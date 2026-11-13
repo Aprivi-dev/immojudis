@@ -2,6 +2,7 @@ import "server-only";
 import { renderTrialEndEmail } from "../../emails/trial-end";
 import type { ResendEmailMessage } from "@/lib/email-alerts";
 import { emailNoReplyText } from "@/lib/email-layout";
+import { formatDate } from "@/lib/format/dates";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import {
   LAUNCH_OFFER_END_NEEDS_ANALYSIS,
@@ -42,18 +43,11 @@ export const TRIAL_END_OFFER_LABEL = "Voir l’offre Analyse";
 export const TRIAL_END_NO_CHARGE_TEXT =
   "Rien ne devient payant automatiquement : aucune carte bancaire ne vous a été demandée et aucun prélèvement n’aura lieu.";
 
-const DAY_FORMAT = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
 /** « 14 novembre 2026 » (« 1er novembre 2026 »), le jour de Paris. */
 export function trialEndDayLabel(endsAt: string | Date): string {
   const date = endsAt instanceof Date ? endsAt : new Date(endsAt);
   if (Number.isNaN(date.getTime())) throw new Error("Trial end email: invalid end date.");
-  return DAY_FORMAT.format(date).replace(/^1 /, "1er ");
+  return formatDate(date.toISOString()).replace(/^1 /, "1er ");
 }
 
 export function trialEndSubject(endsAt: string | Date, internal: boolean): string {

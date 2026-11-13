@@ -9,6 +9,7 @@ import {
   dvfReferenceForType,
   formatDataAsOf,
   formatEuro,
+  formatRatio,
   largestRemainderPercentages,
   mapCourtSummaries,
   mapDvfHistory,
@@ -106,6 +107,12 @@ describe("auction scenarios mapping", () => {
   it("rounds amounts to the thousand euros", () => {
     expect(formatEuro(91_870).replace(/\s/g, " ")).toBe("92 000 €");
     expect(formatEuro(null)).toBe("—");
+  });
+
+  it("writes a ratio to the starting price with one decimal, the sign first", () => {
+    expect(formatRatio(1.25)).toBe("×1,3");
+    expect(formatRatio(2)).toBe("×2,0");
+    expect(formatRatio(null)).toBe("—");
   });
 });
 

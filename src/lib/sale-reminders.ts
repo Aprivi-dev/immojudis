@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/error-detail-for-log";
+import { formatWeekdayDate } from "@/lib/format/dates";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
@@ -72,7 +73,6 @@ const MAX_FOLLOWED_SALES_PER_USER = 300;
 const MAX_SOURCE_CHECK_AGE_HOURS = 36;
 /** Au-delà de cette part de rappels d'audience écartés faute de vérification récente, le passage échoue. */
 const MAX_STALE_SKIP_SHARE = 0.2;
-const PARIS_TIME_ZONE = "Europe/Paris";
 const DATE_TO_CONFIRM = "Nouvelle date à confirmer auprès de l’avocat poursuivant.";
 
 export type FollowedSale = { id: string; saleDate: string | null };
@@ -206,18 +206,6 @@ function parseDate(value: unknown): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-export function weekdayLongDate(value: string): string | null {
-  const date = parseDate(value);
-  if (!date) return null;
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: PARIS_TIME_ZONE,
-  }).format(date);
-}
-
 /** « Maison à Bordeaux » : le type de bien et la commune publics, jamais l'adresse. */
 export function publicTitle(row: Pick<SaleCalendarRow, "property_type" | "city"> | null): string {
   if (!row) return "Vente suivie";
@@ -250,7 +238,7 @@ export function audienceReminderFor(
   const dayKey = parisDateKey(hearing);
   const days = calendarDaysBetween(parisDateKey(now), dayKey);
   const match = REMINDER_DAYS.find((reminder) => reminder.days === days);
-  const dateText = weekdayLongDate(row.sale_date);
+  const dateText = formatWeekdayDate(row.sale_date, null);
   if (!match || !dateText) return null;
   const time = row.date_only === false ? saleHearingTime(row.sale_date) : null;
   return {
@@ -402,7 +390,7 @@ async function detectRemindersForUser({
     const row = await calendarOf(event.saleId);
     const newDate =
       warning.kind === "date_changed" && row?.exportable && row.sale_date
-        ? weekdayLongDate(row.sale_date)
+        ? formatWeekdayDate(row.sale_date, null)
         : null;
     const detail =
       warning.kind === "date_changed"

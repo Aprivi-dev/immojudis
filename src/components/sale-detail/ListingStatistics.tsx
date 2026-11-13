@@ -9,6 +9,7 @@ import type {
   AdjudicationPriceStatisticsScope,
 } from "@/lib/adjudication-price-statistics";
 import { bidBandLabels } from "@/lib/adjudication-distributions";
+import { formatRatio } from "@/lib/auction-scenarios";
 import { getExampleTribunalStatistics } from "@/lib/example-tribunal-statistics";
 import {
   formatDate,
@@ -160,9 +161,8 @@ const PUBLISHED_LEAD_DEFINITION =
 const DISCOVERY_LEAD_DEFINITION =
   "médiane des jours entre le jour où Immojudis a repéré l’annonce pour la première fois et l’audience ; plus court que le précédent quand l’annonce existait avant d’être repérée.";
 
-function formatRatio(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "Données insuffisantes";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)}×`;
+function formatStatisticRatio(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "Données insuffisantes" : formatRatio(value);
 }
 
 function dateSortValue(value: string): number {
@@ -355,7 +355,7 @@ function PriceScopeCard({
         <div>
           <span className={styles.metricLabel}>Ratio publié / mise à prix</span>
           <strong className={styles.metricValue}>
-            {formatRatio(scope.metrics.medianHammerToStartingRatio)}
+            {formatStatisticRatio(scope.metrics.medianHammerToStartingRatio)}
           </strong>
         </div>
       </div>

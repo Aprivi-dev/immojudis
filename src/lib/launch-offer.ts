@@ -71,7 +71,11 @@ export const LAUNCH_OFFER_VISITOR_TEXT = `Inscrivez-vous gratuitement : une fois
 
 let trialDateFormat: Intl.DateTimeFormat | null = null;
 
-/** « 1er novembre 2026 à 14:05 », heure de Paris. */
+/**
+ * « 1er novembre 2026 à 14:05 », heure de Paris : `formatDateTime` (`format/dates.ts`) avec « 1er »
+ * (vérifié par le test). Copie gardée exprès : y importer `format/dates` change le découpage de
+ * Turbopack et alourdit le JavaScript client total d'environ 69 ko (mesuré le 13/11/2026).
+ */
 export function signupTrialDateLabel(iso: string): string {
   const time = Date.parse(iso);
   if (!Number.isFinite(time)) return iso;

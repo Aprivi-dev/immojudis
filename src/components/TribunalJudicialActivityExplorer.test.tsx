@@ -102,7 +102,10 @@ describe("TribunalJudicialActivityExplorer", () => {
     ).toBeTruthy();
     expect(screen.getByText("0 / 2")).toBeTruthy();
     expect(screen.getByText(/Profils historiques publiables \/ tribunaux suivis/i)).toBeTruthy();
-    expect(screen.getByText(/ne mesure pas la couverture nationale/i)).toBeTruthy();
+    // Pourcentage du module commun : une espace ordinaire avant « % ».
+    expect(screen.getByText(/ne mesure pas la couverture nationale/i).textContent).toMatch(
+      /^0 % des tribunaux suivis/,
+    );
     expect(screen.getAllByText("Historique observé").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Pipeline à venir").length).toBeGreaterThan(0);
     expect(screen.getByText(/présentés séparément avec l’offre Analyse/i)).toBeTruthy();

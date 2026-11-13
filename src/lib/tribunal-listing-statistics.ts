@@ -3,6 +3,7 @@
 // devenu `.check(z.refine(...))`), avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
 import { publishedDay } from "@/lib/listing-evidence";
+import { parisDateKey } from "@/lib/paris-time";
 import { wilsonInterval95 } from "@/lib/stats";
 import {
   TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
@@ -754,12 +755,7 @@ function hearingCalendar(sales: ParsedSale[], end: Date) {
   const counts = new Map<string, number>();
   for (const sale of sales) {
     if (sale.saleAt >= end) continue;
-    const date = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(sale.saleAt);
+    const date = parisDateKey(sale.saleAt);
     counts.set(date, (counts.get(date) ?? 0) + 1);
   }
   return [...counts.entries()]

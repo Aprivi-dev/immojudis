@@ -27,6 +27,11 @@ export type DescribedSaleChange = {
 
 const PARIS_TIME_ZONE = "Europe/Paris";
 
+/**
+ * Même sortie que `formatDate(value, null)` (`format/dates.ts`, vérifié par le test). Copie gardée
+ * exprès : importer `format/dates` ici change le découpage de Turbopack et alourdit le JavaScript
+ * client total d'environ 78 ko (mesuré le 13/11/2026), au-delà du plafond.
+ */
 function longDay(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const date = new Date(value);

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { SaleDetailLink } from "@/components/SaleDetailLink";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { formatStartingPrice, formatWeekdayDate, propertyTypeLabel } from "@/lib/format";
 import {
   HEARINGS_WEEK_DAYS,
   HEARINGS_WINDOW_DAYS,
@@ -9,21 +9,11 @@ import {
 } from "@/lib/upcoming-hearings";
 import type { ListedDay, ListedWindows } from "./hearings-list";
 
-/** Le jour en toutes lettres ; « (aujourd’hui) » et « (demain) » s'ajoutent dans le navigateur (`RelativeDay`). */
-function dayLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${dayKey}T12:00:00Z`));
-}
-
 function listDay(day: HearingDay, tribunalPaths: Readonly<Record<string, string>>): ListedDay {
   return {
     dayKey: day.dayKey,
-    label: dayLabel(day.dayKey),
+    // « (aujourd’hui) » et « (demain) » s'ajoutent dans le navigateur (`RelativeDay`).
+    label: formatWeekdayDate(day.dayKey),
     groups: day.tribunals.map((group) => {
       const tribunalPath = group.tribunalCode ? tribunalPaths[group.tribunalCode] : null;
       return {

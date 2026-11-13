@@ -7,6 +7,8 @@ import {
   formatNumericDateTime,
   formatShortDate,
   formatShortDateTime,
+  formatWeekday,
+  formatWeekdayDate,
 } from "./dates";
 
 describe("dates affichées à l'heure de Paris", () => {
@@ -20,6 +22,8 @@ describe("dates affichées à l'heure de Paris", () => {
     expect(formatNumericDate(instant)).toBe("05/11/2026");
     expect(formatNumericDateTime(instant)).toBe("05/11/2026 14:30");
     expect(formatDayMonth(instant)).toBe("5 nov.");
+    expect(formatWeekdayDate(instant)).toBe("jeudi 5 novembre 2026");
+    expect(formatWeekday(instant)).toBe("jeudi");
   });
 
   it("passe au lendemain à minuit de Paris, pas à minuit UTC", () => {
@@ -30,6 +34,8 @@ describe("dates affichées à l'heure de Paris", () => {
     // Été (UTC+2) : 22 h 30 UTC est déjà le lendemain à Paris.
     expect(formatShortDate("2026-07-14T22:30:00.000Z")).toBe("15 juil. 2026");
     expect(formatDayMonth("2026-07-14T22:30:00.000Z")).toBe("15 juil.");
+    // 23 h 30 UTC le vendredi 6 novembre : déjà samedi à Paris.
+    expect(formatWeekday("2026-11-06T23:30:00Z")).toBe("samedi");
   });
 
   it("suit les changements d'heure", () => {
@@ -48,6 +54,7 @@ describe("dates affichées à l'heure de Paris", () => {
     expect(formatShortDate("2026-03-29")).toBe("29 mars 2026");
     expect(formatNumericDate("2026-10-25")).toBe("25/10/2026");
     expect(formatNumericDate("2026-12-31")).toBe("31/12/2026");
+    expect(formatWeekdayDate("2026-11-06")).toBe("vendredi 6 novembre 2026");
   });
 
   it("rend le texte de repli pour une valeur absente ou illisible", () => {
@@ -59,5 +66,14 @@ describe("dates affichées à l'heure de Paris", () => {
     expect(formatNumericDate(null, "")).toBe("");
     expect(formatNumericDateTime("pas une date", "Non établie")).toBe("Non établie");
     expect(formatDayMonth(null)).toBe("—");
+    expect(formatWeekdayDate(null)).toBe("Date à confirmer");
+    expect(formatWeekday("pas une date")).toBe("—");
+  });
+
+  it("rend null quand l'appelant omet la date absente au lieu d'un texte de repli", () => {
+    expect(formatDate(null, null)).toBeNull();
+    expect(formatDate("pas une date", null)).toBeNull();
+    expect(formatDate("2026-11-05", null)).toBe("5 novembre 2026");
+    expect(formatWeekdayDate(undefined, null)).toBeNull();
   });
 });

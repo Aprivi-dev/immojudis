@@ -25,7 +25,8 @@ import type {
 } from "@/lib/tribunal-judicial-activity";
 import * as queryKeys from "@/lib/query-keys";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
-import { formatPrice } from "@/lib/format/numbers";
+import { formatDate } from "@/lib/format/dates";
+import { formatNumber, formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
@@ -328,7 +329,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             formatNumber(national.coverage.trackedCourts)
           }
           detail={
-            formatPercent(national.coverage.rate) +
+            formatShareAsPercent(national.coverage.rate) +
             " des tribunaux suivis ont à la fois un prix et un délai historiques publiables. Ce ratio ne mesure pas la couverture nationale."
           }
         />
@@ -567,7 +568,7 @@ function TribunalProfile({
           <ProfileMetric
             icon={CalendarDays}
             label="Audience suivante suivie"
-            value={formatDate(tribunal.activity.nextSaleAt)}
+            value={formatDate(tribunal.activity.nextSaleAt, "Aucune date")}
             detail={`${formatNumber(tribunal.activity.upcomingSales90Days)} dans les 90 prochains jours`}
           />
           <ProfileMetric
@@ -702,7 +703,7 @@ function formatDaysRange(metric: TribunalJudicialActivityRangeMetric): string {
 function formatPercentMetric(
   metric: TribunalJudicialActivityResponse["activity"]["visitCoverage"],
 ): string {
-  return metric.status === "published" ? formatPercent(metric.value) : "Non publié";
+  return metric.status === "published" ? formatShareAsPercent(metric.value) : "Non publié";
 }
 
 function sampleLabel(
@@ -717,27 +718,6 @@ function sampleLabel(
     " retenue" +
     (metric.sampleSize > 1 ? "s" : "")
   );
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
-}
-
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "percent",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "Aucune date";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(new Date(value));
 }
 
 function normalizeSearch(value: string): string {
