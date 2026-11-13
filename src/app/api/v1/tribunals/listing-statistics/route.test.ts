@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  buildTribunalListingStatistics,
-  TribunalCourtUnresolvedError,
-} from "@/lib/tribunal-listing-statistics";
+import { buildTribunalListingStatistics } from "@/lib/tribunal-listing-statistics";
+import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({

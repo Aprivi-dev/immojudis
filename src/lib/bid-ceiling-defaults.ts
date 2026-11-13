@@ -16,6 +16,7 @@ import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
+import { propertyFamily } from "@/lib/property-type-family";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   DEFAULT_PRELIMINARY_FEES,
@@ -29,9 +30,6 @@ import {
   validEnteredSurface,
 } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
-
-// Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
-export { DEFAULT_PRELIMINARY_FEES };
 /*
  * Statut des valeurs par défaut du plafond (état au 31/10/2026).
  *
@@ -141,7 +139,7 @@ export function buildCeilingHypotheses(
   const entered = acceptsEnteredBuiltSurface(sale) ? validEnteredSurface(enteredSurfaceM2) : null;
   const surface = entered ?? surfaces.builtSurfaceM2;
   const surfaceEstimated = entered == null && surfaces.builtSurfaceEstimated;
-  const apartment = /appart|apartment|studio|duplex|loft/i.test(sale.property_type ?? "");
+  const apartment = propertyFamily(sale.property_type) === "apartment";
   // Un bien qui n'est pas un logement (terrain, parking, local…) n'a aucun loyer de référence.
   const reference = isRentApplicable(sale)
     ? resolveRentReference(rentReference, sale.department)

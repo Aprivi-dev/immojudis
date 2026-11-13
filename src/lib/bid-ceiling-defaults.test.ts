@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCeilingHypotheses,
-  DEFAULT_PRELIMINARY_FEES,
   occupationCaseForStatus,
   preliminaryFeesFromSale,
 } from "@/lib/bid-ceiling-defaults";
+import { DEFAULT_PRELIMINARY_FEES } from "@/lib/profitability";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
 import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
 import type { MarketEstimate } from "@/lib/market.server";

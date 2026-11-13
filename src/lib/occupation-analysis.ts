@@ -2,7 +2,7 @@ import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
 import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import { cleanText } from "@/lib/clean-text";
+import { cleanText, type TextCandidate } from "@/lib/clean-text";
 import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 import { riskTexts } from "@/lib/sale-risk-texts";
 
@@ -29,11 +29,6 @@ export type OccupancyAnalysis = {
   decisionImpact: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 const OCCUPANCY_KEY = /occup|occupation|occupancy|bail|locataire|tenant|rented|lease|vacant|libre/i;

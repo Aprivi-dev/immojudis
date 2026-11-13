@@ -16,8 +16,6 @@ import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 import { ConfigurationError, NotFoundError } from "@/lib/api-errors";
 
-export { resolveCnbDatasetBarKey };
-
 type LawyerRow = Pick<
   Database["public"]["Tables"]["referenced_lawyers"]["Row"],
   | "id"

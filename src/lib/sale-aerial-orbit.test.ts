@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  aerialOrbitTarget,
-  hasNumberedStreetAddress,
-  hasReliableBuildingPosition,
-} from "./sale-aerial-orbit";
+import { aerialOrbitTarget } from "./sale-aerial-orbit";
+import { hasNumberedStreetAddress, hasReliableBuildingPosition } from "./building-position";
 
 const base = {
   latitude: 44.8378,

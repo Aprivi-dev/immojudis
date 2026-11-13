@@ -20,10 +20,11 @@ vi.mock("@/lib/account-product-events.server", () => ({
   recordAccountProductEvent: mocks.record,
 }));
 vi.mock("@/lib/sale-unlocks.server", async () => {
+  const SALE_UNLOCK_QUOTA_MESSAGE = "Vous avez utilisé tous vos déblocages de ce mois-ci.";
   class SaleUnlockQuotaError extends Error {
     readonly status: SaleUnlockStatus;
     constructor(status: SaleUnlockStatus) {
-      super("quota");
+      super(SALE_UNLOCK_QUOTA_MESSAGE);
       this.status = status;
     }
   }

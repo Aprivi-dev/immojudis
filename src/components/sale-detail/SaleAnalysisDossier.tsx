@@ -7,7 +7,11 @@ import { useQuery } from "@tanstack/react-query";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { Button } from "@/components/ui/primitives";
-import { fetchNotificationPreferences, fetchSaleChangeEvents } from "@/lib/client-api";
+import {
+  consentOffered,
+  useNotificationPreferencesQuery,
+} from "@/hooks/use-notification-preferences";
+import { fetchSaleChangeEvents } from "@/lib/client-api";
 import {
   FAVORITE_DOSSIER_STATUSES,
   favoriteDossierStatusLabel,
@@ -47,14 +51,9 @@ export function DossierActions({
   const [statusMessage, setStatusMessage] = useState("");
   // Rappels d'audience : la case (et son texte de consentement) reste dans « Mon dossier » ; le
   // panneau dit seulement s'ils sont activés et y mène.
-  const preferences = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId ?? ""),
-    queryFn: fetchNotificationPreferences,
-    enabled: Boolean(userId),
-    staleTime: 60_000,
-  });
+  const preferences = useNotificationPreferencesQuery(userId);
   const remindersOn = preferences.data?.preferences.saleRemindersEnabled ?? false;
-  const remindersOffered = remindersOn || Boolean(preferences.data?.saleRemindersAvailable);
+  const remindersOffered = consentOffered(preferences.data?.saleRemindersAvailable, remindersOn);
   if (!userId) return null;
   return (
     <div className={styles.actions}>

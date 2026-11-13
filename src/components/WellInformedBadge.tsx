@@ -1,6 +1,14 @@
+"use client";
+
+import dynamic from "next/dynamic";
 import { isWellInformedSale } from "@/lib/listing-completeness-ranking";
 import type { AuctionSale } from "@/lib/types";
-import { WellInformedBadgeInfo } from "./WellInformedBadgeInfo";
+
+// Chargée à part : le JavaScript initial de /sales est à son plafond. Rendue par le serveur, la
+// pastille est dans le HTML dès le départ (rien ne bouge à l'arrivée de son code).
+const WellInformedBadgeInfo = dynamic(() =>
+  import("./WellInformedBadgeInfo").then((module) => module.WellInformedBadgeInfo),
+);
 
 /**
  * Pastille des cartes de résultats : l'annonce est dans le palier haut du classement par

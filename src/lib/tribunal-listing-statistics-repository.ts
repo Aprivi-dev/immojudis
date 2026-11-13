@@ -40,8 +40,6 @@ import {
   sourceFamily,
 } from "@/lib/tribunal-listing-statistics/deduplication";
 
-export { deduplicateTribunalListingSales } from "@/lib/tribunal-listing-statistics/deduplication";
-
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
 const MAX_NATIONAL_NULL_CODE_SCAN = 25_000;

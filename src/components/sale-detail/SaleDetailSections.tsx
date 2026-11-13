@@ -6,6 +6,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import { DocumentsList } from "@/components/DocumentsList";
 import { collectSaleDocuments } from "@/lib/sale-documents";
+import { isPersistedSale } from "@/lib/example-sale-identity";
 import { listingSaleStatus } from "@/lib/listing-evidence";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import {
@@ -93,9 +94,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
   const showLawyerDirectory = isJudicial && !saleStatus;
   const organizerName = procedure.organizerName?.trim() || null;
   const hasOrganizerContact = Boolean(procedure.organizerContact?.trim());
-  const isPersistedSale =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sale.id);
-  const directoryHref = isPersistedSale
+  const directoryHref = isPersistedSale(sale)
     ? `/avocats?saleId=${encodeURIComponent(sale.id)}&city=${encodeURIComponent(sale.city ?? "")}`
     : `/avocats?city=${encodeURIComponent(sale.city ?? "")}`;
 
@@ -158,7 +157,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
               <p className="text-sm text-brand-navy/70">Coordonnées à confirmer par Immojudis.</p>
             )}
           </div>
-          {isPersistedSale && isJudicial && !saleStatus ? (
+          {isPersistedSale(sale) && isJudicial && !saleStatus ? (
             <div className="@4xl:col-start-2">
               <LawyerReferralButton saleId={sale.id} className="min-h-11 w-full sm:w-auto" />
             </div>

@@ -1,3 +1,5 @@
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+
 /**
  * Finds e-mail addresses inside free text (listing blocks, scraped contact lines).
  *
@@ -25,6 +27,18 @@ export function emailInTextPattern(): RegExp {
 /** Raw address matches, in order of appearance (not normalised, not deduplicated). */
 export function findEmailsInText(value: string): string[] {
   return value.match(emailInTextPattern()) ?? [];
+}
+
+/** Distinct normalised addresses found in a text value; any other value has none. */
+export function normalizedEmailsInText(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return [
+    ...new Set(
+      findEmailsInText(value)
+        .map(normalizedEmail)
+        .filter((email): email is string => Boolean(email)),
+    ),
+  ];
 }
 
 /** The text with every address replaced. */

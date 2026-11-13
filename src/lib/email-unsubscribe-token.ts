@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { ConfigurationError } from "@/lib/api-errors";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Signed, expiring unsubscribe links. The token names the user and what to
@@ -37,8 +38,6 @@ export type UnsubscribeClaims = {
   expiresAt: number;
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const dedicated = env.EMAIL_UNSUBSCRIBE_SECRET?.trim();
   if (dedicated) return dedicated;
@@ -72,7 +71,7 @@ function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "offer-opening") return { kind: "offer-opening" };
   if (value === "launch-offer-end") return { kind: "launch-offer-end" };
   const match = /^alert:(.+)$/.exec(value);
-  return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;
+  return match && isUuid(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }
 
 export function createUnsubscribeToken({
@@ -139,7 +138,7 @@ function readSignedClaims(
       s?: unknown;
       e?: unknown;
     };
-    if (typeof data.u !== "string" || !UUID_PATTERN.test(data.u)) return null;
+    if (!isUuid(data.u)) return null;
     if (typeof data.s !== "string" || typeof data.e !== "number") return null;
     const scope = scopeFromString(data.s);
     return scope ? { userId: data.u, scope, expiresAt: data.e } : null;

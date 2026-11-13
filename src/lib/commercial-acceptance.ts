@@ -8,6 +8,7 @@ import { withdrawalInformationLines } from "@/lib/withdrawal-form";
 import { resolveTransactionalEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { ConfigurationError } from "@/lib/api-errors";
+import { formatDateTime } from "@/lib/format/dates";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_OFFER_CODE,
@@ -216,8 +217,10 @@ export async function sendCommercialConfirmation({
           : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL}.`,
         recurringPrice,
         "L’abonnement est conclu sans durée limitée et prélevé automatiquement chaque mois, à la même date, jusqu’à sa résiliation. Vous pouvez le résilier à tout moment depuis la page « Mon compte » : la résiliation prend effet à la fin de la période payée.",
-        trialEnd ? `Fin de l’essai prévue le : ${formatOfferDate(trialEnd)}` : null,
-        firstInvoiceAt ? `Premier prélèvement prévu le : ${formatOfferDate(firstInvoiceAt)}` : null,
+        trialEnd ? `Fin de l’essai prévue le : ${formatDateTime(trialEnd, trialEnd)}` : null,
+        firstInvoiceAt
+          ? `Premier prélèvement prévu le : ${formatDateTime(firstInvoiceAt, firstInvoiceAt)}`
+          : null,
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n")
@@ -463,14 +466,4 @@ function formatInterval(interval: string | null, count: number | null): string {
   const normalizedCount = count && count > 1 ? ` tous les ${count}` : " chaque";
   const label = interval === "month" ? "mois" : interval === "year" ? "an" : interval;
   return `${normalizedCount} ${label}`;
-}
-
-function formatOfferDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(date);
 }

@@ -349,7 +349,7 @@ describe("page Mon compte", () => {
       },
     });
     renderPage();
-    await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/);
+    await screen.findByText(/abonnement mensuel, prochaine échéance le 1er décembre 2026/);
     expect(screen.queryByTestId("account-offer-end")).toBeNull();
   });
 
@@ -365,7 +365,7 @@ describe("page Mon compte", () => {
     });
     renderPage();
     expect(
-      await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/),
+      await screen.findByText(/abonnement mensuel, prochaine échéance le 1er décembre 2026/),
     ).toBeTruthy();
     expect(screen.getByText(/portail sécurisé Stripe/)).toBeTruthy();
     expect(screen.queryByTestId("account-launch-offer")).toBeNull();

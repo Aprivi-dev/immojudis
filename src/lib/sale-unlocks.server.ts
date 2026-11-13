@@ -4,6 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/lib/sale-unlocks";
+import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 
 /**
  * « 3 déblocages par mois » côté serveur. Tout passe par les RPC `unlock_sale` et
@@ -66,7 +67,7 @@ export class SaleUnlockQuotaError extends Error {
   readonly status: SaleUnlockStatus;
 
   constructor(status: SaleUnlockStatus) {
-    super("Vous avez utilisé tous vos déblocages de ce mois-ci.");
+    super(SALE_UNLOCK_QUOTA_MESSAGE);
     this.name = "SaleUnlockQuotaError";
     this.status = status;
   }

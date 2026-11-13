@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type {
   AdminAutoPublicationAction,
   AutoPublicationView,
@@ -8,23 +8,16 @@ import type {
  * Réglage de la publication automatique (administration seulement). Module à part, importé par le seul
  * panneau de l'onglet Réglages : rien n'entre dans `@/lib/client-api`, partagé avec les pages publiques.
  */
-export async function fetchAdminAutoPublication(): Promise<AutoPublicationView> {
-  const response = await fetch("/api/admin/information-agent/auto-publication", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<AutoPublicationView>(response);
+export function fetchAdminAutoPublication(): Promise<AutoPublicationView> {
+  return apiRequest<AutoPublicationView>("/api/admin/information-agent/auto-publication");
 }
 
 /** Changement de mode (arrêt, simulation) ou arrêt d'urgence. */
-export async function runAdminAutoPublicationActionClient(
+export function runAdminAutoPublicationActionClient(
   data: AdminAutoPublicationAction,
 ): Promise<AutoPublicationView> {
-  const response = await fetch("/api/admin/information-agent/auto-publication", {
+  return apiRequest<AutoPublicationView>("/api/admin/information-agent/auto-publication", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(data),
+    body: data,
   });
-  return readJson<AutoPublicationView>(response);
 }

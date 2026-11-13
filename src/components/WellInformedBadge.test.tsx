@@ -6,14 +6,21 @@ import { WELL_INFORMED_BADGE_NOTE } from "./well-informed-copy";
 
 afterEach(cleanup);
 
+/** La pastille est chargée à part (`next/dynamic`) : le test attend son arrivée. */
+async function renderBadge() {
+  const view = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  await screen.findByText("Annonce bien renseignée");
+  return view;
+}
+
 describe("WellInformedBadge", () => {
-  it("affiche « Annonce bien renseignée » pour une annonce du palier haut", () => {
-    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("affiche « Annonce bien renseignée » pour une annonce du palier haut", async () => {
+    await renderBadge();
     expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
   });
 
-  it("affiche la pastille à 12 px, sans majuscules forcées", () => {
-    const { container } = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("affiche la pastille à 12 px, sans majuscules forcées", async () => {
+    const { container } = await renderBadge();
     const badge = container.firstElementChild as HTMLElement;
     expect(badge.className).toContain("text-xs");
     expect(badge.className).not.toContain("uppercase");
@@ -21,8 +28,8 @@ describe("WellInformedBadge", () => {
     expect(container.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("garde la réserve visible à la demande, au clavier comme au toucher", () => {
-    const { container } = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("garde la réserve visible à la demande, au clavier comme au toucher", async () => {
+    const { container } = await renderBadge();
     expect(screen.queryByRole("note")).toBeNull();
     const button = screen.getByRole("button", {
       name: "À propos du repère « Annonce bien renseignée »",
@@ -46,8 +53,8 @@ describe("WellInformedBadge", () => {
     expect(document.activeElement).toBe(button);
   });
 
-  it("ne se ferme pas avec l'Échap d'un dialogue ouvert par-dessus", () => {
-    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("ne se ferme pas avec l'Échap d'un dialogue ouvert par-dessus", async () => {
+    await renderBadge();
     fireEvent.click(screen.getByRole("button", { name: /À propos du repère/ }));
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
@@ -60,15 +67,15 @@ describe("WellInformedBadge", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
-  it("garde un bouton « i » d'au moins 24 px (size-6)", () => {
-    render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("garde un bouton « i » d'au moins 24 px (size-6)", async () => {
+    await renderBadge();
     const button = screen.getByRole("button", { name: /À propos du repère/ });
     expect(button.className).toContain("size-6");
     expect(button.className).not.toMatch(/(^|\s)(h-5|w-5)(\s|$)/);
   });
 
-  it("n'utilise pas d'attribut title, inaccessible au clavier et au tactile", () => {
-    const { container } = render(<WellInformedBadge sale={{ completeness_tier: 1 }} />);
+  it("n'utilise pas d'attribut title, inaccessible au clavier et au tactile", async () => {
+    const { container } = await renderBadge();
     expect(container.querySelector("[title]")).toBeNull();
   });
 

@@ -43,8 +43,8 @@ import {
 } from "@/lib/sale-market-estimates";
 import type { AuctionSale } from "@/lib/types";
 import { isBusyWriteError } from "@/lib/write-busy";
-import { errorDetailForLog as errorMessage } from "@/lib/error-detail-for-log";
 import { parseTimestamp as time } from "@/lib/timestamp";
+import { byEvaluationDate, MAX_REPORTED_ERRORS, recordBatchFailure } from "@/lib/batch-pass";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (table `auction_sale_pepites`, voir la migration
@@ -73,7 +73,6 @@ const PAGE_SIZE = 1000;
 const MAX_ONLINE_SALES = 20_000;
 /** Lignes complètes lues par requête (une ligne pèse plusieurs dizaines de ko). */
 const READ_CHUNK_SIZE = 25;
-const MAX_REPORTED_ERRORS = 5;
 /** Durée du bail : au-delà de `maxDuration` (300 s) de la route, il expire seul si la passe meurt. */
 const SALE_PEPITES_LEASE_SECONDS = 360;
 /**
@@ -257,11 +256,6 @@ export function pickPendingSales(
       aged.push({ id: sale.id, evaluatedAt });
     }
   }
-
-  const byEvaluationDate = (
-    left: { id: string; evaluatedAt: number },
-    right: { id: string; evaluatedAt: number },
-  ) => left.evaluatedAt - right.evaluatedAt || left.id.localeCompare(right.id);
 
   return [
     ...published.sort(byEvaluationDate).map((sale) => sale.id),
@@ -707,10 +701,7 @@ async function runPass({
   const startedAt = Date.now();
   const versions = currentPepiteVersions();
   const result = emptyPepitesResult(versions);
-  const fail = (count: number, error: unknown) => {
-    result.failed += count;
-    if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(errorMessage(error));
-  };
+  const fail = (count: number, error: unknown) => recordBatchFailure(result, count, error);
 
   // En mode « off » : rien n'est lu ni écrit.
   const mode = await readMode();

@@ -37,7 +37,8 @@ import {
   type DirectorySearch,
 } from "@/lib/lawyer-directory-search";
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
-import { isSaleId, lawyerReportPath } from "@/lib/contact-message";
+import { lawyerReportPath } from "@/lib/contact-message";
+import { isUuid } from "@/lib/uuid";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
 import { formatDate } from "@/lib/format/dates";
 import { formatStartingPrice } from "@/lib/format/numbers";
@@ -328,7 +329,7 @@ function DirectoryLayout({
             Vous poursuivez une vente ?
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-            {isSaleId(search.saleId)
+            {isUuid(search.saleId)
               ? "Pour nous signaler une erreur sur la fiche de cette vente, si vous la poursuivez, écrivez-nous"
               : "Pour nous signaler une erreur sur la fiche d’une vente que vous poursuivez, écrivez-nous"}{" "}
             depuis le formulaire de contact, avec le sujet « Je suis l’avocat poursuivant d’une

@@ -15,6 +15,7 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 type SubscriptionFormState = {
   target: string;
@@ -225,17 +226,7 @@ function SubscriptionLine({ subscription }: { subscription: AdminSubscriptionSum
 
 function StatusPill({ status }: { status: PlanStatus }) {
   const active = status === "active" || status === "trialing";
-  return (
-    <span
-      className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] ${
-        active
-          ? "border-emerald-300/20 bg-success-tint text-success"
-          : "border-amber-300/20 bg-warning-tint text-warning"
-      }`}
-    >
-      {status}
-    </span>
-  );
+  return <AdminPill tone={active ? "success" : "warning"}>{status}</AdminPill>;
 }
 
 function emptySubscriptionForm(): SubscriptionFormState {

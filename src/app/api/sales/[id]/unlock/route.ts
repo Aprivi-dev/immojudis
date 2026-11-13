@@ -9,6 +9,7 @@ import { apiRoute } from "@/lib/api-route";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleUnlockQuotaReachedResponse } from "@/lib/sale-unlocks";
+import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 import { getSaleUnlockStatus, SaleUnlockQuotaError, unlockSale } from "@/lib/sale-unlocks.server";
 
 const saleIdSchema = z.string().guid();
@@ -56,7 +57,7 @@ export const POST = apiRoute<{ id: string }>(
       await recordAccountProductEvent(auth.userId, { type: "quota_reached", quota: "unlocks" });
       // Le client lit `code` et `status` pour afficher le quota du mois : corps propre à ce 409.
       const body: SaleUnlockQuotaReachedResponse = {
-        error: "Vous avez utilisé tous vos déblocages de ce mois-ci.",
+        error: SALE_UNLOCK_QUOTA_MESSAGE,
         code: "unlock_quota_reached",
         status: error.status,
       };

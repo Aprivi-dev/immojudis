@@ -31,6 +31,7 @@ import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { documentSignatureParts } from "@/lib/document-signature";
 import { ForbiddenError } from "@/lib/api-errors";
 import { asJson } from "@/lib/supabase-json";
+import { chunks } from "@/lib/chunks";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -208,7 +209,8 @@ let pepiteIdsCache: { at: number; ids: Promise<ReadonlySet<string>> } | null = n
  * une panne n'est pas gardée et fait échouer les alertes qui en ont besoin (elles gardent leur date
  * d'évaluation et sont reprises au passage suivant).
  */
-function loadPepiteSaleIdsForAlerts(now = Date.now()): Promise<ReadonlySet<string>> {
+function loadPepiteSaleIdsForAlerts(): Promise<ReadonlySet<string>> {
+  const now = Date.now();
   if (pepiteIdsCache && now - pepiteIdsCache.at < PEPITE_IDS_CACHE_MS) return pepiteIdsCache.ids;
   const entry = {
     at: now,
@@ -787,8 +789,7 @@ async function loadSalesByIds({
   discovery: boolean;
 }): Promise<AuctionSale[]> {
   const sales: AuctionSale[] = [];
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const chunk = ids.slice(offset, offset + 100);
+  for (const chunk of chunks(ids)) {
     sales.push(
       ...(await getSalesForAlertEvaluation(
         { status_in: [...ALERT_SALE_STATUSES], ids: chunk },

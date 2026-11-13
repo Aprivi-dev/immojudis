@@ -4,7 +4,6 @@ import { serverEnv } from "@/lib/env";
 import { departmentCode } from "@/lib/department-code";
 import {
   isRentApplicable,
-  median,
   RENT_SEGMENTS,
   rentReferenceFromAnilMedian,
   rentReferenceFromAnilRow,
@@ -15,6 +14,7 @@ import {
   type RentSegment,
 } from "@/lib/rent-reference";
 import { HOUSING_ZONINGS, type HousingTension, type HousingZoning } from "@/lib/housing-tension";
+import { median } from "@/lib/stats";
 import {
   arrondissementCode,
   normalizeCommuneCode,
@@ -22,6 +22,7 @@ import {
   saleCommuneCode,
 } from "@/lib/sale-commune-code";
 import type { AuctionSale } from "@/lib/types";
+import { chunks } from "@/lib/chunks";
 
 // Lecture serveur de la carte des loyers de l'ANIL (`anil_rents`, table privée, rôle de service).
 // Jamais importé par le navigateur : il reçoit la référence déjà résolue, en propriété. C'est, avec
@@ -94,14 +95,6 @@ async function inWaves<T>(items: readonly T[], run: (item: T) => Promise<void>):
   }
 }
 
-function chunked<T>(items: readonly T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let offset = 0; offset < items.length; offset += size) {
-    chunks.push(items.slice(offset, offset + size));
-  }
-  return chunks;
-}
-
 /** Codes déjà stockés dans `auction_sale_communes`. */
 async function readStoredSaleCommunes(
   ids: readonly string[],
@@ -149,7 +142,7 @@ async function resolveCommuneCodes(
       toRead.set(id, sale);
     }
   }
-  await inWaves(chunked([...toRead.keys()], SALE_ID_BATCH), async (ids) => {
+  await inWaves(chunks([...toRead.keys()], SALE_ID_BATCH), async (ids) => {
     const [{ data, error }, stored] = await Promise.all([
       supabaseAdmin
         .from("auction_sales")
@@ -216,7 +209,7 @@ async function readAnilReferences(
       }
     }
   }
-  await inWaves(chunked([...missing.keys()], RENT_CODE_BATCH), async (codes) => {
+  await inWaves(chunks([...missing.keys()], RENT_CODE_BATCH), async (codes) => {
     const segments = [...new Set(codes.flatMap((code) => [...(missing.get(code) ?? [])]))];
     const { data, error } = await supabaseAdmin
       .from("anil_rents")
@@ -257,7 +250,7 @@ async function readCodeAliases(codes: readonly string[]): Promise<Map<string, st
     if (cached) aliases.set(code, cached.value);
     else missing.push(code);
   }
-  await inWaves(chunked(missing, 400), async (batch) => {
+  await inWaves(chunks(missing, 400), async (batch) => {
     const { data, error } = await supabaseAdmin.rpc("commune_code_aliases", { p_codes: batch });
     if (error) throw error;
     const found = new Map<string, { newer: string[]; older: string[] }>();
@@ -345,7 +338,7 @@ async function readDepartmentMedians(
       missing.push(department);
     }
   }
-  await inWaves(chunked(missing, 100), async (batch) => {
+  await inWaves(chunks(missing), async (batch) => {
     const { data, error } = await supabaseAdmin.rpc("anil_department_medians", {
       p_departments: batch,
     });

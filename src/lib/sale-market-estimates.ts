@@ -229,13 +229,11 @@ async function enqueueSaleValuation(
   if (error) throw error;
 }
 
-export async function refreshSaleValuationOnDemand(
-  saleId: string,
-  now = new Date(),
-): Promise<MarketContext> {
+export async function refreshSaleValuationOnDemand(saleId: string): Promise<MarketContext> {
   const existing = await getStoredSaleMarketContext(saleId);
   if (existing.estimate) return existing;
 
+  const now = new Date();
   await enqueueSaleValuation(saleId, { now });
   await runSaleValuationPrecomputeForSale(saleId, now);
   return getStoredSaleMarketContext(saleId);

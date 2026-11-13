@@ -303,7 +303,7 @@ describe("page d'un département : contenu", () => {
     );
     render(await Page(params("gironde")));
     const figures = screen.getByRole("region", { name: "Les chiffres du département" });
-    expect(figures.textContent).toContain("1 décembre 2026");
+    expect(figures.textContent).toContain("1er décembre 2026");
     expect(figures.textContent).not.toContain("20 octobre 2026");
     const list = screen.getByRole("region", { name: "Les prochaines ventes" });
     expect(list.textContent).toContain("Vente reportée · nouvelle date à confirmer");

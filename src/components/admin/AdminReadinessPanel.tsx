@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
@@ -209,18 +210,8 @@ function ReadinessBadge({ status }: { status: ReadinessStatus }) {
 
 function ReadinessPill({ status }: { status: ReadinessStatus }) {
   const label = status === "ready" ? "Prêt" : status === "warning" ? "À vérifier" : "Bloquant";
-  const tone =
-    status === "ready"
-      ? "border-emerald-300/20 bg-success-tint text-success"
-      : status === "warning"
-        ? "border-amber-300/20 bg-warning-tint text-warning"
-        : "border-red-300/20 bg-danger-tint text-danger";
-
-  return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] ${tone}`}>
-      {label}
-    </span>
-  );
+  const tone = status === "ready" ? "success" : status === "warning" ? "warning" : "danger";
+  return <AdminPill tone={tone}>{label}</AdminPill>;
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {

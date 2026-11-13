@@ -1,14 +1,16 @@
 import { z } from "zod";
+import { optionalQueryText } from "@/lib/optional-query-text";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { pricePerM2 } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { readSaleThroughDoor, resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
+import { median } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
@@ -18,19 +20,13 @@ const HISTORY_COLUMNS =
 
 type HistorySaleRow = SelectedRow<AppSaleRow, typeof HISTORY_COLUMNS>;
 
-const optionalText = (max = 140) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().trim().max(max).optional(),
-  );
-
 export const saleHistoryQuerySchema = z
   .object({
-    saleId: optionalText().pipe(z.string().guid().optional()),
-    department: optionalText(12),
-    city: optionalText(140),
-    tribunalCode: optionalText(80),
-    propertyType: optionalText(80),
+    saleId: optionalQueryText().pipe(z.string().guid().optional()),
+    department: optionalQueryText(12),
+    city: optionalQueryText(140),
+    tribunalCode: optionalQueryText(80),
+    propertyType: optionalQueryText(80),
     months: z.coerce.number().int().min(1).max(120).default(60),
     limit: z.coerce.number().int().min(1).max(50).default(12),
   })
@@ -112,7 +108,9 @@ export async function getSaleHistory({
     throw new ForbiddenError("Historique des ventes passées réservé à l’offre Analyse.");
   }
 
-  const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;
+  const referenceSale = input.saleId
+    ? await readSaleThroughDoor<HistorySaleRow>(auth, input.saleId, "plan", HISTORY_COLUMNS)
+    : null;
   const scopes = buildHistoryScopes(input, referenceSale);
   const fromDate = monthsAgoIso(now, input.months);
   const toDate = now.toISOString();
@@ -201,20 +199,6 @@ export function buildSaleHistorySummary(items: SaleHistoryItem[]): SaleHistorySu
     latestSaleDate: saleDates.at(-1) ?? null,
     cities,
   };
-}
-
-async function getReferenceSale(
-  auth: SupabaseAuthContext,
-  saleId: string,
-): Promise<HistorySaleRow | null> {
-  const { data, error } = await auth.supabase
-    .from("v_auction_sales_app")
-    .select(HISTORY_COLUMNS)
-    .eq("id", saleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ?? null;
 }
 
 function buildHistoryScopes(input: SaleHistoryQuery, referenceSale: HistorySaleRow | null) {
@@ -363,9 +347,6 @@ function positiveNumber(value: unknown): number | null {
 }
 
 function medianRounded(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const midpoint = Math.floor(sorted.length / 2);
-  if (sorted.length % 2) return roundedNumber(sorted[midpoint]);
-  return roundedNumber((sorted[midpoint - 1] + sorted[midpoint]) / 2);
+  const value = median(values);
+  return value == null ? null : roundedNumber(value);
 }

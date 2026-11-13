@@ -350,9 +350,8 @@ function referencedLawyerToSummary(
 
 async function getPlacementMetricsByLawyerId(
   lawyerIds: string[],
-  now = new Date(),
 ): Promise<Map<string, AdminReferencedLawyerSummary["placementMetrics"]>> {
-  const periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const periodStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const metrics = new Map<string, AdminReferencedLawyerSummary["placementMetrics"]>();
   for (const lawyerId of lawyerIds) {
     metrics.set(lawyerId, emptyPlacementMetrics(periodStart));

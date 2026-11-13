@@ -28,7 +28,7 @@ vi.mock("@/lib/client-api", () => ({
   updateNotificationPreferences: mocks.updatePreferences,
   createWatchedZone: mocks.createZone,
 }));
-vi.mock("@/lib/queries", () => ({ createAlert: mocks.createAlert }));
+vi.mock("@/lib/alert-queries", () => ({ createAlert: mocks.createAlert }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 vi.mock("@/hooks/use-billing-offer", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));

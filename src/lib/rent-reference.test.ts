@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/lib/format/dates";
+import { median } from "@/lib/stats";
 import {
   ANIL_RENT_SOURCES,
   defaultRentPerM2,
   isRentApplicable,
-  median,
   rentReference,
   rentReferenceFromAnilMedian,
   rentReferenceFromAnilRow,
@@ -226,6 +227,10 @@ describe("source notice", () => {
   it("formats the update date in French", () => {
     expect(formatRentSourceDate("2025-12-11")).toBe("11 décembre 2025");
     expect(formatRentSourceDate("2025-12-11T14:50:11+00:00")).toBe("11 décembre 2025");
+    // Même règle du « 1er » que formatDate.
+    for (const day of ["2025-12-01", "2026-11-01", "2026-03-15"]) {
+      expect(formatRentSourceDate(day)).toBe(formatDate(day));
+    }
     expect(formatRentSourceDate(null)).toBeNull();
     expect(formatRentSourceDate("hier")).toBeNull();
   });

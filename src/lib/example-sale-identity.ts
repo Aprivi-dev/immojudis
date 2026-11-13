@@ -1,3 +1,5 @@
+import { isUuid } from "@/lib/uuid";
+
 type SaleIdentity = {
   id: string;
   source_name?: string | null;
@@ -16,4 +18,12 @@ function isHomepageExampleSale(sale: SaleIdentity): boolean {
 
 export function excludeHomepageExampleSales<TSale extends SaleIdentity>(sales: TSale[]): TSale[] {
   return sales.filter((sale) => !isHomepageExampleSale(sale));
+}
+
+/**
+ * Une vente enregistrée dans le catalogue (identifiant UUID), et non une vente d'exemple : seule une
+ * vente enregistrée a un favori, un dossier ou un espace de travail.
+ */
+export function isPersistedSale(sale: Pick<SaleIdentity, "id">): boolean {
+  return isUuid(sale.id);
 }

@@ -21,11 +21,8 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
-import {
-  buildCeilingSnapshot,
-  buildMarketSnapshot,
-  buildReportSnapshot,
-} from "./property-report/analysis";
+import { buildMarketSnapshot, buildReportSnapshot } from "./property-report/analysis";
+import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
 import {
   assertEntitlementIncluded,
   buildPlanEntitlements,

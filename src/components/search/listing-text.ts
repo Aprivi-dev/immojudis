@@ -12,7 +12,7 @@ import {
   isQualifiedPropertyType,
   propertyTypeLabel,
 } from "@/lib/format";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
@@ -163,10 +163,10 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
 
 /**
  * Date courte de la case « Vente le » d'une carte : « 6 nov. 2026 » ; « Vente passée » et « Date à
- * confirmer » comme `listingDateLabel`. `now` est injectable pour les tests.
+ * confirmer » comme `listingDateLabel`.
  */
-export function listingShortDateLabel(sale: AuctionSale, now: Date = new Date()): string {
-  const long = listingDateLabel(sale, now);
+export function listingShortDateLabel(sale: AuctionSale): string {
+  const long = listingDateLabel(sale);
   if (long === PAST_SALE_LABEL) return long;
   return formatShortDate(sale.sale_date, long);
 }

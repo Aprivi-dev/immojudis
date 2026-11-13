@@ -250,8 +250,11 @@ describe("ListingStatistics", () => {
   });
 
   it("signale un tribunal non résolu sans inventer de statistiques de ville", async () => {
-    const unresolved = new Error("Tribunal non résolu");
-    unresolved.name = "TribunalCourtUnresolvedError";
+    // L'erreur levée par `apiRequest` pour le 422 de la route : statut et code de l'enveloppe.
+    const unresolved = Object.assign(new Error("Tribunal non résolu"), {
+      status: 422,
+      code: "COURT_UNRESOLVED",
+    });
     mocks.fetchActivity.mockRejectedValue(unresolved);
     renderStatistics();
 

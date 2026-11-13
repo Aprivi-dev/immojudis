@@ -94,7 +94,10 @@ function seoLongDate(value: string | null | undefined): string | null {
     month: "long",
     year: "numeric",
     timeZone: PARIS_TIME_ZONE,
-  }).format(date);
+  })
+    .formatToParts(date)
+    .map(({ type, value: part }) => (type === "day" && part === "1" ? "1er" : part))
+    .join("");
 }
 
 function parisParts(date: Date) {

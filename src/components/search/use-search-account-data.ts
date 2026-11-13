@@ -2,14 +2,15 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import {
   fetchDpeExplorer,
-  fetchNotificationPreferences,
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
 } from "@/lib/client-api";
-import { getAlerts, getSaleById } from "@/lib/queries";
+import { getAlerts } from "@/lib/alert-queries";
+import { getSaleById } from "@/lib/queries";
 import * as queryKeys from "@/lib/query-keys";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import type { AuctionSale } from "@/lib/types";
@@ -82,12 +83,8 @@ export function useSearchAccountData({
     retry: false,
   });
 
-  const { data: notificationPreferences } = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId ?? "anonymous"),
-    queryFn: fetchNotificationPreferences,
+  const { data: notificationPreferences } = useNotificationPreferencesQuery(userId, {
     enabled: signedIn,
-    staleTime: 60_000,
-    retry: false,
   });
 
   // Alerte gratuite : l'usage (« 0/1 utilisée ») n'est lu qu'à l'ouverture de la fenêtre de création,

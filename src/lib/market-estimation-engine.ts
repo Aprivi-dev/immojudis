@@ -2,6 +2,8 @@ import { gridDistance, latLngToCell } from "h3-js";
 import { MARKET_JACKKNIFE_MIN_COMPARABLES } from "@/lib/market-comparable-minimums";
 import { round } from "@/lib/rounding";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
+import { propertyFamily } from "@/lib/property-type-family";
+import { quantileSorted } from "@/lib/stats";
 
 export type MarketPropertySegment =
   | "apartment"
@@ -104,20 +106,23 @@ export function resolveMarketPropertySegment(input: {
   surfaceKind?: string | null;
   surfaceScope?: string | null;
 }): MarketPropertySegment {
-  const type = (input.propertyType ?? "").toLowerCase();
   const surfaceKind = (input.surfaceKind ?? "").toLowerCase();
   const surfaceScope = (input.surfaceScope ?? "").toLowerCase();
-  if (surfaceKind === "land" || surfaceScope === "land" || /terrain|\bland\b|parcelle/.test(type)) {
-    return "land";
+  if (surfaceKind === "land" || surfaceScope === "land") return "land";
+  const family = propertyFamily(input.propertyType);
+  switch (family) {
+    case "apartment":
+    case "house":
+    case "building":
+    case "commercial":
+    case "land":
+      return family;
+    // Un lot mixte (logement et activité) s'estime avec les mutations d'immeubles.
+    case "mixed":
+      return "building";
+    default:
+      return "unsupported";
   }
-  if (/appartement|apartment|studio|\bapt\b|\bt[1-9]\b/.test(type)) return "apartment";
-  if (/maison|house|villa|pavillon/.test(type)) return "house";
-  if (/immeuble|building/.test(type)) return "building";
-  if (/commerce|commercial|local d'activit|local professionnel|bureau|retail/.test(type)) {
-    return "commercial";
-  }
-  if (/\b(mixed|mixte)\b/.test(type)) return "building";
-  return "unsupported";
 }
 
 export function mutationSegmentFromCode(
@@ -378,8 +383,8 @@ function estimateAnnualMarketTrend(
   if (spanMonths < 12) return 0;
 
   const logs = values.map((value) => Math.log(value.candidate.pricePerM2)).sort((a, b) => a - b);
-  const lower = percentile(logs, 0.1);
-  const upper = percentile(logs, 0.9);
+  const lower = quantileSorted(logs, 0.1)!;
+  const upper = quantileSorted(logs, 0.9)!;
   const rows = values.map((value) => ({
     x: -value.monthsOld / 12,
     y: Math.max(lower, Math.min(upper, Math.log(value.candidate.pricePerM2))),
@@ -423,7 +428,7 @@ function conformalPredictionInterval(input: {
     residuals.length >= MARKET_JACKKNIFE_MIN_COMPARABLES ? "local_jackknife" : "segment_fallback";
   const logExpansion =
     method === "local_jackknife"
-      ? Math.max(percentile(residuals, TARGET_INTERVAL_COVERAGE), Math.log(1.08))
+      ? Math.max(quantileSorted(residuals, TARGET_INTERVAL_COVERAGE)!, Math.log(1.08))
       : SEGMENT_FALLBACK_LOG_ERROR[input.segment];
   const lowerFromResidual = input.median / Math.exp(logExpansion);
   const upperFromResidual = input.median * Math.exp(logExpansion);
@@ -496,8 +501,8 @@ function removePriceOutliers<T extends { candidate: MarketEngineCandidate }>(
 } {
   if (values.length < 7) return { values, removed: 0 };
   const prices = values.map((value) => value.candidate.pricePerM2).sort((a, b) => a - b);
-  const p25 = percentile(prices, 0.25);
-  const p75 = percentile(prices, 0.75);
+  const p25 = quantileSorted(prices, 0.25)!;
+  const p75 = quantileSorted(prices, 0.75)!;
   const iqr = p75 - p25;
   if (iqr <= 0) return { values, removed: 0 };
   const lower = p25 - 1.5 * iqr;
@@ -550,14 +555,6 @@ function inWindow(value: number, window: { min: number; max: number }): boolean 
 
 function monthDistance(from: Date, to: Date): number {
   return (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24 * 30.4375);
-}
-
-function percentile(sortedAsc: number[], p: number): number {
-  const index = (sortedAsc.length - 1) * p;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  if (lower === upper) return sortedAsc[lower];
-  return sortedAsc[lower] + (sortedAsc[upper] - sortedAsc[lower]) * (index - lower);
 }
 
 function positive(value: number | null | undefined): number | null {

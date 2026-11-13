@@ -99,6 +99,8 @@ describe("first-search onboarding", () => {
     ["75011", "75"],
     ["20090", "2A"],
     ["97400", "974"],
+    // Même règle que `departmentFromPostalCode` : la Polynésie (987xx) n'est pas « 98 ».
+    ["98714", "987"],
   ])("turns the area %s into the département %s, which a free alert accepts", (area, expected) => {
     expect(firstSearchToUrl({ area, maxPrice: "", homeType: "" })).toMatchObject({
       query: undefined,

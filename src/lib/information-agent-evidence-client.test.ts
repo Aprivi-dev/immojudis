@@ -48,10 +48,7 @@ describe("information-agent evidence client", () => {
     );
     expect(mocks.fetch).toHaveBeenCalledWith(
       "/api/admin/information-agent/evidence/asset%2F1?format=json",
-      expect.objectContaining({
-        headers: { Authorization: "Bearer test-access-token" },
-        cache: "no-store",
-      }),
+      expect.objectContaining({ headers: { Authorization: "Bearer test-access-token" } }),
     );
   });
 
@@ -78,16 +75,19 @@ describe("information-agent evidence client", () => {
         notes: "Aucune autorisation de diffusion reçue",
       }),
     ).resolves.toMatchObject({ ok: true });
-    expect(mocks.fetch).toHaveBeenCalledWith("/api/admin/information-agent/evidence/asset-1", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer test-access-token",
-      },
-      body: JSON.stringify({
-        rightsStatus: "restricted",
-        notes: "Aucune autorisation de diffusion reçue",
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/admin/information-agent/evidence/asset-1",
+      expect.objectContaining({
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-access-token",
+        },
+        body: JSON.stringify({
+          rightsStatus: "restricted",
+          notes: "Aucune autorisation de diffusion reçue",
+        }),
       }),
-    });
+    );
   });
 });

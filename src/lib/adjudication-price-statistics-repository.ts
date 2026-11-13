@@ -100,10 +100,7 @@ export async function getAdjudicationPriceStatisticsForSale(
       "Configuration: adjudication price statistics are disabled.",
     );
   }
-  const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
-    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
-  }
+  const pinnedBuildId = configuredBuildId();
 
   const [saleResult, nationalResult] = await Promise.all([
     supabaseAdmin
@@ -158,10 +155,7 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
   if (!serverEnv().adjudicationPriceStatisticsEnabled) {
     throw unavailable("Configuration: adjudication price statistics are disabled.");
   }
-  const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
-    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
-  }
+  const pinnedBuildId = configuredBuildId();
 
   const nationalResult = await fetchNationalRow(pinnedBuildId);
   if (nationalResult.error) {
@@ -209,6 +203,15 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
   } catch {
     throw unavailable("The reviewed tribunal statistics directory failed publication validation.");
   }
+}
+
+/** Construction épinglée (`ADJUDICATION_PRICE_STATISTICS_BUILD_ID`), ou `null` pour la dernière publiée. */
+function configuredBuildId(): string | null {
+  const pinnedBuildId = serverEnv().adjudicationPriceStatisticsBuildId ?? null;
+  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
+    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
+  }
+  return pinnedBuildId;
 }
 
 function fetchNationalRow(pinnedBuildId: string | null) {

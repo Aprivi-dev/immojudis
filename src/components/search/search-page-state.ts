@@ -49,7 +49,6 @@ export type SearchStatistics = {
   medianPrice: number | null;
   medianPricePerM2: number | null;
   averageScore: number | null;
-  upcomingSales: number;
   dpeCounts: Record<DpeClass, number>;
   dpeKnownCount: number;
 };
@@ -260,7 +259,6 @@ export function searchStatisticsFromServer(summary: SalesSampleSummary): SearchS
     medianPrice: summary.medianPriceEur,
     medianPricePerM2: summary.medianPricePerM2,
     averageScore: summary.averageInvestmentScore,
-    upcomingSales: summary.upcomingSales,
     dpeCounts: summary.dpeCounts,
     dpeKnownCount: summary.dpeKnownCount,
   };

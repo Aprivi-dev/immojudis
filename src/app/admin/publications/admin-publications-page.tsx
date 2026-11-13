@@ -6,6 +6,7 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { formatShortDateTime } from "@/lib/format/dates";
 import { formatPrice } from "@/lib/format/numbers";
@@ -385,20 +386,13 @@ function PublicationRequestCard({
 }
 
 function PublicationStatusPill({ status }: { status: PublicationRequestStatus }) {
-  const label =
-    status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
-  const tone =
+  const [tone, label] =
     status === "approved"
-      ? "border-emerald-300/20 bg-success-tint text-success"
+      ? (["success", "Validée"] as const)
       : status === "rejected"
-        ? "border-red-300/20 bg-danger-tint text-danger"
-        : "border-amber-300/20 bg-warning-tint text-warning";
-
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
-      {label}
-    </span>
-  );
+        ? (["danger", "Refusée"] as const)
+        : (["warning", "En attente"] as const);
+  return <AdminPill tone={tone}>{label}</AdminPill>;
 }
 
 function publicationPromotionLabel(value: string): string {

@@ -1,5 +1,6 @@
 import { FloodExposedNote, PepiteInfoBadge } from "@/components/PepiteBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
+import { WellInformedBadge } from "@/components/WellInformedBadge";
 import type * as React from "react";
 import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/primitives";
@@ -30,16 +31,10 @@ import {
   FAVORITE_ANONYMOUS_TITLE,
   FAVORITE_VERIFYING_TITLE,
   FAVORITE_REMOVE_LABEL,
-  announceFavoriteAdded,
 } from "@/components/favorite-feedback";
-import {
-  addFavoriteSale as addFavoriteSaleRequest,
-  fetchSaleUnlocksOverview,
-  removeFavoriteSale as removeFavoriteSaleRequest,
-} from "@/lib/client-api";
+import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatPrice, formatPricePerM2, occupancyLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { departmentFromCode } from "@/lib/department-pages";
 import { saleShortHeading, seoSurface } from "@/lib/seo";
@@ -80,9 +75,8 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
-import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
+import { toggleFavoriteSale, useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
 
@@ -733,6 +727,11 @@ export const ListingCard = memo(function ListingCard({
             </Fragment>,
           ])}
         </p>
+        {/* Repère « Annonce bien renseignée » (palier haut du classement par complétude) : sa réserve
+            et le lien vers /classement-des-annonces s'ouvrent avec le bouton « i ». */}
+        <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
+          <WellInformedBadge sale={sale} />
+        </div>
         {showAccessLine ? <p className="text-caption text-ink-soft">{accessLine}</p> : null}
         {lastChange ? (
           <p
@@ -1206,36 +1205,18 @@ export function CompactFavoriteButton({
     if (locked) return;
 
     setBusy(true);
-    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
-    let removed: RemovedFavoriteDossier | null = null;
     try {
-      await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
-      if (isFavorite) {
-        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
-        if (!(await confirmRemoval(saleId))) return;
-        removed = (await removeFavoriteSaleRequest({ saleId }))?.dossier ?? null;
-        setIsFavorite(false);
-      } else {
-        const added = await addFavoriteSaleRequest({ data: { saleId } });
-        trackProductEvent("favorite_added");
-        setIsFavorite(true);
-        void announceFavoriteAdded(queryClient, user.id, added?.plan?.limit ?? null);
-      }
-      queryClient.setQueriesData<string[] | undefined>(
-        { queryKey: queryKeys.searchFavoriteStatusForUser(user.id) },
-        (favoriteSaleIds) => {
-          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
-          if (isFavorite) nextFavoriteSaleIds.delete(saleId);
-          else nextFavoriteSaleIds.add(saleId);
-          return [...nextFavoriteSaleIds];
+      await toggleFavoriteSale({
+        queryClient,
+        userId: user.id,
+        saleId,
+        favorite: isFavorite,
+        confirmRemoval,
+        onToggled: (favorite, removed) => {
+          setIsFavorite(favorite);
+          onChange?.(saleId, favorite, removed);
         },
-      );
-      queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
-      onChange?.(saleId, !isFavorite, removed);
-      await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-    } catch (error) {
-      void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(userMessage(error));
+      });
     } finally {
       setBusy(false);
     }

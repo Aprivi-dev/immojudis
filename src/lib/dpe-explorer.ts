@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { optionalQueryText } from "@/lib/optional-query-text";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
@@ -26,12 +27,6 @@ const DPE_COLUMNS =
 
 type DpeSaleRow = SelectedRow<AppSaleRow, typeof DPE_COLUMNS>;
 
-const optionalText = (max = 140) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().trim().max(max).optional(),
-  );
-
 const booleanParam = z.preprocess((value) => {
   if (value === "true") return true;
   if (value === "false") return false;
@@ -39,9 +34,9 @@ const booleanParam = z.preprocess((value) => {
 }, z.boolean());
 
 export const dpeExplorerQuerySchema = z.object({
-  department: optionalText(12),
-  city: optionalText(140),
-  propertyType: optionalText(80),
+  department: optionalQueryText(12),
+  city: optionalQueryText(140),
+  propertyType: optionalQueryText(80),
   dpeClasses: z.preprocess(
     (value) =>
       typeof value === "string"

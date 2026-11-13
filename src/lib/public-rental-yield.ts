@@ -8,8 +8,8 @@ import type { AuctionSale } from "@/lib/types";
 /**
  * Rendement brut de la fiche publique, calculé par le serveur au rendu de la page : la section
  * « Marché local » ne reçoit que le texte, sans embarquer dans le navigateur le calcul des frais
- * d'acquisition (budget de JavaScript client). Mêmes règles, mêmes mots que le bloc « Marché
- * locatif » de la fiche des comptes (`RentalMarketBlock`, `yieldText`) ; un test les compare.
+ * d'acquisition (budget de JavaScript client). Le bloc « Marché locatif » de la fiche des comptes
+ * (`RentalMarketBlock`) écrit son rendement avec le même libellé et le même `publicYieldText`.
  */
 export const PUBLIC_YIELD_LABEL = "Rendement brut à la mise à prix (charges comprises)";
 

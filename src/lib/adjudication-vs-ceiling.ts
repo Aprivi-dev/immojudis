@@ -1,5 +1,5 @@
 import { formatPrice } from "@/lib/format";
-import { isPastSaleDay } from "@/lib/sale-countdown";
+import { isPastParisDay } from "@/lib/paris-time";
 
 /**
  * Après la vente (proposition n° 24) : sur la fiche d'une vente passée dont le prix est connu, une ligne neutre
@@ -31,7 +31,7 @@ export function adjudicationVersusCeilingLine({
     ceilingEur == null ||
     !Number.isFinite(ceilingEur) ||
     ceilingEur <= 0 ||
-    !isPastSaleDay(saleDate, now)
+    !isPastParisDay(saleDate, now)
   ) {
     return null;
   }

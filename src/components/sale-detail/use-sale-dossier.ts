@@ -13,7 +13,7 @@ import { userMessage } from "@/lib/user-messages";
  * la même clé de requête que la carte « Mon dossier » : le panneau de la fiche, le bouton
  * « Enregistrer ce plafond » et la carte se tiennent à jour ensemble.
  */
-export function useSaleDossier(saleId: string, enabled = true) {
+export function useSaleDossier(saleId: string) {
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id ?? null;
@@ -21,7 +21,7 @@ export function useSaleDossier(saleId: string, enabled = true) {
   const query = useQuery({
     queryKey: dossierKey,
     queryFn: () => fetchFavoriteDossier(saleId),
-    enabled: enabled && Boolean(userId) && !loading,
+    enabled: Boolean(userId) && !loading,
   });
   const save = useMutation({
     mutationFn: (changes: Omit<FavoriteDossierInput, "saleId">) =>

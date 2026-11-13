@@ -1,6 +1,6 @@
 import { getSupabase, hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 
-export async function authHeaders(): Promise<HeadersInit> {
+export async function authHeaders(): Promise<Record<string, string>> {
   // Sans session stockée (visiteur anonyme), la réponse est connue d'avance : on ne charge pas
   // supabase-js pour la lire (même erreur qu'une session absente).
   if (!hasSupabaseAuthHint()) {
@@ -21,10 +21,6 @@ export async function authHeaders(): Promise<HeadersInit> {
 }
 
 /**
- * L'erreur d'une réponse refusée : son message `error`, ou « Erreur HTTP n ». Le statut accompagne
- * l'erreur pour que userMessage() choisisse la bonne phrase (429, 401, 5xx).
- */
-/**
  * Erreur d'une réponse HTTP en échec : le message, le statut et le code de l'enveloppe de l'API
  * (`{ ok: false, error, code }`), que `userMessage` lit pour choisir la phrase montrée.
  */
@@ -44,4 +40,77 @@ export async function readJson<T>(response: Response): Promise<T> {
     | null;
   if (!response.ok) throw responseError(response.status, payload);
   return payload as T;
+}
+
+/**
+ * Délai d'une lecture ou d'un appel d'administration : 30 s, la durée maximale des routes
+ * d'administration (`maxDuration = 30`). Une écriture ou un fichier hors administration (création
+ * d'un rapport, export PDF ou CSV) n'a pas de délai côté navigateur, comme avant `apiRequest` : sa
+ * route n'est bornée que par l'hébergeur, et l'abandonner côté navigateur laisserait l'écriture se
+ * faire sans que la page le sache. `timeoutMs` impose un délai précis.
+ */
+const API_TIMEOUT_MS = 30_000;
+
+function defaultTimeoutMs(
+  path: string,
+  method: ApiRequestOptions["method"],
+  file: boolean,
+): number | null {
+  if (path.startsWith("/api/admin/")) return API_TIMEOUT_MS;
+  return method === undefined && !file ? API_TIMEOUT_MS : null;
+}
+
+export type ApiRequestOptions = {
+  method?: "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Corps de la requête, envoyé en JSON. */
+  body?: unknown;
+  /** Route ouverte aux visiteurs : la requête part sans jeton, sans charger supabase-js. */
+  anonymous?: boolean;
+  /** Délai précis (durée maximale de la route), à la place de la règle de `defaultTimeoutMs`. */
+  timeoutMs?: number;
+};
+
+/**
+ * La réponse d'une route de l'API, sans la lire (fichier, statut que l'appelant interprète). Le
+ * jeton du compte, l'en-tête JSON du corps et le délai sont posés ici, pour tous les appels.
+ */
+function timeoutSignal(ms: number | null): AbortSignal | undefined {
+  return ms === null ? undefined : AbortSignal.timeout(ms);
+}
+
+export async function apiFetch(
+  path: string,
+  options: ApiRequestOptions = {},
+  file = false,
+): Promise<Response> {
+  const headers: Record<string, string> = options.anonymous ? {} : await authHeaders();
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  return fetch(path, {
+    method: options.method,
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: timeoutSignal(options.timeoutMs ?? defaultTimeoutMs(path, options.method, file)),
+  });
+}
+
+/** Appel JSON de l'API : le corps de la réponse, ou l'erreur de `readJson` (message, statut, code). */
+export async function apiRequest<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+  return readJson<T>(await apiFetch(path, options));
+}
+
+/**
+ * Fichier rendu par l'API (PDF, CSV, agenda) : son contenu, le nom annoncé par
+ * `content-disposition` (sans chemin) ou `fallbackName`, et les en-têtes de la réponse. Un refus
+ * est levé avec son message et son statut, comme pour un appel JSON.
+ */
+export async function apiDownload(
+  path: string,
+  options: ApiRequestOptions,
+  fallbackName: string,
+): Promise<{ blob: Blob; filename: string; headers: Headers }> {
+  const response = await apiFetch(path, options, true);
+  if (!response.ok) await readJson<unknown>(response);
+  const header = response.headers.get("content-disposition") ?? "";
+  const filename = /filename="([^"\\/]+)"/i.exec(header)?.[1]?.trim() || fallbackName;
+  return { blob: await response.blob(), filename, headers: response.headers };
 }

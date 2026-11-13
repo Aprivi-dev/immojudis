@@ -38,7 +38,10 @@ export function parisMonthName(instant: string | Date): string {
   return MONTH_NAME.format(new Date(instant));
 }
 
-/** « 1er novembre » : jour et mois (heure de Paris) d'un instant, avec « 1er » pour le premier. */
+/**
+ * « 1er novembre » : jour et mois (heure de Paris) d'un instant, avec la règle du « 1er » de
+ * `formatDate` (`format/dates.ts`) ; le test vérifie l'accord.
+ */
 export function parisDayMonthLabel(instant: string | Date): string {
   const date = new Date(instant);
   const day = Number(DAY_NUMBER.format(date));

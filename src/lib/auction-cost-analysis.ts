@@ -2,10 +2,11 @@ import type { AcquisitionCostResult } from "@/lib/profitability";
 import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
 import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
-import { cleanText } from "@/lib/clean-text";
+import type { AuctionSale } from "@/lib/types";
+import { cleanText, type TextCandidate } from "@/lib/clean-text";
 import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -32,11 +33,6 @@ export type AuctionCostAnalysis = {
   summary: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 const COST_KEY =
@@ -341,23 +337,11 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   }
 
   for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
+    for (const text of riskTexts(risk, { excerptsOnly: true }))
+      addCandidate(candidates, text, "Preuves de risques");
   }
 
   return candidates;
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function moneyValue(value: unknown): number | null {

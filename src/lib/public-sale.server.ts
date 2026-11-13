@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
-import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { fetchPublicSaleSummary } from "@/lib/public-sale-summary";
+import { isUuid } from "@/lib/uuid";
 import { withPhotoMirror, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
@@ -51,7 +52,7 @@ async function fetchMergedSaleTarget(
     { p_sale_id: id },
   );
   if (error) throw error;
-  if (typeof data !== "string" || !SALE_ID_PATTERN.test(data)) return null;
+  if (!isUuid(data)) return null;
   const targetId = data.toLowerCase();
   return targetId === id ? null : targetId;
 }
@@ -117,7 +118,7 @@ async function missingOrMerged(
  * and the "unavailable" answer (no database configured) are never stored in the cache.
  */
 export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLookup> => {
-  if (!SALE_ID_PATTERN.test(id)) return { status: "missing" };
+  if (!isUuid(id)) return { status: "missing" };
   const client = createPublicSupabaseClient();
   if (!client) return { status: "unavailable" };
 

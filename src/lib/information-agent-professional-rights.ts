@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeSignedLinkEmail } from "@/lib/information-agent-signed-link";
+import { chunks } from "@/lib/chunks";
 
 /**
  * Accès et effacement pour un professionnel contacté par l'agent d'information, sans compte.
@@ -107,15 +108,13 @@ async function professionalScope(email: string): Promise<Scope> {
   };
 }
 
+/** Lectures par paquets de 100 identifiants, l'une après l'autre. */
 async function inChunks<R>(
   values: string[],
   read: (chunk: string[]) => Promise<R[]>,
-  chunkSize = 100,
 ): Promise<R[]> {
   const rows: R[] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    rows.push(...(await read(values.slice(index, index + chunkSize))));
-  }
+  for (const chunk of chunks(values)) rows.push(...(await read(chunk)));
   return rows;
 }
 

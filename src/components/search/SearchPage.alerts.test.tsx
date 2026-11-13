@@ -38,8 +38,8 @@ vi.mock("@/lib/client-billing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/client-billing")>()),
   fetchAccessPlan: state.fetchAccessPlan,
 }));
-vi.mock("@/lib/queries", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/queries")>()),
+vi.mock("@/lib/alert-queries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/alert-queries")>()),
   getAlerts: state.getAlerts,
 }));
 vi.mock("@/lib/search/search-service", () => ({

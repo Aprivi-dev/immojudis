@@ -8,7 +8,8 @@
 /**
  * Les 13 régions de métropole (code officiel géographique de l'INSEE, découpage en vigueur depuis
  * 2016) et l'outre-mer, dans l'ordre alphabétique, celui de la liste de l'index. Chaque département
- * figure dans une seule région (un test le vérifie pour les 101 départements).
+ * figure dans une seule région (un test le vérifie pour les 101 départements). La recherche
+ * géographique en tire ses régions (`search/french-geo-search.ts`).
  */
 export const DEPARTMENT_REGIONS: ReadonlyArray<{
   /** Code de la région au COG de l'INSEE ; `null` pour le groupe « Outre-mer ». */

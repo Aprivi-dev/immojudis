@@ -1,25 +1,22 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { enableAlertEmailRecap } from "@/components/search/alert-email-consent";
 import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 import { isAnalysisOfferOpen } from "@/hooks/use-billing-offer";
-import {
-  createWatchedZone as createWatchedZoneRequest,
-  fetchNotificationPreferences,
-} from "@/lib/client-api";
+import { createWatchedZone as createWatchedZoneRequest } from "@/lib/client-api";
 import { departmentFromSearchQuery } from "@/lib/alerts";
 import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent, type AlertSurface } from "@/lib/product-events";
-import * as queryKeys from "@/lib/query-keys";
 import { savePendingAlert } from "@/lib/pending-alert";
-import { createAlert } from "@/lib/queries";
+import { createAlert } from "@/lib/alert-queries";
 import {
   countAlertableSearchFilters,
   hasUnalertableSearchFilters,
@@ -97,12 +94,8 @@ export function useCreateAlert({
   const { user, loading: authLoading } = useAuth();
   const [saving, setSaving] = useState(false);
   const { data: entitlements, isLoading: entitlementsLoading } = useAccessPlanQuery(user?.id);
-  const { data: notificationPreferences } = useQuery({
-    queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
-    queryFn: fetchNotificationPreferences,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 60_000,
-    retry: false,
+  const { data: notificationPreferences } = useNotificationPreferencesQuery(user?.id, {
+    enabled: !authLoading,
   });
   const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
 

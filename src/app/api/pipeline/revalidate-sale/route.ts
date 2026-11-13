@@ -8,7 +8,7 @@ import { DEPARTMENT_CATALOGUE_CACHE_TAG } from "@/lib/department-pages.server";
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SITEMAP_CACHE_TAG } from "@/lib/public-sitemap.server";
-import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { UUID_PATTERN } from "@/lib/uuid";
 import { PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG } from "@/lib/public-tribunal-activity.server";
 import { resolveRequestId } from "@/lib/request-id";
 import { warmSalePages } from "@/lib/sale-page-warmup";
@@ -28,7 +28,7 @@ const MAX_SALES_PER_CALL = 100;
 // The warm-up runs in `after()`, inside this budget: four list pages at 4 at a time and 5 s each.
 export const maxDuration = 60;
 
-const saleIdSchema = z.string().regex(SALE_ID_PATTERN, "Identifiant de vente invalide.");
+const saleIdSchema = z.string().regex(UUID_PATTERN, "Identifiant de vente invalide.");
 const bodySchema = z.union([
   z.object({ saleId: saleIdSchema }).strict(),
   z.object({ saleIds: z.array(saleIdSchema).min(1).max(MAX_SALES_PER_CALL) }).strict(),

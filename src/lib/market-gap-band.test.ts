@@ -21,7 +21,7 @@ import {
   MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
 } from "@/lib/market-comparable-minimums";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
-import { normalizeOccupationStatus } from "./tribunal-listing-statistics";
+import { occupancyClass } from "./occupancy-status";
 import { evaluateValuationPromotionGate } from "./valuation-admin";
 
 // La règle des trois bandes et ses garde-fous sont dans la première migration ; la porte de qualité,
@@ -149,7 +149,7 @@ describe("band wording", () => {
 });
 
 describe("occupancy", () => {
-  it("agrees with normalizeOccupationStatus on every value", () => {
+  it("agrees with occupancyClass on every value", () => {
     const values = [
       "occupied",
       "rented",
@@ -169,7 +169,7 @@ describe("occupancy", () => {
       undefined,
     ];
     for (const value of values) {
-      const normalized = normalizeOccupationStatus(value);
+      const normalized = occupancyClass(value);
       expect(isOccupiedOccupancyStatus(value), String(value)).toBe(
         normalized === "occupied" || normalized === "rented",
       );
@@ -197,17 +197,17 @@ describe("bien libre seulement", () => {
     undefined,
   ];
 
-  it("isVacantOccupancyStatus est d'accord avec normalizeOccupationStatus", () => {
+  it("isVacantOccupancyStatus est d'accord avec occupancyClass", () => {
     for (const value of values) {
       expect(isVacantOccupancyStatus(value), String(value)).toBe(
-        normalizeOccupationStatus(value) === "vacant",
+        occupancyClass(value) === "vacant",
       );
     }
   });
 
   it("dit pourquoi l'écart ne se dit pas, ou rien pour un bien libre", () => {
     for (const value of values) {
-      const normalized = normalizeOccupationStatus(value);
+      const normalized = occupancyClass(value);
       const expected =
         normalized === "vacant"
           ? null
@@ -413,7 +413,7 @@ describe("migration 20261029120000 (hardened public gate)", () => {
     );
   });
 
-  it("mirrors the occupancy rule of normalizeOccupationStatus", () => {
+  it("mirrors the occupancy rule of occupancyClass", () => {
     expect(hardenedCode).toContain("x.v ~ 'inoccup|libre'");
     expect(hardenedCode).toContain("x.v ~ 'lou[eé]'");
     expect(hardenedCode).toContain("x.v ~ 'occup|proprietaire|propriétaire|squat'");

@@ -94,7 +94,7 @@ describe("/prix-encheres-immobilieres", () => {
       expect(plain(screen.getByTestId("median-ratio").textContent)).toBe("× 1,30");
       expect(plain(screen.getByTestId("above-rate").textContent)).toBe("70 %");
       const page = plain(document.body.textContent);
-      expect(page).toContain("1 octobre 2023 au 30 septembre 2026");
+      expect(page).toContain("1er octobre 2023 au 30 septembre 2026");
       expect(page).toContain("calcul du 5 octobre 2026, revu le 7 octobre 2026");
       expect(screen.getByRole("heading", { name: "Méthode et limites" })).toBeTruthy();
       expect(screen.getByRole("link", { name: "Voir la méthode" }).getAttribute("href")).toBe(

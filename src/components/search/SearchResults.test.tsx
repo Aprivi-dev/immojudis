@@ -383,9 +383,9 @@ describe("useful public discovery", () => {
     expect(screen.queryByText(/déblocages par mois/)).toBeNull();
   });
 
-  it("laisse « Annonce bien renseignée » à la fiche : la carte ne la montre plus", () => {
-    // Décision du 24/10/2026 (docs/design/fondations.md) : deux pastilles au plus par carte,
-    // l'échéance et les points à vérifier ; la qualité de l'annonce n'est dite que sur la fiche.
+  it("montre « Annonce bien renseignée » sur la carte, liste publique comprise", async () => {
+    // Décision du propriétaire du 13/11/2026 : le repère que décrivent le classement et
+    // /classement-des-annonces s'affiche sur les cartes (il ne l'était plus depuis le 24/10/2026).
     for (const locked of [true, false]) {
       render(
         <QueryClientProvider client={new QueryClient()}>
@@ -400,7 +400,7 @@ describe("useful public discovery", () => {
           />
         </QueryClientProvider>,
       );
-      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+      expect(await screen.findByText("Annonce bien renseignée")).toBeTruthy();
       cleanup();
     }
   });

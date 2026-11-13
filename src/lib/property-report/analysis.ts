@@ -60,8 +60,6 @@ export async function buildMarketSnapshot(sale: AuctionSale): Promise<MarketEsti
   return getPrecomputedMarketEstimate(sale.id);
 }
 
-export { buildCeilingSnapshot };
-
 export function buildOpportunityAnalysis({
   sale,
   surfaceM2,

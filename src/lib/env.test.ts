@@ -338,3 +338,27 @@ describe("positiveInteger", () => {
     expect(positiveInteger("50", { fallback: 3, max: 20 })).toBe(20);
   });
 });
+
+describe("serverEnv: Stripe, contact form and adjudication-price build", () => {
+  it("reads the Analyse Prices, the contact addresses and the pinned build, trimmed", () => {
+    const env = serverEnv({
+      STRIPE_ANALYSIS_PRICE_ID: " price_new ",
+      STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old1, price_old2",
+      CONTACT_EMAIL_TO: " equipe@immojudis.example ",
+      CONTACT_EMAIL_FROM: "Immojudis <contact@immojudis.example>",
+      ADJUDICATION_PRICE_STATISTICS_BUILD_ID: " 0f8fad5b-d9cb-469f-a165-70867728950e ",
+    });
+    expect(env.stripe.analysisPriceId).toBe("price_new");
+    expect(env.stripe.legacyAnalysisPriceIds).toBe("price_old1, price_old2");
+    expect(env.email.contactTo).toBe("equipe@immojudis.example");
+    expect(env.email.contactFrom).toBe("Immojudis <contact@immojudis.example>");
+    expect(env.adjudicationPriceStatisticsBuildId).toBe("0f8fad5b-d9cb-469f-a165-70867728950e");
+  });
+
+  it("treats a blank value as unset", () => {
+    const env = serverEnv({ STRIPE_ANALYSIS_PRICE_ID: "  ", CONTACT_EMAIL_TO: "" });
+    expect(env.stripe.analysisPriceId).toBeUndefined();
+    expect(env.email.contactTo).toBeUndefined();
+    expect(env.adjudicationPriceStatisticsBuildId).toBeUndefined();
+  });
+});

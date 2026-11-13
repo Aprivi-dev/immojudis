@@ -35,7 +35,8 @@ vi.mock("stripe", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.adminRpc },
 }));
-vi.mock("@/lib/analysis-checkout-readiness", () => ({
+vi.mock("@/lib/analysis-checkout-readiness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/analysis-checkout-readiness")>()),
   assertAnalysisCheckoutOpen: mocks.assertOpen,
 }));
 vi.mock("@/lib/launch-offer.server", () => ({ readLaunchOfferState: mocks.launchState }));

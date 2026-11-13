@@ -9,16 +9,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { QueryClient } from "@tanstack/react-query";
+import { announceFavoriteAdded } from "@/components/favorite-feedback";
 import { Button } from "@/components/ui/primitives";
-import { addFavoriteSale, fetchFavoriteDossier, saveFavoriteDossier } from "@/lib/client-api";
+import {
+  addFavoriteSale,
+  fetchFavoriteDossier,
+  removeFavoriteSale,
+  saveFavoriteDossier,
+} from "@/lib/client-api";
 import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import { formatPrice } from "@/lib/format";
+import { trackProductEvent } from "@/lib/product-events";
+import * as queryKeys from "@/lib/query-keys";
+import { toast } from "@/lib/toast";
+import { userMessage } from "@/lib/user-messages";
 
 /**
  * Retirer un favori supprime la ligne qui porte « Mon dossier » (statut personnel, enchère
  * plafond). Ce module en tient les deux garde-fous : une confirmation avant le retrait quand le
- * dossier n'est pas vide, et le rétablissement réel du dossier quand la personne annule.
+ * dossier n'est pas vide, et le rétablissement réel du dossier quand la personne annule. Il tient
+ * aussi la bascule du cœur (`toggleFavoriteSale`), partagée par les cartes et la fiche.
  */
 
 /** Un plafond de 0 € n'est pas une valeur : il n'est ni affiché, ni compté, ni rétabli. */
@@ -151,4 +163,58 @@ export function useFavoriteRemovalConfirmation(): {
   );
 
   return { confirmRemoval, dialog };
+}
+
+/**
+ * Ajoute ou retire une vente des favoris, pour les deux cœurs (cartes de résultats, fiche) :
+ * confirmation du retrait quand « Mon dossier » n'est pas vide, mesure et annonce de l'ajout, mise à
+ * jour de la liste des favoris de la recherche, puis relecture. `onToggled` reçoit le nouvel état
+ * dès que le serveur l'a confirmé ; une personne qui renonce au retrait ne change rien. Un échec est
+ * dit dans un message, et la liste de la recherche est relue.
+ */
+export async function toggleFavoriteSale({
+  queryClient,
+  userId,
+  saleId,
+  favorite,
+  confirmRemoval,
+  onToggled,
+}: {
+  queryClient: QueryClient;
+  userId: string;
+  saleId: string;
+  /** État affiché au moment du clic. */
+  favorite: boolean;
+  confirmRemoval: (saleId: string) => Promise<boolean>;
+  onToggled: (favorite: boolean, removed: RemovedFavoriteDossier | null) => void;
+}): Promise<void> {
+  const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(userId);
+  try {
+    await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
+    let removed: RemovedFavoriteDossier | null = null;
+    if (favorite) {
+      // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
+      if (!(await confirmRemoval(saleId))) return;
+      removed = (await removeFavoriteSale({ saleId }))?.dossier ?? null;
+    } else {
+      const added = await addFavoriteSale({ data: { saleId } });
+      trackProductEvent("favorite_added");
+      void announceFavoriteAdded(queryClient, userId, added?.plan?.limit ?? null);
+    }
+    onToggled(!favorite, removed);
+    queryClient.setQueriesData<string[] | undefined>(
+      { queryKey: searchFavoriteQueryKey },
+      (favoriteSaleIds) => {
+        const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
+        if (favorite) nextFavoriteSaleIds.delete(saleId);
+        else nextFavoriteSaleIds.add(saleId);
+        return [...nextFavoriteSaleIds];
+      },
+    );
+    void queryClient.invalidateQueries({ queryKey: queryKeys.favorites(userId) });
+    await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
+  } catch (error) {
+    void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
+    toast.error(userMessage(error));
+  }
 }

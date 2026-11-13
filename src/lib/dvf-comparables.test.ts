@@ -8,7 +8,11 @@ const mocks = vi.hoisted(() => ({
   saleQuery: vi.fn(),
 }));
 
-vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  resolvePlanEntitlements: mocks.plan,
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({ assertSalePublicationVisible: vi.fn() }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.usage }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc, from: mocks.from },

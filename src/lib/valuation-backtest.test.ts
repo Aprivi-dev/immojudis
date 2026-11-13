@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/sale-publication-guard", () => ({ assertSalePublicationVisible: vi.fn() }));
 import { PublicApiError } from "@/lib/api-errors";
 import {
   buildValuationBacktest,

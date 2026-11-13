@@ -18,7 +18,7 @@ import {
   stripInvisibleCharacters,
 } from "@/lib/information-agent-inbound/text";
 import { resolveOperationalAlertEmailConfig } from "@/lib/operational-alerts";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 /**

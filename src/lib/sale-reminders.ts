@@ -12,7 +12,8 @@ import {
 } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import { SALE_CALENDAR_DISCLAIMER, type SaleCalendarRow } from "@/lib/sale-calendar";
-import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
 import {
   buildSaleReminderMessage,
   type SaleReminderItem,

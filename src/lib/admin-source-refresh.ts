@@ -143,11 +143,8 @@ async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourc
   );
 }
 
-function rowToRefreshItem(
-  row: SourceDetailJobRow,
-  sale: RefreshableSale,
-  reused = false,
-): AdminSourceRefreshItem {
+/** Une demande lue dans la file : `reused` ne vaut que pour la réponse à une nouvelle demande. */
+function rowToRefreshItem(row: SourceDetailJobRow, sale: RefreshableSale): AdminSourceRefreshItem {
   return {
     id: row.id,
     saleId: sale.id,
@@ -156,7 +153,7 @@ function rowToRefreshItem(
     sourceUrl: row.detail_source_url,
     status: row.status,
     priority: row.priority,
-    reused,
+    reused: false,
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
     requestedAt: row.created_at,

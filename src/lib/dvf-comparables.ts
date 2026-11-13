@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { optionalQueryText } from "@/lib/optional-query-text";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
@@ -11,11 +12,11 @@ import {
 } from "@/lib/dvf-comparable-engine";
 import { resolveMarketPropertySegment } from "@/lib/market-estimation-engine";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { readSaleThroughDoor, resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
-import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfComparableRow =
@@ -34,14 +35,8 @@ const REFERENCE_SALE_COLUMNS =
 /** Colonnes d'affichage que la recherche par segment et distance ne renvoie pas. */
 const DVF_DISPLAY_COLUMNS = "id,address,city,postal_code,source";
 
-const optionalText = (max = 140) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().trim().max(max).optional(),
-  );
-
 export const dvfComparablesQuerySchema = z.object({
-  saleId: optionalText().pipe(z.string().guid()),
+  saleId: optionalQueryText().pipe(z.string().guid()),
   radiusM: z.coerce.number().int().min(300).max(2_000).default(1_000),
   months: z.coerce.number().int().min(6).max(60).default(36),
   limit: z.coerce.number().int().min(3).max(50).default(12),
@@ -87,7 +82,12 @@ export async function getDvfComparables({
     throw new ForbiddenError("Comparables DVF détaillés réservés à l’offre Analyse.");
   }
 
-  const sale = await getReferenceSale(auth, input.saleId);
+  const sale = await readSaleThroughDoor<AppSaleRow & { id: string }>(
+    auth,
+    input.saleId,
+    "plan",
+    REFERENCE_SALE_COLUMNS,
+  );
   const latitude = finiteNumber(sale.latitude);
   const longitude = finiteNumber(sale.longitude);
   if (latitude == null || longitude == null) {
@@ -165,21 +165,6 @@ export async function getDvfComparables({
     },
     analysis,
   };
-}
-
-async function getReferenceSale(
-  auth: SupabaseAuthContext,
-  saleId: string,
-): Promise<AppSaleRow & { id: string }> {
-  const { data, error } = await auth.supabase
-    .from("v_auction_sales_app")
-    .select(REFERENCE_SALE_COLUMNS)
-    .eq("id", saleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.id) throw new NotFoundError("Vente introuvable ou non accessible.");
-  return data as AppSaleRow & { id: string };
 }
 
 async function fetchDvfCandidates({

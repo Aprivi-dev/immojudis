@@ -2,13 +2,13 @@ import { isPublicMarketGapBand, type PublicMarketGapBand } from "@/lib/market-ga
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
 import { knownSourceLabel } from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Public (signed-out) facts of ONE sale: what the catalogue card already shows,
  * looked up by identifier. Shared by the server (page, metadata) and the
  * browser (React Query) so both describe a sale the same way.
  */
-export const SALE_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 type ErrorLike = { code?: string; message?: string } | null;
 
@@ -224,7 +224,7 @@ export async function fetchPublicSaleSummary(
   id: string,
   options: { withIndexability?: boolean } = {},
 ): Promise<PublicSaleSummaryResult> {
-  if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
+  if (!isUuid(id)) return { kind: "missing" };
   const [{ data, error }, details, indexable, marketGapBand, sourceLabel, pepite] =
     await Promise.all([
       client.rpc("get_public_sale_summary", { p_sale_id: id }),

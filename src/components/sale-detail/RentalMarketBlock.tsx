@@ -1,9 +1,9 @@
 "use client";
 
 import { RentSourceNotice } from "@/components/RentSourceNotice";
-import { estimateSaleGrossYieldRange, type GrossYieldRange } from "@/lib/geo";
+import { estimateSaleGrossYieldRange } from "@/lib/geo";
 import { feeRegimeKeyForSale } from "@/lib/fee-regime-key";
-import { formatPercent, formatRentPerM2 } from "@/lib/format/numbers";
+import { formatRentPerM2 } from "@/lib/format/numbers";
 import {
   HOUSING_TENSION_NOTE,
   tensionAttribution,
@@ -14,10 +14,10 @@ import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-not
 import type { RentReference, RentSegment } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
 import { rentNature } from "@/lib/rent-nature";
+import { PUBLIC_YIELD_LABEL, publicYieldText } from "@/lib/public-rental-yield";
 
-/** Titre du bloc, et libellé exact du rendement affiché (n° 44). */
+/** Titre du bloc (n° 44). */
 export const RENTAL_MARKET_TITLE = "Marché locatif (estimation)";
-export const YIELD_AT_STARTING_PRICE_LABEL = "Rendement brut à la mise à prix (charges comprises)";
 
 const SEGMENT_LABELS: Record<RentSegment, string> = {
   apt_all: "appartements",
@@ -27,26 +27,6 @@ const SEGMENT_LABELS: Record<RentSegment, string> = {
 };
 
 const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-
-const percent = (value: number) => formatPercent(value, 1, 1);
-
-/**
- * Le rendement à afficher : une référence fiable donne la valeur centrale et sa fourchette ; une référence
- * indicative (maille, intercommunalité, peu d’annonces) ne donne QUE la fourchette, jamais un chiffre ponctuel.
- * Sans borne de loyer, une référence indicative ne donne aucun rendement.
- */
-export function yieldText(range: GrossYieldRange, reliability: RentReference["reliability"]) {
-  const hasBounds = range.lowPct != null && range.highPct != null;
-  const bounds = hasBounds
-    ? [Math.min(range.lowPct!, range.highPct!), Math.max(range.lowPct!, range.highPct!)]
-    : null;
-  if (reliability === "reliable") {
-    return bounds
-      ? `${percent(range.centralPct)} (de ${percent(bounds[0])} à ${percent(bounds[1])} selon la fourchette de loyer)`
-      : percent(range.centralPct);
-  }
-  return bounds ? `entre ${percent(bounds[0])} et ${percent(bounds[1])}` : null;
-}
 
 type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
 
@@ -91,7 +71,7 @@ export function RentalMarketBlock({
           anil,
         )
       : null;
-  const yieldValue = range && anil ? yieldText(range, anil.reliability) : null;
+  const yieldValue = range && anil ? publicYieldText(range, anil.reliability) : null;
   const low = anil?.lowPerM2;
   const high = anil?.highPerM2;
   const observations = anil?.observations;
@@ -125,7 +105,7 @@ export function RentalMarketBlock({
             <p className="text-ink-soft">{rentNature(anil)}</p>
             {yieldValue ? (
               <p>
-                {YIELD_AT_STARTING_PRICE_LABEL} : <strong>{yieldValue}</strong>
+                {PUBLIC_YIELD_LABEL} : <strong>{yieldValue}</strong>
                 <span className="mt-1 block text-xs text-ink-soft">
                   Calculé sur la mise à prix, avec les frais d’acquisition estimés du type de vente.
                   Si la vente se conclut au-dessus de la mise à prix, le rendement est plus faible.

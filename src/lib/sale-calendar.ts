@@ -1,5 +1,5 @@
 import { buildIcsCalendar, buildIcsCalendarMany, formatIcsUtc, type IcsEvent } from "@/lib/ical";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { DEADLINES_CONFIRM_NOTICE, type SaleDeadline } from "@/lib/sale-deadlines";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import type { VisitSlot } from "@/lib/visit-slots";

@@ -113,14 +113,22 @@ describe("SaleTimeline", () => {
     expect(
       steps.some((step) => /Mandater un avocat.*barreau de Bordeaux.*9.500\s€/.test(step)),
     ).toBe(true);
-    expect(steps.some((step) => /19 nov\..*Audience d’adjudication.*09 h 30/.test(step))).toBe(
+    expect(steps.some((step) => /19 nov\..*Audience d’adjudication.*à 9 h 30/.test(step))).toBe(
       true,
     );
+    expect(steps.some((step) => /09 h 30/.test(step))).toBe(false);
     expect(steps.some((step) => /\+10 jours.*n’est définitive qu’après ce délai/.test(step))).toBe(
       true,
     );
     expect(steps.some((step) => /\+2 mois.*Paiement du prix et des frais/.test(step))).toBe(true);
     expect(screen.getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
+  });
+
+  it("writes no hour for a hearing dated without one", () => {
+    render(<SaleTimeline sale={upcoming({ sale_date: "2099-11-19" })} />);
+    const hearing = screen.getByText("Audience d’adjudication").closest("li")!;
+    expect(hearing.textContent).toMatch(/19 nov\./);
+    expect(hearing.textContent).not.toMatch(/\d h \d/);
   });
 
   it("leaves the guarantee amount out while the starting price is under review", () => {

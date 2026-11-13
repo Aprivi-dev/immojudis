@@ -1,15 +1,17 @@
 import { z } from "zod";
+import { optionalQueryText } from "@/lib/optional-query-text";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { pricePerM2 } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { readSaleThroughDoor, resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
+import { quantile } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
@@ -19,19 +21,13 @@ const MARKET_COLUMNS =
 
 type MarketSaleRow = SelectedRow<AppSaleRow, typeof MARKET_COLUMNS>;
 
-const optionalText = (max = 140) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().trim().max(max).optional(),
-  );
-
 export const marketAnalyticsQuerySchema = z
   .object({
-    saleId: optionalText().pipe(z.string().guid().optional()),
-    department: optionalText(12),
-    city: optionalText(140),
-    tribunalCode: optionalText(80),
-    propertyType: optionalText(80),
+    saleId: optionalQueryText().pipe(z.string().guid().optional()),
+    department: optionalQueryText(12),
+    city: optionalQueryText(140),
+    tribunalCode: optionalQueryText(80),
+    propertyType: optionalQueryText(80),
     months: z.coerce.number().int().min(3).max(120).default(36),
     futureMonths: z.coerce.number().int().min(0).max(24).default(6),
     limit: z.coerce.number().int().min(20).max(1000).default(500),
@@ -170,7 +166,9 @@ export async function getMarketAnalytics({
     throw new ForbiddenError("Analyse de marché avancée réservée à l’offre Analyse.");
   }
 
-  const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;
+  const referenceSale = input.saleId
+    ? await readSaleThroughDoor<MarketSaleRow>(auth, input.saleId, "plan", MARKET_COLUMNS)
+    : null;
   const scopes = buildAnalyticsScopes(input, referenceSale);
   const fromDate = addMonthsIso(now, -input.months);
   const toDate = addMonthsIso(now, input.futureMonths);
@@ -269,20 +267,6 @@ export function buildMarketAnalyticsSnapshot(
     comparisonSegments: buildComparisonSegments(items),
     communeComparison: buildCommuneComparison(items),
   };
-}
-
-async function getReferenceSale(
-  auth: SupabaseAuthContext,
-  saleId: string,
-): Promise<MarketSaleRow | null> {
-  const { data, error } = await auth.supabase
-    .from("v_auction_sales_app")
-    .select(MARKET_COLUMNS)
-    .eq("id", saleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ?? null;
 }
 
 function buildAnalyticsScopes(input: MarketAnalyticsQuery, referenceSale: MarketSaleRow | null) {
@@ -803,12 +787,6 @@ function positiveRounded(value: number | null | undefined): number | null {
 }
 
 function percentileRounded(values: number[], percentile: number): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = (sorted.length - 1) * percentile;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  if (lower === upper) return roundedNumber(sorted[lower]);
-  const ratio = index - lower;
-  return roundedNumber(sorted[lower] * (1 - ratio) + sorted[upper] * ratio);
+  const value = quantile(values, percentile);
+  return value == null ? null : roundedNumber(value);
 }

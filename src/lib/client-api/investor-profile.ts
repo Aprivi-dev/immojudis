@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type { InvestorProfileInput } from "@/lib/investor-profile-input";
 import type {
   InvestorProfileDeleteResponse,
@@ -6,29 +6,19 @@ import type {
 } from "@/lib/investor-profile";
 
 /** Profil d'investisseur du compte (n° 93) : lu, remplacé ou effacé par son propriétaire. */
-export async function fetchInvestorProfile(): Promise<InvestorProfileResponse> {
-  const response = await fetch("/api/investor-profile", { headers: await authHeaders() });
-  return readJson<InvestorProfileResponse>(response);
+export function fetchInvestorProfile(): Promise<InvestorProfileResponse> {
+  return apiRequest<InvestorProfileResponse>("/api/investor-profile");
 }
 
-export async function saveInvestorProfile(args: {
+export function saveInvestorProfile(args: {
   data: InvestorProfileInput;
 }): Promise<InvestorProfileResponse> {
-  const response = await fetch("/api/investor-profile", {
+  return apiRequest<InvestorProfileResponse>("/api/investor-profile", {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-  return readJson<InvestorProfileResponse>(response);
 }
 
-export async function deleteInvestorProfile(): Promise<InvestorProfileDeleteResponse> {
-  const response = await fetch("/api/investor-profile", {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
-  return readJson<InvestorProfileDeleteResponse>(response);
+export function deleteInvestorProfile(): Promise<InvestorProfileDeleteResponse> {
+  return apiRequest<InvestorProfileDeleteResponse>("/api/investor-profile", { method: "DELETE" });
 }

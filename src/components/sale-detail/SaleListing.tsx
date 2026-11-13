@@ -27,6 +27,7 @@ import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { Terme } from "@/components/ceiling/Terme";
+import { isPersistedSale } from "@/lib/example-sale-identity";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import { formatPrice } from "@/lib/format";
@@ -74,11 +75,6 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 
-/** Une vente enregistrée (identifiant UUID) : les ventes d'exemple n'ont pas de favori. */
-export function isPersistedSaleId(saleId: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saleId);
-}
-
 export function ListingActions({
   sale,
   publicDemo = false,
@@ -90,7 +86,7 @@ export function ListingActions({
   showFavorite?: boolean;
 }) {
   const [sharing, setSharing] = useState(false);
-  const persistedSale = showFavorite && isPersistedSaleId(sale.id);
+  const persistedSale = showFavorite && isPersistedSale(sale);
   async function share() {
     setSharing(true);
     try {

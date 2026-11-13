@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ConfigurationError, NotFoundError, PublicApiError } from "@/lib/api-errors";
 import { apiRoute } from "@/lib/api-route";
-import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { isUuid } from "@/lib/uuid";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { buildSaleCalendarFile, type SaleCalendarRow } from "@/lib/sale-calendar";
@@ -50,7 +50,7 @@ export const GET = apiRoute<{ id: string }>(
       ...RATE_LIMIT_POLICIES.publicIp,
     });
     const { id } = params;
-    if (!SALE_ID_PATTERN.test(id)) throw new NotFoundError("Vente introuvable.");
+    if (!isUuid(id)) throw new NotFoundError("Vente introuvable.");
 
     const client = createPublicSupabaseClient();
     if (!client) throw new ConfigurationError("Base de données non configurée.");

@@ -19,6 +19,10 @@ import {
   type WithdrawnSourcesClient,
 } from "@/lib/withdrawn-sources";
 import { ServiceUnavailableError } from "@/lib/api-errors";
+import { withTimeout } from "@/lib/with-timeout";
+
+const catalogueTimeout = () =>
+  new ServiceUnavailableError("Délai dépassé pour le catalogue public.");
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -128,12 +132,14 @@ const cachedFirstPage = unstable_cache(() => defaultSearch({}), [...FIRST_PAGE_C
 function withdrawnSourcesApplier(client: WithdrawnSourcesClient | null | undefined) {
   const loading: Promise<unknown> = client ? loadWithdrawnSources(client) : Promise.resolve([]);
   return async (items: AuctionSale[]): Promise<AuctionSale[]> => {
-    await withTimeout(loading, WITHDRAWN_SOURCES_TIMEOUT_MS).catch((error: unknown) => {
-      console.warn(
-        "[catalogue] Sources retirées: dernière liste connue appliquée:",
-        error instanceof Error ? error.message : error,
-      );
-    });
+    await withTimeout(loading, WITHDRAWN_SOURCES_TIMEOUT_MS, catalogueTimeout).catch(
+      (error: unknown) => {
+        console.warn(
+          "[catalogue] Sources retirées: dernière liste connue appliquée:",
+          error instanceof Error ? error.message : error,
+        );
+      },
+    );
     return items.map((sale) => stripWithdrawnSourceContent(sale));
   };
 }
@@ -150,17 +156,6 @@ function withdrawnSourcesClient(
 function photoMirrorClient(): PhotoMirrorClient | null {
   if (!isPhotoMirrorEnabled()) return null;
   return createPublicSupabaseClient() as unknown as PhotoMirrorClient | null;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new ServiceUnavailableError("Délai dépassé pour le catalogue public.")),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -181,6 +176,7 @@ export async function loadInitialCatalogue(
     const response = await withTimeout(
       isDefaultCatalogueSearch(search) ? firstPage() : run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+      catalogueTimeout,
     );
     // Copies hébergées des photos : un seul appel pour la page, après le cache de la première page.
     // Les copies trouvées ont leur propre cache de 5 minutes (photo-mirror.server.ts) ; une panne
@@ -227,6 +223,7 @@ export async function loadInitialCount(
     const response = await withTimeout(
       run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+      catalogueTimeout,
     );
     return Number.isFinite(response.count) ? response.count : null;
   } catch (error) {
@@ -271,6 +268,7 @@ export async function loadPreviewCataloguePage(
   const response = await withTimeout(
     isDefaultCatalogueSearch(search) ? firstPage() : run(search),
     dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+    catalogueTimeout,
   );
   // Avant la lecture des copies : la photo d'une source retirée n'est même pas cherchée.
   const items = await withoutWithdrawn(excludeHomepageExampleSales(response.items));

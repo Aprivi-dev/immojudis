@@ -35,6 +35,10 @@ describe("« Comparer » d'une fiche : /sales?comparer=<id>", () => {
     expect(compareSaleIdFromParam(" 52d72de3-d795-492e-be50-58eb72d2eb47 ")).toBe(
       "52d72de3-d795-492e-be50-58eb72d2eb47",
     );
+    // La règle des routes (`@/lib/uuid`) : tout UUID hexadécimal, sans version ni variante exigées.
+    expect(compareSaleIdFromParam("11111111-1111-1111-1111-111111111111")).toBe(
+      "11111111-1111-1111-1111-111111111111",
+    );
     for (const value of [null, undefined, "", "abc", "52d72de3", "../admin", "1 OR 1=1"]) {
       expect(compareSaleIdFromParam(value)).toBeNull();
     }

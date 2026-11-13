@@ -1,4 +1,5 @@
 import { departmentCode } from "@/lib/department-code";
+import { propertyFamily, type PropertyFamily } from "@/lib/property-type-family";
 
 // Loyer de référence en €/m²/mois : carte des loyers de l'ANIL à la commune (table `anil_rents`,
 // lue côté serveur par `rent-reference.server.ts`), ou, faute de donnée ANIL, la table
@@ -111,10 +112,13 @@ const RENT_BY_DEPARTMENT: Record<string, number> = {
   "21": 11,
 };
 
-const HOUSE_PATTERN =
-  /maison|villa|pavillon|house|chalet|long[eè]re|ferme|ch[aâ]teau|\bmas\b|propri[eé]t[eé]|bastide/i;
-const NOT_A_HOME_PATTERN =
-  /terrain|parking|garage|box|cave|local|commerc|bureau|immeuble|building|land|lot de|entrep[oô]t|hangar|atelier|usine/i;
+/** Familles qui ne sont pas un logement : leur segment de loyer ne dépend pas des pièces. */
+const NOT_A_HOME: ReadonlySet<PropertyFamily> = new Set([
+  "building",
+  "land",
+  "parking",
+  "commercial",
+]);
 
 /**
  * Segment de la carte des loyers d'une vente : maison pour une maison ; pour un appartement,
@@ -125,17 +129,12 @@ export function rentSegmentFor(sale: {
   property_type?: string | null;
   rooms_count?: number | null;
 }): RentSegment {
-  const type = sale.property_type ?? "";
-  if (HOUSE_PATTERN.test(type)) return "house";
+  const family = propertyFamily(sale.property_type);
+  if (family === "house") return "house";
   const rooms = sale.rooms_count;
-  if (NOT_A_HOME_PATTERN.test(type) || typeof rooms !== "number" || !(rooms >= 1)) {
-    return "apt_all";
-  }
+  if (NOT_A_HOME.has(family) || typeof rooms !== "number" || !(rooms >= 1)) return "apt_all";
   return rooms <= 2 ? "apt_1_2" : "apt_3p";
 }
-
-const APARTMENT_PATTERN = /apartment|appart|studio|duplex|triplex|loft|\bflat\b/i;
-const UNKNOWN_TYPE_PATTERN = /^(unknown|inconnu|non pr[eé]cis[eé]?)$/i;
 
 /** Ce que `isRentApplicable` lit d'une vente : son type et, à défaut de type, la surface publiée. */
 export type RentApplicableSale = {
@@ -153,11 +152,9 @@ export type RentApplicableSale = {
  * vente publie une surface (un logement sans type se reconnaît à sa surface, un lot sans rien n'est pas chiffrable).
  */
 export function isRentApplicable(sale: RentApplicableSale): boolean {
-  const type = (sale.property_type ?? "").trim();
-  if (HOUSE_PATTERN.test(type)) return true;
-  if (NOT_A_HOME_PATTERN.test(type)) return false;
-  if (APARTMENT_PATTERN.test(type)) return true;
-  if (type === "" || UNKNOWN_TYPE_PATTERN.test(type)) {
+  const family = propertyFamily(sale.property_type);
+  if (family === "house" || family === "apartment") return true;
+  if (family === "unknown") {
     const surface = sale.app_surface_m2 ?? sale.habitable_surface_m2 ?? sale.carrez_surface_m2;
     return typeof surface === "number" && Number.isFinite(surface) && surface > 0;
   }
@@ -202,14 +199,6 @@ export function rentReferenceFromAnilRow(row: AnilRentRow): RentReference | null
     vintage: row.vintage,
     sourceUpdatedOn: row.source_updated_on,
   };
-}
-
-/** Médiane d'une liste de nombres (moyenne des deux valeurs centrales si le compte est pair) ; `null` si vide. */
-export function median(values: readonly number[]): number | null {
-  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
-  if (!sorted.length) return null;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 /**

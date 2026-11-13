@@ -11,6 +11,7 @@ import {
   type AutoPublicationPlanItem,
 } from "@/lib/information-agent/auto-publication-policy";
 import { startOfParisDay } from "@/lib/paris-time";
+import { chunks } from "@/lib/chunks";
 
 /**
  * Accès en base du moteur « publier ou relire » (migration 20261115100000) : lecture du mode, passe de
@@ -102,14 +103,6 @@ export async function loadAutoPublicationMode(): Promise<AutoPublicationMode> {
     throw new Error("Auto-publication setting missing or unreadable");
   }
   return mode as AutoPublicationMode;
-}
-
-function chunks<T>(values: T[], size = PAGE_SIZE): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < values.length; index += size) {
-    result.push(values.slice(index, index + size));
-  }
-  return result;
 }
 
 /**

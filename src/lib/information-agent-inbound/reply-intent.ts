@@ -1,6 +1,7 @@
 import "server-only";
 import { normalizeEmail, replyTextForExtraction } from "@/lib/information-agent-inbound/text";
 import { unicodeWordBoundaries } from "@/lib/information-agent-inbound/unicode-boundaries";
+import { UUID_SOURCE } from "@/lib/uuid";
 
 export function findInboundToken(
   addresses: readonly string[],
@@ -140,8 +141,7 @@ export function collectInboundTokens(
   inboundDomain: string,
 ): string[] {
   const expectedDomain = inboundDomain.trim().toLowerCase();
-  const localPartPattern =
-    /^enquete\+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+  const localPartPattern = new RegExp(`^enquete\\+(${UUID_SOURCE})$`, "i");
   const tokens = new Set<string>();
   for (const address of addresses) {
     const email = normalizeEmail(address);

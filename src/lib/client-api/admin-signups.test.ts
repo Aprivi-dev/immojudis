@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ authHeaders: vi.fn() }));
-vi.mock("@/lib/client-api-core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/client-api-core")>()),
-  authHeaders: mocks.authHeaders,
+const session = vi.hoisted(() => ({ token: "jeton" as string | null }));
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => session.token !== null,
+  getSupabase: async () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: session.token ? { access_token: session.token } : null },
+      }),
+    },
+  }),
 }));
 
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
@@ -12,7 +18,6 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("client de la vue « Inscriptions »", () => {
   it("cherche en POST : l'adresse ou le nom ne figure jamais dans l'URL", async () => {
-    mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer jeton" });
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ accounts: [] }), { status: 200 }));
@@ -43,7 +48,6 @@ describe("client de la vue « Inscriptions »", () => {
   });
 
   it("garde les valeurs par défaut de la liste", async () => {
-    mocks.authHeaders.mockResolvedValue({});
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ accounts: [] }), { status: 200 }));
@@ -61,7 +65,6 @@ describe("client de la vue « Inscriptions »", () => {
   });
 
   it("prolonge en POST sur la route des inscriptions", async () => {
-    mocks.authHeaders.mockResolvedValue({});
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(

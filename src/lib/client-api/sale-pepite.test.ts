@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ headers: vi.fn() }));
-vi.mock("@/lib/client-api-core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/client-api-core")>()),
-  authHeaders: mocks.headers,
+const session = vi.hoisted(() => ({ token: "token" as string | null }));
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => session.token !== null,
+  getSupabase: async () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: session.token ? { access_token: session.token } : null },
+      }),
+    },
+  }),
 }));
 
 import { fetchSalePepite } from "./sale-pepite";
@@ -20,7 +26,7 @@ const reply = (status: number, body: unknown = {}) => ({
 describe("fetchSalePepite", () => {
   beforeEach(() => {
     fetchMock.mockReset();
-    mocks.headers.mockReset().mockResolvedValue({ Authorization: "Bearer token" });
+    session.token = "token";
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -28,7 +34,7 @@ describe("fetchSalePepite", () => {
   it("le niveau criteria n'envoie aucun jeton : il est ouvert aux visiteurs", async () => {
     fetchMock.mockResolvedValue(reply(200, { access: "criteria", count: 1, criteria: [] }));
     await fetchSalePepite(saleId, "criteria");
-    expect(mocks.headers).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({});
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/sales/${saleId}/pepite?view=criteria`);
   });
 
@@ -37,6 +43,15 @@ describe("fetchSalePepite", () => {
     await fetchSalePepite(saleId, "detail");
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer token" });
     expect(fetchMock.mock.calls[0][0]).toContain("view=detail");
+  });
+
+  it("sans session lisible, le niveau detail retombe sur les critères sans rien envoyer", async () => {
+    session.token = null;
+    const criteria = { access: "criteria", count: 1, criteria: [] };
+    fetchMock.mockResolvedValue(reply(200, criteria));
+    await expect(fetchSalePepite(saleId, "detail")).resolves.toEqual(criteria);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("view=criteria");
   });
 
   it("404 : pas une pépite (null)", async () => {

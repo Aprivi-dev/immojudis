@@ -5,6 +5,7 @@
  * Lu dans le brouillon (`metadata.contact_discovery`), jamais recalculé à partir de la vente.
  */
 import { INFORMATION_AGENT_REGISTRY_PROVENANCE_FIELD } from "@/lib/information-agent/contact-resolution";
+import { asRecord } from "@/lib/guards";
 import {
   INFORMATION_AGENT_ADDRESS_KIND_LABELS,
   informationAgentAddressKind,
@@ -61,12 +62,6 @@ function originLabel(provenance: Record<string, unknown>): string | null {
     return REGISTRY_ORIGIN_LABEL;
   }
   return ORIGIN_LABELS[text(provenance.kind) ?? ""] ?? null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function text(value: unknown): string | null {

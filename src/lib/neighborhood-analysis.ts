@@ -4,9 +4,9 @@ import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
-import { riskTextsWithType as riskTexts } from "@/lib/sale-risk-texts";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -35,11 +35,6 @@ export type NeighborhoodAnalysis = {
   decisionImpact: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 const NEIGHBORHOOD_KEY =
@@ -416,7 +411,8 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   }
 
   for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
+    for (const text of riskTexts(risk, { withType: true }))
+      addCandidate(candidates, text, "Preuves de risques");
   }
 
   return candidates.filter((candidate) => hasNeighborhoodSignal(candidate.text));

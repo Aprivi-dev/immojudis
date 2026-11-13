@@ -34,8 +34,8 @@ describe("régions des départements", () => {
   });
 
   it("concorde avec les régions de la recherche (`search/french-geo-search.ts`)", () => {
-    // Deux tables écrites à part : la recherche ajoute des sigles (IDF, PACA…) et range chaque
-    // département d'outre-mer dans sa propre région. Le découpage, lui, doit rester le même.
+    // La recherche tire ses régions de cette table : elle y ajoute des sigles (IDF, PACA…) et range
+    // chaque département d'outre-mer dans sa propre région.
     for (const region of DEPARTMENT_REGIONS.filter((item) => item.inseeCode)) {
       expect(resolveFrenchGeoSearch(region.name), region.name).toEqual({
         kind: "region",

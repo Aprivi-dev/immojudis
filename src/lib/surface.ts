@@ -1,4 +1,5 @@
 import { formatSurface } from "@/lib/format";
+import { propertyFamily } from "@/lib/property-type-family";
 
 // Surface provisoire retenue pour les très petits logements sans surface publiée :
 // les studios et les appartements 1 pièce (T1). À confirmer avant d'enchérir.
@@ -235,12 +236,5 @@ function isLandOnlySurface(sale: SurfaceSaleLike): boolean {
   const appKind = sale.app_surface_kind?.trim().toLocaleLowerCase("fr-FR");
   const scope = sale.surface_scope?.trim().toLocaleLowerCase("fr-FR");
   if (appKind === "land" || scope === "land") return true;
-  const type = sale.property_type?.toLocaleLowerCase("fr-FR") ?? "";
-  if (
-    /\b(?:maison|house|villa|pavillon|appartement|apartment|appart|apt|studio|studette)\b/.test(
-      type,
-    )
-  )
-    return false;
-  return /\b(?:land|terrain|parcelle)\b/.test(type);
+  return propertyFamily(sale.property_type) === "land";
 }

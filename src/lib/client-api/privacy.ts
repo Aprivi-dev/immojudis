@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type { ProfessionalDataExport } from "@/lib/information-agent-professional-rights";
 import type {
   PrivacyRequestAdminListResponse,
@@ -11,78 +11,62 @@ import type {
   PrivacyRequestSummary,
 } from "@/lib/privacy-requests";
 
-export async function fetchPrivacyRequests(): Promise<PrivacyRequestListResponse> {
-  const response = await fetch("/api/privacy/requests", { headers: await authHeaders() });
-  return readJson<PrivacyRequestListResponse>(response);
+export function fetchPrivacyRequests(): Promise<PrivacyRequestListResponse> {
+  return apiRequest<PrivacyRequestListResponse>("/api/privacy/requests");
 }
 
-export async function createPrivacyRequestClient(
+export function createPrivacyRequestClient(
   data: PrivacyRequestInput,
 ): Promise<PrivacyRequestSummary> {
-  const response = await fetch("/api/privacy/requests", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(data),
-  });
-  return readJson<PrivacyRequestSummary>(response);
+  return apiRequest<PrivacyRequestSummary>("/api/privacy/requests", { method: "POST", body: data });
 }
 
-export async function fetchAdminPrivacyRequests(
+export function fetchAdminPrivacyRequests(
   input: { offset?: number; limit?: number } = {},
 ): Promise<PrivacyRequestAdminListResponse> {
   const search = new URLSearchParams({
     offset: String(input.offset ?? 0),
     limit: String(input.limit ?? 100),
   });
-  const response = await fetch("/api/admin/privacy-requests?" + search.toString(), {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-  return readJson<PrivacyRequestAdminListResponse>(response);
+  return apiRequest<PrivacyRequestAdminListResponse>(
+    "/api/admin/privacy-requests?" + search.toString(),
+  );
 }
 
-export async function updateAdminPrivacyRequest(
+export function updateAdminPrivacyRequest(
   data: PrivacyRequestAdminUpdate,
 ): Promise<PrivacyRequestAdminSummary> {
-  const response = await fetch("/api/admin/privacy-requests", {
+  return apiRequest<PrivacyRequestAdminSummary>("/api/admin/privacy-requests", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(data),
+    body: data,
   });
-  return readJson<PrivacyRequestAdminSummary>(response);
 }
 
-export async function executeAdminContractWithdrawal(data: {
+export function executeAdminContractWithdrawal(data: {
   requestId: string;
   refundMode: "prorata" | "full";
 }): Promise<{ refundedCents: number; subscriptionCancelled: boolean }> {
-  const response = await fetch("/api/admin/privacy-requests/withdrawal", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(data),
-  });
-  return readJson<{ refundedCents: number; subscriptionCancelled: boolean }>(response);
+  return apiRequest<{ refundedCents: number; subscriptionCancelled: boolean }>(
+    "/api/admin/privacy-requests/withdrawal",
+    { method: "POST", body: data },
+  );
 }
 
 /** Copie des données d'un professionnel sans compte qui a demandé l'accès (administrateur). */
-export async function fetchAdminProfessionalPrivacyExport(
+export function fetchAdminProfessionalPrivacyExport(
   requestId: string,
 ): Promise<ProfessionalDataExport> {
   const search = new URLSearchParams({ requestId });
-  const response = await fetch("/api/admin/privacy-requests/professional-export?" + search, {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-  return readJson<ProfessionalDataExport>(response);
+  return apiRequest<ProfessionalDataExport>(
+    "/api/admin/privacy-requests/professional-export?" + search,
+  );
 }
 
-export async function executeAdminPrivacyErasure(
+export function executeAdminPrivacyErasure(
   data: PrivacyErasureExecuteInput,
 ): Promise<PrivacyErasureReport> {
-  const response = await fetch("/api/admin/privacy-requests", {
+  return apiRequest<PrivacyErasureReport>("/api/admin/privacy-requests", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(data),
+    body: data,
   });
-  return readJson<PrivacyErasureReport>(response);
 }

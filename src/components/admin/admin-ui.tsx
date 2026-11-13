@@ -4,6 +4,7 @@ import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import type * as React from "react";
 import { AdminPanel } from "@/components/admin/AdminShell";
 import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 export function AdminPanelLoading({ label }: { label: string }) {
   return (
@@ -94,20 +95,17 @@ export function PipelineStat({
   );
 }
 
+/** Statut d'une exécution du pipeline. */
 export function StatusPill({ status }: { status: string }) {
   const tone =
     status === "succeeded"
-      ? "border-emerald-300/20 bg-success-tint text-success"
+      ? "success"
       : status === "failed"
-        ? "border-red-300/20 bg-danger-tint text-danger"
+        ? "danger"
         : status === "running"
-          ? "border-sky-300/20 bg-info-tint text-info"
-          : "border-amber-300/20 bg-warning-tint text-warning";
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
-      {status}
-    </span>
-  );
+          ? "info"
+          : "warning";
+  return <AdminPill tone={tone}>{status}</AdminPill>;
 }
 
 export function EmptyState({ label }: { label: string }) {

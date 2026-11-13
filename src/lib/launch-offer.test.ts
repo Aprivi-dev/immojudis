@@ -85,12 +85,15 @@ describe("textes de l'essai gratuit à l'inscription", () => {
   });
 
   it("date l'essai comme formatDateTime, avec « 1er » pour le premier du mois", () => {
-    for (const iso of ["2026-11-05T13:30:00.000Z", "2026-03-29T01:30:00.000Z"]) {
+    for (const iso of [
+      "2026-11-05T13:30:00.000Z",
+      "2026-03-29T01:30:00.000Z",
+      "2026-12-01T13:05:00.000Z",
+      "2026-10-31T23:30:00.000Z",
+    ]) {
       expect(signupTrialDateLabel(iso)).toBe(formatDateTime(iso));
     }
-    expect(signupTrialDateLabel("2026-12-01T13:05:00.000Z")).toBe(
-      formatDateTime("2026-12-01T13:05:00.000Z").replace(/^1 /, "1er "),
-    );
+    expect(signupTrialDateLabel("2026-12-01T13:05:00.000Z")).toBe("1er décembre 2026 à 14:05");
     expect(signupTrialDateLabel("illisible")).toBe("illisible");
   });
 });

@@ -15,6 +15,7 @@ import type {
   AdminLawyerReferralUpdateInput,
 } from "@/lib/admin-lawyer-referrals";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { contactMethodLabel } from "@/lib/lawyer-contact-method";
 import {
   formatPrice,
   formatShortDate,
@@ -22,6 +23,7 @@ import {
   formatStartingPrice,
 } from "@/lib/format";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
 
@@ -296,17 +298,11 @@ function LawyerReferralRequestCard({
 
 function ReferralStatusPill({ status }: { status: ReferralStatus }) {
   const done = status === "responded" || status === "closed";
-  const blocked = status === "cancelled";
-  const tone = done
-    ? "border-emerald-300/20 bg-success-tint text-success"
-    : blocked
-      ? "border-red-300/20 bg-danger-tint text-danger"
-      : "border-amber-300/20 bg-warning-tint text-warning";
-
+  const tone = done ? "success" : status === "cancelled" ? "danger" : "warning";
   return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
+    <AdminPill tone={tone}>
       {STATUS_OPTIONS.find(([option]) => option === status)?.[1] ?? status}
-    </span>
+    </AdminPill>
   );
 }
 
@@ -325,12 +321,6 @@ function lawyerOptionLabel(lawyer: AdminLawyerReferralLawyerOption): string {
   return [lawyer.displayName, lawyer.firmName, lawyer.barAssociation, lawyer.city]
     .filter(Boolean)
     .join(" · ");
-}
-
-function contactMethodLabel(value: AdminLawyerReferralSummary["preferredContactMethod"]): string {
-  if (value === "phone") return "Téléphone";
-  if (value === "either") return "Email ou téléphone";
-  return "Email";
 }
 
 function emailDeliveryLabel(

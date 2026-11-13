@@ -1,9 +1,6 @@
 import { ConfigurationError } from "@/lib/api-errors";
 import { serverEnv, type EnvSource } from "@/lib/env";
 
-// Compared with `EXPLICIT_SITE_URL_ENV_NAMES` by scripts/verify-required-env.test.mjs.
-export { SITE_URL_ENV_NAMES } from "@/lib/env";
-
 type SiteUrlEnv = EnvSource;
 
 /**

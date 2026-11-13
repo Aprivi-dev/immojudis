@@ -1,11 +1,8 @@
 import type { AuctionSale } from "./types";
-import { addDays, calendarDaysBetween, isCalendarDay } from "@/lib/calendar-day";
+import { addDays, isCalendarDay } from "@/lib/calendar-day";
 import { parseSaleWindow } from "./sale-window";
 import { asRecordOrNull } from "@/lib/guards";
-import { isPastParisDay, parisDateKey, parisMidnightUtc } from "@/lib/paris-time";
-
-// Repris par les modules qui les lisaient ici avant `@/lib/paris-time` (à migrer, puis à retirer).
-export { calendarDaysBetween, parisDateKey, isPastParisDay as isPastSaleDay };
+import { parisDateKey, parisMidnightUtc } from "@/lib/paris-time";
 
 export type SaleCountdownTarget = {
   target: Date | null;

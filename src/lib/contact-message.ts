@@ -3,6 +3,7 @@
  * Le module est pur (aucune dépendance réseau) : l'envoi réel passe par une
  * fonction injectée, ce qui le rend testable sans Resend.
  */
+import { UUID_SOURCE, isUuid } from "@/lib/uuid";
 
 export const CONTACT_SUBJECTS = [
   { value: "annonce", label: "Question sur une annonce" },
@@ -74,17 +75,10 @@ const CONTACT_REPORT_TOPICS = {
 } as const;
 export type ContactReportTopic = keyof typeof CONTACT_REPORT_TOPICS;
 
-const SALE_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
-
 /** Adresse du formulaire de contact prérempli pour signaler une erreur sur une fiche. */
 export function contactReportPath(saleId: string, topic: ContactReportTopic = "fiche"): string {
   const query = new URLSearchParams({ sujet: "erreur", vente: saleId, rubrique: topic });
   return `/contact?${query.toString()}`;
-}
-
-/** Vrai si la valeur a la forme d'un identifiant de vente (UUID). */
-export function isSaleId(value: string | null | undefined): value is string {
-  return typeof value === "string" && SALE_ID.test(value);
 }
 
 /**
@@ -93,7 +87,7 @@ export function isSaleId(value: string | null | undefined): value is string {
  */
 export function lawyerReportPath(saleId?: string): string {
   const query = new URLSearchParams({ sujet: "avocat-poursuivant" });
-  if (isSaleId(saleId)) {
+  if (isUuid(saleId)) {
     query.set("vente", saleId);
     query.set("rubrique", "fiche");
   }
@@ -116,7 +110,7 @@ export function contactPrefill(params: { get(name: string): string | null }): {
     ? CONTACT_REPORT_TOPICS[topicKey as ContactReportTopic]
     : null;
   const lines: string[] = [];
-  if (SALE_ID.test(saleId)) lines.push(`Vente concernée : ${saleId.toLowerCase()}`);
+  if (isUuid(saleId)) lines.push(`Vente concernée : ${saleId.toLowerCase()}`);
   if (topic && lines.length > 0) lines.push(`Rubrique : ${topic}`);
   const message =
     lines.length > 0 ? `${lines.join("\n")}\n\nCe qui est inexact ou manquant : ` : undefined;
@@ -194,8 +188,7 @@ function contactEmailTags(subject: ContactSubject): { name: string; value: strin
   ];
 }
 
-const PREFILLED_SALE_LINE =
-  /^Vente concernée : ([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\s*$/im;
+const PREFILLED_SALE_LINE = new RegExp(`^Vente concernée : (${UUID_SOURCE})\\s*$`, "im");
 const PREFILLED_TOPIC_LINE = /^Rubrique : (.+?)\s*$/im;
 
 /**
