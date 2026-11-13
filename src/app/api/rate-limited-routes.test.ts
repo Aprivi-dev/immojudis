@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   listDirectory: vi.fn(),
   createReferral: vi.fn(),
   createPrivacy: vi.fn(),
-  dvf: vi.fn(),
   environment: vi.fn(),
   featured: vi.fn(),
   boundary: vi.fn(),
@@ -67,10 +66,6 @@ vi.mock("@/lib/privacy-requests", () => ({
   listPrivacyRequests: vi.fn(),
   privacyRequestInputSchema: { parse: (value: unknown) => value },
 }));
-vi.mock("@/lib/dvf-comparables", () => ({
-  dvfComparablesQuerySchema: { parse: (value: unknown) => value },
-  getDvfComparables: mocks.dvf,
-}));
 vi.mock("@/lib/environmental-context", () => ({
   environmentalContextCacheControl: () => "private, no-store",
   getEnvironmentalContext: mocks.environment,
@@ -104,7 +99,6 @@ import { POST as marketEstimate } from "./market-estimate/route";
 import { GET as directory } from "./lawyers/directory/route";
 import { POST as referralPost } from "./lawyer-referrals/route";
 import { POST as privacyPost } from "./privacy/requests/route";
-import { GET as dvfGet } from "./dvf-comparables/route";
 import { POST as environmentPost } from "./environment-context/route";
 import { GET as featuredGet } from "./lawyers/featured/route";
 import { GET as boundaryGet } from "./geographic-boundary/route";
@@ -314,23 +308,11 @@ describe("P4-02 rate limits on costly and public routes", () => {
     expect(mocks.createReferral).toHaveBeenCalledTimes(1);
   });
 
-  it("charges dvf-comparables and environment-context to the 30/min compute budget", async () => {
-    mocks.dvf.mockResolvedValue({ analysis: { sampleSize: 1 } });
+  it("charges environment-context to the 30/min compute budget", async () => {
     mocks.environment.mockResolvedValue({});
 
-    await dvfGet(
-      new Request("https://example.test/api/dvf-comparables", {
-        headers: { authorization: "Bearer t" },
-      }),
-    );
     await environmentPost(json({}));
 
-    expect(mocks.enforceUser).toHaveBeenCalledWith({
-      userId: "user-1",
-      bucketKey: "dvf-comparables",
-      limit: 30,
-      windowSeconds: 60,
-    });
     expect(mocks.enforceUser).toHaveBeenCalledWith({
       userId: "user-1",
       bucketKey: "environment-context",

@@ -1,7 +1,5 @@
 import "server-only";
-import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
   analyzeMarketCandidates,
@@ -10,20 +8,13 @@ import {
 } from "@/lib/market-estimation-engine";
 import { DVF_PUBLIC_SOURCE_URL } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
-import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/plans";
-import { cleanSaleTitle } from "@/lib/sale-title";
-import { getSaleSurface } from "@/lib/surface";
-import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { matchesPropertyFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
 import { averageRounded, roundToTenth } from "@/lib/rounding";
 import { quantileSorted } from "@/lib/stats";
 import { addUtcCalendarMonths } from "@/lib/calendar-months";
-import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
-import { readSaleThroughDoor } from "@/lib/entitlements.server";
 
-type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
 export type DvfBacktestTransaction = Pick<
   DvfTransactionRow,
@@ -46,19 +37,8 @@ export type DvfBacktestTransaction = Pick<
   | "source"
 > & { source_url?: string | null };
 
-const REFERENCE_SALE_COLUMNS =
-  "id,title,city,department,postal_code,address,property_type,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,latitude,longitude";
-
 const DVF_BACKTEST_COLUMNS =
   "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
-
-export const valuationBacktestQuerySchema = z.object({
-  saleId: z.string().guid(),
-  radiusM: z.coerce.number().int().min(300).max(2_000).default(1_000),
-  months: z.coerce.number().int().min(12).max(84).default(48),
-  maxTests: z.coerce.number().int().min(5).max(80).default(30),
-});
-export type ValuationBacktestQuery = z.output<typeof valuationBacktestQuerySchema>;
 
 type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
 
@@ -113,19 +93,6 @@ export type ValuationBacktestResult = {
   limitations: string[];
 };
 
-export type ValuationBacktestResponse = {
-  ok: true;
-  sale: {
-    id: string;
-    title: string | null;
-    city: string | null;
-    department: string | null;
-    propertyType: string | null;
-    surfaceM2: number | null;
-  };
-  backtest: ValuationBacktestResult;
-};
-
 export type ValuationBacktestSaleContext = {
   department: string | null;
   propertyType: string | null;
@@ -133,83 +100,6 @@ export type ValuationBacktestSaleContext = {
   latitude: number | null;
   longitude: number | null;
 };
-
-export async function getValuationBacktest({
-  auth,
-  input,
-  now = new Date(),
-}: {
-  auth: SupabaseAuthContext;
-  input: ValuationBacktestQuery;
-  now?: Date;
-}): Promise<ValuationBacktestResponse> {
-  await assertValuationBacktestAvailable(auth);
-
-  const sale = await readSaleThroughDoor<AppSaleRow & { id: string }>(
-    auth,
-    input.saleId,
-    "plan",
-    REFERENCE_SALE_COLUMNS,
-  );
-  const latitude = finiteNumber(sale.latitude);
-  const longitude = finiteNumber(sale.longitude);
-  if (latitude == null || longitude == null) {
-    throw new PublicApiError("Backtest indisponible : la vente n'est pas géocodée.", 422);
-  }
-
-  const transactions = await fetchBacktestTransactions({
-    sale,
-    latitude,
-    longitude,
-    radiusM: input.radiusM,
-    months: input.months,
-    maxTests: input.maxTests,
-    now,
-  });
-  const surface = getSaleSurface(sale);
-  const backtest = buildValuationBacktest({
-    transactions,
-    reference: { latitude, longitude },
-    subject: {
-      propertyType: sale.property_type,
-      surfaceM2: surface.value,
-    },
-    options: {
-      radiusM: input.radiusM,
-      months: input.months,
-      maxTests: input.maxTests,
-      now,
-    },
-  });
-
-  await recordFeatureUsageEvent({
-    auth,
-    eventKey: "valuation.backtest_viewed",
-    subjectType: "auction_sale",
-    subjectId: sale.id,
-    metadata: {
-      status: backtest.summary.status,
-      tested_transactions: backtest.summary.testedTransactions,
-      usable_tests: backtest.summary.usableTests,
-      median_absolute_error_pct: backtest.summary.medianAbsoluteErrorPct,
-      radius_m: input.radiusM,
-      months: input.months,
-    },
-  });
-
-  return {
-    ok: true,
-    sale: {
-      id: sale.id,
-      title: cleanSaleTitle(sale.title),
-      city: sale.city,
-      department: sale.department,
-      propertyType: sale.property_type,
-      surfaceM2: surface.value,
-    },
-    backtest,
-  };
-}
 
 export async function buildValuationBacktestForSale({
   sale,
@@ -259,26 +149,6 @@ export async function buildValuationBacktestForSale({
       now,
     },
   });
-}
-
-async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
-  if (auth.isAdmin || auth.accountTier === "premium") return;
-
-  const { data, error } = await auth.supabase
-    .from("user_subscriptions")
-    .select("plan_code,status,current_period_end")
-    .eq("user_id", auth.userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  const plan =
-    data && isPlanPeriodActive(data.status, data.current_period_end)
-      ? normalizePlanCode(data.plan_code)
-      : "decouverte";
-
-  if (!featureIncluded(plan, "property.soldComparables")) {
-    throw new ForbiddenError("Backtest de valorisation réservé à l’offre Analyse.");
-  }
 }
 
 export function buildValuationBacktest({

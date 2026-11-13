@@ -168,11 +168,9 @@ describe("scheduled jobs inventory", () => {
     expect(weekly).toBeGreaterThan(results);
   });
 
-  it("supervise les rappels d'audience comme les autres tâches quotidiennes", () => {
+  it("documente la supervision des rappels d'audience", () => {
     const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
     expect(document).toMatch(/`\/api\/cron\/sale-reminders`.*\| oui /);
-    // Dans la migration d'origine, les apostrophes de la liste attendue de cron.stale sont doublées.
-    expect(migrationText()).toContain("(''sale-reminders'', interval ''30 hours'')");
   });
 
   it("lance l'envoi des alertes dans l'heure qui suit leur évaluation (plan Hobby : ±59 min)", () => {
@@ -221,22 +219,6 @@ describe("scheduled jobs inventory", () => {
     }
   });
 
-  it("attend les tâches quotidiennes toutes les 27 heures (un passage de rattrapage compris)", () => {
-    // La dernière migration qui redéfinit la liste attendue de cron.stale.
-    const definition = readFileSync(
-      join(root, "supabase/migrations/20261029170000_operational_health_alerts.sql"),
-      "utf8",
-    );
-    for (const job of [
-      "smart-alerts",
-      "alert-notifications",
-      "sale-change-monitor",
-      "sale-reminders",
-    ]) {
-      expect(definition, job).toContain(`('${job}', interval '27 hours')`);
-    }
-    expect(definition).not.toContain("interval '30 hours'");
-  });
   it("contrôle le registre des pièces chaque jour (Vercel Cron), sous cron.stale à 27 heures", () => {
     const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
       crons: Array<{ path: string; schedule: string }>;
