@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from src.config import cron_secret, licitor_collector_database_url
 from src.sources.licitor_cloud import connect_store
 from src.sources.licitor_cloud_import import import_snapshot, snapshot_archive
 from src.sources.licitor_history import licitor_window_start
@@ -122,9 +123,9 @@ if __name__ == "__main__":
         # Database/HTTP exceptions can contain URLs or secrets. No traceback here.
         message = str(error)
         for secret in (
-            os.environ.get("LICITOR_DATABASE_URL"),
-            os.environ.get("CRON_SECRET"),
-            urlsplit(os.environ.get("LICITOR_DATABASE_URL", "")).password,
+            licitor_collector_database_url(),
+            cron_secret(),
+            urlsplit(licitor_collector_database_url()).password,
         ):
             if secret:
                 message = message.replace(secret, "[REDACTED]")

@@ -13,11 +13,11 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 from src.config import load_settings  # noqa: E402
 from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME  # noqa: E402
+from src.outcome_ingestion.judilibre_match_contract import JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX  # noqa: E402
 from src.outcome_ingestion.judilibre_matching import (  # noqa: E402
     JUDILIBRE_MATCH_CONTEXT_LIMIT_DEFAULT,
     JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
     JUDILIBRE_MATCH_DATE_DELTA_DAYS_DEFAULT,
-    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
     JUDILIBRE_MATCH_PAGE_SIZE_DEFAULT,
     JUDILIBRE_MATCH_PAGE_SIZE_MAX,
     JUDILIBRE_MATCH_SOURCE_LIMIT_MAX,

@@ -275,16 +275,16 @@ def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> No
     )
     monkeypatch.setattr(
         supabase_client,
-        "_read_persisted_pdf_rows_rest",
+        "read_persisted_pdf_rows_rest",
         lambda url, key, urls: [{"updated_at": "2026-11-04T10:00:00Z"}, {"updated_at": "2026-11-04T11:00:00Z"}],
     )
-    monkeypatch.setattr(supabase_client, "_validated_persisted_pdf_texts", lambda s, row: None)
+    monkeypatch.setattr(supabase_client, "validated_persisted_pdf_texts", lambda s, row: None)
     monkeypatch.setattr(
-        supabase_client, "_validated_persisted_pdf_progress", lambda s, row: [{"row": row["updated_at"]}]
+        supabase_client, "validated_persisted_pdf_progress", lambda s, row: [{"row": row["updated_at"]}]
     )
     monkeypatch.setattr(
         supabase_client,
-        "_restore_pdf_page_caches_for_documents",
+        "restore_pdf_page_caches_for_documents",
         lambda restored, docs: restored_pages.append((restored, docs)),
     )
 

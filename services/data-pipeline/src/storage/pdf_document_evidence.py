@@ -1,6 +1,6 @@
 """Per-document PDF evidence recovered from ``auction_extractions``.
 
-The strict cold-cache recovery (``_validated_persisted_pdf_texts``) restores a
+The strict cold-cache recovery (``validated_persisted_pdf_texts``) restores a
 sale's text only when its whole manifest is complete: one skipped, blocked or
 partially read attachment disables it for every other document of the sale.
 A publication worker that does not hold the local PDF cache (GitHub runners

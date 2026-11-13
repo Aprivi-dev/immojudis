@@ -69,7 +69,8 @@ def _list_sales(count: int) -> list[dict[str, object]]:
 def scrape(monkeypatch):
     def run(count: int, *, budget: str | None, known: dict[str, str] | None = None):
         clock, fetched = _Clock(), []
-        monkeypatch.setattr(licitor, "time", clock)
+        # Le budget de la source se lit et se compare dans ``common`` (source_budget_deadline/expired).
+        monkeypatch.setattr(common, "time", clock)
         if budget is None:
             monkeypatch.delenv(licitor.SOURCE_BUDGET_ENV, raising=False)
         else:

@@ -27,9 +27,11 @@ from src.official_sources.judilibre import (  # noqa: E402
     JudilibreSearchPage,
     JudilibreSearchQuery,
 )
-from src.outcome_ingestion.judilibre_contract import JUDILIBRE_EVIDENCE_HASH_VERSION  # noqa: E402
-from src.outcome_ingestion.judilibre_extraction import (  # noqa: E402
+from src.outcome_ingestion.judilibre_contract import (  # noqa: E402
     JUDILIBRE_CLAIM_SCHEMA_VERSION,
+    JUDILIBRE_EVIDENCE_HASH_VERSION,
+)
+from src.outcome_ingestion.judilibre_extraction import (  # noqa: E402
     extract_judilibre_candidate_facts,
 )
 from src.outcome_ingestion.judilibre_ingestion import (  # noqa: E402

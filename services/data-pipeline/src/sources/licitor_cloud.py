@@ -15,6 +15,7 @@ import httpx
 import psycopg
 
 from src import source_withdrawal
+from src.config import cron_secret, licitor_collector_database_url
 from src.sources.common import RobotsRules, is_allowed_origin_url
 from src.sources.licitor import ALLOWED_ORIGINS
 from src.sources.licitor_cloud_store import CloudStore, LeaseLost
@@ -275,7 +276,7 @@ def start_monthly(store: CloudStore, *, today: date | None = None) -> dict:
 
 
 def connect_store() -> CloudStore:
-    url = os.environ.get("LICITOR_DATABASE_URL", "")
+    url = licitor_collector_database_url()
     parsed = urlsplit(url)
     if parsed.scheme not in {"postgres", "postgresql"} or not (parsed.username or "").startswith("licitor_collector"):
         raise ValueError("Dedicated collector database credentials are required")
@@ -294,7 +295,7 @@ def connect_store() -> CloudStore:
 
 
 def request_authorized(header: str | None) -> bool:
-    secret = os.environ.get("CRON_SECRET")
+    secret = cron_secret()
     return bool(secret and header and hmac.compare_digest(header.encode(), f"Bearer {secret}".encode()))
 
 

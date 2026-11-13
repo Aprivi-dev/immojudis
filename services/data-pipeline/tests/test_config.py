@@ -194,3 +194,35 @@ def test_document_reading_limits_fall_back_to_defaults_and_stay_bounded(monkeypa
     assert config.document_reading_limits() == (500, 120 * 60.0)
     assert config.document_reading_limits(0, 0.2) == (1, 60.0)
     assert config.document_reading_limits(15, 4) == (15, 240.0)
+
+
+def test_write_step_summary_appends_only_inside_github_actions(monkeypatch, tmp_path) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    config.write_step_summary("ignoré\n")
+    assert not summary.exists()
+
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    config.write_step_summary("### Première\n")
+    config.write_step_summary("### Seconde\n")
+    assert summary.read_text(encoding="utf-8") == "### Première\n### Seconde\n"
+
+
+def test_unwritable_step_summary_leaves_a_warning_instead_of_failing(monkeypatch, tmp_path, caplog) -> None:
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "missing-directory" / "summary.md"))
+
+    config.write_step_summary("### Rapport\n")
+
+    assert "Could not write the GitHub step summary" in caplog.text
+
+
+def test_licitor_collector_credentials_are_read_at_call_time(monkeypatch) -> None:
+    monkeypatch.delenv("LICITOR_DATABASE_URL", raising=False)
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    assert config.licitor_collector_database_url() == ""
+    assert config.cron_secret() is None
+
+    monkeypatch.setenv("LICITOR_DATABASE_URL", "postgresql://licitor_collector@db.example.supabase.co/postgres")
+    monkeypatch.setenv("CRON_SECRET", "secret")
+    assert config.licitor_collector_database_url() == "postgresql://licitor_collector@db.example.supabase.co/postgres"
+    assert config.cron_secret() == "secret"

@@ -299,7 +299,7 @@ def test_cold_partial_restore_materializes_modern_checkpoint_without_promoting_m
         "load_settings",
         lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
-    monkeypatch.setattr(storage, "_read_persisted_pdf_rows_rest", lambda *_args: [row])
+    monkeypatch.setattr(storage, "read_persisted_pdf_rows_rest", lambda *_args: [row])
 
     restored = storage.restore_persisted_pdf_progress_for_sale(sale)
     assert len(restored) == 6

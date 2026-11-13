@@ -1645,7 +1645,7 @@ def _has_usable_local_pdf_cache(sale: AuctionSale) -> bool:
     return _validate_pdf_document_checkpoint_payload(sale, analysis, payload) is not None
 
 
-def _validated_persisted_pdf_texts(
+def validated_persisted_pdf_texts(
     sale: AuctionSale,
     extraction_row: dict[str, object],
 ) -> list[dict[str, object]] | None:
@@ -1729,7 +1729,7 @@ def _validated_persisted_pdf_texts(
     return validated
 
 
-def _read_persisted_pdf_rows_rest(
+def read_persisted_pdf_rows_rest(
     supabase_url: str,
     api_key: str,
     source_urls: list[str],
@@ -2024,20 +2024,20 @@ def _fetch_persisted_pdf_texts_for_sales(
             reverse=True,
         )
         for row in rows:
-            payload = _validated_persisted_pdf_texts(sale, row)
+            payload = validated_persisted_pdf_texts(sale, row)
             if payload is not None:
                 validated[source_url] = payload
                 break
     return validated
 
 
-def _validated_persisted_pdf_progress(
+def validated_persisted_pdf_progress(
     sale: AuctionSale,
     extraction_row: dict[str, object],
 ) -> list[dict[str, object]] | None:
     """Validate a partial modern PDF checkpoint for a cold worker.
 
-    This path is intentionally separate from ``_validated_persisted_pdf_texts``:
+    This path is intentionally separate from ``validated_persisted_pdf_texts``:
     it can restore only the modern per-document entries represented by the
     current progress manifest. It never makes a partial manifest current and
     never feeds the strict complete fallback.
@@ -2110,7 +2110,7 @@ def _validated_persisted_pdf_progress(
     return restored
 
 
-def _restore_pdf_page_caches_for_documents(
+def restore_pdf_page_caches_for_documents(
     restored: list[dict[str, object]],
     downloaded_documents: list[dict[str, object]],
 ) -> None:
@@ -2198,17 +2198,17 @@ def restore_persisted_pdf_progress_for_sale(
         if connection is not None:
             rows = _read_persisted_pdf_rows_postgres(connection, [source_url])
         else:
-            rows = _read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+            rows = read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
     except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
         LOGGER.warning("Cold PDF progress lookup failed; keeping pending documents: %s", exc)
         return []
     rows = sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
     restored: list[dict[str, object]] | None = None
     for row in rows:
-        restored = _validated_persisted_pdf_texts(sale, row)
+        restored = validated_persisted_pdf_texts(sale, row)
         if restored is not None:
             break
-        restored = _validated_persisted_pdf_progress(sale, row)
+        restored = validated_persisted_pdf_progress(sale, row)
         if restored is not None:
             break
     if not restored:
@@ -2221,7 +2221,7 @@ def restore_persisted_pdf_progress_for_sale(
         LOGGER.warning("Could not materialize cold PDF progress for %s: %s", source_url, exc)
         return []
     if downloaded_documents:
-        _restore_pdf_page_caches_for_documents(restored, downloaded_documents)
+        restore_pdf_page_caches_for_documents(restored, downloaded_documents)
     return restored
 
 

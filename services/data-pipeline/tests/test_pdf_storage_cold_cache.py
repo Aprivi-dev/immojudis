@@ -69,7 +69,7 @@ def _validated_map(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> dic
         "result": [dict(item) for item in pdf_texts],
         "updated_at": "2026-09-29T01:24:38+00:00",
     }
-    validated = storage._validated_persisted_pdf_texts(sale, row)
+    validated = storage.validated_persisted_pdf_texts(sale, row)
     assert validated is not None
     assert all(item.get("_persisted_pdf_proof") is True for item in validated)
     return {sale.source_url: validated}

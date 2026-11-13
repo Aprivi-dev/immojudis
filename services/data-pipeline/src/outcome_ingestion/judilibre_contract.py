@@ -1,8 +1,8 @@
 """Contrat d'une décision Judilibre enregistrée : ce que l'ingestion écrit, et que le dépôt et le rapprochement relisent.
 
-``judilibre_ingestion`` et ``judilibre_extraction`` écrivent ces valeurs ; ``repository`` les exige dans ses requêtes
-et ``judilibre_matching`` les vérifie. Une version qui change ici change pour tous. Module feuille : le dépôt ne
-peut pas lire l'ingestion, qui l'importe.
+``judilibre_ingestion`` et ``judilibre_extraction`` écrivent ces valeurs ; ``repository`` et ``retention`` les
+exigent dans leurs requêtes et ``judilibre_matching`` les vérifie. Une version qui change ici change pour tous.
+Module feuille : le dépôt ne peut pas lire l'ingestion, qui l'importe.
 """
 
 from __future__ import annotations
@@ -14,6 +14,9 @@ JUDILIBRE_EXTRACTOR_NAME = "judilibre_candidate_extraction"
 JUDILIBRE_EXTRACTOR_VERSION = "3"
 JUDILIBRE_NORMALIZED_SCHEMA = "judilibre_decision_candidate_v3"
 JUDILIBRE_EVIDENCE_HASH_VERSION = "judilibre-evidence-sha256-v1"
+# Version des règles d'extraction des allégations : écrite dans la projection (``extraction_rule_version``) et
+# dans l'empreinte de chaque allégation (``claim_id``).
+JUDILIBRE_CLAIM_SCHEMA_VERSION = "judilibre_candidate_claims_v1"
 
 # Clés de la projection minimisée v3, et aucune autre : ni texte de la décision, ni identité de personne.
 JUDILIBRE_V3_SAFE_PROJECTION_KEYS = (

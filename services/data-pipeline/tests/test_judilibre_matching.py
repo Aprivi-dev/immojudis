@@ -6,6 +6,11 @@ from datetime import date, timedelta
 import pytest
 
 from src.official_sources.base import canonical_sha256
+from src.outcome_ingestion.judilibre_match_contract import (
+    JUDILIBRE_MATCH_METHODS,
+    judilibre_match_score_and_method,
+    validate_judilibre_match_signals,
+)
 from src.outcome_ingestion.judilibre_matching import (
     JudilibreDecisionMatchingService,
     persisted_judilibre_matchable_decision,
@@ -224,6 +229,70 @@ def test_dry_run_uses_canonical_court_date_and_exact_reference_without_writes() 
         "dbxx-v-b7g-abcde",
     )
     assert repository.context_calls[0]["limit"] == 251
+
+
+@pytest.mark.parametrize(
+    ("portalis", "case_number", "delta", "expected"),
+    [
+        (True, True, 0, ("0.9800", "exact_portalis_number")),
+        (True, False, 3, ("0.9400", "exact_portalis_number")),
+        (False, True, 0, ("0.9500", "exact_case_number")),
+        (False, True, 3, ("0.9000", "exact_case_number")),
+        (False, False, 0, ("0.7500", "composite")),
+    ],
+)
+def test_match_score_and_method_rule_shared_with_the_repository(
+    portalis: bool, case_number: bool, delta: int, expected: tuple[str, str]
+) -> None:
+    result = judilibre_match_score_and_method(
+        portalis_number_match=portalis, case_number_match=case_number, date_delta_days=delta
+    )
+
+    assert result == expected
+    assert result[1] in JUDILIBRE_MATCH_METHODS
+
+
+def test_persisted_signals_follow_the_contract_the_repository_revalidates() -> None:
+    # Le dépôt revalide ces signaux avec le même contrat : versions, empreintes et score ne peuvent pas diverger.
+    repository = FakeJudilibreMatchingRepository(
+        contexts=[_context(delta=2, portalis=False, case_number=True)]
+    )
+
+    JudilibreDecisionMatchingService(repository).run(source_limit=10, persist=True)
+
+    payload = repository.append_calls[0]
+    signals = payload["match_signals"]
+    assert isinstance(signals, dict)
+    validate_judilibre_match_signals(
+        signals,
+        expected_source_content_hash=_record().content_hash,
+        match_method=str(payload["match_method"]),
+    )
+    assert (payload["match_score"], payload["match_method"]) == ("0.9000", "exact_case_number")
+    assert signals["schema_version"] == "judilibre_match_signals_v1"
+    assert signals["match_rule_version"] == "judilibre-review-match-v1"
+    assert signals["case_reference_manifest_sha256"] == canonical_sha256(
+        {
+            "schema_version": "judilibre_case_reference_manifest_v1",
+            "references": ["22/00001", "dbxx-v-b7g-abcde"],
+        }
+    )
+    assert signals["target_context_sha256"] == canonical_sha256(
+        {
+            "schema_version": "judilibre_target_context_v1",
+            "case_id": "case-1",
+            "lot_id": "lot-1",
+            "round_id": "round-1",
+            "court_id": "court-1",
+            "scheduled_date": date(2025, 5, 16),
+        }
+    )
+    assert signals["source_record_sha256"] == canonical_sha256(
+        {
+            "schema_version": "judilibre_source_record_reference_v1",
+            "source_record_id": "source-record-1",
+        }
+    )
 
 
 def test_persist_appends_only_a_review_candidate_with_hash_only_provenance() -> None:

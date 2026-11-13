@@ -186,7 +186,7 @@ def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path
             item.pop("text_sha256", None)
         else:
             item["text_sha256"] = invalid_hash
-        assert storage._validated_persisted_pdf_progress(sale, extraction_row) is None
+        assert storage.validated_persisted_pdf_progress(sale, extraction_row) is None
         item["text_sha256"] = result[0]["text_sha256"]
 
     cache_path.write_text(
@@ -352,7 +352,7 @@ def test_blank_page_checkpoint_roundtrips_empty_text_hash(monkeypatch, tmp_path:
         "result": sanitized,
         "updated_at": "2026-09-30T00:00:00+00:00",
     }
-    restored = storage._validated_persisted_pdf_progress(sale, row)
+    restored = storage.validated_persisted_pdf_progress(sale, row)
     assert restored is not None
     assert restored[0]["text"] == ""
     assert restored[0].get("text_sha256", "") == ""
@@ -363,7 +363,7 @@ def test_blank_page_checkpoint_roundtrips_empty_text_hash(monkeypatch, tmp_path:
             row_item.pop("text_sha256", None)
         else:
             row_item["text_sha256"] = invalid_hash
-        assert storage._validated_persisted_pdf_progress(sale, row) is None
+        assert storage.validated_persisted_pdf_progress(sale, row) is None
         row_item["text_sha256"] = ""
 
     for invalid_hash in (None, hashlib.sha256(b"").hexdigest()):
@@ -377,7 +377,7 @@ def test_blank_page_checkpoint_roundtrips_empty_text_hash(monkeypatch, tmp_path:
             progress_item["text_sha256"] = invalid_hash
             proof_item["text_sha256"] = invalid_hash
         assert storage._prepare_pdf_document_checkpoint(sale) is None
-        assert storage._validated_persisted_pdf_progress(sale, row) is None
+        assert storage.validated_persisted_pdf_progress(sale, row) is None
         progress_item["text_sha256"] = ""
         proof_item["text_sha256"] = ""
 
@@ -417,7 +417,7 @@ def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
         "result": [partial],
         "updated_at": "2026-09-30T00:00:00+00:00",
     }
-    assert storage._validated_persisted_pdf_progress(sale, row) is None
+    assert storage.validated_persisted_pdf_progress(sale, row) is None
 
 
 @pytest.mark.parametrize(

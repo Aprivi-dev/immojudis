@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from src.config import document_reading_limits, load_settings
+from src.config import document_reading_limits, load_settings, write_step_summary
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import documents_are_current
 from src.models import AuctionSale
@@ -815,9 +815,6 @@ def _prefetcher(source_urls: list[str], deadline: float) -> Any:
 
 
 def _write_step_summary(summary: dict[str, Any]) -> None:
-    path = os.getenv("GITHUB_STEP_SUMMARY")
-    if not path:
-        return
     lines = [
         "### Pièces jointes : vidage du stock",
         "",
@@ -853,11 +850,7 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
         lines.append(f"| {source} | {bucket['sales']} | {bucket['documents_read']} | {bucket['errors']} |")
     if summary["facts_added"]:
         lines += ["", "Faits ajoutés ou corrigés : " + ", ".join(f"{k} ({v})" for k, v in summary["facts_added"].items())]
-    try:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write("\n".join(lines) + "\n")
-    except OSError as exc:
-        LOGGER.warning("Could not write the GitHub step summary: %s", exc)
+    write_step_summary("\n".join(lines) + "\n")
 
 
 def _record_yield(summary: dict[str, Any]) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import re
 import signal
 import ssl
@@ -234,6 +235,25 @@ def _source_task_sleep(seconds: float, operation: str) -> None:
         return
     time.sleep(min(duration, max(0.0, remaining)))
     ensure_source_task_deadline(operation)
+
+
+def source_budget_deadline(env_name: str) -> float | None:
+    """Échéance, sur l'horloge monotone, du budget de temps qu'un lanceur donne à une source dans ``env_name``.
+
+    La valeur est en secondes ; absente, illisible ou non positive, la source n'a pas de budget (``None``).
+    """
+    raw = os.getenv(env_name)
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    return time.monotonic() + seconds if seconds > 0 else None
+
+
+def source_budget_expired(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
 
 
 def retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float:

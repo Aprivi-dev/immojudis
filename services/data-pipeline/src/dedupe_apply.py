@@ -21,10 +21,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 
-from src.config import load_settings
+from src.config import load_settings, write_step_summary
 from src.dedupe_candidates import report_duplicate_candidates
 from src.merge_guards import MergeGuardRefused, merge_trigger_deployed, merges_cap, refusal_message
 
@@ -32,11 +31,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _write_summary(lines: list[str]) -> None:
-    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
-    with Path(summary_path).open("a", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
+    write_step_summary("\n".join(lines) + "\n")
 
 
 def apply_duplicate_sweep(*, candidates_only: bool = False, output: Path | None = None) -> int:

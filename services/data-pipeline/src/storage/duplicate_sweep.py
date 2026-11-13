@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from src.config import write_step_summary
 from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.models import AuctionSale
 from src.position_quality import PROBABLE_DUPLICATE
@@ -385,10 +386,7 @@ def emit_candidates_report(plan: DuplicateSweepPlan, *, output: Path | None = No
     )
     for line in candidate_lines(plan):
         LOGGER.info("DUPLICATE_CANDIDATE %s", line)
-    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with Path(summary_path).open("a", encoding="utf-8") as handle:
-            handle.write(markdown_summary(plan))
+    write_step_summary(markdown_summary(plan))
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         report = {

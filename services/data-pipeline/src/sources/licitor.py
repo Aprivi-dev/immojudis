@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +28,8 @@ from src.sources.common import (
     is_allowed_origin_url,
     is_plausible_email,
     parse_html,
+    source_budget_deadline,
+    source_budget_expired,
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.licitor_extraction import (
@@ -174,21 +175,6 @@ class RobotsRules:
         return len(matched_allow) >= len(matched_disallow)
 
 
-def _source_budget_deadline() -> float | None:
-    raw = os.getenv(SOURCE_BUDGET_ENV)
-    if not raw:
-        return None
-    try:
-        seconds = float(raw)
-    except ValueError:
-        return None
-    return time.monotonic() + seconds if seconds > 0 else None
-
-
-def _source_budget_expired(deadline: float | None) -> bool:
-    return deadline is not None and time.monotonic() >= deadline
-
-
 def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[str, Any]]) -> list[str]:
     """Fiches à lire dans l'ordre où elles comptent le plus : audiences les plus proches d'abord.
 
@@ -214,7 +200,7 @@ def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[
 def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details: bool = True, known: dict[str, str] | None = None) -> ScrapeResult:
     """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()
-    deadline = _source_budget_deadline()
+    deadline = source_budget_deadline(SOURCE_BUDGET_ENV)
     client = LicitorClient(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
@@ -255,7 +241,7 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
     deferred = 0
     for detail_url in _nearest_sales_first(to_fetch, listing_by_url):
         summary = listing_by_url[detail_url]
-        if _source_budget_expired(deadline):
+        if source_budget_expired(deadline):
             deferred += 1
             summary["_detail_fetch_failed"] = True
             summary["source_detail_status"] = "deferred"
