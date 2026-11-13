@@ -2,7 +2,7 @@ import { saleDetailPath, type LoginPageMode } from "@/lib/navigation";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 import { UUID_SOURCE } from "@/lib/uuid";
-import { departmentFromPostalCode } from "@/lib/commune-names";
+import { departmentFromSearchText } from "@/lib/search/french-geo-search";
 
 /** Paramètre de `/bienvenue` qui porte la fiche à retrouver après la première recherche. */
 export const ONBOARDING_RETURN_PARAM = "retour";
@@ -65,18 +65,11 @@ export type FirstSearch = {
   homeType: string;
 };
 
-/** « 33 », « 2A », « 974 » or a postal code: a département the free alert can follow. */
-function departmentFromArea(area: string): string | undefined {
-  const value = area.trim().toUpperCase();
-  if (/^(0[1-9]|[1-8]\d|9[0-5]|2A|2B)$/.test(value) || /^97[1-6]$/.test(value)) return value;
-  return departmentFromPostalCode(value) ?? undefined;
-}
-
 export function firstSearchToUrl(search: FirstSearch): SalesSearchUrlRecord {
   const maxPrice = Number(search.maxPrice);
   // A département is a public criterion the free alert accepts; a free-text
   // query is not, so the first search could not be saved as an alert.
-  const department = departmentFromArea(search.area);
+  const department = departmentFromSearchText(search.area) ?? undefined;
   return {
     query: department ? undefined : search.area.trim().slice(0, 120) || undefined,
     department,

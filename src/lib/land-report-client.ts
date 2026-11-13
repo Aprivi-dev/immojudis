@@ -1,28 +1,21 @@
-import { authHeaders, readJson } from "./client-api-core";
+import { apiDownload, apiRequest } from "./client-api-core";
 import { downloadBlob } from "@/lib/download-blob";
 import type { LandReport } from "./land-report-types";
 
+/** Juste sous la durée maximale de la route du rapport (`maxDuration = 180`). */
+const LAND_REPORT_TIMEOUT_MS = 175_000;
+
 export async function fetchSaleLandReport(saleId: string, refresh = false): Promise<LandReport> {
-  const response = await fetch(
-    `/api/v1/sales/${encodeURIComponent(saleId)}/land-report${refresh ? "?refresh=1" : ""}`,
-    {
-      headers: await authHeaders(),
-      cache: "no-store",
-      signal: AbortSignal.timeout(175_000),
-    },
-  );
-  return (await readJson<{ report: LandReport }>(response)).report;
+  const path = `/api/v1/sales/${encodeURIComponent(saleId)}/land-report${refresh ? "?refresh=1" : ""}`;
+  return (await apiRequest<{ report: LandReport }>(path, { timeoutMs: LAND_REPORT_TIMEOUT_MS }))
+    .report;
 }
 
 export async function downloadSaleLandReport(saleId: string): Promise<void> {
-  const response = await fetch(
+  const { blob, filename } = await apiDownload(
     `/api/v1/sales/${encodeURIComponent(saleId)}/land-report?format=pdf`,
-    {
-      headers: await authHeaders(),
-      cache: "no-store",
-      signal: AbortSignal.timeout(175_000),
-    },
+    { timeoutMs: LAND_REPORT_TIMEOUT_MS },
+    `immojudis-plu-risques-${saleId}.pdf`,
   );
-  if (!response.ok) await readJson(response);
-  downloadBlob(await response.blob(), `immojudis-plu-risques-${saleId}.pdf`);
+  downloadBlob(blob, filename);
 }

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Card } from "@/components/ui/primitives";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import { lawyerQuestionsText, type LawyerQuestionsResponse } from "@/lib/lawyer-questions-text";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
@@ -17,12 +17,10 @@ const HEADING = "Mes questions pour l’avocat";
 const PRINT_ONLY_THE_LIST =
   "@media print{body *:not(#questions-avocat):not(#questions-avocat *):not(:has(#questions-avocat)){display:none!important}}";
 
-async function fetchLawyerQuestions(saleId: string): Promise<LawyerQuestionsResponse> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/lawyer-questions`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(15_000),
+function fetchLawyerQuestions(saleId: string): Promise<LawyerQuestionsResponse> {
+  return apiRequest(`/api/sales/${encodeURIComponent(saleId)}/lawyer-questions`, {
+    timeoutMs: 15_000,
   });
-  return readJson<LawyerQuestionsResponse>(response);
 }
 
 /**

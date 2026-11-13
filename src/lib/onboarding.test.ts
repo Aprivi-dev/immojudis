@@ -101,10 +101,18 @@ describe("first-search onboarding", () => {
     ["97400", "974"],
     // Même règle que `departmentFromPostalCode` : la Polynésie (987xx) n'est pas « 98 ».
     ["98714", "987"],
+    // Même règle que l'alerte créée depuis la recherche (`departmentFromSearchText`) : le nom aussi.
+    ["Gironde", "33"],
   ])("turns the area %s into the département %s, which a free alert accepts", (area, expected) => {
     expect(firstSearchToUrl({ area, maxPrice: "", homeType: "" })).toMatchObject({
       query: undefined,
       department: expected,
+    });
+  });
+  it("keeps « 20 » as text: Corsica is 2A or 2B", () => {
+    expect(firstSearchToUrl({ area: "20", maxPrice: "", homeType: "" })).toMatchObject({
+      query: "20",
+      department: undefined,
     });
   });
   it.each(["", "-1", "Infinity", "NaN", "1e20"])(

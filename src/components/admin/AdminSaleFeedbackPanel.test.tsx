@@ -7,13 +7,11 @@ import type { SaleFeedbackBySale } from "@/lib/admin-sale-signal-feedback";
 import { AdminSaleFeedbackPanel, saleFeedbackReasonLabel } from "./AdminSaleFeedbackPanel";
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock("@/lib/client-api-core", () => ({
-  authHeaders: async () => ({ Authorization: "Bearer jeton" }),
-  readJson: async (response: Response) => {
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error);
-    return body;
-  },
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => true,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "jeton" } } }) },
+  }),
 }));
 
 afterEach(() => {
@@ -72,7 +70,10 @@ describe("AdminSaleFeedbackPanel", () => {
     const table = await screen.findByRole("table", { name: "Retours par vente" });
     expect(mocks.fetch).toHaveBeenCalledWith(
       "/api/admin/sale-feedback",
-      expect.objectContaining({ headers: { Authorization: "Bearer jeton" }, cache: "no-store" }),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer jeton" },
+        signal: expect.any(AbortSignal),
+      }),
     );
     const rows = within(table).getAllByRole("row");
     // En-tête + la seule ligne du signal « pepite » (l'autre signal est sur la page Qualité).

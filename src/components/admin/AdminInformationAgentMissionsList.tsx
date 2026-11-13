@@ -14,7 +14,7 @@ import {
 import { adminClampOffset } from "@/lib/admin-pagination";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { formatShortDateTime } from "@/lib/format/dates";
-import type { InformationAgentMission } from "@/lib/information-agent";
+import type { InformationAgentMission } from "@/lib/information-agent/schemas";
 import { saleDetailPath } from "@/lib/navigation";
 
 /**

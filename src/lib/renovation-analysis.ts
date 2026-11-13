@@ -1,8 +1,7 @@
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { dedupeEvidence, excerpt, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale } from "@/lib/types";
 import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type RenovationConditionStatus =
   | "good"
@@ -343,60 +342,18 @@ function limitations(status: RenovationConditionStatus): string[] {
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-
-  addCandidate(candidates, sale.description, "Description annonce");
-  addCandidate(candidates, sale.source_description, "Description source");
-  // `risk_notes` is the pipeline's own output (model text read back): not independent evidence.
-
-  // Generated scores and summaries are not independent evidence about the property.
-
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    if (WORKS_KEY.test(item.path) || hasRenovationText(item.value)) {
-      addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-    }
-  }
-
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      if (WORKS_KEY.test(item.path) || hasRenovationText(item.value)) {
-        addCandidate(
-          candidates,
-          `${item.path}: ${cleanText(item.value)}`,
-          `Données source ${sourceName}`,
-        );
-      }
-    }
-  }
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk, { withType: true }))
-      addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) => hasRenovationText(candidate.text));
+  return collectSaleTextCandidates(sale, {
+    descriptions: "each",
+    sourceFields: ({ path, value }) => WORKS_KEY.test(path) || hasRenovationText(value),
+    documents: sale.documents_rich,
+    risks: sale.risks,
+    riskOptions: { withType: true },
+  }).filter((candidate) => hasRenovationText(candidate.text));
 }
 
 function hasRenovationText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
-  const byKey = new Map<string, RenovationEvidence>();
-  for (const item of evidence) {
-    const key = `${item.status}-${normalizeText(item.excerpt)}-${item.source}`;
-    if (!byKey.has(key)) byKey.set(key, item);
-  }
-  return [...byKey.values()];
 }
 
 function formatBudgetRange(range: RenovationBudgetRange): string {

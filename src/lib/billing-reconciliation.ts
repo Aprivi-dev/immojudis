@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
+import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
   analysisSubscriptionPriceIds,
   getStripe,
@@ -252,7 +253,7 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
       stripeSubscriptions: stripeResult.subscriptions,
       rows,
       acceptedPriceIds: analysisSubscriptionPriceIds(),
-      currentPriceId: serverEnv().stripe.analysisPriceId ?? null,
+      currentPriceId: analysisPriceId() ?? null,
       listComplete: !stripeResult.truncated,
     }),
   };

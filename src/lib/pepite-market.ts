@@ -6,18 +6,27 @@ import {
   type PepiteMarketAggregate,
   type PepiteMarketPropertyType,
 } from "@/lib/pepite-policy";
+import { propertyFamily } from "@/lib/property-type-family";
 
 /**
- * Type de logement DVF d'une vente : « Maison » pour `house`, « Appartement » pour `apartment`. Tout autre type
- * (immeuble, local, terrain, inconnu) n'a pas d'agrégat : les critères de marché sont alors réussis, faute de donnée.
+ * Type de logement DVF d'une vente : « Maison » pour une maison, « Appartement » pour un appartement
+ * (`propertyFamily`). Ces deux noms sont les seules valeurs de `commune_market_trends.property_type`
+ * (contrainte SQL, migration 20261109130100) : ils doivent rester ceux de DVF. La table ne classe pas
+ * les ventes aux enchères, seulement les mutations DVF ; la famille du bien reste donc celle de
+ * l'application. Tout autre type (immeuble, local, terrain, inconnu) n'a pas d'agrégat : les critères
+ * de marché sont alors réussis, faute de donnée.
  */
 export function marketPropertyType(
   saleType: string | null | undefined,
 ): PepiteMarketPropertyType | null {
-  const type = (saleType ?? "").trim().toLowerCase();
-  if (type === "house" || type === "maison") return "Maison";
-  if (type === "apartment" || type === "appartement") return "Appartement";
-  return null;
+  switch (propertyFamily(saleType)) {
+    case "house":
+      return "Maison";
+    case "apartment":
+      return "Appartement";
+    default:
+      return null;
+  }
 }
 
 /**

@@ -46,6 +46,51 @@ describe("occupation analysis", () => {
     },
   );
 
+  // Le champ est un code de la base : il se lit par sa classe (`occupancyClass`), pas par les motifs
+  // des textes, que `owner_occupied` ou `squatted` ne déclenchaient pas (« À confirmer » avant le lot 10).
+  it.each([
+    ["occupied", "Occupé"],
+    ["owner_occupied", "Occupé par le propriétaire"],
+    ["squatted", "Occupé sans droit ni titre"],
+  ])("qualifies the structured status %s as occupied", (occupancy_status, label) => {
+    const analysis = buildOccupancyAnalysis({ ...cleanSale, occupancy_status });
+    expect(analysis).toMatchObject({
+      status: "occupied",
+      label: "Occupé",
+      confidence: "medium",
+      confidenceLabel: "Statut repéré, à confirmer",
+    });
+    expect(analysis.evidence).toEqual([
+      { status: "occupied", label, excerpt: label, source: "Champ occupation" },
+    ]);
+  });
+
+  // Relecture juridique du 13/11/2026 : un statut lu sur le seul champ le dit, et un bien occupé
+  // renvoie l'estimation du délai de libération à un conseil.
+  it("says when the status rests on the collected field alone, and sends the eviction delay to counsel", () => {
+    const occupied = buildOccupancyAnalysis({ ...cleanSale, occupancy_status: "occupied" });
+    expect(occupied.limitations).toEqual(
+      expect.arrayContaining([
+        "Le statut provient des données collectées sur la vente ; aucun extrait de pièce ne le confirme dans ce rapport.",
+        "Le délai de libération dépend du statut de l'occupant et de la procédure d'expulsion applicable ; il est à faire estimer par un conseil.",
+      ]),
+    );
+    const rented = buildOccupancyAnalysis({ ...cleanSale, occupancy_status: "rented" });
+    expect(rented.limitations).toContain(
+      "Le statut provient des données collectées sur la vente ; aucun extrait de pièce ne le confirme dans ce rapport.",
+    );
+    expect(rented.limitations.join(" ")).not.toContain("délai de libération");
+  });
+
+  it("flags an occupied structured status contradicted by a vacant text", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "squatted",
+      description: "Appartement libre de toute occupation.",
+    });
+    expect(analysis.status).toBe("conflicting");
+  });
+
   it("treats rented and occupied as compatible signals", () => {
     const analysis = buildOccupancyAnalysis({
       ...cleanSale,
@@ -59,7 +104,7 @@ describe("occupation analysis", () => {
   it("keeps a late contradiction in the decision and visible evidence", () => {
     const analysis = buildOccupancyAnalysis({
       ...cleanSale,
-      occupancy_status: "free",
+      occupancy_status: "vacant",
       source_blocks: {
         ...Object.fromEntries(
           Array.from({ length: 10 }, (_, i) => [
@@ -92,7 +137,7 @@ describe("occupation analysis", () => {
   it("qualifies free properties from a structured status and source confirmation", () => {
     const analysis = buildOccupancyAnalysis({
       ...EXAMPLE_SALE,
-      occupancy_status: "free",
+      occupancy_status: "vacant",
       source_blocks: {
         occupation: "Libre de toute occupation",
       },
@@ -133,7 +178,7 @@ describe("occupation analysis", () => {
   it("flags conflicting occupancy signals before bidding assumptions are fixed", () => {
     const analysis = buildOccupancyAnalysis({
       ...EXAMPLE_SALE,
-      occupancy_status: "free",
+      occupancy_status: "vacant",
       description: "Présence d'une personne se déclarant occupante, bail non produit.",
     });
 

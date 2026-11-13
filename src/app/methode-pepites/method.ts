@@ -33,7 +33,7 @@ import {
 import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
 
 /**
- * Adresse et seuils publiés sur « Comment repérons-nous les pépites ? ».
+ * Seuils publiés sur « Comment repérons-nous les pépites ? ».
  *
  * Les seuils sont ceux de la règle `pepite-v1`, validée par le fondateur le 26/10/2026 (compte-rendu
  * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v1.1` (règle
@@ -45,7 +45,6 @@ import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
  * page change avec elle, et le test de la page (`page.test.tsx`) doit être mis à jour dans le même
  * geste. Le module de la règle ne lit ni la base ni le catalogue : la page non plus.
  */
-export { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 /**
  * Lissage des ventes comparables, tel que le calcule la base (fonction `app_private.court_auction_scenarios`,

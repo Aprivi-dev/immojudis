@@ -51,45 +51,42 @@ export async function readJson<T>(response: Response): Promise<T> {
  */
 const API_TIMEOUT_MS = 30_000;
 
-function defaultTimeoutMs(
-  path: string,
-  method: ApiRequestOptions["method"],
-  file: boolean,
-): number | null {
-  if (path.startsWith("/api/admin/")) return API_TIMEOUT_MS;
-  return method === undefined && !file ? API_TIMEOUT_MS : null;
-}
-
 export type ApiRequestOptions = {
   method?: "POST" | "PUT" | "PATCH" | "DELETE";
   /** Corps de la requête, envoyé en JSON. */
   body?: unknown;
   /** Route ouverte aux visiteurs : la requête part sans jeton, sans charger supabase-js. */
   anonymous?: boolean;
-  /** Délai précis (durée maximale de la route), à la place de la règle de `defaultTimeoutMs`. */
+  /** Délai précis (durée maximale de la route), à la place de la règle de `API_TIMEOUT_MS`. */
   timeoutMs?: number;
+  /** Réponse fichier (PDF, CSV, agenda), posée par `apiDownload` : sans délai hors administration. */
+  file?: boolean;
+  /** Abandon décidé par l'appelant (lecture que React Query annule), en plus du délai. */
+  signal?: AbortSignal;
 };
 
 /**
- * La réponse d'une route de l'API, sans la lire (fichier, statut que l'appelant interprète). Le
- * jeton du compte, l'en-tête JSON du corps et le délai sont posés ici, pour tous les appels.
+ * La réponse d'une route de l'API, sans la lire (statut que l'appelant interprète). Le jeton du
+ * compte, l'en-tête JSON du corps et le délai sont posés ici, pour tous les appels.
  */
-function timeoutSignal(ms: number | null): AbortSignal | undefined {
-  return ms === null ? undefined : AbortSignal.timeout(ms);
-}
-
-export async function apiFetch(
-  path: string,
-  options: ApiRequestOptions = {},
-  file = false,
-): Promise<Response> {
+export async function apiFetch(path: string, options: ApiRequestOptions = {}): Promise<Response> {
   const headers: Record<string, string> = options.anonymous ? {} : await authHeaders();
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  const ms =
+    options.timeoutMs ??
+    (path.startsWith("/api/admin/") || !(options.method || options.file) ? API_TIMEOUT_MS : 0);
+  let { signal } = options;
+  if (ms) {
+    const timeout = AbortSignal.timeout(ms);
+    // `AbortSignal.any` manque aux plus anciens navigateurs pris en charge (Safari 16.4 à 17.3) :
+    // l'abandon de l'appelant y reste, sans délai.
+    signal = signal ? (AbortSignal.any?.([signal, timeout]) ?? signal) : timeout;
+  }
   return fetch(path, {
     method: options.method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: timeoutSignal(options.timeoutMs ?? defaultTimeoutMs(path, options.method, file)),
+    signal,
   });
 }
 
@@ -108,7 +105,7 @@ export async function apiDownload(
   options: ApiRequestOptions,
   fallbackName: string,
 ): Promise<{ blob: Blob; filename: string; headers: Headers }> {
-  const response = await apiFetch(path, options, true);
+  const response = await apiFetch(path, { ...options, file: true });
   if (!response.ok) await readJson<unknown>(response);
   const header = response.headers.get("content-disposition") ?? "";
   const filename = /filename="([^"\\/]+)"/i.exec(header)?.[1]?.trim() || fallbackName;

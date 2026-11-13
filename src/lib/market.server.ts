@@ -35,8 +35,6 @@ import { shouldWidenRadius } from "@/lib/market-server/radius-widening";
 import { buildParkingEstimate, isParkingProperty } from "@/lib/market-server/parking";
 import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 
-export { officialDvfCommuneCode } from "@/lib/market-server/sources";
-
 export type {
   MarketEstimate,
   MarketContext,

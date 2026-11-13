@@ -23,8 +23,6 @@ import {
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
 
-export type { OutcomeGraphForecastQuery } from "@/hooks/use-outcome-graph-forecast";
-
 export function OutcomeForecast({ forecastQuery }: { forecastQuery: OutcomeGraphForecastQuery }) {
   const [ceilingDraft, setCeilingDraft] = useState("");
 

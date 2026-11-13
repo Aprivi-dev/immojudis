@@ -10,10 +10,5 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function Page() {
-  // Précharge ici et non dans `TermsPage` : ce fichier est ancré par son sha256 (legal-documents).
-  return (
-    <>
-      <TermsPage />
-    </>
-  );
+  return <TermsPage />;
 }

@@ -1,6 +1,6 @@
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import type { ReactNode } from "react";
-import type { InformationAgentPreviewResponse } from "@/lib/information-agent";
+import type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
 
 /** Début du motif de blocage rendu par l'aperçu quand l'adresse n'a aucune origine connue. */
 const ORIGIN_UNKNOWN_BLOCKER = "Origine de l’adresse inconnue";

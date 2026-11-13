@@ -144,6 +144,63 @@ describe("apiRequest", () => {
     }
   });
 
+  it("ajoute l'abandon de l'appelant au délai d'une lecture, et le transmet seul à une écriture", async () => {
+    signedIn();
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const signalOf = () => (fetchMock.mock.calls.at(-1) as [string, RequestInit])[1].signal;
+    try {
+      const caller = new AbortController();
+      await apiRequest("/api/sales/s1/risks", { anonymous: true, signal: caller.signal });
+      const read = signalOf();
+      expect(read).not.toBe(caller.signal);
+      expect(read?.aborted).toBe(false);
+      caller.abort();
+      expect(read?.aborted).toBe(true);
+
+      const writer = new AbortController();
+      await apiFetch("/api/favorites", { method: "POST", signal: writer.signal });
+      expect(signalOf()).toBe(writer.signal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("garde l'abandon de l'appelant, sans délai, quand le navigateur ignore `AbortSignal.any`", async () => {
+    signedIn();
+    const any = AbortSignal.any;
+    Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const caller = new AbortController();
+      await apiRequest("/api/sales/s1/weather", { anonymous: true, signal: caller.signal });
+      expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].signal).toBe(caller.signal);
+    } finally {
+      Object.defineProperty(AbortSignal, "any", { value: any, configurable: true });
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un fichier garde le délai qu'on lui impose", async () => {
+    signedIn();
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response("%PDF", { status: 200 })),
+    );
+    try {
+      await apiDownload("/api/v1/sales/s1/land-report?format=pdf", { timeoutMs: 175_000 }, "x.pdf");
+      expect(timeout).toHaveBeenLastCalledWith(175_000);
+      timeout.mockClear();
+      await apiDownload("/api/admin/lawyers/statement.csv", {}, "releve.csv");
+      expect(timeout).toHaveBeenLastCalledWith(30_000);
+    } finally {
+      vi.unstubAllGlobals();
+      timeout.mockRestore();
+    }
+  });
+
   it("une lecture n'a ni méthode ni corps ; une route publique part sans jeton", async () => {
     lazy.hasSupabaseAuthHint.mockReturnValue(false);
     lazy.getSupabase.mockReset();

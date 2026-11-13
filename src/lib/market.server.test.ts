@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMarketEstimate, officialDvfCommuneCode } from "@/lib/market.server";
+import { getMarketEstimate } from "@/lib/market.server";
+import { officialDvfCommuneCode } from "@/lib/market-server/sources";
 
 afterEach(() => {
   vi.unstubAllGlobals();

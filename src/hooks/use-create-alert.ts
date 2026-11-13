@@ -10,13 +10,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 import { isAnalysisOfferOpen } from "@/hooks/use-billing-offer";
 import { createWatchedZone as createWatchedZoneRequest } from "@/lib/client-api";
-import { departmentFromSearchQuery } from "@/lib/alerts";
 import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent, type AlertSurface } from "@/lib/product-events";
 import { savePendingAlert } from "@/lib/pending-alert";
 import { createAlert } from "@/lib/alert-queries";
+import { departmentFromSearchText, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import {
   countAlertableSearchFilters,
   hasUnalertableSearchFilters,
@@ -157,10 +157,15 @@ export function useCreateAlert({
         return { status: "blocked" };
       }
 
-      // Un code de département tapé dans la recherche texte est un filtre département, comme dans
-      // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas). Seul
-      // le texte restant est un critère avancé : le contrôle de l'offre gratuite porte sur lui.
-      const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
+      // Un département tapé dans la recherche texte (son nom ou son code) est un filtre département,
+      // comme dans le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique
+      // pas). Un code postal reste du texte : l'alerte le suit exactement, son département
+      // l'élargirait. Seul le texte restant est un critère avancé : le contrôle de l'offre gratuite
+      // porte sur lui.
+      const queryDepartment =
+        search.department || resolveFrenchGeoSearch(search.query).kind === "postal_code"
+          ? null
+          : departmentFromSearchText(search.query);
       const residualQuery = queryDepartment ? null : search.query;
       if (
         !entitlements.plan.hasAnalysisAccess &&

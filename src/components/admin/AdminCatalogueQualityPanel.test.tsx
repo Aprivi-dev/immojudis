@@ -6,12 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminCatalogueQualityView } from "@/lib/admin-catalogue-quality";
 import { AdminCatalogueQualityPanel } from "./AdminCatalogueQualityPanel";
 
-vi.mock("@/lib/client-api-core", () => ({
-  authHeaders: async () => ({ Authorization: "Bearer admin-token" }),
-  readJson: async (response: Response) => {
-    if (!response.ok) throw new Error("Erreur");
-    return response.json();
-  },
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => true,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "admin-token" } } }) },
+  }),
 }));
 
 const LOT_MISMATCH = "licitor_lot_mismatch";

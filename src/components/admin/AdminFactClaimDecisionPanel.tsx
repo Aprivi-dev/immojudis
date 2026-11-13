@@ -10,6 +10,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { formatShortDateTime } from "@/lib/format/dates";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import type {
   AdminFactClaimDecisionInput,
@@ -307,11 +308,7 @@ function DecisionLine({
   return (
     <article ref={articleRef} className="p-5" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${state.tone}`}
-        >
-          {state.label}
-        </span>
+        <AdminPill tone={state.tone}>{state.label}</AdminPill>
         {item.latestDecision ? (
           <span className="text-xs text-brand-navy/55">
             Décision du {formatShortDateTime(item.latestDecision.decidedAt)}
@@ -623,19 +620,16 @@ function successMessage(
 
 function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
   label: string;
-  tone: string;
+  tone: AdminPillTone;
 } {
-  const neutral = "border-line bg-surface-muted text-brand-navy/80";
-  const final = "border-danger/30 bg-danger-tint text-danger";
-  if (!latest)
-    return { label: "À décider", tone: "border-warning/30 bg-warning-tint text-warning" };
+  if (!latest) return { label: "À décider", tone: "warning" };
   if (isFinalFactClaimDecision(latest)) {
     return {
       label:
         latest.decision === "opposed"
           ? "Dernière décision : opposition (définitif)"
           : "Dernière décision : autorisation retirée (définitif)",
-      tone: final,
+      tone: "danger",
     };
   }
   switch (latest.decision) {
@@ -644,16 +638,16 @@ function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
         label: factClaimLotAttachmentHolds(latest.lotAttachment as FactClaimLotAttachment)
           ? "Dernière décision : acceptée"
           : "Dernière décision : acceptée, sans affichage",
-        tone: "border-success/30 bg-success-tint text-success",
+        tone: "success",
       };
     case "rejected":
-      return { label: "Dernière décision : rejetée", tone: neutral };
+      return { label: "Dernière décision : rejetée", tone: "neutral" };
     case "withdrawn":
-      return { label: "Dernière décision : retirée", tone: neutral };
+      return { label: "Dernière décision : retirée", tone: "neutral" };
     case "contradicted":
-      return { label: "Dernière décision : contredite par une autre source", tone: final };
+      return { label: "Dernière décision : contredite par une autre source", tone: "danger" };
     default:
-      return { label: "État inconnu", tone: neutral };
+      return { label: "État inconnu", tone: "neutral" };
   }
 }
 

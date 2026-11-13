@@ -133,6 +133,26 @@ describe("rapprochement Stripe quotidien", () => {
     expect(result).toMatchObject({ alert: "open", kinds: { unknown_price: 1 } });
   });
 
+  it("signale le Price courant à un autre montant que 59 €, comme l'ouverture des droits", async () => {
+    mocks.subscriptionsList.mockResolvedValue({
+      data: [
+        stripeSubscription({
+          items: {
+            data: [
+              { current_period_end: PERIOD_END, price: { id: "price_a", unit_amount: 4_900 } },
+            ],
+          },
+        }),
+      ],
+      has_more: false,
+    });
+    mocks.rows.mockResolvedValue({ data: [row()], error: null });
+
+    const result = await runBillingReconciliationJob();
+
+    expect(result).toMatchObject({ alert: "open", kinds: { unknown_price: 1 } });
+  });
+
   it("échoue quand l'alerte ne peut pas être écrite, pour que l'écart ne reste pas silencieux", async () => {
     mocks.subscriptionsList.mockResolvedValue({ data: [stripeSubscription()], has_more: false });
     mocks.rows.mockResolvedValue({ data: [row({ status: "paused" })], error: null });

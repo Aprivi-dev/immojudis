@@ -6,9 +6,9 @@ import {
   type StructuredDpeDiagnostic,
 } from "@/lib/dpe";
 import type { AuctionSale } from "@/lib/types";
-import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
+import { excerpt } from "@/lib/analysis-text";
 import { cleanText } from "@/lib/clean-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type DpeImpactLevel = "positive" | "neutral" | "watch" | "risk" | "unknown";
 
@@ -252,60 +252,23 @@ function collectEvidence({
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    if (DPE_CONTEXT.test(item.path) || DPE_CONTEXT.test(cleanText(item.value) ?? "")) {
-      addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source", item);
-    }
-  }
-
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      if (DPE_CONTEXT.test(item.path) || DPE_CONTEXT.test(cleanText(item.value) ?? "")) {
-        addCandidate(
-          candidates,
-          `${item.path}: ${cleanText(item.value)}`,
-          `Données source ${sourceName}`,
-          item,
-        );
-      }
-    }
-  }
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) => DPE_CONTEXT.test(candidate.text));
-}
-
-function addCandidate(
-  candidates: TextCandidate[],
-  value: unknown,
-  source: string,
-  field?: { path: string; value: unknown },
-) {
-  const text = cleanText(value);
-  if (text)
-    candidates.push({
-      text,
-      source,
-      ...(field
+  return collectSaleTextCandidates(sale, {
+    sourceFields: ({ path, value }) =>
+      DPE_CONTEXT.test(path) || DPE_CONTEXT.test(cleanText(value) ?? ""),
+    documents: sale.documents_rich,
+    risks: sale.risks,
+  })
+    .filter((candidate) => DPE_CONTEXT.test(candidate.text))
+    .map(({ text, source, field }) =>
+      field
         ? {
+            text,
+            source,
             displayText: cleanText(field.value) ?? "Valeur non renseignée",
             sourceField: field.path,
           }
-        : {}),
-    });
+        : { text, source },
+    );
 }
 
 function dedupeEvidence(evidence: DpeEvidence[]): DpeEvidence[] {

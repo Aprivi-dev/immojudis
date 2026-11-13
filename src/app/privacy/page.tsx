@@ -11,10 +11,5 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function Page() {
-  // Précharge ici et non dans `PrivacyPage` : ce fichier est ancré par son sha256 (legal-documents).
-  return (
-    <>
-      <PrivacyPage courtRegistryDailyCap={courtRegistryDailyCap()} />
-    </>
-  );
+  return <PrivacyPage courtRegistryDailyCap={courtRegistryDailyCap()} />;
 }

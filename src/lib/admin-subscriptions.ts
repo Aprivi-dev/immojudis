@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
@@ -320,8 +321,4 @@ function subscriptionToSummary(
     createdAt: subscription.created_at,
     updatedAt: subscription.updated_at,
   };
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

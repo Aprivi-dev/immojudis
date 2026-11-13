@@ -325,21 +325,19 @@ describe("searchParamsToRecord", () => {
 });
 
 describe("linkPrefetch", () => {
-  it("désactive le préchargement des pages rendues à la demande", () => {
+  it("désactive le préchargement des pages rendues à la demande, ancre comprise", () => {
     expect(linkPrefetch("/sales")).toBe(false);
     expect(linkPrefetch("/annonce-exemple")).toBe(false);
+    expect(linkPrefetch("/sales#carte")).toBe(false);
   });
 
-  it("désactive le préchargement des pages juridiques à fond de nuages, ancre comprise", () => {
-    expect(linkPrefetch("/legal")).toBe(false);
-    expect(linkPrefetch("/conditions-generales")).toBe(false);
-    expect(linkPrefetch("/privacy")).toBe(false);
-    expect(linkPrefetch("/privacy#cookies")).toBe(false);
-  });
-
-  it("laisse le comportement par défaut aux pages préfabriquées et aux fiches", () => {
+  it("laisse le comportement par défaut aux pages préfabriquées, juridiques comprises, et aux fiches", () => {
     expect(linkPrefetch("/offres")).toBeUndefined();
     expect(linkPrefetch("/ressources")).toBeUndefined();
     expect(linkPrefetch("/sales/abc")).toBeUndefined();
+    // Elles ne préchargent plus l'image des nuages (retirée) : rien ne justifie de les exclure.
+    expect(linkPrefetch("/legal")).toBeUndefined();
+    expect(linkPrefetch("/conditions-generales")).toBeUndefined();
+    expect(linkPrefetch("/privacy#cookies")).toBeUndefined();
   });
 });

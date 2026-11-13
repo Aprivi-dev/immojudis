@@ -17,10 +17,10 @@ import type { EmailCategory } from "@/lib/email-alerts";
 export type EmailTemplateLevel = "editable" | "readonly" | "supabase";
 
 /**
- * Variable d'environnement qui porte l'expéditeur du gabarit (voir `EMAIL_ENV_ALLOWLIST`). `null` dans
- * une définition : l'expéditeur n'est pas dans l'environnement d'Immojudis (emails d'authentification,
- * envoyés par le SMTP de Supabase, de la même adresse « ne pas répondre » que `NOREPLY_EMAIL_FROM`, réglée par
- * `scripts/apply-supabase-auth-config.mjs`).
+ * Variable d'environnement qui porte l'expéditeur du gabarit (voir `EMAIL_ADDRESS_VARIABLES` dans
+ * `admin-emails/env.ts`). `null` dans une définition : l'expéditeur n'est pas dans l'environnement
+ * d'Immojudis (emails d'authentification, envoyés par le SMTP de Supabase, de la même adresse « ne
+ * pas répondre » que `NOREPLY_EMAIL_FROM`, réglée par `scripts/apply-supabase-auth-config.mjs`).
  */
 export type EmailSenderVariable =
   | "ALERT_EMAIL_FROM"

@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  isOccupiedOccupancyStatus,
   isPublicMarketGapBand,
-  isVacantOccupancyStatus,
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
@@ -21,7 +19,11 @@ import {
   MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
 } from "@/lib/market-comparable-minimums";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
-import { occupancyClass } from "./occupancy-status";
+import {
+  isOccupiedOccupancyStatus,
+  isVacantOccupancyStatus,
+  occupancyClass,
+} from "./occupancy-status";
 import { evaluateValuationPromotionGate } from "./valuation-admin";
 
 // La règle des trois bandes et ses garde-fous sont dans la première migration ; la porte de qualité,

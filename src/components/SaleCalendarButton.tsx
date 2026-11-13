@@ -3,29 +3,22 @@
 import { useState } from "react";
 import CalendarPlus from "lucide-react/dist/esm/icons/calendar-plus.js";
 import { Button } from "@/components/ui/primitives";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiDownload, apiFetch } from "@/lib/client-api-core";
 import { downloadBlob } from "@/lib/download-blob";
 import { userMessage } from "@/lib/user-messages";
 
 const FALLBACK_FILENAME = "immojudis-audience.ics";
 
-function filenameFrom(response: Response): string {
-  const header = response.headers.get("content-disposition") ?? "";
-  const match = /filename="([^"\\/]+\.ics)"/i.exec(header);
-  return match?.[1] ?? FALLBACK_FILENAME;
-}
-
 /**
  * Mesure par compte de l'export (point 65). Le fichier est public et mis en cache : seul le
- * navigateur d'une personne connectée peut dire qui l'a téléchargé. Sans session, `authHeaders`
+ * navigateur d'une personne connectée peut dire qui l'a téléchargé. Sans session, `apiFetch`
  * répond « Connexion requise. » sans rien charger ni envoyer. La mesure ne gêne jamais le
  * téléchargement.
  */
 async function reportExport(saleId: string): Promise<void> {
   try {
-    await fetch(`/api/sales/${encodeURIComponent(saleId)}/calendar/exported`, {
+    await apiFetch(`/api/sales/${encodeURIComponent(saleId)}/calendar/exported`, {
       method: "POST",
-      headers: await authHeaders(),
     });
   } catch {
     // Sans compte ou hors ligne : rien à mesurer.
@@ -46,9 +39,12 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
     setPending(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/calendar`);
-      if (!response.ok) await readJson<unknown>(response);
-      downloadBlob(await response.blob(), filenameFrom(response));
+      const { blob, filename } = await apiDownload(
+        `/api/sales/${encodeURIComponent(saleId)}/calendar`,
+        { anonymous: true },
+        FALLBACK_FILENAME,
+      );
+      downloadBlob(blob, filename);
       void reportExport(saleId);
     } catch (error) {
       setMessage(userMessage(error, "L’export vers l’agenda est indisponible pour le moment."));

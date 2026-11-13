@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { UUID_PATTERN } from "@/lib/uuid";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -251,7 +252,7 @@ export type AlertNotificationAction = (typeof ALERT_NOTIFICATION_ACTIONS)[number
 
 /** Corps de `PATCH /api/alerts/notifications` : une action hors de la liste est refusée, jamais devinée. */
 export const alertNotificationUpdateSchema = z.object({
-  notificationId: z.string().uuid(),
+  notificationId: z.string().regex(UUID_PATTERN),
   action: z.enum(ALERT_NOTIFICATION_ACTIONS),
 });
 

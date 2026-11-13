@@ -1,11 +1,15 @@
 /**
- * React Query key factory.
+ * React Query key factory of the site and the account pages.
  *
- * Every key is built here so that `useQuery`, `invalidateQueries` and
- * `setQueryData` agree on the exact same tuple. The array contents and their
- * order are part of the contract: invalidation relies on prefix matching, and
- * `catalogPlaceholder` reads the access scope at index 2 of the catalogue keys.
- * Do not reorder elements when editing a key.
+ * `useQuery`, `invalidateQueries` and `setQueryData` read these keys from here so that they agree
+ * on the exact same tuple. The array contents and their order are part of the contract:
+ * invalidation relies on prefix matching, and `catalogPlaceholder` reads the access scope at index
+ * 2 of the catalogue keys. Do not reorder elements when editing a key.
+ *
+ * The administration keeps its keys next to its panels (`information-agent-queries.ts` for those
+ * the agent views share): this module is copied whole into every chunk that reads a key, and their
+ * fifty keys here weighed 2.1 kB more on /sales and on the sale page, 4.7 kB on each administration
+ * page and 82 kB in total (measured 13/11/2026).
  */
 
 type Id = string | null | undefined;
@@ -19,9 +23,9 @@ export type SaleAccessMode = "discovery" | "unlocked" | "analysis";
 
 /*
  * Each key is its own named export, and consumers read them through a namespace import
- * (`import * as queryKeys from "@/lib/query-keys"`, then `queryKeys.favorites(userId)`). The bundler
- * then keeps only the keys a chunk actually uses: this module used to be one object literal that was
- * copied whole into ~20 client chunks (about 5 kB each).
+ * (`import * as queryKeys from "@/lib/query-keys"`, then `queryKeys.favorites(userId)`). Turbopack
+ * still copies the whole module, not only the keys a chunk uses: about 2.7 kB in each of 17 client
+ * chunks (measured 13/11/2026).
  */
 
 // Account, alerts and notifications

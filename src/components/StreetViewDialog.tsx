@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import * as queryKeys from "@/lib/query-keys";
-import { readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import {
   buildStreetViewEmbedUrl,
   getGoogleMapsEmbedApiKey,
@@ -39,8 +39,9 @@ export type StreetViewDialogProps = {
 
 async function fetchPanorama(lat: number, lng: number, signal: AbortSignal) {
   const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
-  const response = await fetch(`/api/street-view?${params.toString()}`, { signal });
-  return (await readJson<{ panorama: StreetViewPanorama }>(response)).panorama;
+  const path = `/api/street-view?${params.toString()}`;
+  return (await apiRequest<{ panorama: StreetViewPanorama }>(path, { anonymous: true, signal }))
+    .panorama;
 }
 
 export function StreetViewDialog({

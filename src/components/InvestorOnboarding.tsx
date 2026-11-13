@@ -96,8 +96,8 @@ export function InvestorOnboarding({
 
   const criteria = firstSearchToUrl(search);
   const alertSearch = validateSalesSearch(criteria);
-  // L'alerte gratuite accepte des critères publics : un secteur saisi en texte libre (ni numéro de
-  // département ni code postal) n'en est pas un, et sans aucun critère elle préviendrait de tout.
+  // L'alerte gratuite accepte des critères publics : un secteur saisi en texte libre (ni département
+  // ni code postal) n'en est pas un, et sans aucun critère elle préviendrait de tout.
   const alertUnavailable: string | null =
     countActiveSearchFilters(alertSearch) === 0
       ? "Indiquez un secteur, un type de bien ou une mise à prix maximale pour créer une alerte."

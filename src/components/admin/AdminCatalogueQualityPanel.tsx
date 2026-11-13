@@ -7,7 +7,7 @@ import type {
   CeilingCoverageView,
   CrossSourceDuplicatesView,
 } from "@/lib/admin-catalogue-quality";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 
 // Vert sous le seuil, rouge au-dessus ; neutre pour une tendance ou une mesure absente.
 const TONES: Record<string, string> = {
@@ -22,14 +22,7 @@ const TONES: Record<string, string> = {
 export function AdminCatalogueQualityPanel() {
   const query = useQuery({
     queryKey: ["admin-catalogue-quality"],
-    queryFn: async () =>
-      readJson<AdminCatalogueQualityView>(
-        await fetch("/api/admin/catalogue-quality", {
-          signal: AbortSignal.timeout(30_000),
-          headers: await authHeaders(),
-          cache: "no-store",
-        }),
-      ),
+    queryFn: () => apiRequest<AdminCatalogueQualityView>("/api/admin/catalogue-quality"),
     staleTime: 60_000,
   });
   const view = query.data;

@@ -1,6 +1,9 @@
 // Règles d'occupation partagées (écart au marché, plafond, libellés, statistiques des tribunaux).
 // Module sans dépendance : les libellés et le plafond, chargés par des composants client, ne doivent
-// pas tirer `market-gap-band` (seuils, bandes) pour deux prédicats.
+// pas tirer `market-gap-band` (seuils, bandes) pour deux prédicats, ni le filtre de la recherche
+// (`occupancy-filter.ts`).
+
+export type OccupancyClass = "vacant" | "occupied" | "rented";
 
 /**
  * Classe d'occupation d'une valeur `occupancy_status` : bien libre, occupé ou loué ; `null` pour une
@@ -10,9 +13,7 @@
  * squatted, unknown), celui du graphe des résultats (tenant_occupied, occupied_other) et les mots
  * français (« libre », « inoccupé », « loué », « occupé par le propriétaire », « squatté »).
  */
-export function occupancyClass(
-  value: string | null | undefined,
-): "vacant" | "occupied" | "rented" | null {
+export function occupancyClass(value: string | null | undefined): OccupancyClass | null {
   const normalized = value?.trim().toLocaleLowerCase("fr-FR");
   if (!normalized || normalized === "unknown") return null;
   if (normalized === "vacant" || /inoccup|libre/.test(normalized)) return "vacant";
@@ -26,6 +27,23 @@ export function occupancyClass(
     /occup|proprietaire|propriétaire|squat/.test(normalized)
   ) {
     return "occupied";
+  }
+  return null;
+}
+
+/**
+ * Précision d'un bien occupé (classe `occupied`) : squatté (« occupé sans droit ni titre ») ou occupé
+ * par son propriétaire ; `null` pour un bien simplement occupé et pour toute autre classe. Le libellé
+ * (`occupancyLabel`) et le cas du plafond (`occupationCaseForStatus`) la lisent.
+ */
+export function occupancyDetail(
+  value: string | null | undefined,
+): "squatted" | "owner_occupied" | null {
+  if (occupancyClass(value) !== "occupied") return null;
+  const normalized = (value ?? "").trim().toLocaleLowerCase("fr-FR");
+  if (/squat/.test(normalized)) return "squatted";
+  if (normalized === "owner_occupied" || /propri[eé]taire/.test(normalized)) {
+    return "owner_occupied";
   }
   return null;
 }

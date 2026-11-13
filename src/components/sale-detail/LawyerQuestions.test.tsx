@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LawyerQuestion } from "@/lib/lawyer-questions-text";
 import { LawyerQuestions } from "./LawyerQuestions";
 
-const mocks = vi.hoisted(() => ({ readJson: vi.fn() }));
-vi.mock("@/lib/client-api-core", () => ({
-  authHeaders: async () => ({ authorization: "Bearer t" }),
-  readJson: mocks.readJson,
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => true,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) },
+  }),
 }));
 
 const SALE_ID = "11111111-1111-4111-8111-111111111111";
@@ -37,16 +38,14 @@ function renderQuestions() {
 function answer(questions: LawyerQuestion[]) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue({ ok: true, json: async () => ({ questions }) }),
+    vi.fn().mockImplementation(async () => Response.json({ questions })),
   );
-  mocks.readJson.mockResolvedValue({ questions });
 }
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  mocks.readJson.mockReset();
 });
 
 describe("LawyerQuestions (Mes questions pour l'avocat)", () => {
@@ -65,7 +64,10 @@ describe("LawyerQuestions (Mes questions pour l'avocat)", () => {
     expect(screen.getByText(/Rien n’est envoyé/)).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith(
       `/api/sales/${SALE_ID}/lawyer-questions`,
-      expect.objectContaining({ headers: { authorization: "Bearer t" } }),
+      expect.objectContaining({
+        headers: { Authorization: "Bearer t" },
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
@@ -126,11 +128,13 @@ describe("LawyerQuestions (Mes questions pour l'avocat)", () => {
   });
 
   it("n'affiche rien quand la lecture est refusée ou échoue", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
-    mocks.readJson.mockRejectedValue(Object.assign(new Error("Réservé"), { status: 403 }));
+    const refusal = vi
+      .fn()
+      .mockImplementation(async () => Response.json({ error: "Réservé" }, { status: 403 }));
+    vi.stubGlobal("fetch", refusal);
     const { container } = renderQuestions();
 
-    await waitFor(() => expect(mocks.readJson).toHaveBeenCalled());
+    await waitFor(() => expect(refusal).toHaveBeenCalled());
     await Promise.resolve();
     expect(container.innerHTML).toBe("");
   });

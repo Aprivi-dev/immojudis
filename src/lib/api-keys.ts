@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { isUuid } from "@/lib/uuid";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
@@ -182,7 +183,7 @@ export async function revokeUserApiKey({
   keyId: string;
 }): Promise<{ key: ApiKeySummary }> {
   // Un identifiant mal formé est une erreur de l'appelant (400), pas une panne de la base.
-  if (!z.string().uuid().safeParse(keyId).success) {
+  if (!isUuid(keyId)) {
     throw new PublicApiError("Identifiant de clé invalide.", 400);
   }
 

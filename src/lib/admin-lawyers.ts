@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
@@ -403,8 +404,4 @@ function emptyPlacementMetrics(
     ctaClicks: 0,
     referralRequests: 0,
   };
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

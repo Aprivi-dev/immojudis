@@ -18,6 +18,7 @@ import { INFORMATION_AGENT_OPT_OUT_PATH } from "@/lib/information-agent-link-pat
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
+import { apiFetch } from "@/lib/client-api-core";
 import { supabase } from "@/integrations/supabase/client";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
@@ -1031,12 +1032,7 @@ const inputClassName =
   "block min-h-11 w-full rounded-md border border-brand-navy/55 bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  const response = await apiFetch(url, { method: "POST", body, anonymous: true });
   const raw = await response.text();
   let payload: unknown;
   try {

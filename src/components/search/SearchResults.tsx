@@ -1068,64 +1068,6 @@ export function ListingMediaCarousel({
   );
 }
 
-export function ListingBadge({
-  children,
-  tone,
-  icon: Icon,
-}: {
-  children: React.ReactNode;
-  tone: "navy" | "teal" | "cream";
-  icon?: React.ComponentType<{ className?: string }>;
-}) {
-  const toneClass =
-    tone === "teal"
-      ? "bg-brand-navy text-white"
-      : tone === "cream"
-        ? "bg-surface text-gold-text"
-        : "bg-brand-navy text-white";
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-extrabold shadow-sm ${toneClass}`}
-    >
-      {Icon ? <Icon className="h-3 w-3" /> : null}
-      {children}
-    </span>
-  );
-}
-
-export function Metric({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-surface-muted px-2 py-1">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-brand-navy" />
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
-export function ListingSignal({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: string;
-}) {
-  return (
-    <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
-      <span className="block text-xs font-bold text-ink-soft">{label}</span>
-      <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
-    </span>
-  );
-}
-
 export function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
   async function share(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();

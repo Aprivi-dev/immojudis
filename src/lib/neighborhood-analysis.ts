@@ -3,10 +3,9 @@ import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale } from "@/lib/types";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -385,37 +384,12 @@ function limitations(status: NeighborhoodStatus): string[] {
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.description, "Description annonce");
-  addCandidate(candidates, sale.source_description, "Description source");
-  // `risk_notes` is the pipeline's own output (model text read back): not independent evidence.
-
-  // Generated scores and summaries are not independent evidence about the property.
-
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    if (NEIGHBORHOOD_KEY.test(item.path) || hasNeighborhoodSignal(item.value)) {
-      addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-    }
-  }
-
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      if (NEIGHBORHOOD_KEY.test(item.path) || hasNeighborhoodSignal(item.value)) {
-        addCandidate(
-          candidates,
-          `${item.path}: ${cleanText(item.value)}`,
-          `Données source ${sourceName}`,
-        );
-      }
-    }
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk, { withType: true }))
-      addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) => hasNeighborhoodSignal(candidate.text));
+  return collectSaleTextCandidates(sale, {
+    descriptions: "each",
+    sourceFields: ({ path, value }) => NEIGHBORHOOD_KEY.test(path) || hasNeighborhoodSignal(value),
+    risks: sale.risks,
+    riskOptions: { withType: true },
+  }).filter((candidate) => hasNeighborhoodSignal(candidate.text));
 }
 
 function hasNeighborhoodSignal(value: unknown): boolean {

@@ -9,7 +9,7 @@ import {
 } from "@/lib/environment-reference";
 import { formatNumericDate } from "@/lib/format/dates";
 import * as queryKeys from "@/lib/query-keys";
-import { readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import styles from "./ListingEnvironment.module.css";
 
 const SEISMIC_LABELS: Record<number, string> = {
@@ -44,8 +44,9 @@ export function ListingEnvironmentalRisks({
   const query = useQuery({
     queryKey: queryKeys.saleRisks(saleId),
     queryFn: async ({ signal }) => {
-      const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/risks`, { signal });
-      return (await readJson<{ risks: CommuneRiskResult }>(response)).risks;
+      const path = `/api/sales/${encodeURIComponent(saleId)}/risks`;
+      return (await apiRequest<{ risks: CommuneRiskResult }>(path, { anonymous: true, signal }))
+        .risks;
     },
     enabled: enabled && !demoProfile,
     staleTime: 24 * 60 * 60_000,

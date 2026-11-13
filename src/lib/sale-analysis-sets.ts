@@ -17,6 +17,7 @@ import { asRecord } from "@/lib/guards";
 import { asRecord as normalizeJsonObject } from "@/lib/guards";
 import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 import { asJson } from "@/lib/supabase-json";
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -766,7 +767,7 @@ export async function buildCanonicalComparisonSnapshot(
       "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,occupancy_status,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
-    .in("status", ["upcoming", "postponed", "unknown"]);
+    .in("status", OPEN_SALE_STATUSES);
   if (error) throw error;
 
   const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));

@@ -4,9 +4,8 @@ import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 import { cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -325,23 +324,13 @@ function flattenSaleSources(
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk, { excerptsOnly: true }))
-      addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates;
+  // Sans blocs source : `dedicatedFeeSources` les lit à part, champ par champ.
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    documents: sale.documents_rich,
+    risks: sale.risks,
+    riskOptions: { excerptsOnly: true },
+  });
 }
 
 function moneyValue(value: unknown): number | null {

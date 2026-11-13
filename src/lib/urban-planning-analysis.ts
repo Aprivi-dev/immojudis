@@ -1,10 +1,9 @@
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
 import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type UrbanPlanningSignalKind =
   | "zoning"
@@ -355,47 +354,25 @@ function collectTextCandidates({
   documents: SaleDocumentRich[];
   risks: SaleRisk[];
 }): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-
-  for (const item of dedicatedSourceFields(sale.source_blocks ?? {})) {
-    addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-  }
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of dedicatedSourceFields(blocks)) {
-      addCandidate(
-        candidates,
-        `${item.path}: ${cleanText(item.value)}`,
-        `Données source ${sourceName}`,
-      );
-    }
-  }
-  for (const document of documents) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-  for (const risk of risks) {
-    for (const text of riskTexts(risk, { withType: true, excerptsOnly: true }))
-      addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) =>
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    sourceFields: isDedicatedSourceField,
+    documents,
+    risks,
+    riskOptions: { withType: true, excerptsOnly: true },
+  }).filter((candidate) =>
     SIGNAL_DEFINITIONS.some((definition) => matches(definition, candidate.text)),
   );
 }
 
-function dedicatedSourceFields(blocks: Record<string, unknown>) {
-  return flattenKeyValues(blocks).filter(
-    ({ path }) =>
-      !/(?:^|\.)(?:page_text|description|sale_procedure|related|similar|autres_annonces)(?:$|\.|\[)/i.test(
-        path,
-      ) &&
-      /plu|urbanisme|zoning|zonage|permit|permis|servitude|coownership|copropriete|copropriété|usage|cadastre/i.test(
-        path,
-      ),
+function isDedicatedSourceField({ path }: { path: string }): boolean {
+  return (
+    !/(?:^|\.)(?:page_text|description|sale_procedure|related|similar|autres_annonces)(?:$|\.|\[)/i.test(
+      path,
+    ) &&
+    /plu|urbanisme|zoning|zonage|permit|permis|servitude|coownership|copropriete|copropriété|usage|cadastre/i.test(
+      path,
+    )
   );
 }
 

@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import {
   ADMIN_SIGNUP_ACCESS,
   TRIAL_EXTENSION_MAX_ACCOUNTS,
@@ -751,8 +752,4 @@ async function readSignupUsage(): Promise<Map<
       },
     ]),
   );
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

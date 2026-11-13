@@ -112,6 +112,16 @@ export function listingOccupation(sale: AuctionSale): string {
   return occupancyLabel(rawStatus);
 }
 
+/**
+ * Statuts d'une vente encore ouverte : à venir, reportée ou au statut encore inconnu. Ce sont ceux que
+ * montre le catalogue (`statusValuesForSearch`) ; les alertes, la qualité du catalogue et les
+ * comparaisons de ventes lisent les mêmes.
+ */
+export const OPEN_SALE_STATUSES: readonly string[] = ["upcoming", "unknown", "postponed"];
+
+/** Statuts d'une vente interrompue (annulée ou reportée) : la date connue n'est plus celle de la vente. */
+export const INTERRUPTED_SALE_STATUSES: readonly string[] = ["cancelled", "canceled", "postponed"];
+
 export function listingSaleStatus(sale: AuctionSale, now = new Date()): string | null {
   if (["cancelled", "canceled"].includes(sale.status ?? "")) return "Vente annulée";
   if (sale.status === "postponed") return "Vente reportée · nouvelle date à confirmer";

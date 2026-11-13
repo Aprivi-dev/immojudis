@@ -2,16 +2,6 @@ import type { AdjudicationPriceStatisticsScope } from "./adjudication-price-stat
 import type { AdjudicationDistribution } from "./adjudication-distributions";
 import { wilsonInterval95 } from "./stats";
 
-export const propertyTypeLabels: Record<string, string> = {
-  apartment: "Appartement",
-  house: "Maison",
-  building: "Immeuble",
-  commercial: "Local commercial",
-  land: "Terrain",
-  parking: "Parking",
-  mixed: "Bien mixte",
-};
-
 export function distributionRates(distribution: AdjudicationDistribution) {
   const count = (band: string) =>
     distribution.bidDistribution.find((item) => item.band === band)?.count ?? 0;

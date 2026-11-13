@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryErrorMessage } from "@/components/admin/admin-format";
+import { REVIEW_QUERY_KEY } from "@/components/admin/information-agent-queries";
 import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import {
@@ -11,7 +12,6 @@ import {
 import type { AutoPublicationReviewDecision } from "@/lib/admin-information-agent-auto-publication";
 
 const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
-const REVIEW_QUERY_KEY = ["admin-information-agent-review"] as const;
 
 /**
  * Publication automatique des informations reçues (onglet Réglages) : arrêt ou simulation ; le mode

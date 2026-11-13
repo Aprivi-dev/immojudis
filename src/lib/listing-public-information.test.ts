@@ -432,6 +432,20 @@ describe("getListingPublicInformation", () => {
     expect(item(result, "occupancy_status")).toBeUndefined();
   });
 
+  // Caractérisation (lot 10) : le terrain se lit par la famille du type (`propertyFamily`), comme
+  // partout ; seul un code de terrain écarte les critères de logement.
+  it.each([
+    ["land", false],
+    ["Terrain à bâtir", false],
+    ["house", true],
+    ["apartment", true],
+    ["Maison avec terrain", true],
+    ["unknown", true],
+  ])("keeps housing-only facts for the type %s: %s", (property_type, housing) => {
+    const result = getListingPublicInformation(sale({ property_type, rooms_count: 3 }));
+    expect(item(result, "rooms_count") !== undefined, property_type).toBe(housing);
+  });
+
   it("does not let an unrelated PDF hide a missing conditions document", () => {
     const result = getListingPublicInformation(
       sale({

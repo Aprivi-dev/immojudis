@@ -1,6 +1,8 @@
 import { saleDateBoundary } from "./search/sale-date-range";
 import { getSupabase, type SupabaseBrowserClient } from "@/integrations/supabase/lazy";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
+import { occupancyClassCodes } from "@/lib/occupancy-filter";
+import { occupancyClass } from "@/lib/occupancy-status";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
 import {
   ALERT_DETAIL_COLUMNS,
@@ -201,19 +203,9 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   if (filters.min_bedrooms != null) q = q.gte("bedrooms_count", filters.min_bedrooms);
   if (filters.min_bathrooms != null) q = q.gte("bathrooms_count", filters.min_bathrooms);
   if (filters.occupancy_status) {
-    // Match the same historical aliases as occupancyLabel, before count/pagination.
-    const occupancy = filters.occupancy_status.toLowerCase();
-    if (["free", "vacant", "libre"].includes(occupancy)) {
-      q = q.or(
-        "occupancy_status.ilike.%libre%,occupancy_status.ilike.vacant,occupancy_status.ilike.free",
-      );
-    } else if (["occupied", "occupé", "occupe"].includes(occupancy)) {
-      q = q.ilike("occupancy_status", "%occup%");
-    } else if (["rented", "loué", "loue"].includes(occupancy)) {
-      q = q.or(
-        "occupancy_status.ilike.%loué%,occupancy_status.ilike.%loue%,occupancy_status.ilike.%rented%",
-      );
-    } else q = q.eq("occupancy_status", filters.occupancy_status);
+    // Les codes de la classe du filtre (`matchesOccupancyFilter`), avant le décompte et la pagination.
+    const occupancy = occupancyClass(filters.occupancy_status);
+    q = q.in("occupancy_status", occupancy ? occupancyClassCodes(occupancy) : []);
   }
   if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
   if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
@@ -506,20 +498,6 @@ export async function getSalesCount(
   return count ?? 0;
 }
 
-export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<number> {
-  if (!assertCloudConfigured()) return 0;
-  const supabase = await getSupabase();
-  let q = supabase.from(PUBLIC_PREVIEW_VIEW).select("id", { count: "exact", head: true });
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-
-  const { count, error } = await q;
-  if (error) throw error;
-  return count ?? 0;
-}
-
 export async function getSaleById(
   id: string,
   options: { discovery?: boolean; unlocked?: boolean } = {},
@@ -620,127 +598,4 @@ export async function getSaleMapPoints(
     },
   });
   return rows;
-}
-
-/**
- * Fetch sales within a bounding box around (lat,lng).
- * radiusKm is the half-side of the bbox; the caller is expected to filter
- * by exact haversine distance afterwards if needed.
- */
-export async function getNearbySales(
-  lat: number,
-  lng: number,
-  radiusKm: number,
-  excludeId?: string,
-  limit = 50,
-): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
-  // 1° latitude ≈ 111 km. 1° longitude ≈ 111 km × cos(lat).
-  const dLat = radiusKm / 111;
-  const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
-  const supabase = await getSupabase();
-  let q = supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_LIST_COLUMNS)
-    .gte("latitude", lat - dLat)
-    .lte("latitude", lat + dLat)
-    .gte("longitude", lng - dLng)
-    .lte("longitude", lng + dLng)
-    .order("sale_date", { ascending: true })
-    .limit(limit);
-  if (excludeId) q = q.neq("id", excludeId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return saleRows(data);
-}
-
-export async function getStats(): Promise<{
-  totalSales: number;
-  departments: number;
-  nextSale: string | null;
-}> {
-  if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
-  const supabase = await getSupabase();
-  const { count, error } = await supabase
-    .from(PUBLIC_PREVIEW_VIEW)
-    .select("*", { count: "exact", head: true });
-  if (error) throw error;
-  const totalSales = count ?? 0;
-
-  if (typeof window === "undefined") {
-    return { totalSales, departments: 0, nextSale: null };
-  }
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return { totalSales, departments: 0, nextSale: null };
-  const { data: deps } = await supabase
-    .from(DISCOVERY_VIEW)
-    .select("department")
-    .not("department", "is", null)
-    .limit(1000);
-  const uniqueDeps = new Set(
-    (deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean),
-  );
-  const { data: next } = await supabase
-    .from(DISCOVERY_VIEW)
-    .select("sale_date")
-    .gte("sale_date", new Date().toISOString())
-    .order("sale_date", { ascending: true })
-    .limit(1);
-  return {
-    totalSales,
-    departments: uniqueDeps.size,
-    nextSale: next?.[0]?.sale_date ?? null,
-  };
-}
-
-// Favorites
-export async function getFavorites(userId: string): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
-  const supabase = await getSupabase();
-  const { data: favs, error } = await supabase
-    .from("user_favorites")
-    .select("sale_id")
-    .eq("user_id", userId);
-  if (error) throw error;
-  const ids = (favs ?? []).map((f: { sale_id: string }) => f.sale_id);
-  if (ids.length === 0) return [];
-  const { data, error: e2 } = await supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_LIST_COLUMNS)
-    .in("id", ids);
-  if (e2) throw e2;
-  return saleRows(data);
-}
-
-export async function getFavoriteIds(userId: string): Promise<Set<string>> {
-  if (!assertCloudConfigured()) return new Set();
-  const supabase = await getSupabase();
-  const { data, error } = await supabase
-    .from("user_favorites")
-    .select("sale_id")
-    .eq("user_id", userId);
-  if (error) throw error;
-  return new Set((data ?? []).map((r: { sale_id: string }) => r.sale_id));
-}
-
-export async function addFavorite(userId: string, saleId: string) {
-  assertCloudConfigured();
-  const supabase = await getSupabase();
-  const { error } = await supabase
-    .from("user_favorites")
-    .insert({ user_id: userId, sale_id: saleId });
-  if (error && !error.message.includes("duplicate")) throw error;
-}
-
-export async function removeFavorite(userId: string, saleId: string) {
-  assertCloudConfigured();
-  const supabase = await getSupabase();
-  const { error } = await supabase
-    .from("user_favorites")
-    .delete()
-    .eq("user_id", userId)
-    .eq("sale_id", saleId);
-  if (error) throw error;
 }

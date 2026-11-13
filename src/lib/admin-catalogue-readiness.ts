@@ -11,8 +11,7 @@ import {
 } from "@/lib/admin-information-agent-sale";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { asRecord as jsonObject } from "@/lib/guards";
-
-const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 
 export type CatalogueReadinessStatus =
   | "unassessed"
@@ -222,7 +221,7 @@ async function countActiveSales(status?: CatalogueReadinessStatus): Promise<numb
   let query = supabaseAdmin
     .from("auction_sales")
     .select("id", { count: "exact", head: true })
-    .in("status", ACTIVE_SALE_STATUSES);
+    .in("status", OPEN_SALE_STATUSES);
   if (status) query = query.eq("premium_readiness_status", status);
   const { count, error } = await query;
   if (error) throw error;
@@ -233,7 +232,7 @@ async function countPendingEvaluations(policyVersion: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from("auction_sales")
     .select("id", { count: "exact", head: true })
-    .in("status", ACTIVE_SALE_STATUSES)
+    .in("status", OPEN_SALE_STATUSES)
     .or(
       `premium_readiness_status.eq.unassessed,premium_readiness_evaluated_at.is.null,premium_readiness_policy_version.is.null,premium_readiness_policy_version.neq.${policyVersion}`,
     );

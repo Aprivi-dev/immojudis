@@ -15,6 +15,7 @@ import type { ReactElement } from "react";
 import { AdminCatalogueQualityPanel } from "@/components/admin/AdminCatalogueQualityPanel";
 import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
 import type {
@@ -355,15 +356,11 @@ function QualityPill({ value }: { value: string }) {
   const numeric = parseInt(value, 10);
   const tone =
     Number.isFinite(numeric) && numeric >= 75
-      ? "border-emerald-300/20 bg-success-tint text-success"
+      ? "success"
       : Number.isFinite(numeric) && numeric >= 50
-        ? "border-amber-300/20 bg-warning-tint text-warning"
-        : "border-red-300/20 bg-danger-tint text-danger";
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-xs ${tone}`}>
-      {value}
-    </span>
-  );
+        ? "warning"
+        : "danger";
+  return <AdminPill tone={tone}>{value}</AdminPill>;
 }
 
 function buildQualityMetrics(report: DataQualityReport | undefined) {
