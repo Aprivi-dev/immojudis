@@ -11,7 +11,7 @@ import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPill } from "@/components/admin/admin-pill";
 
-const READINESS_QUERY_KEY = ["admin-readiness"] as const;
+export const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
 export function AdminReadinessPanel() {
   const readinessQuery = useQuery({

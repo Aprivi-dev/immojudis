@@ -7,6 +7,7 @@ import { toast } from "@/lib/toast";
 import { AdminPanel, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 import Link from "next/link";
+import { DASHBOARD_QUERY_KEY, PIPELINE_QUERY_KEY } from "@/lib/admin-query-keys";
 import { fetchPipelineStatus, updatePipelineControl } from "@/lib/client-api";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
@@ -213,7 +214,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
   const client = useQueryClient();
   const [changes, setChanges] = useState<Partial<PipelineControlSettings>>({});
   const query = useQuery({
-    queryKey: ["admin-pipeline"],
+    queryKey: PIPELINE_QUERY_KEY,
     queryFn: fetchPipelineStatus,
     staleTime: 30_000,
     retry: 1,
@@ -222,7 +223,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
   const mutation = useMutation({
     mutationFn: () => updatePipelineControl(changes),
     onSuccess: async (control) => {
-      client.setQueryData<PipelineStatus>(["admin-pipeline"], (previous) =>
+      client.setQueryData<PipelineStatus>(PIPELINE_QUERY_KEY, (previous) =>
         previous
           ? {
               ...previous,
@@ -235,8 +236,8 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
       onDirtyChange(false);
       toast.success("Configuration enregistrée.");
       await Promise.all([
-        client.invalidateQueries({ queryKey: ["admin-pipeline"] }),
-        client.invalidateQueries({ queryKey: ["admin-dashboard"] }),
+        client.invalidateQueries({ queryKey: PIPELINE_QUERY_KEY }),
+        client.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY }),
       ]);
     },
     onError: () =>

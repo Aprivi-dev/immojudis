@@ -11,10 +11,6 @@ import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
   PEPITE_RULE_PARAMS,
   PEPITE_V12_RULE_PARAMS,
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
   pepiteV12EffectiveClause,
   pepiteV2EffectiveClause,
 } from "./method";
@@ -159,11 +155,11 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
     // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.2.
-    expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
-    expect(PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
-    expect(PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
-    expect(PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
-    expect(text).toContain(`Version ${PEPITE_V1_2_RULE_VERSION}.`);
+    expect(policy.PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
+    expect(policy.PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
+    expect(policy.PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
+    expect(policy.PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
+    expect(text).toContain(`Version ${policy.PEPITE_V1_2_RULE_VERSION}.`);
     expect(text).not.toContain("indiquée sur cette page");
     expect(PEPITE_RULE_PARAMS.chanceMinPct).toBe(70);
     expect(PEPITE_RULE_PARAMS.maxCostShareCourtPct).toBe(75);

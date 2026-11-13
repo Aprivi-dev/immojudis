@@ -6,10 +6,11 @@
  * invalidation relies on prefix matching, and `catalogPlaceholder` reads the access scope at index
  * 2 of the catalogue keys. Do not reorder elements when editing a key.
  *
- * The administration keeps its keys next to its panels (`information-agent-queries.ts` for those
- * the agent views share): this module is copied whole into every chunk that reads a key, and their
- * fifty keys here weighed 2.1 kB more on /sales and on the sale page, 4.7 kB on each administration
- * page and 82 kB in total (measured 13/11/2026).
+ * The administration keeps its keys next to its panels, which export them for the pages that show
+ * them; only the keys several of its views read are shared, in `admin-query-keys.ts` (and in
+ * `information-agent-queries.ts` for the agent views). This module is copied whole into every chunk
+ * that reads a key, and their fifty keys here weighed 2.1 kB more on /sales and on the sale page,
+ * 4.7 kB on each administration page and 82 kB in total (measured 13/11/2026).
  */
 
 type Id = string | null | undefined;
@@ -171,7 +172,3 @@ export const publicationRequestsWorkspace = (userId: Id) =>
   ["publication-requests", "workspace", userId] as const;
 export const publicationRequest = (requestId: string | null | undefined) =>
   ["publication-request", requestId] as const;
-
-// Admin quality dashboards
-export const adminQualityReport = () => ["admin-quality-report"] as const;
-export const adminValuationOverview = () => ["admin-valuation-overview"] as const;

@@ -32,6 +32,7 @@ import {
   StatusPill,
 } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { DASHBOARD_RUNS_QUERY_KEY } from "@/lib/admin-query-keys";
 import type { AuctionRun } from "@/lib/admin.server";
 import { fetchAdminDashboardRuns } from "@/lib/client-api";
 import Link from "next/link";
@@ -100,7 +101,7 @@ const ADMIN_VIEW_LINKS: Array<{
 export function AdminHomePage() {
   const { user } = useAuth();
   const { data, isLoading, error, isFetching, refetch } = useQuery({
-    queryKey: ["admin-dashboard", "runs"],
+    queryKey: DASHBOARD_RUNS_QUERY_KEY,
     queryFn: fetchAdminDashboardRuns,
     staleTime: 30_000,
     retry: 1,

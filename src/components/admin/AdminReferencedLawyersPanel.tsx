@@ -48,13 +48,13 @@ type LawyerFormState = {
   coverage: CoverageDraft[];
 };
 
-const LAWYER_QUERY_KEY = ["admin-referenced-lawyers"] as const;
+export const REFERENCED_LAWYERS_QUERY_KEY = ["admin-referenced-lawyers"] as const;
 
 export function AdminReferencedLawyersPanel() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<LawyerFormState>(() => emptyLawyerForm());
   const lawyersQuery = useQuery({
-    queryKey: LAWYER_QUERY_KEY,
+    queryKey: REFERENCED_LAWYERS_QUERY_KEY,
     queryFn: fetchAdminReferencedLawyers,
     staleTime: 30_000,
   });
@@ -65,7 +65,7 @@ export function AdminReferencedLawyersPanel() {
     onSuccess: async (response) => {
       toast.success("Avocat référencé sauvegardé.");
       setForm(formFromLawyer(response.lawyer));
-      await queryClient.invalidateQueries({ queryKey: LAWYER_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: REFERENCED_LAWYERS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(queryErrorMessage(error, "Sauvegarde impossible"));

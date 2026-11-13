@@ -27,7 +27,7 @@ import { AdminPill } from "@/components/admin/admin-pill";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
 
-const QUERY_KEY = ["admin-lawyer-referral-requests"] as const;
+export const LAWYER_REFERRAL_REQUESTS_QUERY_KEY = ["admin-lawyer-referral-requests"] as const;
 
 const STATUS_OPTIONS: Array<[ReferralStatus, string]> = [
   ["new", "Nouvelle"],
@@ -42,7 +42,7 @@ export function AdminLawyerReferralRequestsPanel() {
   const queryClient = useQueryClient();
   const [offset, setOffset] = useState(0);
   const requestsQuery = useQuery({
-    queryKey: [...QUERY_KEY, offset],
+    queryKey: [...LAWYER_REFERRAL_REQUESTS_QUERY_KEY, offset],
     queryFn: () => fetchAdminLawyerReferralRequests({ offset }),
     staleTime: 30_000,
   });
@@ -59,7 +59,7 @@ export function AdminLawyerReferralRequestsPanel() {
       updateAdminLawyerReferralRequest({ data }),
     onSuccess: async () => {
       toast.success("Demande avocat mise à jour.");
-      await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: LAWYER_REFERRAL_REQUESTS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(queryErrorMessage(error, "Mise à jour impossible"));

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { isPlanPeriodActive } from "@/lib/plans";
+import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
   ANALYSIS_OFFER_CODE,
@@ -266,5 +267,16 @@ describe("billing helpers", () => {
     expect(isRecognisedAnalysisPrice({ id: "price_other", unit_amount: 5_900 }, env)).toBe(false);
     expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: 5_900 }, {})).toBe(false);
     expect(isRecognisedAnalysisPrice(undefined, env)).toBe(false);
+  });
+
+  it("contrôle le montant du Price que vend le checkout (`analysisPriceId`)", () => {
+    const env = { STRIPE_ANALYSIS_PRICE_ID: "price_1QxYz9AbCdEfGhIj" };
+    expect(analysisPriceId(env)).toBe("price_1QxYz9AbCdEfGhIj");
+    expect(
+      isRecognisedAnalysisPrice({ id: "price_1QxYz9AbCdEfGhIj", unit_amount: 5_900 }, env),
+    ).toBe(true);
+    expect(
+      isRecognisedAnalysisPrice({ id: "price_1QxYz9AbCdEfGhIj", unit_amount: 4_900 }, env),
+    ).toBe(false);
   });
 });

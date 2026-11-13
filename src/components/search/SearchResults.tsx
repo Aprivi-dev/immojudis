@@ -132,7 +132,7 @@ export function listingMediaFrameClass(
  * la première qui a une photo, pas forcément la carte 0, qui peut n'avoir qu'une case neutre et
  * perdrait le seul rang prioritaire. Aucune photo dans la liste : la carte 0, comme avant.
  */
-export function eagerImageIndex(sales: readonly Pick<AuctionSale, "media">[]): number {
+function eagerImageIndex(sales: readonly Pick<AuctionSale, "media">[]): number {
   const withPhoto = sales.findIndex((sale) => propertyImages(sale.media).length > 0);
   return withPhoto === -1 ? 0 : withPhoto;
 }
@@ -801,7 +801,7 @@ export const ListingCard = memo(function ListingCard({
   );
 });
 
-export function ListingImage({
+function ListingImage({
   sale,
   locked,
   eager = false,
@@ -1068,7 +1068,7 @@ export function ListingMediaCarousel({
   );
 }
 
-export function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
+function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
   async function share(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -1102,7 +1102,7 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
   );
 }
 
-export function CompactFavoriteButton({
+function CompactFavoriteButton({
   saleId,
   locked,
   favoriteScope,

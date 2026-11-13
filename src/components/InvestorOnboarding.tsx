@@ -102,7 +102,7 @@ export function InvestorOnboarding({
     countActiveSearchFilters(alertSearch) === 0
       ? "Indiquez un secteur, un type de bien ou une mise à prix maximale pour créer une alerte."
       : hasAnalysisAccess === false && alertSearch.query
-        ? "L’alerte gratuite suit un département : indiquez son numéro (ex. 33) ou un code postal pour la créer."
+        ? "L’alerte gratuite suit un département : indiquez son nom, son numéro (ex. 33) ou un code postal pour la créer."
         : null;
   const alertWanted = wantsAlert && alertUnavailable === null;
   // Pendant l'essai, la première alerte est quotidienne ; après l'essai, elle repasse en hebdomadaire
