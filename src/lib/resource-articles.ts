@@ -207,12 +207,3 @@ export function resourceLastModified(
 export function getResourceArticle(slug: string): ResourceArticle | undefined {
   return RESOURCE_ARTICLES.find((article) => article.slug === slug);
 }
-
-export function formatResourceDate(date: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(new Date(`${date}T12:00:00Z`));
-}

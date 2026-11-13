@@ -1,3 +1,4 @@
+import { formatNumericDate } from "@/lib/format/dates";
 import { getDisplaySurface } from "@/lib/surface";
 import { saleTimeConflict } from "@/lib/listing-evidence";
 import type { AuctionSale } from "@/lib/types";
@@ -258,7 +259,7 @@ export function getFactReliability(
     "to_confirm",
     checkedAt,
     latestCheck
-      ? `${label} est présente. Un contrôle global de source est enregistré le ${formatCheckedAt(latestCheck)}, mais il n'est pas rattaché à cette valeur.`
+      ? `${label} est présente. Un contrôle global de source est enregistré le ${formatNumericDate(latestCheck)}, mais il n'est pas rattaché à cette valeur.`
       : `${label} est présente, mais aucun contrôle de source ou extrait de preuve n'est enregistré pour cette valeur.`,
     "source_unlinked",
   );
@@ -362,7 +363,7 @@ function factPresentationKind(fact: FactReliability): FactPresentationKind {
 function factPresentationDetail(fact: FactReliability, kind: FactPresentationKind): string {
   if (kind === "documented") {
     return fact.checkedAt
-      ? `${fact.label} est accompagnée d'une trace de source ou d'un contrôle enregistré le ${formatCheckedAt(fact.checkedAt)}.`
+      ? `${fact.label} est accompagnée d'une trace de source ou d'un contrôle enregistré le ${formatNumericDate(fact.checkedAt)}.`
       : `${fact.label} est accompagnée d'une trace de source enregistrée dans le dossier.`;
   }
   if (kind === "reported") {
@@ -726,7 +727,7 @@ function observedDetail(field: KeyFact, checkedAt: string | null, sale: AuctionS
     return "Un extrait de preuve de surface est enregistré dans le dossier.";
   }
   return checkedAt
-    ? `La valeur est présente et un contrôle de source est enregistré le ${formatCheckedAt(checkedAt)}.`
+    ? `La valeur est présente et un contrôle de source est enregistré le ${formatNumericDate(checkedAt)}.`
     : "La valeur est accompagnée d'une preuve enregistrée dans le dossier.";
 }
 
@@ -759,14 +760,6 @@ function latestSourceCheck(sale: AuctionSale): string | null {
   return timestamps.reduce((latest, value) =>
     Date.parse(value) > Date.parse(latest) ? value : latest,
   );
-}
-
-function formatCheckedAt(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
 }
 
 function qualityFlags(sale: AuctionSale): string[] {

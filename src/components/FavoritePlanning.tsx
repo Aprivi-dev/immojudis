@@ -22,12 +22,11 @@ import {
   type PlanningEntry,
 } from "@/lib/favorite-planning";
 import type { FavoriteSale } from "@/lib/favorites";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { listingVisits } from "@/lib/sale-listing";
 import { downloadBlob } from "@/lib/download-blob";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { seoLongDate } from "@/lib/seo";
 import { userMessage } from "@/lib/user-messages";
 
 /**
@@ -148,7 +147,7 @@ function PlanningRow({ entry }: { entry: PlanningEntry }) {
   const place = [sale.city, sale.department ? `(${sale.department})` : null]
     .filter(Boolean)
     .join(" ");
-  const date = seoLongDate(sale.sale_date);
+  const date = formatDate(sale.sale_date, null);
   const visits = listingVisits(sale);
   return (
     <Card as="article" className="!py-3">

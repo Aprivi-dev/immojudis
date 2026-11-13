@@ -4,10 +4,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ResourceCard } from "@/components/resources/ResourceCard";
 import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
+import { formatDate } from "@/lib/format/dates";
 import {
   RESOURCE_ARTICLES,
   getResourceArticle,
-  formatResourceDate,
   resourceDocumentDescription,
   resourceDocumentTitle,
   resourceLastModified,
@@ -145,10 +145,7 @@ export default async function Page({ params }: Props) {
               {article.publishedAt && (
                 <>
                   {" "}
-                  ·{" "}
-                  <time dateTime={article.publishedAt}>
-                    {formatResourceDate(article.publishedAt)}
-                  </time>
+                  · <time dateTime={article.publishedAt}>{formatDate(article.publishedAt)}</time>
                 </>
               )}
               {article.updatedAt && article.updatedAt !== article.publishedAt && (
@@ -157,9 +154,7 @@ export default async function Page({ params }: Props) {
                   ·{" "}
                   <span>
                     Mis à jour le{" "}
-                    <time dateTime={article.updatedAt}>
-                      {formatResourceDate(article.updatedAt)}
-                    </time>
+                    <time dateTime={article.updatedAt}>{formatDate(article.updatedAt)}</time>
                   </span>
                 </>
               )}{" "}

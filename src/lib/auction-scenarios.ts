@@ -1,5 +1,6 @@
 import { asRecordOrNull as record } from "@/lib/guards";
 import { parseFiniteNumber as num } from "@/lib/finite-number";
+import { formatPrice } from "@/lib/format/numbers";
 /**
  * « Scénarios d'enchères » : ce que les trois dernières années d'adjudications
  * du tribunal disent d'une vente à venir. Licitor donne mise à prix et prix
@@ -405,20 +406,16 @@ export function probabilityAtLeast(scenarios: AuctionScenario[], ratio: number):
     .reduce((sum, scenario) => sum + scenario.probability, 0);
 }
 
-const euro = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
 const ratioFormat = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 1,
   minimumFractionDigits: 1,
 });
 
 export function formatEuro(value: number | null | undefined): string {
-  return value == null ? "—" : euro.format(Math.round(value / 1000) * 1000);
+  return value == null ? "—" : formatPrice(Math.round(value / 1000) * 1000);
 }
 
+/** Rapport à la mise à prix, à une décimale : 1.25 → « ×1,3 ». */
 export function formatRatio(value: number | null | undefined): string {
   return value == null ? "—" : `×${ratioFormat.format(value)}`;
 }

@@ -27,7 +27,6 @@ import {
   medianOf,
   normalizeDepartmentCity,
   parisDateBlock,
-  parisWeekday,
   topCities,
   type DepartmentSaleInput,
 } from "./department-pages";
@@ -662,7 +661,6 @@ describe("lignes de la liste des ventes", () => {
     expect(isParisToday("2026-11-06T17:00:00Z", NOW)).toBe(true);
     expect(isParisToday("2026-11-06T23:30:00Z", NOW)).toBe(false);
     expect(isParisToday(null, NOW)).toBe(false);
-    expect(parisWeekday("2026-11-06T17:00:00Z")).toBe("vendredi");
   });
 });
 

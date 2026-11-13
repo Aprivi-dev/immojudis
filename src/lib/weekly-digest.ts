@@ -9,12 +9,12 @@ import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import { parisDateKey, startOfParisDay } from "@/lib/paris-time";
 import { addDays, calendarDaysBetween } from "@/lib/calendar-day";
+import { formatWeekdayDate } from "@/lib/format/dates";
 import {
   isSourceCheckStale,
   publicLocation,
   publicTitle,
   rotateRecipients,
-  weekdayLongDate,
   type FollowedSale,
 } from "@/lib/sale-reminders";
 import { saleHearingTime, seoPropertyLabel } from "@/lib/seo";
@@ -182,7 +182,7 @@ export function upcomingAudienceFor(
   if (!Number.isFinite(hearing.getTime())) return null;
   const days = calendarDaysBetween(parisDateKey(now), parisDateKey(hearing));
   if (days == null || days < 0 || days > AUDIENCE_WINDOW_DAYS) return null;
-  const dateText = weekdayLongDate(row.sale_date);
+  const dateText = formatWeekdayDate(row.sale_date, null);
   if (!dateText) return null;
   const time = row.date_only === false ? saleHearingTime(row.sale_date) : null;
   return {

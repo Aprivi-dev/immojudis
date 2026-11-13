@@ -30,7 +30,7 @@ import {
   lawyerSourceForDisplayedValue,
 } from "@/lib/lawyer-fact-sources";
 import { isPastSaleDay } from "@/lib/sale-countdown";
-import { formatPrice, formatPricePerM2, formatShortDate } from "@/lib/format";
+import { formatDate, formatPrice, formatPricePerM2, formatShortDate } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
@@ -62,7 +62,6 @@ import {
   saleReference,
   saleShortHeading,
   saleVenueSentence,
-  seoLongDate,
   seoPropertyLabel,
   seoSurface,
   tribunalDisplayName,
@@ -367,7 +366,7 @@ export function SalePublicPreview({
   const photoCount = Math.max(0, preview.photo_count ?? 0);
   const morePhotos = photoCount > (photo?.url ? 1 : 0);
   const surface = seoSurface(preview.app_surface_m2);
-  const hearingDate = seoLongDate(preview.sale_date);
+  const hearingDate = formatDate(preview.sale_date, null);
   // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
   // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente). Calculé
   // après l'hydratation : le serveur et le premier rendu du navigateur n'ont pas la même heure (à

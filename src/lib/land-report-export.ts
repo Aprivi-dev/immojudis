@@ -7,6 +7,7 @@ import {
   rulesUnavailableReason,
 } from "./land-report-coherence";
 import type { LandReport, LandScope, LandSourceStatus } from "./land-report-types";
+import { formatNumericDateTime } from "@/lib/format/dates";
 
 export const LAND_REPORT_HEADINGS = [
   "Parcelles et localisation",
@@ -62,7 +63,7 @@ export function landReportToLines(
   const constraints = landConstraintsOverview(report.planning);
   const lines = [
     address,
-    `Sources consultées le ${new Date(report.generatedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}`,
+    `Sources consultées le ${formatNumericDateTime(report.generatedAt, report.generatedAt)}`,
     landZoneVerdict(report.planning.zones) ?? "",
     LAND_REPORT_HEADINGS[0],
     reliability.text,

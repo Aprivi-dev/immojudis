@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/lib/format/dates";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import {
   RECENT_SALE_CHANGE_DAYS,
@@ -223,5 +224,16 @@ describe("saleChangeDetectedOn", () => {
   it("formats the detection day in Paris time", () => {
     expect(saleChangeDetectedOn("2026-10-14T22:30:00Z")).toBe("15 octobre 2026");
     expect(saleChangeDetectedOn("n'importe quoi")).toBeNull();
+  });
+
+  it("writes the same day as formatDate", () => {
+    for (const value of [
+      "2026-10-14T22:30:00Z",
+      "2026-03-29T00:30:00Z",
+      "2026-11-05",
+      "illisible",
+    ]) {
+      expect(saleChangeDetectedOn(value)).toBe(formatDate(value, null));
+    }
   });
 });

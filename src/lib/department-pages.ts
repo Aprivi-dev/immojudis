@@ -334,15 +334,6 @@ export function parisDateBlock(value: string | null): { day: string; month: stri
   };
 }
 
-/** Jour de la semaine à Paris (« jeudi »). `null` sans date. */
-export function parisWeekday(value: string | null): string | null {
-  const time = timestamp(value);
-  if (time == null) return null;
-  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: PARIS_TIME_ZONE }).format(
-    new Date(time),
-  );
-}
-
 /** Lundi de la semaine (à Paris) d'un instant, en jour UTC à minuit. */
 function parisWeekStart(time: number): Date {
   const [year, month, day] = parisDateKey(new Date(time)).split("-").map(Number);

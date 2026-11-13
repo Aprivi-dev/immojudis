@@ -1,7 +1,7 @@
 // zod/mini : `getSaleProcedure` lit la procédure dans le navigateur (fiches, favoris). Mêmes règles
 // que l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import type {
   AuctionSale,
   SaleLegalFramework,
@@ -353,11 +353,11 @@ export function guaranteeLabel(procedure: SaleProcedurePresentation): string {
   const rate = procedure.guaranteeRatePct;
   const minimum = procedure.guaranteeMinimumEur;
   if (amount != null) {
-    const suffix = rate != null ? ` · ${formatPercentNumber(rate)} de la mise à prix` : "";
+    const suffix = rate != null ? ` · ${formatPercent(rate, 1)} de la mise à prix` : "";
     return `${formatPrice(amount)}${suffix}`;
   }
   if (rate != null) {
-    return `${formatPercentNumber(rate)} de la mise à prix${
+    return `${formatPercent(rate, 1)} de la mise à prix${
       minimum != null ? ` · minimum ${formatPrice(minimum)}` : ""
     }`;
   }
@@ -375,7 +375,7 @@ export function overbidLabel(procedure: SaleProcedurePresentation): string {
   if (procedure.overbidAllowed !== true) return "À confirmer dans les conditions de vente";
   const parts = [
     procedure.overbidMinimumIncreasePct != null
-      ? `+${formatPercentNumber(procedure.overbidMinimumIncreasePct)} minimum`
+      ? `+${formatPercent(procedure.overbidMinimumIncreasePct, 1)} minimum`
       : null,
     procedure.overbidWindowDays != null ? `dans les ${procedure.overbidWindowDays} jours` : null,
   ].filter(Boolean);
@@ -426,10 +426,6 @@ function legacyEligibleBar(sale: AuctionSale): string | null {
 function judicialGuarantee(startingPrice: number | null): number | null {
   if (startingPrice == null || !Number.isFinite(startingPrice)) return null;
   return Math.max(3000, startingPrice * 0.1);
-}
-
-function formatPercentNumber(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} %`;
 }
 
 function nonEmpty(value: unknown): string | null {

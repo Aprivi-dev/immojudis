@@ -81,7 +81,12 @@ function seoPrice(value: number): string {
     .replaceAll(" ", " ")} €`;
 }
 
-export function seoLongDate(value: string | null | undefined): string | null {
+/**
+ * Même sortie que `formatDate(value, null)` (`format/dates.ts`, vérifié par `seo.test.ts`). Copie
+ * gardée exprès : importer `format/dates` ici change le découpage de Turbopack et alourdit le
+ * JavaScript client total d'environ 50 ko (mesuré le 13/11/2026). Les pages appellent `formatDate`.
+ */
+function seoLongDate(value: string | null | undefined): string | null {
   const date = parseDate(value);
   if (!date) return null;
   return new Intl.DateTimeFormat("fr-FR", {

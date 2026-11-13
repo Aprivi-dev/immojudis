@@ -38,6 +38,8 @@ import {
   rentSourceDetail,
 } from "@/lib/rent-source-notice";
 import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
+import { formatDate } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -186,27 +188,9 @@ type DigestItem = {
   startingPrice: string | null;
 };
 
-const hearingDateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-const priceFormat = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
-
-function formatHearingDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : hearingDateFormat.format(date);
-}
-
+/** Mise à prix omise de l'email quand elle n'est pas communiquée (0 compris). */
 function formatStartingPrice(value: number | null): string | null {
-  return value == null || !Number.isFinite(value) || value <= 0 ? null : priceFormat.format(value);
+  return value == null || !Number.isFinite(value) || value <= 0 ? null : formatPrice(value);
 }
 
 /** « Audience : 12 novembre 2026 · Mise à prix : 95 000 € », or null when neither is known. */
@@ -504,7 +488,7 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
       marketDiscountPct == null
         ? null
         : `Mise à prix inférieure d’environ ${Math.round(marketDiscountPct)}\u00a0% à la référence DVF (indicatif : hors frais, travaux et occupation).`,
-    hearingDate: formatHearingDate(stringValue(sale.saleDate)),
+    hearingDate: formatDate(stringValue(sale.saleDate), null),
     startingPrice: formatStartingPrice(numberValue(sale.startingPriceEur)),
   };
 }
@@ -1138,14 +1122,13 @@ function receptionReasonLine(
   activatedAt?: ReadonlyMap<string, string | null>,
 ): string {
   const label = (group: { alertId: string | null; alertName: string }, joiner: string) => {
-    const date = formatHearingDate(
-      group.alertId ? (activatedAt?.get(group.alertId) ?? null) : null,
-    );
+    const date = formatDate(group.alertId ? (activatedAt?.get(group.alertId) ?? null) : null, null);
     return `« ${group.alertName} »${date ? ` (${joiner} ${date})` : ""}`;
   };
   if (groups.length === 1) {
-    const date = formatHearingDate(
+    const date = formatDate(
       groups[0].alertId ? (activatedAt?.get(groups[0].alertId) ?? null) : null,
+      null,
     );
     return `Vous recevez ce message parce que vous avez activé l’alerte « ${groups[0].alertName} »${date ? ` le ${date}` : ""}.`;
   }

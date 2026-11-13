@@ -218,6 +218,12 @@ describe("ListingStatistics", () => {
     await waitFor(() => expect(mocks.fetchPrices).toHaveBeenCalledWith(EXAMPLE_SALE.id));
   });
 
+  it("écrit le ratio publié / mise à prix comme les autres écrans de la fiche", async () => {
+    renderStatistics({ premium: true });
+
+    expect((await screen.findAllByText("×1,4")).length).toBeGreaterThan(0);
+  });
+
   it("utilise la fixture fictive sans appeler les endpoints pour une démo publique", async () => {
     renderStatistics({ publicDemo: true, premium: true });
 

@@ -2,6 +2,7 @@
  * Modèle de vue du panneau du pilote automatique : tout est mis en forme côté serveur (libellés français, dates,
  * nombres). Le navigateur n'affiche que des chaînes (budget de JavaScript). Module pur.
  */
+import { formatNumericDateTime } from "@/lib/format/dates";
 import {
   autopilotCaps,
   type AutopilotSettings,
@@ -66,13 +67,6 @@ const MODE_LABELS = {
   live: "Réel",
 } as const;
 
-const formatDateTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(new Date(iso));
-
 function eventDetail(kind: string, reason: string | null, details: unknown): string {
   const record =
     details && typeof details === "object" && !Array.isArray(details)
@@ -113,10 +107,13 @@ export function buildAutopilotView({
     const reason = settings.autoStopReason ?? "";
     notice = {
       tone: "alert",
-      text: `Arrêt automatique le ${formatDateTime(settings.autoStoppedAt)} : ${AUTOPILOT_STOP_LABELS[reason] ?? reason}. La réactivation est manuelle et journalisée.`,
+      text: `Arrêt automatique le ${formatNumericDateTime(settings.autoStoppedAt)} : ${AUTOPILOT_STOP_LABELS[reason] ?? reason}. La réactivation est manuelle et journalisée.`,
     };
   } else if (settings.pausedUntil && Date.parse(settings.pausedUntil) > now.getTime()) {
-    notice = { tone: "warn", text: `En pause jusqu’au ${formatDateTime(settings.pausedUntil)}.` };
+    notice = {
+      tone: "warn",
+      text: `En pause jusqu’au ${formatNumericDateTime(settings.pausedUntil)}.`,
+    };
   } else if (!stats.sharedStructureCountsComplete) {
     notice = { tone: "warn", text: AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE };
   }
@@ -145,7 +142,7 @@ export function buildAutopilotView({
       art14RuleEnabled: settings.art14RuleEnabled,
       art14MaxAgeDays: settings.art14MaxAgeDays,
       aipdLabel: settings.aipdAttestedAt
-        ? `Attestée le ${formatDateTime(settings.aipdAttestedAt)} (version ${settings.aipdVersion})`
+        ? `Attestée le ${formatNumericDateTime(settings.aipdAttestedAt)} (version ${settings.aipdVersion})`
         : "Non attestée",
     },
     readiness: {
@@ -154,7 +151,7 @@ export function buildAutopilotView({
     },
     ready: { count: prepared.length, items: prepared },
     events: events.map((event) => ({
-      at: formatDateTime(event.at),
+      at: formatNumericDateTime(event.at),
       label: EVENT_LABELS[event.kind] ?? event.kind,
       detail: eventDetail(event.kind, event.reason, event.details),
     })),

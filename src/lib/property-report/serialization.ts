@@ -3,6 +3,7 @@ import {
   formatPercent,
   formatPrice,
   formatPricePerM2,
+  formatSurface,
   propertyTypeLabel,
 } from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
@@ -343,7 +344,7 @@ export function normalizeMarketComparableRows(value: unknown): string[] {
         type,
         totalPrice != null ? formatPrice(totalPrice) : null,
         pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
+        surface != null ? formatSurface(surface) : null,
         distance != null ? `${Math.round(distance)} m` : null,
       ]
         .filter(Boolean)
@@ -395,7 +396,7 @@ export function normalizeActiveComparableItems(value: unknown): string[] {
         saleDate ? formatDate(saleDate) : null,
         startingPrice != null ? formatPrice(startingPrice) : null,
         pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
+        surface != null ? formatSurface(surface) : null,
       ]
         .filter(Boolean)
         .join(" | ");
