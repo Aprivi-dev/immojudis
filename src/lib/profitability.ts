@@ -9,6 +9,7 @@ import {
   type RentReference,
   type RentReferenceSource,
 } from "@/lib/rent-reference";
+import { formatPercent, formatPrice, formatPricePerM2 } from "@/lib/format/numbers";
 
 /** Raison d'un rendement indisponible faute de prix d'acquisition. */
 const RENTABILITY_PRICE_MISSING = "Prix manquant";
@@ -564,7 +565,7 @@ function addYieldFactor({
     key,
     label,
     delta,
-    detail: `${formatPct(valuePct)} vs objectif ${formatPct(targetPct)}.`,
+    detail: `${formatPercent(valuePct, 1)} vs objectif ${formatPercent(targetPct, 1)}.`,
     tone: delta > 0 ? "positive" : delta === 4 ? "neutral" : "negative",
   });
   return delta;
@@ -580,7 +581,7 @@ function addCashflowFactor(factors: RentabilityScoreFactor[], cashflowMonthly: n
     key: "cashflow",
     label: "Cashflow mensuel",
     delta,
-    detail: `${Math.round(cashflowMonthly).toLocaleString("fr-FR")} €/mois après dette estimée.`,
+    detail: `${formatPrice(cashflowMonthly)}/mois après dette estimée.`,
     tone: delta > 0 ? "positive" : delta > -10 ? "neutral" : "negative",
   });
   return delta;
@@ -601,7 +602,7 @@ function addBreakEvenFactor(
     key: "break_even",
     label: "Occupation d'équilibre",
     delta,
-    detail: `${formatPct(breakEvenOccupancyPct)} d'occupation nécessaire pour couvrir charges et dette.`,
+    detail: `${formatPercent(breakEvenOccupancyPct, 1)} d'occupation nécessaire pour couvrir charges et dette.`,
     tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
   });
   return delta;
@@ -622,7 +623,7 @@ function addMarketMarginFactor(
     key: "market_margin",
     label: "Marge vs marché cible",
     delta,
-    detail: `${formatSigned(marketMarginPerM2)} €/m² par rapport au seuil tout compris.`,
+    detail: `${formatSignedPricePerM2(marketMarginPerM2)} par rapport au seuil tout compris.`,
     tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
   });
   return delta;
@@ -701,11 +702,7 @@ function clampScore(value: number): number {
   return clamp(value, 0, 100);
 }
 
-function formatSigned(value: number): string {
-  if (Math.abs(value) < 1) return "0";
-  return `${value > 0 ? "+" : ""}${Math.round(value)}`;
-}
-
-function formatPct(value: number): string {
-  return `${roundPct(value).toLocaleString("fr-FR")} %`;
+function formatSignedPricePerM2(value: number): string {
+  if (Math.abs(value) < 1) return formatPricePerM2(0);
+  return `${value > 0 ? "+" : ""}${formatPricePerM2(value)}`;
 }

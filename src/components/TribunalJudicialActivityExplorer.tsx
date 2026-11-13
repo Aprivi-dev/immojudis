@@ -25,7 +25,7 @@ import type {
 } from "@/lib/tribunal-judicial-activity";
 import * as queryKeys from "@/lib/query-keys";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
-import { formatWholeEuros as formatCurrency } from "@/lib/format-euros";
+import { formatPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
@@ -680,12 +680,12 @@ function ExplorerError({ onRetry }: { onRetry: () => void }) {
 }
 
 function formatCurrencyMedian(metric: TribunalJudicialActivityRangeMetric): string {
-  return metric.status === "published" ? formatCurrency(metric.p50) : "Non publié";
+  return metric.status === "published" ? formatPrice(metric.p50) : "Non publié";
 }
 
 function formatCurrencyRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
-    ? `Fourchette centrale ${formatCurrency(metric.p25)} – ${formatCurrency(metric.p75)}`
+    ? `Fourchette centrale ${formatPrice(metric.p25)} – ${formatPrice(metric.p75)}`
     : `${metric.sampleSize} annonces · minimum requis : ${TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE}`;
 }
 

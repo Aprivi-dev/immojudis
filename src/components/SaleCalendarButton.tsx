@@ -4,6 +4,7 @@ import { useState } from "react";
 import CalendarPlus from "lucide-react/dist/esm/icons/calendar-plus.js";
 import { Button } from "@/components/ui/primitives";
 import { authHeaders } from "@/lib/client-api-core";
+import { downloadBlob } from "@/lib/download-blob";
 import { userMessage } from "@/lib/user-messages";
 
 const FALLBACK_FILENAME = "immojudis-audience.ics";
@@ -50,14 +51,7 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         throw Object.assign(new Error(payload?.error ?? ""), { status: response.status });
       }
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filenameFrom(response);
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(await response.blob(), filenameFrom(response));
       void reportExport(saleId);
     } catch (error) {
       setMessage(userMessage(error, "L’export vers l’agenda est indisponible pour le moment."));

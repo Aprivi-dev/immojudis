@@ -24,6 +24,7 @@ import {
 import type { FavoriteSale } from "@/lib/favorites";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { listingVisits } from "@/lib/sale-listing";
+import { downloadBlob } from "@/lib/download-blob";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { seoLongDate } from "@/lib/seo";
@@ -211,14 +212,7 @@ function FollowedCalendarExport({
     setMessage(null);
     try {
       const file = await downloadFollowedCalendar({ saleIds });
-      const url = URL.createObjectURL(file.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.filename;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(file.blob, file.filename);
       setMessage({
         tone: "info",
         text:

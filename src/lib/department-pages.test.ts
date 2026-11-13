@@ -446,7 +446,7 @@ describe("titres et descriptions", () => {
     const text = departmentPageDescription(gironde, stats);
     expect(text).toContain("12 ventes aux enchères immobilières à venir (Gironde, 33)");
     expect(text).toContain("prochaine audience le 10 novembre 2026");
-    expect(text).toMatch(/mise à prix médiane au tribunal 85\s000 €/);
+    expect(text).toMatch(/mise à prix médiane au tribunal 85\s000\s€/);
     for (const department of DEPARTMENTS) {
       for (const sample of [
         stats,

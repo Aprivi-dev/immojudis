@@ -20,10 +20,13 @@ export function occupancyLabel(status: string | null | undefined): string {
   return status;
 }
 
+const UNTYPED_PROPERTY_LABEL = "Bien";
+const UNQUALIFIED_PROPERTY_LABEL = "Bien à qualifier";
+
 export function propertyTypeLabel(t: string | null | undefined): string {
-  if (!t) return "Bien";
+  if (!t) return UNTYPED_PROPERTY_LABEL;
   const s = t.toLowerCase();
-  if (s === "unknown" || s === "other") return "Bien à qualifier";
+  if (s === "unknown" || s === "other") return UNQUALIFIED_PROPERTY_LABEL;
   if (s === "mixed" || s.includes("mixte")) return "Bien mixte";
   if (s.includes("apart") || s.includes("apt")) return "Appartement";
   if (s === "studio" || s.includes("studio")) return "Appartement";
@@ -35,5 +38,16 @@ export function propertyTypeLabel(t: string | null | undefined): string {
     return "Local commercial";
   }
   // An internal code that has no label yet must never reach a visitor.
-  return /^[a-z][a-z0-9_-]*$/.test(t) ? "Bien à qualifier" : t;
+  return /^[a-z][a-z0-9_-]*$/.test(t) ? UNQUALIFIED_PROPERTY_LABEL : t;
+}
+
+/**
+ * Le type de bien est qualifié quand `propertyTypeLabel` lui donne un vrai libellé : ni type absent
+ * (« Bien »), ni `other`, `unknown` ou code interne sans libellé (« Bien à qualifier »). Accepte aussi
+ * un libellé déjà calculé, celui qu'un rapport enregistré conserve : `propertyTypeLabel` rend chacun
+ * de ses libellés tel quel.
+ */
+export function isQualifiedPropertyType(t: string | null | undefined): boolean {
+  const label = propertyTypeLabel(t);
+  return label !== UNTYPED_PROPERTY_LABEL && label !== UNQUALIFIED_PROPERTY_LABEL;
 }

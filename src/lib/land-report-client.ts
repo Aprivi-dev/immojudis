@@ -1,4 +1,5 @@
 import { authHeaders, readJson } from "./client-api-core";
+import { downloadBlob } from "@/lib/download-blob";
 import type { LandReport } from "./land-report-types";
 
 export async function fetchSaleLandReport(saleId: string, refresh = false): Promise<LandReport> {
@@ -23,12 +24,5 @@ export async function downloadSaleLandReport(saleId: string): Promise<void> {
     },
   );
   if (!response.ok) await readJson(response);
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `immojudis-plu-risques-${saleId}.pdf`;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  downloadBlob(await response.blob(), `immojudis-plu-risques-${saleId}.pdf`);
 }

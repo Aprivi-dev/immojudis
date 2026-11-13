@@ -5,7 +5,13 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatDate, formatShortDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import {
+  formatDate,
+  formatShortDate,
+  formatStartingPrice,
+  isQualifiedPropertyType,
+  propertyTypeLabel,
+} from "@/lib/format";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
@@ -20,8 +26,7 @@ import type { AuctionSale } from "@/lib/types";
 
 /** Titre de carte : « Appartement », « Maison »… ; « Bien » quand le type n'est pas qualifié. */
 export function cardTypeLabel(propertyType: string | null | undefined): string {
-  const label = propertyTypeLabel(propertyType);
-  return label === "Bien à qualifier" ? "Bien" : label;
+  return isQualifiedPropertyType(propertyType) ? propertyTypeLabel(propertyType) : "Bien";
 }
 
 /** « Département 33 » pour un code, le nom tel quel sinon (« Gironde »). */

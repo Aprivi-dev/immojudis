@@ -15,6 +15,7 @@ import {
   fetchAdminProfessionalPrivacyExport,
   updateAdminPrivacyRequest,
 } from "@/lib/client-api";
+import { downloadBlob } from "@/lib/download-blob";
 import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type {
   PrivacyRequestAdminSummary,
@@ -78,12 +79,7 @@ export function AdminPrivacyRequestsPanel() {
     mutationFn: fetchAdminProfessionalPrivacyExport,
     onSuccess: (result) => {
       const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `donnees-professionnel-${result.generatedAt.slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `donnees-professionnel-${result.generatedAt.slice(0, 10)}.json`);
       toast.success("Export des données du professionnel téléchargé.");
     },
     onError: (mutationError) => {

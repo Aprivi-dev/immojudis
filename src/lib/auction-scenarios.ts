@@ -410,7 +410,6 @@ const euro = new Intl.NumberFormat("fr-FR", {
   currency: "EUR",
   maximumFractionDigits: 0,
 });
-const percent = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 });
 const ratioFormat = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 1,
   minimumFractionDigits: 1,
@@ -418,10 +417,6 @@ const ratioFormat = new Intl.NumberFormat("fr-FR", {
 
 export function formatEuro(value: number | null | undefined): string {
   return value == null ? "—" : euro.format(Math.round(value / 1000) * 1000);
-}
-
-export function formatPercent(value: number | null | undefined): string {
-  return value == null ? "—" : percent.format(value);
 }
 
 export function formatRatio(value: number | null | undefined): string {

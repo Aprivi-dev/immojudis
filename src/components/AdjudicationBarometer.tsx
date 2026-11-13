@@ -22,6 +22,7 @@ import {
   wilsonShareInterval,
   type TribunalSort,
 } from "@/lib/adjudication-barometer";
+import { downloadBlob } from "@/lib/download-blob";
 import { formatShortDate } from "@/lib/format/dates";
 import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 import styles from "./AdjudicationBarometer.module.css";
@@ -80,16 +81,10 @@ export function AdjudicationBarometer({
     }
   }
   function downloadComparison() {
-    const url = URL.createObjectURL(
+    downloadBlob(
       new Blob([tribunalComparisonCsv(filtered)], { type: "text/csv;charset=utf-8;" }),
+      `statistiques-tribunaux-${data.national.periodEnd}.csv`,
     );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `statistiques-tribunaux-${data.national.periodEnd}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
     <div className={styles.barometer}>

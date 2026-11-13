@@ -1,5 +1,5 @@
 import { feeRegimeKeyForSale } from "@/lib/fee-regime-key";
-import { formatWholeEuros } from "@/lib/format-euros";
+import { formatPercent, formatPrice } from "@/lib/format/numbers";
 import { estimateSaleGrossYieldRange, type GrossYieldRange } from "@/lib/geo";
 import type { RentReference } from "@/lib/rent-reference";
 import { isAnilRentReference } from "@/lib/rent-source-notice";
@@ -13,11 +13,7 @@ import type { AuctionSale } from "@/lib/types";
  */
 export const PUBLIC_YIELD_LABEL = "Rendement brut à la mise à prix (charges comprises)";
 
-const percentFormat = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-const percent = (value: number) => `${percentFormat.format(value)} %`;
+const percent = (value: number) => formatPercent(value, 1, 1);
 
 /**
  * Une référence fiable donne la valeur centrale et sa fourchette ; une référence indicative ne donne
@@ -73,7 +69,7 @@ function highestDisplayedPct(
 
 /** Loyer mensuel arrondi à la dizaine d'euros : l'estimation n'est pas plus précise. */
 const monthlyRent = (surface: number, perM2: number) =>
-  formatWholeEuros(Math.round((surface * perM2) / 10) * 10);
+  formatPrice(Math.round((surface * perM2) / 10) * 10);
 
 /**
  * Le loyer mensuel estimé du bien (surface × loyer d'annonce au m²), avec la même règle que le
