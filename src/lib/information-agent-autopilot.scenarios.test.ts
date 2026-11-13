@@ -33,13 +33,21 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 vi.mock("@/lib/send-tracked-email", () => ({ sendTrackedEmail: mocks.sendTrackedEmail }));
-vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: mocks.sendResendEmail }));
+vi.mock("@/lib/email-alerts", async (importOriginal) => ({
+  ResendRejectedError: (await importOriginal<typeof import("@/lib/email-alerts")>())
+    .ResendRejectedError,
+  sendResendEmail: mocks.sendResendEmail,
+}));
 vi.mock("@/lib/admin-information-agent-email-template", () => ({
   getPublishedInformationAgentEmailTemplate: mocks.template,
 }));
 vi.mock("@/lib/information-agent", () => ({
   runAdminInformationAgentAction: mocks.runAction,
+}));
+vi.mock("@/lib/information-agent/draft", () => ({
   createAdminInformationAgentDraft: mocks.createDraft,
+}));
+vi.mock("@/lib/information-agent/preview", () => ({
   previewAdminInformationAgentMission: mocks.preview,
 }));
 vi.mock("@/lib/information-agent/mission-store", () => ({
@@ -74,6 +82,12 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { ResendRejectedError } from "@/lib/email-alerts";
+import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
+import {
+  InformationAgentSentButUnrecordedError,
+  InformationAgentUnverifiedSendError,
+} from "@/lib/information-agent/send";
 import { isConsumerMailAddress } from "@/lib/information-agent/address-hygiene";
 
 const MONDAY_10H = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris, plage d'envoi
@@ -345,7 +359,7 @@ describe("matrice du pilote : S01 à S32", () => {
       }),
       send: async () => {
         calls.sends += 1;
-        throw new Error("rate limit (429)");
+        throw new ResendRejectedError(429);
       },
     });
     // Le premier envoi échoue en 429 et clôt le passage : un seul essai, jamais de second.
@@ -479,7 +493,7 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S21 erreur du fournisseur (4xx/5xx) : événement, pas de réessai ; trois erreurs consécutives arrêtent le pilote", async () => {
     const one = harness({
       send: async () => {
-        throw new Error("Resend a refusé l'envoi (500).");
+        throw new ResendRejectedError(500);
       },
     });
     const summary = await runInformationAgentAutopilot(one.deps);
@@ -499,9 +513,7 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S21b plafond de validations d'un administrateur : une limite, jamais comptée comme erreur d'API", async () => {
     const { deps, calls } = harness({
       send: async () => {
-        throw new Error(
-          "Plafond de 30 validations par jour atteint : les envois reprennent demain.",
-        );
+        throw new AdminDailyApprovalCapError(30);
       },
     });
     const summary = await runInformationAgentAutopilot(deps);
@@ -513,9 +525,7 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S21c envoi accepté par le fournisseur mais mal enregistré : compté comme envoyé, jamais comme erreur", async () => {
     const { deps, calls } = harness({
       send: async () => {
-        throw new Error(
-          "Message accepté par Resend (id), enregistrement incomplet : base. Ne renvoyez pas ce message.",
-        );
+        throw new InformationAgentSentButUnrecordedError(new Error("base"));
       },
     });
     const summary = await runInformationAgentAutopilot(deps);
@@ -526,7 +536,7 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S22 délai dépassé (envoi à vérifier) : arrêt immédiat, aucune reprise", async () => {
     const { deps, calls } = harness({
       send: async () => {
-        throw new Error("Envoi à vérifier : Resend n’a pas répondu à temps.");
+        throw new InformationAgentUnverifiedSendError(new Error("timeout"));
       },
     });
     const summary = await runInformationAgentAutopilot(deps);
@@ -663,7 +673,7 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S31 Resend 429 : fin de passage, aucun échec de mission, aucun arrêt", async () => {
     const { deps, calls } = harness({
       send: async () => {
-        throw new Error("Resend a refusé l'envoi (429).");
+        throw new ResendRejectedError(429);
       },
     });
     const summary = await runInformationAgentAutopilot(deps);

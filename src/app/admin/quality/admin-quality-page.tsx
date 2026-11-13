@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatPercent, formatShareAsPercent } from "@/lib/format/numbers";
 import { saleDetailPath } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -10,9 +12,13 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
-import { AdminCatalogueQualityPanel } from "@/components/admin/AdminCatalogueQualityPanel";
+import {
+  AdminCatalogueQualityPanel,
+  CATALOGUE_QUALITY_QUERY_KEY,
+} from "@/components/admin/AdminCatalogueQualityPanel";
 import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
 import type {
@@ -20,12 +26,14 @@ import type {
   DataQualityReport,
   DataQualitySourceCoverage,
 } from "@/lib/data-quality-monitor";
-import * as queryKeys from "@/lib/query-keys";
+
+const QUALITY_REPORT_QUERY_KEY = ["admin-quality-report"] as const;
+const VALUATION_OVERVIEW_QUERY_KEY = ["admin-valuation-overview"] as const;
 
 export function AdminQualityPage() {
   const queryClient = useQueryClient();
   const qualityQuery = useQuery({
-    queryKey: queryKeys.adminQualityReport(),
+    queryKey: QUALITY_REPORT_QUERY_KEY,
     queryFn: fetchAdminDataQuality,
     staleTime: 60_000,
   });
@@ -37,7 +45,7 @@ export function AdminQualityPage() {
     isFetching: valuationFetching,
     error: valuationError,
   } = useQuery({
-    queryKey: queryKeys.adminValuationOverview(),
+    queryKey: VALUATION_OVERVIEW_QUERY_KEY,
     queryFn: fetchValuationAdminOverview,
     staleTime: 60_000,
   });
@@ -52,7 +60,7 @@ export function AdminQualityPage() {
       onRefresh={() => {
         void qualityQuery.refetch();
         void refetchValuation();
-        void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-quality"] });
+        void queryClient.invalidateQueries({ queryKey: CATALOGUE_QUALITY_QUERY_KEY });
       }}
       isRefreshing={qualityQuery.isFetching || valuationFetching}
     >
@@ -62,9 +70,7 @@ export function AdminQualityPage() {
             role="alert"
             className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
           >
-            {qualityQuery.error instanceof Error
-              ? qualityQuery.error.message
-              : "Erreur de chargement"}
+            {queryErrorMessage(qualityQuery.error, "Erreur de chargement")}
           </div>
         )}
 
@@ -226,12 +232,12 @@ export function AdminQualityPage() {
             <QualityMetric
               icon={<Sparkles />}
               label="Hybride LightGBM"
-              value={formatOptionalPct(valuationOverview?.runtime.hybridSharePct)}
+              value={formatPercent(valuationOverview?.runtime.hybridSharePct, 1)}
             />
             <QualityMetric
               icon={<ShieldCheck />}
               label="Actionnables"
-              value={formatOptionalPct(valuationOverview?.runtime.actionableSharePct)}
+              value={formatPercent(valuationOverview?.runtime.actionableSharePct, 1)}
             />
           </div>
           {valuationOverview?.runtime.driftSignals.length ? (
@@ -255,8 +261,8 @@ export function AdminQualityPage() {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {model.version} · erreur médiane{" "}
-                  {formatOptionalPct(model.metrics.testMedianApePct)} · couverture{" "}
-                  {formatOptionalPct(model.metrics.intervalCoveragePct)}
+                  {formatPercent(model.metrics.testMedianApePct, 1)} · couverture{" "}
+                  {formatPercent(model.metrics.intervalCoveragePct, 1)}
                 </p>
               </article>
             ))}
@@ -271,10 +277,6 @@ export function AdminQualityPage() {
       </div>
     </AdminShell>
   );
-}
-
-function formatOptionalPct(value: number | null | undefined): string {
-  return value == null ? "—" : `${value.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}%`;
 }
 
 function QualityMetric({
@@ -319,7 +321,7 @@ function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
         <span className="text-xs text-muted-foreground">{sale.flags.join(" · ")}</span>
       </span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-        {sale.score_confidence != null ? `${Math.round(sale.score_confidence * 100)}%` : "—"}
+        {formatShareAsPercent(sale.score_confidence)}
       </span>
     </Link>
   );
@@ -359,15 +361,11 @@ function QualityPill({ value }: { value: string }) {
   const numeric = parseInt(value, 10);
   const tone =
     Number.isFinite(numeric) && numeric >= 75
-      ? "border-emerald-300/20 bg-success-tint text-success"
+      ? "success"
       : Number.isFinite(numeric) && numeric >= 50
-        ? "border-amber-300/20 bg-warning-tint text-warning"
-        : "border-red-300/20 bg-danger-tint text-danger";
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-xs ${tone}`}>
-      {value}
-    </span>
-  );
+        ? "warning"
+        : "danger";
+  return <AdminPill tone={tone}>{value}</AdminPill>;
 }
 
 function buildQualityMetrics(report: DataQualityReport | undefined) {
@@ -382,10 +380,7 @@ function buildQualityMetrics(report: DataQualityReport | undefined) {
     highConfidence: report?.highConfidenceCount ?? 0,
     riskSales: report?.riskSales ?? 0,
     sourcedRisks: report?.sourcedRiskSales ?? 0,
-    avgConfidence:
-      report?.averageConfidencePct == null
-        ? "—"
-        : String(Math.round(report.averageConfidencePct)) + "%",
+    avgConfidence: formatPercent(report?.averageConfidencePct),
     sources: (report?.sourceCoverage ?? []).map(sourceCoverageToQuality),
   };
 }
@@ -398,15 +393,11 @@ function sourceCoverageToQuality(source: DataQualitySourceCoverage): SourceQuali
     withGps: source.count - source.missingLocation,
     withDocs: source.count - source.missingDocuments,
     withOccupation: source.count - source.missingOccupation,
-    avgConfidence:
-      source.averageConfidencePct == null
-        ? "—"
-        : String(Math.round(source.averageConfidencePct)) + "%",
+    avgConfidence: formatPercent(source.averageConfidencePct),
     weakCount: source.weakCount,
   };
 }
 
 function pct(count: number, total: number): string {
-  if (total === 0) return "0%";
-  return `${Math.round((count / total) * 100)}%`;
+  return formatShareAsPercent(total === 0 ? 0 : count / total);
 }

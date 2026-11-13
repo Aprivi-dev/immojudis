@@ -229,7 +229,7 @@ export async function loadInitiatorMission(sharedCase: SharedCase): Promise<Miss
     : query.eq("case_id", sharedCase.id).order("created_at", { ascending: true }).limit(1);
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("Mission initiatrice du dossier introuvable.");
+  if (!data) throw new Error("Case initiator mission not found");
   return data;
 }
 
@@ -305,7 +305,7 @@ export async function insertOrLoadInboundMessage({
     .maybeSingle();
   if (existingError || !existing) throw error;
   if (existing.case_id !== sharedCase.id) {
-    throw new Error("Message entrant déjà rattaché à un autre dossier.");
+    throw new Error("Inbound message already attached to another case");
   }
   // A replay must not write a stale metadata snapshot over a worker's newer
   // processing checkpoint. Authentication was recorded on the first receipt;

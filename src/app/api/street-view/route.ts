@@ -1,11 +1,10 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { RateLimitError } from "@/lib/api-errors";
-import { apiRouteError, rateLimitResponse } from "@/lib/api-observability";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import type { StreetViewPanorama } from "@/lib/street-view";
 import { findStreetViewPanorama } from "@/lib/street-view-panorama.server";
 
 const coordinate = (min: number, max: number) =>
@@ -24,46 +23,33 @@ const querySchema = z.object({
  * metadata, so it reveals nothing about our catalogue. Results change only
  * when Google publishes new imagery and are cached at the edge for a week.
  */
-export async function GET(
-  request: Request,
-): Promise<NextResponse<{ panorama: StreetViewPanorama } | { error: string }>> {
-  const url = new URL(request.url);
-  const parsed = querySchema.safeParse({
-    lat: url.searchParams.get("lat"),
-    lng: url.searchParams.get("lng"),
-  });
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Coordonnées invalides." }, { status: 400 });
-  }
-  try {
+export const GET = apiRoute(
+  { scope: "street_view.panorama", fallbackMessage: "Street View indisponible" },
+  async (request) => {
+    const url = new URL(request.url);
+    const parsed = querySchema.safeParse({
+      lat: url.searchParams.get("lat"),
+      lng: url.searchParams.get("lng"),
+    });
+    if (!parsed.success) throw new PublicApiError("Coordonnées invalides.", 400);
     await enforceIpRateLimit({
       request,
       bucketKey: "street_view.panorama",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-  } catch (error) {
-    if (error instanceof RateLimitError) {
-      return rateLimitResponse(error) as NextResponse<{ error: string }>;
-    }
-    throw error;
-  }
 
-  try {
     const panorama = await findStreetViewPanorama(parsed.data.lat, parsed.data.lng);
+    // Sans clé Google configurée, la réponse n'est gardée par aucun cache.
+    if (panorama.status === "unavailable" && panorama.reason === "not_configured") {
+      return { panorama };
+    }
     return NextResponse.json(
       { panorama },
       {
         headers: {
-          "cache-control":
-            panorama.status === "unavailable" && panorama.reason === "not_configured"
-              ? "no-store"
-              : "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000",
+          "cache-control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000",
         },
       },
     );
-  } catch (error) {
-    return apiRouteError(error, request, "street_view.panorama", {
-      fallbackMessage: "Street View indisponible",
-    });
-  }
-}
+  },
+);

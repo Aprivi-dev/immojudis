@@ -66,7 +66,7 @@ export function formatIcsUtc(date: Date): string {
 }
 
 /** `20261023` from `2026-10-23`. */
-export function formatIcsDate(isoDay: string): string {
+function formatIcsDate(isoDay: string): string {
   return isoDay.replaceAll("-", "");
 }
 

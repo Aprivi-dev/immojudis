@@ -2,10 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import type { AutopilotSettings, AutopilotStats } from "@/lib/information-agent/autopilot-rules";
-import {
-  assertInformationAgentControllerIdentity,
-  informationAgentPortalSecret,
-} from "@/lib/information-agent/message-guards";
+import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
+import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ. Fixée volontairement
@@ -15,12 +13,12 @@ import {
  */
 export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2099-01-01.0";
 
-export const AUTOPILOT_MIN_MANUAL_SENDS = 30;
-export const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
-export const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
+const AUTOPILOT_MIN_MANUAL_SENDS = 30;
+const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
+const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
 const DAY_MS = 86_400_000;
 
-export type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail: string };
+type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail: string };
 export type AutopilotReadiness = { ready: boolean; checks: AutopilotReadinessCheck[] };
 
 export type AutopilotReadinessInput = {

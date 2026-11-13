@@ -211,13 +211,14 @@ def process(data: bytes, *, max_pixels: int = MAX_PIXELS) -> Processed:
 # --------------------------------------------------------------------------------------------------
 
 
-def _apply_resource_limits() -> None:
-    """Plafonds de processeur et de mémoire du décodeur, là où le système les connaît (Linux)."""
+def apply_resource_limits(cpu_seconds: int, address_space_bytes: int) -> None:
+    """Plafonds de processeur et de mémoire d'un processus qui lit des octets tiers, là où le système les connaît
+    (Linux), et pas de fichier core. Aussi appelé par ``pdf_photo_extract.py`` avec ses propres plafonds."""
     try:
         import resource
 
-        resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS_LIMIT, CPU_SECONDS_LIMIT))
-        resource.setrlimit(resource.RLIMIT_AS, (ADDRESS_SPACE_LIMIT_BYTES, ADDRESS_SPACE_LIMIT_BYTES))
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+        resource.setrlimit(resource.RLIMIT_AS, (address_space_bytes, address_space_bytes))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     except (ImportError, ValueError, OSError):
         pass
@@ -236,7 +237,7 @@ def _parse_max_pixels(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     max_pixels = _parse_max_pixels(list(sys.argv[1:] if argv is None else argv))
-    _apply_resource_limits()
+    apply_resource_limits(CPU_SECONDS_LIMIT, ADDRESS_SPACE_LIMIT_BYTES)
     data = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(data) > MAX_INPUT_BYTES:
         header: dict[str, object] = {"ok": False, "reason": "too_large", "width": None, "height": None}

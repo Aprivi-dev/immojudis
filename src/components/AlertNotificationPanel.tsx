@@ -9,6 +9,8 @@ import Link from "next/link";
 import { updateAlertNotification } from "@/lib/client-api";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { PEPITE_ALERT_REASON, PEPITE_LABEL } from "@/lib/pepite-copy";
+import { formatPercent } from "@/lib/format/numbers";
+import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
@@ -184,7 +186,7 @@ function NotificationItem({
             ))}
             {notification.marketDiscountPct != null ? (
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                {Math.round(notification.marketDiscountPct)} % sous la valeur estimée (base DVF)
+                {formatPercent(notification.marketDiscountPct)} sous la valeur estimée (base DVF)
               </span>
             ) : null}
           </div>
@@ -226,5 +228,6 @@ function formatNotificationDate(value: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: PARIS_TIME_ZONE,
   }).format(date);
 }

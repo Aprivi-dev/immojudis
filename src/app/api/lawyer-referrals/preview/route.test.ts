@@ -52,6 +52,7 @@ describe("GET /api/lawyer-referrals/preview", () => {
       bucketKey: "lawyer-referrals.preview",
       limit: 30,
       windowSeconds: 60,
+      context: expect.objectContaining({ scope: "api.lawyer-referrals.preview" }),
     });
   });
 

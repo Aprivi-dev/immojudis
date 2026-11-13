@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -8,40 +9,33 @@ import {
   getAdminSourceRefreshStatus,
   requestAdminSourceRefresh,
 } from "@/lib/admin-source-refresh";
-import { adminErrorResponse } from "@/lib/api-route-errors";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
+import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-async function handleGET(request: Request) {
-  try {
+export const GET = adminRoute(
+  {
+    scope: "admin.information-agent.source-refresh.read",
+    fallbackMessage: "Refresh source indisponible.",
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshStatusQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    const response = await getAdminSourceRefreshStatus({ auth, input });
-    return Response.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
-  }
-}
+    return getAdminSourceRefreshStatus({ auth, input });
+  },
+);
 
-async function handlePOST(request: Request) {
-  try {
+export const POST = adminRoute(
+  {
+    scope: "admin.information-agent.source-refresh.request",
+    fallbackMessage: "Refresh source indisponible.",
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshRequestSchema.parse(await request.json());
-    const response = await requestAdminSourceRefresh({ auth, input });
-    return Response.json(response, {
-      status: 202,
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
-export const POST = withAdminDeadline(handlePOST);
+    return NextResponse.json(await requestAdminSourceRefresh({ auth, input }), { status: 202 });
+  },
+);

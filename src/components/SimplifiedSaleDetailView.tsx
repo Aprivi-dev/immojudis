@@ -19,12 +19,12 @@ import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { isPersistedSale } from "@/lib/example-sale-identity";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
 import { buildStatePilot } from "@/lib/professional-pilot-state";
 import {
   ListingOverview,
-  isPersistedSaleId,
   type CeilingWording,
   type OverviewAction,
   SaleDetailHeading,
@@ -428,7 +428,7 @@ function SaleDetailWorkspace({
   const enteredSurfaceAccepted =
     Boolean(user) &&
     !publicDemo &&
-    isPersistedSaleId(sale.id) &&
+    isPersistedSale(sale) &&
     !listingCeilingInputs.blocked.critical &&
     acceptsEnteredBuiltSurface(listingCeilingInputs.displaySale);
   const dossierQuery = useQuery({
@@ -689,7 +689,7 @@ function SaleDetailWorkspace({
   // prix (clé de requête partagée). Un visiteur n'y a pas droit ; l'annonce exemple la calcule sur
   // son estimation fictive. Rien tant que la valeur ou le prix sont en cours de vérification.
   const valuePreviewQuery = useQuery({
-    queryKey: ["value-preview", sale.id],
+    queryKey: queryKeys.valuePreview(sale.id),
     queryFn: () => fetchValuePreview(sale.id),
     enabled: Boolean(user) && !publicDemo,
     staleTime: 60 * 60_000,
@@ -887,7 +887,7 @@ function SaleDetailWorkspace({
             backLabel={backLabel}
             cityBlocked={cityBlocked}
             publicDemo={publicDemo}
-            showFavorite={dossierInPanel && isPersistedSaleId(sale.id)}
+            showFavorite={dossierInPanel && isPersistedSale(sale)}
           />
           <SaleDetailHeading
             sale={displaySale}
@@ -973,7 +973,7 @@ function SaleDetailWorkspace({
                     ) : null
                   }
                   followAction={
-                    !publicDemo && isPersistedSaleId(sale.id) ? (
+                    !publicDemo && isPersistedSale(sale) ? (
                       <FavoriteButton saleId={sale.id} className="min-h-11 w-full px-4 text-sm" />
                     ) : null
                   }

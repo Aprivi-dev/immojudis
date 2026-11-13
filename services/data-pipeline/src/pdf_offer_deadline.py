@@ -14,8 +14,11 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from src.admission import sale_date_has_passed
-from src.normalize import clean_text, parse_french_datetime, source_sale_timezone, strip_accents
-from src.pdf_document_types import _canonical_document_type
+from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN
+from src.normalize import clean_text, parse_french_datetime, source_sale_timezone
+from src.pdf_document_types import canonical_document_type
+from src.pdf_sale_date_guard import assign_pdf_sale_date
+from src.text_folding import strip_accents
 
 _E = "[eéèêEÉÈÊ]"
 # A full stop ends the phrase, except after a roman numeral (a section reference): « Date limite de
@@ -29,9 +32,8 @@ _SUBJECT = (
     # A table cell: « Date limite de réception du dossier 10/12/2026 à 16h00 d'offre » (Bougival).
     r"|du\s+dossier(?=\s*:?\s*\d))"
 )
-_MONTHS = r"janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre"
 _WEEKDAY = r"(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?"
-_DATE_TEXT = rf"(?:\d{{1,2}}(?:\s*er)?\s+(?:{_MONTHS})\s+\d{{4}}|\d{{1,2}}[/.-]\d{{1,2}}[/.-]\d{{4}})"
+_DATE_TEXT = rf"(?:\d{{1,2}}(?:\s*er)?\s+(?:{MONTH_PATTERN})\s+\d{{4}}|\d{{1,2}}[/.-]\d{{1,2}}[/.-]\d{{4}})"
 _WHEN = rf"(?P<when>{_WEEKDAY}{_DATE_TEXT}[^.;]{{0,40}})"
 OFFER_DEADLINE_PATTERNS = (
     re.compile(
@@ -85,7 +87,7 @@ _FOREIGN_LEAD = re.compile(
     re.I,
 )
 _DATE_RE = re.compile(
-    rf"\b(?P<day>\d{{1,2}})(?:\s*er)?\s+(?P<month>{_MONTHS})\s+(?P<year>\d{{4}})\b"
+    rf"\b(?P<day>\d{{1,2}})(?:\s*er)?\s+(?P<month>{MONTH_PATTERN})\s+(?P<year>\d{{4}})\b"
     r"|\b(?P<nday>\d{1,2})[/.-](?P<nmonth>\d{1,2})[/.-](?P<nyear>\d{4})\b",
     re.I,
 )
@@ -94,14 +96,6 @@ _TIME_RE = re.compile(
     r"\s*,?\s*(?:(?:à|a)\s*)?(?:(?P<midi>midi)\b|(?P<hour>[01]?\d|2[0-3])\s*(?:h|heures?|:)\s*(?P<minute>[0-5]\d)?(?![\d/]))",
     re.I,
 )
-_MONTH_NUMBERS = {
-    name: index
-    for index, name in enumerate(
-        ("janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre",
-         "novembre", "decembre"),
-        start=1,
-    )
-}
 DOCUMENT_RANK = {
     "cahier_conditions_vente": 90,
     "conditions_vente": 85,
@@ -124,7 +118,7 @@ def _first_deadline(text: str, *, local_timezone: str) -> tuple[datetime, bool] 
         return None
     if match.group("day"):
         day, year = int(match.group("day")), int(match.group("year"))
-        month = _MONTH_NUMBERS.get(strip_accents(match.group("month")).lower(), 0)
+        month = MONTH_NUMBERS.get(strip_accents(match.group("month")).lower(), 0)
     else:
         day, month, year = int(match.group("nday")), int(match.group("nmonth")), int(match.group("nyear"))
     try:
@@ -192,7 +186,7 @@ def extract_offer_deadline_from_documents(
         url = clean_text(item.get("url")) or ""
         raw_type = item.get("document_type") or item.get("type")
         document_type = (
-            "source_page" if raw_type == "source_page" else _canonical_document_type(raw_type, label=label, url=url)
+            "source_page" if raw_type == "source_page" else canonical_document_type(raw_type, label=label, url=url)
         )
         if document_type in _FOREIGN_DOCUMENT_TYPES:
             continue
@@ -264,15 +258,13 @@ def apply_page_offer_deadline(sale: object) -> None:
     timezone = source_sale_timezone(raw_payload if isinstance(raw_payload, dict) else {})
     extraction = extract_offer_deadline_from_documents([page], local_timezone=timezone)
     if extraction:
-        from src.pdf_fact_extraction import _assign_pdf_sale_date
-
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(extraction))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(extraction))
 
 
 def offer_deadline_sale_date(
     extraction: dict[str, object], *, allow_expired: bool = False, now: datetime | None = None
 ) -> dict[str, object]:
-    """Candidate for ``_assign_pdf_sale_date``; its value is None when not allowed.
+    """Candidate for ``assign_pdf_sale_date``; its value is None when not allowed.
 
     ``allow_expired`` (a call for offers, whose deadline is the sale's échéance): a deadline read without
     ambiguity that has passed closes the sale (``offer_deadline_expired``) instead of leaving it undated

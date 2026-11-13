@@ -5,7 +5,7 @@
  */
 import type { LandGeometry, LandParcel } from "./land-report-types";
 
-export type ParcelOutline = {
+type ParcelOutline = {
   id: string;
   label: string;
   confirmed: boolean;

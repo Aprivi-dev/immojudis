@@ -131,6 +131,20 @@ def retry_delay_seconds(
     return min(policy.max_sleep_seconds, max(exponential, instructed))
 
 
+def looks_like_html(text: str) -> bool:
+    """Une page HTML ou XML servie à la place du fichier de données attendu."""
+    prefix = text.lstrip()[:512].lower()
+    return prefix.startswith(("<!doctype html", "<html", "<?xml")) or "<html" in prefix
+
+
+def has_excessive_controls(text: str) -> bool:
+    """Plus d'un caractère de contrôle pour mille : fichier binaire ou mal décodé."""
+    if not text:
+        return False
+    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text[:100_000])
+    return controls > max(2, len(text[:100_000]) // 1_000)
+
+
 def _json_default(value: Any) -> Any:
     if isinstance(value, (date, datetime)):
         return value.isoformat()

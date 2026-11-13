@@ -1,29 +1,26 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { enableAlertEmailRecap } from "@/components/search/alert-email-consent";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  createWatchedZone as createWatchedZoneRequest,
-  fetchAccessPlan,
-  fetchNotificationPreferences,
-} from "@/lib/client-api";
-import { departmentFromSearchQuery } from "@/lib/alerts";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
+import { isAnalysisOfferOpen } from "@/hooks/use-billing-offer";
+import { createWatchedZone as createWatchedZoneRequest } from "@/lib/client-api";
 import { ALERT_CREATION_PATH } from "@/lib/discovery-alerts";
 import type { GeoPoint } from "@/lib/geo";
 import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent, type AlertSurface } from "@/lib/product-events";
-import * as queryKeys from "@/lib/query-keys";
 import { savePendingAlert } from "@/lib/pending-alert";
-import { createAlert } from "@/lib/queries";
+import { createAlert } from "@/lib/alert-queries";
+import { departmentFromSearchText, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import {
   countAlertableSearchFilters,
   hasUnalertableSearchFilters,
 } from "@/lib/search/search-filters";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { userMessage } from "@/lib/user-messages";
 
@@ -35,7 +32,7 @@ const ALERTS_PATH = "/alertes";
  * condition de `createAlertFromSearch` (texte libre, occupation, note, rendement, écart avec le
  * marché, DPE, maison avec terrain), puis ce que l'alerte gratuite accepte.
  */
-export const RESERVED_ALERT_CRITERIA_TEXT =
+const RESERVED_ALERT_CRITERIA_TEXT =
   "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…";
 
 export type CreateAlertOptions = {
@@ -96,18 +93,9 @@ export function useCreateAlert({
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const [saving, setSaving] = useState(false);
-  const { data: entitlements, isLoading: entitlementsLoading } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 5 * 60_000,
-  });
-  const { data: notificationPreferences } = useQuery({
-    queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
-    queryFn: fetchNotificationPreferences,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 60_000,
-    retry: false,
+  const { data: entitlements, isLoading: entitlementsLoading } = useAccessPlanQuery(user?.id);
+  const { data: notificationPreferences } = useNotificationPreferencesQuery(user?.id, {
+    enabled: !authLoading,
   });
   const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
 
@@ -169,10 +157,15 @@ export function useCreateAlert({
         return { status: "blocked" };
       }
 
-      // Un code de département tapé dans la recherche texte est un filtre département, comme dans
-      // le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique pas). Seul
-      // le texte restant est un critère avancé : le contrôle de l'offre gratuite porte sur lui.
-      const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
+      // Un département tapé dans la recherche texte (son nom ou son code) est un filtre département,
+      // comme dans le catalogue : il n'est pas gardé comme texte libre (que l'évaluation n'applique
+      // pas). Un code postal reste du texte : l'alerte le suit exactement, son département
+      // l'élargirait. Seul le texte restant est un critère avancé : le contrôle de l'offre gratuite
+      // porte sur lui.
+      const queryDepartment =
+        search.department || resolveFrenchGeoSearch(search.query).kind === "postal_code"
+          ? null
+          : departmentFromSearchText(search.query);
       const residualQuery = queryDepartment ? null : search.query;
       if (
         !entitlements.plan.hasAnalysisAccess &&
@@ -295,5 +288,5 @@ export function useCreateAlert({
   /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
   const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
 
-  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
+  return { createAlertFromSearch, explainReservedFeature, saving, emailRecapEnabled, ready };
 }

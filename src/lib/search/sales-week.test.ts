@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parisToday, upcomingWeekScope } from "./sales-week";
+import { parisDateKey } from "@/lib/paris-time";
+import { upcomingWeekScope } from "./sales-week";
 
-describe("parisToday", () => {
+describe("jour de la semaine (`parisDateKey`)", () => {
   it("donne le jour de Paris, pas celui d'UTC", () => {
     // 23 h 30 UTC le 6 novembre = 0 h 30 à Paris le 7 novembre (heure d'hiver).
-    expect(parisToday(new Date("2026-11-06T23:30:00Z"))).toBe("2026-11-07");
-    expect(parisToday(new Date("2026-11-06T10:00:00Z"))).toBe("2026-11-06");
+    expect(parisDateKey(new Date("2026-11-06T23:30:00Z"))).toBe("2026-11-07");
+    expect(parisDateKey(new Date("2026-11-06T10:00:00Z"))).toBe("2026-11-06");
   });
 });
 

@@ -25,7 +25,8 @@ vi.mock("@/components/admin/AdminSaleFeedbackPanel", () => ({
   AdminSaleFeedbackPanel: () => null,
 }));
 // Les contrôles qualité du catalogue ont leur propre test (AdminCatalogueQualityPanel.test.tsx).
-vi.mock("@/components/admin/AdminCatalogueQualityPanel", () => ({
+vi.mock("@/components/admin/AdminCatalogueQualityPanel", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/admin/AdminCatalogueQualityPanel")>()),
   AdminCatalogueQualityPanel: () => null,
 }));
 afterEach(() => {
@@ -99,7 +100,7 @@ describe("AdminQualityPage error recovery", () => {
     );
     expect(await screen.findByText("Appartement prioritaire")).toBeTruthy();
     expect(screen.getByText("confiance faible · surface absente")).toBeTruthy();
-    expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.getByText("25 %")).toBeTruthy();
     expect(mocks.sales).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });

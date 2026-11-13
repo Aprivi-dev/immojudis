@@ -4,12 +4,14 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { PublicationRequestStatus } from "@/lib/publication-requests-client";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { normalizeEmail } from "@/lib/account";
 
 export const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents" as const;
-export const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
-export const MAX_PUBLICATION_DOCUMENTS = 20;
-export const MAX_PUBLICATION_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024;
-export const PUBLICATION_REQUEST_PAGE_SIZE = 50;
+const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
+const MAX_PUBLICATION_DOCUMENTS = 20;
+const MAX_PUBLICATION_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024;
+const PUBLICATION_REQUEST_PAGE_SIZE = 50;
 
 const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   "application/pdf",
@@ -39,7 +41,7 @@ const uploadedPublicationDocumentSchema = z.object({
   uploaded_at: z.string().trim().min(1).max(80),
 });
 
-export const publicationRequestFieldsSchema = z.object({
+const publicationRequestFieldsSchema = z.object({
   title: z.string().trim().min(1).max(240),
   location: z.string().trim().min(1).max(240),
   startingPriceEur: z.number().finite().nonnegative().nullable(),
@@ -84,7 +86,7 @@ export const publicationRequestFinalizeSchema = z.object({
   documents: z.array(uploadedPublicationDocumentSchema).max(MAX_PUBLICATION_DOCUMENTS),
 });
 
-export type PublicationDocumentView = Omit<UploadedPublicationDocument, "path" | "bucket"> & {
+type PublicationDocumentView = Omit<UploadedPublicationDocument, "path" | "bucket"> & {
   signedUrl: string | null;
 };
 
@@ -151,7 +153,8 @@ export async function createPublicationUploadTargets({
       const { data, error } = await supabaseAdmin.storage
         .from(PUBLICATION_DOCUMENT_BUCKET)
         .createSignedUploadUrl(path);
-      if (error || !data?.token) throw error ?? new Error("Impossible de préparer la pièce.");
+      if (error || !data?.token)
+        throw error ?? new Error("Publication request: upload URL not created.");
       uploads.push({
         bucket: PUBLICATION_DOCUMENT_BUCKET,
         path,
@@ -296,7 +299,7 @@ export async function getPublicationRequest({
 
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("NotFound: demande de publication introuvable.");
+  if (!data) throw new NotFoundError("Demande de publication introuvable.");
 
   const row = data as PublicationRequestRow;
   const documents = await signedPublicationDocuments(row);
@@ -308,10 +311,12 @@ export async function getPublicationRequest({
   };
 }
 
-export async function assertApprovedProfessional(auth: SupabaseAuthContext): Promise<string> {
-  const claimEmail = normalizeEmail(auth.claims.email);
+async function assertApprovedProfessional(auth: SupabaseAuthContext): Promise<string> {
+  const claimEmail = normalizeEmail(
+    typeof auth.claims.email === "string" ? auth.claims.email : null,
+  );
   if (!claimEmail) {
-    throw new Error("Forbidden: une adresse email confirmée est obligatoire avant tout dépôt.");
+    throw new ForbiddenError("Une adresse email confirmée est obligatoire avant tout dépôt.");
   }
   if (auth.isAdmin) return claimEmail;
 
@@ -323,15 +328,13 @@ export async function assertApprovedProfessional(auth: SupabaseAuthContext): Pro
   if (error) throw error;
   const profile = data as PublicationProfile | null;
   if (!profile || profile.account_type !== "b2b") {
-    throw new Error("Forbidden: ce dépôt est réservé aux comptes professionnels.");
+    throw new ForbiddenError("Ce dépôt est réservé aux comptes professionnels.");
   }
   if (profile.professional_status === "pending") {
-    throw new Error("Forbidden: votre compte professionnel est encore en attente de validation.");
+    throw new ForbiddenError("Votre compte professionnel est encore en attente de validation.");
   }
   if (profile.professional_status !== "approved") {
-    throw new Error(
-      "Forbidden: votre compte professionnel n'est pas autorisé à déposer une vente.",
-    );
+    throw new ForbiddenError("Votre compte professionnel n'est pas autorisé à déposer une vente.");
   }
   return claimEmail;
 }
@@ -494,10 +497,6 @@ export async function removePublicationRequestUploads({
     .from(PUBLICATION_DOCUMENT_BUCKET)
     .remove(paths)
     .catch(() => undefined);
-}
-
-function normalizeEmail(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 function safeStorageFileName(fileName: string): string {

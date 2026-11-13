@@ -10,11 +10,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src import valuation_activation_gate as gate
 from src import valuation_training as vt
+from src.valuation_activation_gate import decide_activation
 from src.valuation_training import (
     ActiveModel,
     CellLevel,
-    decide_activation,
     export_local_market,
     lookup_exported_local_market,
     past_cell_levels,
@@ -380,7 +381,7 @@ def test_a_coverage_that_was_not_measured_blocks_activation() -> None:
 
 
 def test_the_minimum_number_of_test_sales_to_activate_is_300() -> None:
-    assert vt.MIN_ACTIVATION_TEST_ROWS == 300
+    assert gate.MIN_ACTIVATION_TEST_ROWS == 300
     assert decide_activation(_report(9.0, 12.0, test_rows=300), requested=True).activate is True
     decision = decide_activation(_report(9.0, 12.0, test_rows=299), requested=True)
     assert decision.activate is False
@@ -432,7 +433,7 @@ def test_a_missing_interval_blocks_activation_like_a_missing_coverage() -> None:
 def test_paired_bootstrap_proves_a_consistent_improvement_even_on_noisy_sales() -> None:
     rng = np.random.default_rng(3)
     base = rng.gamma(2.0, 6.0, size=400)  # noisy errors shared by both models
-    gap = vt.paired_bootstrap_error_gap(base - 1.5, base, resamples=300)
+    gap = gate.paired_bootstrap_error_gap(base - 1.5, base, resamples=300)
 
     assert gap["rows"] == 400 and gap["resamples"] == 300 and gap["confidence_pct"] == 95.0
     assert gap["gap_pp"] == pytest.approx(-1.5, abs=1e-9)
@@ -442,11 +443,11 @@ def test_paired_bootstrap_proves_a_consistent_improvement_even_on_noisy_sales() 
 def test_paired_bootstrap_does_not_prove_identical_or_unrelated_models_apart() -> None:
     rng = np.random.default_rng(4)
     errors = rng.gamma(2.0, 6.0, size=400)
-    same = vt.paired_bootstrap_error_gap(errors, errors, resamples=200)
+    same = gate.paired_bootstrap_error_gap(errors, errors, resamples=200)
     assert same["gap_pp"] == 0.0 and same["ci_high_pp"] == 0.0  # not < 0: no activation
 
     other = rng.gamma(2.0, 6.0, size=400)  # same distribution, different sales: pure noise
-    noise = vt.paired_bootstrap_error_gap(errors, other, resamples=300)
+    noise = gate.paired_bootstrap_error_gap(errors, other, resamples=300)
     assert noise["ci_low_pp"] < 0 < noise["ci_high_pp"]
 
 
@@ -457,18 +458,18 @@ def test_a_model_ten_percent_worse_on_75_sales_is_never_proven_better() -> None:
         rng = np.random.default_rng(100 + trial)
         reference = rng.gamma(2.0, 6.0, size=75)
         candidate = np.abs(reference * 1.10 + rng.normal(0, 4.0, size=75))
-        gap = vt.paired_bootstrap_error_gap(candidate, reference, resamples=200)
+        gap = gate.paired_bootstrap_error_gap(candidate, reference, resamples=200)
         proven_better += gap["ci_high_pp"] < 0
     assert proven_better == 0
 
 
 def test_paired_bootstrap_rejects_unpaired_or_empty_errors() -> None:
     with pytest.raises(ValueError, match="same length"):
-        vt.paired_bootstrap_error_gap(np.array([1.0, 2.0]), np.array([1.0]))
+        gate.paired_bootstrap_error_gap(np.array([1.0, 2.0]), np.array([1.0]))
     with pytest.raises(ValueError, match="non-empty"):
-        vt.paired_bootstrap_error_gap(np.array([]), np.array([]))
+        gate.paired_bootstrap_error_gap(np.array([]), np.array([]))
     with pytest.raises(ValueError, match="finite"):
-        vt.paired_bootstrap_error_gap(np.array([1.0, np.nan]), np.array([1.0, 2.0]))
+        gate.paired_bootstrap_error_gap(np.array([1.0, np.nan]), np.array([1.0, 2.0]))
 
 
 def test_the_javascript_publication_gate_uses_the_same_numbers() -> None:
@@ -476,13 +477,13 @@ def test_the_javascript_publication_gate_uses_the_same_numbers() -> None:
         Path(__file__).resolve().parents[3] / "scripts" / "lib" / "valuation-promotion-gate.mjs"
     ).read_text(encoding="utf-8")
 
-    assert f"MIN_ACTIVATION_TEST_ROWS = {vt.MIN_ACTIVATION_TEST_ROWS};" in script
-    assert f"MIN_COVERAGE_PCT = {int(vt.MIN_PROMOTION_COVERAGE_PCT)};" in script
+    assert f"MIN_ACTIVATION_TEST_ROWS = {gate.MIN_ACTIVATION_TEST_ROWS};" in script
+    assert f"MIN_COVERAGE_PCT = {int(gate.MIN_PROMOTION_COVERAGE_PCT)};" in script
 
 
 def test_the_coverage_floor_is_below_nominal_and_not_below_the_absolute_reject_threshold() -> None:
-    assert vt.MIN_PROMOTION_COVERAGE_PCT < vt.CONFIDENCE_LEVEL * 100
-    assert vt.MIN_PROMOTION_COVERAGE_PCT >= 70.0
+    assert gate.MIN_PROMOTION_COVERAGE_PCT < gate.CONFIDENCE_LEVEL * 100
+    assert gate.MIN_PROMOTION_COVERAGE_PCT >= 70.0
 
 
 def test_accuracy_and_coverage_failures_are_all_reported_accuracy_first() -> None:
@@ -559,7 +560,7 @@ def test_force_never_bypasses_the_served_blend_rule(tmp_path, monkeypatch) -> No
     )
 
     assert forced is not None and vt.bundle_is_activated(forced) is False
-    assert forced.report["promotion"]["reasons"] == vt.served_blend_reasons(forced.report["blend"])
+    assert forced.report["promotion"]["reasons"] == gate.served_blend_reasons(forced.report["blend"])
     assert "'fragile' comparables" in forced.report["promotion"]["reasons"][0]
 
 
@@ -727,7 +728,7 @@ def test_active_model_is_scored_on_the_same_sales_as_the_candidate() -> None:
     features = pd.DataFrame({"surface_m2": [40.0, 50.0, 60.0, 70.0]})
     actual = np.array([3000.0, 3300.0, 2700.0, 6000.0])
 
-    result = vt.evaluate_active_model(active, features, actual)
+    result = vt.score_active_model(active, features, actual)[0]
 
     assert result["status"] == "evaluated"
     assert result["version"] == "v1"
@@ -761,7 +762,7 @@ def test_active_model_is_scored_with_its_own_local_variables_not_the_candidates(
     )
     actual = np.array([5000.0, 5000.0])
 
-    result = vt.evaluate_active_model(_active_with_export(9.0), features, actual, h3_module=FakeH3)
+    result = vt.score_active_model(_active_with_export(9.0), features, actual, h3_module=FakeH3)[0]
 
     assert result["status"] == "evaluated"
     assert result["local_features_source"] == "own_export"
@@ -777,7 +778,7 @@ def test_an_active_model_older_than_the_export_keeps_the_approximation_and_says_
     )
     legacy = _active_with_export(9.0, with_export=False)
 
-    result = vt.evaluate_active_model(legacy, features, np.array([2000.0]), h3_module=FakeH3)
+    result = vt.score_active_model(legacy, features, np.array([2000.0]), h3_module=FakeH3)[0]
 
     assert result["local_features_source"] == "candidate_past_only_approximation"
     assert result["median_ape_pct"] == 0.0
@@ -791,15 +792,15 @@ def test_active_model_that_cannot_be_scored_is_reported_not_ignored() -> None:
     features = pd.DataFrame({"surface_m2": [40.0]})
     actual = np.array([3000.0])
 
-    assert vt.evaluate_active_model(None, features, actual) == {"status": "none"}
+    assert vt.score_active_model(None, features, actual)[0] == {"status": "none"}
     legacy = ActiveModel("v0", {"format": "something-else"}, {})
-    assert vt.evaluate_active_model(legacy, features, actual)["status"] == "unevaluable"
+    assert vt.score_active_model(legacy, features, actual)[0]["status"] == "unevaluable"
     broken = ActiveModel(
         "v2",
         {"format": "lightgbm-json-v1", "featureNames": ["surface_m2"], "models": {"p50": {"tree_info": []}}},
         {},
     )
-    assert vt.evaluate_active_model(broken, features, actual)["status"] == "unevaluable"
+    assert vt.score_active_model(broken, features, actual)[0]["status"] == "unevaluable"
 
 
 def test_fetch_active_model_reads_the_active_lightgbm_row() -> None:
@@ -930,7 +931,7 @@ def test_published_model_is_refit_on_train_and_calibration_and_recalibrated_on_t
     coverage = report["coverage"]
     assert coverage["rows"] == split["test_rows"]
     assert coverage["nominal_pct"] == 80.0
-    assert coverage["promotion_floor_pct"] == vt.MIN_PROMOTION_COVERAGE_PCT
+    assert coverage["promotion_floor_pct"] == gate.MIN_PROMOTION_COVERAGE_PCT
     assert 0.0 <= coverage["served_interval_pct"] <= 100.0
     assert coverage["served_interval_pct"] + coverage["below_pct"] + coverage["above_pct"] == pytest.approx(
         100.0, abs=0.05
@@ -984,7 +985,7 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
     pytest.importorskip("h3")
     frame = _training_frame(rows=2600)  # about 390 test sales: enough to be allowed to activate
     first = vt.train_segment_model(frame, segment="apartment", version="t1")
-    assert first.report["split"]["test_rows"] >= vt.MIN_ACTIVATION_TEST_ROWS
+    assert first.report["split"]["test_rows"] >= gate.MIN_ACTIVATION_TEST_ROWS
     assert first.report["error_gap"]["vs_active"] is None
     assert first.report["error_gap"]["vs_naive"]["rows"] == first.report["split"]["test_rows"]
 
@@ -1007,7 +1008,7 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
     # The weak active model is beaten for sure; whether the candidate is also proven better than the
     # naive reference (paired bootstrap, ~390 sales, 25-tree test models) is up to the data.
     proven_vs_naive = against_weak.report["error_gap"]["vs_naive"]["ci_high_pp"] < 0
-    blend_holds = not vt.served_blend_reasons(against_weak.report["blend"])
+    blend_holds = not gate.served_blend_reasons(against_weak.report["blend"])
     assert vt.bundle_is_activated(against_weak) is (
         proven_vs_naive
         and blend_holds
@@ -1032,7 +1033,7 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
         < min(report["naive"]["gate_median_ape_pct"], report["active"]["median_ape_pct"])
         and gaps["vs_naive"]["ci_high_pp"] < 0
         and gaps["vs_active"]["ci_high_pp"] < 0
-        and not vt.served_blend_reasons(report["blend"])
+        and not gate.served_blend_reasons(report["blend"])
     )
     assert vt.bundle_is_activated(against_same) is expected
     assert (tmp_path / "apartment-t3.report.json").exists()

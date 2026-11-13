@@ -1,10 +1,11 @@
 import "server-only";
 import type { Json } from "@/integrations/supabase/types";
+import { PublicApiError } from "@/lib/api-errors";
 import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sale";
 import {
   discoverInformationAgentContacts,
   type InformationAgentContactCandidate,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import {
   assertCourtRegistryFallbackAddress,
   assertCourtRegistryFallbackLimits,
@@ -87,7 +88,7 @@ export async function assertCourtRegistryDraftAllowed(
   await assertCourtRegistryFallbackLimits({ courtCode: fallback.court.code, saleId });
 }
 
-export const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
+const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
   "La vente n’est plus une vente au tribunal qui justifie une demande au greffe";
 
 /**
@@ -96,28 +97,33 @@ export const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
  * `tribunal_inconsistent`), et l'annonce ne doit donner AUCUN email d'avocat ou de cabinet exploitable.
  * Sinon la demande au greffe n'a plus lieu d'être : régénérer le brouillon.
  */
-export async function assertCourtRegistrySaleCurrent({
+async function assertCourtRegistrySaleCurrent({
   saleId,
   courtCode,
 }: {
   saleId: string | null;
   courtCode: string;
 }): Promise<void> {
-  if (!saleId) throw new Error(`${COURT_REGISTRY_SALE_CHANGED_MESSAGE} (vente introuvable).`);
+  if (!saleId) {
+    throw new PublicApiError(`${COURT_REGISTRY_SALE_CHANGED_MESSAGE} (vente introuvable).`, 409);
+  }
   const sale = await loadAdminInformationAgentSale({ auth: { isAdmin: true }, saleId });
   if (sale.tribunal_code?.trim() !== courtCode) {
-    throw new Error(
+    throw new PublicApiError(
       `${COURT_REGISTRY_SALE_CHANGED_MESSAGE} (le tribunal de la vente a changé depuis le brouillon) : régénérez le brouillon.`,
+      409,
     );
   }
   if (!isCourtRegistryFallbackSale(sale)) {
-    throw new Error(
+    throw new PublicApiError(
       `${COURT_REGISTRY_SALE_CHANGED_MESSAGE} (vente non confirmée, incohérente ou hors tribunal) : annulez ce brouillon.`,
+      409,
     );
   }
   if (discoverInformationAgentContacts(sale).length > 0) {
-    throw new Error(
+    throw new PublicApiError(
       `${COURT_REGISTRY_SALE_CHANGED_MESSAGE} (l’annonce donne maintenant une adresse d’avocat ou de cabinet) : régénérez le brouillon pour l’écrire à lui.`,
+      409,
     );
   }
 }
@@ -157,7 +163,7 @@ export function courtRegistryMissionChecks({
   };
 }
 
-export const COURT_REGISTRY_ORIGIN_MISSING_MESSAGE =
+const COURT_REGISTRY_ORIGIN_MISSING_MESSAGE =
   "L’adresse du greffe n’a plus de ligne de registre issue du référentiel des tribunaux : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
 
 /**
@@ -170,7 +176,7 @@ export function assertCourtRegistryFallbackOriginIntact(
   origin: { kind: string | null },
 ): void {
   if (courtFallback && origin.kind !== INFORMATION_AGENT_COURT_REGISTRY_FALLBACK) {
-    throw new Error(COURT_REGISTRY_ORIGIN_MISSING_MESSAGE);
+    throw new PublicApiError(COURT_REGISTRY_ORIGIN_MISSING_MESSAGE, 409);
   }
 }
 

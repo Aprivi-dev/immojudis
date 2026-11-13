@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError, createApiRequestContext, withApiHeaders } from "@/lib/api-observability";
-import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { ConfigurationError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
+import { isUuid } from "@/lib/uuid";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { buildSaleCalendarFile, type SaleCalendarRow } from "@/lib/sale-calendar";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
-import { isMissingCalendarFunction as isMissingFunction } from "@/lib/sale-calendar-rpc";
 
 /**
  * One minute in the CDN. It was 300 s, as long as the public page of the sale
@@ -37,32 +36,33 @@ const CALENDAR_CACHE_SECONDS = 60;
  * listing and must be checked with the lawyer; no server-side indicator of the review state
  * exists for an anonymous request.
  */
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  const requestContext = createApiRequestContext(request, "sale-calendar");
-  try {
+// Le fichier comme le refus (409, 404, 429…) ne doivent jamais être indexés.
+export const GET = apiRoute<{ id: string }>(
+  {
+    scope: "sale-calendar",
+    fallbackMessage: "Export vers l’agenda indisponible.",
+    headers: { "x-robots-tag": "noindex, nofollow" },
+  },
+  async (request, { params }) => {
     await enforceIpRateLimit({
       request,
       bucketKey: "sales.calendar",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const { id } = await context.params;
-    if (!SALE_ID_PATTERN.test(id)) throw new PublicApiError("Vente introuvable.", 404);
+    const { id } = params;
+    if (!isUuid(id)) throw new NotFoundError("Vente introuvable.");
 
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Base de données non configurée.");
+    if (!client) throw new ConfigurationError("Base de données non configurée.");
     const { data, error } = await client.rpc("get_public_sale_calendar_event", {
       p_sale_id: id.toLowerCase(),
     });
-    if (error) {
-      // The migration is not deployed yet: no export rather than a guess from other columns.
-      if (isMissingFunction(error)) throw new Error("Calendrier non configuré.");
-      throw error;
-    }
+    if (error) throw error;
     const row = (Array.isArray(data) ? data[0] : data) as SaleCalendarRow | null | undefined;
-    if (!row) throw new PublicApiError("Vente introuvable.", 404);
+    if (!row) throw new NotFoundError("Vente introuvable.");
 
     // Never derived from the request: the answer is kept by shared caches.
-    const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+    const origin = siteOrigin();
     const file = buildSaleCalendarFile(row, { origin });
     if (!file) {
       throw new PublicApiError(
@@ -71,25 +71,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       );
     }
 
-    return withApiHeaders(
-      new NextResponse(file.body, {
-        headers: {
-          "content-type": "text/calendar; charset=utf-8",
-          "content-disposition": `attachment; filename="${file.filename}"`,
-          "cache-control": `public, s-maxage=${CALENDAR_CACHE_SECONDS}, stale-while-revalidate=60`,
-          "x-robots-tag": "noindex, nofollow",
-        },
-      }),
-      requestContext,
-      // The file is kept by shared caches and served to other visitors: it must not carry the
-      // request id of the first request (it stays in the logs).
-      { echoRequestId: false },
-    );
-  } catch (error) {
-    const response = apiRouteError(error, request, "sale-calendar", {
-      fallbackMessage: "Export vers l’agenda indisponible.",
+    return new NextResponse(file.body, {
+      headers: {
+        "content-type": "text/calendar; charset=utf-8",
+        "content-disposition": `attachment; filename="${file.filename}"`,
+        "cache-control": `public, s-maxage=${CALENDAR_CACHE_SECONDS}, stale-while-revalidate=60`,
+      },
     });
-    response.headers.set("x-robots-tag", "noindex, nofollow");
-    return response;
-  }
-}
+  },
+);

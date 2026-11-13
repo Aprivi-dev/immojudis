@@ -33,7 +33,7 @@ function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: 
   return request;
 }
 
-export type AuthState = ReturnType<typeof useVerifiedAuth>;
+type AuthState = ReturnType<typeof useVerifiedAuth>;
 
 /** Message unique quand l'identité du compte n'a pas pu être vérifiée (réseau ou session rejetée). */
 export const SESSION_UNVERIFIED_MESSAGE = "Votre session n’a pas pu être vérifiée.";

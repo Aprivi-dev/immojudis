@@ -18,8 +18,8 @@ refusés, durée, lecture en avance) dans le résumé d'étape et le journal, pu
 
 L'enregistrement passe par ``app_private.sync_documents_backlog_low_yield_alert`` (migration
 20261111131500), qui appelle le mécanisme commun ``app_private.sync_operational_alert``. Ce module ne lève
-jamais : une base sans la fonction, ou une erreur, est notée dans le journal et le vidage se termine comme
-avant. Procédure : docs/runbooks/vidage-des-pieces.md.
+jamais : une erreur est notée dans le journal et le vidage se termine comme avant. Procédure :
+docs/runbooks/vidage-des-pieces.md.
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from typing import Any
 LOGGER = logging.getLogger(__name__)
 
 ALERT_KEY = "pipeline.documents_backlog.low_yield"
-FUNCTION = "app_private.sync_documents_backlog_low_yield_alert(boolean,jsonb,timestamptz)"
 
 #: Seuils de l'alerte (décision du 08/11/2026, T9, revue de code du 08/11 ; à recalibrer sur les vidages suivants).
 LOW_YIELD_MIN_DURATION_SECONDS = 30 * 60
@@ -113,7 +112,7 @@ def sync_low_yield_alert(
     *,
     connect: Callable[[str], Any] | None = None,
 ) -> str:
-    """Enregistre la décision ; renvoie ``skipped``, ``not_deployed``, ``opened``, ``clear`` ou ``error``."""
+    """Enregistre la décision ; renvoie ``skipped``, ``opened``, ``clear`` ou ``error``."""
     if not evaluation.get("evaluated") or not db_url:
         return "skipped"
     active = bool(evaluation.get("active"))
@@ -123,14 +122,6 @@ def sync_low_yield_alert(
 
             connect = default_connect
         with connect(db_url) as db:
-            deployed = db.execute("select to_regprocedure(%s)", (FUNCTION,)).fetchone()
-            if not deployed or not deployed[0]:
-                LOGGER.warning(
-                    "Document backlog yield: %s is not deployed yet (migration 20261111131500); alert %s not synced.",
-                    FUNCTION,
-                    ALERT_KEY,
-                )
-                return "not_deployed"
             db.execute(
                 "select app_private.sync_documents_backlog_low_yield_alert(%s, %s::jsonb)",
                 (active, json.dumps(alert_details(summary, evaluation), ensure_ascii=False, default=str)),

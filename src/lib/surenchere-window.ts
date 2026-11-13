@@ -15,10 +15,11 @@
  * et renvoient à un avocat, de préférence du barreau du tribunal, dont le choix reste libre.
  */
 
+import { parisDateKey, parisDateKeyOrNull } from "@/lib/paris-time";
+import { addDays } from "@/lib/calendar-day";
+
 /** Délai de la surenchère du dixième après l'adjudication en vente judiciaire (R. 322-50 du CPCE). */
 export const SURENCHERE_WINDOW_DAYS = 10;
-
-const PARIS_TIME_ZONE = "Europe/Paris";
 
 export type SurenchereWindow =
   /** Vente qui n'est pas judiciaire (notaire, État, en ligne) ou de type inconnu : aucune fenêtre calculée. */
@@ -49,40 +50,10 @@ export function surenchereWindow({
   now?: Date;
 }): SurenchereWindow {
   if (venueType !== "tribunal") return { kind: "not_applicable" };
-  const hearingDay = parisDay(saleDate);
+  const hearingDay = parisDateKeyOrNull(saleDate);
   if (!hearingDay) return { kind: "no_date" };
 
   const deadline = addDays(hearingDay, SURENCHERE_WINDOW_DAYS);
-  const today = parisDay(now.toISOString()) as string;
-  const expired = daysBetween(today, deadline) < 0;
+  const expired = parisDateKey(now) > deadline;
   return { kind: "window", hearingDay, deadline, adjudicationConfirmed, expired };
-}
-
-/** Jour civil à Paris (AAAA-MM-JJ) d'un instant ISO, ou null si la valeur n'est pas une date. */
-function parisDay(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: PARIS_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
-}
-
-function addDays(day: string, days: number): string {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + days)).toISOString().slice(0, 10);
-}
-
-function daysBetween(from: string, to: string): number {
-  const [fromYear, fromMonth, fromDate] = from.split("-").map(Number);
-  const [toYear, toMonth, toDate] = to.split("-").map(Number);
-  return Math.round(
-    (Date.UTC(toYear, toMonth - 1, toDate) - Date.UTC(fromYear, fromMonth - 1, fromDate)) /
-      86_400_000,
-  );
 }

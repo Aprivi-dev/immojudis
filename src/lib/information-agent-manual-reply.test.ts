@@ -13,10 +13,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-vi.mock("@/lib/information-agent-inbound", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/information-agent-inbound")>(
-    "@/lib/information-agent-inbound",
-  );
+vi.mock("@/lib/information-agent-inbound/attachments", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/information-agent-inbound/attachments")
+  >("@/lib/information-agent-inbound/attachments");
   return { ...actual, persistFactCandidates: mocks.persistFactCandidates };
 });
 
@@ -366,7 +366,7 @@ describe("manual information agent replies", () => {
           bodyText: "La réponse est reçue et doit être vérifiée par l'équipe.",
         },
       }),
-    ).rejects.toThrow("dossier de vente introuvable ou incohérent");
+    ).rejects.toThrow("Dossier de vente introuvable ou incohérent");
     expect(state.messages).toHaveLength(0);
     expect(mocks.persistFactCandidates).not.toHaveBeenCalled();
   });

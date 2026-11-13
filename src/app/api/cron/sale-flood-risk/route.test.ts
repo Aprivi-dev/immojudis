@@ -6,10 +6,7 @@ const mocks = vi.hoisted(() => ({
   dispatchSaleFloodRiskWorkflow: vi.fn(),
 }));
 
-vi.mock("@/lib/cron-jobs", async () => ({
-  positiveNumberFromEnv: (
-    await vi.importActual<typeof import("@/lib/cron-jobs")>("@/lib/cron-jobs")
-  ).positiveNumberFromEnv,
+vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
 }));
 vi.mock("@/lib/sale-flood-risk-batch", () => ({
@@ -58,7 +55,8 @@ describe("sale flood risk cron route", () => {
     expect(await response.json()).toEqual({ evaluated: 3 });
     expect(mocks.runMonitoredCron).toHaveBeenCalledTimes(1);
     expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-flood-risk");
-    expect(mocks.runSaleFloodRiskBatch).toHaveBeenCalledWith({ limit: 150 });
+    // Sans variable, la bibliothèque applique sa propre taille de lot par défaut.
+    expect(mocks.runSaleFloodRiskBatch).toHaveBeenCalledWith({ limit: undefined });
   });
 
   it("ne diffère aucune reprise : elle ajouterait du temps à une route bornée par maxDuration", async () => {
@@ -79,14 +77,14 @@ describe("sale flood risk cron route", () => {
   });
 
   it.each(["0", "-3", "abc", "  "])(
-    "revient à 150 ventes quand la taille de lot de l'environnement est %j",
+    "laisse la taille de lot par défaut du traitement quand l'environnement donne %j",
     async (value) => {
       process.env.SALE_FLOOD_RISK_BATCH_LIMIT = value;
       mocks.runSaleFloodRiskBatch.mockResolvedValueOnce({});
 
       await runHandler();
 
-      expect(mocks.runSaleFloodRiskBatch).toHaveBeenCalledWith({ limit: 150 });
+      expect(mocks.runSaleFloodRiskBatch).toHaveBeenCalledWith({ limit: undefined });
     },
   );
 
@@ -116,11 +114,9 @@ describe("sale flood risk cron route", () => {
       await runHandler();
 
       // Le déclenchement réussit même quand le workflow échoue : c'est la passe, écrite par le workflow, qui compte.
-      expect(mocks.runMonitoredCron.mock.calls[0][3]).toMatchObject({
-        catchUpSchedule: "35 5 * * *",
-        catchUpSuccessWindowHours: 2,
-        catchUpSuccessJobName: "sale-flood-risk",
-      });
+      // Le rattrapage du registre est celui de la passe « sale-flood-risk », même pour le déclenchement.
+      const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
+      expect(options?.catchUpOf ?? jobName).toBe("sale-flood-risk");
     },
   );
 

@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 import pytest
 
-from src import main
+from src import main, sale_finalization
 from src.dedupe import merge_duplicate_sales
 from src.normalize import normalize_sale
 from src.sources import agrasc, agrasc_operators
@@ -496,9 +496,9 @@ def _run_pipeline_with_fallback(monkeypatch, result: ScrapeResult) -> dict[str, 
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_agrasc_aquitaine_result", lambda: result)
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
@@ -510,8 +510,6 @@ def _run_pipeline_with_fallback(monkeypatch, result: ScrapeResult) -> dict[str, 
     monkeypatch.setattr(main, "delete_secondary_sales_in_supabase", lambda sales: calls.append("delete_secondary") or 0)
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: calls.append("mark_past") or 0)
     monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: calls.append("delete_expired") or 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase",
-                        lambda: calls.append("delete_vench") or 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase",
                         lambda sales: seen.setdefault("upserted", []).extend(sales) or len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales: len(sales))

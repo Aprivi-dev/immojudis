@@ -1,11 +1,7 @@
+import { departmentFromPostalCode } from "@/lib/commune-names";
+import { DEPARTMENT_REGIONS } from "@/lib/department-geography";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
 import type { AuctionSale } from "@/lib/types";
-
-type RegionDefinition = {
-  name: string;
-  departments: readonly string[];
-  aliases?: readonly string[];
-};
 
 export type FrenchGeoSearchResolution =
   | { kind: "department"; departments: string[] }
@@ -14,51 +10,14 @@ export type FrenchGeoSearchResolution =
   | { kind: "text"; text: string }
   | { kind: "empty" };
 
-const REGIONS: readonly RegionDefinition[] = [
-  {
-    name: "Auvergne-Rhône-Alpes",
-    departments: ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"],
-    aliases: ["ARA"],
-  },
-  {
-    name: "Bourgogne-Franche-Comté",
-    departments: ["21", "25", "39", "58", "70", "71", "89", "90"],
-    aliases: ["BFC"],
-  },
-  { name: "Bretagne", departments: ["22", "29", "35", "56"] },
-  { name: "Centre-Val de Loire", departments: ["18", "28", "36", "37", "41", "45"] },
-  { name: "Corse", departments: ["2A", "2B"] },
-  {
-    name: "Grand Est",
-    departments: ["08", "10", "51", "52", "54", "55", "57", "67", "68", "88"],
-  },
-  { name: "Hauts-de-France", departments: ["02", "59", "60", "62", "80"] },
-  {
-    name: "Île-de-France",
-    departments: ["75", "77", "78", "91", "92", "93", "94", "95"],
-    aliases: ["IDF"],
-  },
-  { name: "Normandie", departments: ["14", "27", "50", "61", "76"] },
-  {
-    name: "Nouvelle-Aquitaine",
-    departments: ["16", "17", "19", "23", "24", "33", "40", "47", "64", "79", "86", "87"],
-  },
-  {
-    name: "Occitanie",
-    departments: ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"],
-  },
-  { name: "Pays de la Loire", departments: ["44", "49", "53", "72", "85"] },
-  {
-    name: "Provence-Alpes-Côte d'Azur",
-    departments: ["04", "05", "06", "13", "83", "84"],
-    aliases: ["PACA"],
-  },
-  { name: "Guadeloupe", departments: ["971"] },
-  { name: "Martinique", departments: ["972"] },
-  { name: "Guyane", departments: ["973"] },
-  { name: "La Réunion", departments: ["974"], aliases: ["Réunion"] },
-  { name: "Mayotte", departments: ["976"] },
-];
+/** Noms que l'on tape aussi pour une région, en plus de son nom officiel. */
+const REGION_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  "Auvergne-Rhône-Alpes": ["ARA"],
+  "Bourgogne-Franche-Comté": ["BFC"],
+  "Île-de-France": ["IDF"],
+  "Provence-Alpes-Côte d'Azur": ["PACA"],
+  "La Réunion": ["Réunion"],
+};
 
 const DEPARTMENT_BY_SEARCH_KEY = new Map<string, string>();
 const DEPARTMENT_NAME_BY_CODE = new Map<string, string>();
@@ -70,8 +29,19 @@ for (const { code, name } of FRENCH_DEPARTMENTS) {
   DEPARTMENT_NAME_BY_CODE.set(code.toUpperCase(), name);
 }
 
+// Les 13 régions de métropole des pages par département. Leur groupe « Outre-mer » n'est pas une
+// région : chacun de ses départements en est une, sous son propre nom.
+const REGIONS = DEPARTMENT_REGIONS.flatMap<{ name: string; departments: readonly string[] }>(
+  (region) =>
+    region.inseeCode
+      ? [region]
+      : FRENCH_DEPARTMENTS.filter(({ code }) => region.departments.includes(code)).map(
+          ({ code, name }) => ({ name, departments: [code] }),
+        ),
+);
+
 for (const region of REGIONS) {
-  for (const label of [region.name, ...(region.aliases ?? [])]) {
+  for (const label of [region.name, ...(REGION_ALIASES[region.name] ?? [])]) {
     REGION_BY_SEARCH_KEY.set(normalizeFrenchSearchText(label), region.departments);
   }
 }
@@ -132,6 +102,20 @@ export function resolveFrenchGeoSearch(
   }
 
   return { kind: "text", text: raw };
+}
+
+/**
+ * Le département que désigne un texte saisi, quand il n'en désigne qu'un : son nom ou son code
+ * (« Gironde », « 33 », « 2A », « 974 ») ou un code postal (« 33000 », `departmentFromPostalCode`).
+ * `null` pour une région, plusieurs départements (« 66, 65, 05 »), un code qui n'est pas celui d'un
+ * département (« 20 ») ou tout autre texte.
+ */
+export function departmentFromSearchText(text: string | null | undefined): string | null {
+  const scope = resolveFrenchGeoSearch(text);
+  if (scope.kind === "postal_code") return departmentFromPostalCode(scope.postalCode);
+  return scope.kind === "department" && scope.departments.length === 1
+    ? (scope.departments[0] ?? null)
+    : null;
 }
 
 /**

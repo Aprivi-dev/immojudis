@@ -8,15 +8,20 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import psycopg
 import pytest
+from fake_publication import direct_publication, inside_publication
 
+from src.config import DirectDatabaseMissing
 from src.court_competence import CompetentCourtAssignment
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
-from src.storage import supabase_client
+from src.sha256_digest import is_sha256
+from src.storage import postgrest_helpers, supabase_client
+from src.storage.known_sale_projection import KNOWN_SALE_RAW_PAYLOAD_KEYS, KNOWN_SALE_RAW_PAYLOAD_PROJECTION
+from src.storage.postgrest_payload import POSTGREST_MAX_PAYLOAD_DEPTH
 from src.storage.supabase_client import (
-    POSTGREST_MAX_PAYLOAD_DEPTH,
     _sanitize_postgrest_payload,
     _secondary_source_urls,
 )
@@ -27,9 +32,9 @@ _REAL_FETCH_REVIEWED_ALIAS_REGISTRY = supabase_client._fetch_reviewed_alias_regi
 @pytest.fixture(autouse=True)
 def isolate_enrichment_queue(monkeypatch):
     monkeypatch.setattr(supabase_client, "_enqueue_due_enrichment", lambda *args: None)
-    # Claim persistence has its own focused tests below; catalogue publication
-    # tests should not make network calls for the additive evidence table.
-    monkeypatch.setattr(supabase_client, "_write_fact_claims_rest", lambda *args: 0)
+    # Claim persistence has its own focused tests; catalogue publication
+    # tests do not write the additive evidence table.
+    monkeypatch.setattr(supabase_client, "_write_fact_claims_postgres", lambda *args: 0)
     monkeypatch.setattr(
         supabase_client,
         "_fetch_reviewed_alias_registry",
@@ -120,32 +125,52 @@ def test_pdf_prerequisite_lookup_ignores_exhausted_jobs(monkeypatch) -> None:
     assert seen[0]["source_url"] == "eq.https://example.test/sale"
 
 
-def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
+def test_postgrest_upsert_retries_cloudflare_520(monkeypatch) -> None:
     responses = iter(
         [
             httpx.Response(520, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
             httpx.Response(201, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
         ]
     )
-    attempts: list[int] = []
+    attempts: list[dict[str, object]] = []
 
-    def fake_post(*args, **kwargs):
-        attempts.append(1)
+    def fake_post(endpoint, **kwargs):
+        attempts.append({"endpoint": endpoint, **kwargs})
         return next(responses)
 
     monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
-    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
 
-    response = supabase_client._postgrest_upsert_batch(
-        "https://supabase.test/rest/v1/properties",
+    supabase_client._postgrest_upsert(
+        "https://supabase.test",
         "secret",
         "properties",
-        [{"source_url": "https://example.test/sale"}],
+        [{"source_url": "https://example.test/sale\x00"}],
         "source_url",
     )
 
-    assert response.status_code == 201
     assert len(attempts) == 2
+    assert attempts[1]["endpoint"] == "https://supabase.test/rest/v1/properties"
+    assert attempts[1]["params"] == {"on_conflict": "source_url"}
+    assert attempts[1]["headers"]["Prefer"] == "resolution=merge-duplicates,return=minimal"
+    assert attempts[1]["json"] == [{"source_url": "https://example.test/sale"}]
+
+
+def test_postgrest_upsert_raises_once_the_retries_are_spent(monkeypatch) -> None:
+    attempts: list[int] = []
+
+    def fake_post(endpoint, **_kwargs):
+        attempts.append(1)
+        return httpx.Response(503, text="unavailable", request=httpx.Request("POST", endpoint))
+
+    monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(httpx.HTTPStatusError, match="503 response from Supabase properties"):
+        supabase_client._postgrest_upsert(
+            "https://supabase.test", "secret", "properties", [{"source_url": "https://example.test/sale"}], "source_url"
+        )
+    assert len(attempts) == postgrest_helpers.POSTGREST_REQUEST_ATTEMPTS
 
 
 def test_postgrest_read_retries_cloudflare_521(monkeypatch) -> None:
@@ -157,9 +182,9 @@ def test_postgrest_read_retries_cloudflare_521(monkeypatch) -> None:
     )
     attempts = []
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *_args, **_kwargs: attempts.append(1) or next(responses))
-    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
 
-    response = supabase_client._postgrest_request_with_retries(
+    response = postgrest_helpers.postgrest_request_with_retries(
         "GET", "https://supabase.test/rest/v1/auction_sales", "known_sale_details"
     )
 
@@ -273,16 +298,15 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
         "tribunal_assignment",
     }
 
-    assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
-    for field in (
-        "latitude",
-        "longitude",
-        "risk_notes",
-        "investment_score",
-        "investment_summary",
-    ):
-        assert field in supabase_client.KNOWN_SALE_DETAIL_SELECT.split(",")
+    assert required.issubset(set(KNOWN_SALE_RAW_PAYLOAD_KEYS))
     compact_select = supabase_client._known_sale_postgres_select(compact_presence=True)
+    for select in (supabase_client._known_sale_postgres_select(compact_presence=False), compact_select):
+        columns = select.split(",")
+        for field in ("latitude", "longitude", "risk_notes", "investment_score", "investment_summary"):
+            assert field in columns
+        # raw_payload is read once, through its key projection: never as a whole column next to it.
+        assert "raw_payload" not in columns
+        assert select.count(" as raw_payload") == 1
     assert "app_private.auction_sale_source_presence_json(id)" in compact_select
     for key in required:
         assert f"raw_payload->'{key}'" in compact_select
@@ -433,7 +457,7 @@ def test_known_sale_projection_executes_in_disposable_postgres() -> None:
     with supabase_client._postgres_connect(url) as db:
         row = db.execute(
             "select "
-            f"{supabase_client.KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
+            f"{KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
             "from (values (%s::jsonb)) as input(raw_payload)",
             (Jsonb(payload),),
         ).fetchone()
@@ -444,31 +468,38 @@ def test_known_sale_projection_executes_in_disposable_postgres() -> None:
     },)
 
 
-def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
-    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
-        "supabase_url": "https://supabase.test",
-        "supabase_service_role_key": "secret",
-        "supabase_db_url": "postgresql://test",
-    })
+_RUN_SETTINGS = {
+    "supabase_url": "https://supabase.test",
+    "supabase_service_role_key": "secret",
+    "supabase_db_url": "postgresql://test",
+}
+
+
+class _RunDb:
+    """Connexion directe simulée pour ``auction_runs`` : garde chaque requête, rend ``row`` à ``fetchone``."""
+
+    def __init__(self, calls: list[tuple[str, tuple]], row: tuple | None = ("run-1",)) -> None:
+        self.calls = calls
+        self.row = row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
+        return SimpleNamespace(fetchone=lambda: self.row)
+
+
+def test_run_lifecycle_writes_through_postgres_only(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
     monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_request_with_retries",
-        lambda *_args, **_kwargs: httpx.Response(521, request=httpx.Request("PATCH", "https://supabase.test")),
+        supabase_client, "postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
     )
-    calls = []
-
-    class FakeDb:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def execute(self, query, params):
-            calls.append((query, params))
-            return SimpleNamespace(fetchone=lambda: ("run-1",))
-
-    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls))
 
     assert supabase_client.start_existing_run_in_supabase("run-1", "all", True) == "run-1"
     supabase_client.finish_run_in_supabase(
@@ -479,33 +510,79 @@ def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
     assert len(calls) == 2
     assert "status='running'" in calls[0][0]
     assert calls[0][1] == ("all", True, "run-1")
-    assert "summary=coalesce(summary" in calls[1][0]
     assert calls[1][1][0] == "failed"
     assert calls[1][1][1].obj == {"stage": "known_sale_lookup", "amount": 12.5}
     assert calls[1][1][2].obj == {"supabase": ["lookup failed"]}
     assert calls[1][1][-1] == "run-1"
 
 
-def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> None:
-    frozen = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
-    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+def test_run_finish_is_written_again_after_a_dropped_connection(monkeypatch) -> None:
+    """Une coupure de connexion à la clôture ne fait pas passer en échec un run publié : l'écriture est rejouée."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr("src.storage.connection_guards.time.sleep", lambda _seconds: None)
+    calls: list[tuple[str, tuple]] = []
+    attempts = {"count": 0}
+
+    def connect(_url):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return _RunDb(calls)
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", connect)
+
+    supabase_client.finish_run_in_supabase("run-1", "succeeded", {"upserted": 3}, {})
+
+    assert attempts["count"] == 2
+    assert len(calls) == 1
+    assert calls[0][1][0] == "succeeded"
+
+
+def test_run_start_of_an_unknown_run_returns_no_id(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb([], row=None))
+
+    assert supabase_client.start_existing_run_in_supabase("run-missing", "all", True) is None
+
+
+def test_run_lifecycle_refuses_supabase_without_direct_connection(monkeypatch) -> None:
+    """Le suivi des runs n'a plus de chemin REST : les identifiants REST sans SUPABASE_DB_URL sont une erreur."""
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
+    monkeypatch.setattr(
+        supabase_client, "postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
+    )
+
+    with pytest.raises(DirectDatabaseMissing):
+        supabase_client.start_existing_run_in_supabase("run-1", "all", True)
+    with pytest.raises(DirectDatabaseMissing):
+        supabase_client.finish_run_in_supabase("run-1", "failed", {}, {})
+
+
+def test_run_lifecycle_is_a_no_op_without_supabase(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda *_args, **_kwargs: pytest.fail("no connection"))
+
+    assert supabase_client.start_existing_run_in_supabase("run-1", "all", True) == "run-1"
+    supabase_client.finish_run_in_supabase("run-1", "succeeded", {}, {})
+
+
+def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
+    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
     requests: list[tuple[str, dict[str, object]]] = []
 
     def fake_request(method, endpoint, table, **kwargs):
         requests.append((method, kwargs["json"]))
-        if method == "POST":
-            return httpx.Response(201, json=[{"id": "run-new"}], request=httpx.Request(method, endpoint))
-        return httpx.Response(204, request=httpx.Request(method, endpoint))
+        return httpx.Response(201, json=[{"id": "run-new"}], request=httpx.Request(method, endpoint))
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls, row=("run-existing",)))
 
     assert supabase_client.create_run_in_supabase("all", True) == "run-new"
     assert supabase_client.start_existing_run_in_supabase("run-existing", "all", True) == "run-existing"
@@ -522,18 +599,11 @@ def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> Non
                 "updated_at": expected,
             },
         ),
-        (
-            "PATCH",
-            {
-                "status": "running",
-                "source": "all",
-                "use_llm": True,
-                "started_at": expected,
-                "finished_at": None,
-                "updated_at": expected,
-            },
-        ),
     ]
+    # Reprise d'un run existant : une seule horloge, celle de la transaction.
+    assert len(calls) == 1
+    assert "started_at=now()" in calls[0][0]
+    assert "finished_at=null, updated_at=now()" in calls[0][0]
 
 
 def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> None:
@@ -553,7 +623,7 @@ def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> 
         captured.update(kwargs)
         return httpx.Response(204, request=httpx.Request(method, endpoint))
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
 
     supabase_client.update_run_progress_in_supabase(
         "run-progress",
@@ -568,24 +638,10 @@ def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> 
     }
 
 
-def test_run_finish_payload_includes_deterministic_updated_at(monkeypatch) -> None:
-    frozen = datetime(2026, 10, 1, 9, 32, tzinfo=UTC)
-    monkeypatch.setattr(supabase_client, "datetime", SimpleNamespace(now=lambda _tz: frozen))
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
-    )
-    captured: dict[str, object] = {}
-
-    def fake_request(method, endpoint, table, **kwargs):
-        captured.update(kwargs)
-        return httpx.Response(204, request=httpx.Request(method, endpoint))
-
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+def test_run_finish_replaces_summary_and_errors_at_one_timestamp(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls))
 
     supabase_client.finish_run_in_supabase(
         "run-finish",
@@ -594,13 +650,16 @@ def test_run_finish_payload_includes_deterministic_updated_at(monkeypatch) -> No
         {"runner": []},
     )
 
-    assert captured["json"] == {
-        "status": "succeeded",
-        "finished_at": frozen.isoformat(),
-        "updated_at": frozen.isoformat(),
-        "summary": {"stage": "complete"},
-        "errors": {"runner": []},
-    }
+    assert len(calls) == 1
+    query, params = calls[0]
+    assert "finished_at=now(), updated_at=now()" in query
+    # Le bilan final remplace celui de la progression, comme le faisait l'écriture REST.
+    assert "summary=%s, errors=%s" in query
+    assert "coalesce" not in query
+    assert params[0] == "succeeded"
+    assert params[1].obj == {"stage": "complete"}
+    assert params[2].obj == {"runner": []}
+    assert params[3] == "run-finish"
 
 
 def test_sanitize_postgrest_payload_removes_null_characters_recursively() -> None:
@@ -676,61 +735,63 @@ def test_secondary_source_urls_excludes_batch_primary_urls() -> None:
     assert _secondary_source_urls([first, second]) == ["https://avoventes.test/poor"]
 
 
-def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "fetch_known_sale_details",
-        lambda: {
-            "https://example.test/scored": {
-                "_signature": "2027-01-10|100000",
-                "score_version": "v1",
-            },
-            "https://example.test/unscored": {
-                "_signature": "2027-01-11|200000",
-                "score_version": None,
-            },
-        },
-    )
+class _KnownSalesDb:
+    """Connexion directe simulée pour la lecture des ventes connues : rend ``pages`` une à une, avec ``aliases``."""
 
-    assert supabase_client.fetch_known_sale_signatures() == {
-        "https://example.test/scored": "2027-01-10|100000"
-    }
+    def __init__(self, pages: list[object], aliases: list[tuple] | None = None) -> None:
+        self.pages = list(pages)
+        self.aliases = aliases or []
+        self.page_params: list[tuple] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params=None):
+        if query == "set transaction isolation level repeatable read" or query.startswith("set local"):
+            return SimpleNamespace(fetchall=lambda: [])
+        if "to_regclass" in query:
+            return SimpleNamespace(fetchone=lambda: (None, None))
+        if "list_reviewed_publication_aliases" in query:
+            return SimpleNamespace(fetchall=lambda: list(self.aliases))
+        assert "select to_jsonb(sale)" in query
+        self.page_params.append(params)
+        page = self.pages.pop(0)
+        if isinstance(page, Exception):
+            raise page
+        return SimpleNamespace(fetchall=lambda: [(row,) for row in page])
 
 
-def test_fetch_known_sale_details_uses_bounded_pages(monkeypatch) -> None:
+def _known_sales_from(monkeypatch, db: _KnownSalesDb) -> None:
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://test",
+        },
     )
-    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: db)
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *_args, **_kwargs: pytest.fail("no REST read"))
 
-    class Response:
-        is_error = False
-        status_code = 200
-        text = ""
 
-        def __init__(self, rows):
-            self._rows = rows
-
-        def json(self):
-            return self._rows
-
+def test_fetch_known_sale_details_uses_bounded_pages(monkeypatch) -> None:
+    size = supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE
     first_page = [
-        {"source_url": f"https://example.test/{index}", "source_urls": []}
-        for index in range(supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE)
+        {"id": f"00000000-0000-0000-0000-{index:012d}", "source_url": f"https://example.test/{index}", "source_urls": []}
+        for index in range(size)
     ]
-
-    def fake_get(endpoint, params, headers, timeout):
-        calls.append((params["limit"], params["offset"]))
-        return Response(first_page if params["offset"] == "0" else [])
-
-    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    db = _KnownSalesDb([first_page, []])
+    _known_sales_from(monkeypatch, db)
 
     details = supabase_client.fetch_known_sale_details()
 
-    assert len(details) == supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE
-    assert calls == [("100", "0"), ("100", "100")]
+    assert len(details) == size
+    # Pagination par curseur sur l'identifiant : la deuxième page repart du dernier identifiant lu.
+    assert db.page_params == [(size,), (first_page[-1]["id"], size)]
 
 
 def test_reviewed_alias_rpc_rejects_non_list_payload(monkeypatch) -> None:
@@ -757,75 +818,67 @@ def test_fetch_known_sale_details_overrides_reviewed_alias_after_full_pagination
     canonical_id = "00000000-0000-0000-0000-000000000082"
     alias_url = "https://cessions.test/mn222"
     canonical_url = "https://notaires.test/mn222"
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_fetch_reviewed_alias_registry",
-        lambda *_args: registry_from_rows(
-            [
-                (
-                    alias_id,
-                    canonical_id,
-                    alias_url,
-                    canonical_url,
-                    "agde-mn222",
-                    {"audit": "docs/audits/agde-identity-review-20260913.json"},
-                    "2026-09-13T08:33:51Z",
-                    "test",
-                )
-            ]
-        ),
-    )
     monkeypatch.setattr(supabase_client, "KNOWN_SALE_DETAIL_PAGE_SIZE", 1)
-
-    class Response:
-        is_error = False
-        status_code = 200
-        text = ""
-
-        def __init__(self, rows):
-            self._rows = rows
-
-        def json(self):
-            return self._rows
-
-    pages = {
-        "0": [{"id": alias_id, "source_url": alias_url, "source_urls": []}],
-        "1": [{"id": canonical_id, "source_url": canonical_url, "source_urls": []}],
-        "2": [],
-    }
-    monkeypatch.setattr(
-        supabase_client.httpx,
-        "get",
-        lambda _endpoint, params, headers, timeout: Response(pages[params["offset"]]),
+    db = _KnownSalesDb(
+        [
+            [{"id": alias_id, "source_url": alias_url, "source_urls": []}],
+            [{"id": canonical_id, "source_url": canonical_url, "source_urls": []}],
+            [],
+        ],
+        aliases=[
+            (
+                alias_id,
+                canonical_id,
+                alias_url,
+                canonical_url,
+                "agde-mn222",
+                {"audit": "docs/audits/agde-identity-review-20260913.json"},
+                "2026-09-13T08:33:51Z",
+                "test",
+            )
+        ],
     )
+    _known_sales_from(monkeypatch, db)
 
     details = supabase_client.fetch_known_sale_details()
 
+    assert len(db.page_params) == 3
     assert details[alias_url]["id"] == canonical_id
     assert details[alias_url]["source_url"] == canonical_url
 
 
 def test_fetch_known_sale_details_raises_instead_of_returning_partial_data(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "KNOWN_SALE_DETAIL_PAGE_SIZE", 1)
+    db = _KnownSalesDb(
+        [
+            [{"id": "00000000-0000-0000-0000-000000000001", "source_url": "https://example.test/1", "source_urls": []}],
+            RuntimeError("canceling statement due to statement timeout"),
+        ]
+    )
+    _known_sales_from(monkeypatch, db)
+
+    with pytest.raises(RuntimeError, match="statement timeout"):
+        supabase_client.fetch_known_sale_details()
+
+
+def test_fetch_known_sale_details_refuses_supabase_without_direct_connection(monkeypatch) -> None:
+    """Plus de lecture REST : les identifiants REST sans SUPABASE_DB_URL sont une erreur de configuration."""
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
         lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
+    monkeypatch.setattr(supabase_client.httpx, "get", lambda *_args, **_kwargs: pytest.fail("no REST read"))
 
-    class Response:
-        is_error = True
-        status_code = 500
-        text = "canceling statement due to statement timeout"
-
-    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
-
-    with pytest.raises(RuntimeError, match="statement timeout"):
+    with pytest.raises(DirectDatabaseMissing):
         supabase_client.fetch_known_sale_details()
+
+
+def test_fetch_known_sale_details_is_empty_without_supabase(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {})
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda *_args, **_kwargs: pytest.fail("no connection"))
+
+    assert supabase_client.fetch_known_sale_details() == {}
 
 
 def test_enriched_hashes_use_compact_postgres_projection(monkeypatch) -> None:
@@ -1010,11 +1063,6 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
     ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
 
 
-def test_legacy_vench_cleanup_does_not_delete_existing_rows(monkeypatch):
-    monkeypatch.setattr(supabase_client, "load_settings", lambda: pytest.fail("legacy cleanup accessed DB"))
-    assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 0
-
-
 def test_delete_expired_sales_uses_atomic_retention_rpc(monkeypatch):
     monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "test"})
     calls = []
@@ -1074,20 +1122,13 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     )
     monkeypatch.setattr(
         supabase_client,
-        "_sync_normalized_sale_tables_with_rest",
-        lambda supabase_url, api_key, sales, now, **kwargs: calls.append(
-            (supabase_url, "normalized_tables", len(sales))
-        ),
+        "_sync_normalized_sale_tables",
+        lambda sales, now, **kwargs: calls.append(("transaction", "normalized_tables", len(sales))),
     )
     monkeypatch.setattr(
         supabase_client,
-        "_upsert_with_rest",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("REST upsert should not run")),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_asset_tables_with_rest",
-        lambda supabase_url, api_key, sales, now: calls.append((supabase_url, "asset_tables", len(sales))),
+        "_upsert_asset_tables",
+        lambda sales, now: calls.append(("transaction", "asset_tables", len(sales))),
     )
 
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=lambda *args: None)))
@@ -1095,57 +1136,33 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
-        ("https://supabase.test", "normalized_tables", 1),
-        ("https://supabase.test", "asset_tables", 1),
+        ("transaction", "normalized_tables", 1),
+        ("transaction", "asset_tables", 1),
     ]
 
 
-def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> None:
+def test_upsert_sales_refuses_supabase_without_direct_connection(monkeypatch) -> None:
+    """No REST write path: REST credentials without SUPABASE_DB_URL are a configuration error, nothing is sent."""
     sale = normalize_sale(
-        {
-            "source_name": "avoventes", "starting_price_eur": 10000,
-            "source_url": "https://example.test/primary",
-            "source_urls": [
-                "https://example.test/primary",
-                "https://example.test/secondary",
-            ],
-        }
+        {"source_name": "avoventes", "starting_price_eur": 10000, "source_url": "https://example.test/no-db"}
     )
-    calls: list[str] = []
-
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_with_rest",
-        lambda *args, **kwargs: calls.append("upsert"),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows",
-        lambda *args: (_ for _ in ()).throw(
-            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
-        ),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sync_normalized_sale_tables_with_rest",
-        lambda *args, **kwargs: calls.append("normalized"),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_asset_tables_with_rest",
-        lambda *args, **kwargs: calls.append("assets"),
-    )
+    monkeypatch.setattr(supabase_client.httpx, "post", lambda *args, **kwargs: pytest.fail("no REST write"))
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda *args, **kwargs: pytest.fail("no connection"))
 
-    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
-    assert calls == ["upsert", "normalized", "assets"]
+    with pytest.raises(DirectDatabaseMissing, match="SUPABASE_DB_URL"):
+        supabase_client.upsert_sales_to_supabase([sale])
+    with pytest.raises(DirectDatabaseMissing, match="SUPABASE_DB_URL"):
+        supabase_client.upsert_observations_to_supabase([sale])
+
+
+def test_catalogue_tables_are_written_inside_a_publication_transaction_only() -> None:
+    with pytest.raises(RuntimeError, match="publication transaction"):
+        supabase_client._transaction_write("auction_documents", [{"source_url": "https://example.test/x"}])
 
 
 def test_committed_publication_version_allows_following_enrichment_checkpoint(monkeypatch) -> None:
@@ -1174,8 +1191,8 @@ def test_committed_publication_version_allows_following_enrichment_checkpoint(mo
     })
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=execute)))
     monkeypatch.setattr(supabase_client, "_transaction_write", write)
-    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *args: None)
     monkeypatch.setattr(
         "src.publication_identity.resolve_publication_identities",
         lambda _db, sales: [item.model_copy(deep=True) for item in sales],
@@ -1198,21 +1215,12 @@ def test_upsert_sales_neutralizes_room_bedroom_contradiction_before_storage(monk
     sale.rooms_count = 3
     sale.bedrooms_count = 4
     captured: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
+    direct_publication(
+        monkeypatch,
+        lambda table, payload, _conflict: captured.extend(payload) if table == "auction_sales" else None,
     )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_with_rest",
-        lambda _url, _key, payload: captured.extend(payload),
-    )
-    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *args, **kwargs: None)
 
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
 
@@ -1245,32 +1253,22 @@ def test_upsert_sales_registers_verified_competent_court_before_sale(monkeypatch
     )
     sale.raw_payload["tribunal_assignment"] = assignment.evidence()
     calls: list[tuple[str, object]] = []
+    direct_publication(monkeypatch)
     monkeypatch.setattr(
         supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
+        "_transaction_write",
+        lambda table, payload, on_conflict=None, **_kwargs: calls.append(
+            (table, (payload, on_conflict) if table == "tribunals" else None)
+        ) or [],
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, table, payload, on_conflict: calls.append((table, (payload, on_conflict))),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_with_rest",
-        lambda *_args, **_kwargs: calls.append(("auction_sales", None)),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sync_normalized_sale_tables_with_rest",
+        "_sync_normalized_sale_tables",
         lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
         supabase_client,
-        "_upsert_asset_tables_with_rest",
+        "_upsert_asset_tables",
         lambda *args, **kwargs: None,
     )
 
@@ -1310,11 +1308,6 @@ def test_secondary_sale_cleanup_is_explicit_and_uses_postgres(monkeypatch) -> No
         supabase_client,
         "_delete_secondary_sale_rows_with_postgres",
         lambda db_url, sales, **kwargs: calls.append("delete_secondary") or 1,
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows",
-        lambda *args: (_ for _ in ()).throw(AssertionError("REST fallback should not run")),
     )
 
     assert supabase_client.delete_secondary_sales_in_supabase([sale]) == 1
@@ -1359,8 +1352,8 @@ def test_secondary_sale_cleanup_skips_reviewed_alias_before_any_delete(monkeypat
     deleted: list[list[str]] = []
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_delete_by_source_urls",
-        lambda _url, _key, _table, urls: deleted.append(urls) or len(urls),
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda _db_url, sales, **_kwargs: deleted.append(sales) or len(sales),
     )
 
     assert supabase_client.delete_secondary_sales_in_supabase([sale]) == 0
@@ -1391,11 +1384,6 @@ def test_secondary_cleanup_does_not_fallback_after_registry_failure(monkeypatch)
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             supabase_client.ReviewedAliasRegistryError("registry unavailable under lock")
         ),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("registry failure must not fall back")),
     )
 
     with pytest.raises(supabase_client.ReviewedAliasRegistryError, match="under lock"):
@@ -1488,12 +1476,10 @@ def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> No
     monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows_with_postgres", lambda *args: 0)
     monkeypatch.setattr(
         supabase_client,
-        "_sync_normalized_sale_tables_with_rest",
-        lambda supabase_url, api_key, sales, now, **kwargs: captured.setdefault(
-            "refresh_last_seen", kwargs.get("refresh_last_seen")
-        ),
+        "_sync_normalized_sale_tables",
+        lambda sales, now, **kwargs: captured.setdefault("refresh_last_seen", kwargs.get("refresh_last_seen")),
     )
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *args: None)
 
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=lambda *args: SimpleNamespace(fetchone=lambda: (sale.updated_at,)))))
     monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict, **_kwargs: captured.setdefault("payload", payload) and [])
@@ -1545,6 +1531,7 @@ def test_reconcile_duplicate_sales_in_supabase_merges_historical_rows(monkeypatc
         lambda: {
             "supabase_url": "https://supabase.test",
             "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
             "dedupe_reconcile_max_rows": 20,
         },
     )
@@ -1562,31 +1549,35 @@ def test_reconcile_duplicate_sales_in_supabase_merges_historical_rows(monkeypatc
         captured["fetch_params"] = params
         return Response()
 
-    def fake_delete(supabase_url, api_key, sales, **kwargs):
+    def fake_delete(db_url, sales, **kwargs):
         captured["delete_sales"] = sales
         return len(supabase_client._secondary_source_urls(sales))
+
+    def in_transaction(name):
+        def write(sales, now, **_kwargs):
+            assert supabase_client._PUBLICATION_CONNECTION.get() is not None, "child tables outside the transaction"
+            captured.setdefault(name, sales)
+        return write
 
     monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
     monkeypatch.setattr(
         supabase_client,
-        "_upsert_with_rest",
-        lambda supabase_url, api_key, payload: captured.setdefault("upsert_payload", payload),
+        "_postgres_upsert",
+        lambda db_url, table, payload, on_conflict: captured.setdefault("upsert_payload", payload),
     )
-    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", fake_delete)
+    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows_with_postgres", fake_delete)
     monkeypatch.setattr(
         supabase_client,
-        "_sync_normalized_sale_tables_with_rest",
-        lambda supabase_url, api_key, sales, now: captured.setdefault("normalized_sales", sales),
+        "_postgres_connect",
+        lambda *_args, **_kwargs: nullcontext(SimpleNamespace(execute=lambda *args, **kwargs: None)),
     )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_asset_tables_with_rest",
-        lambda supabase_url, api_key, sales, now: captured.setdefault("asset_sales", sales),
-    )
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", in_transaction("normalized_sales"))
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", in_transaction("asset_sales"))
 
     deleted = supabase_client.reconcile_duplicate_sales_in_supabase(limit=20)
 
     assert deleted == 1
+    assert captured["normalized_sales"] and captured["asset_sales"]
     assert captured["fetch_endpoint"] == "https://supabase.test/rest/v1/auction_sales"
     assert captured["fetch_params"]["status"] == 'in.("active","upcoming","unknown")'
     payload = captured["upsert_payload"]
@@ -1669,26 +1660,19 @@ def test_sync_normalized_sale_tables_upserts_properties_before_judicial_sales(mo
             "city": "Pau",
         }
     )
-    calls: list[tuple[str, str, str, int]] = []
+    calls: list[tuple[str, str, int]] = []
 
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_upsert",
-        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
-            (supabase_url, table, on_conflict, len(payload))
-        ),
+        "_transaction_write",
+        lambda table, payload, on_conflict=None, **_kwargs: calls.append((table, on_conflict, len(payload))),
     )
 
-    supabase_client._sync_normalized_sale_tables_with_rest(
-        "https://supabase.test",
-        "secret",
-        [sale],
-        "2026-07-06T10:00:00+00:00",
-    )
+    supabase_client._sync_normalized_sale_tables([sale], "2026-07-06T10:00:00+00:00")
 
     assert calls == [
-        ("https://supabase.test", "properties", "source_url", 1),
-        ("https://supabase.test", "judicial_sales", "source_url", 1),
+        ("properties", "source_url", 1),
+        ("judicial_sales", "source_url", 1),
     ]
 
 
@@ -1713,8 +1697,13 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
     )
     monkeypatch.setattr(
         supabase_client,
+        "_postgres_upsert_observations_with_parent_guard",
+        lambda db_url, payload, on_conflict: calls.append((db_url, on_conflict, len(payload))) or len(payload),
+    )
+    monkeypatch.setattr(
+        supabase_client,
         "_postgres_upsert",
-        lambda db_url, table, payload, on_conflict: calls.append((db_url, table, len(payload))),
+        lambda *args, **kwargs: pytest.fail("observations are written by their parent-guarded writer only"),
     )
     monkeypatch.setattr(
         supabase_client,
@@ -1723,7 +1712,21 @@ def test_upsert_observations_prefers_direct_postgres_when_db_url_is_configured(m
     )
 
     assert supabase_client.upsert_observations_to_supabase([sale]) == 1
-    assert calls == [("postgresql://example", "auction_observations", 1)]
+    assert calls == [("postgresql://example", "source_url", 1)]
+
+
+class _PublicationReads:
+    """Fake publication connection: returns the requested ``auction_extractions`` rows, nothing else."""
+
+    def __init__(self, rows: list[dict[str, object]] | None = None) -> None:
+        self.rows = rows or []
+        self.reads: list[object] = []
+
+    def execute(self, statement, params=None):
+        if "as extracted\n        order by extracted.updated_at desc" in str(statement):
+            self.reads.append(params)
+            return SimpleNamespace(fetchall=lambda: [dict(row) for row in self.rows])
+        return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: None)
 
 
 def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
@@ -1739,19 +1742,7 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
         }
     )
     calls: list[tuple[str, list[dict[str, object]], str]] = []
-
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda supabase_url, api_key, table, payload, on_conflict: calls.append(
-            (table, payload, on_conflict)
-        ),
-    )
+    inside_publication(monkeypatch, _PublicationReads(), lambda *write: calls.append(write))
 
     assert supabase_client.upsert_documents_to_supabase([sale]) == 2
     assert calls[0][0] == "auction_documents"
@@ -1768,12 +1759,12 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
     ["+" + "a" * 63, "-" + "a" * 63, "0x" + "a" * 62],
 )
 def test_sha256_rejects_non_hex_prefixes(value: str) -> None:
-    assert not supabase_client._is_sha256(value)
+    assert not is_sha256(value)
 
 
 @pytest.mark.parametrize("value", ["a" * 64, "A" * 64])
 def test_sha256_accepts_lowercase_and_uppercase_hex(value: str) -> None:
-    assert supabase_client._is_sha256(value)
+    assert is_sha256(value)
 
 
 def _persisted_pdf_sale_fixture(
@@ -1781,7 +1772,7 @@ def _persisted_pdf_sale_fixture(
     *,
     cache_dir: Path | None = None,
 ) -> tuple[AuctionSale, list[dict[str, object]]]:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     labels = (
         "PV descriptif",
@@ -1822,14 +1813,14 @@ def _persisted_pdf_sale_fixture(
         starting_price_eur=Decimal("100000"),
         documents=documents,
     )
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
     if cache_dir is not None:
         from src import pdf_fact_extraction
 
         previous_cache_dir = pdf_fact_extraction.PDF_TEXTS_DIR
         pdf_fact_extraction.PDF_TEXTS_DIR = cache_dir
         try:
-            cache_path = pdf_fact_extraction._write_pdf_text_cache(sale, pdf_texts)
+            cache_path = pdf_fact_extraction.write_pdf_text_cache(sale, pdf_texts)
             pdf_texts = json.loads(cache_path.read_text(encoding="utf-8"))
         finally:
             pdf_fact_extraction.PDF_TEXTS_DIR = previous_cache_dir
@@ -1859,24 +1850,10 @@ def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstru
     sale.content_hash = "newer-source-record-hash"
     reconstructed = AuctionSale(**sale.model_dump())
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    reads: list[dict[str, object]] = []
-    writes: list[list[dict[str, object]]] = []
-
-    def fake_get(endpoint, **kwargs):
-        reads.append(kwargs["params"])
-        return httpx.Response(200, json=[extraction_row], request=httpx.Request("GET", endpoint))
-
-    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
-    )
+    connection = _PublicationReads([extraction_row])
+    written: list[tuple[str, list[dict[str, object]], str]] = []
+    inside_publication(monkeypatch, connection, lambda *write: written.append(write))
+    reads = connection.reads
 
     assert not supabase_client.documents_are_current(reconstructed)
     assert supabase_client._load_pdf_texts(reconstructed) == []
@@ -1887,10 +1864,13 @@ def test_upsert_documents_rehydrates_complete_persisted_pdf_text_after_reconstru
         for item in pdf_texts
     )
     assert supabase_client.upsert_documents_to_supabase([reconstructed]) == 4
+    writes = [payload for _table, payload, _conflict in written]
     assert len(reads) == 1
-    assert reads[0]["provider"] == "eq.pdf_text"
-    assert reads[0]["model"] == f"eq.{supabase_client.PDF_EXTRACTION_MODEL}"
-    assert reads[0]["schema_version"] == f"eq.{supabase_client.PDF_EXTRACTION_SCHEMA_VERSION}"
+    assert reads[0][1:] == (
+        "pdf_text",
+        supabase_client.PDF_EXTRACTION_MODEL,
+        supabase_client.PDF_EXTRACTION_SCHEMA_VERSION,
+    )
     assert len(writes) == 1
     assert all(row["extraction_status"] == "extracted" for row in writes[0])
     assert all(row["file_path"] is None for row in writes[0])
@@ -1910,87 +1890,29 @@ def test_persisted_pdf_text_corruption_fails_closed_for_every_document(monkeypat
     corrupted[0]["text"] = "Texte modifié après la preuve persistée."
     extraction_row = _persisted_extraction_row(sale, corrupted)
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    writes: list[list[dict[str, object]]] = []
-    monkeypatch.setattr(
-        supabase_client.httpx,
-        "get",
-        lambda endpoint, **_kwargs: httpx.Response(
-            200,
-            json=[extraction_row],
-            request=httpx.Request("GET", endpoint),
-        ),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
-    )
+    written: list[tuple[str, list[dict[str, object]], str]] = []
+    inside_publication(monkeypatch, _PublicationReads([extraction_row]), lambda *write: written.append(write))
 
     assert supabase_client.upsert_documents_to_supabase([sale]) == 4
+    writes = [payload for _table, payload, _conflict in written]
     assert len(writes) == 1
     assert all(row["extraction_status"] != "extracted" for row in writes[0])
     assert all(row["raw_payload"]["extraction"]["text_present"] is False for row in writes[0])
 
 
-def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, tmp_path) -> None:
-    sale, _pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
-    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    calls: list[object] = []
-    writes: list[list[dict[str, object]]] = []
-
-    def timeout_once(endpoint, **_kwargs):
-        calls.append(endpoint)
-        raise httpx.ReadTimeout("optional persisted PDF lookup timed out")
-
-    monkeypatch.setattr(supabase_client.httpx, "get", timeout_once)
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
-    )
-
-    assert supabase_client.upsert_documents_to_supabase([sale]) == 4
-    assert len(calls) == 1
-    assert len(writes) == 1
-    assert all(row["extraction_status"] != "extracted" for row in writes[0])
-
-
 def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monkeypatch, tmp_path) -> None:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
-    _store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
+    store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    reads: list[object] = []
-    writes: list[list[dict[str, object]]] = []
-    monkeypatch.setattr(
-        supabase_client.httpx,
-        "get",
-        lambda endpoint, **_kwargs: reads.append(endpoint) or pytest.fail("partial manifest queried"),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
-    )
+    connection = _PublicationReads()
+    written: list[tuple[str, list[dict[str, object]], str]] = []
+    inside_publication(monkeypatch, connection, lambda *write: written.append(write))
 
     assert supabase_client.upsert_documents_to_supabase([sale]) == 4
-    assert reads == []
+    assert connection.reads == []
+    writes = [payload for _table, payload, _conflict in written]
     assert len(writes) == 1
     assert all(row["extraction_status"] != "extracted" for row in writes[0])
 
@@ -2025,21 +1947,9 @@ def test_persisted_pdf_roundtrip_rejects_partial_or_legacy_result_markers(
             document.pop("failed_pages")
 
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path / "worker-cache")
-    monkeypatch.setattr(
-        supabase_client.httpx,
-        "get",
-        lambda endpoint, **_kwargs: httpx.Response(
-            200,
-            json=[extraction_row],
-            request=httpx.Request("GET", endpoint),
-        ),
-    )
+    inside_publication(monkeypatch, _PublicationReads([extraction_row]))
 
-    assert supabase_client._fetch_persisted_pdf_texts_for_sales(
-        [sale],
-        "https://supabase.test",
-        "secret",
-    ) == {}
+    assert supabase_client._fetch_persisted_pdf_texts_for_sales([sale]) == {}
 
 
 def test_upsert_cadastre_parcels_uses_service_role_rest_upsert(monkeypatch) -> None:
@@ -2194,7 +2104,7 @@ def test_postgres_connect_can_skip_retries_for_optional_telemetry(monkeypatch) -
     ]
 
 
-def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
+def test_asset_table_cleanup_deletes_child_rows_once_per_table_in_the_transaction(monkeypatch) -> None:
     sales = [
         normalize_sale(
             {
@@ -2202,43 +2112,33 @@ def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:
                 "source_url": f"https://example.test/annonce/{index}/" + ("path-" * 30),
             }
         )
-        for index in range(supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE + 1)
+        for index in range(51)
     ]
-    delete_calls: list[tuple[str, str]] = []
+    deletes: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_postgrest_insert", lambda *args, **kwargs: None)
+    class Connection:
+        def execute(self, statement, params=None):
+            deletes.append((str(statement), params))
+
+    inside_publication(monkeypatch, Connection())
     monkeypatch.setattr(supabase_client, "upsert_documents_to_supabase", lambda *args, **kwargs: 0)
     monkeypatch.setattr(supabase_client, "upsert_extractions_to_supabase", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda supabase_url, api_key, table, params: delete_calls.append((table, params["source_url"])),
-    )
+    monkeypatch.setattr(supabase_client, "_fetch_persisted_pdf_texts_for_sales", lambda *args: {})
 
-    supabase_client._upsert_asset_tables_with_rest(
-        "https://supabase.test",
-        "secret",
-        sales,
-        "2026-06-30T13:00:00+00:00",
-    )
+    supabase_client._upsert_asset_tables(sales, "2026-06-30T13:00:00+00:00")
 
-    assert [table for table, _filter in delete_calls] == [
-        "auction_surface_derivations",
+    tables = (
         "auction_surface_derivations",
         "auction_surface_measurements",
-        "auction_surface_measurements",
-        "auction_risks",
         "auction_risks",
         "auction_risk_occurrences",
-        "auction_risk_occurrences",
-        "auction_urban_planning_signals",
         "auction_urban_planning_signals",
         "auction_score_factors",
-        "auction_score_factors",
-    ]
-    assert delete_calls[0][1].count("https://example.test") == supabase_client.POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE
-    assert delete_calls[1][1].count("https://example.test") == 1
+    )
+    assert len(deletes) == len(tables)
+    for (statement, params), table in zip(deletes, tables, strict=True):
+        assert statement.startswith("Composed([SQL('delete from ')") and f"'{table}'" in statement
+        assert params == ([sale.source_url for sale in sales],)
 
 
 def test_surface_reasoning_rows_preserve_evidence_and_formula() -> None:
@@ -2296,11 +2196,7 @@ def test_surface_reasoning_rows_preserve_evidence_and_formula() -> None:
 
 
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
 
     class Response:
         is_error = False
@@ -2310,7 +2206,7 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
                 {
                     "id": "run-1",
                     "summary": {"trigger": "admin_dashboard"},
-                    "errors": {},
+                    "errors": {"runner": ["earlier"]},
                     "started_at": "2026-06-29T14:41:12Z",
                 }
             ]
@@ -2321,19 +2217,224 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
         assert params["started_at"].startswith("lt.")
         return Response()
 
-    finished = []
+    calls: list[tuple[str, tuple]] = []
     monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls))
     monkeypatch.setattr(
-        supabase_client,
-        "finish_run_in_supabase",
-        lambda run_id, status, summary, errors: finished.append((run_id, status, summary, errors)),
+        supabase_client, "finish_run_in_supabase", lambda *_args: pytest.fail("the worker's closing rule replaces")
     )
 
     assert supabase_client.fail_stale_running_runs_in_supabase(max_age_minutes=190) == 1
-    assert finished[0][0] == "run-1"
-    assert finished[0][1] == "failed"
-    assert "stale_cleanup" in finished[0][2]
-    assert finished[0][3]["runner"]
+    assert len(calls) == 1
+    query, params = calls[0]
+    # Fermeture par un autre processus : fusion dans le bilan, et seulement si le run est encore ouvert.
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj["runner"][0] == "earlier"
+    assert "190 min" in params[1].obj["runner"][1]
+    assert set(params[2].obj) == {"stale_cleanup"}
+    assert params[3] == "run-1"
+
+
+def test_fail_stale_running_runs_needs_no_connection_when_nothing_is_stale(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: httpx.Response(200, json=[], request=httpx.Request("GET", endpoint)),
+    )
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: pytest.fail("no connection"))
+
+    assert supabase_client.fail_stale_running_runs_in_supabase() == 0
+
+
+def test_close_open_run_merges_and_only_closes_an_open_run() -> None:
+    calls: list[tuple[str, tuple]] = []
+
+    supabase_client.close_open_run(
+        _RunDb(calls), "run-1", "failed", {"completion_status": "interrupted"}, {"runner": ["cut\x00 off"]}
+    )
+
+    query, params = calls[0]
+    assert "errors=coalesce(errors,'{}') || %s" in query
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "where id=%s and status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj == {"runner": ["cut off"]}
+    assert params[2].obj == {"completion_status": "interrupted"}
+    assert params[3] == "run-1"
+
+
+def test_rest_headers_are_the_single_supabase_rest_identity() -> None:
+    """Un seul jeu d'en-têtes REST : ``Prefer`` seulement quand l'appelant le demande."""
+    assert postgrest_helpers.rest_headers("secret") == {
+        "apikey": "secret",
+        "Authorization": "Bearer secret",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    assert postgrest_helpers.rest_headers("secret", prefer="return=minimal")["Prefer"] == "return=minimal"
+
+
+def test_merge_into_run_report_adds_to_any_run_without_touching_its_status() -> None:
+    calls: list[tuple[str, tuple]] = []
+
+    supabase_client.merge_into_run_report(
+        _RunDb(calls), "run-1", {"worker_exit_code": 1}, {"runner": ["Worker exited\x00 with status 1"]}
+    )
+
+    [(query, params)] = calls
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "errors=coalesce(errors,'{}') || %s" in query
+    assert "status" not in query
+    assert params[0].obj == {"worker_exit_code": 1}
+    assert params[1].obj == {"runner": ["Worker exited with status 1"]}
+    assert params[2] == "run-1"
+
+
+def test_close_open_run_in_supabase_merges_on_its_own_connection_and_retries(monkeypatch) -> None:
+    """Le niveau au-dessus du worker clôt par fusion, et une coupure de connexion rejoue l'écriture."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr("src.storage.connection_guards.time.sleep", lambda _seconds: None)
+    calls: list[tuple[str, tuple]] = []
+    attempts = {"count": 0}
+
+    def connect(_url):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return _RunDb(calls)
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", connect)
+
+    supabase_client.close_open_run_in_supabase(
+        "run-1", "failed", {"runner": "github_actions_queue"}, {"runner": ["stage crashed"]}
+    )
+
+    assert attempts["count"] == 2
+    query, params = calls[0]
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj == {"runner": ["stage crashed"]}
+    assert params[2].obj == {"runner": "github_actions_queue"}
+    assert params[3] == "run-1"
+
+
+def test_close_open_run_in_supabase_is_a_no_op_without_run_or_supabase(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda *_args, **_kwargs: pytest.fail("no connection"))
+
+    supabase_client.close_open_run_in_supabase(None, "failed", {}, {})
+    supabase_client.close_open_run_in_supabase("run-1", "failed", {}, {})
+
+
+def _transient_then(method: str, endpoint: str, final: httpx.Response, attempts: list[str]):
+    """Une réponse 503 puis ``final`` : simule une erreur passagère de PostgREST."""
+    responses = iter([httpx.Response(503, request=httpx.Request(method, endpoint)), final])
+
+    def send(url, **_kwargs):
+        attempts.append(f"{method} {url}")
+        return next(responses)
+
+    return send
+
+
+@pytest.mark.parametrize(
+    "call,expected",
+    [
+        (lambda: supabase_client.fetch_next_queued_run_from_supabase(), {"id": "run-1"}),
+        (lambda: supabase_client.has_active_running_run_in_supabase(), True),
+    ],
+)
+def test_run_queue_reads_are_retried_on_a_transient_failure(monkeypatch, call, expected) -> None:
+    """Une lecture se rejoue sans danger : une erreur passagère ne fait plus sauter le tour du worker."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/auction_runs"
+    attempts: list[str] = []
+    final = httpx.Response(200, json=[{"id": "run-1"}], request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, final, attempts))
+
+    assert call() == expected
+    assert attempts == [f"GET {endpoint}"] * 2
+
+
+def test_stale_run_read_is_retried_on_a_transient_failure(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/auction_runs"
+    attempts: list[str] = []
+    final = httpx.Response(200, json=[], request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, final, attempts))
+
+    assert supabase_client.fail_stale_running_runs_in_supabase() == 0
+    assert len(attempts) == 2
+
+
+def test_data_refresh_lock_sent_again_finds_its_row_already_locked(monkeypatch) -> None:
+    """Le verrou est rejoué à l'identique ; une première tentative arrivée à la base laisse la seconde sans ligne."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/data_refresh_requests"
+    attempts: list[str] = []
+    queued = [{"id": "refresh-1", "status": "queued", "request_kind": "dpe"}]
+    read = httpx.Response(200, json=queued, request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, read, attempts))
+    payloads: list[dict[str, object]] = []
+    responses = iter(
+        [
+            httpx.Response(504, request=httpx.Request("PATCH", endpoint)),
+            httpx.Response(200, json=[], request=httpx.Request("PATCH", endpoint)),
+        ]
+    )
+
+    def fake_patch(url, params, headers, json, timeout):
+        assert params == {"id": "eq.refresh-1", "status": "eq.queued"}
+        payloads.append(json)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    request = supabase_client.fetch_next_data_refresh_request_from_supabase()
+
+    assert len(attempts) == 2
+    assert len(payloads) == 2 and payloads[0] == payloads[1]
+    assert request is not None
+    assert request["id"] == "refresh-1"
+    assert request["status"] == "running"
+
+
+def test_data_refresh_finish_is_sent_again_with_the_same_payload(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/data_refresh_requests"
+    payloads: list[dict[str, object]] = []
+    responses = iter(
+        [
+            httpx.Response(502, request=httpx.Request("PATCH", endpoint)),
+            httpx.Response(204, request=httpx.Request("PATCH", endpoint)),
+        ]
+    )
+
+    def fake_patch(url, params, headers, json, timeout):
+        assert url == endpoint
+        assert params == {"id": "eq.refresh-1"}
+        payloads.append(json)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    supabase_client.finish_data_refresh_request_in_supabase("refresh-1", "completed", {"dpe_rows": 1})
+
+    assert len(payloads) == 2 and payloads[0] == payloads[1]
+    assert payloads[0]["status"] == "completed"
+    assert payloads[0]["completed_at"] == payloads[0]["updated_at"]
 
 
 def test_has_active_running_run_checks_recent_running_rows(monkeypatch) -> None:
@@ -2519,7 +2620,7 @@ def test_publication_commits_completed_batches_before_later_batch_failure(monkey
             raise RuntimeError('second batch failed')
         return []
     monkeypatch.setattr(supabase_client, '_transaction_write', write)
-    for name in ['_sync_normalized_sale_tables_with_rest', '_upsert_asset_tables_with_rest', '_enqueue_due_enrichment']:
+    for name in ['_sync_normalized_sale_tables', '_upsert_asset_tables', '_enqueue_due_enrichment']:
         monkeypatch.setattr(supabase_client, name, lambda *args, **kwargs: None)
     sales = [AuctionSale(source_name='test', source_url=f'https://example.test/{i}', starting_price_eur=100) for i in range(26)]
     with pytest.raises(RuntimeError, match='second batch'):

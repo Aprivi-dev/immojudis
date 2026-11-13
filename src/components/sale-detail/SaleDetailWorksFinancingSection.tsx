@@ -85,6 +85,8 @@ export function SaleDetailWorksFinancingSection({
   rentalDraft: ListingRentalDraft | null;
   onRentalDraftChange: (draft: ListingRentalDraft) => void;
 }) {
+  // Sans mise à prix, pas d'enveloppe : elle serait celle d'une enchère à 0 €.
+  const startingPrice = displaySale.starting_price_eur ?? 0;
   return (
     <DetailSection id="travaux-financement">
       <div className={layoutStyles.stack}>
@@ -108,8 +110,8 @@ export function SaleDetailWorksFinancingSection({
                   surface={surface}
                   onScenarioSelect={retainedWorks != null ? onScenarioSelect : undefined}
                   maxWorks={
-                    heroCeiling != null
-                      ? maxWorksAtBid(ceilingHypotheses, displaySale.starting_price_eur ?? 0)
+                    heroCeiling != null && startingPrice > 0
+                      ? maxWorksAtBid(ceilingHypotheses, startingPrice)
                       : null
                   }
                 />

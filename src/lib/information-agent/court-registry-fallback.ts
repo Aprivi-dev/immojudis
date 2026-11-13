@@ -13,11 +13,11 @@ import { informationAgentExcludedAddressReason } from "@/lib/information-agent/e
  * exécutés par pytest et par vitest (`information-agent-court-registry-parity.test.ts`).
  */
 
-/** Origine de l'adresse d'un greffe (`information_agent_contacts.source_kind`), distincte de toute autre. */
+/**
+ * Origine de l'adresse d'un greffe (`information_agent_contacts.source_kind`), distincte de toute autre ; aussi
+ * la valeur de `metadata.contact_discovery.method` d'une mission adressée au greffe.
+ */
 export const INFORMATION_AGENT_COURT_REGISTRY_FALLBACK = "court_registry_fallback";
-
-/** Valeur de `metadata.contact_discovery.method` d'une mission adressée au greffe. */
-export const COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD = INFORMATION_AGENT_COURT_REGISTRY_FALLBACK;
 
 /** Sources qui ne sont jamais une vente au tribunal : notaires, cessions de l'État, AGRASC. */
 const EXCLUDED_SOURCES: ReadonlySet<string> = new Set(["notaires", "cessions_etat", "agrasc"]);
@@ -82,7 +82,7 @@ export function courtRegistryFallbackEmails(
 /** Plafond par défaut de sollicitations de greffes, par tribunal et par jour (valeur prudente). */
 export const COURT_REGISTRY_DAILY_CAP_DEFAULT = 3;
 /** Variable d'environnement qui règle le plafond quotidien par tribunal (0 : aucun envoi aux greffes). */
-export const COURT_REGISTRY_DAILY_CAP_ENV = "INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP";
+const COURT_REGISTRY_DAILY_CAP_ENV = "INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP";
 const COURT_REGISTRY_DAILY_CAP_MAX = 100;
 
 /**

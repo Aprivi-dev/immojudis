@@ -1,20 +1,20 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   courtRegistryDailyCap,
   courtRegistryFallbackEmails,
-  COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD,
   INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
   type CourtRegistryFallbackSale,
 } from "@/lib/information-agent/court-registry-fallback";
 import {
   isInformationAgentContactBlocked,
   loadInformationAgentContactRegistry,
-  normalizedEmail,
-  type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import { type InformationAgentContactCandidate } from "@/lib/information-agent/contact-resolution";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
-import { startOfParisDay } from "@/lib/information-agent/paris-time";
+import { startOfParisDay } from "@/lib/paris-time";
 
 /**
  * Greffe de secours (lecture du référentiel `court_registry_contacts`, limites d'envoi). Seul module
@@ -28,7 +28,7 @@ import { startOfParisDay } from "@/lib/information-agent/paris-time";
  * tribunal et par vente, et un plafond par tribunal et par jour (3 par défaut, réglable).
  */
 
-export type CourtRegistryContact = {
+type CourtRegistryContact = {
   courtCode: string;
   name: string;
   emails: string[];
@@ -37,9 +37,7 @@ export type CourtRegistryContact = {
 export type CourtRegistryFallbackSaleInput = CourtRegistryFallbackSale & { id: string };
 
 /** Ligne du référentiel d'un tribunal, ou null s'il n'y est pas. Une erreur de base est propagée. */
-export async function loadCourtRegistryContact(
-  courtCode: string,
-): Promise<CourtRegistryContact | null> {
+async function loadCourtRegistryContact(courtCode: string): Promise<CourtRegistryContact | null> {
   const { data, error } = await supabaseAdmin
     .from("court_registry_contacts")
     .select("court_code,name,emails")
@@ -62,7 +60,6 @@ export type CourtRegistryFallback = {
  */
 export async function findCourtRegistryFallback(
   sale: CourtRegistryFallbackSaleInput,
-  now: Date = new Date(),
 ): Promise<CourtRegistryFallback | null> {
   const courtCode = sale.tribunal_code?.trim();
   if (!courtCode) return null;
@@ -92,7 +89,7 @@ export async function findCourtRegistryFallback(
         source: {
           kind: INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
           url: null,
-          observedAt: now.toISOString(),
+          observedAt: new Date().toISOString(),
           observedBy: "agent",
         },
       },
@@ -124,7 +121,7 @@ export function courtRegistryFallbackOfMission(
   };
   const code = metadata.court_registry_fallback?.court_code;
   if (
-    metadata.contact_discovery?.method !== COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD ||
+    metadata.contact_discovery?.method !== INFORMATION_AGENT_COURT_REGISTRY_FALLBACK ||
     typeof code !== "string" ||
     !code ||
     normalizedEmail(mission.recipient_email) !== normalizedEmail(recipientEmail)
@@ -135,7 +132,7 @@ export function courtRegistryFallbackOfMission(
   return { courtCode: code, courtName: typeof name === "string" ? name : null };
 }
 
-export const COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE =
+const COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE =
   "Cette adresse n’est plus celle du greffe indiquée par le référentiel des tribunaux : annulez ce brouillon et relancez la préparation.";
 
 /** L'adresse figure toujours dans le référentiel pour ce tribunal (relue à l'aperçu et à l'envoi). */
@@ -146,7 +143,7 @@ export async function assertCourtRegistryFallbackAddress(
   const normalized = normalizedEmail(email);
   const contact = await loadCourtRegistryContact(courtCode);
   if (!normalized || !contact?.emails.some((item) => normalizedEmail(item) === normalized)) {
-    throw new Error(COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE);
+    throw new PublicApiError(COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE, 409);
   }
 }
 
@@ -207,16 +204,16 @@ export async function assertCourtRegistryFallbackLimits({
   const forSale = [...(saleSent.data ?? []), ...(saleUnverified.data ?? [])];
   if (forSale.length > 0) {
     const on = formatInformationAgentOriginDate(forSale[0]?.approved_at ?? null);
-    throw new Error(
+    throw new PublicApiError(
       `Ce tribunal a déjà été sollicité pour cette vente${on ? ` le ${on}` : ""} : une seule demande est autorisée par tribunal et par vente.`,
+      409,
     );
   }
   const today = [...(daySent.data ?? []), ...(dayUnverified.data ?? [])];
   if (today.length >= cap) {
-    throw new Error(
+    throw new PublicApiError(
       `Plafond atteint : ${cap} demande${cap > 1 ? "s" : ""} aux greffes par tribunal et par jour (INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP). Ce tribunal a déjà été sollicité ${today.length} fois aujourd’hui ; réessayez demain.`,
+      409,
     );
   }
 }
-
-export { startOfParisDay };

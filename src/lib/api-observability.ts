@@ -2,23 +2,16 @@ import { NextResponse } from "next/server";
 // Classe de base des erreurs de zod 4 : couvre les ZodError de zod et celles levées par les
 // schémas zod/mini (partagés avec le navigateur), qui ne sont pas des instances de ZodError.
 import { $ZodError } from "zod/v4/core";
-import { PublicApiError, RateLimitError, isPublicErrorMessage } from "@/lib/api-errors";
+import {
+  type ApiErrorCode,
+  AuthRequiredError,
+  ConfigurationError,
+  PublicApiError,
+  RateLimitError,
+  ServiceUnavailableError,
+} from "@/lib/api-errors";
+import { ResponseSchemaViolationError, isPublicErrorMessage } from "@/lib/api-error-detail";
 import { resolveRequestId } from "@/lib/request-id";
-
-/** Codes d'erreur de l'API ; la liste de `components.schemas.ApiError.code` d'openapi.yaml doit être identique. */
-export const API_ERROR_CODES = [
-  "AUTH_REQUIRED",
-  "FORBIDDEN",
-  "NOT_FOUND",
-  "CONFLICT",
-  "INVALID_REQUEST",
-  "COURT_UNRESOLVED",
-  "RATE_LIMITED",
-  "CONFIGURATION_ERROR",
-  "INTERNAL_ERROR",
-] as const;
-
-export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 export type ApiRequestContext = {
   requestId: string;
@@ -40,9 +33,9 @@ export type ApiErrorOptions = {
    */
   extra?: Record<string, unknown>;
   /**
-   * Return short French business messages ("Vente introuvable.") verbatim and map
-   * "introuvable" to 404. Enabled by `apiRouteError`; the versioned /api/v1 routes keep
-   * their historical generic fallbacks.
+   * Return short French business messages thrown as plain errors verbatim (400) instead of the
+   * fallback. Enabled by `apiRouteError`; the versioned /api/v1 routes keep their generic
+   * fallbacks. Typed errors (`@/lib/api-errors`) are returned verbatim either way.
    */
   exposeBusinessMessages?: boolean;
 };
@@ -159,17 +152,28 @@ export type ClassifiedApiError = {
   retryAfterSeconds?: number;
 };
 
+const STATUS_CODES: Record<number, ApiErrorCode> = {
+  401: "AUTH_REQUIRED",
+  403: "FORBIDDEN",
+  404: "NOT_FOUND",
+  409: "CONFLICT",
+  429: "RATE_LIMITED",
+};
+
+function codeForStatus(status: number): ApiErrorCode {
+  return STATUS_CODES[status] ?? (status >= 500 ? "INTERNAL_ERROR" : "INVALID_REQUEST");
+}
+
 /**
- * Maps any thrown value to a status and a client-safe message. Only messages that
- * look like French business messages (or come from a PublicApiError) are returned
+ * Maps any thrown value to a status and a client-safe message. The status comes from the error
+ * type (see `@/lib/api-errors`), never from its text. Only messages that come from a
+ * PublicApiError, or that look like French business messages on first-party routes, are returned
  * verbatim; database, driver and runtime details stay in the logs.
  */
 export function classifyApiError(
   error: unknown,
   options: Pick<ApiErrorOptions, "fallbackMessage" | "fallbackStatus" | "exposeBusinessMessages">,
 ): ClassifiedApiError {
-  const message = error instanceof Error ? error.message : "";
-
   if (error instanceof RateLimitError) {
     return {
       code: "RATE_LIMITED",
@@ -180,83 +184,38 @@ export function classifyApiError(
   }
   if (error instanceof PublicApiError) {
     return {
-      code:
-        error.status === 404
-          ? "NOT_FOUND"
-          : error.status === 403
-            ? "FORBIDDEN"
-            : error.status === 409
-              ? "CONFLICT"
-              : error.status >= 500
-                ? "INTERNAL_ERROR"
-                : "INVALID_REQUEST",
+      code: error.code ?? codeForStatus(error.status),
       status: error.status,
       message: error.message,
     };
   }
-  if (message.startsWith("Unauthorized")) {
+  if (error instanceof AuthRequiredError) {
     return { code: "AUTH_REQUIRED", status: 401, message: "Authentification requise." };
   }
-  if (message.startsWith("Trop de demandes") || message.includes("Rate limit")) {
-    return {
-      code: "RATE_LIMITED",
-      status: 429,
-      message: "Trop de demandes.",
-      retryAfterSeconds: 60,
-    };
+  if (error instanceof $ZodError || error instanceof SyntaxError) {
+    return { code: "INVALID_REQUEST", status: 400, message: "Requête invalide." };
   }
-  if (
-    message.includes("réservé") ||
-    message.includes("réservée") ||
-    message.startsWith("Forbidden") ||
-    /^Limite de \d+/.test(message)
-  ) {
-    return {
-      code: "FORBIDDEN",
-      status: 403,
-      message: isPublicErrorMessage(message) ? message : "Accès refusé.",
-    };
+  if (error instanceof ServiceUnavailableError) {
+    return { code: "INTERNAL_ERROR", status: 503, message: options.fallbackMessage };
   }
-  if (
-    message.startsWith("NotFound") ||
-    (options.exposeBusinessMessages &&
-      /introuvable/i.test(message) &&
-      isPublicErrorMessage(message))
-  ) {
-    return {
-      code: "NOT_FOUND",
-      status: 404,
-      message: isPublicErrorMessage(message) ? message : "Ressource introuvable.",
-    };
+  if (error instanceof ResponseSchemaViolationError) {
+    // The server broke its own published contract: a server fault, logged at error level.
+    return { code: "INTERNAL_ERROR", status: 503, message: options.fallbackMessage };
   }
-  if (
-    error instanceof $ZodError ||
-    error instanceof SyntaxError ||
-    message.startsWith("Requête invalide")
-  ) {
-    return {
-      code: "INVALID_REQUEST",
-      status: 400,
-      message: message.startsWith("Requête invalide") ? message : "Requête invalide.",
-    };
-  }
-  if (message.toLowerCase().includes("configur")) {
+  if (error instanceof ConfigurationError) {
     return {
       code: "CONFIGURATION_ERROR",
       status: 503,
       message: "Service temporairement indisponible.",
     };
   }
+  const message = error instanceof Error ? error.message : "";
   if (options.exposeBusinessMessages && isPublicErrorMessage(message)) {
     return { code: "INVALID_REQUEST", status: 400, message };
   }
 
   const status = options.fallbackStatus ?? 500;
-  return {
-    code: status >= 500 ? "INTERNAL_ERROR" : "INVALID_REQUEST",
-    status,
-    message: options.fallbackMessage,
-  };
+  return { code: codeForStatus(status), status, message: options.fallbackMessage };
 }
 
 function logApiCompletion(

@@ -2,14 +2,13 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import type { InformationAgentAdminActionPayload } from "@/lib/information-agent";
-import {
-  detectInformationAgentContactOptOut,
-  extractInformationAgentFacts,
-  persistFactCandidates,
-  replyTextForExtraction,
-} from "@/lib/information-agent-inbound";
+import type { InformationAgentAdminActionPayload } from "@/lib/information-agent/schemas";
+import { detectInformationAgentContactOptOut } from "@/lib/information-agent-inbound/reply-intent";
+import { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
+import { persistFactCandidates } from "@/lib/information-agent-inbound/attachments";
+import { replyTextForExtraction } from "@/lib/information-agent-inbound/text";
 import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 // Réponse reçue hors circuit (téléphone, courrier, autre boîte) consignée par
 // un administrateur : rattachée au dossier partagé, puis extraite comme les
@@ -26,7 +25,10 @@ export async function recordManualMissionReply({
   input: Extract<InformationAgentAdminActionPayload, { action: "record_reply" }>;
 }) {
   if (!(["sent", "replied"] as MissionRow["status"][]).includes(mission.status)) {
-    throw new Error("Requête invalide : aucune réponse ne peut être rattachée à cette enquête.");
+    throw new PublicApiError(
+      "Requête invalide : aucune réponse ne peut être rattachée à cette enquête.",
+      409,
+    );
   }
   const sharedCase = await loadManualReplyCase(mission);
   const bodyText = input.bodyText.trim();
@@ -76,7 +78,7 @@ export async function recordManualMissionReply({
     repliedAt: replyReceivedAt,
   });
   if (!caseUpdated) {
-    throw new Error("Requête invalide : le dossier de cette enquête est déjà fermé.");
+    throw new PublicApiError("Requête invalide : le dossier de cette enquête est déjà fermé.", 409);
   }
 
   const updatedAt = new Date().toISOString();
@@ -92,7 +94,7 @@ const OPEN_INFORMATION_AGENT_CASE_STATUSES = ["sending", "sent", "replied", "rev
 
 async function loadManualReplyCase(mission: MissionRow): Promise<CaseRow> {
   if (!mission.case_id || !mission.sale_id) {
-    throw new Error("Requête invalide : l'enquête n'est pas rattachée à une vente.");
+    throw new PublicApiError("Requête invalide : l'enquête n'est pas rattachée à une vente.", 400);
   }
   const { data: sharedCase, error } = await supabaseAdmin
     .from("information_agent_cases")
@@ -102,7 +104,7 @@ async function loadManualReplyCase(mission: MissionRow): Promise<CaseRow> {
     .maybeSingle();
   if (error) throw error;
   if (!sharedCase) {
-    throw new Error("Requête invalide : dossier de vente introuvable ou incohérent.");
+    throw new NotFoundError("Dossier de vente introuvable ou incohérent.");
   }
   const { data: subscriber, error: subscriberError } = await supabaseAdmin
     .from("information_agent_case_subscribers")
@@ -112,10 +114,13 @@ async function loadManualReplyCase(mission: MissionRow): Promise<CaseRow> {
     .maybeSingle();
   if (subscriberError) throw subscriberError;
   if (!subscriber) {
-    throw new Error("Requête invalide : la mission n'est pas rattachée à ce dossier.");
+    throw new PublicApiError(
+      "Requête invalide : la mission n'est pas rattachée à ce dossier.",
+      400,
+    );
   }
   if (!OPEN_INFORMATION_AGENT_CASE_STATUSES.some((status) => status === sharedCase.status)) {
-    throw new Error("Requête invalide : le dossier de cette enquête est déjà fermé.");
+    throw new PublicApiError("Requête invalide : le dossier de cette enquête est déjà fermé.", 409);
   }
   return sharedCase;
 }
@@ -228,7 +233,7 @@ async function insertOrLoadManualReplyMessage({
     .select("*")
     .single();
   if (!insertError && inserted) return inserted;
-  if (!insertError) throw new Error("Réponse manuelle impossible à enregistrer.");
+  if (!insertError) throw new Error("Manual reply insert returned no row");
 
   // A double click or concurrent admin request can win the unique provider
   // id between the lookup and insert. Reuse it only after rechecking every
@@ -261,8 +266,9 @@ function assertSameManualReply(
     message.subject !== subject ||
     message.body_text !== bodyText
   ) {
-    throw new Error(
+    throw new PublicApiError(
       "Requête invalide : cette réponse manuelle est déjà rattachée à un autre dossier.",
+      409,
     );
   }
 }

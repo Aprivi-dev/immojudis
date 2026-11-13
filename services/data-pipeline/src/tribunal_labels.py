@@ -9,7 +9,8 @@ se rattache à rien et qui est visiblement polluée reste absente.
 from __future__ import annotations
 
 import re
-import unicodedata
+
+from src.text_folding import ascii_alnum_words, strip_accents
 
 _MAX_COURT_NAME_WORDS = 7
 # L'article doit être un mot entier (``\b``) : sans cela « de Lille » se lisait « de l » + « ille » et
@@ -47,9 +48,7 @@ _BOUNDARY_WORDS = _STRONG_NOISE_WORDS | frozenset(
 
 
 def _fold(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    return ascii_alnum_words(strip_accents(str(value or "")).lower())
 
 
 def _court_words(label: object) -> list[str]:

@@ -1,10 +1,11 @@
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { isInFrance } from "@/lib/france-bounds";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { publishedDay, sourceVisitExcerpt } from "./listing-evidence";
-import { calendarDaysBetween, parisDateKey } from "./sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
 import { cleanDateForListing, cleanListingAddress, cleanVisitText } from "./listing-data-cleanup";
 
 export function listingAddress(sale: AuctionSale): string {
@@ -77,12 +78,7 @@ export function listingDate(value: string | null | undefined): string {
   if (dateOnly) {
     const date = new Date(`${text}T12:00:00Z`);
     if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== text) return text;
-    return new Intl.DateTimeFormat("fr-FR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone: "Europe/Paris",
-    }).format(date);
+    return formatDate(text);
   }
   // Human-readable visit slots have no timezone. Keep their published local time.
   const visit = /^(\d{4}-\d{2}-\d{2})\s+(?:à\s+)?(\d{1,2})[:h](\d{2})(.*)$/.exec(text);

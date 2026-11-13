@@ -1,6 +1,5 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Bail nommé d'un traitement planifié (table `cron_lease`, fonctions `claim_cron_lease` et `release_cron_lease`,
@@ -12,29 +11,22 @@ import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 /** Nom des baux existants (une ligne chacun dans `cron_lease`). */
 export type CronLeaseName = "sale-pepites" | "information-agent-autopilot";
 
-export type CronLease =
-  | { kind: "held"; token: string }
-  | { kind: "busy" }
-  /** La fonction de bail n'existe pas encore (migration en retard) : le traitement continue sans verrou. */
-  | { kind: "unavailable" };
+export type CronLease = { kind: "held"; token: string } | { kind: "busy" };
 
 /**
  * Prend le bail `name` pour `ttlSeconds` (au-delà de `maxDuration` de la route : il expire seul si la passe
- * meurt). `busy` : une autre passe court.
+ * meurt). `busy` : une autre passe court. Une erreur de la base lève : jamais de passe sans bail.
  */
 export async function claimCronLease(name: CronLeaseName, ttlSeconds: number): Promise<CronLease> {
   const { data, error } = await supabaseAdmin.rpc("claim_cron_lease", {
     p_name: name,
     p_ttl_seconds: ttlSeconds,
   });
-  if (error) {
-    if (isMissingDatabaseObject(error)) return { kind: "unavailable" };
-    throw new Error(`Bail ${name} refusé (code ${error.code ?? "inconnu"})`);
-  }
+  if (error) throw new Error(`Cron lease ${name} refused (code ${error.code ?? "unknown"})`);
   return typeof data === "string" && data ? { kind: "held", token: data } : { kind: "busy" };
 }
 
-/** Rend le bail. Sans effet (et sans erreur) si la passe l'a déjà perdu ou si la fonction manque. */
+/** Rend le bail. Sans effet (et sans erreur) si la passe l'a déjà perdu. */
 export async function releaseCronLease(name: CronLeaseName, token: string): Promise<void> {
   try {
     await supabaseAdmin.rpc("release_cron_lease", { p_name: name, p_token: token });

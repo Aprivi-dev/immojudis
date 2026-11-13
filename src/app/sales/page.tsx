@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { catalogueSearch } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { renderSalesCatalogue, salesPageMetadata } from "./sales-catalogue";
 
@@ -25,11 +26,15 @@ function flattenSearchParams(params: Record<string, string | string[] | undefine
 // The canonical is `/sales` for the first page and for every filtered address; page 2 and beyond of
 // the unfiltered catalogue are pages of their own (`/sales?page=N`, title "… - page N").
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
-  return salesPageMetadata(validateSalesSearch(flattenSearchParams(await searchParams)));
+  return salesPageMetadata(
+    catalogueSearch(validateSalesSearch(flattenSearchParams(await searchParams))),
+  );
 }
 
 export default async function Page({ searchParams }: PageProps) {
   // The signed-out catalogue is rendered here so that the first HTML already contains the listings
   // (links to every sale included).
-  return renderSalesCatalogue(validateSalesSearch(flattenSearchParams(await searchParams)));
+  return renderSalesCatalogue(
+    catalogueSearch(validateSalesSearch(flattenSearchParams(await searchParams))),
+  );
 }

@@ -61,7 +61,7 @@ describe("MarketPriceDistribution (n° 24)", () => {
     const text = plain(container.textContent);
     expect(text).toContain("18 ventes comparables (une par parcelle)");
     expect(text).toContain("DVF normalisé");
-    expect(text).toContain("du 20 novembre 2023 au 04 mai 2026");
+    expect(text).toContain("du 20 novembre 2023 au 4 mai 2026");
   });
 
   it("affiche la vraie médiane quand elle existe", () => {

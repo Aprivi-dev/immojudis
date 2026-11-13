@@ -22,11 +22,11 @@ import {
   type PlanningEntry,
 } from "@/lib/favorite-planning";
 import type { FavoriteSale } from "@/lib/favorites";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { listingVisits } from "@/lib/sale-listing";
+import { downloadBlob } from "@/lib/download-blob";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { seoLongDate } from "@/lib/seo";
 import { userMessage } from "@/lib/user-messages";
 
 /**
@@ -147,7 +147,7 @@ function PlanningRow({ entry }: { entry: PlanningEntry }) {
   const place = [sale.city, sale.department ? `(${sale.department})` : null]
     .filter(Boolean)
     .join(" ");
-  const date = seoLongDate(sale.sale_date);
+  const date = formatDate(sale.sale_date, null);
   const visits = listingVisits(sale);
   return (
     <Card as="article" className="!py-3">
@@ -211,14 +211,7 @@ function FollowedCalendarExport({
     setMessage(null);
     try {
       const file = await downloadFollowedCalendar({ saleIds });
-      const url = URL.createObjectURL(file.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.filename;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(file.blob, file.filename);
       setMessage({
         tone: "info",
         text:

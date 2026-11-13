@@ -35,6 +35,8 @@ import styles from "./ListingDataCoverage.module.css";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
 import type { AuctionSale } from "@/lib/types";
 import { asRecordOrNull } from "@/lib/guards";
+import { formatShortDate } from "@/lib/format/dates";
+import { isQualifiedPropertyType } from "@/lib/format/property-labels";
 
 const MISSING_TEXT_MARKERS = new Set([
   "-",
@@ -62,7 +64,7 @@ const CHECKLIST = [
   { key: "source", label: "Source de l’annonce" },
 ] as const;
 
-export type ListingDataCoverageKey = (typeof CHECKLIST)[number]["key"];
+type ListingDataCoverageKey = (typeof CHECKLIST)[number]["key"];
 
 const KEY_FACT_FIELDS: ReadonlyArray<{ key: ListingDataCoverageKey; field: KeyFact }> = [
   { key: "surface", field: "surface" },
@@ -71,13 +73,13 @@ const KEY_FACT_FIELDS: ReadonlyArray<{ key: ListingDataCoverageKey; field: KeyFa
   { key: "schedule", field: "sale_date" },
 ];
 
-export type ListingDataCoverageItem = {
+type ListingDataCoverageItem = {
   key: ListingDataCoverageKey;
   label: string;
   present: boolean;
 };
 
-export type ListingDataCoverageKeyFact = {
+type ListingDataCoverageKeyFact = {
   key: ListingDataCoverageKey;
   label: string;
   presentation: FactPresentation;
@@ -121,14 +123,10 @@ function hasMeaningfulText(value: unknown): value is string {
   return !MISSING_TEXT_MARKERS.has(normalized);
 }
 
+/** Le type compte comme publié quand la règle commune lui donne un vrai libellé. */
 function hasPropertyType(sale: AuctionSale): boolean {
   if (!hasMeaningfulText(sale.property_type)) return false;
-  const normalized = sale.property_type
-    .trim()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLocaleLowerCase("fr-FR");
-  return !["bien", "bien a qualifier", "other"].includes(normalized);
+  return isQualifiedPropertyType(sale.property_type);
 }
 
 function hasDescription(sale: AuctionSale): boolean {
@@ -364,12 +362,7 @@ function factActionAriaLabel(fact: PublicListingFact, label: string): string {
 
 function capturedAtLabel(capturedAt: string | null): string | null {
   const value = capturedAt?.trim();
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  if (Number.isNaN(timestamp)) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-  }).format(new Date(timestamp));
+  return value ? formatShortDate(value, value) : null;
 }
 
 type SourceDialogProps = {
@@ -563,7 +556,7 @@ function isNotCommunicated(fact: PublicListingFact): boolean {
 type NotCommunicatedItem = { fact: PublicListingFact; sectionTitle: string };
 
 /** « 3 informations non communiquées dans le dossier » (singular for one). */
-export function notCommunicatedTitle(count: number): string {
+function notCommunicatedTitle(count: number): string {
   return count > 1
     ? `${count} informations non communiquées dans le dossier`
     : `${count} information non communiquée dans le dossier`;

@@ -13,7 +13,7 @@ from bs4 import Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department, strip_accents
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import (
@@ -37,6 +37,7 @@ from src.sources.common import (
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.text_folding import strip_accents
 
 BASE_URL = "https://agrasc.gouv.fr"
 # AGRASC publishes ``?page=0`` as the first page.  The bare path currently
@@ -65,10 +66,6 @@ def agrasc_tls_context() -> ssl.SSLContext:
     context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
     context.load_verify_locations(str(Path(__file__).with_name("certificates") / "sectigo-qualified-r39.pem"))
     return context
-
-
-def scrape_agrasc_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_agrasc_aquitaine_result(max_pages=max_pages).sales
 
 
 def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:

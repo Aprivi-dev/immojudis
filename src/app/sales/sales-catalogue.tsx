@@ -9,7 +9,8 @@ import {
 } from "@/lib/search/catalog-placeholder";
 import { RPC_LIMITS } from "@/lib/search/preview-search-request";
 import { DEFAULT_SEARCH_LIMIT } from "@/lib/search/search-filters";
-import { parisToday, upcomingWeekScope } from "@/lib/search/sales-week";
+import { parisDateKey } from "@/lib/paris-time";
+import { upcomingWeekScope } from "@/lib/search/sales-week";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { SalesPage } from "./sales-page";
 
@@ -96,7 +97,7 @@ export async function renderSalesCatalogue(
     staticQuery?: string;
   } = {},
 ) {
-  const today = parisToday();
+  const today = parisDateKey(new Date());
   const week = upcomingWeekScope(search, today);
   const [initial, weekCount] = await Promise.all([
     photoMirrorTimeoutMs === undefined

@@ -24,7 +24,6 @@ recalcul sur l'existant (``source_blocks.page_text`` stocké), sans requête :
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -41,6 +40,7 @@ from src.sources.professional_contact import (
     professional_sentence,
     same_professional,
 )
+from src.text_folding import ascii_lower_single_spaced
 
 FEATURES_SCHEMA_VERSION = "petites_affiches_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -99,9 +99,7 @@ _PUBLICATION_RE = re.compile(r"publication\s+l[ée]gale\s*:\s*(?P<journal>.+?)\s
 
 def fold(value: object | None) -> str:
     """Texte replié : minuscules, sans accents, apostrophes droites, espaces simples."""
-    text = str(value or "").replace("’", "'").replace("\u00a0", " ")
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
-    return re.sub(r"\s+", " ", text).strip()
+    return ascii_lower_single_spaced(str(value or "").replace("’", "'"))
 
 
 def _lines(page_text: str | None) -> list[str]:

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import {
@@ -16,6 +18,7 @@ import type {
 } from "@/lib/information-agent-email-template";
 // Le jeton seul : le module du modèle embarque zod, que l'éditeur n'a pas à télécharger.
 import { templateVariableToken } from "@/lib/information-agent-email-template-token";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 const TEMPLATE_QUERY_KEY = ["admin-information-agent-email-template"] as const;
 
@@ -43,9 +46,7 @@ export function AdminInformationAgentTemplatePanel() {
     return (
       <AdminPanel className="p-6">
         <p className="text-sm text-red-700">
-          {templateQuery.error instanceof Error
-            ? templateQuery.error.message
-            : "Le template d’email est indisponible."}
+          {queryErrorMessage(templateQuery.error, "Le template d’email est indisponible.")}
         </p>
         <button
           type="button"
@@ -106,7 +107,7 @@ function InformationAgentTemplateEditor({
     mutationFn: () => previewAdminInformationAgentEmailTemplate(template),
     onSuccess: (response) => setPreview(response.preview),
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Prévisualisation impossible");
+      toast.error(queryErrorMessage(error, "Prévisualisation impossible"));
     },
   });
   const saveMutation = useMutation({
@@ -124,7 +125,7 @@ function InformationAgentTemplateEditor({
       toast.success("Brouillon enregistré.");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Enregistrement impossible");
+      toast.error(queryErrorMessage(error, "Enregistrement impossible"));
     },
   });
   const publishMutation = useMutation({
@@ -138,7 +139,7 @@ function InformationAgentTemplateEditor({
       toast.success("Le nouveau template est publié.");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Publication impossible");
+      toast.error(queryErrorMessage(error, "Publication impossible"));
     },
   });
 
@@ -195,15 +196,14 @@ function InformationAgentTemplateEditor({
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             {workspace.publishedIgnored ? (
-              <StatusBadge
-                label={`Publié · v${workspace.published.revision} (ignoré)`}
-                tone="amber"
-              />
+              <AdminPill tone="warning">
+                Publié · v{workspace.published.revision} (ignoré)
+              </AdminPill>
             ) : (
-              <StatusBadge label={`Publié · v${workspace.published.revision}`} tone="green" />
+              <AdminPill tone="success">Publié · v{workspace.published.revision}</AdminPill>
             )}
             {workspace.draft ? (
-              <StatusBadge label={`Brouillon · v${workspace.draft.revision}`} tone="amber" />
+              <AdminPill tone="warning">Brouillon · v{workspace.draft.revision}</AdminPill>
             ) : null}
           </div>
         </div>
@@ -456,7 +456,7 @@ function InformationAgentTemplateEditor({
                       v{entry.revision} · {entry.name}
                     </p>
                     <p className="mt-1 text-xs text-brand-navy/50">
-                      {formatDateTime(entry.publishedAt ?? entry.updatedAt)}
+                      {formatShortDateTime(entry.publishedAt ?? entry.updatedAt)}
                     </p>
                   </div>
                   {entry.status === "published" ? (
@@ -546,23 +546,4 @@ function OrderButton({
       {children}
     </button>
   );
-}
-
-function StatusBadge({ label, tone }: { label: string; tone: "green" | "amber" }) {
-  return (
-    <span
-      className={`rounded-full px-3 py-1.5 font-semibold ${
-        tone === "green" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

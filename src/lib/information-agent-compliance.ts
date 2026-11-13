@@ -93,7 +93,7 @@ export type InformationAgentAddressSourceKind =
  * Annuaires officiels admis comme source d'une adresse (liste fermée, reprise par la contrainte SQL
  * `information_agent_contacts_directory_name_check`) et leur complément dans la phrase d'origine.
  */
-export const INFORMATION_AGENT_DIRECTORY_NAMES = {
+const INFORMATION_AGENT_DIRECTORY_NAMES = {
   "annuaire officiel des commissaires de justice":
     "l’annuaire officiel des commissaires de justice",
   "annuaire du barreau de Lyon": "l’annuaire du barreau de Lyon",
@@ -101,11 +101,9 @@ export const INFORMATION_AGENT_DIRECTORY_NAMES = {
   "annuaire des avocats du CNB": "l’annuaire des avocats du Conseil national des barreaux",
 } as const;
 
-export type InformationAgentDirectoryName = keyof typeof INFORMATION_AGENT_DIRECTORY_NAMES;
+type InformationAgentDirectoryName = keyof typeof INFORMATION_AGENT_DIRECTORY_NAMES;
 
-export function isInformationAgentDirectoryName(
-  value: unknown,
-): value is InformationAgentDirectoryName {
+function isInformationAgentDirectoryName(value: unknown): value is InformationAgentDirectoryName {
   return typeof value === "string" && Object.hasOwn(INFORMATION_AGENT_DIRECTORY_NAMES, value);
 }
 
@@ -389,15 +387,14 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
 }
 
 /** Ce message reste purement informatif (décision du 13 octobre 2026). */
-export const INFORMATION_AGENT_NO_OFFER_STATEMENT =
-  "Ce message ne contient aucune offre commerciale.";
+const INFORMATION_AGENT_NO_OFFER_STATEMENT = "Ce message ne contient aucune offre commerciale.";
 
 /**
  * Finalité et base légale (art. 14(1)(c) RGPD). Le rythme annoncé est celui du code : une seule
  * sollicitation par adresse et par période de 30 jours (`assertInformationAgentRecipientCooldown`)
  * et aucune relance.
  */
-export const INFORMATION_AGENT_PURPOSE_STATEMENT =
+const INFORMATION_AGENT_PURPOSE_STATEMENT =
   "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.";
 
 /**
@@ -405,16 +402,16 @@ export const INFORMATION_AGENT_PURPOSE_STATEMENT =
  * tribunal, au plus `dailyCap` messages par jour (valeur réellement appliquée, jamais écrite en dur). Le
  * délai de 30 jours par adresse ne s'applique pas à ces messages ; les professionnels gardent le leur.
  */
-export function informationAgentCourtRegistryPurposeStatement(dailyCap: number): string {
+function informationAgentCourtRegistryPurposeStatement(dailyCap: number): string {
   return `Base : intérêt légitime à obtenir des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous écrivons au plus une fois par vente et, pour un même tribunal, au plus ${dailyCap} message${dailyCap > 1 ? "s" : ""} par jour, sans relance.`;
 }
 
 /** Catégories de données d'un message à un greffe : adresse de service, puis la personne qui répond. */
-export const INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT =
+const INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT =
   "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
 
 /** Catégories de données d'un message à l'adresse générique d'une structure : l'adresse, puis la personne qui répond. */
-export function informationAgentStructureDataCategoriesStatement(
+function informationAgentStructureDataCategoriesStatement(
   structure: InformationAgentFooterStructure,
 ): string {
   return `l’adresse de contact ${STRUCTURE_WORDS[structure].yours} et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.`;
@@ -427,7 +424,7 @@ export function informationAgentStructureDataCategoriesStatement(
 export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT = `Si vous vous opposez depuis l’adresse de contact ${STRUCTURE_WORDS.unknown.any}, nous n’écrirons plus à aucune adresse ${STRUCTURE_WORDS.unknown.that}.`;
 
 /** La même portée, avec le mot de la structure du destinataire (cabinet, étude, service). */
-export function informationAgentStructureObjectionScopeStatement(
+function informationAgentStructureObjectionScopeStatement(
   structure: InformationAgentFooterStructure,
 ): string {
   if (structure === "unknown") return INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT;
@@ -436,7 +433,7 @@ export function informationAgentStructureObjectionScopeStatement(
 }
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
-export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
+const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
   "votre nom, votre fonction, votre adresse professionnelle et nos échanges.";
 
 /**
@@ -445,7 +442,7 @@ export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
  * address-search.ts`). Elle ne peut apparaître que pour une source `other_listing`,
  * `firm_website` ou `official_directory` relevée par l'agent.
  */
-export function informationAgentAutomatedSearchStatement(
+function informationAgentAutomatedSearchStatement(
   source?: InformationAgentAddressSourceKind | null,
 ): string {
   const from =
@@ -455,20 +452,17 @@ export function informationAgentAutomatedSearchStatement(
   return `Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’${from} (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.`;
 }
 
-export const INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT =
-  informationAgentAutomatedSearchStatement();
-
 /**
  * Durées de conservation annoncées au destinataire (art. 14(2)(a) RGPD), identiques à la purge
  * (`app_private.purge_information_agent_data`, hebdomadaire) ; les demandes qui n'ont pas été
  * envoyées sont supprimées au plus tard 28 jours après leur création (seuil de 21 jours ; matrice de
  * conservation, `docs/data-retention-matrix.md`).
  */
-export const INFORMATION_AGENT_RETENTION_STATEMENT =
+const INFORMATION_AGENT_RETENTION_STATEMENT =
   "12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.";
 
 /** Droits (art. 14(2)(c) RGPD), exercés sans compte. */
-export function informationAgentRightsStatement(contactEmail: string): string {
+function informationAgentRightsStatement(contactEmail: string): string {
   return `accès, rectification, effacement et limitation du traitement. Pour les exercer sans créer de compte, écrivez à ${contactEmail} ou répondez à ce message.`;
 }
 
@@ -477,7 +471,7 @@ export const INFORMATION_AGENT_OBJECTION_STATEMENT =
   "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.";
 
 /** Droit de réclamation (art. 14(2)(e) RGPD). */
-export const INFORMATION_AGENT_COMPLAINT_STATEMENT =
+const INFORMATION_AGENT_COMPLAINT_STATEMENT =
   "Vous pouvez aussi saisir la CNIL d’une réclamation (cnil.fr/plaintes).";
 
 export const INFORMATION_AGENT_CNIL_COMPLAINT_URL = "https://www.cnil.fr/fr/plaintes";
@@ -487,7 +481,7 @@ export const INFORMATION_AGENT_CNIL_COMPLAINT_URL = "https://www.cnil.fr/fr/plai
  * configuration (`informationAgentAiProvider`). Aucun mécanisme de transfert n'est affirmé tant
  * qu'il n'est pas vérifié pour chaque prestataire : le destinataire peut le demander.
  */
-export function informationAgentRecipientsStatement(
+function informationAgentRecipientsStatement(
   aiProvider: InformationAgentAiProvider,
   contactEmail: string,
 ): string {

@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { AdminLawyerReferralRequestsPanel } from "@/components/admin/AdminLawyerReferralRequestsPanel";
+import {
+  AdminLawyerReferralRequestsPanel,
+  LAWYER_REFERRAL_REQUESTS_QUERY_KEY,
+} from "@/components/admin/AdminLawyerReferralRequestsPanel";
 import {
   AdminLawyerStatementPanel,
   LAWYER_STATEMENT_QUERY_KEY,
 } from "@/components/admin/AdminLawyerStatementPanel";
-import { AdminReferencedLawyersPanel } from "@/components/admin/AdminReferencedLawyersPanel";
+import {
+  AdminReferencedLawyersPanel,
+  REFERENCED_LAWYERS_QUERY_KEY,
+} from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,8 +23,8 @@ export function AdminLawyersPage() {
   const { user } = useAuth();
   const [lawyerTab, setLawyerTab] = useState<LawyerTab>("referrals");
   const { isRefreshing, refresh } = useAdminRefresh([
-    "admin-lawyer-referral-requests",
-    "admin-referenced-lawyers",
+    LAWYER_REFERRAL_REQUESTS_QUERY_KEY[0],
+    REFERENCED_LAWYERS_QUERY_KEY[0],
     LAWYER_STATEMENT_QUERY_KEY,
   ]);
 

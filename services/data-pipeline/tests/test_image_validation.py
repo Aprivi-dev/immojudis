@@ -183,7 +183,7 @@ def test_filter_leaves_payloads_without_images_alone() -> None:
 
 
 def test_finalizing_a_sale_applies_the_image_filter(monkeypatch) -> None:
-    from src import main
+    from src import sale_finalization
     from src.normalize import normalize_sale
 
     validator, _ = _validator(_image(**{"cross-origin-resource-policy": "same-origin"}))
@@ -199,7 +199,7 @@ def test_finalizing_a_sale_applies_the_image_filter(monkeypatch) -> None:
     )
     sale.raw_payload["raw_image_url"] = "https://cdn.example.test/blocked.jpg"
 
-    main._finalize_sale_for_app(sale, geocode=False)
+    sale_finalization.finalize_sale_for_app(sale, geocode=False)
 
     assert "raw_image_url" not in sale.raw_payload
 

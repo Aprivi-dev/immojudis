@@ -1,6 +1,8 @@
+import { formatNumericDate } from "@/lib/format/dates";
 import { getDisplaySurface } from "@/lib/surface";
-import { saleTimeConflict } from "@/lib/listing-evidence";
+import { INTERRUPTED_SALE_STATUSES, saleTimeConflict } from "@/lib/listing-evidence";
 import type { AuctionSale } from "@/lib/types";
+import { KEY_FACT_FIELDS, normalizeFactKey as normalize } from "@/lib/key-fact-fields";
 
 export type KeyFact = "sale_date" | "starting_price_eur" | "surface" | "occupancy_status";
 
@@ -14,7 +16,7 @@ export type FactReliabilityStatus = "observed" | "inferred" | "to_confirm" | "co
  * missing value from an automatically collected value that lacks a linked
  * check, or from a concrete reservation that needs review.
  */
-export type FactReliabilityReasonCode =
+type FactReliabilityReasonCode =
   | "source_conflict"
   | "missing_value"
   | "derived_display"
@@ -24,7 +26,7 @@ export type FactReliabilityReasonCode =
   | "source_unlinked"
   | "candidate_claim";
 
-export type FactPresentationKind =
+type FactPresentationKind =
   | "documented"
   | "reported"
   | "missing"
@@ -79,31 +81,6 @@ const STATUS_LABELS: Record<FactReliabilityStatus, string> = {
   inferred: "Inféré",
   to_confirm: "À confirmer",
   conflict: "Conflit",
-};
-
-const CONFLICT_FIELDS: Record<KeyFact, string[]> = {
-  sale_date: ["sale_date", "sale.sale_date", "date", "event_date", "auction_date"],
-  starting_price_eur: [
-    "starting_price_eur",
-    "sale.starting_price_eur",
-    "starting_price",
-    "price",
-    "mise_a_prix",
-  ],
-  surface: [
-    "surface",
-    "surface_m2",
-    "property.surface_m2",
-    "app_surface_m2",
-    "property.app_surface_m2",
-    "habitable_surface_m2",
-    "property.habitable_surface_m2",
-    "carrez_surface_m2",
-    "property.carrez_surface_m2",
-    "land_surface_m2",
-    "property.land_surface_m2",
-  ],
-  occupancy_status: ["occupancy_status", "property.occupancy_status", "occupancy", "occupation"],
 };
 
 const CONFLICT_FLAGS: Record<KeyFact, string[]> = {
@@ -258,7 +235,7 @@ export function getFactReliability(
     "to_confirm",
     checkedAt,
     latestCheck
-      ? `${label} est présente. Un contrôle global de source est enregistré le ${formatCheckedAt(latestCheck)}, mais il n'est pas rattaché à cette valeur.`
+      ? `${label} est présente. Un contrôle global de source est enregistré le ${formatNumericDate(latestCheck)}, mais il n'est pas rattaché à cette valeur.`
       : `${label} est présente, mais aucun contrôle de source ou extrait de preuve n'est enregistré pour cette valeur.`,
     "source_unlinked",
   );
@@ -362,7 +339,7 @@ function factPresentationKind(fact: FactReliability): FactPresentationKind {
 function factPresentationDetail(fact: FactReliability, kind: FactPresentationKind): string {
   if (kind === "documented") {
     return fact.checkedAt
-      ? `${fact.label} est accompagnée d'une trace de source ou d'un contrôle enregistré le ${formatCheckedAt(fact.checkedAt)}.`
+      ? `${fact.label} est accompagnée d'une trace de source ou d'un contrôle enregistré le ${formatNumericDate(fact.checkedAt)}.`
       : `${fact.label} est accompagnée d'une trace de source enregistrée dans le dossier.`;
   }
   if (kind === "reported") {
@@ -436,13 +413,6 @@ export function getFactPresentation(
   };
 }
 
-const CLAIM_FIELD_ALIASES: Record<KeyFact, ReadonlySet<string>> = {
-  sale_date: new Set(CONFLICT_FIELDS.sale_date),
-  starting_price_eur: new Set(CONFLICT_FIELDS.starting_price_eur),
-  surface: new Set(CONFLICT_FIELDS.surface),
-  occupancy_status: new Set(CONFLICT_FIELDS.occupancy_status),
-};
-
 function claimReliabilityForField(
   sale: AuctionSale,
   field: KeyFact,
@@ -459,7 +429,7 @@ function claimReliabilityForField(
   const fieldClaims = claims.filter((claim) =>
     field === "surface"
       ? isRelevantSurfaceField(sale, claim.field_key)
-      : CLAIM_FIELD_ALIASES[field].has(normalize(claim.field_key)),
+      : KEY_FACT_FIELDS[field].includes(normalize(claim.field_key)),
   );
   if (!fieldClaims.length) return legacy;
 
@@ -638,7 +608,7 @@ function hasKnownOccupancy(value: string | null): boolean {
 
 function hasConflict(sale: AuctionSale, field: KeyFact, flags: string[]): boolean {
   const conflicts = Array.isArray(sale.source_conflicts) ? sale.source_conflicts : [];
-  const fields = new Set(CONFLICT_FIELDS[field]);
+  const fields = new Set(KEY_FACT_FIELDS[field]);
   if (
     conflicts.some((conflict) => {
       const conflictField = normalize(String(conflict.field ?? ""));
@@ -667,7 +637,7 @@ function hasConfirmationReservation(sale: AuctionSale, field: KeyFact, flags: st
   ) {
     return true;
   }
-  if (field === "sale_date" && ["cancelled", "canceled", "postponed"].includes(sale.status ?? "")) {
+  if (field === "sale_date" && INTERRUPTED_SALE_STATUSES.includes(sale.status ?? "")) {
     return true;
   }
   return false;
@@ -726,12 +696,12 @@ function observedDetail(field: KeyFact, checkedAt: string | null, sale: AuctionS
     return "Un extrait de preuve de surface est enregistré dans le dossier.";
   }
   return checkedAt
-    ? `La valeur est présente et un contrôle de source est enregistré le ${formatCheckedAt(checkedAt)}.`
+    ? `La valeur est présente et un contrôle de source est enregistré le ${formatNumericDate(checkedAt)}.`
     : "La valeur est accompagnée d'une preuve enregistrée dans le dossier.";
 }
 
 function sourceCheckForField(sale: AuctionSale, field: KeyFact): string | null {
-  const aliases = new Set([field, ...CONFLICT_FIELDS[field]]);
+  const aliases = new Set([field, ...KEY_FACT_FIELDS[field]]);
   for (const [key, rawCheck] of Object.entries(sale.source_checks ?? {})) {
     if (!rawCheck || typeof rawCheck !== "object" || Array.isArray(rawCheck)) continue;
     const check = rawCheck as unknown as Record<string, unknown>;
@@ -761,14 +731,6 @@ function latestSourceCheck(sale: AuctionSale): string | null {
   );
 }
 
-function formatCheckedAt(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
 function qualityFlags(sale: AuctionSale): string[] {
   return Array.isArray(sale.quality_flags)
     ? sale.quality_flags.filter((flag): flag is string => typeof flag === "string").map(normalize)
@@ -780,13 +742,4 @@ function hasMeaningfulText(value: string | null | undefined): value is string {
   return !["-", "—", "a_confirmer", "inconnu", "n/a", "non_renseigne", "unknown"].includes(
     normalize(value),
   );
-}
-
-function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[\s-]+/g, "_")
-    .trim();
 }

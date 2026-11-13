@@ -18,9 +18,9 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { buttonClasses, Card, Notice, PageTitle } from "@/components/ui/primitives";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchLawyerDirectory, fetchLawyerProsecutedSales } from "@/lib/client-api";
-import { fetchAccessPlan } from "@/lib/client-billing";
 import {
   LAWYER_CONTACT_HREF,
   SPONSORED_LABEL,
@@ -37,8 +37,10 @@ import {
   type DirectorySearch,
 } from "@/lib/lawyer-directory-search";
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
-import { isSaleId, lawyerReportPath } from "@/lib/contact-message";
+import { lawyerReportPath } from "@/lib/contact-message";
+import { isUuid } from "@/lib/uuid";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
+import { formatDate } from "@/lib/format/dates";
 import { formatStartingPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
@@ -48,13 +50,6 @@ import * as queryKeys from "@/lib/query-keys";
 
 /** At most three areas of practice are shown per lawyer (RIN, art. 10.2). */
 const MAX_PRACTICE_TAGS = 3;
-
-const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
 
 const NO_SEARCH: DirectorySearch = {};
 
@@ -334,7 +329,7 @@ function DirectoryLayout({
             Vous poursuivez une vente ?
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-            {isSaleId(search.saleId)
+            {isUuid(search.saleId)
               ? "Pour nous signaler une erreur sur la fiche de cette vente, si vous la poursuivez, écrivez-nous"
               : "Pour nous signaler une erreur sur la fiche d’une vente que vous poursuivez, écrivez-nous"}{" "}
             depuis le formulaire de contact, avec le sujet « Je suis l’avocat poursuivant d’une
@@ -525,7 +520,7 @@ function DirectoryResults({
               </a>
             </p>
             <p className="shrink-0 font-medium">
-              Mise à jour le {formatFrenchDate(officialSource.updatedAt)}
+              Mise à jour le {formatDate(officialSource.updatedAt, officialSource.updatedAt)}
             </p>
           </div>
         ) : null}
@@ -576,14 +571,8 @@ function useProsecutedSalesForPaidAccount(
 ): Record<string, LawyerUpcomingSales> {
   const { user, loading } = useAuth();
   const userKey = user?.id ?? "anonymous";
-  const planQuery = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userKey),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !loading,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(planQuery.data?.plan);
+  const plan = useAccessPlan(loading ? null : user?.id);
+  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(plan);
   const lawyerIds = lawyers.filter((lawyer) => lawyer.source === "immojudis").map(({ id }) => id);
   const salesQuery = useQuery({
     queryKey: queryKeys.lawyerProsecutedSales(userKey, lawyerIds),
@@ -681,7 +670,7 @@ function LawyerCard({
         </DirectoryFact>
         {lawyer.oathDate ? (
           <DirectoryFact icon={<CalendarDays className="h-4 w-4" />} label="Serment">
-            {formatFrenchDate(lawyer.oathDate)}
+            {formatDate(lawyer.oathDate, lawyer.oathDate)}
           </DirectoryFact>
         ) : null}
         {lawyer.languages.length ? (
@@ -782,7 +771,7 @@ function ProsecutedSales({
       <ul className="mt-2 grid gap-2">
         {upcoming.sales.map((sale) => {
           const details = [
-            sale.saleDate ? formatFrenchDate(sale.saleDate) : null,
+            sale.saleDate ? formatDate(sale.saleDate, sale.saleDate) : null,
             sale.tribunalName,
             sale.startingPriceEur && sale.startingPriceEur > 0
               ? `Mise à prix ${formatStartingPrice(sale.startingPriceEur)}`
@@ -900,10 +889,4 @@ function cnbDirectoryHref(barAssociation: string | null) {
   return barAssociation
     ? `/api/lawyers/cnb-redirect?${new URLSearchParams({ bar: barAssociation }).toString()}`
     : "https://cnb.avocat.fr/annuaire-des-avocats-de-france";
-}
-
-function formatFrenchDate(value: string) {
-  const date = new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value);
-  if (!Number.isFinite(date.getTime())) return value;
-  return FRENCH_DATE_FORMATTER.format(date);
 }

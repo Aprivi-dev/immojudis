@@ -19,6 +19,16 @@ from src.official_sources.judilibre import (
     JudilibreSearchQuery,
     JudilibreTransaction,
 )
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CANDIDATE_GRADE,
+    JUDILIBRE_EXTRACTOR_NAME,
+    JUDILIBRE_EXTRACTOR_VERSION,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_REVIEW_STATUS,
+    JUDILIBRE_SOURCE_NAME,
+    JUDILIBRE_TEXT_STORAGE,
+)
 from src.outcome_ingestion.judilibre_extraction import (
     JudilibreExtractionResult,
     extract_judilibre_candidate_facts,
@@ -26,10 +36,7 @@ from src.outcome_ingestion.judilibre_extraction import (
 from src.outcome_ingestion.repository import OutcomeIngestionRepository, PersistedSourceRecord
 from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngestionService
 
-JUDILIBRE_SOURCE_NAME = "judilibre"
 JUDILIBRE_CONNECTOR_VERSION = "judilibre-outcome/5"
-JUDILIBRE_EXTRACTOR_VERSION = "3"
-JUDILIBRE_NORMALIZED_SCHEMA = "judilibre_decision_candidate_v3"
 JUDILIBRE_DECISION_PAGE_BASE_URL = "https://www.courdecassation.fr/decision"
 JUDILIBRE_SEARCH_MAX_RESULTS = SEARCH_MAX_RESULTS
 JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW = 500
@@ -239,7 +246,7 @@ def normalized_judilibre_decision(
     resolved_extraction = extraction or extract_judilibre_candidate_facts(decision)
     projection: dict[str, object] = {
         "schema_version": JUDILIBRE_NORMALIZED_SCHEMA,
-        "record_type": "judicial_decision_candidate",
+        "record_type": JUDILIBRE_RECORD_KIND,
         "judilibre_id": decision.id,
         "jurisdiction": decision.jurisdiction,
         "location": decision.location,
@@ -261,10 +268,10 @@ def normalized_judilibre_decision(
         # Make source-record versioning sensitive to corrections in private raw
         # fields without projecting the text or any personal identity.
         "raw_representation_sha256": decision.canonical_sha256(),
-        "candidate_grade": "C",
-        "review_status": "pending",
+        "candidate_grade": JUDILIBRE_CANDIDATE_GRADE,
+        "review_status": JUDILIBRE_REVIEW_STATUS,
         "training_eligible": False,
-        "text_storage": "private_raw_artifact",
+        "text_storage": JUDILIBRE_TEXT_STORAGE,
         "personal_identity_features_allowed": False,
     }
     projection.update(resolved_extraction.normalized_fields())
@@ -335,11 +342,11 @@ class JudilibreOutcomeIngestor:
                 external_record_id=decision.id,
                 requested_url=f"{self.client.base_url}/decision",
                 canonical_url=f"{JUDILIBRE_DECISION_PAGE_BASE_URL}/{quote(decision.id, safe='')}",
-                record_kind="judicial_decision_candidate",
+                record_kind=JUDILIBRE_RECORD_KIND,
                 raw_payload=raw_payload,
                 normalized_data=normalized_judilibre_decision(decision, extraction=extraction),
                 connector_version=JUDILIBRE_CONNECTOR_VERSION,
-                extractor_name="judilibre_candidate_extraction",
+                extractor_name=JUDILIBRE_EXTRACTOR_NAME,
                 extractor_version=JUDILIBRE_EXTRACTOR_VERSION,
                 schema_version=JUDILIBRE_NORMALIZED_SCHEMA,
                 field_provenance=extraction.field_provenance(),
@@ -1256,7 +1263,7 @@ def _date_at_utc_midnight(value: date | None) -> datetime | None:
 
 
 def _parse_datetime(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("Judilibre timestamps must include a timezone")
     return parsed.astimezone(UTC)

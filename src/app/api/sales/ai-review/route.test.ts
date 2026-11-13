@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -312,11 +313,13 @@ describe("GET /api/sales/ai-review", () => {
     expect(userFrom).not.toHaveBeenCalledWith("v_auction_sales_unlocked");
   });
 
-  it("treats a database without the unlocked view as having no unlocked sale", async () => {
+  it("answers the neutral unavailability when the unlocked view cannot be read", async () => {
     setup({ visibleIds: [], unlockedError: { code: "PGRST205" } });
     const response = await request();
-    expect(response.status).toBe(200);
-    expect((await response.json()).projections[0]).toMatchObject({ sale_unavailable: true });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: "La relecture IA de cette annonce est momentanément indisponible.",
+    });
   });
 
   it("blocks every field when a sampled visible sale has no AI projection row", async () => {
@@ -401,13 +404,16 @@ describe("GET /api/sales/ai-review", () => {
   });
 
   it("returns unauthorized without touching the private projection reader", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: session required"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: session required"));
 
     const response = await request();
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
+      ok: false,
       error: "Authentification requise.",
+      code: "AUTH_REQUIRED",
+      requestId: expect.any(String),
     });
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });
@@ -576,6 +582,10 @@ describe("GET /api/sales/ai-review", () => {
     const response = await request(["not-a-uuid"]);
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Identifiants de vente invalides.",
+      code: "INVALID_REQUEST",
+    });
     expect(mocks.auth).not.toHaveBeenCalled();
   });
 
@@ -591,8 +601,12 @@ describe("GET /api/sales/ai-review", () => {
     const response = await request([saleId, secondSaleId]);
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     await expect(response.json()).resolves.toEqual({
+      ok: false,
       error: "La relecture IA de cette annonce est momentanément indisponible.",
+      code: "INTERNAL_ERROR",
+      requestId: expect.any(String),
     });
   });
 });

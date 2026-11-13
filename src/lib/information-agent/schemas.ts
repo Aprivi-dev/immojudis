@@ -12,7 +12,7 @@ import {
 import type {
   InformationAgentContactCandidate,
   InformationAgentRecipientKind,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import type { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import type { InformationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 
@@ -199,6 +199,6 @@ export function assertIssuedAutopilotTrigger(
   trigger: InformationAgentSendTrigger | undefined,
 ): void {
   if (trigger && !issuedTriggers.has(trigger)) {
-    throw new Error("Déclencheur d'envoi automatique non reconnu.");
+    throw new Error("Unrecognized autopilot send trigger");
   }
 }

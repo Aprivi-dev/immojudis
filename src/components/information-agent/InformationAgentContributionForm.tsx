@@ -14,17 +14,14 @@ import {
   validateContributionDraft,
   type ContributionFieldName,
 } from "@/lib/information-agent-contribution-rules";
+import { INFORMATION_AGENT_OPT_OUT_PATH } from "@/lib/information-agent-link-paths";
 import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { pathWithSearch } from "@/lib/navigation";
 import { userMessage } from "@/lib/user-messages";
+import { apiFetch } from "@/lib/client-api-core";
 import { supabase } from "@/integrations/supabase/client";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
-const DEFAULT_MAX_FILE_BYTES = 20 * 1024 * 1024;
-const DEFAULT_MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
-const DEFAULT_MAX_PORTAL_BYTES = 480 * 1024 * 1024;
-const DEFAULT_MAX_PORTAL_FILES = 12;
-const MAX_FILES = 10;
 const MAX_EXTERNAL_LINKS = CONTRIBUTION_LIMITS.linksMax;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -46,6 +43,8 @@ type ContributionSession = {
   subject: string;
   /** Questions de l'email, rappelées pour répondre sans revenir au message. */
   questions: string[];
+  /** Limites du dépôt : celles du serveur (`informationAgentContributionPage`). */
+  maxFiles: number;
   maxFileBytes: number;
   maxSubmissionBytes: number;
   maxPortalBytes: number;
@@ -90,7 +89,7 @@ const INCOMPLETE_LINK_MESSAGE =
   "Ce lien semble incomplet. Rouvrez-le depuis l’email que vous avez reçu, ou répondez simplement à cet email.";
 const UNAVAILABLE_MESSAGE = "Service momentanément indisponible.";
 const EXPIRED_LINK_HINT = "Répondez simplement à l’email que vous avez reçu pour nous en informer.";
-const OPT_OUT_PATH_PREFIX = "/api/information-agent/opt-out?";
+const OPT_OUT_PATH_PREFIX = `${INFORMATION_AGENT_OPT_OUT_PATH}?`;
 const ERROR_ALERT_ID = "contribution-error";
 
 // The token lives in sessionStorage (scoped to the tab, never sent in a URL or logged) so that a
@@ -202,10 +201,11 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             questions: Array.isArray(data.questions)
               ? data.questions.filter((item): item is string => typeof item === "string")
               : [],
-            maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
-            maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
-            maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
-            maxPortalFiles: data.maxPortalFiles || DEFAULT_MAX_PORTAL_FILES,
+            maxFiles: data.maxFiles,
+            maxFileBytes: data.maxFileBytes,
+            maxSubmissionBytes: data.maxSubmissionBytes,
+            maxPortalBytes: data.maxPortalBytes,
+            maxPortalFiles: data.maxPortalFiles,
             optOutPath: safeOptOutPath(data.optOutPath),
           });
           setState("ready");
@@ -309,6 +309,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   };
 
   const addFiles = (incoming: File[]) => {
+    if (!session) return;
     setError(null);
     const normalized = incoming.map((file) => ({
       file,
@@ -333,24 +334,22 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       );
       return;
     }
-    const tooLarge = normalized.find(
-      (item) => item.file.size > (session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES),
-    );
+    const tooLarge = normalized.find((item) => item.file.size > session.maxFileBytes);
     if (tooLarge) {
       fail(
-        `Le fichier ${tooLarge.file.name} dépasse la limite de ${formatLimit(session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES)}.`,
+        `Le fichier ${tooLarge.file.name} dépasse la limite de ${formatLimit(session.maxFileBytes)}.`,
         "files",
       );
       return;
     }
-    if (files.length + normalized.length > MAX_FILES) {
-      fail(`Vous pouvez joindre au maximum ${MAX_FILES} fichiers.`, "files");
+    if (files.length + normalized.length > session.maxFiles) {
+      fail(`Vous pouvez joindre au maximum ${session.maxFiles} fichiers.`, "files");
       return;
     }
     const totalBytes = [...files, ...normalized].reduce((total, item) => total + item.file.size, 0);
-    if (totalBytes > (session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)) {
+    if (totalBytes > session.maxSubmissionBytes) {
       fail(
-        `Le dépôt dépasse la limite totale de ${formatLimit(session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)}.`,
+        `Le dépôt dépasse la limite totale de ${formatLimit(session.maxSubmissionBytes)}.`,
         "files",
       );
       return;
@@ -1033,12 +1032,7 @@ const inputClassName =
   "block min-h-11 w-full rounded-md border border-brand-navy/55 bg-white/75 px-3 py-2.5 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  const response = await apiFetch(url, { method: "POST", body, anonymous: true });
   const raw = await response.text();
   let payload: unknown;
   try {

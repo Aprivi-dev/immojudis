@@ -15,9 +15,10 @@ Jardin » ou le « Jardin des plantes ».
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+from src.text_folding import strip_accents
 
 # (c) Un étage lu dans le texte situe un lot dans un immeuble : un appartement, un local, un parking. Une maison,
 # un immeuble entier, un ensemble mixte ou un terrain n'ont pas « un étage » : leurs niveaux sont une distribution.
@@ -137,8 +138,7 @@ def fold_aligned(text: str) -> str:
         if char in "’ʼ´`":
             folded.append("'")
             continue
-        decomposed = unicodedata.normalize("NFKD", char)
-        base = "".join(part for part in decomposed if not unicodedata.combining(part)).lower()
+        base = strip_accents(char).lower()
         folded.append(base[0] if len(base) >= 1 else " ")
     return "".join(folded)
 

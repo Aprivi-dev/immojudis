@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from src import source_extraction_backfill as backfill
+from src.lot_scope import surface_reasoning_context
 from src.source_extraction_backfill import (
     PROTECTED_FIELDS,
     UPDATE_ALLOWLIST,
@@ -234,7 +235,7 @@ def test_listing_completeness_is_projected_exactly_and_replay_is_idempotent(tmp_
     }
     expected_sale = backfill._recompute_sale(row)
     expected_projection = expected_sale.raw_payload["source_blocks"]["listing_completeness"]
-    assert "9999" not in backfill._surface_context(expected_sale)
+    assert "9999" not in surface_reasoning_context(expected_sale)
 
     first_plan, _backup = build_plan(
         [row],
@@ -273,3 +274,63 @@ def test_projection_survives_application_view_without_raw_payload(tmp_path: Path
     projected_payload = plan["operations"][0]["values"]["raw_payload"]
     assert projected_payload["source_blocks"]["listing_completeness"] == expected
     assert projected_payload["source_blocks"]["property"] == "rez-de-jardin, 50 m2"
+
+
+# --- caractérisation : page à un lot, page Licitor à plusieurs lots ---------------------------------------------
+
+_LICITOR_LOTS = json.loads(
+    (Path(__file__).parent / "fixtures" / "licitor_lignes_stockees_lots_numerotes.json").read_text(encoding="utf-8")
+)
+_STUDIO_LOT_ID = "545e6fde-899f-43c8-9bde-b7e75756b96e"  # lot 2 (studio, Bordeaux) de l'annonce 110492 à 4 lots
+
+
+def _licitor_lot_row(row_id: str) -> dict[str, object]:
+    row = deepcopy(next(item for item in _LICITOR_LOTS["rows"] if item["id"] == row_id))
+    page_text = _LICITOR_LOTS["pages"][row.pop("page")]
+    row["raw_text"] = page_text
+    row["raw_payload"].update(raw_text=page_text, source_blocks={"page_text": page_text})
+    row["updated_at"] = "2026-11-03T10:00:00+00:00"
+    return row
+
+
+def _planned_values(row: dict[str, object], tmp_path: Path) -> dict[str, object]:
+    plan, _backup = build_plan([row], backup_path=tmp_path / "backup.json", generated_at="2026-11-03T12:00:00+00:00")
+    return plan["operations"][0]["values"]
+
+
+def test_single_lot_page_rewrites_the_facts_of_its_own_text(tmp_path: Path) -> None:
+    values = _planned_values(_row(), tmp_path)
+
+    assert {key: value for key, value in values.items() if key != "raw_payload"} == {
+        "has_air_conditioning": False,
+        "has_double_glazing": False,
+        "has_garage": False,
+        "has_garden": False,
+        "has_pool": False,
+        "rooms_count": 3,
+        "surface_confidence": 0.8,
+        "surface_evidence": "Appartement rez-de-jardin Appartement 3 pièces, 2 chambres. Surface 50 m2.",
+        "surface_source": "source_text",
+    }
+    evidence = values["raw_payload"]["source_extraction_backfill"]
+    assert [item["value_m2"] for item in evidence["surface_analysis"]["measurements"]] == ["50.00"]
+    assert evidence["source_procedure_profile"]["family"] == "unknown"
+
+
+def test_multi_lot_page_reads_only_the_text_of_its_lot(tmp_path: Path) -> None:
+    """Avant le lot 15, le lot du studio recevait le jardin du lot 4 et l'étage cité avec le titre du lot 1 (Talence)."""
+    values = _planned_values(_licitor_lot_row(_STUDIO_LOT_ID), tmp_path)
+
+    assert values["has_garden"] is False
+    assert values["bedrooms_count"] == 0
+    assert "rooms_count" not in values  # la ligne garde sa pièce ; elle était effacée
+    features = values["raw_payload"]["source_extraction_backfill"]["source_property_features"]
+    assert "Talence" not in features["floor"]["evidence"]
+
+
+def test_multi_lot_page_clears_the_surface_of_another_lot(tmp_path: Path) -> None:
+    # Lot 2 (dépendances) de l'annonce 110549 : 141,37 m² est la maison du lot 1 (voir test_licitor_multi_lot_recompute_rows).
+    values = _planned_values(_licitor_lot_row("f29f877a-995e-4a17-b816-32c877b5ce5c"), tmp_path)
+
+    assert values["surface_m2"] is None and values["habitable_surface_m2"] is None
+    assert "surface_analysis" not in values["raw_payload"]["source_extraction_backfill"]

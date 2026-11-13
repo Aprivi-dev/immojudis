@@ -8,6 +8,7 @@ import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert.js";
 import { fetchSaleLandReport, downloadSaleLandReport } from "@/lib/land-report-client";
 import { LAND_SCOPE_LABELS, LAND_SOURCE_STATUS_LABELS } from "@/lib/land-report-export";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { formatNumericDateTime } from "@/lib/format/dates";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import type {
@@ -277,7 +278,8 @@ export function LandPotentialPanel({
                 </dl>
                 {surfaceGap ? <p className={styles.attention}>{surfaceGap}</p> : null}
                 <p className={styles.summaryMeta}>
-                  Sources consultées le {formatDate(report.generatedAt)}
+                  Sources consultées le{" "}
+                  {formatNumericDateTime(report.generatedAt, report.generatedAt)}
                   {unavailableCount > 0
                     ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
                     : ""}
@@ -741,7 +743,9 @@ function RiskCard({ risk }: { risk: LandRiskFinding }) {
       ) : null}
       <p className={styles.ruleMeta}>
         {risk.sourceLabel} · année des données : {risk.vintage ?? "non renseignée"}
-        {risk.sourceUpdatedAt ? ` · source mise à jour le ${formatDate(risk.sourceUpdatedAt)}` : ""}
+        {risk.sourceUpdatedAt
+          ? ` · source mise à jour le ${formatNumericDateTime(risk.sourceUpdatedAt, risk.sourceUpdatedAt)}`
+          : ""}
         {risk.precision ? ` · ${risk.precision}` : ""}
         {risk.distanceM != null ? ` · distance indicative ${Math.round(risk.distanceM)} m` : ""}
       </p>
@@ -762,10 +766,10 @@ function SourceCheck({ check }: { check: LandSourceCheck }) {
       </span>
       {check.message ? <p>{check.message}</p> : null}
       <small>
-        Consulté le {formatDate(check.checkedAt)}
+        Consulté le {formatNumericDateTime(check.checkedAt, check.checkedAt)}
         {check.version ? ` · ${check.version}` : ""}
         {check.sourceUpdatedAt
-          ? ` · source mise à jour le ${formatDate(check.sourceUpdatedAt)}`
+          ? ` · source mise à jour le ${formatNumericDateTime(check.sourceUpdatedAt, check.sourceUpdatedAt)}`
           : ""}
       </small>
       <SourceLink url={check.sourceUrl} label="Source officielle" />
@@ -781,11 +785,4 @@ function SourceLink({ url, label }: { url: string; label: string }) {
       <ArrowUpRight size={14} aria-hidden="true" />
     </a>
   ) : null;
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString("fr-FR", { timeZone: "Europe/Paris" })
-    : value;
 }

@@ -12,10 +12,9 @@ from src.outcome_ingestion.artifact_store import (
     SupabaseRawArtifactStore,
     raw_artifact_object_path,
 )
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_EXTRACTOR_VERSION, JUDILIBRE_NORMALIZED_SCHEMA
 from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_CONNECTOR_VERSION,
-    JUDILIBRE_EXTRACTOR_VERSION,
-    JUDILIBRE_NORMALIZED_SCHEMA,
     normalized_judilibre_decision,
 )
 from src.outcome_ingestion.repository import (

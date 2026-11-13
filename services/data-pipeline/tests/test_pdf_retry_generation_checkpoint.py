@@ -6,7 +6,7 @@ from src import queued_runner
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _store_document_analysis_status
+from src.pdf_document_selection import store_document_analysis_status
 from src.storage import supabase_client as storage
 
 
@@ -80,7 +80,7 @@ def test_retry_cap_requires_the_current_generation_after_partial_checkpoint(monk
         }
         for index, document in enumerate(sale.documents[:6])
     ]
-    _store_document_analysis_status(sale, downloaded_documents, pdf_texts)
+    store_document_analysis_status(sale, downloaded_documents, pdf_texts)
     current_hash = storage.pdf_enrichment_input_hash_for_sale(sale)
     assert current_hash != initial_hash
     assert not queued_runner._pdf_failure_reached_retry_cap(sale, sale.source_url)

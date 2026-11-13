@@ -24,7 +24,7 @@ import { surenchereWindow } from "@/lib/surenchere-window";
 export const DEADLINES_CONFIRM_NOTICE = "À confirmer avec votre avocat.";
 
 /** Délai de paiement du prix, en mois, après l'adjudication définitive (art. R. 322-56 du CPCE). */
-export const PAYMENT_DELAY_MONTHS = 2;
+const PAYMENT_DELAY_MONTHS = 2;
 
 export type SaleDeadline = {
   key: "surenchere" | "paiement";

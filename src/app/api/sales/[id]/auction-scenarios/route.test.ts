@@ -1,3 +1,4 @@
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getScenarios: vi.fn(),
   recordUsage: vi.fn(),
   after: vi.fn(),
+  insertUsage: vi.fn(),
+  publicationVisible: vi.fn(),
 }));
 
 // `after()` only exists inside a request: the test keeps the callbacks and runs them by hand.
@@ -20,9 +23,24 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlementVia: mocks.assertEntitlement }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  assertFeatureEntitlementVia: mocks.assertEntitlement,
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({
+  assertSalePublicationVisible: mocks.publicationVisible,
+}));
 vi.mock("@/lib/auction-scenarios.server", () => ({ getAuctionScenarios: mocks.getScenarios }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.recordUsage }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: () => ({ insert: mocks.insertUsage }) },
+}));
+
+/** The real measurement (`@/lib/usage`), for the cases about when and how it runs. */
+async function useRealUsageRecording() {
+  const usage = await vi.importActual<typeof import("@/lib/usage")>("@/lib/usage");
+  mocks.recordUsage.mockImplementation(usage.recordFeatureUsageEvent);
+}
 
 import { GET } from "./route";
 
@@ -50,8 +68,9 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     mocks.enforce.mockResolvedValue(1);
     mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
     mocks.getScenarios.mockResolvedValue({ scenarios: null, history: {} });
-    mocks.recordUsage.mockResolvedValue(undefined);
     mocks.after.mockImplementation(() => undefined);
+    mocks.insertUsage.mockResolvedValue({ error: null });
+    mocks.publicationVisible.mockResolvedValue(undefined);
   });
 
   it("asks for the entitlement of this very sale, so an unlock opens that sale only", async () => {
@@ -68,10 +87,10 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     );
   });
 
-  it("reads the sale through the discovery view for an unlock, the full view for Analyse", async () => {
+  it("reads the sale through the unlocked view for an unlock, the full view for Analyse", async () => {
     const unlocked = accountSeeing(true);
     await call();
-    expect(unlocked).toHaveBeenCalledWith("v_auction_sales_discovery");
+    expect(unlocked).toHaveBeenCalledWith("v_auction_sales_unlocked");
     expect(unlocked).not.toHaveBeenCalledWith("v_auction_sales_app");
 
     mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "analyse" }, door: "plan" });
@@ -81,7 +100,9 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
   });
 
   it("refuses an account that neither subscribes nor unlocked this sale", async () => {
-    mocks.assertEntitlement.mockRejectedValue(new Error("Les scénarios d’enchères sont réservés."));
+    mocks.assertEntitlement.mockRejectedValue(
+      new ForbiddenError("Les scénarios d’enchères sont réservés."),
+    );
     accountSeeing(true);
 
     const response = await call();
@@ -94,6 +115,17 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     accountSeeing(false);
 
     expect((await call()).status).toBe(404);
+    expect(mocks.getScenarios).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a quarantined sale, unlocked or not, before reading the figures", async () => {
+    accountSeeing(true);
+    mocks.publicationVisible.mockRejectedValue(
+      new NotFoundError("Vente introuvable ou inaccessible."),
+    );
+
+    expect((await call()).status).toBe(404);
+    expect(mocks.publicationVisible).toHaveBeenCalledWith(saleId);
     expect(mocks.getScenarios).not.toHaveBeenCalled();
   });
 
@@ -123,7 +155,9 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
 
   it("answers 403, not 429, when the account has no right and is also over the limit", async () => {
     accountSeeing(true);
-    mocks.assertEntitlement.mockRejectedValue(new Error("Les scénarios d’enchères sont réservés."));
+    mocks.assertEntitlement.mockRejectedValue(
+      new ForbiddenError("Les scénarios d’enchères sont réservés."),
+    );
     mocks.enforce.mockRejectedValue(new Error("rate limited"));
 
     expect((await call()).status).toBe(403);
@@ -134,7 +168,7 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     accountSeeing(false);
     await call();
     expect(mocks.getScenarios).not.toHaveBeenCalled();
-    expect(mocks.after).not.toHaveBeenCalled();
+    expect(mocks.recordUsage).not.toHaveBeenCalled();
   });
 
   it("does not select the surface of the sale any more", async () => {
@@ -152,6 +186,7 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
   });
 
   it("records the usage event after the response, not before", async () => {
+    await useRealUsageRecording();
     accountSeeing(true);
     mocks.getScenarios.mockResolvedValue({
       scenarios: { courtSample: 12 },
@@ -161,36 +196,37 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     const response = await call();
 
     expect(response.status).toBe(200);
-    expect(mocks.recordUsage).not.toHaveBeenCalled();
+    expect(mocks.insertUsage).not.toHaveBeenCalled();
     expect(mocks.after).toHaveBeenCalledTimes(1);
     await mocks.after.mock.calls[0][0]();
-    expect(mocks.recordUsage).toHaveBeenCalledWith(
+    expect(mocks.insertUsage).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventKey: "sales.statistics_viewed",
-        subjectId: saleId,
+        event_key: "sales.statistics_viewed",
+        subject_id: saleId,
         metadata: { view: "auction_scenarios", court_sample: 12, dvf_sample: 5 },
       }),
     );
   });
 
   it("never turns a failing usage event into an error response", async () => {
+    await useRealUsageRecording();
     accountSeeing(true);
-    mocks.recordUsage.mockRejectedValue(new Error("insert failed"));
+    mocks.insertUsage.mockResolvedValue({ error: { message: "insert failed" } });
     expect((await call()).status).toBe(200);
     await expect(mocks.after.mock.calls[0][0]()).resolves.toBeUndefined();
 
-    // A synchronous throw inside the callback, too.
-    mocks.recordUsage.mockImplementation(() => {
-      throw new Error("sync failure");
-    });
+    // A rejected insert, too.
+    mocks.insertUsage.mockRejectedValue(new Error("network failure"));
     await expect(mocks.after.mock.calls[0][0]()).resolves.toBeUndefined();
   });
 
   it("answers normally when after() itself throws (outside a request)", async () => {
+    await useRealUsageRecording();
     accountSeeing(true);
     mocks.after.mockImplementation(() => {
       throw new Error("after() was called outside a request scope");
     });
     expect((await call()).status).toBe(200);
+    expect(mocks.insertUsage).toHaveBeenCalledTimes(1);
   });
 });

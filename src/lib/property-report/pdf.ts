@@ -10,7 +10,7 @@ import {
 import { PROPERTY_TAX_NOT_COUNTED } from "@/lib/bid-ceiling-engine";
 import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
-import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
+import { sanitizeReportSnapshotForPlan } from "./entitlements";
 import { reportWording } from "./report-wording";
 import { RENT_SOURCE_URL, rentSourceNotice } from "@/lib/rent-source-notice";
 import { reportRentReference } from "./rent-notice";
@@ -19,21 +19,20 @@ import {
   FINANCING_NOT_PROVIDED,
   financingDossierLines,
 } from "./financing-dossier";
-import { PlanEntitlements, SavedReportRow } from "../property-reports";
+import type { SavedReportRow } from "../property-reports";
+import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import {
-  formatPercent as formatKnownPercent,
+  formatReportPercent,
   formatRenovationBudgetRange,
   normalizeActiveComparableItems,
   normalizeAudienceChecklistItems,
   normalizeCadastralReferences,
   normalizeDemographicSignals,
-  normalizeDpeEvidence,
+  normalizeEvidence,
   normalizeLegalAttentionItems,
   normalizeMarketComparableRows,
   normalizeNearbyCategoryLabels,
   normalizeNeighborhoodSignals,
-  normalizeOccupancyEvidence,
-  normalizeRenovationEvidence,
   normalizeSourceTrace,
   normalizeStringList,
   normalizeUrbanPlanningItems,
@@ -103,7 +102,7 @@ export const REPORT_PDF_HEADINGS = [
 const NOT_PROVIDED = FINANCING_NOT_PROVIDED;
 
 function formatPercent(value: unknown): string {
-  return numberValue(value) != null ? formatKnownPercent(value) : NOT_PROVIDED;
+  return numberValue(value) != null ? formatReportPercent(value) : NOT_PROVIDED;
 }
 
 /** Montant en euros, avec son unité (« / mois », « / an »), ou « non renseigné ». */
@@ -112,7 +111,7 @@ function formatAmount(value: unknown, unit = ""): string {
   return amount != null ? `${formatPrice(amount)}${unit}` : NOT_PROVIDED;
 }
 
-/** Nombre entier ou texte du rapport suivi d'un suffixe (« /100 », « % »), ou « non renseigné ». */
+/** Nombre entier ou texte du rapport suivi d'un suffixe (« /100 »), ou « non renseigné ». */
 function formatCount(value: unknown, suffix = ""): string {
   const text = stringOrNumberValue(value, "");
   return text ? `${text}${suffix}` : NOT_PROVIDED;
@@ -212,7 +211,7 @@ export function reportToPdfLines(
     ? analysis.legalAttentionPoints
     : [];
   const cadastral = asRecord(analysis.cadastralAnalysis);
-  const cadastralReferences = normalizeCadastralReferences(cadastral.références);
+  const cadastralReferences = normalizeCadastralReferences(cadastral.references);
   const cadastralNextActions = normalizeStringList(cadastral.nextActions);
   const nearbyServices = asRecord(analysis.nearbyServices);
   const nearbyCategories = normalizeNearbyCategoryLabels(nearbyServices.categories);
@@ -222,7 +221,7 @@ export function reportToPdfLines(
   const demographicActions = normalizeStringList(demographicAnalysis.nextActions);
   const demographicMissingData = normalizeStringList(demographicAnalysis.missingData);
   const occupancyAnalysis = asRecord(analysis.occupancyAnalysis);
-  const occupancyEvidence = normalizeOccupancyEvidence(occupancyAnalysis.evidence);
+  const occupancyEvidence = normalizeEvidence(occupancyAnalysis.evidence);
   const occupancyNextActions = normalizeStringList(occupancyAnalysis.nextActions);
   const auctionCostAnalysis = asRecord(analysis.auctionCostAnalysis);
   const auctionCostSignals = normalizeStringList(auctionCostAnalysis.sourceFeeSignals);
@@ -237,10 +236,10 @@ export function reportToPdfLines(
   const urbanPlanningMissingChecks = normalizeStringList(urbanPlanningAnalysis.missingChecks);
   const dpe = asRecord(analysis.dpe);
   const dpeDiagnostic = asRecord(dpe.diagnostic);
-  const dpeEvidence = normalizeDpeEvidence(dpe.evidence);
+  const dpeEvidence = normalizeEvidence(dpe.evidence);
   const dpeNextActions = normalizeStringList(dpe.nextActions);
   const renovationAnalysis = asRecord(analysis.renovationAnalysis);
-  const renovationEvidence = normalizeRenovationEvidence(renovationAnalysis.evidence);
+  const renovationEvidence = normalizeEvidence(renovationAnalysis.evidence);
   const renovationActions = normalizeStringList(renovationAnalysis.nextActions);
   const renovationBudgetRange = formatRenovationBudgetRange(
     asRecord(renovationAnalysis.budgetRange),
@@ -259,12 +258,12 @@ export function reportToPdfLines(
     audienceReadinessAnalysis.checklist,
   );
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
-  const canShowSoldComparables = featureUnlocked(plan.features.soldComparables);
-  const canShowSaleHistory = featureUnlocked(plan.features.saleHistory);
-  const canShowUrbanPlanning = featureUnlocked(plan.features.urbanPlanning);
-  const canShowStreetFacade = featureUnlocked(plan.features.streetFacade);
-  const canShowNeighborhood = featureUnlocked(plan.features.neighborhoodAnalysis);
-  const canShowActiveComparables = featureUnlocked(plan.features.activeComparables);
+  const canShowSoldComparables = featureIncluded(plan.plan, "property.soldComparables");
+  const canShowSaleHistory = featureIncluded(plan.plan, "property.saleHistory");
+  const canShowUrbanPlanning = featureIncluded(plan.plan, "property.urbanPlanning");
+  const canShowStreetFacade = featureIncluded(plan.plan, "property.streetFacade");
+  const canShowNeighborhood = featureIncluded(plan.plan, "property.neighborhoodAnalysis");
+  const canShowActiveComparables = featureIncluded(plan.plan, "property.activeComparables");
 
   return [
     `Plan: ${plan.label}`,
@@ -473,7 +472,7 @@ export function reportToPdfLines(
           ...lineIfProvided(
             "Marge de sécurité",
             numberValue(ceiling.safetyDiscountPct) != null
-              ? `${numberValue(ceiling.safetyDiscountPct)} %`
+              ? formatPercent(ceiling.safetyDiscountPct)
               : null,
           ),
           `Base retenue: ${stringOrNumberValue(ceiling.basisLabel, "à confirmer")}`,
@@ -518,7 +517,7 @@ export function reportToPdfLines(
     wording.audiencePreparation,
     `Synthèse: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
     `Statut: ${stringOrNumberValue(audienceReadinessAnalysis.label, "à vérifier")}`,
-    `Progression: ${formatCount(audienceReadinessAnalysis.progressPct, " %")}`,
+    `Progression: ${formatPercent(audienceReadinessAnalysis.progressPct)}`,
     `Points prioritaires ouverts: ${formatCount(audienceReadinessAnalysis.highPriorityOpenCount)}`,
     ...(audienceChecklistItems.length
       ? audienceChecklistItems.slice(0, 8).map((item) => `- ${item}`)

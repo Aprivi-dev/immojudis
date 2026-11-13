@@ -24,7 +24,7 @@ from fake_sale_base import patch_neighbouring_tables
 from psycopg.types.json import Jsonb
 from sale_table_columns import add_model_columns
 
-from src import base_reads
+from src import base_reads, known_enrichment
 from src import main as pipeline
 from src.asset_normalization import normalize_asset_features
 from src.freshness import record_source_checks
@@ -178,7 +178,7 @@ def _collect(read: dict[str, Any]) -> AuctionSale:
         "status": "upcoming", "city": "Alphaville", **read,
     }]
     pipeline._hydrate_known_unchanged_sales(raws, known)
-    pipeline._preserve_known_enrichment_payloads(raws, known)
+    known_enrichment.preserve_known_enrichment_payloads(raws, known)
     record_source_checks(raws, known)
     sale = normalize_sale(raws[0])
     normalize_asset_features(sale)
@@ -253,7 +253,7 @@ def _fail_once_after_the_sale_write(monkeypatch) -> None:
         if calls["count"] == 1:
             raise RuntimeError("canceling statement due to statement timeout")
 
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", failing_once)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", failing_once)
 
 
 def test_a_rolled_back_publication_then_a_retry_writes_the_labels_of_the_run(base, monkeypatch) -> None:

@@ -8,6 +8,7 @@ import {
   departmentFromCode,
   type DepartmentRef,
 } from "@/lib/department-pages";
+import { formatNumericDate } from "@/lib/format/dates";
 import { jsonLdString } from "@/lib/json-ld";
 import { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
@@ -18,12 +19,6 @@ import { getResourceArticle } from "@/lib/resource-articles";
  * données structurées et l'entrée du guide dans le sitemap (`src/app/sitemap.ts`).
  */
 export { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES };
-
-/** « 2026-10-13 » devient « 13/10/2026 ». */
-export function formatGuideDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day}/${month}/${year}`;
-}
 
 /** Vitesse de lecture retenue pour un texte d'information en français (mots par minute). */
 export const READING_WORDS_PER_MINUTE = 230;
@@ -444,7 +439,7 @@ export function ResourcesPage() {
           </p>
           <p className="mt-4 text-xs text-muted-foreground">
             Mis à jour le{" "}
-            <time dateTime={GUIDE_LAST_UPDATED}>{formatGuideDate(GUIDE_LAST_UPDATED)}</time>
+            <time dateTime={GUIDE_LAST_UPDATED}>{formatNumericDate(GUIDE_LAST_UPDATED)}</time>
             <span aria-hidden> · </span>
             <span data-reading-time>Temps de lecture : environ {GUIDE_READING_MINUTES} min</span>
           </p>

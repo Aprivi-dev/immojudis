@@ -10,8 +10,8 @@ import { useFeeRegimes } from "@/components/FeeRegimesProvider";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { Card } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 import { getSupabase } from "@/integrations/supabase/lazy";
-import { fetchNotificationPreferences } from "@/lib/client-api";
 import { saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
 import {
@@ -85,13 +85,7 @@ export function MonDemarrage({ className = "" }: { className?: string }) {
     staleTime: 0,
     retry: false,
   });
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId ?? "anonymous"),
-    queryFn: fetchNotificationPreferences,
-    enabled: active,
-    staleTime: 60_000,
-    retry: false,
-  });
+  const preferencesQuery = useNotificationPreferencesQuery(userId, { enabled: active });
 
   const progress = favoritesQuery.data;
   const preferencesSettled = preferencesQuery.isSuccess || preferencesQuery.isError;

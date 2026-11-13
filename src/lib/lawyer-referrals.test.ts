@@ -334,6 +334,10 @@ describe("lawyer referrals", () => {
     await expect(
       previewLawyerReferralRecipient({ auth, query: { saleId: SALE_ID, lawyerId: LAWYER_ID } }),
     ).rejects.toThrow("n'est pas proposé pour cette vente");
+    // Refus métier typé : son statut ne dépend pas du texte.
+    await expect(
+      previewLawyerReferralRecipient({ auth, query: { saleId: SALE_ID, lawyerId: LAWYER_ID } }),
+    ).rejects.toMatchObject({ name: "PublicApiError", status: 400 });
   });
 
   it("keeps the preview for the plans that include the referral", async () => {

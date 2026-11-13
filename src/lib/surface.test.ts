@@ -162,3 +162,49 @@ describe("getMarketValuationSurfaces", () => {
     });
   });
 });
+
+// Le type de bien connu décide de la famille ; le titre ne sert que si le type est inconnu.
+describe("surface bâtie estimée selon le type de bien et le titre", () => {
+  // [type, titre, pièces, surface bâtie retenue pour l'estimation de valeur]
+  it.each([
+    // Une maison titrée « Appartement T3 » est une maison : barème des maisons.
+    ["house", "Appartement T3", null, 100],
+    ["house", "Appartement T3", 3, 80],
+    ["house", "Studio", null, 100],
+    // Un appartement reste un appartement, quels que soient les mots du titre.
+    ["apartment", "Appartement dans un immeuble", null, 50],
+    ["apartment", "Appartement dans un immeuble", 3, 62],
+    ["apartment", "Local commercial", 3, 62],
+    // Le titre précise la taille dans la famille appartement : un studio.
+    ["apartment", "Studio", null, 20],
+    // Un parking, ou un bien « autre », n'a pas de surface bâtie estimée.
+    ["parking", "Studio", null, null],
+    ["parking", "Studio", 3, null],
+    ["other", "Appartement T3", 3, null],
+    // Type inconnu : la famille vient du titre.
+    ["unknown", "Appartement T3", 3, 62],
+    [null, "Maison de ville", null, 100],
+    [null, "Studio vendu occupé", null, 20],
+    [null, "Immeuble de rapport", 3, null],
+  ] as const)(
+    "%s titré « %s », %s pièce(s) : %s m²",
+    (property_type, title, rooms_count, built) => {
+      expect(getMarketValuationSurfaces({ property_type, title, rooms_count }).builtSurfaceM2).toBe(
+        built,
+      );
+    },
+  );
+
+  it("n'affiche une surface de studio estimée que pour un appartement", () => {
+    expect(getSaleSurface({ property_type: "apartment", title: "Studio" })).toMatchObject({
+      value: STUDIO_ESTIMATED_SURFACE_M2,
+      kind: "estimated",
+    });
+    for (const property_type of ["parking", "house", "commercial"]) {
+      expect(getSaleSurface({ property_type, title: "Studio" })).toMatchObject({
+        value: null,
+        kind: "none",
+      });
+    }
+  });
+});

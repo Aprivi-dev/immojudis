@@ -7,8 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import pdf_enrichment
+from src import pdf_deadline
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
 from src.models import AuctionSale
@@ -73,7 +80,7 @@ def test_queued_runner_refuses_a_leftover_llm_description_backfill_run(monkeypat
         lambda: {"id": "run-backfill", "source": "llm-description-backfill", "summary": {"limit": 11}},
     )
     monkeypatch.setattr(queued_runner, "fetch_next_data_refresh_request_from_supabase", lambda: None)
-    monkeypatch.setattr(queued_runner, "finish_run_in_supabase", lambda *args: finished.append(args))
+    monkeypatch.setattr(queued_runner, "close_open_run_in_supabase", lambda *args: finished.append(args))
     monkeypatch.setattr(
         queued_runner,
         "run_pipeline",
@@ -89,6 +96,23 @@ def test_queued_runner_refuses_a_leftover_llm_description_backfill_run(monkeypat
             {"runner": ["Invalid queued source: llm-description-backfill"]},
         )
     ]
+
+
+def test_queued_runner_merges_a_crashed_pipeline_into_the_report_of_its_run(monkeypatch) -> None:
+    """run_pipeline tient le bilan de son run : le niveau au-dessus fusionne l'exception, sans écraser ni rouvrir."""
+    closed: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
+    monkeypatch.setattr(queued_runner, "fetch_next_queued_run_from_supabase", lambda: {"id": "run-1", "source": "all"})
+    monkeypatch.setattr(queued_runner, "close_open_run_in_supabase", lambda *args: closed.append(args))
+
+    def crashing_pipeline(_options):
+        raise RuntimeError("stage crashed")
+
+    monkeypatch.setattr(queued_runner, "run_pipeline", crashing_pipeline)
+
+    assert queued_runner.main() == 1
+    assert closed == [("run-1", "failed", {"runner": "github_actions_queue"}, {"runner": ["stage crashed"]})]
 
 
 def test_queued_runner_defaults_missing_llm_flag_to_automatic(monkeypatch, capsys) -> None:
@@ -236,7 +260,11 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
         or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: calls.append("geocode"))
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: calls.append("normalize"))
+    monkeypatch.setattr(
+        queued_runner,
+        "derive_sale_facts",
+        lambda current: calls.append("derive_sale_facts"),
+    )
     monkeypatch.setattr(
         queued_runner,
         "upsert_sales_to_supabase",
@@ -249,8 +277,43 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     )
 
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
-    assert calls == ["pdf", "facts", "geocode", "normalize", "upsert"]
+    assert calls == ["pdf", "facts", "geocode", "derive_sale_facts", "upsert"]
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
+
+
+def test_enrichment_queue_rederives_source_facts_after_a_document_pass(monkeypatch) -> None:
+    """La lecture des pièces change le type du bien : surfaces et caractéristiques de la source sont relues avec lui."""
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/enrichment-rederive",
+            "description": "Maison de 120 m2 avec jardin et garage",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    written: list[AuctionSale] = []
+
+    def document_pass(current: AuctionSale) -> SimpleNamespace:
+        current.property_type = "house"
+        return SimpleNamespace(errors=0)
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [{"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf"}],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "manifest_is_complete", lambda *_args: True)
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", document_pass)
+    monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: written.extend(sales) or 1)
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", lambda *args, **kwargs: None)
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    payload = written[0].raw_payload
+    assert payload["source_property_features_meta"]["schema_version"]
+    assert payload["surface_analysis"]["version"] == "surface_reasoning_v1"
+    assert payload["sale_procedure"]["schema_version"] == "sale_procedure_v1"
 
 
 @pytest.mark.parametrize(
@@ -318,9 +381,7 @@ def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_eff
         "create_llm_client",
         "enrich_sale_with_llm",
         "geocode_sale",
-        "fill_tribunal",
-        "classify_sale_procedure",
-        "normalize_asset_features",
+        "derive_sale_facts",
         "upsert_sales_to_supabase",
         "retry_fact_claims_to_supabase",
     ):
@@ -463,10 +524,8 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
         "create_llm_client",
         lambda: (_ for _ in ()).throw(AssertionError("verified facts must not invoke the LLM")),
     )
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -582,9 +641,7 @@ def test_enrichment_queue_cancels_terminal_facts_and_completes_the_pdf_job(monke
         lambda: (_ for _ in ()).throw(AssertionError("PDF-only terminal batch must not invoke the LLM")),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -644,7 +701,7 @@ def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(mo
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", policy_blocked_pdf)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -887,9 +944,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
         "enrich_sale_with_llm",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no LLM call for these jobs")),
     )
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -964,7 +1019,7 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
     monkeypatch.setattr(
         queued_runner,
-        "_postgres_connect",
+        "connect",
         lambda db_url, **kwargs: nullcontext(SimpleNamespace(execute=execute)),
     )
 
@@ -997,7 +1052,7 @@ def test_worker_claim_status_snapshot_reads_unique_ids_without_retries(monkeypat
         connect_kwargs.update(kwargs)
         return nullcontext(connection)
 
-    monkeypatch.setattr(queued_runner, "_postgres_connect", connect)
+    monkeypatch.setattr(queued_runner, "connect", connect)
 
     assert queued_runner._read_worker_claim_status_counts({"job-b", "job-a"}) == {
         "completed": 1,
@@ -1020,7 +1075,7 @@ def test_worker_claim_status_snapshot_failure_is_optional(monkeypatch) -> None:
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
     monkeypatch.setattr(
         queued_runner,
-        "_postgres_connect",
+        "connect",
         lambda db_url, **kwargs: (_ for _ in ()).throw(TimeoutError("snapshot timeout")),
     )
 
@@ -1237,6 +1292,31 @@ def test_worker_stops_general_claims_after_llm_budget_exhaustion_and_keeps_caps(
     assert all(family == queued_runner.SOURCE_DETAIL_FAMILY for _, family in calls[2:])
     assert all(limit == 1 for limit, _ in calls)
     assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+@pytest.mark.parametrize(
+    "max_jobs_env,expected_jobs",
+    [(None, ENRICHMENT_MAX_JOBS), ("2", 2), (str(ENRICHMENT_MAX_JOBS + 10), ENRICHMENT_MAX_JOBS)],
+)
+def test_enrichment_worker_reads_its_job_limit_under_the_name_the_runner_sets(
+    monkeypatch, max_jobs_env, expected_jobs
+) -> None:
+    """Le nom posé par le lanceur abaisse le plafond du travailleur, sans jamais le dépasser."""
+    if max_jobs_env is None:
+        monkeypatch.delenv(ENRICHMENT_MAX_JOBS_ENV, raising=False)
+    else:
+        monkeypatch.setenv(ENRICHMENT_MAX_JOBS_ENV, max_jobs_env)
+    monkeypatch.setenv(ENRICHMENT_BUDGET_SECONDS_ENV, str(ENRICHMENT_BUDGET_SECONDS))
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {queued_runner.SOURCE_DETAIL_FAMILY: 1_000, queued_runner.ENRICHMENT_FAMILY: 1_000},
+    )
+    monkeypatch.setattr(
+        queued_runner, "run_enrichment_queue_batch", lambda *, limit, family, provider_clients=None: 1
+    )
+
+    assert queued_runner.run_enrichment_queue_worker() == expected_jobs
 
 
 def test_worker_reaches_bounded_180_job_cap_without_concurrent_claims(monkeypatch) -> None:
@@ -1472,7 +1552,7 @@ def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatc
     observed_remaining: list[float | None] = []
 
     def fake_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         return 0
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
@@ -1481,17 +1561,17 @@ def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatc
     assert observed_remaining
     assert all(
         value is not None
-        and 0 < value <= 1200 - queued_runner._pdf_finalization_margin_seconds(1200)
+        and 0 < value <= 1200 - queued_runner.pdf_finalization_margin_seconds(1200)
         for value in observed_remaining
     )
-    assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert pdf_deadline.pdf_deadline_remaining() is None
 
 
 def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None:
     observed_remaining: list[float | None] = []
 
     def failing_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         raise RuntimeError("batch failed")
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", failing_batch)
@@ -1499,7 +1579,7 @@ def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None
     with pytest.raises(RuntimeError, match="batch failed"):
         queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200)
     assert observed_remaining and observed_remaining[0] is not None
-    assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert pdf_deadline.pdf_deadline_remaining() is None
     assert source_task_deadline_remaining() is None
     assert llm_task_deadline_remaining() is None
 
@@ -1513,7 +1593,7 @@ def test_worker_source_and_llm_deadline_scopes_use_existing_finalization_margin(
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
     started = time.monotonic()
-    queued_runner._run_enrichment_queue_batch_with_deadline(
+    queued_runner.run_enrichment_queue_batch_with_deadline(
         limit=1,
         family=queued_runner.SOURCE_DETAIL_FAMILY,
         provider_clients={},
@@ -1573,7 +1653,7 @@ def test_worker_stops_slow_tasks_before_claiming_past_budget(monkeypatch, caplog
 
     assert handled == 2
     assert claim_start_times == [0.0, 30.0]
-    assert all(start < 60.0 - queued_runner._pdf_finalization_margin_seconds(60) for start in claim_start_times)
+    assert all(start < 60.0 - queued_runner.pdf_finalization_margin_seconds(60) for start in claim_start_times)
     assert max_active_claims == 1
     assert active_claims == 0
     summary = next(record.getMessage() for record in caplog.records if "Enrichment worker summary" in record.getMessage())
@@ -1584,15 +1664,15 @@ def test_worker_short_budget_keeps_a_scaled_pdf_margin_and_processes_job(monkeyp
     observed_remaining: list[float | None] = []
 
     def fake_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         return 1
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
 
     assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=60) == 1
     assert observed_remaining and observed_remaining[0] is not None
-    assert 0 < observed_remaining[0] <= 60 - queued_runner._pdf_finalization_margin_seconds(60)
-    assert queued_runner._pdf_finalization_margin_seconds(60) < queued_runner.PDF_FINALIZATION_MARGIN_SECONDS
+    assert 0 < observed_remaining[0] <= 60 - queued_runner.pdf_finalization_margin_seconds(60)
+    assert queued_runner.pdf_finalization_margin_seconds(60) < queued_runner.PDF_FINALIZATION_MARGIN_SECONDS
 
 
 def test_enrichment_worker_gives_empty_lane_slot_to_other_family(monkeypatch) -> None:
@@ -2421,7 +2501,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     progress_made,
     should_defer,
 ) -> None:
-    from src.pdf_enrichment import PdfDocumentOcrBudgetExceeded
+    from src.pdf_ocr import PdfDocumentOcrBudgetExceeded
 
     sale = normalize_sale(
         {
@@ -2487,7 +2567,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
 
 
 def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:
-    from src.pdf_enrichment import PdfExtractionDeferred
+    from src.pdf_deadline import PdfExtractionDeferred
     from src.pipeline_usage import QueueJobDeferred
 
     sale = normalize_sale(
@@ -2555,7 +2635,7 @@ def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) ->
 
 
 def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatch) -> None:
-    from src.pdf_enrichment import PdfDeadlineExceeded
+    from src.pdf_deadline import PdfDeadlineExceeded
 
     sale = normalize_sale(
         {
@@ -2702,7 +2782,7 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
     assert "private PDF text" not in message
 
 
-@pytest.mark.parametrize(("facts_version", "reads"), [(None, True), (pdf_enrichment.DOCUMENT_FACTS_VERSION, False)])
+@pytest.mark.parametrize(("facts_version", "reads"), [(None, True), (DOCUMENT_FACTS_VERSION, False)])
 def test_a_pdf_job_reads_again_documents_whose_facts_used_older_rules(monkeypatch, facts_version, reads) -> None:
     """Fresh documents are read again when their facts came from older rules (offer deadlines, 02/11/2026)."""
     from src.config import EncheresPubliquesAccessNotAuthorized
@@ -2781,3 +2861,21 @@ def test_partial_manifest_without_an_advancing_pdf_job_waits_six_hours(monkeypat
     assert "manifest is still partial" in str(error)
     wait = (error.next_attempt_at - datetime.now(UTC)).total_seconds()
     assert 5.9 * 3600 < wait <= 6 * 3600
+
+
+def test_a_job_is_finished_only_for_the_attempt_this_worker_claimed(monkeypatch) -> None:
+    finished: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)) or True,
+    )
+
+    claimed = {"id": "job-1", "attempt_count": "2", "locked_at": "2026-11-12T08:00:00+00:00"}
+    assert queued_runner._finish_job(claimed, succeeded=True, attempt_count=9) is True
+    assert queued_runner._finish_job({"id": "job-2"}, succeeded=False, error_message="boom") is True
+
+    assert finished == [
+        ("job-1", {"succeeded": True, "attempt_count": 2, "locked_at": "2026-11-12T08:00:00+00:00"}),
+        ("job-2", {"succeeded": False, "error_message": "boom"}),
+    ]

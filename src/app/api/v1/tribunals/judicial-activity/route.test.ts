@@ -4,6 +4,7 @@ import {
   TribunalCourtUnresolvedError,
 } from "@/lib/tribunal-judicial-activity";
 import { TribunalJudicialSaleNotFoundError } from "@/lib/tribunal-judicial-activity-repository";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 
@@ -68,7 +69,9 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
   });
 
   it("refuse les visiteurs avant de lire l’activité", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
     const response = await request();
 
     expect(response.status).toBe(401);
@@ -77,7 +80,7 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
 
   it("refuse le plan Découverte avant de lire l’activité", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Activité judiciaire réservée à l’offre Analyse."),
+      new ForbiddenError("Activité judiciaire réservée à l’offre Analyse."),
     );
     const response = await request();
 
@@ -142,7 +145,7 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
     mocks.getActivity.mockRejectedValue(new TribunalCourtUnresolvedError());
     const response = await request();
     expect(response.status).toBe(422);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toMatchObject({ code: "COURT_UNRESOLVED" });
   });
 

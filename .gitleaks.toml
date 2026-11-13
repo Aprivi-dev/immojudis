@@ -88,3 +88,15 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)supabase/functions/source-fetch-relay/auth\.ts''']
 regexes = ['''^381b771e9d098c1d3a29a1d284debec324b39435646c14cfa79a4aefcdd6b913$''']
+
+[[allowlists]]
+description = "Synthetic portal secret and the HMAC token it signs, frozen so links already sent stay valid"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)src/lib/information-agent-signed-link\.test\.ts''']
+regexes = [
+'''^known-portal-secret-for-signature-tests-0123456789$''',
+'''^71a93f54fffbabccfebc8c5e8186f7d1c2183ef776b83d774e10c696aa48ae6f$''',
+'''^4724d4be04324a8624c7ddeb7dacffc3182e486271c115df98b0d2f7fc1cbe47$'''
+]

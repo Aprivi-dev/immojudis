@@ -1,17 +1,18 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatNumericDateTime } from "@/lib/format/dates";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
+import { PIPELINE_QUERY_KEY } from "@/lib/admin-query-keys";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
 import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {
-  return value && Number.isFinite(Date.parse(value))
-    ? new Date(value).toLocaleString("fr-FR")
-    : "Non établie";
+  return formatNumericDateTime(value, "Non établie");
 }
 export function AdminPipelinePanel() {
   const client = useQueryClient();
   const query = useQuery({
-    queryKey: ["admin-pipeline"],
+    queryKey: PIPELINE_QUERY_KEY,
     queryFn: fetchPipelineStatus,
     refetchInterval: 60_000,
     staleTime: 30_000,
@@ -24,7 +25,7 @@ export function AdminPipelinePanel() {
       toast.success(
         `${variables.source} : planification ${variables.enabled ? "activée" : "suspendue"}.`,
       );
-      await client.invalidateQueries({ queryKey: ["admin-pipeline"] });
+      await client.invalidateQueries({ queryKey: PIPELINE_QUERY_KEY });
     },
   });
   if (query.isPending) return <p role="status">Chargement de la supervision…</p>;
@@ -180,7 +181,7 @@ export function AdminPipelinePanel() {
                   </td>
                   <td className="p-2">
                     {typeof ratio === "number"
-                      ? `${Math.round(ratio * 100)} % (${metrics?.fresh_listings}/${metrics?.active_listings})`
+                      ? `${formatShareAsPercent(ratio)} (${metrics?.fresh_listings}/${metrics?.active_listings})`
                       : "Non mesuré"}
                   </td>
                   <td className="p-2">

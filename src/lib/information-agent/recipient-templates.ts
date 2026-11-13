@@ -19,14 +19,14 @@ import type { InformationAgentQuestionAudience } from "@/lib/information-agent/r
 
 const block = (id: string) => {
   const found = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find((entry) => entry.id === id);
-  if (!found) throw new Error(`Bloc « ${id} » absent du modèle de message.`);
+  if (!found) throw new Error(`Default email template has no block "${id}"`);
   return found;
 };
 
-export const NOTARY_REPLY_INSTRUCTIONS =
+const NOTARY_REPLY_INSTRUCTIONS =
   "Répondre est facultatif. Nous ne demandons que des informations déjà destinées aux candidats acquéreurs : celles de l’annonce et du cahier des charges. Ne nous transmettez rien d’autre : votre secret professionnel prime sur notre demande.";
 
-export const STATE_SERVICE_REPLY_INSTRUCTIONS =
+const STATE_SERVICE_REPLY_INSTRUCTIONS =
   "Répondre est facultatif. Nous ne demandons que des informations déjà destinées aux candidats à l’acquisition. Les règles de votre administration priment sur notre demande.";
 
 const REPLY_BY_EMAIL = "Un simple retour à cet email suffit ; aucun compte n’est nécessaire.";

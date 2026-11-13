@@ -23,15 +23,6 @@ type SaleInput = {
   property_type: string | null;
 };
 
-/**
- * Function (or parameter) not known to the database: the migration is not applied yet, which a
- * staggered deployment makes possible (PostgREST `PGRST202`, PostgreSQL `42883`).
- */
-function isMissingFunction(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST202" || code === "42883";
-}
-
 /** What the database answers for one (court, band, property group): no data of the caller's sale. */
 type CourtScenariosPayload = {
   scenarios: Record<string, unknown> | null;
@@ -40,8 +31,8 @@ type CourtScenariosPayload = {
 };
 
 /** The copy of the lots changes at most daily; an hour of cache keeps the answers well in step. */
-export const AUCTION_SCENARIOS_REVALIDATE_SECONDS = 3_600;
-export const AUCTION_SCENARIOS_CACHE_TAG = "auction-scenarios";
+const AUCTION_SCENARIOS_REVALIDATE_SECONDS = 3_600;
+const AUCTION_SCENARIOS_CACHE_TAG = "auction-scenarios";
 
 /**
  * The answer depends on the court, the starting-price band and the property group only, never on
@@ -96,24 +87,11 @@ export async function getAuctionScenarios(sale: SaleInput): Promise<AuctionScena
   if (!sale.tribunal_code) return empty;
   const usablePrice = empty.unavailable === null;
   const band = usablePrice ? startingPriceBand(sale.starting_price_eur) : null;
-  let payload: CourtScenariosPayload;
-  try {
-    payload = await cachedCourtScenarios(
-      sale.tribunal_code,
-      band ?? 0,
-      scenarioPropertyGroup(sale.property_type),
-    );
-  } catch (error) {
-    if (!isMissingFunction(error)) throw error;
-    // Code deployed before the migration that adds `p_property_group`: say « not enough data »
-    // rather than fail. Never retry without the group (figures of every property type would be
-    // shown as those of this one). The error is thrown out of the cache, so nothing is kept: the
-    // next call asks the database again and the figures come back once the migration is applied.
-    console.warn("[auction-scenarios] get_court_auction_scenarios indisponible (migration ?)", {
-      code: (error as { code?: string }).code,
-    });
-    return { ...empty, unavailable: empty.unavailable ?? "insufficient_data" };
-  }
+  const payload = await cachedCourtScenarios(
+    sale.tribunal_code,
+    band ?? 0,
+    scenarioPropertyGroup(sale.property_type),
+  );
   const scenarios = usablePrice ? mapScenarioSet(payload.scenarios) : null;
   return {
     ...empty,

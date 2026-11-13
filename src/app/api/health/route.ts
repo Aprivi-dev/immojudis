@@ -1,7 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog, RateLimitError } from "@/lib/api-errors";
+import { RateLimitError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { apiJson, createApiRequestContext, rateLimitResponse } from "@/lib/api-observability";
 import { asRecord } from "@/lib/guards";
 import { enforceIpRateLimit } from "@/lib/rate-limit";

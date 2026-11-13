@@ -1,4 +1,6 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -34,7 +36,7 @@ export type AdminSourceRefreshRequestInput = z.input<typeof adminSourceRefreshRe
 export type AdminSourceRefreshRequest = z.output<typeof adminSourceRefreshRequestSchema>;
 export type AdminSourceRefreshStatusQuery = z.output<typeof adminSourceRefreshStatusQuerySchema>;
 
-export type AdminSourceRefreshItem = {
+type AdminSourceRefreshItem = {
   id: string;
   saleId: string;
   kind: "source_detail";
@@ -71,7 +73,7 @@ export async function requestAdminSourceRefresh({
   auth: SupabaseAuthContext;
   input: AdminSourceRefreshRequest;
 }): Promise<AdminSourceRefreshResponse> {
-  requireAdmin(auth);
+  assertAdmin(auth);
 
   const { data, error } = await supabaseAdmin.rpc(ADMIN_SOURCE_REFRESH_RPC, {
     p_admin_id: auth.userId,
@@ -82,13 +84,13 @@ export async function requestAdminSourceRefresh({
   if (error) throw mapAdmissionError(error);
   const admission = data?.[0];
   if (!admission?.job_id) {
-    throw new Error("Le refresh source n’a pas pu être admis.");
+    throw new Error("Source refresh admission returned no job.");
   }
 
   const history = await loadAdminSourceRefreshHistory(input.saleId);
   const request = history.find((item) => item.id === admission.job_id) ?? null;
   if (!request) {
-    throw new Error("Le refresh source a été admis mais son statut est indisponible.");
+    throw new Error("Admitted source refresh job is missing from the history.");
   }
 
   return {
@@ -106,7 +108,7 @@ export async function getAdminSourceRefreshStatus({
   auth: SupabaseAuthContext;
   input: AdminSourceRefreshStatusQuery;
 }): Promise<AdminSourceRefreshResponse> {
-  requireAdmin(auth);
+  assertAdmin(auth);
   const history = await loadAdminSourceRefreshHistory(input.saleId);
   return {
     ok: true,
@@ -114,10 +116,6 @@ export async function getAdminSourceRefreshStatus({
     request: history[0] ?? null,
     history,
   };
-}
-
-function requireAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourceRefreshItem[]> {
@@ -145,11 +143,8 @@ async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourc
   );
 }
 
-function rowToRefreshItem(
-  row: SourceDetailJobRow,
-  sale: RefreshableSale,
-  reused = false,
-): AdminSourceRefreshItem {
+/** Une demande lue dans la file : `reused` ne vaut que pour la réponse à une nouvelle demande. */
+function rowToRefreshItem(row: SourceDetailJobRow, sale: RefreshableSale): AdminSourceRefreshItem {
   return {
     id: row.id,
     saleId: sale.id,
@@ -158,7 +153,7 @@ function rowToRefreshItem(
     sourceUrl: row.detail_source_url,
     status: row.status,
     priority: row.priority,
-    reused,
+    reused: false,
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
     requestedAt: row.created_at,
@@ -168,26 +163,29 @@ function rowToRefreshItem(
   };
 }
 
+/** Refus de l'admission (`ADMIN_SOURCE_DETAIL_*`) : 409, message montré ; toute autre erreur reste interne. */
 function mapAdmissionError(error: { code?: string; message?: string }): Error {
   const message = error.message ?? "";
   if (message.includes("ADMIN_SOURCE_DETAIL_")) {
     if (message.includes("PAUSED")) {
-      return new Error("Le refresh source est désactivé dans le contrôle du pipeline.");
+      return new PublicApiError(
+        "Le refresh source est désactivé dans le contrôle du pipeline.",
+        409,
+      );
     }
     if (message.includes("SUSPENDED")) {
-      return new Error("Cette source est temporairement suspendue après des refus d’accès.");
+      return new PublicApiError(
+        "Cette source est temporairement suspendue après des refus d’accès.",
+        409,
+      );
     }
     if (message.includes("DISABLED")) {
-      return new Error("Cette source n’est pas activée pour la lecture détaillée.");
+      return new PublicApiError("Cette source n’est pas activée pour la lecture détaillée.", 409);
     }
-    return new Error(
+    return new PublicApiError(
       "Le refresh source est temporairement limité. Réessayez dans quelques minutes.",
+      409,
     );
   }
-  if (message.includes("Could not find the function") || message.includes("does not exist")) {
-    return new Error(
-      "Le refresh source administrateur n’est pas encore activé sur cet environnement.",
-    );
-  }
-  return new Error(message || "Le refresh source n’a pas pu être admis.");
+  return new Error("Source refresh admission failed.", { cause: error });
 }

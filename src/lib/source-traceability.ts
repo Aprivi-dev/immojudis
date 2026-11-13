@@ -15,7 +15,7 @@ import {
   saleVenueLabel,
 } from "@/lib/sale-procedure";
 
-export type SourceTraceKind =
+type SourceTraceKind =
   | "judicial_listing"
   | "judicial_document"
   | "sale_procedure"

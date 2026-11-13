@@ -59,7 +59,7 @@ const CLAUSE_SEPARATOR_RE = u(
   /(?<!\d),|,(?!\d)|;|\(|\)|\s[-–]\s|\b(?:et|mais|car|donc|puis|tandis\s+que|alors\s+que|or)\b/giu,
 );
 
-export function splitSentences(text: string): Array<[number, number]> {
+function splitSentences(text: string): Array<[number, number]> {
   const bounds: Array<[number, number]> = [];
   let start = 0;
   let index = 0;

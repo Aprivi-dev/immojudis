@@ -15,26 +15,30 @@ from typing import Any, Literal
 from src.config import load_settings
 from src.official_sources.base import OfficialSourceError
 from src.official_sources.encheres_publiques_open_data import (
+    ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
     parse_encheres_publiques_courts_csv,
     parse_encheres_publiques_csv,
 )
 from src.official_sources.judilibre import JudilibreClient
 from src.official_sources.justice_open_data import (
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
     parse_justice_open_data_csv,
     validate_justice_competence_semantics,
 )
+from src.outcome_cli_args import positive_int
 from src.outcome_ingestion.adapters import (
     dvf_adjudication_to_json_record,
     encheres_publiques_to_json_record,
     justice_open_data_to_json_record,
 )
 from src.outcome_ingestion.artifact_store import RawArtifactStorageError, SupabaseRawArtifactStore
-from src.outcome_ingestion.dvf_adjudication import iter_dvf_adjudication_candidates
+from src.outcome_ingestion.dvf_adjudication import DVF_OFFICIAL_SOURCE_NAME, iter_dvf_adjudication_candidates
 from src.outcome_ingestion.dvf_matching import (
     DVF_MATCH_PAGE_SIZE_DEFAULT,
     DVF_MATCH_PAGE_SIZE_MAX,
     DvfAdjudicationMatchingService,
 )
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME
 from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_SEARCH_MAX_RESULTS,
     JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW,
@@ -57,10 +61,10 @@ LOCAL_SOURCES: tuple[LocalSource, ...] = (
     "encheres-courts",
 )
 SOURCE_POLICIES: dict[LocalSource, tuple[str, Literal["automated", "manual"]]] = {
-    "dvf-adjudications": ("dvf_dgfip", "automated"),
-    "justice": ("justice_open_data", "automated"),
-    "encheres-hearings": ("encheres_publiques_open_data", "manual"),
-    "encheres-courts": ("encheres_publiques_open_data", "manual"),
+    "dvf-adjudications": (DVF_OFFICIAL_SOURCE_NAME, "automated"),
+    "justice": (JUSTICE_OPEN_DATA_SOURCE_NAME, "automated"),
+    "encheres-hearings": (ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME, "manual"),
+    "encheres-courts": (ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME, "manual"),
 }
 
 
@@ -100,8 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--since", default=None, help="Required for the first sync (ISO-8601).")
     sync.add_argument("--stream-key", default="transactional_history")
-    sync.add_argument("--max-pages", type=_positive_int, default=100)
-    sync.add_argument("--max-records", type=_positive_int, default=None)
+    sync.add_argument("--max-pages", type=positive_int, default=100)
+    sync.add_argument("--max-records", type=positive_int, default=None)
     sync.set_defaults(handler=_run_judilibre_sync)
 
     search_sync = commands.add_parser(
@@ -137,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     match_bound = match_dvf.add_mutually_exclusive_group(required=True)
     match_bound.add_argument(
         "--limit",
-        type=_positive_int,
+        type=positive_int,
         help="Global maximum source records scanned across all pages in this run.",
     )
     match_bound.add_argument(
@@ -147,7 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     match_dvf.add_argument(
         "--context-limit",
-        type=_positive_int,
+        type=positive_int,
         default=250,
         help="Maximum lot/round contexts evaluated per DVF candidate.",
     )
@@ -182,25 +186,18 @@ def _add_local_source_args(parser: argparse.ArgumentParser, *, require_bound: bo
     parser.add_argument("path", type=Path)
     if require_bound:
         bound = parser.add_mutually_exclusive_group(required=True)
-        bound.add_argument("--limit", type=_positive_int)
+        bound.add_argument("--limit", type=positive_int)
         bound.add_argument(
             "--all",
             action="store_true",
             help="Explicitly acknowledge an unbounded import.",
         )
     else:
-        parser.add_argument("--limit", type=_positive_int, default=None)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
+        parser.add_argument("--limit", type=positive_int, default=None)
 
 
 def _bounded_ingest_workers(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > 8:
         raise argparse.ArgumentTypeError("value must not exceed 8")
     return parsed
@@ -214,21 +211,21 @@ def _iso_calendar_date(value: str) -> date:
 
 
 def _judilibre_max_results_per_window(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW:
         raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW}")
     return parsed
 
 
 def _judilibre_max_total_results(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > JUDILIBRE_SEARCH_MAX_RESULTS:
         raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS}")
     return parsed
 
 
 def _dvf_match_page_size(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > DVF_MATCH_PAGE_SIZE_MAX:
         raise argparse.ArgumentTypeError(f"value must not exceed {DVF_MATCH_PAGE_SIZE_MAX}")
     return parsed
@@ -239,7 +236,7 @@ def _run_plan(_args: argparse.Namespace) -> int:
         {
             "schema_version": "outcome_source_activation_plan_v1",
             "sources": {
-                "judilibre": {
+                JUDILIBRE_SOURCE_NAME: {
                     "channel": "automated",
                     "default_state": "runtime_gated_after_review",
                     "requires": [
@@ -251,17 +248,17 @@ def _run_plan(_args: argparse.Namespace) -> int:
                         "private outcome-raw-artifacts bucket",
                     ],
                 },
-                "dvf_dgfip": {
+                DVF_OFFICIAL_SOURCE_NAME: {
                     "channel": "automated",
                     "record_kind": "auction_result_candidate",
                     "training_eligible": False,
                 },
-                "justice_open_data": {
+                JUSTICE_OPEN_DATA_SOURCE_NAME: {
                     "channel": "automated",
                     "record_kinds": ["territorial_jurisdiction", "court_reference_candidate"],
                     "training_eligible": False,
                 },
-                "encheres_publiques_open_data": {
+                ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME: {
                     "channel": "manual",
                     "default_state": "inactive_pending_review",
                     "record_kinds": ["auction_hearing_candidate", "court_reference_candidate"],
@@ -421,7 +418,7 @@ def _run_match_dvf(args: argparse.Namespace) -> int:
     settings = load_settings()
     repository = OutcomeIngestionRepository.from_settings(settings)
     if args.persist:
-        repository.require_source_policy("dvf_dgfip", "automated")
+        repository.require_source_policy(DVF_OFFICIAL_SOURCE_NAME, "automated")
     summary = DvfAdjudicationMatchingService(repository).run(
         source_limit=None if args.all else args.limit,
         context_limit=args.context_limit,
@@ -447,7 +444,7 @@ def _live_judilibre_ingestor() -> tuple[JudilibreOutcomeIngestor, JudilibreClien
     # The DB approval gate is checked before constructing anything capable of
     # writing or making a source request. The client independently requires the
     # explicit JUDILIBRE_ENABLED runtime gate and PISTE credentials.
-    repository.require_source_policy("judilibre", "automated")
+    repository.require_source_policy(JUDILIBRE_SOURCE_NAME, "automated")
     artifact_store = SupabaseRawArtifactStore.from_settings(settings)
     client = JudilibreClient.from_settings(settings)
     service = OutcomeSourceIngestionService(repository=repository, artifact_store=artifact_store)

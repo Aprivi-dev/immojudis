@@ -1,8 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { RateLimitError } from "@/lib/api-errors";
-import { apiRouteError, rateLimitResponse } from "@/lib/api-observability";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { getCommuneRiskProfile, resolveSaleCommune } from "@/lib/commune-risks.server";
 import type { CommuneRiskResult } from "@/lib/environment-reference";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
@@ -19,31 +19,20 @@ type SaleRisksResponse = { saleId: string; risks: CommuneRiskResult };
  * Only commune facts leave the server: the listing coordinates are read with
  * the service role to find the commune and are never returned.
  */
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-): Promise<NextResponse<SaleRisksResponse | { error: string }>> {
-  const parsedId = saleIdSchema.safeParse((await context.params).id);
-  if (!parsedId.success) {
-    return NextResponse.json({ error: "Identifiant de vente invalide." }, { status: 400 });
-  }
-  try {
+export const GET = apiRoute<{ id: string }>(
+  { scope: "sales.id.risks", fallbackMessage: "Risques de la commune indisponibles" },
+  async (request, { params }) => {
+    const parsedId = saleIdSchema.safeParse(params.id);
+    if (!parsedId.success) throw new PublicApiError("Identifiant de vente invalide.", 400);
     await enforceIpRateLimit({
       request,
       bucketKey: "sales.risks",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-  } catch (error) {
-    if (error instanceof RateLimitError) {
-      return rateLimitResponse(error) as NextResponse<{ error: string }>;
-    }
-    throw error;
-  }
 
-  try {
     // Same rule as the listing page: only missing or quarantined sales are refused.
     const sale = await loadVisibleSaleLocation(parsedId.data);
-    if (!sale) return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
+    if (!sale) throw new NotFoundError("Vente introuvable.");
 
     const commune = await resolveSaleCommune({
       latitude: sale.latitude,
@@ -59,19 +48,13 @@ export async function GET(
           reason: sale.city || sale.latitude != null ? "commune_not_found" : "location_missing",
         };
     const cacheable = risks.status === "ready";
-    return NextResponse.json(
-      { saleId: parsedId.data, risks },
-      {
-        headers: {
-          "cache-control": cacheable
-            ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
-            : "public, max-age=300, s-maxage=300",
-        },
+    const body: SaleRisksResponse = { saleId: parsedId.data, risks };
+    return NextResponse.json(body, {
+      headers: {
+        "cache-control": cacheable
+          ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+          : "public, max-age=300, s-maxage=300",
       },
-    );
-  } catch (error) {
-    return apiRouteError(error, request, "sales.id.risks", {
-      fallbackMessage: "Risques de la commune indisponibles",
     });
-  }
-}
+  },
+);

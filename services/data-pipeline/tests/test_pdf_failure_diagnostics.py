@@ -5,7 +5,7 @@ from pathlib import Path
 
 import src.pdf_enrichment as pdf_enrichment
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _store_document_analysis_status
+from src.pdf_document_selection import store_document_analysis_status
 from src.pdf_failure_diagnostics import (
     format_pdf_failure_diagnostics,
     pdf_extraction_exception_marker,
@@ -142,7 +142,7 @@ def test_document_analysis_persists_safe_failure_details_and_logs_them(caplog) -
     }
 
     with caplog.at_level(logging.WARNING):
-        _store_document_analysis_status(
+        store_document_analysis_status(
             sale,
             [{"label": "PV", "url": url, "document_type": "pv_huissier"}],
             [payload],
@@ -213,7 +213,7 @@ def test_enrichment_exception_logs_safe_marker_and_forwards_it(monkeypatch, tmp_
     monkeypatch.setattr(pdf_enrichment, "download_documents", lambda _sale, stats: [document])
     monkeypatch.setattr(
         pdf_enrichment,
-        "_select_documents_for_extraction",
+        "select_documents_for_extraction",
         lambda documents, sale=None, **kwargs: documents,
     )
     monkeypatch.setattr(pdf_enrichment, "_invalidate_replaced_document_facts", lambda *_args: None)
@@ -222,7 +222,7 @@ def test_enrichment_exception_logs_safe_marker_and_forwards_it(monkeypatch, tmp_
     ))
     monkeypatch.setattr(
         pdf_enrichment,
-        "_store_document_analysis_status",
+        "store_document_analysis_status",
         lambda *_args, **kwargs: captured.update(kwargs),
     )
 

@@ -57,8 +57,8 @@ export const OFFER_OPENING_INTERVIEW_HELP =
   "Nous vous écrirons une seule fois, à l’adresse de votre compte, pour convenir d’un créneau. Cette case est facultative : elle n’a aucun effet sur votre demande.";
 
 /** Durées annoncées avec la case « entretien » : à tenir dans l'étude (voir le texte ci-dessous). */
-export const OFFER_OPENING_INTERVIEW_RECORDING_RETENTION_DAYS = 30;
-export const OFFER_OPENING_INTERVIEW_NOTES_RETENTION_MONTHS = 12;
+const OFFER_OPENING_INTERVIEW_RECORDING_RETENTION_DAYS = 30;
+const OFFER_OPENING_INTERVIEW_NOTES_RETENTION_MONTHS = 12;
 
 /**
  * Information donnée avec la case « entretien » (finalité, responsable, enregistrement, retrait, droits).

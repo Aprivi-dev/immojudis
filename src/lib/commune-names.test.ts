@@ -23,3 +23,14 @@ describe("commune names", () => {
     expect(departmentFromPostalCode("3300")).toBeNull();
   });
 });
+
+describe("departmentFromPostalCode", () => {
+  it("gives Corsica its letters and the overseas collectivities three digits", () => {
+    expect(departmentFromPostalCode("20000")).toBe("2A");
+    expect(departmentFromPostalCode("20200")).toBe("2B");
+    expect(departmentFromPostalCode("97400")).toBe("974");
+    expect(departmentFromPostalCode("98800")).toBe("988");
+    expect(departmentFromPostalCode("33000")).toBe("33");
+    expect(departmentFromPostalCode("3300")).toBeNull();
+  });
+});

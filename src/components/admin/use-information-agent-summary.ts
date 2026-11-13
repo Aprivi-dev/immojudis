@@ -48,7 +48,7 @@ export function useInformationAgentSummary(): InformationAgentSummaryData {
     sentToday: pick(pilot, (data) => data.sentToday),
     toReview,
     unrouted: unroutedCount,
-    contactable: pick(readiness, (data) => data.queueTotal),
+    contactable: pick(readiness, (data) => data.total),
     replies:
       toReview.value !== null && unroutedCount.value !== null
         ? toReview.value + unroutedCount.value

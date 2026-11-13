@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import subprocess
 import sys
@@ -58,25 +57,31 @@ from types import SimpleNamespace
 from typing import Any, Protocol
 
 from src import photo_mirror, source_withdrawal
-from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
-from src.encheres_publiques_guard import (
-    require_encheres_publiques_sale_access,
-    require_encheres_publiques_url_access,
+from src.config import (
+    EncheresPubliquesAccessNotAuthorized,
+    encheres_publiques_access_enabled,
+    env_flag_on_unless_false,
+    load_settings,
 )
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.pdf_document_types import classify_document_type
 from src.photo_mirror import (
     BUCKET,
     ENCHERES_PUBLIQUES_URL_PATTERN,
+    AdvisoryLockedStore,
     ImageRejected,
     MirrorFailure,
     PathPending,
     PhotoDownloader,
     PhotoStorage,
     SupabasePhotoStorage,
+    bounded_int,
     build_politeness,
+    emit,
     host_of,
     image_decoder_environment,
 )
+from src.sha256_digest import is_lowercase_sha256
 from src.source_withdrawal import is_withdrawn_source_url, sale_is_fully_withdrawn
 
 LOGGER = logging.getLogger(__name__)
@@ -108,8 +113,6 @@ CONSECUTIVE_ERROR_LIMIT = 5
 WITHDRAWAL_BATCH = 500
 STALE_BATCH = 300
 LOCK_NAME = "immojudis:pdf-photos:v1"
-
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -213,7 +216,7 @@ def parse_extraction(output: bytes, *, max_photos: int = MAX_PHOTOS_PER_SALE) ->
             if not isinstance(entry, dict):
                 raise ValueError("entry")
             sha256 = str(entry["sha256"])
-            if not _SHA256.match(sha256):
+            if not is_lowercase_sha256(sha256):
                 raise ValueError("sha256")
             single = entry["single"]
             if not isinstance(single, bool):
@@ -266,7 +269,7 @@ def parse_extraction(output: bytes, *, max_photos: int = MAX_PHOTOS_PER_SALE) ->
 def photo_paths(sale_id: str, sha256: str, *, single: bool) -> tuple[str, str]:
     """``documents/{sale_id}/{sha256[0:16]}-640.webp`` et ``-1600.webp`` (le même chemin quand ``single``)."""
     uuid.UUID(str(sale_id))
-    if not _SHA256.match(sha256):
+    if not is_lowercase_sha256(sha256):
         raise ValueError("invalid sha256")
     prefix = f"{PATH_PREFIX}/{sale_id}/{sha256[:16]}"
     path_640 = f"{prefix}-640.webp"
@@ -484,23 +487,10 @@ delete from public.sale_document_photos photo
 """
 
 
-class PostgresDocumentPhotoStore:
-    """Les deux tables et la sélection en lecture seule, sur une connexion en autocommit.
+class PostgresDocumentPhotoStore(AdvisoryLockedStore):
+    """Les deux tables et la sélection en lecture seule."""
 
-    La connexion tient aussi le verrou consultatif qui empêche deux passages de viser les mêmes hôtes ensemble.
-    """
-
-    def __init__(self, db_url: str, *, connect: Callable[[str], Any] | None = None) -> None:
-        if connect is None:
-            from src.storage.supabase_client import connect as connect_postgres
-
-            connect = connect_postgres
-        self._connection = connect(db_url)
-        self._connection.autocommit = True
-
-    def try_lock(self) -> bool:
-        row = self._connection.execute("select pg_try_advisory_lock(hashtextextended(%s, 0))", (LOCK_NAME,)).fetchone()
-        return bool(row and row[0])
+    lock_name = LOCK_NAME
 
     def select_candidates(self, max_sales: int, *, include_encheres_publiques: bool) -> list[Candidate]:
         types = list(PHOTO_DOCUMENT_TYPES)
@@ -603,11 +593,6 @@ class PostgresDocumentPhotoStore:
     def delete_stale_rows(self, limit: int) -> int:
         return int(self._connection.execute(DELETE_STALE_ROWS_SQL, (int(limit),)).rowcount or 0)
 
-    def close(self) -> None:
-        try:
-            self._connection.close()
-        except Exception:  # noqa: BLE001 - fermer libère de toute façon le verrou consultatif
-            pass
 
 
 # --------------------------------------------------------------------------------------------------
@@ -621,24 +606,15 @@ class PassLimits:
     max_sales: int = DEFAULT_MAX_SALES
 
 
-def _bounded_int(value: object, default: int, low: int, high: int) -> int:
-    try:
-        parsed = int(str(value).strip()) if value is not None and str(value).strip() else default
-    except (TypeError, ValueError):
-        parsed = default
-    return max(low, min(high, parsed))
-
-
 def limits_from_inputs(max_sales: object = None, budget_seconds: object = None) -> PassLimits:
     return PassLimits(
-        budget_seconds=float(_bounded_int(budget_seconds, DEFAULT_BUDGET_SECONDS, 10, MAX_BUDGET_SECONDS)),
-        max_sales=_bounded_int(max_sales, DEFAULT_MAX_SALES, 1, MAX_SALES_LIMIT),
+        budget_seconds=float(bounded_int(budget_seconds, DEFAULT_BUDGET_SECONDS, 10, MAX_BUDGET_SECONDS)),
+        max_sales=bounded_int(max_sales, DEFAULT_MAX_SALES, 1, MAX_SALES_LIMIT),
     )
 
 
-def pass_enabled(env: Mapping[str, str] | None = None) -> bool:
-    value = str((env if env is not None else os.environ).get(ENABLED_ENV, "true")).strip().lower()
-    return value not in {"0", "false", "no", "off"}
+def pass_enabled() -> bool:
+    return env_flag_on_unless_false(ENABLED_ENV)
 
 
 @dataclass
@@ -676,10 +652,6 @@ class PassSummary:
             "stale_deleted": self.stale_deleted,
             "elapsed_seconds": round(self.elapsed_seconds, 1),
         }
-
-
-def _emit(payload: Mapping[str, Any]) -> None:
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str), flush=True)
 
 
 def _scan_log(result: ScanResult) -> dict[str, Any]:
@@ -858,13 +830,12 @@ def run_pdf_photos(
     store: DocumentPhotoStore | None = None,
     storage: PhotoStorage | None = None,
     downloader: PhotoDownloader | None = None,
-    env: Mapping[str, str] | None = None,
     extract: Callable[[bytes], Extraction] = extract_photos,
     clock: Callable[[], float] = time.monotonic,
 ) -> PassSummary:
     """Un passage. Interrupteur éteint : retraits seulement (aucun téléchargement, aucune copie)."""
     summary = PassSummary()
-    enabled = pass_enabled(env)
+    enabled = pass_enabled()
     settings = settings if settings is not None else load_settings()
     started = clock()
     deadline = started + limits.budget_seconds
@@ -911,7 +882,7 @@ def run_pdf_photos(
             LOGGER.warning("PDF photos: stale photos step failed: %s", type(exc).__name__)
             summary.failures_by_reason[f"stale_{type(exc).__name__}"] += 1
 
-        ep_open = _encheres_publiques_open(settings)
+        ep_open = encheres_publiques_access_enabled(settings)
         candidates = store.select_candidates(limits.max_sales, include_encheres_publiques=ep_open)
         summary.documents_selected = len(candidates)
         summary.sales_selected = len({candidate.sale_id for candidate in candidates})
@@ -949,21 +920,13 @@ def run_pdf_photos(
                     continue
             consecutive_errors = 0
             _count(summary, result)
-            _emit(_scan_log(result))
+            emit(_scan_log(result))
             _update_host_health(host, result, host_failures, paused_hosts)
         return summary
     finally:
         summary.elapsed_seconds = clock() - started
         if owns_store and store is not None:
             store.close()
-
-
-def _encheres_publiques_open(settings: Mapping[str, object]) -> bool:
-    try:
-        require_encheres_publiques_url_access("https://www.encheres-publiques.com/", settings)
-    except EncheresPubliquesAccessNotAuthorized:
-        return False
-    return True
 
 
 def _count(summary: PassSummary, result: ScanResult) -> None:
@@ -1012,7 +975,7 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.exception("PDF photos pass failed")
         print(f"::error title=Photos des pièces jointes::the pass could not run ({type(exc).__name__}).")
         return 1
-    _emit(summary)
+    emit(summary)
     return 0
 
 

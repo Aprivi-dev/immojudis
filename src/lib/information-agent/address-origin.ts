@@ -8,7 +8,8 @@ import {
   type InformationAgentAddressSourceKind,
   type InformationAgentFooterStructure,
 } from "@/lib/information-agent-compliance";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { PublicApiError } from "@/lib/api-errors";
+import { requireInformationAgentContactEmail } from "@/lib/information-agent/contacts";
 import {
   INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE,
   isInformationAgentExcludedSourceUrl,
@@ -27,7 +28,7 @@ export function assertInformationAgentSourceAllowed(addressOrigin: {
     addressOrigin.origin.url &&
     isInformationAgentExcludedSourceUrl(addressOrigin.origin.url)
   ) {
-    throw new Error(INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE, 400);
   }
 }
 
@@ -65,8 +66,7 @@ export async function resolveInformationAgentAddressOrigin({
   known: boolean;
   kind: InformationAgentAddressSourceKind | null;
 }> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const normalized = requireInformationAgentContactEmail(email);
   const manual = manualOriginUrl?.trim();
   const manualUrl = manual && /^https?:\/\//i.test(manual) ? manual : null;
   let observedAt = fallbackObservedAt;

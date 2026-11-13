@@ -15,7 +15,8 @@ import {
 import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
-import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
+import { occupancyClass, occupancyDetail } from "@/lib/occupancy-status";
+import { propertyFamily } from "@/lib/property-type-family";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   DEFAULT_PRELIMINARY_FEES,
@@ -29,9 +30,6 @@ import {
   validEnteredSurface,
 } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
-
-// Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
-export { DEFAULT_PRELIMINARY_FEES };
 /*
  * Statut des valeurs par défaut du plafond (état au 31/10/2026).
  *
@@ -53,17 +51,17 @@ export { DEFAULT_PRELIMINARY_FEES };
  *   (`carrying.annualPropertyTaxSource`).
  */
 /** Commissaire de justice, serrurier, garde-meubles : ordre de grandeur d'une libération. */
-export const DEFAULT_RELEASE_COST = 3_000;
-export const DEFAULT_RELEASE_MONTHS = 12;
+const DEFAULT_RELEASE_COST = 3_000;
+const DEFAULT_RELEASE_MONTHS = 12;
 export const DEFAULT_RENTED_DISCOUNT_PCT = 10;
 /** Charges de copropriété moyennes, en € par m² et par mois. */
-export const DEFAULT_CONDO_CHARGES_PER_M2 = 2.5;
-export const DEFAULT_MONTHLY_INSURANCE = 15;
-export const DEFAULT_FINANCING_RATE_PCT = 4;
-export const DEFAULT_RESALE_MONTHS = 4;
-export const DEFAULT_SELLING_COSTS_PCT = 5;
-export const DEFAULT_VACANCY_PCT = 5;
-export const DEFAULT_NON_RECOVERABLE_PCT = 7;
+const DEFAULT_CONDO_CHARGES_PER_M2 = 2.5;
+const DEFAULT_MONTHLY_INSURANCE = 15;
+const DEFAULT_FINANCING_RATE_PCT = 4;
+const DEFAULT_RESALE_MONTHS = 4;
+const DEFAULT_SELLING_COSTS_PCT = 5;
+const DEFAULT_VACANCY_PCT = 5;
+const DEFAULT_NON_RECOVERABLE_PCT = 7;
 
 export type CeilingUserChoices = {
   project?: CeilingProject;
@@ -105,18 +103,21 @@ export type CeilingUserChoices = {
 };
 
 /**
- * Cas d'occupation du plafond pour un `occupancy_status`. Mêmes règles que l'écart au marché
- * (`isVacantOccupancyStatus`, `isOccupiedOccupancyStatus`) : « inoccupé » est un bien libre (aucun
- * coût de libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
+ * Cas d'occupation du plafond pour un `occupancy_status`. Même classe que l'écart au marché et le
+ * libellé (`occupancyClass`, `occupancyDetail`) : « inoccupé » est un bien libre (aucun coût de
+ * libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
  */
 export function occupationCaseForStatus(status: string | null | undefined): OccupationCase {
-  const value = (status ?? "").trim().toLocaleLowerCase("fr-FR");
-  if (!value || value === "unknown" || value === "inconnu") return "inconnu";
-  if (isVacantOccupancyStatus(value) || value === "free") return "libre";
-  if (!isOccupiedOccupancyStatus(value)) return "inconnu";
-  if (/squat/.test(value)) return "squat";
-  if (value === "rented" || value === "tenant_occupied" || /lou[eé]/.test(value)) return "loue";
-  return "occupe";
+  switch (occupancyClass(status)) {
+    case "vacant":
+      return "libre";
+    case "rented":
+      return "loue";
+    case "occupied":
+      return occupancyDetail(status) === "squatted" ? "squat" : "occupe";
+    default:
+      return "inconnu";
+  }
 }
 
 /**
@@ -141,7 +142,7 @@ export function buildCeilingHypotheses(
   const entered = acceptsEnteredBuiltSurface(sale) ? validEnteredSurface(enteredSurfaceM2) : null;
   const surface = entered ?? surfaces.builtSurfaceM2;
   const surfaceEstimated = entered == null && surfaces.builtSurfaceEstimated;
-  const apartment = /appart|apartment|studio|duplex|loft/i.test(sale.property_type ?? "");
+  const apartment = propertyFamily(sale.property_type) === "apartment";
   // Un bien qui n'est pas un logement (terrain, parking, local…) n'a aucun loyer de référence.
   const reference = isRentApplicable(sale)
     ? resolveRentReference(rentReference, sale.department)

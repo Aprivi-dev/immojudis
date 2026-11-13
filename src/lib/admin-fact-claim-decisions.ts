@@ -129,7 +129,7 @@ type ClaimQuery = PromiseLike<{
 /**
  * Observations à décider. Lecture par le rôle de service : la vue et le journal des décisions
  * sont fermés aux rôles du navigateur. L'appelant a déjà vérifié le rôle administrateur
- * (`requireAdmin` dans la route), comme pour toute lecture par le rôle de service.
+ * (`assertAdminAuth` dans la route), comme pour toute lecture par le rôle de service.
  */
 export async function listAdminFactClaimDecisions(
   input: AdminFactClaimDecisionQuery,

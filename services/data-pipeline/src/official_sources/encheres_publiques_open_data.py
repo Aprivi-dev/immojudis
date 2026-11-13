@@ -5,7 +5,6 @@ import codecs
 import csv
 import io
 import json
-import re
 import unicodedata
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -14,8 +13,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from .base import canonical_sha256
+from src.text_folding import ascii_lower_single_spaced
 
+from .base import canonical_sha256, has_excessive_controls, looks_like_html
+
+# Nom de la source dans ``data_sources`` : celui des enregistrements produits ici et de leur politique d'ingestion.
+ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME = "encheres_publiques_open_data"
 ENCHERES_PUBLIQUES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/"
     "distribution-des-prix-de-vente-des-biens-immobiliers-des-tribunaux-judiciaires-francais"
@@ -315,7 +318,7 @@ def _parse_candidate_row(row: dict[str, str]) -> tuple[dict[str, Any], Counter[s
         "record_type": "auction_hearing_candidate",
         "event_type": "auction_hearing_candidate",
         "stable_id": stable_id,
-        "source_name": "encheres_publiques_open_data",
+        "source_name": ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
         "source_url": source_url,
         "source_dataset_url": ENCHERES_PUBLIQUES_DATASET_URL,
         "source_is_official": False,
@@ -345,7 +348,7 @@ def _parse_court_reference_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "court_reference_candidate",
         "stable_id": f"encheres_publiques:court:{organizer_id}",
-        "source_name": "encheres_publiques_open_data",
+        "source_name": ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
         "source_url": profile_url,
         "source_dataset_url": ENCHERES_PUBLIQUES_DATASET_URL,
         "source_is_official": False,
@@ -440,9 +443,9 @@ def _decode_text_file(path: Path) -> tuple[str, str]:
             text = payload.decode(encoding, errors="strict")
         except UnicodeDecodeError:
             continue
-        if _looks_like_html(text):
+        if looks_like_html(text):
             raise EncheresPubliquesSchemaError("download is HTML, not the expected CSV resource")
-        if _has_excessive_controls(text):
+        if has_excessive_controls(text):
             raise EncheresPubliquesSchemaError("CSV file contains unexpected control characters")
         return text, encoding
     raise EncheresPubliquesSchemaError("CSV encoding is neither UTF-8 nor Windows-1252")
@@ -527,8 +530,7 @@ def _record_anomaly(
 
 
 def _header_token(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", " ", normalized.strip().lower())
+    return ascii_lower_single_spaced(value)
 
 
 def _clean_header(value: str) -> str:
@@ -537,18 +539,6 @@ def _clean_header(value: str) -> str:
 
 def _clean_text(value: object) -> str:
     return unicodedata.normalize("NFC", str(value or "")).strip()
-
-
-def _looks_like_html(text: str) -> bool:
-    prefix = text.lstrip()[:512].lower()
-    return prefix.startswith(("<!doctype html", "<html", "<?xml")) or "<html" in prefix
-
-
-def _has_excessive_controls(text: str) -> bool:
-    if not text:
-        return False
-    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text[:100_000])
-    return controls > max(2, len(text[:100_000]) // 1_000)
 
 
 def _main() -> int:

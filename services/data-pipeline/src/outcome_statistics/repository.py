@@ -21,6 +21,7 @@ from src.outcome_statistics.models import (
     StatisticsBundle,
     StatisticsSnapshot,
 )
+from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
 
@@ -542,7 +543,7 @@ def _database_member_hashes(
     if (
         len(expected_round_ids) != len(members)
         or set(hashes) != expected_round_ids
-        or any(not _is_sha256(value) for value in hashes.values())
+        or any(not is_lowercase_sha256(value) for value in hashes.values())
     ):
         raise OutcomeStatisticsRepositoryError("database returned an invalid member hash batch")
     return hashes
@@ -706,7 +707,7 @@ def _insert_members(
     if not ordered_members:
         return
     if set(member_hashes) != {member.round_id for member in ordered_members} or any(
-        not _is_sha256(value) for value in member_hashes.values()
+        not is_lowercase_sha256(value) for value in member_hashes.values()
     ):
         raise OutcomeStatisticsRepositoryError("member hash batch does not match snapshot members")
     records = []
@@ -799,10 +800,6 @@ def _member_record(member: SnapshotMember) -> dict[str, object]:
         "double_reviewed": member.double_reviewed,
         "exclusion_reasons": list(member.exclusion_reasons),
     }
-
-
-def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _mapping_rows(cursor: Any) -> tuple[dict[str, object], ...]:

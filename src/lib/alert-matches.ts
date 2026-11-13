@@ -20,6 +20,7 @@ import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { featureIncluded, hasStandingAnalysisAccess } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
@@ -28,8 +29,10 @@ import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { documentSignatureParts } from "@/lib/document-signature";
+import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
+import { chunks } from "@/lib/chunks";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -51,7 +54,7 @@ export type AlertMatchSummary = {
 };
 
 /** Une alerte qui n'a pas pu être évaluée ou enregistrée (message et code de l'erreur d'origine). */
-export type AlertEvaluationFailure = {
+type AlertEvaluationFailure = {
   alertId: string;
   error: string;
 };
@@ -78,14 +81,14 @@ export type PublicAlertEvaluationResponse = Omit<AlertEvaluationResponse, "alert
 };
 
 /** The user's plan does not include alerts: nothing to evaluate, not a failure. */
-export class AlertsNotIncludedError extends Error {
+class AlertsNotIncludedError extends Error {
   constructor() {
     super("Alertes avancées réservées à l’offre Analyse.");
     this.name = "AlertsNotIncludedError";
   }
 }
 
-export type SmartAlertBatchUserResult = {
+type SmartAlertBatchUserResult = {
   userId: string;
   ok: boolean;
   skipped?: boolean;
@@ -118,13 +121,6 @@ export type SmartAlertBatchRunResult = {
   totalNotificationCount: number;
   results: SmartAlertBatchUserResult[];
 };
-
-/**
- * Statuts des ventes que les alertes évaluent : ceux de la recherche du catalogue
- * (`statusValuesForSearch`, src/lib/search/search-filters.ts). Une vente reportée ou au statut encore
- * inconnu que la recherche affiche doit aussi alerter.
- */
-const ALERT_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
 /**
  * Pré-filtre SQL d'une alerte gratuite sur son département : le code et le nom (« 33 » et « Gironde »),
@@ -171,7 +167,7 @@ export async function listUserAlertMatches({
 }): Promise<{ matches: AlertMatchSummary[] }> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
-    throw new Error("Alertes avancées réservées à l’offre Analyse.");
+    throw new ForbiddenError("Alertes avancées réservées à l’offre Analyse.");
   }
 
   let query = auth.supabase
@@ -207,7 +203,8 @@ let pepiteIdsCache: { at: number; ids: Promise<ReadonlySet<string>> } | null = n
  * une panne n'est pas gardée et fait échouer les alertes qui en ont besoin (elles gardent leur date
  * d'évaluation et sont reprises au passage suivant).
  */
-export function loadPepiteSaleIdsForAlerts(now = Date.now()): Promise<ReadonlySet<string>> {
+function loadPepiteSaleIdsForAlerts(): Promise<ReadonlySet<string>> {
+  const now = Date.now();
   if (pepiteIdsCache && now - pepiteIdsCache.at < PEPITE_IDS_CACHE_MS) return pepiteIdsCache.ids;
   const entry = {
     at: now,
@@ -268,7 +265,7 @@ export function isRentBasisSilentPass(
 }
 
 /** Les loyers de la carte de l'ANIL n'ont pas pu être lus : une alerte à critère de rendement n'avance pas. */
-export class RentReferenceUnavailableError extends Error {
+class RentReferenceUnavailableError extends Error {
   constructor() {
     super(
       "Loyers de référence (ANIL) indisponibles : l'alerte à critère de rendement est reprise au prochain passage.",
@@ -532,8 +529,6 @@ const ALERT_MATCHES_DEFERRED_CODE = "55P03";
  * `auction_sales` attendait le verrou jusqu'au délai de la requête (57014), puis l'alerte entière échouait. Une vente
  * sautée lève une erreur de code 55P03 APRÈS l'écriture des autres lignes du lot : l'alerte n'est pas marquée évaluée
  * et est rejouée à la passe suivante sans doublon (upsert), comme pour toute autre erreur d'écriture.
- *
- * Sans la migration (fonction absente, déploiement avant migration), repli sur l'upsert d'origine.
  */
 async function upsertAlertMatchRows(
   batch: Database["public"]["Tables"]["user_alert_matches"]["Insert"][],
@@ -541,25 +536,15 @@ async function upsertAlertMatchRows(
   const { data, error } = await supabaseAdmin.rpc("upsert_user_alert_matches", {
     p_rows: batch as unknown as Json,
   });
-  if (!error) {
-    const written = (data ?? []) as AlertMatchRow[];
-    if (written.length < batch.length) {
-      throw Object.assign(
-        new Error(
-          `${batch.length - written.length} correspondance(s) différée(s) : vente verrouillée ou disparue`,
-        ),
-        { code: ALERT_MATCHES_DEFERRED_CODE },
-      );
-    }
-    return written;
+  if (error) throw error;
+  const written = (data ?? []) as AlertMatchRow[];
+  if (written.length < batch.length) {
+    throw Object.assign(
+      new Error(`${batch.length - written.length} alert match(es) deferred: sale locked or gone`),
+      { code: ALERT_MATCHES_DEFERRED_CODE },
+    );
   }
-  if (!isMissingDatabaseObject(error)) throw error;
-  const fallback = await supabaseAdmin
-    .from("user_alert_matches")
-    .upsert(batch, { onConflict: "alert_id,sale_id" })
-    .select("*");
-  if (fallback.error) throw fallback.error;
-  return fallback.data ?? [];
+  return written;
 }
 
 /**
@@ -759,7 +744,7 @@ async function loadSalesToEvaluate({
       : start;
   });
   const filters: SaleFilters = {
-    status_in: [...ALERT_SALE_STATUSES],
+    status_in: [...OPEN_SALE_STATUSES],
     ...(neverEvaluated ? {} : { updated_since: new Date(Math.min(...windowStarts)).toISOString() }),
     ...(discovery && alerts.length === 1
       ? { city: alerts[0].city ?? undefined, ...departmentPrefilter(alerts[0].department) }
@@ -798,11 +783,10 @@ async function loadSalesByIds({
   discovery: boolean;
 }): Promise<AuctionSale[]> {
   const sales: AuctionSale[] = [];
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const chunk = ids.slice(offset, offset + 100);
+  for (const chunk of chunks(ids)) {
     sales.push(
       ...(await getSalesForAlertEvaluation(
-        { status_in: [...ALERT_SALE_STATUSES], ids: chunk },
+        { status_in: [...OPEN_SALE_STATUSES], ids: chunk },
         chunk.length,
         0,
         { client: auth.supabase, discovery },
@@ -959,7 +943,7 @@ export async function runSmartAlertEvaluationBatch({
 }
 
 /** Part de comptes en échec à partir de laquelle le passage est déclaré en échec. */
-export const SMART_ALERT_FAILURE_RATE_THRESHOLD = 0.2;
+const SMART_ALERT_FAILURE_RATE_THRESHOLD = 0.2;
 
 /**
  * Un passage où des comptes ont échoué ne compte pas comme un succès quand l'échec n'est plus
@@ -1283,8 +1267,4 @@ function roundNumber(value: number | null | undefined): number | null {
 
 function roundPercent(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

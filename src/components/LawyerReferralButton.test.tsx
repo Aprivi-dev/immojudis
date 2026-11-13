@@ -17,8 +17,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: { id: "user-1" }, loading: false }),
 }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: mocks.fetchAccessPlan }));
 vi.mock("@/lib/client-api", () => ({
-  fetchAccessPlan: mocks.fetchAccessPlan,
   fetchLawyerReferrals: mocks.fetchLawyerReferrals,
   fetchLawyerReferralPreview: mocks.fetchLawyerReferralPreview,
   requestLawyerReferral: mocks.requestLawyerReferral,

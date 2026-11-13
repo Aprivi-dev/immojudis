@@ -34,7 +34,12 @@ describe("GET /api/information-agent/evidence", () => {
     mocks.sign.mockResolvedValue(null);
     const response = await GET(get());
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ ok: false, error: "Pièce introuvable." });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: "Pièce introuvable.",
+      code: "NOT_FOUND",
+    });
   });
 
   it("is rate limited per IP", async () => {

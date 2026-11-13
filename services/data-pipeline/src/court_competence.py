@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -13,11 +12,14 @@ from src.config import RAW_DIR
 from src.models import AuctionSale
 from src.official_sources.justice_open_data import (
     JUSTICE_COMPETENCES_DATASET_URL,
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
     JusticeOpenDataSchemaError,
     parse_justice_competences_csv,
     parse_justice_structures_csv,
     validate_justice_competence_semantics,
 )
+from src.sha256_digest import is_lowercase_sha256
+from src.text_folding import ascii_alnum_words, strip_accents
 
 LOGGER = logging.getLogger(__name__)
 COURT_ASSIGNMENT_SCHEMA_VERSION = "justice_competent_court_assignment_v1"
@@ -99,7 +101,7 @@ class CompetentCourtAssignment:
             "court_phone": self.court_phone,
             "court_email": self.court_email,
             "reference_sha256": self.reference_sha256,
-            "source_name": "justice_open_data",
+            "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
             "source_url": JUSTICE_COMPETENCES_DATASET_URL,
         }
 
@@ -151,7 +153,7 @@ class OfficialCourt:
             "court_srj_code": self.court_srj_code,
             "court_department": self.court_department,
             "court_city": self.court_city,
-            "source_name": "justice_open_data",
+            "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
             "source_url": JUSTICE_COMPETENCES_DATASET_URL,
         }
 
@@ -375,7 +377,7 @@ def _valid_label_assignment_evidence(value: Any) -> bool:
         value.get("schema_version") == COURT_LABEL_ASSIGNMENT_SCHEMA_VERSION
         and value.get("status") == "label_exact"
         and value.get("mapping_method") == COURT_LABEL_ASSIGNMENT_METHOD
-        and value.get("source_name") == "justice_open_data"
+        and value.get("source_name") == JUSTICE_OPEN_DATA_SOURCE_NAME
         and value.get("source_url") == JUSTICE_COMPETENCES_DATASET_URL
         and all(isinstance(value.get(key), str) and value[key].strip() for key in required_text)
         and value["label_key"] == tribunal_label_court_key(value["source_label"])
@@ -403,13 +405,13 @@ def _valid_assignment_evidence(value: Any) -> bool:
         value.get("schema_version") == COURT_ASSIGNMENT_SCHEMA_VERSION
         and value.get("status") == "verified"
         and value.get("mapping_method") == COURT_ASSIGNMENT_METHOD
-        and value.get("source_name") == "justice_open_data"
+        and value.get("source_name") == JUSTICE_OPEN_DATA_SOURCE_NAME
         and value.get("source_url") == JUSTICE_COMPETENCES_DATASET_URL
         and all(isinstance(value.get(key), str) and value[key].strip() for key in required_text)
         and bool(_INSEE_CODE_RE.fullmatch(str(value["insee_code"]).upper()))
         and bool(re.fullmatch(r"\d+", str(value["court_origin_code"])))
         and bool(re.fullmatch(r"\d+", str(value["court_srj_code"])))
-        and bool(re.fullmatch(r"[0-9a-f]{64}", str(value["reference_sha256"])))
+        and is_lowercase_sha256(str(value["reference_sha256"]))
     )
 
 
@@ -453,9 +455,7 @@ def _department_from_insee(insee_code: str) -> str:
 
 
 def _fingerprint(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    ascii_text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
+    return ascii_alnum_words(strip_accents(str(value or "")).lower())
 
 
 def _court_names_compatible(left: object, right: object) -> bool:

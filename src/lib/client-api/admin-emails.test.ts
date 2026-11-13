@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ authHeaders: vi.fn() }));
-vi.mock("@/lib/client-api-core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/client-api-core")>()),
-  authHeaders: mocks.authHeaders,
+const session = vi.hoisted(() => ({ token: "jeton" as string | null }));
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => session.token !== null,
+  getSupabase: async () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: session.token ? { access_token: session.token } : null },
+      }),
+    },
+  }),
 }));
 
 import { fetchAdminEmailHistory } from "@/lib/client-api/admin-emails";
@@ -11,7 +17,6 @@ import { fetchAdminEmailHistory } from "@/lib/client-api/admin-emails";
 afterEach(() => vi.restoreAllMocks());
 
 function mockFetch() {
-  mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer jeton" });
   return vi
     .spyOn(globalThis, "fetch")
     .mockResolvedValue(new Response(JSON.stringify({ rows: [], next: null }), { status: 200 }));

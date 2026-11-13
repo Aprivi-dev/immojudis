@@ -10,8 +10,10 @@ import Users from "lucide-react/dist/esm/icons/users.js";
 import { useEffect, useState } from "react";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
-import { formatInteger } from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDate, formatShortDateTime } from "@/lib/format/dates";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
@@ -25,7 +27,7 @@ import {
 } from "@/lib/admin-signups-format";
 import type { AdminSignupAccount, AdminTrialExtensionResponse } from "@/lib/admin-signups";
 import { toast } from "@/lib/toast";
-import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { SUBSCRIPTIONS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 export const SIGNUPS_QUERY_KEY = ["admin-signups"] as const;
 
@@ -83,7 +85,7 @@ export function AdminSignupsPanel() {
       setLastResult(response);
       if (extended) {
         toast.success(
-          `Essai prolongé pour ${extended} compte${extended > 1 ? "s" : ""} jusqu’au ${formatDate(response.endsAt)}.`,
+          `Essai prolongé pour ${extended} compte${extended > 1 ? "s" : ""} jusqu’au ${formatShortDate(response.endsAt)}.`,
         );
       }
       if (skipped)
@@ -93,10 +95,10 @@ export function AdminSignupsPanel() {
       setSelected(new Set());
       setNote("");
       await queryClient.invalidateQueries({ queryKey: SIGNUPS_QUERY_KEY });
-      await queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+      await queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_QUERY_KEY });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Prolongation impossible");
+      toast.error(queryErrorMessage(error, "Prolongation impossible"));
     },
   });
 
@@ -440,7 +442,7 @@ export function AdminSignupsPanel() {
           label="comptes inscrits"
           offset={offset}
           limit={PAGE_SIZE}
-          total={data.filteredCount}
+          total={data.total}
           shown={accounts.length}
           busy={query.isFetching}
           onOffsetChange={setOffset}
@@ -488,10 +490,10 @@ function SignupRow({
             .join(" · ") || "—"}
         </span>
       </th>
-      <td className="px-2 py-3 tabular-nums">{formatDateTime(account.createdAt)}</td>
+      <td className="px-2 py-3 tabular-nums">{formatShortDateTime(account.createdAt)}</td>
       <td className="px-2 py-3">{formatAccountSeniority(account.createdAt)}</td>
       <td className="px-2 py-3 tabular-nums">
-        {account.lastSignInAt ? formatDateTime(account.lastSignInAt) : "Jamais"}
+        {account.lastSignInAt ? formatShortDateTime(account.lastSignInAt) : "Jamais"}
       </td>
       <td className="px-2 py-3">
         <AccessPill access={account.access} />
@@ -517,32 +519,24 @@ function UsageCell({ value }: { value: number | undefined }) {
 function AccessPill({ access }: { access: AdminSignupAccess }) {
   const tone =
     access === "decouverte"
-      ? "border-brand-navy/15 bg-brand-navy/[0.04] text-brand-navy/75"
+      ? "neutral"
       : access === "trial" || access === "trial_extended"
-        ? "border-warning/25 bg-warning-tint text-warning"
-        : "border-success/25 bg-success-tint text-success";
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-0.5 text-xs ${tone}`}>
-      {ADMIN_SIGNUP_ACCESS_LABELS[access]}
-    </span>
-  );
+        ? "warning"
+        : "success";
+  return <AdminPill tone={tone}>{ADMIN_SIGNUP_ACCESS_LABELS[access]}</AdminPill>;
 }
 
 function accessDetail(account: AdminSignupAccount): string {
   if (account.access === "premium") return "Accès complet sans fin";
   if (account.access !== "decouverte") {
     return account.accessEndsAt
-      ? `jusqu’au ${formatDate(account.accessEndsAt)}`
+      ? `jusqu’au ${formatShortDate(account.accessEndsAt)}`
       : "sans date de fin";
   }
   if (!account.emailConfirmedAt) return "Essai à la confirmation de l’email";
   if (account.trialEndsAt && Date.parse(account.trialEndsAt) <= Date.now()) {
-    return `Essai terminé le ${formatDate(account.trialEndsAt)}`;
+    return `Essai terminé le ${formatShortDate(account.trialEndsAt)}`;
   }
   if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value));
 }

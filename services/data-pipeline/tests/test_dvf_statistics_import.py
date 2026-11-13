@@ -124,14 +124,11 @@ def test_import_statistics_commits_each_batch(tmp_path, monkeypatch) -> None:
         "load_settings",
         lambda: {"supabase_db_url": "postgresql://example"},
     )
-    monkeypatch.setattr(
-        dvf_statistics_import,
-        "_postgres_connect",
-        lambda db_url: connection,
-    )
     monkeypatch.setattr(dvf_statistics_import, "_upsert_statistics", lambda conn, rows: len(rows))
 
-    summary = import_dvf_statistics(DvfStatisticsImportOptions(path=path, batch_size=1))
+    summary = import_dvf_statistics(
+        DvfStatisticsImportOptions(path=path, batch_size=1), connect=lambda db_url: connection
+    )
 
     assert summary.upserted_rows == 1
     assert connection.commits == 1

@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createHash } from "node:crypto";
 import { serverEnv } from "@/lib/env";
+import { NotFoundError } from "@/lib/api-errors";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
@@ -37,6 +38,8 @@ import {
   rentSourceDetail,
 } from "@/lib/rent-source-notice";
 import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
+import { formatDate } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -54,7 +57,7 @@ export type EmailAlertDeliveryConfig = {
   missing: string[];
 };
 
-export type EmailAlertDeliveryOutcome = {
+type EmailAlertDeliveryOutcome = {
   notificationId: string;
   status: "sent" | "failed";
   recipient: string | null;
@@ -185,27 +188,9 @@ type DigestItem = {
   startingPrice: string | null;
 };
 
-const hearingDateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-const priceFormat = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
-
-function formatHearingDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : hearingDateFormat.format(date);
-}
-
+/** Mise à prix omise de l'email quand elle n'est pas communiquée (0 compris). */
 function formatStartingPrice(value: number | null): string | null {
-  return value == null || !Number.isFinite(value) || value <= 0 ? null : priceFormat.format(value);
+  return value == null || !Number.isFinite(value) || value <= 0 ? null : formatPrice(value);
 }
 
 /** « Audience : 12 novembre 2026 · Mise à prix : 95 000 € », or null when neither is known. */
@@ -443,7 +428,7 @@ export async function unsubscribeEmailAlertsByNotificationId({
     .maybeSingle();
 
   if (notificationError) throw notificationError;
-  if (!notification) throw new Error("Lien de désinscription invalide ou expiré.");
+  if (!notification) throw new NotFoundError("Lien de désinscription invalide ou expiré.");
   return revokeEmailAlertConsent({ userId: notification.user_id, now });
 }
 
@@ -467,7 +452,7 @@ async function cancelQueuedEmailNotifications({
     .eq("delivery_status", "queued");
   if (alertId) query = query.eq("alert_id", alertId);
   const { error } = await query;
-  if (error) throw new Error(`Annulation des emails en attente impossible (${reason}).`);
+  if (error) throw new Error(`Cancelling queued alert emails failed (${reason})`, { cause: error });
 }
 
 const PEPITE_REASON = "pépite";
@@ -503,7 +488,7 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
       marketDiscountPct == null
         ? null
         : `Mise à prix inférieure d’environ ${Math.round(marketDiscountPct)}\u00a0% à la référence DVF (indicatif : hors frais, travaux et occupation).`,
-    hearingDate: formatHearingDate(stringValue(sale.saleDate)),
+    hearingDate: formatDate(stringValue(sale.saleDate), null),
     startingPrice: formatStartingPrice(numberValue(sale.startingPriceEur)),
   };
 }
@@ -681,7 +666,7 @@ export function buildAlertDigestMessage({
 }
 
 /** La notification porte la mention « pépite » dans les motifs de sa correspondance. */
-export function mentionsPepite(notification: Pick<NotificationRow, "notification_snapshot">) {
+function mentionsPepite(notification: Pick<NotificationRow, "notification_snapshot">) {
   return arrayOfStrings(
     asRecord(asRecord(notification.notification_snapshot).match).reasons,
   ).includes(PEPITE_REASON);
@@ -694,9 +679,9 @@ export function mentionsPepite(notification: Pick<NotificationRow, "notification
  * illisible retire la mention (on n'affirme rien qu'on n'a pas pu vérifier). Une notification sans mention n'est pas
  * touchée et ne déclenche aucune lecture.
  */
-export async function withCurrentPepiteMentions<
-  T extends Pick<NotificationRow, "notification_snapshot">,
->(notifications: T[]): Promise<T[]> {
+async function withCurrentPepiteMentions<T extends Pick<NotificationRow, "notification_snapshot">>(
+  notifications: T[],
+): Promise<T[]> {
   const mentions = (notification: T) => mentionsPepite(notification);
   if (!notifications.some(mentions)) return notifications;
   let current: ReadonlySet<string>;
@@ -951,6 +936,21 @@ export function resolveReplyTo(env: Pick<NodeJS.ProcessEnv, string> = process.en
   return null;
 }
 
+/**
+ * Réponse d'erreur de Resend : un refus établi (l'email n'est pas parti), à distinguer d'un délai
+ * dépassé. `status` est le statut HTTP de Resend (429 : envoi trop rapide, à reprendre plus tard).
+ * Le message (motif donné par Resend, sinon le statut) est un détail pour l'administrateur.
+ */
+export class ResendRejectedError extends Error {
+  readonly status: number;
+
+  constructor(status: number, detail?: string) {
+    super(detail ?? `Resend a refusé l'envoi (${status}).`);
+    this.name = "ResendRejectedError";
+    this.status = status;
+  }
+}
+
 export async function sendResendEmail({
   apiKey,
   message,
@@ -999,9 +999,7 @@ export async function sendResendEmail({
   });
   const body = await readResendBody(response);
 
-  if (!response.ok) {
-    throw new Error(body.error ?? `Resend a refusé l'envoi (${response.status}).`);
-  }
+  if (!response.ok) throw new ResendRejectedError(response.status, body.error);
 
   return { id: body.id ?? null };
 }
@@ -1124,14 +1122,13 @@ function receptionReasonLine(
   activatedAt?: ReadonlyMap<string, string | null>,
 ): string {
   const label = (group: { alertId: string | null; alertName: string }, joiner: string) => {
-    const date = formatHearingDate(
-      group.alertId ? (activatedAt?.get(group.alertId) ?? null) : null,
-    );
+    const date = formatDate(group.alertId ? (activatedAt?.get(group.alertId) ?? null) : null, null);
     return `« ${group.alertName} »${date ? ` (${joiner} ${date})` : ""}`;
   };
   if (groups.length === 1) {
-    const date = formatHearingDate(
+    const date = formatDate(
       groups[0].alertId ? (activatedAt?.get(groups[0].alertId) ?? null) : null,
+      null,
     );
     return `Vous recevez ce message parce que vous avez activé l’alerte « ${groups[0].alertName} »${date ? ` le ${date}` : ""}.`;
   }

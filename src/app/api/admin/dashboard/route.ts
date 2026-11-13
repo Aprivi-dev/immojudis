@@ -6,8 +6,7 @@ import {
   getAdminDashboardSection,
   type AdminDashboardSection,
 } from "@/lib/admin.server";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { adminErrorResponse } from "@/lib/api-route-errors";
+import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
@@ -20,8 +19,9 @@ const CACHE_CONTROL: Record<AdminDashboardSection | "all", string> = {
   all: "private, max-age=30",
 };
 
-async function handleGET(request: Request) {
-  try {
+export const GET = adminRoute(
+  { scope: "admin.dashboard.read", fallbackMessage: "Tableau de bord indisponible" },
+  async (request) => {
     // `?section=runs|counts` ne calcule que la section demandée ; sans paramètre, toutes.
     const { section } = adminDashboardQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
@@ -36,9 +36,5 @@ async function handleGET(request: Request) {
         vary: "authorization",
       },
     });
-  } catch (error) {
-    return adminErrorResponse(error, { fallbackStatus: 500 });
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
+  },
+);

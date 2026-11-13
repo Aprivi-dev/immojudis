@@ -18,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from src.config import source_budget_seconds
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
     ensure_source_task_deadline,
@@ -236,6 +237,17 @@ def _source_task_sleep(seconds: float, operation: str) -> None:
     ensure_source_task_deadline(operation)
 
 
+def source_budget_deadline(env_name: str) -> float | None:
+    """Échéance, sur l'horloge monotone, du budget de temps qu'un lanceur donne à une source dans ``env_name``
+    (lu par ``config.source_budget_seconds``) ; ``None`` sans budget."""
+    seconds = source_budget_seconds(env_name)
+    return time.monotonic() + seconds if seconds is not None else None
+
+
+def source_budget_expired(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
 def retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float:
     """HTTP delta-seconds and HTTP-date share the same minimum retry deadline."""
     if not value:
@@ -413,7 +425,7 @@ def _looks_like_html_challenge(response: httpx.Response) -> bool:
         body = response.text[:8192].lstrip().casefold()
     except SourceTaskDeadlineExceeded:
         raise
-    except Exception:
+    except Exception:  # an unreadable body is refused like a challenge, never read as an empty policy
         return True
     if re.search(r"<(?:(?:!doctype)\s+)?html\b", body):
         return True

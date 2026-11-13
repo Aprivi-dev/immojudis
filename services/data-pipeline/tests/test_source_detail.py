@@ -48,7 +48,7 @@ def test_source_publication_checks_lease_version_and_atomicity(monkeypatch, scen
 
             writes = []
 
-            def write(sales, settings, *, refresh_last_seen):
+            def write(sales, *, refresh_last_seen):
                 assert refresh_last_seen is False
                 assert storage._PUBLICATION_CONNECTION.get() is db
                 writes.append(sales[0].source_url)
@@ -264,10 +264,10 @@ def test_robots_refusal_prevents_detail_request(monkeypatch):
 def test_changed_detail_invalidates_analysis_and_preserves_catalogue_identity(monkeypatch):
     from datetime import UTC, datetime
 
-    from src import main
+    from src import sale_finalization
     from src.normalize import normalize_sale
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     existing = normalize_sale({'source_name': 'licitor', 'source_url': 'https://www.licitor.com/annonce/1',
                                'sale_date': '2099-01-01', 'starting_price_eur': 10000})
     existing.updated_at = datetime(2026, 9, 12, tzinfo=UTC)
@@ -297,11 +297,11 @@ def test_unchanged_source_preserves_later_documentary_qualification(monkeypatch)
     from copy import deepcopy
     from decimal import Decimal
 
-    from src import main
+    from src import sale_finalization
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     raw = {'source_name':'licitor','source_url':'https://www.licitor.com/annonce/1',
            'raw_text':'Appartement 50 m²','starting_price_eur':10000,'habitable_surface_m2':50,
            'source_detail_status':'complete'}
@@ -327,11 +327,11 @@ def test_unchanged_detail_still_brings_its_fuller_gallery(monkeypatch):
     """Immo-Interactif, 02/11/2026 : la carte n'a qu'une photo, la fiche en a 13 ; la relecture doit les garder."""
     from copy import deepcopy
 
-    from src import main
+    from src import sale_finalization
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     card_photo = 'https://media.immobilier.notaires.fr/inotr/media/1/83061/2092712/b5acb2f_VGA.jpg'
     gallery = [f'https://media.immobilier.notaires.fr/inotr/media/1/83061/2092712/p{n}_QXGA.jpg' for n in range(13)]
     raw = {'source_name': 'notaires', 'source_url': 'https://www.immo-interactif.fr/encheres-en-ligne/x/2092712',
@@ -356,11 +356,11 @@ def test_unchanged_detail_still_brings_its_fuller_gallery(monkeypatch):
 def test_structured_source_change_is_not_mistaken_for_unchanged_text(monkeypatch, change, expected):
     from copy import deepcopy
 
-    from src import main
+    from src import sale_finalization
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     raw = {'source_name':'licitor','source_url':'https://www.licitor.com/annonce/1',
            'raw_text':'Appartement','status':'upcoming','starting_price_eur':10000,'habitable_surface_m2':50}
     first = deepcopy(raw)
@@ -375,10 +375,10 @@ def test_structured_source_change_is_not_mistaken_for_unchanged_text(monkeypatch
 
 
 def test_reused_url_for_different_lot_holds_existing_identity(monkeypatch):
-    from src import main
+    from src import sale_finalization
     from src.normalize import normalize_sale
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     existing = normalize_sale({'source_name': 'licitor', 'source_url': 'https://www.licitor.com/annonce/1',
                                'lot_number': '1', 'starting_price_eur': 10000})
     revised = source_detail.prepare_source_revision(existing, {
@@ -417,12 +417,12 @@ def _registry_existing():
 
 def test_unchanged_detail_refreshes_the_registry(monkeypatch):
     """Détail inchangé : le registre est rafraîchi (les adresses décodées de la relecture sont conservées)."""
-    from src import main, publication_identity
+    from src import publication_identity, sale_finalization
 
     def no_merge(*args, **kwargs):
         raise AssertionError('un détail inchangé ne doit pas passer par la fusion')
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     monkeypatch.setattr(publication_identity, 'merge_revision', no_merge)
     existing = _registry_existing()
     revised = source_detail.prepare_source_revision(existing, _registry_raw())
@@ -432,9 +432,9 @@ def test_unchanged_detail_refreshes_the_registry(monkeypatch):
 
 
 def test_changed_detail_refreshes_the_registry(monkeypatch):
-    from src import main
+    from src import sale_finalization
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     existing = _registry_existing()
     revised = source_detail.prepare_source_revision(existing, _registry_raw(habitable_surface_m2=70))
     assert revised.raw_payload['source_content_changed'] is True
@@ -442,18 +442,18 @@ def test_changed_detail_refreshes_the_registry(monkeypatch):
 
 
 def test_detail_without_address_gives_an_empty_registry_refresh(monkeypatch):
-    from src import main
+    from src import sale_finalization
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     existing = _registry_existing()
     revised = source_detail.prepare_source_revision(existing, _registry_raw(internal_contacts=[]))
     assert revised.internal_contacts == []
 
 
 def test_identity_conflict_does_not_write_the_registry(monkeypatch):
-    from src import main
+    from src import sale_finalization
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     existing = _registry_existing()
     existing.raw_payload['lot_number'] = '1'
     revised = source_detail.prepare_source_revision(existing, _registry_raw(lot_number='2'))

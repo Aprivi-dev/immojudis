@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -25,6 +24,7 @@ from src.sources.licitor import (
     LicitorClient,
     parse_licitor_detail_html,
 )
+from src.text_folding import ascii_alnum_words, to_ascii
 
 LICITOR_HISTORY_ZONE_URLS = tuple(
     url.replace("prochaines-ventes.html", "historique-des-adjudications.html") for url in LICITOR_ZONE_URLS
@@ -797,8 +797,7 @@ def _external_id(value: str) -> str | None:
 
 
 def _fragment(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-") or "unknown"
+    return ascii_alnum_words(to_ascii(value).lower(), "-") or "unknown"
 
 
 def _without_fragment(value: str) -> str:

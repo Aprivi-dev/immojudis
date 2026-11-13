@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   listDirectory: vi.fn(),
   createReferral: vi.fn(),
   createPrivacy: vi.fn(),
-  dvf: vi.fn(),
   environment: vi.fn(),
   featured: vi.fn(),
   boundary: vi.fn(),
@@ -35,12 +34,15 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceIpRateLimit: mocks.enforceIp,
   enforceDailyOperationLimits: mocks.enforceDaily,
 }));
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.entitlement,
-  assertFeatureEntitlementVia: mocks.entitlement,
-  featureIncludedForSale: async () => true,
-  getSharedPropertyReport: mocks.sharedReport,
+  assertFeatureEntitlementVia: async (...args: unknown[]) => ({
+    plan: await mocks.entitlement(...args),
+    door: "plan",
+  }),
+  readSaleThroughDoor: async () => ({ id: "11111111-1111-4111-8111-111111111111" }),
 }));
+vi.mock("@/lib/property-reports", () => ({ getSharedPropertyReport: mocks.sharedReport }));
 vi.mock("@/lib/sale-analysis-sets", () => ({
   getSharedSaleComparison: mocks.sharedComparison,
 }));
@@ -63,10 +65,6 @@ vi.mock("@/lib/privacy-requests", () => ({
   createPrivacyRequest: mocks.createPrivacy,
   listPrivacyRequests: vi.fn(),
   privacyRequestInputSchema: { parse: (value: unknown) => value },
-}));
-vi.mock("@/lib/dvf-comparables", () => ({
-  dvfComparablesQuerySchema: { parse: (value: unknown) => value },
-  getDvfComparables: mocks.dvf,
 }));
 vi.mock("@/lib/environmental-context", () => ({
   environmentalContextCacheControl: () => "private, no-store",
@@ -101,7 +99,6 @@ import { POST as marketEstimate } from "./market-estimate/route";
 import { GET as directory } from "./lawyers/directory/route";
 import { POST as referralPost } from "./lawyer-referrals/route";
 import { POST as privacyPost } from "./privacy/requests/route";
-import { GET as dvfGet } from "./dvf-comparables/route";
 import { POST as environmentPost } from "./environment-context/route";
 import { GET as featuredGet } from "./lawyers/featured/route";
 import { GET as boundaryGet } from "./geographic-boundary/route";
@@ -204,13 +201,14 @@ describe("P4-02 rate limits on costly and public routes", () => {
     }
     expect(mocks.listDirectory).not.toHaveBeenCalled();
     expect(mocks.boundary).not.toHaveBeenCalled();
+    // The four calls run in parallel: their order depends on each route's own awaits.
     expect(
-      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]),
+      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]).sort(),
     ).toEqual([
+      ["billing.offer", 60],
+      ["geographic-boundary", 60],
       ["lawyers.directory", 60],
       ["lawyers.featured", 60],
-      ["geographic-boundary", 60],
-      ["billing.offer", 60],
     ]);
   });
 
@@ -294,12 +292,14 @@ describe("P4-02 rate limits on costly and public routes", () => {
       bucketKey: "lawyer-referrals.create",
       limit: 10,
       windowSeconds: 3600,
+      context: expect.objectContaining({ scope: "api.lawyer-referrals.create" }),
     });
     expect(mocks.enforceUser).toHaveBeenCalledWith({
       userId: "user-1",
       bucketKey: "privacy-requests.create",
       limit: 10,
       windowSeconds: 3600,
+      context: expect.objectContaining({ scope: "api.privacy.requests.create" }),
     });
 
     mocks.enforceUser.mockRejectedValue(new RateLimitError(undefined, 600));
@@ -308,25 +308,18 @@ describe("P4-02 rate limits on costly and public routes", () => {
     expect(mocks.createReferral).toHaveBeenCalledTimes(1);
   });
 
-  it("charges dvf-comparables and environment-context to the 30/min compute budget", async () => {
-    mocks.dvf.mockResolvedValue({ analysis: { sampleSize: 1 } });
+  it("charges environment-context to the 30/min compute budget", async () => {
     mocks.environment.mockResolvedValue({});
 
-    await dvfGet(
-      new Request("https://example.test/api/dvf-comparables", {
-        headers: { authorization: "Bearer t" },
-      }),
-    );
     await environmentPost(json({}));
 
-    for (const bucketKey of ["dvf-comparables", "environment-context"]) {
-      expect(mocks.enforceUser).toHaveBeenCalledWith({
-        userId: "user-1",
-        bucketKey,
-        limit: 30,
-        windowSeconds: 60,
-      });
-    }
+    expect(mocks.enforceUser).toHaveBeenCalledWith({
+      userId: "user-1",
+      bucketKey: "environment-context",
+      limit: 30,
+      windowSeconds: 60,
+      context: expect.objectContaining({ scope: "api.environment-context" }),
+    });
   });
 
   it("caps environment-context per day, only for an entitled account, with the daily message", async () => {
@@ -363,7 +356,7 @@ describe("P4-02 rate limits on costly and public routes", () => {
     // Sans droit d'accès : refusé avant le plafond, qui n'est pas consommé.
     mocks.enforceDaily.mockClear();
     mocks.entitlement.mockRejectedValue(
-      new Error("Contexte environnemental réservé à l’offre Analyse."),
+      new ForbiddenError("Contexte environnemental réservé à l’offre Analyse."),
     );
     expect((await environmentPost(json({}))).status).toBe(403);
     expect(mocks.enforceDaily).not.toHaveBeenCalled();

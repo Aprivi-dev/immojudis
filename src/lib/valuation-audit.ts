@@ -2,10 +2,10 @@ import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
 
-export type ValuationAuditStatus = "robust" | "usable" | "fragile" | "missing";
-export type ValuationCheckpointStatus = "ok" | "watch" | "risk" | "missing";
+type ValuationAuditStatus = "robust" | "usable" | "fragile" | "missing";
+type ValuationCheckpointStatus = "ok" | "watch" | "risk" | "missing";
 
-export type ValuationCheckpoint = {
+type ValuationCheckpoint = {
   key: string;
   label: string;
   status: ValuationCheckpointStatus;

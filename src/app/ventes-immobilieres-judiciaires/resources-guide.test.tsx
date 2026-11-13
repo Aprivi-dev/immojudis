@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { formatNumericDate } from "@/lib/format/dates";
 import {
   GUIDE_LAST_UPDATED,
   GUIDE_READING_MINUTES,
   READING_WORDS_PER_MINUTE,
   ResourcesPage,
-  formatGuideDate,
   lexiqueAnchor,
   lexiqueSlug,
 } from "./resources-guide";
@@ -120,7 +120,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       const structured = JSON.parse(script!.textContent ?? "{}") as { dateModified?: string };
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
-      expect(time!.textContent).toBe(formatGuideDate(structured.dateModified!));
+      expect(time!.textContent).toBe(formatNumericDate(structured.dateModified!));
       expect(time!.textContent).toBe("28/10/2026");
     });
 

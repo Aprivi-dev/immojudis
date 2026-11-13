@@ -22,15 +22,15 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: mocks.plan }));
 vi.mock("@/lib/client-api", () => ({
-  fetchAccessPlan: mocks.plan,
   fetchNotificationPreferences: mocks.preferences,
   updateNotificationPreferences: mocks.updatePreferences,
   createWatchedZone: mocks.createZone,
 }));
-vi.mock("@/lib/queries", () => ({ createAlert: mocks.createAlert }));
+vi.mock("@/lib/alert-queries", () => ({ createAlert: mocks.createAlert }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
-vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
+vi.mock("@/hooks/use-billing-offer", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";

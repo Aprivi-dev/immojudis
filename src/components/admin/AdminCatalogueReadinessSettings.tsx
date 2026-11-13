@@ -4,11 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import {
   CATALOGUE_READINESS_QUERY_KEY as QUERY_KEY,
   catalogueReadinessQuery,
 } from "@/components/admin/information-agent-queries";
 import { runAdminCatalogueReadinessActionClient } from "@/lib/client-api";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 
 /**
@@ -25,7 +27,7 @@ export function AdminCatalogueReadinessSettings() {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Décision de maturité enregistrée.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
 
   if (query.isPending) {
@@ -35,9 +37,7 @@ export function AdminCatalogueReadinessSettings() {
     return (
       <section className="rounded-xl border bg-white p-5">
         <p role="alert" className="text-sm text-danger">
-          {query.error instanceof Error
-            ? query.error.message
-            : "Le seuil de maturité est indisponible."}
+          {queryErrorMessage(query.error, "Le seuil de maturité est indisponible.")}
         </p>
         <button className="admin-button-secondary mt-3" onClick={() => void query.refetch()}>
           Réessayer
@@ -110,7 +110,7 @@ export function AdminCatalogueReadinessSettings() {
       </div>
       <p className="mt-3 text-xs text-brand-navy/55">
         Politique {overview.policy.policyVersion} · seuil {overview.policy.premiumReadyMin}/100 ·
-        confiance minimale {Math.round(overview.policy.minimumScoreConfidence * 100)} %
+        confiance minimale {formatShareAsPercent(overview.policy.minimumScoreConfidence)}
       </p>
     </section>
   );

@@ -185,16 +185,11 @@ describe("auction fact claim server contract", () => {
     );
   });
 
-  it("marks a pre-migration read as unavailable without failing the caller", async () => {
-    setup(null, { code: "PGRST205", message: "view missing" });
+  it("throws a failed read instead of reporting a sale without claims", async () => {
+    const failure = { code: "PGRST205", message: "view missing" };
+    setup(null, failure);
 
-    await expect(readSaleFactClaims(saleId)).resolves.toEqual({
-      claims: [],
-      claimsBacked: false,
-    });
-    await expect(readSaleFactSignals(saleId)).resolves.toEqual({
-      signals: [],
-      claimsBacked: false,
-    });
+    await expect(readSaleFactClaims(saleId)).rejects.toBe(failure);
+    await expect(readSaleFactSignals(saleId)).rejects.toBe(failure);
   });
 });

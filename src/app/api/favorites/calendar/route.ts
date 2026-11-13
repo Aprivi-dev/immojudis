@@ -5,7 +5,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   exportFollowedCalendar,
   exportSnapshotDeadlines,
@@ -13,7 +13,8 @@ import {
 } from "@/lib/favorite-calendar";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import type { SaleCalendarFile } from "@/lib/sale-calendar";
+import { siteOrigin } from "@/lib/site-url";
 
 /**
  * « Mon planning » : le fichier `.ics` de toutes les audiences suivies, en un téléchargement.
@@ -33,18 +34,24 @@ import { resolveSiteOrigin } from "@/lib/site-url";
  * l'export d'une seule audience ; la base en garde un par compte, vente et jour, et au plus 50 par
  * compte et par jour.
  */
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "api.favorites.calendar",
+    fallbackMessage: "Export vers l’agenda indisponible.",
+    headers: { "x-robots-tag": "noindex, nofollow" },
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "favorites-calendar",
       ...RATE_LIMIT_POLICIES.compute,
+      context: api,
     });
     const input = favoriteCalendarInputSchema.parse(await request.json());
 
     // Jamais déduite de la requête : le fichier porte des adresses absolues vers les fiches.
-    const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+    const origin = siteOrigin();
     if ("deadlinesSnapshotId" in input) {
       // Échéancier indicatif d'une vente passée remportée : deux dates à confirmer avec l'avocat. Ni
       // mesure « calendar_exported » (réservée aux audiences), ni prix, ni adresse dans le fichier.
@@ -53,16 +60,7 @@ export async function POST(request: Request) {
         snapshotId: input.deadlinesSnapshotId,
         origin,
       });
-      return new NextResponse(file.body, {
-        headers: {
-          "content-type": "text/calendar; charset=utf-8",
-          "content-disposition": `attachment; filename="${file.filename}"`,
-          "cache-control": "private, no-store",
-          "x-robots-tag": "noindex, nofollow",
-          "x-exported-count": "2",
-          "x-skipped-count": "0",
-        },
-      });
+      return calendarFileResponse(file, { exported: "2", skipped: "0" });
     }
     const { file, followed, skipped } = await exportFollowedCalendar({
       auth,
@@ -84,21 +82,23 @@ export async function POST(request: Request) {
       ),
     );
 
-    return new NextResponse(file.body, {
-      headers: {
-        "content-type": "text/calendar; charset=utf-8",
-        "content-disposition": `attachment; filename="${file.filename}"`,
-        "cache-control": "private, no-store",
-        "x-robots-tag": "noindex, nofollow",
-        "x-exported-count": String(file.exportedIds.length),
-        "x-skipped-count": String(skipped),
-      },
+    return calendarFileResponse(file, {
+      exported: String(file.exportedIds.length),
+      skipped: String(skipped),
     });
-  } catch (error) {
-    const response = apiRouteError(error, request, "favorites-calendar", {
-      fallbackMessage: "Export vers l’agenda indisponible.",
-    });
-    response.headers.set("x-robots-tag", "noindex, nofollow");
-    return response;
-  }
+  },
+);
+
+function calendarFileResponse(
+  file: SaleCalendarFile,
+  counts: { exported: string; skipped: string },
+): Response {
+  return new NextResponse(file.body, {
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-disposition": `attachment; filename="${file.filename}"`,
+      "x-exported-count": counts.exported,
+      "x-skipped-count": counts.skipped,
+    },
+  });
 }

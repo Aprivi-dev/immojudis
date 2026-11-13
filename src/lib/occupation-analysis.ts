@@ -1,14 +1,14 @@
 import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
+import { occupancyClass, type OccupancyClass } from "@/lib/occupancy-status";
 import type { AuctionSale } from "@/lib/types";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import { cleanText } from "@/lib/clean-text";
-import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { dedupeEvidence, excerpt, normalizeText } from "@/lib/analysis-text";
+import { cleanText, type TextCandidate } from "@/lib/clean-text";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
-export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
+type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
-export type OccupancyEvidence = {
+type OccupancyEvidence = {
   status: Exclude<OccupancyStatusKind, "conflicting">;
   label: string;
   excerpt: string;
@@ -31,31 +31,86 @@ export type OccupancyAnalysis = {
   limitations: string[];
 };
 
-type TextCandidate = {
-  text: string;
-  source: string;
-};
+const OCCUPANCY_KEY =
+  /occup|occupation|occupancy|bail|locataire|locative|tenant|rented|lease|vacant|libre/i;
 
-const OCCUPANCY_KEY = /occup|occupation|occupancy|bail|locataire|tenant|rented|lease|vacant|libre/i;
+/** Ce que vend la vente : « libre », « vide » ou « vacant » qui le suivent disent son occupation. */
+const PREMISES =
+  "(?:bien|lot|logement|appartement|maison|studio|pavillon|villa|local|locaux|immeuble)s?";
+/**
+ * « libre de » ne dit l'occupation que suivi d'elle (premier motif) : « libre de toute
+ * inscription » ou « libre d'hypothèque » parlent des charges du bien.
+ */
+const NOT_FREE_OF = String.raw`(?!\s+(?:de|du|d)\s)`;
+/** « aucun logement libre », « aucun bail en cours », « pas de loyer perçu » disent le contraire. */
+const NOT_DENIED = String.raw`(?<!\b(?:aucun|pas\s+de|sans)\s+)`;
+/**
+ * « part des logements vacants », « taxe sur les logements vacants » : une statistique de la
+ * commune (lue par `demographic-analysis.ts`), pas l'occupation du bien.
+ */
+const NOT_STATISTIC = String.raw`(?<!\b(?:part|taux|nombre|taxe\s+sur)\s+(?:de\s+|des\s+|les\s+)?)`;
 
+// « libre », « vide » et « vacant » seuls disent aussi un accès, un parking visiteurs, un vide
+// sanitaire ou un terrain vacant : ils ne comptent que dans une phrase d'occupation. Un texte qui
+// n'en a pas reste « À confirmer ».
 const FREE_PATTERNS = [
-  /\blibre(?:\s+de\s+toute\s+occupation)?\b/i,
-  /\bfree\b/i,
+  /\b(?:libre|vide)s?\s+(?:de\s+tout(?:e|s|es)?\s+|d\s+)(?:occupation|occupant|location|bail)/i,
+  new RegExp(
+    String.raw`${NOT_DENIED}${NOT_STATISTIC}\b${PREMISES}\s+` +
+      String.raw`(?:(?:est|sont|sera|seront|actuellement|desormais)\s+){0,2}` +
+      String.raw`(?:libre|vide|vacante?)s?\b${NOT_FREE_OF}`,
+    "i",
+  ),
+  new RegExp(
+    String.raw`\b(?:il|elle)s?\s+(?:est|sont|sera|seront)\s+(?:(?:actuellement|desormais)\s+)?` +
+      String.raw`libres?\b${NOT_FREE_OF}`,
+    "i",
+  ),
+  new RegExp(String.raw`\bvendue?s?\s+libres?\b${NOT_FREE_OF}`, "i"),
+  // Champ de la source nommé d'après l'occupation (« occupation: Libre », « situationLocative:
+  // LIBRE », « occupancy_status: vacant »). « free » ne compte que là : dans un texte, il dit aussi
+  // l'opérateur Free (« fibre Orange, Free, SFR »).
+  /(?:occup|locative)[\w.[\]]*\s*:\s*(?:libres?|free|vacant)\b/i,
   /\bnon\s+occup(?:e|ee|é|ée)\b/i,
   /\binoccup(?:e|ee|é|ée)\b/i,
-  /\bvacant\b/i,
-  /\bvide\b/i,
 ];
 
+/** Sortes de bail qui peuvent suivre « bail » (« bail commercial », « bail d'habitation »). */
+const LEASE_KIND = String.raw`(?:\s+(?:commercial|professionnel|d\s+habitation|mixte|rural|meuble))?`;
+/** Désignation d'un bail : « Bail », « Bail commercial », « Contrat de bail d'habitation ». */
+const LEASE_DESIGNATION = String.raw`(?:contrat\s+de\s+)?bail${LEASE_KIND}`;
+
+// « bail » et « loyer » dans une phrase disent aussi un bail passé ou absent (« bail à construction
+// expiré », « aucun bail annexé ») ou un loyer estimé (« loyer de marché estimé », « loyer
+// potentiel ») : ils ne comptent que dans une phrase de location en cours, ou seuls comme désignation
+// d'un bail (texte, valeur d'un champ, pièce du dossier). Un texte qui n'en a pas reste « À confirmer ».
 const RENTED_PATTERNS = [
   /\blou(?:e|ee|é|ée)\b/i,
   /\blocataire\b/i,
-  /\bbail\b/i,
-  /\bloyer\b/i,
+  // Un texte qui n'est que la désignation d'un bail (« Bail commercial. »).
+  new RegExp(String.raw`^${LEASE_DESIGNATION}\s*\.?$`, "i"),
+  // Champ de la source nommé d'après l'occupation ou le bail, dont la valeur est un bail
+  // (« bail: Bail commercial ») ou un locataire (« occupancy: tenant »). « tenant » ne compte que
+  // là : dans un texte français, il dit « en tenant compte de ».
+  new RegExp(
+    String.raw`(?:occup|locative|bail)[\w.[\]]*\s*:\s*(?:${LEASE_DESIGNATION}|tenant)\b`,
+    "i",
+  ),
+  new RegExp(String.raw`${NOT_DENIED}\bbail${LEASE_KIND}\s+en\s+cours\b`, "i"),
+  /\b(?:suivant|selon|en\s+vertu\s+d\s+un|titulaire\s+d\s+un|donnee?s?\s+a)\s+bail\b/i,
+  // Loyer chiffré : « loyer mensuel de 650 € », « loyer actuel : 520 € », « loyer 500 euros ».
+  /\bloyers?\s+(?:(?:mensuel|annuel|trimestriel|actuel)s?\s+)?(?:de\s+|:\s*)?\d/i,
+  new RegExp(
+    String.raw`${NOT_DENIED}\bloyers?\s+(?:percus?|encaisses?|payes?|regles?|verses?|en\s+cours)\b`,
+    "i",
+  ),
+  /\bmoyennant\s+(?:un\s+)?loyer\b/i,
   /\brented\b/i,
-  /\btenant\b/i,
   /\blease\b/i,
 ];
+
+/** Pièce du dossier qui est un bail : son type (`bail`) ou son libellé (« Bail commercial du… »). */
+const LEASE_DOCUMENT = new RegExp(String.raw`^${LEASE_DESIGNATION}\b`, "i");
 
 const OCCUPIED_PATTERNS = [
   /\boccup(?:e|ee|ant|ante|ants|é|ée)\b/i,
@@ -83,7 +138,10 @@ const EVICTION_PATTERNS = [
 export function buildOccupancyAnalysis(sale: AuctionSale): OccupancyAnalysis {
   const candidates = collectTextCandidates(sale);
   const fieldEvidence = evidenceFromOccupancyStatus(sale.occupancy_status);
-  const textEvidence = collectTextEvidence(candidates);
+  const textEvidence = [
+    ...collectTextEvidence(candidates),
+    ...leaseDocumentEvidence(sale.documents_rich),
+  ];
   const allEvidence = dedupeEvidence([...fieldEvidence, ...textEvidence]);
   // Keep each distinct status visible, including contradictions found after the display cap.
   const seenStatuses = new Set<OccupancyEvidence["status"]>();
@@ -121,9 +179,15 @@ export function buildOccupancyAnalysis(sale: AuctionSale): OccupancyAnalysis {
         : summary({ status, evidence, hasLeaseSignal, hasEvictionSignal }),
     decisionImpact: decisionImpact({ status, hasLeaseSignal, hasEvictionSignal }),
     nextActions: nextActions({ status, hasLeaseSignal, hasEvictionSignal }),
-    limitations: limitations(status),
+    limitations: limitations(status, sources),
   };
 }
+
+const FIELD_STATUS_BY_CLASS: Record<OccupancyClass, OccupancyEvidence["status"]> = {
+  vacant: "free",
+  occupied: "occupied",
+  rented: "rented",
+};
 
 function evidenceFromOccupancyStatus(status: AuctionSale["occupancy_status"]): OccupancyEvidence[] {
   const normalized = normalizeText(status ?? "");
@@ -137,10 +201,12 @@ function evidenceFromOccupancyStatus(status: AuctionSale["occupancy_status"]): O
       },
     ];
   }
-  const detected = detectStatus(normalized);
+  // Le champ est un code de la base (owner_occupied, squatted…) : il se lit par sa classe, comme
+  // l'écart au marché et le plafond ; les motifs de `detectStatus` sont faits pour les textes.
+  const occupancy = occupancyClass(status);
   return [
     {
-      status: detected ?? "to_confirm",
+      status: occupancy ? FIELD_STATUS_BY_CLASS[occupancy] : "to_confirm",
       label: occupancyLabel(status),
       excerpt: occupancyLabel(status),
       source: "Champ occupation",
@@ -163,13 +229,35 @@ function collectTextEvidence(candidates: TextCandidate[]): OccupancyEvidence[] {
   return evidence;
 }
 
+/**
+ * Une pièce dont le type ou le libellé désigne un bail est un indice de location, lu sur la pièce et
+ * non dans son texte : « bail bail Bail », texte de la pièce, n'est pas une phrase.
+ */
+function leaseDocumentEvidence(documents: AuctionSale["documents_rich"]): OccupancyEvidence[] {
+  return (documents ?? [])
+    .filter((document) =>
+      [document.type, document.document_type, document.label].some((value) =>
+        LEASE_DOCUMENT.test(normalizeText(value ?? "")),
+      ),
+    )
+    .map((document) => ({
+      status: "rented",
+      label: statusLabel("rented"),
+      excerpt: excerpt(cleanText(document.label) ?? "Bail"),
+      source: "Pièces du dossier",
+    }));
+}
+
 function detectStatus(value: string): OccupancyEvidence["status"] | null {
   const text = normalizeText(value);
-  if (FREE_PATTERNS.some((pattern) => pattern.test(text))) return "free";
-  if (TO_CONFIRM_PATTERNS.some((pattern) => pattern.test(text))) return "to_confirm";
-  if (RENTED_PATTERNS.some((pattern) => pattern.test(text))) return "rented";
-  if (OCCUPIED_PATTERNS.some((pattern) => pattern.test(text))) return "occupied";
-  return null;
+  const matches = (patterns: RegExp[]) => patterns.some((pattern) => pattern.test(text));
+  if (matches(FREE_PATTERNS)) return "free";
+  // Un doute (« bail non produit », « à confirmer ») retient « Loué », mais pas un occupant déclaré :
+  // « se déclarant occupante ; bail non produit » reste un indice « occupé ».
+  const doubt = matches(TO_CONFIRM_PATTERNS);
+  if (!doubt && matches(RENTED_PATTERNS)) return "rented";
+  if (matches(OCCUPIED_PATTERNS)) return "occupied";
+  return doubt ? "to_confirm" : null;
 }
 
 function resolveStatus(evidence: OccupancyEvidence[]): OccupancyStatusKind {
@@ -245,7 +333,7 @@ function decisionImpact({
   hasEvictionSignal: boolean;
 }): string {
   if (status === "conflicting") {
-    return "Ne pas figer l’enchère plafond avant arbitrage des pièces contradictoires.";
+    return "Ne pas figer l’enchère plafond avant d'avoir levé la contradiction entre les sources (annonce, PV descriptif, cahier des conditions).";
   }
   if (status === "free") {
     return "Hypothèse favorable pour la jouissance et les travaux, sous réserve de confirmation au PV.";
@@ -284,13 +372,23 @@ function nextActions({
   return actions.slice(0, 4);
 }
 
-function limitations(status: OccupancyStatusKind): string[] {
+function limitations(status: OccupancyStatusKind, sources: string[]): string[] {
   const items = [
     "L'analyse repose sur les champs collectés et les extraits disponibles, pas sur une consultation juridique.",
     "Le statut réel doit être confirmé dans les pièces officielles et, si possible, lors de la visite.",
   ];
   if (status === "conflicting" || status === "to_confirm") {
     items.unshift("Le dossier ne permet pas encore de qualifier fermement l'occupation.");
+  }
+  if (sources.length === 1 && sources[0] === "Champ occupation") {
+    items.push(
+      "Le statut provient des données collectées sur la vente ; aucun extrait de pièce ne le confirme dans ce rapport.",
+    );
+  }
+  if (status === "occupied") {
+    items.push(
+      "Le délai de libération dépend du statut de l'occupant et de la procédure d'expulsion applicable ; il est à faire estimer par un conseil.",
+    );
   }
   return items;
 }
@@ -307,45 +405,12 @@ function statusLabel(status: OccupancyStatusKind): string {
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-
-  addCandidate(candidates, sale.description, "Description annonce");
-  addCandidate(candidates, sale.source_description, "Description source");
-  // `risk_notes` is the pipeline's own output (model text read back): not independent evidence.
-
-  // Generated scores and summaries are not independent evidence about the property.
-
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    if (OCCUPANCY_KEY.test(item.path) || hasOccupancyText(item.value)) {
-      addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-    }
-  }
-
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      if (OCCUPANCY_KEY.test(item.path) || hasOccupancyText(item.value)) {
-        addCandidate(
-          candidates,
-          `${item.path}: ${cleanText(item.value)}`,
-          `Données source ${sourceName}`,
-        );
-      }
-    }
-  }
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) => hasOccupancyText(candidate.text));
+  return collectSaleTextCandidates(sale, {
+    descriptions: "each",
+    sourceFields: ({ path, value }) => OCCUPANCY_KEY.test(path) || hasOccupancyText(value),
+    documents: sale.documents_rich,
+    risks: sale.risks,
+  }).filter((candidate) => hasOccupancyText(candidate.text));
 }
 
 function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
@@ -357,13 +422,4 @@ function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
 function hasOccupancyText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function dedupeEvidence(evidence: OccupancyEvidence[]): OccupancyEvidence[] {
-  const byKey = new Map<string, OccupancyEvidence>();
-  for (const item of evidence) {
-    const key = `${item.status}-${normalizeText(item.excerpt)}-${item.source}`;
-    if (!byKey.has(key)) byKey.set(key, item);
-  }
-  return [...byKey.values()];
 }

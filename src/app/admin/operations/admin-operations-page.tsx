@@ -17,7 +17,11 @@ import {
   AdminSectionHeading,
   AdminShell,
 } from "@/components/admin/AdminShell";
-import { formatInteger, formatRelativeTime } from "@/components/admin/admin-format";
+import {
+  formatInteger,
+  formatRelativeTime,
+  queryErrorMessage,
+} from "@/components/admin/admin-format";
 import {
   AdminQueryErrorNotice,
   OverviewMetric,
@@ -25,6 +29,11 @@ import {
   useAdminRefresh,
 } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  DASHBOARD_QUERY_KEY,
+  DASHBOARD_RUNS_QUERY_KEY,
+  PIPELINE_QUERY_KEY,
+} from "@/lib/admin-query-keys";
 import type { AdminRunRequest } from "@/lib/admin-run-actions";
 import { collectionTransportNote } from "@/lib/admin-source-collection";
 import type { AdminDashboardRunsData, AdminScrollSource, AuctionRun } from "@/lib/admin.server";
@@ -49,7 +58,7 @@ export function AdminOperationsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const runsQuery = useQuery({
-    queryKey: ["admin-dashboard", "runs"],
+    queryKey: DASHBOARD_RUNS_QUERY_KEY,
     queryFn: fetchAdminDashboardRuns,
     staleTime: 30_000,
     retry: 1,
@@ -57,24 +66,27 @@ export function AdminOperationsPage() {
       query.state.data?.stats.queuedRuns || query.state.data?.stats.runningRuns ? 10_000 : 60_000,
   });
   const countsQuery = useQuery({
-    queryKey: ["admin-dashboard", "counts"],
+    queryKey: [...DASHBOARD_QUERY_KEY, "counts"],
     queryFn: fetchAdminDashboardCounts,
     staleTime: 60_000,
     retry: 1,
     enabled: activeTab === "documents",
   });
-  const { isRefreshing, refresh } = useAdminRefresh(["admin-dashboard", "admin-pipeline"]);
+  const { isRefreshing, refresh } = useAdminRefresh([
+    DASHBOARD_QUERY_KEY[0],
+    PIPELINE_QUERY_KEY[0],
+  ]);
 
   const startMutation = useMutation({
     mutationFn: (request?: AdminRunRequest) =>
       startAdminScrollRequest({ data: request ?? { source, mode: "collect" } }),
     onSuccess: async (result) => {
       toast.success(result.message);
-      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
+      await queryClient.invalidateQueries({ queryKey: DASHBOARD_RUNS_QUERY_KEY });
     },
     onError: async (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de lancer la collecte");
-      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
+      toast.error(queryErrorMessage(err, "Impossible de lancer la collecte"));
+      await queryClient.invalidateQueries({ queryKey: DASHBOARD_RUNS_QUERY_KEY });
     },
   });
 

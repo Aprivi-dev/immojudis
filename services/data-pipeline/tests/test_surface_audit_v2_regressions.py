@@ -12,8 +12,6 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-import src.asset_normalization  # noqa: F401  (resolves the asset_normalization import cycle)
-import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text, reason_about_surfaces
 from src.multi_unit_surface import listed_unit_surfaces, single_dwelling_lot_surface
 from src.recompute_scoring import _recomputed_sale_from_storage_row

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 
 const { serverFrom, serverRpc } = vi.hoisted(() => ({ serverFrom: vi.fn(), serverRpc: vi.fn() }));
 
@@ -174,7 +175,10 @@ describe("tribunal judicial activity repository", () => {
         { courtCode: "tribunal-inconnu", historyMonths: 36 },
         { asOf: AS_OF },
       ),
-    ).rejects.toThrow("No active exact official court reference");
+    ).rejects.toMatchObject({
+      code: "COURT_UNRESOLVED",
+      cause: expect.stringContaining("No active exact official court reference"),
+    });
     expect(serverFrom).toHaveBeenCalledOnce();
   });
 
@@ -366,7 +370,10 @@ describe("tribunal judicial activity repository", () => {
         { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
         { asOf: AS_OF },
       ),
-    ).rejects.toThrow("no verified exact judicial court assignment");
+    ).rejects.toMatchObject({
+      code: "COURT_UNRESOLVED",
+      cause: expect.stringContaining("no verified exact judicial court assignment"),
+    });
     expect(serverFrom).toHaveBeenCalledTimes(2);
   });
 
@@ -403,12 +410,12 @@ describe("tribunal judicial activity repository", () => {
     const salesQuery = fakeQuery({ data: null, error: { message: "database unavailable" } });
     serverFrom.mockReturnValueOnce(courtQuery.query).mockReturnValueOnce(salesQuery.query);
 
-    await expect(
-      getTribunalJudicialActivity(
-        { courtCode: "justice_tj_1_59", historyMonths: 36 },
-        { asOf: AS_OF },
-      ),
-    ).rejects.toThrow("Judicial sale activity lookup failed");
+    const failure = getTribunalJudicialActivity(
+      { courtCode: "justice_tj_1_59", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+    await expect(failure).rejects.toThrow("Judicial sale activity lookup failed");
+    await expect(failure).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it("charge l’annuaire en deux lectures bornées sans exposer les lignes sources", async () => {

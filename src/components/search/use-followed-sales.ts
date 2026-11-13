@@ -13,7 +13,7 @@ import {
 import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
 import type { FavoriteSale } from "@/lib/favorites";
 import * as queryKeys from "@/lib/query-keys";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import {
   recentSaleChanges,
   type DescribedSaleChange,
@@ -25,7 +25,7 @@ import {
  * que la cloche de l'en-tête (même clé, même taille), donc aucun appel de plus quand elle est déjà
  * faite. Au-delà, la case dit « 12+ ».
  */
-export const FOLLOWED_ALERT_NOTIFICATION_LIMIT = 12;
+const FOLLOWED_ALERT_NOTIFICATION_LIMIT = 12;
 
 /** « Mon dossier » d'une vente suivie, tel que la carte le montre. */
 export type FollowedSaleDossier = {
@@ -34,7 +34,7 @@ export type FollowedSaleDossier = {
   bidCeilingEur: number | null;
 };
 
-export type FollowedAlertNews = {
+type FollowedAlertNews = {
   /** Ventes distinctes des notifications non lues. */
   saleCount: number;
   /** Alertes distinctes dont viennent ces ventes. */

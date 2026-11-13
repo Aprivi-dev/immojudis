@@ -8,7 +8,7 @@ import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { verifiedOptOutLink as verifiedLink } from "@/lib/information-agent-opt-out-link.server";
+import { verifiedSignedEmailLink } from "@/lib/information-agent-signed-link";
 
 /**
  * Accès et effacement des données d'un professionnel contacté par l'agent d'information.
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       bucketKey: "information-agent.rights.get",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const verified = verifiedLink(request);
+    const verified = verifiedSignedEmailLink(request);
     if (!verified) return invalidLink();
     const action = new URL(request.url);
     const target = `${action.pathname}${action.search}`;
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       bucketKey: "information-agent.rights.post",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const verified = verifiedLink(request);
+    const verified = verifiedSignedEmailLink(request);
     if (!verified) return invalidLink();
     const requestType = await readRequestType(request);
     if (!requestType) {

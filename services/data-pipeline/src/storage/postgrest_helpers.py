@@ -1,8 +1,10 @@
-"""Small pure helpers shared by the PostgREST and Postgres writers (filters, batching, headers)."""
+"""Helpers shared by the PostgREST and Postgres writers: filters, batching, headers and the REST retry loop."""
 
 from __future__ import annotations
 
+import logging
 import math
+import time
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -11,6 +13,10 @@ from uuid import UUID
 import httpx
 
 from src.freshness import timestamp_is_fresh
+
+LOGGER = logging.getLogger(__name__)
+POSTGREST_REQUEST_ATTEMPTS = 5
+POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 
 
 def _is_uuid(value: object) -> bool:
@@ -101,13 +107,54 @@ def _postgrest_batches(payload: list[dict[str, object]], batch_size: int) -> lis
     return [payload[index : index + batch_size] for index in range(0, len(payload), batch_size)]
 
 
-def _rest_headers(api_key: str, prefer: str) -> dict[str, str]:
-    return {
+def rest_headers(api_key: str, prefer: str | None = None) -> dict[str, str]:
+    headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Prefer": prefer,
+        "Accept": "application/json",
     }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
+    """Send one PostgREST request, again on a timeout or a transient status; the caller reads ``is_error``.
+
+    Only for a request that is safe to repeat: a read, or a write whose second application changes nothing.
+    """
+    last_timeout: httpx.TimeoutException | None = None
+    request_method = getattr(httpx, method.lower())
+    for attempt in range(1, POSTGREST_REQUEST_ATTEMPTS + 1):
+        try:
+            response = request_method(endpoint, **kwargs)
+            status_code = getattr(response, "status_code", 200 if not response.is_error else 500)
+            if status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_REQUEST_ATTEMPTS:
+                return response
+            LOGGER.warning(
+                "Supabase %s %s returned %s on attempt %s/%s; retrying",
+                table,
+                method,
+                status_code,
+                attempt,
+                POSTGREST_REQUEST_ATTEMPTS,
+            )
+        except httpx.TimeoutException as exc:
+            last_timeout = exc
+            if attempt == POSTGREST_REQUEST_ATTEMPTS:
+                raise
+            LOGGER.warning(
+                "Supabase %s %s timed out on attempt %s/%s; retrying",
+                table,
+                method,
+                attempt,
+                POSTGREST_REQUEST_ATTEMPTS,
+            )
+        time.sleep(2 * attempt)
+    if last_timeout is not None:
+        raise last_timeout
+    raise RuntimeError(f"Supabase {table} {method} failed before request")
 
 
 def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:

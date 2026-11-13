@@ -14,6 +14,16 @@ describe("type de logement du marché local", () => {
     expect(marketPropertyType("appartement")).toBe("Appartement");
   });
 
+  // Lot 10 : le type se lit par sa famille (`propertyFamily`). Les codes de la base donnent le même
+  // résultat qu'avant ; un libellé écrit (« Villa », « Studio ») a désormais son agrégat.
+  it("lit le type par sa famille", () => {
+    expect(marketPropertyType("Villa")).toBe("Maison");
+    expect(marketPropertyType("Maison avec terrain")).toBe("Maison");
+    expect(marketPropertyType("Studio")).toBe("Appartement");
+    expect(marketPropertyType("Appartement avec parking")).toBe("Appartement");
+    expect(marketPropertyType("Immeuble")).toBeNull();
+  });
+
   it("n'a pas d'agrégat pour un autre type", () => {
     for (const type of [
       "land",

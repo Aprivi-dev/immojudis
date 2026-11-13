@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { EMAIL_BRAND_NAME, EMAIL_COLORS, EMAIL_FONT_STACK } from "@/lib/email-brand";
 import {
   deactivateAlertForUser,
@@ -17,8 +17,7 @@ import {
   type UnsubscribeScope,
 } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from "@/lib/uuid";
 
 /** La question et le bouton de la page de confirmation, selon ce que le lien désactive. */
 function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; button: string } {
@@ -86,7 +85,7 @@ export async function GET(request: Request) {
     });
   }
 
-  if (legacyNotificationId && UUID_PATTERN.test(legacyNotificationId)) {
+  if (isUuid(legacyNotificationId)) {
     return htmlResponse(
       "Confirmer la désinscription",
       "Voulez-vous ne plus recevoir d'alertes par email ?",
@@ -172,7 +171,7 @@ export async function POST(request: Request) {
         );
       }
       await revokeEmailAlertConsent({ userId: claims.userId });
-    } else if (legacyNotificationId && UUID_PATTERN.test(legacyNotificationId)) {
+    } else if (isUuid(legacyNotificationId)) {
       await unsubscribeEmailAlertsByNotificationId({ notificationId: legacyNotificationId });
     } else {
       return htmlResponse("Lien incomplet", "Le lien de désinscription est incomplet.", 400);

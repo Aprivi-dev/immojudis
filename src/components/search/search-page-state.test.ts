@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { EXAMPLE_SALE } from "@/lib/example-sale";
+import type { AuctionSale } from "@/lib/types";
 import {
+  buildSearchStatistics,
   draftNumber,
   draftPrice,
   draftToSearch,
@@ -123,5 +126,37 @@ describe("filtres « sous la fourchette » et « sans point à vérifier » dans
     const before = emptySearchDraft();
     expect(historyModeForDraftChange(before, { ...before, belowRange: true })).toBe("push");
     expect(historyModeForDraftChange(before, { ...before, noPointsToVerify: true })).toBe("push");
+  });
+});
+
+describe("résumé de la page affichée", () => {
+  const sale = (overrides: Partial<AuctionSale>): AuctionSale => ({
+    ...EXAMPLE_SALE,
+    starting_price_eur: 100_000,
+    app_surface_m2: 50,
+    sale_date: "2999-01-01T09:00:00.000Z",
+    source_blocks: { dpe_classe: "C" },
+    ...overrides,
+  });
+
+  it("suit la règle des statistiques du serveur : médianes et score moyen arrondis", () => {
+    const statistics = buildSearchStatistics([
+      sale({ id: "a", investment_score: 61, starting_price_eur: 100_001 }),
+      sale({ id: "b", investment_score: 62, starting_price_eur: 100_000 }),
+    ]);
+
+    expect(statistics.medianPrice).toBe(100_001);
+    expect(statistics.averageScore).toBe(62);
+    expect(statistics.dpeKnownCount).toBe(2);
+    expect(statistics.dpeCounts.C).toBe(2);
+  });
+
+  it("reste vide sans vente", () => {
+    expect(buildSearchStatistics([])).toMatchObject({
+      medianPrice: null,
+      medianPricePerM2: null,
+      averageScore: null,
+      dpeKnownCount: 0,
+    });
   });
 });

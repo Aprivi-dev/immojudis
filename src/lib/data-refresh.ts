@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, RateLimitError } from "@/lib/api-errors";
 import { enforceIpRateLimit, enforceUserRateLimit, secondsUntilWindowEnds } from "@/lib/rate-limit";
 import {
   DAILY_LIMIT_MESSAGE,
@@ -20,7 +20,7 @@ type RefreshSaleRow = Pick<AuctionSaleRow, "id" | "title" | "city" | "department
   source_url: string;
 };
 
-export const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
+const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
 export type DataRefreshKind = (typeof DATA_REFRESH_KINDS)[number];
 export const DATA_REFRESH_REQUESTS_PER_MINUTE = 5;
 
@@ -36,12 +36,10 @@ export const dataRefreshListQuerySchema = z.object({
   saleId: z.string().guid().optional(),
   status: z.enum(["queued", "running", "completed", "failed", "cancelled"]).optional(),
 });
-
-export type DataRefreshRequestInput = z.input<typeof dataRefreshRequestSchema>;
 export type DataRefreshRequestPayload = z.output<typeof dataRefreshRequestSchema>;
 export type DataRefreshListQuery = z.output<typeof dataRefreshListQuerySchema>;
 
-export type DataRefreshSaleSnapshot = {
+type DataRefreshSaleSnapshot = {
   id: string;
   sourceUrl: string;
   title: string | null;
@@ -49,7 +47,7 @@ export type DataRefreshSaleSnapshot = {
   department: string | null;
 };
 
-export type DataRefreshRequestItem = {
+type DataRefreshRequestItem = {
   id: string;
   saleId: string;
   sourceUrl: string;
@@ -91,7 +89,7 @@ export async function requestDataRefresh({
 }): Promise<DataRefreshRequestResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "data.onDemandRefresh")) {
-    throw new Error("Le refresh DPE/cadastre à la demande est réservé aux plans Analyse.");
+    throw new ForbiddenError("Le refresh DPE/cadastre à la demande est réservé aux plans Analyse.");
   }
 
   await enforceUserRateLimit({
@@ -132,7 +130,7 @@ export async function requestDataRefresh({
     requests.push(rowToRefreshItem(request, admission.reused));
   }
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "data_refresh.requested",
     subjectType: "sale",
@@ -198,7 +196,7 @@ export function normalizeDataRefreshKindList(value: unknown): DataRefreshKind[] 
   return normalizeRequestedKinds(kinds);
 }
 
-export function normalizeRequestedKinds(kinds: readonly DataRefreshKind[]): DataRefreshKind[] {
+function normalizeRequestedKinds(kinds: readonly DataRefreshKind[]): DataRefreshKind[] {
   const normalized: DataRefreshKind[] = [
     ...new Set<DataRefreshKind>(kinds.length ? kinds : ["full"]),
   ];
@@ -213,7 +211,8 @@ async function loadRefreshSale(auth: SupabaseAuthContext, saleId: string): Promi
     .single();
 
   if (error) throw error;
-  if (!data?.source_url) throw new Error("Vente introuvable ou source non rafraîchissable.");
+  if (!data?.source_url)
+    throw new NotFoundError("Vente introuvable ou source non rafraîchissable.");
   return { ...data, source_url: data.source_url };
 }
 
@@ -247,7 +246,7 @@ async function admitRefreshRequest({
       );
     }
     if (error.message?.includes("DATA_REFRESH_")) {
-      throw new Error("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
+      throw new RateLimitError("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
     }
     throw new Error(error.message || "Admission du rafraîchissement indisponible.");
   }

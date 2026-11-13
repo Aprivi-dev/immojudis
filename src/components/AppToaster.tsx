@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Toaster, toast } from "sonner";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { registerToaster } from "@/lib/toast";
 
 /**
@@ -13,15 +14,7 @@ import { registerToaster } from "@/lib/toast";
  * notifications arrivées pendant le chargement.
  */
 export function AppToaster() {
-  const [compact, setCompact] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 639px)");
-    setCompact(media.matches);
-    const update = () => setCompact(media.matches);
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
+  const compact = useMediaQuery("(max-width: 639px)");
 
   // L'effet du composant parent passe après celui de `Toaster` : l'abonnement de sonner existe
   // quand la file est vidée.

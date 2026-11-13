@@ -1,16 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  isOccupiedOccupancyStatus,
   isPublicMarketGapBand,
-  isVacantOccupancyStatus,
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
   MARKET_GAP_BAND_MAX_RADIUS_OTHER_M,
   MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M,
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
   MARKET_GAP_BAND_STARTING_PRICE_NOTE,
   marketGapBand,
@@ -18,8 +14,12 @@ import {
   marketGapWithheldReason,
   passesPublicMarketGapGate,
 } from "./market-gap-band";
+import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
+} from "@/lib/market-comparable-minimums";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
-import { normalizeOccupationStatus } from "./tribunal-listing-statistics";
+import { occupancyClass } from "./occupancy-status";
 import { evaluateValuationPromotionGate } from "./valuation-admin";
 
 // La règle des trois bandes et ses garde-fous sont dans la première migration ; la porte de qualité,
@@ -146,35 +146,6 @@ describe("band wording", () => {
   });
 });
 
-describe("occupancy", () => {
-  it("agrees with normalizeOccupationStatus on every value", () => {
-    const values = [
-      "occupied",
-      "rented",
-      "owner_occupied",
-      "tenant_occupied",
-      "squatted",
-      "vacant",
-      "unknown",
-      "Libre",
-      "Inoccupé",
-      "Loué",
-      "Occupé par le propriétaire",
-      "  OCCUPIED ",
-      "",
-      "n'importe quoi",
-      null,
-      undefined,
-    ];
-    for (const value of values) {
-      const normalized = normalizeOccupationStatus(value);
-      expect(isOccupiedOccupancyStatus(value), String(value)).toBe(
-        normalized === "occupied" || normalized === "rented",
-      );
-    }
-  });
-});
-
 describe("bien libre seulement", () => {
   const values = [
     "occupied",
@@ -195,17 +166,9 @@ describe("bien libre seulement", () => {
     undefined,
   ];
 
-  it("isVacantOccupancyStatus est d'accord avec normalizeOccupationStatus", () => {
-    for (const value of values) {
-      expect(isVacantOccupancyStatus(value), String(value)).toBe(
-        normalizeOccupationStatus(value) === "vacant",
-      );
-    }
-  });
-
   it("dit pourquoi l'écart ne se dit pas, ou rien pour un bien libre", () => {
     for (const value of values) {
-      const normalized = normalizeOccupationStatus(value);
+      const normalized = occupancyClass(value);
       const expected =
         normalized === "vacant"
           ? null
@@ -233,7 +196,7 @@ describe("bien libre seulement", () => {
 
   it("la migration garde la porte de qualité et le contrat de la précédente", () => {
     for (const fragment of [
-      `when c.interval_method = 'local_jackknife' then ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE}`,
+      `when c.interval_method = 'local_jackknife' then ${MARKET_JACKKNIFE_MIN_COMPARABLES}`,
       `>= ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}`,
       "c.radius_m <= app_private.public_market_gap_band_max_radius_m(c.segment, c.area_kind)",
       "app_private.auction_sale_is_publicly_visible(s.id)",
@@ -358,9 +321,9 @@ describe("migration 20261028200000 (public band)", () => {
 describe("migration 20261029120000 (hardened public gate)", () => {
   it("carries the thresholds of the TypeScript code", () => {
     expect(hardenedCode).toContain(
-      `when c.interval_method = 'local_jackknife' then ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE}`,
+      `when c.interval_method = 'local_jackknife' then ${MARKET_JACKKNIFE_MIN_COMPARABLES}`,
     );
-    expect(hardenedCode).toMatch(new RegExp(`else ${MARKET_GAP_BAND_MIN_COMPARABLES}\\s+end`));
+    expect(hardenedCode).toMatch(new RegExp(`else ${MARKET_NON_JACKKNIFE_MIN_COMPARABLES}\\s+end`));
     expect(hardenedCode).toContain(`>= ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}`);
     expect(hardenedCode).toContain(`<= ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT / 100}0`);
     expect(hardenedCode).toContain(
@@ -388,7 +351,7 @@ describe("migration 20261029120000 (hardened public gate)", () => {
     });
     expect(atPublicBound.passes).toBe(true);
     expect(MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT).toBeLessThan(110);
-    expect(MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE).toBeGreaterThan(4);
+    expect(MARKET_JACKKNIFE_MIN_COMPARABLES).toBeGreaterThan(4);
     expect(MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE).toBeGreaterThan(3);
   });
 
@@ -411,7 +374,7 @@ describe("migration 20261029120000 (hardened public gate)", () => {
     );
   });
 
-  it("mirrors the occupancy rule of normalizeOccupationStatus", () => {
+  it("mirrors the occupancy rule of occupancyClass", () => {
     expect(hardenedCode).toContain("x.v ~ 'inoccup|libre'");
     expect(hardenedCode).toContain("x.v ~ 'lou[eé]'");
     expect(hardenedCode).toContain("x.v ~ 'occup|proprietaire|propriétaire|squat'");

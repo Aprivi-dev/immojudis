@@ -12,13 +12,13 @@ The output is stored on the raw sale payload so that the canonical
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from src.contact_channels import contact_channels
 from src.lot_scope import fact_view
 from src.text_fact_scope import fold_aligned, select_unit_floor, unit_floor_claims
+from src.text_folding import strip_accents
 from src.text_property_facts import (
     NO_DWELLING_FACTS_TYPES,
     OCCUPIED_RE,
@@ -66,12 +66,7 @@ def _clean(value: Any) -> str:
 
 
 def _fold(value: Any) -> str:
-    text = _clean(value).casefold()
-    return "".join(
-        char
-        for char in unicodedata.normalize("NFKD", text)
-        if not unicodedata.combining(char)
-    )
+    return strip_accents(_clean(value).casefold())
 
 
 def _clip(value: Any, limit: int = 280) -> str:
@@ -963,18 +958,6 @@ def extract_source_property_features(
         "source_url": _source_url(raw_sale),
         "extraction_status": "complete" if evidence else "no_explicit_facts",
     }
-
-
-def _value_field(raw_sale: Mapping[str, Any], key: str) -> Any:
-    value = raw_sale.get(key)
-    if value is not None and value != "":
-        return value
-    features = raw_sale.get("source_property_features")
-    if isinstance(features, Mapping):
-        field = features.get(key)
-        if isinstance(field, Mapping):
-            return field.get("value")
-    return None
 
 
 def _without_generated_feature_claims(value: Any) -> Any:

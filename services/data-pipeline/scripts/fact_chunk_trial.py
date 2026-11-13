@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -43,7 +42,7 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from src.config import load_settings  # noqa: E402
+from src.config import load_settings, write_step_summary  # noqa: E402
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access  # noqa: E402
 from src.enrichment.extract_structured import (  # noqa: E402
     FACT_FINGERPRINT_CHUNK_CHARS,
@@ -683,10 +682,7 @@ def parse_args(argv: Sequence[str] | None = None) -> TrialOptions:
 
 def publish(markdown: str) -> None:
     sys.stdout.write(markdown)
-    summary = os.getenv("GITHUB_STEP_SUMMARY")
-    if summary:
-        with open(summary, "a", encoding="utf-8") as handle:
-            handle.write(markdown)
+    write_step_summary(markdown)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

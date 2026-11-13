@@ -118,7 +118,7 @@ const HOMOGLYPH_RE = new RegExp(`[${Object.keys(HOMOGLYPHS).join("")}]`, "gu");
 const SPACED_LETTERS_RE = /(?<!\p{L})(?:\p{L}[ \t]{1,2}){3,}\p{L}(?!\p{L})/gu;
 
 /** Texte tel que le détecteur le lit (mêmes étapes que le worker Python). */
-export function normalizeForPromptInjection(text: string): string {
+function normalizeForPromptInjection(text: string): string {
   return stripInvisibleCharacters(text)
     .normalize("NFKC")
     .replace(HOMOGLYPH_RE, (character) => HOMOGLYPHS[character] ?? character);

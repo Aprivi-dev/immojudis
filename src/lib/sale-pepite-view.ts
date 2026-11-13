@@ -52,7 +52,7 @@ export type PepiteCriterionView = {
 };
 
 /** Les deux tests de la règle, présentés en tête ; tout le reste est une vérification de fiabilité. */
-export const PEPITE_TEST_IDS: readonly PepiteCriterionId[] = ["test_b_chance", "test_c_cost"];
+const PEPITE_TEST_IDS: readonly PepiteCriterionId[] = ["test_b_chance", "test_c_cost"];
 
 /**
  * Le contrôle du risque d'inondation tel que la fiche l'affiche (règle `pepite-v2`, textes dans

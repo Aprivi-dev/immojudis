@@ -1,3 +1,4 @@
+import { ConfigurationError } from "@/lib/api-errors";
 /**
  * Dates d'effet des versions du 26/10/2026 (repère « Pépite »). Elles n'entrent pas dans l'empreinte
  * du texte.
@@ -197,7 +198,7 @@ export function assertPaidOfferLegalReadiness(
 ): void {
   const status = legalConfigurationStatus(env);
   if (!status.ready) {
-    throw new Error(
+    throw new ConfigurationError(
       `Configuration juridique incomplète: ${status.missing.join(", ")}. Le checkout est suspendu.`,
     );
   }

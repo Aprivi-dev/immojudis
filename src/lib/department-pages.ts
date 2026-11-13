@@ -1,10 +1,13 @@
+import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
 import { departmentCode } from "@/lib/department-code";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
+import { formatDate, formatDayLongMonth } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
+import { median } from "@/lib/stats";
 import type { SaleVenueType } from "@/lib/types";
 import { parseTimestamp as timestamp } from "@/lib/timestamp";
-import { formatLongParisDate as longDate } from "@/lib/long-date";
 
 /**
  * Pages « Ventes aux enchères immobilières par département » : une page par département, qui
@@ -77,7 +80,7 @@ export function departmentSearchPath(department: Pick<DepartmentRef, "code">): s
  * (`get_public_tribunal_sales`) lit le statut : `unknown` y marque une vente dont la base ne connaît
  * pas le statut, qui n'est pas présentée comme « à venir » mais « à confirmer ».
  */
-export type DepartmentSaleStatus = "scheduled" | "postponed" | "unknown";
+type DepartmentSaleStatus = "scheduled" | "postponed" | "unknown";
 
 /** Une vente à venir du catalogue public, réduite à ce que la page affiche. */
 export type DepartmentSale = {
@@ -163,14 +166,7 @@ export function topCities(
     .slice(0, limit);
 }
 
-export function medianOf(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-export function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
+function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
   return sale.venueType === "tribunal";
 }
 
@@ -311,24 +307,10 @@ export function normalizeDepartmentCity(city: string | null | undefined): string
 
 // ── Dates d'une liste de ventes (heure de Paris) ─────────────────────────
 
-const PARIS_TIME_ZONE = "Europe/Paris";
-
-const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  timeZone: PARIS_TIME_ZONE,
-});
-
-/** Jour calendaire à Paris, `AAAA-MM-JJ`. */
-function parisDayKey(time: number): string {
-  return PARIS_DAY_FORMAT.format(new Date(time));
-}
-
 /** Vrai quand la date tombe le même jour calendaire que `now`, à Paris. */
 export function isParisToday(value: string | null, now: Date = new Date()): boolean {
   const time = timestamp(value);
-  return time != null && parisDayKey(time) === parisDayKey(now.getTime());
+  return time != null && parisDateKey(new Date(time)) === parisDateKey(now);
 }
 
 /** Pavé de date d'une ligne de liste : « 6 » et « nov. », à Paris. `null` sans date. */
@@ -346,18 +328,9 @@ export function parisDateBlock(value: string | null): { day: string; month: stri
   };
 }
 
-/** Jour de la semaine à Paris (« jeudi »). `null` sans date. */
-export function parisWeekday(value: string | null): string | null {
-  const time = timestamp(value);
-  if (time == null) return null;
-  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: PARIS_TIME_ZONE }).format(
-    new Date(time),
-  );
-}
-
 /** Lundi de la semaine (à Paris) d'un instant, en jour UTC à minuit. */
 function parisWeekStart(time: number): Date {
-  const [year, month, day] = parisDayKey(time).split("-").map(Number);
+  const [year, month, day] = parisDateKey(new Date(time)).split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   const fromMonday = (date.getUTCDay() + 6) % 7;
   date.setUTCDate(date.getUTCDate() - fromMonday);
@@ -383,7 +356,7 @@ export function groupDepartmentSalesByWeek(
 ): DepartmentSaleWeek[] {
   const current = parisWeekStart(now.getTime());
   const currentKey = current.toISOString().slice(0, 10);
-  const currentYear = Number(parisDayKey(now.getTime()).slice(0, 4));
+  const currentYear = Number(parisDateKey(now).slice(0, 4));
   const weeks = new Map<string, DepartmentSaleWeek>();
   const later: DepartmentSale[] = [];
   for (const sale of sales) {
@@ -403,12 +376,9 @@ export function groupDepartmentSalesByWeek(
       const label =
         key === currentKey
           ? "Semaine en cours"
-          : `Semaine du ${new Intl.DateTimeFormat("fr-FR", {
-              day: "numeric",
-              month: "long",
-              ...(start.getUTCFullYear() !== currentYear ? { year: "numeric" } : {}),
-              timeZone: "UTC",
-            }).format(start)}`;
+          : `Semaine du ${
+              start.getUTCFullYear() !== currentYear ? formatDate(key) : formatDayLongMonth(key)
+            }`;
       week = { key, label, sales: [] };
       weeks.set(key, week);
     }
@@ -474,7 +444,7 @@ export function aggregateDepartments(
       upcomingCount: sorted.length,
       nextSaleDate: nextSale?.saleDate ?? null,
       nextSaleVenueType: nextSale?.venueType ?? null,
-      medianStartingPriceEur: medianOf(tribunalPrices),
+      medianStartingPriceEur: median(tribunalPrices),
       medianSampleSize: tribunalPrices.length,
       types: [...typeCounts]
         .map(([label, count]) => ({ label, count }))
@@ -534,10 +504,6 @@ export function departmentPageTitle(department: Pick<DepartmentRef, "name">): st
   return `Enchères immobilières : ${department.name}`;
 }
 
-function priceLabel(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
 /**
  * Description d'une page de département, calculée sur les chiffres de la page. Elle tient en 158
  * caractères : si tout n'y rentre pas, la mention des types de vente, puis la médiane, puis la date
@@ -556,7 +522,7 @@ export function departmentPageDescription(
     return `Aucune vente aux enchères immobilière à venir référencée pour le moment (${place}). Consultez les ventes des autres départements.`;
   }
   const head = `${count} ${count > 1 ? "ventes aux enchères immobilières" : "vente aux enchères immobilière"} à venir (${place})`;
-  const next = longDate(stats.nextSaleDate);
+  const next = formatDate(stats.nextSaleDate, "");
   const nextWord =
     stats.nextSaleVenueType === "tribunal"
       ? "prochaine audience"
@@ -566,7 +532,7 @@ export function departmentPageDescription(
   const nextText = next ? `${nextWord} le ${next}` : null;
   const median =
     stats.medianStartingPriceEur != null
-      ? `mise à prix médiane au tribunal ${priceLabel(stats.medianStartingPriceEur)}`
+      ? `mise à prix médiane au tribunal ${formatPrice(stats.medianStartingPriceEur)}`
       : null;
   // Les chiffres passent avant la mention générique des types de vente.
   for (const details of [[nextText, median], [nextText], []]) {

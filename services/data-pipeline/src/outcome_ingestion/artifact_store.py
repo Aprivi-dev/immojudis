@@ -6,6 +6,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from src.sha256_digest import is_lowercase_sha256
+
 try:
     from storage3.utils import StorageException
     from supabase import create_client
@@ -36,7 +38,7 @@ def raw_artifact_object_path(
     content_hash: str,
     mime_type: str,
 ) -> str:
-    if not re.fullmatch(r"[0-9a-f]{64}", content_hash):
+    if not is_lowercase_sha256(content_hash):
         raise ValueError("content_hash must be a lowercase SHA-256 hex digest")
     source_slug = re.sub(r"[^a-z0-9]+", "-", source_name.casefold()).strip("-")
     if not source_slug:

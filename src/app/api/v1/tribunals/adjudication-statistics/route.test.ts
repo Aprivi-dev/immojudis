@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -11,7 +12,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.assertEntitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.assertEntitlement }));
 vi.mock("@/lib/adjudication-price-statistics-repository", () => ({
   getAdjudicationPriceStatisticsDirectory: mocks.getDirectory,
 }));
@@ -40,7 +41,9 @@ describe("GET /api/v1/tribunals/adjudication-statistics", () => {
   });
 
   it("refuse les visiteurs avant de lire les prix", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
     const response = await request();
     expect(response.status).toBe(401);
     expect(mocks.getDirectory).not.toHaveBeenCalled();
@@ -48,7 +51,7 @@ describe("GET /api/v1/tribunals/adjudication-statistics", () => {
 
   it("refuse le plan Découverte avant de lire les prix", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques d’adjudication réservées à l’offre Analyse."),
+      new ForbiddenError("Statistiques d’adjudication réservées à l’offre Analyse."),
     );
     const response = await request();
     expect(response.status).toBe(403);

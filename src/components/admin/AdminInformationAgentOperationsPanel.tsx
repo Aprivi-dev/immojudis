@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   attestAdminInformationAgentRoundtripClient,
@@ -32,7 +33,7 @@ export function AdminInformationAgentOperationsPanel() {
       queryClient.setQueryData(QUERY_KEY, view);
       toast.success("Vérification de l’aller-retour enregistrée.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
   const view = query.data;
 

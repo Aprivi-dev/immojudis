@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTribunalListingStatistics,
-  hasVisitDate,
   TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE,
   TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE,
   tribunalListingStatisticsPeriod,
   tribunalListingStatisticsQuerySchema,
   wilsonInterval,
 } from "@/lib/tribunal-listing-statistics";
+import { hasVisitDate } from "@/lib/tribunal-statistics-dates";
 
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 const COURT = {

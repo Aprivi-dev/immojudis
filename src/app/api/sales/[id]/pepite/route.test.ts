@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -22,7 +23,9 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.enforceUser,
   enforceIpRateLimit: mocks.enforceIp,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlementVia: mocks.assertEntitlement }));
+vi.mock("@/lib/entitlements.server", () => ({
+  assertFeatureEntitlementVia: mocks.assertEntitlement,
+}));
 vi.mock("@/lib/supabase-public.server", () => ({ createPublicSupabaseClient: () => ({}) }));
 vi.mock("@/lib/sale-pepite.server", () => ({
   isPublishedPepite: mocks.isPublished,
@@ -140,7 +143,7 @@ describe("GET /api/sales/[id]/pepite", () => {
     });
 
     it("reste ouvert avec un jeton invalide : le niveau « criteria » ne lit pas le compte", async () => {
-      mocks.auth.mockRejectedValue(new Error("Unauthorized: invalid token"));
+      mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: invalid token"));
       const response = await call("", "jeton-invalide");
       expect(response.status).toBe(200);
       expect((await response.json()).access).toBe("criteria");
@@ -194,7 +197,7 @@ describe("GET /api/sales/[id]/pepite", () => {
     });
 
     it("répond 401 avec un jeton invalide", async () => {
-      mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+      mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
       const response = await call("?view=detail", "mauvais");
       expect(response.status).toBe(401);
       expect(mocks.readStored).not.toHaveBeenCalled();
@@ -202,7 +205,9 @@ describe("GET /api/sales/[id]/pepite", () => {
 
     it("répond 403 à un compte Découverte qui n'a pas débloqué la vente, sans le moindre montant", async () => {
       mocks.assertEntitlement.mockRejectedValue(
-        new Error("Le détail de la pépite est réservé à l’offre Analyse ou à une vente débloquée."),
+        new ForbiddenError(
+          "Le détail de la pépite est réservé à l’offre Analyse ou à une vente débloquée.",
+        ),
       );
       const response = await call("?view=detail", "token");
       expect(response.status).toBe(403);

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 
@@ -139,7 +140,7 @@ describe("export des données d'un professionnel", () => {
         auth: { userId: "u", isAdmin: false } as unknown as SupabaseAuthContext,
         requestId: REQUEST_ID,
       }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
     await expect(
       exportProfessionalPrivacyData({ auth: admin, requestId: REQUEST_ID }),
     ).resolves.toMatchObject({ email: "maitre@cabinet.example" });

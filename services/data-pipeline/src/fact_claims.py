@@ -11,19 +11,20 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from datetime import datetime
 from uuid import UUID, uuid5
 
 from src.base_reads import SNAPSHOT_RELAYED_FIELDS_KEY, SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
+from src.sha256_digest import is_sha256
+from src.text_folding import ascii_alnum_words, strip_accents
 
 # The identity already includes source_url and evidence_locator.  Corrected
 # document claims receive a new UUID without duplicating unchanged v2 claims.
 # v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (``SOURCE_SNAPSHOT_KEY`` :
 # ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée,
-# ``src.main._preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
+# ``src.known_enrichment.preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
 # collecte avait seulement relue en base ; un lecteur de la table peut les écarter par leur version.
 FACT_CLAIMS_VERSION = "auction_fact_claims_v3"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"
@@ -439,7 +440,7 @@ def _document_source_url(sale: AuctionSale, extraction: dict[str, object]) -> st
         return None
     document_hash = _extraction_document_hash(extraction)
     if document_hash:
-        if not _is_sha256(document_hash):
+        if not is_sha256(document_hash):
             return None
         expected_hashes = {
             expected
@@ -494,14 +495,9 @@ def _document_hash(document: dict[str, object] | None) -> str | None:
         return None
     for key in ("sha256", "document_sha256", "document_hash"):
         value = clean_text(document.get(key))
-        if value and _is_sha256(value):
+        if value and is_sha256(value):
             return value.casefold()
     return None
-
-
-def _is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
 
 
 def _surface_evidence_matches_field(field: str, evidence: str) -> bool:
@@ -626,8 +622,7 @@ def _deduplicate_candidates(candidates: list[dict[str, object]]) -> list[dict[st
 
 def _normalize_key(value: object) -> str:
     text = "" if value is None else str(value)
-    text = "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return ascii_alnum_words(strip_accents(text).lower(), "_")
 
 
 def _quote(value: object) -> str | None:

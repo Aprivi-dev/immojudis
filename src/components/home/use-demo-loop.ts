@@ -1,20 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FocusEvent } from "react";
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  if (typeof window === "undefined" || !window.matchMedia) return () => {};
-  const query = window.matchMedia(REDUCED_MOTION);
-  query.addEventListener?.("change", onChange);
-  return () => query.removeEventListener?.("change", onChange);
-}
-
-function reducedMotionNow(): boolean {
-  return typeof window !== "undefined" && Boolean(window.matchMedia?.(REDUCED_MOTION).matches);
-}
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
 /**
  * Démonstration qui défile seule, sans jamais gêner la lecture (WCAG 2.2.2, RGAA 13.8) :
@@ -36,7 +24,7 @@ export function useDemoLoop({
   stepMs: number;
   active?: boolean;
 }) {
-  const reduced = useSyncExternalStore(subscribeReducedMotion, reducedMotionNow, () => false);
+  const reduced = usePrefersReducedMotion();
   const [step, setStep] = useState(0);
   const [paused, setPaused] = useState(false);
   const [stopped, setStopped] = useState(false);

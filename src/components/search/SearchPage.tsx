@@ -9,15 +9,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
-import { exportSalesCsv, fetchAccessPlan } from "@/lib/client-api";
+import { exportSalesCsv } from "@/lib/client-api";
+import { downloadBlob } from "@/lib/download-blob";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
-import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -36,7 +39,6 @@ import {
   type ResultsView,
 } from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   catalogPlaceholder,
@@ -48,10 +50,12 @@ import {
   mergeSalesSearch,
   salesSearchSignature,
   salesSearchToUrlRecord,
+  stableUrlRecord,
   type SalesSearchParams,
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
-import { parisToday, upcomingWeekScope } from "@/lib/search/sales-week";
+import { parisDateKey } from "@/lib/paris-time";
+import { upcomingWeekScope } from "@/lib/search/sales-week";
 import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
 import {
   fetchPepiteFloodExposedIds,
@@ -98,14 +102,11 @@ import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import type { FollowedCardData } from "./FollowedSalesSummary";
 import {
   SearchDraft,
-  downloadBlob,
   draftToSearch,
   emptySearchDraft,
   historyModeForDraftChange,
   searchToDraft,
-  stableUrlRecord,
   type HistoryMode,
-  useMediaQuery,
   useResultsView,
 } from "./search-page-state";
 import { trackProductEvent } from "@/lib/product-events";
@@ -392,12 +393,7 @@ export function SearchPage({
     data: entitlementsData,
     isLoading: entitlementsLoading,
     isPending: entitlementsPending,
-  } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 5 * 60_000,
-  });
+  } = useAccessPlanQuery(user?.id);
   const hasAnalysisAccess = entitlementsData?.plan.hasAnalysisAccess === true;
   const isDiscovery = Boolean(user) && !hasAnalysisAccess;
   // Le tri par score d'investissement n'existe que dans l'offre Analyse.
@@ -488,8 +484,8 @@ export function SearchPage({
 
   // « dont M cette semaine » (titre) : la même recherche bornée aux sept prochains jours, comptée à
   // part (voir `upcomingWeekScope`). Le jour vient du serveur pour l'hydratation, puis du navigateur.
-  const [today, setToday] = useState(() => serverToday ?? parisToday());
-  useEffect(() => setToday(parisToday()), []);
+  const [today, setToday] = useState(() => serverToday ?? parisDateKey(new Date()));
+  useEffect(() => setToday(parisDateKey(new Date())), []);
   const week = useMemo(() => upcomingWeekScope(search, today), [search, today]);
   const weekSignature = week.kind === "count" ? salesSearchSignature(week.search) : "";
   const { data: connectedWeekCount } = useQuery({
@@ -985,23 +981,14 @@ export function SearchPage({
     },
   };
 
-  const { createAlertFromSearch, saving: savingAlert } = useCreateAlert({
+  const {
+    createAlertFromSearch,
+    explainReservedFeature,
+    saving: savingAlert,
+  } = useCreateAlert({
     returnTo: currentHref,
     center,
   });
-
-  /**
-   * A feature reserved to Analyse: send the person to the offers page only when the
-   * subscription can really be bought, otherwise explain instead of leading to a dead end.
-   */
-  async function explainReservedFeature(reservedMessage: string) {
-    if (await isAnalysisOfferOpen()) {
-      toast.message(reservedMessage);
-      router.push(OFFERS_PATH);
-      return;
-    }
-    toast.message(`${reservedMessage} L'abonnement Analyse n'est pas encore ouvert.`);
-  }
 
   async function saveSearch(options?: SaveSearchOptions) {
     const result = await createAlertFromSearch(search, options);

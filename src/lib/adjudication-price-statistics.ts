@@ -16,13 +16,9 @@ const label = () => z.string().check(z.minLength(1));
 export const ADJUDICATION_PRICE_STATISTICS_WARNING =
   "Source tierce non officielle : prix publiés par Licitor, non vérifiés auprès du greffe et non présentés comme définitifs. Agrégats descriptifs uniquement, sans valeur prédictive ni estimation du bien.";
 
-export const adjudicationPriceStatisticsReliabilitySchema = z.enum([
-  "limited",
-  "descriptive",
-  "extended",
-]);
+const adjudicationPriceStatisticsReliabilitySchema = z.enum(["limited", "descriptive", "extended"]);
 
-export const adjudicationPriceStatisticsScopeSchema = z
+const adjudicationPriceStatisticsScopeSchema = z
   .strictObject({
     scopeType: z.enum(["national", "tribunal"]),
     label: label(),

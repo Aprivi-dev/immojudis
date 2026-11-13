@@ -1,13 +1,8 @@
-import { positiveNumberFromEnv, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { serverEnv } from "@/lib/env";
 import { runSalePepitesBatch } from "@/lib/sale-pepites-batch";
 
 export const maxDuration = 300;
-
-/**
- * Filet quotidien de `vercel.json`. Le passage horaire vient de Supabase `pg_cron` (à :35) : le filet ne
- * fait rien si la tâche a réussi dans les deux dernières heures, et ne sert que si ce chemin est en panne.
- */
-const CATCH_UP_SCHEDULE = "42 5 * * *";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (règle `pepite-v1.2`, ou `pepite-v2.1` interrupteur ouvert, voir
@@ -22,8 +17,8 @@ export async function GET(request: Request) {
     "sale-pepites",
     () =>
       runSalePepitesBatch({
-        limit: positiveNumberFromEnv("SALE_PEPITES_BATCH_LIMIT") ?? 300,
+        limit: serverEnv().batchLimits.salePepites,
       }),
-    { retryDelaysMs: [], catchUpSchedule: CATCH_UP_SCHEDULE, catchUpSuccessWindowHours: 2 },
+    { retryDelaysMs: [] },
   );
 }

@@ -137,7 +137,10 @@ describe("createBillingPortalSession", () => {
         origin: "https://immojudis.test",
         intent: "cancel",
       }),
-    ).rejects.toThrow("Aucun abonnement Analyse à résilier");
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Aucun abonnement Analyse à résilier"),
+    });
     expect(mocks.portalCreate).not.toHaveBeenCalled();
   });
 
@@ -146,7 +149,10 @@ describe("createBillingPortalSession", () => {
 
     await expect(
       createBillingPortalSession({ auth: authContext(), intent: "cancel" }),
-    ).rejects.toThrow("Aucun compte Stripe");
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Aucun compte Stripe"),
+    });
     expect(mocks.portalCreate).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAdminInformationAgentDraft } from "@/lib/information-agent";
+import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
 import { DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE } from "@/lib/information-agent-email-template";
 import type { AuctionSale } from "@/lib/types";
 

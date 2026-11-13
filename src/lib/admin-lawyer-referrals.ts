@@ -1,11 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { escapeHtml } from "@/lib/guards";
+import { asRecord, escapeHtml, numberValue, trimmedStringValue } from "@/lib/guards";
 import {
   emailButton,
   emailEyebrow,
@@ -15,7 +16,11 @@ import {
   emailParagraph,
 } from "@/lib/email-layout";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
-import { formatWholeEuros as formatPrice } from "@/lib/format-euros";
+import { PublicApiError } from "@/lib/api-errors";
+import { contactMethodLabel } from "@/lib/lawyer-contact-method";
+import type { AdminPageQuery } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
+import { formatPrice } from "@/lib/format/numbers";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
@@ -35,7 +40,7 @@ type AssignableReferencedLawyer = Pick<
   | "paid_placement_ends_at"
 >;
 
-export type AdminLawyerReferralEmailDelivery = {
+type AdminLawyerReferralEmailDelivery = {
   status: "sent" | "skipped" | "failed";
   provider: "resend";
   recipient: string | null;
@@ -126,31 +131,26 @@ export type AdminLawyerReferralSummary = {
   updatedAt: string;
 };
 
-export type AdminLawyerReferralListResponse = {
+export type AdminLawyerReferralListResponse = AdminPageMeta & {
   requests: AdminLawyerReferralSummary[];
   lawyers: AdminLawyerReferralLawyerOption[];
-  totalCount: number;
   openCount: number;
   truncated: boolean;
-  offset: number;
-  limit: number;
-  hasMore: boolean;
 };
 
 export type AdminLawyerReferralUpdateResponse = {
   request: AdminLawyerReferralSummary;
 };
 
+/** Une page des demandes ; `offset` et `limit` sont validés par `adminPageQuerySchema` (route). */
 export async function listAdminLawyerReferralRequests(
   authToken: string,
-  { offset = 0, limit = 50 }: { offset?: number; limit?: number } = {},
+  { offset = 0, limit = ADMIN_PAGE_SIZE }: Partial<AdminPageQuery> = {},
 ): Promise<AdminLawyerReferralListResponse> {
   await assertAdminAuth(authToken);
-  const safeOffset = Math.max(0, Math.floor(offset));
-  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
 
   const [
-    { data: requestRows, error: requestError, count: totalCount },
+    { data: requestRows, error: requestError, count },
     { count: openCount, error: openCountError },
     lawyerOptions,
   ] = await Promise.all([
@@ -158,7 +158,7 @@ export async function listAdminLawyerReferralRequests(
       .from("lawyer_referral_requests")
       .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
-      .range(safeOffset, safeOffset + safeLimit - 1),
+      .range(offset, offset + limit - 1),
     supabaseAdmin
       .from("lawyer_referral_requests")
       .select("id", { count: "exact", head: true })
@@ -177,17 +177,15 @@ export async function listAdminLawyerReferralRequests(
     ...lawyerOptions.map((lawyer) => lawyer.id),
   ]);
 
+  const total = count ?? requestRows?.length ?? 0;
   return {
     requests: (requestRows ?? []).map((request) =>
       referralRequestToSummary(request, lawyerById.get(request.requested_lawyer_id ?? "") ?? null),
     ),
     lawyers: lawyerOptions,
-    totalCount: totalCount ?? requestRows?.length ?? 0,
     openCount: openCount ?? 0,
-    truncated: (totalCount ?? requestRows?.length ?? 0) > (requestRows?.length ?? 0),
-    offset: safeOffset,
-    limit: safeLimit,
-    hasMore: safeOffset + (requestRows?.length ?? 0) < (totalCount ?? 0),
+    truncated: total > (requestRows?.length ?? 0),
+    ...adminPageMeta({ offset, limit, total }),
   };
 }
 
@@ -293,7 +291,7 @@ export function adminLawyerReferralUpdatePayload({
     responded_at:
       input.status === "responded" && !existing.responded_at ? timestamp : existing.responded_at,
     metadata: asJson({
-      ...jsonObject(existing.metadata),
+      ...asRecord(existing.metadata),
       last_admin_update: {
         updated_by: updatedBy,
         updated_at: timestamp,
@@ -361,7 +359,7 @@ export function isReferencedLawyerPlacementActive(
 
 async function assertAssignableReferencedLawyer(lawyerId: string | null): Promise<void> {
   if (!lawyerId) {
-    throw new Error("Un avocat référencé éligible doit être assigné avant l'envoi.");
+    throw new PublicApiError("Un avocat référencé éligible doit être assigné avant l'envoi.", 422);
   }
 
   const { data, error } = await supabaseAdmin
@@ -373,8 +371,9 @@ async function assertAssignableReferencedLawyer(lawyerId: string | null): Promis
     .maybeSingle();
   if (error) throw error;
   if (!data || !isReferencedLawyerPlacementActive(data)) {
-    throw new Error(
+    throw new PublicApiError(
       "Cet avocat n'est pas éligible : fiche active, adjudications acceptées et placement payant en cours requis.",
+      409,
     );
   }
 }
@@ -427,7 +426,7 @@ export function shouldDispatchReferencedLawyerEmail({
   if (reassigned || !existing.sent_at) return true;
 
   const previousDelivery = normalizeEmailDelivery(
-    jsonObject(existing.metadata).lawyer_email_delivery,
+    asRecord(existing.metadata).lawyer_email_delivery,
   );
   return previousDelivery?.status === "failed" || previousDelivery?.status === "skipped";
 }
@@ -529,7 +528,7 @@ async function recordLawyerReferralEmailDelivery(
     .from("lawyer_referral_requests")
     .update({
       metadata: asJson({
-        ...jsonObject(request.metadata),
+        ...asRecord(request.metadata),
         lawyer_email_delivery: delivery,
       }),
     })
@@ -578,12 +577,12 @@ export function buildLawyerReferralEmailMessage({
   from: string;
   appUrl: string;
 }): ResendEmailMessage {
-  const sale = jsonObject(request.sale_snapshot);
-  const title = cleanSaleTitle(stringOrNull(sale.title)) ?? "Vente judiciaire";
-  const city = stringOrNull(sale.city);
-  const department = stringOrNull(sale.department);
+  const sale = asRecord(request.sale_snapshot);
+  const title = cleanSaleTitle(trimmedStringValue(sale.title)) ?? "Vente judiciaire";
+  const city = trimmedStringValue(sale.city);
+  const department = trimmedStringValue(sale.department);
   const location = [city, department].filter(Boolean).join(" · ");
-  const saleId = stringOrNull(sale.id);
+  const saleId = trimmedStringValue(sale.id);
   const saleUrl = saleId ? `${appUrl}/sales/${encodeURIComponent(saleId)}` : appUrl;
   const subject = `Demande Immojudis - ${title}${city ? ` à ${city}` : ""}`;
   const textLines = [
@@ -632,7 +631,7 @@ function referralRequestToSummary(
   request: LawyerReferralRow,
   requestedLawyer: AdminLawyerReferralLawyerOption | null,
 ): AdminLawyerReferralSummary {
-  const sale = jsonObject(request.sale_snapshot);
+  const sale = asRecord(request.sale_snapshot);
   return {
     id: request.id,
     // Colonnes text protégées par des contraintes CHECK : les types générés les exposent en string.
@@ -644,14 +643,14 @@ function referralRequestToSummary(
     requesterId: request.requester_id,
     saleId: request.sale_id,
     sale: {
-      id: stringOrNull(sale.id),
-      title: cleanSaleTitle(stringOrNull(sale.title)),
-      city: stringOrNull(sale.city),
-      department: stringOrNull(sale.department),
-      tribunal: stringOrNull(sale.tribunal),
-      tribunalCode: stringOrNull(sale.tribunal_code),
-      saleDate: stringOrNull(sale.sale_date),
-      startingPriceEur: numberOrNull(sale.starting_price_eur),
+      id: trimmedStringValue(sale.id),
+      title: cleanSaleTitle(trimmedStringValue(sale.title)),
+      city: trimmedStringValue(sale.city),
+      department: trimmedStringValue(sale.department),
+      tribunal: trimmedStringValue(sale.tribunal),
+      tribunalCode: trimmedStringValue(sale.tribunal_code),
+      saleDate: trimmedStringValue(sale.sale_date),
+      startingPriceEur: numberValue(sale.starting_price_eur),
     },
     preferredContactMethod:
       request.preferred_contact_method as AdminLawyerReferralSummary["preferredContactMethod"],
@@ -660,7 +659,7 @@ function referralRequestToSummary(
     financingReady: request.financing_ready,
     maxBidEur: request.max_bid_eur,
     adminNotes: request.admin_notes,
-    emailDelivery: normalizeEmailDelivery(jsonObject(request.metadata).lawyer_email_delivery),
+    emailDelivery: normalizeEmailDelivery(asRecord(request.metadata).lawyer_email_delivery),
     assignedAt: request.assigned_at,
     sentAt: request.sent_at,
     respondedAt: request.responded_at,
@@ -736,23 +735,17 @@ function buildLawyerReferralEmailHtml({
 }
 
 function normalizeEmailDelivery(value: unknown): AdminLawyerReferralEmailDelivery | null {
-  const delivery = jsonObject(value);
-  const status = stringOrNull(delivery.status);
+  const delivery = asRecord(value);
+  const status = trimmedStringValue(delivery.status);
   if (status !== "sent" && status !== "skipped" && status !== "failed") return null;
   return {
     status,
     provider: "resend",
-    recipient: stringOrNull(delivery.recipient),
-    messageId: stringOrNull(delivery.messageId),
-    detail: stringOrNull(delivery.detail),
-    attemptedAt: stringOrNull(delivery.attemptedAt) ?? "",
+    recipient: trimmedStringValue(delivery.recipient),
+    messageId: trimmedStringValue(delivery.messageId),
+    detail: trimmedStringValue(delivery.detail),
+    attemptedAt: trimmedStringValue(delivery.attemptedAt) ?? "",
   };
-}
-
-function contactMethodLabel(value: LawyerReferralRow["preferred_contact_method"]): string {
-  if (value === "phone") return "Téléphone";
-  if (value === "either") return "Email ou téléphone";
-  return "Email";
 }
 
 function referencedLawyerToOption(
@@ -769,20 +762,4 @@ function referencedLawyerToOption(
     city: lawyer.city,
     department: lawyer.department,
   };
-}
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function jsonObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

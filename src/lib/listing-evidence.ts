@@ -1,6 +1,7 @@
 import { occupancyLabel } from "./format";
 import type { AuctionSale } from "./types";
 import { saleSession, saleWindow } from "./sale-window";
+import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
 
 export function listingValuationConflict(sale: AuctionSale): string | null {
   const blocks =
@@ -43,7 +44,7 @@ const normalize = (value: string) =>
 export function publishedDay(value: string): string | null {
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim())) {
     const instant = new Date(value);
-    return Number.isFinite(instant.getTime()) ? parisDay(instant) : null;
+    return Number.isFinite(instant.getTime()) ? parisDateKey(instant) : null;
   }
   const text = normalize(value);
   const iso = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
@@ -76,18 +77,9 @@ export function listingContactEmail(sale: AuctionSale): string {
   return source.length === 1 ? source[0] : "";
 }
 
-function parisDay(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}
-
 export function visitHasPassed(value: string, now = new Date()): boolean {
   const day = publishedDay(value);
-  return day != null && day < parisDay(now);
+  return day != null && day < parisDateKey(now);
 }
 
 export function sourceVisitExcerpt(sale: AuctionSale): string | null {
@@ -120,6 +112,16 @@ export function listingOccupation(sale: AuctionSale): string {
   return occupancyLabel(rawStatus);
 }
 
+/**
+ * Statuts d'une vente encore ouverte : à venir, reportée ou au statut encore inconnu. Ce sont ceux que
+ * montre le catalogue (`statusValuesForSearch`) ; les alertes, la qualité du catalogue et les
+ * comparaisons de ventes lisent les mêmes.
+ */
+export const OPEN_SALE_STATUSES: readonly string[] = ["upcoming", "unknown", "postponed"];
+
+/** Statuts d'une vente interrompue (annulée ou reportée) : la date connue n'est plus celle de la vente. */
+export const INTERRUPTED_SALE_STATUSES: readonly string[] = ["cancelled", "canceled", "postponed"];
+
 export function listingSaleStatus(sale: AuctionSale, now = new Date()): string | null {
   if (["cancelled", "canceled"].includes(sale.status ?? "")) return "Vente annulée";
   if (sale.status === "postponed") return "Vente reportée · nouvelle date à confirmer";
@@ -149,11 +151,11 @@ export function saleTimeConflict(sale: AuctionSale): string | null {
   const sourceTime = `${match[2].padStart(2, "0")}:${match[3] ?? "00"}`;
   if (Number(match[2]) > 23 || Number(match[3] ?? "0") > 59 || !sourceDay) return null;
   const actualTime = new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "Europe/Paris",
+    timeZone: PARIS_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-  return sourceDay !== parisDay(date) || sourceTime !== actualTime
+  return sourceDay !== parisDateKey(date) || sourceTime !== actualTime
     ? `Date ou horaire contradictoire : le texte source indique le ${match[1]} à ${sourceTime}. Faites confirmer le rendez-vous par l’organisateur.`
     : null;
 }

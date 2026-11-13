@@ -119,7 +119,7 @@ def evaluate(
         "status": status,
         "evaluation_mode": config.mode,
         "threshold_version": thresholds.version,
-        "computed_at": _utc_iso(computed_at),
+        "computed_at": utc_iso(computed_at),
         "backtest": {
             "strategy": "explicit_date_split_grouped_by_lot",
             "prediction_timing": "pre_hearing_only",
@@ -189,7 +189,7 @@ def temporal_lot_split(
         "train_end": config.train_end.isoformat(),
         "validation_end": config.validation_end.isoformat(),
         "test_end": config.test_end.isoformat(),
-        "label_cutoff_at": _utc_iso(config.label_cutoff_at),
+        "label_cutoff_at": utc_iso(config.label_cutoff_at),
         "maturity_days": config.maturity_days,
         "training_records": len(result["training"]),
         "validation_records": len(result["validation"]),
@@ -206,7 +206,7 @@ def invalid_input_report(*, mode: str, threshold_version: str, computed_at: date
         "status": "invalid_input",
         "evaluation_mode": mode if mode in ("historical_replay", "prospective_shadow") else "invalid",
         "threshold_version": threshold_version,
-        "computed_at": _utc_iso(computed_at),
+        "computed_at": utc_iso(computed_at),
         "gates": [{"code": "input_contract", "result": "invalid"}],
         "privacy": {"aggregate_only": True, "row_level_values_included": False},
         "writes": 0,
@@ -689,5 +689,6 @@ def _require_computed_at(computed_at: datetime, config: EvaluationConfig) -> Non
         raise EvaluationInputError("computed_at cannot predate label cutoff")
 
 
-def _utc_iso(value: datetime) -> str:
+def utc_iso(value: datetime) -> str:
+    """Horodatage des rapports d'évaluation (UTC, suffixe ``Z``) ; le dépôt le recalcule pour contrôler un rapport."""
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

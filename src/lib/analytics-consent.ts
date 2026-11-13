@@ -10,6 +10,8 @@
  * inaccessible, le choix vaut jusqu'à la fermeture de l'onglet.
  */
 
+import { subscribeStoredChoice } from "@/lib/stored-choice-subscription";
+
 export const ANALYTICS_CONSENT_STORAGE_KEY = "immojudis:analytics-consent";
 const ANALYTICS_CONSENT_EVENT = "immojudis:analytics-consent-change";
 export const ANALYTICS_CONSENT_MAX_AGE_MS = 182 * 24 * 60 * 60 * 1000;
@@ -88,14 +90,5 @@ export function clearAnalyticsConsent(): void {
 
 /** Pour `useSyncExternalStore` : change dans cet onglet ou dans un autre. */
 export function subscribeAnalyticsConsent(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => undefined;
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === ANALYTICS_CONSENT_STORAGE_KEY) onChange();
-  };
-  window.addEventListener(ANALYTICS_CONSENT_EVENT, onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(ANALYTICS_CONSENT_EVENT, onChange);
-    window.removeEventListener("storage", onStorage);
-  };
+  return subscribeStoredChoice(ANALYTICS_CONSENT_STORAGE_KEY, ANALYTICS_CONSENT_EVENT, onChange);
 }

@@ -24,10 +24,8 @@ import {
   indexableDepartments,
   isDepartmentPageIndexable,
   isParisToday,
-  medianOf,
   normalizeDepartmentCity,
   parisDateBlock,
-  parisWeekday,
   topCities,
   type DepartmentSaleInput,
 } from "./department-pages";
@@ -419,15 +417,6 @@ describe("communes les plus présentes", () => {
   });
 });
 
-describe("medianOf", () => {
-  it("rend la médiane, ou null sans valeur", () => {
-    expect(medianOf([])).toBeNull();
-    expect(medianOf([5])).toBe(5);
-    expect(medianOf([9, 1, 5])).toBe(5);
-    expect(medianOf([1, 2, 3, 10])).toBe(2.5);
-  });
-});
-
 describe("titres et descriptions", () => {
   it("tient dans 48 caractères de titre pour chaque département", () => {
     for (const department of DEPARTMENTS) {
@@ -446,7 +435,7 @@ describe("titres et descriptions", () => {
     const text = departmentPageDescription(gironde, stats);
     expect(text).toContain("12 ventes aux enchères immobilières à venir (Gironde, 33)");
     expect(text).toContain("prochaine audience le 10 novembre 2026");
-    expect(text).toMatch(/mise à prix médiane au tribunal 85\s000 €/);
+    expect(text).toMatch(/mise à prix médiane au tribunal 85\s000\s€/);
     for (const department of DEPARTMENTS) {
       for (const sample of [
         stats,
@@ -662,7 +651,6 @@ describe("lignes de la liste des ventes", () => {
     expect(isParisToday("2026-11-06T17:00:00Z", NOW)).toBe(true);
     expect(isParisToday("2026-11-06T23:30:00Z", NOW)).toBe(false);
     expect(isParisToday(null, NOW)).toBe(false);
-    expect(parisWeekday("2026-11-06T17:00:00Z")).toBe("vendredi");
   });
 });
 

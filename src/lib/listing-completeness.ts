@@ -8,6 +8,7 @@ import type {
   SaleVerificationStatus,
 } from "./types";
 import { asRecordOrNull } from "@/lib/guards";
+import { propertyFamily } from "@/lib/property-type-family";
 import {
   type CatalogField,
   CATALOGUE,
@@ -36,32 +37,11 @@ import type {
 
 export type {
   CompletenessEvidence,
-  CompletenessReason,
-  CompletenessInference,
-  FieldObservation,
   CompletenessFieldResult,
-  CompletenessCategorySummary,
-  CompletenessGate,
-  CompletenessMissingField,
-  CompletenessKnownField,
-  CompletenessProfileId,
-  CompletenessSourceProfile,
   ListingCompletenessResult,
 } from "@/lib/listing-completeness/types";
 
-export {
-  COMPLETENESS_STATES,
-  LISTING_COMPLETENESS_CATALOGUE,
-  LISTING_COMPLETENESS_FIELD_IDS,
-  LISTING_COMPLETENESS_FIELD_COUNT,
-} from "@/lib/listing-completeness/catalogue";
-export type {
-  CompletenessState,
-  CompletenessImportance,
-  CompletenessCategoryId,
-  CompletenessProcedure,
-  CompletenessClass,
-} from "@/lib/listing-completeness/catalogue";
+export type { CompletenessState, CompletenessClass } from "@/lib/listing-completeness/catalogue";
 
 const MISSING_TEXT_MARKERS = new Set([
   "",
@@ -98,7 +78,7 @@ const STATE_FACTOR: Record<CompletenessState, number> = {
   conflict: CATALOGUE.scoring.state_factors.conflict ?? 0,
 };
 
-export const SHARED_GARDEN_LABEL = "Commun (copropriété)";
+const SHARED_GARDEN_LABEL = "Commun (copropriété)";
 
 function isMeaningfulText(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -398,20 +378,6 @@ function inferredDirect(field: string, value: unknown, method: string): FieldObs
   return makeObservation(field, "inferred", value, {
     inference: { method, input_fields: [field], confidence: 0.6 },
   });
-}
-
-function normalizedPropertyType(value: unknown): string {
-  const key = normalized(value);
-  if (!key) return "unknown";
-  if (/appartement|apartment|studio|duplex|loft|t[1-9]/.test(key)) return "apartment";
-  if (/maison|villa|pavillon/.test(key)) return "house";
-  if (/terrain|parcelle|pre(?:$|[^a-z])|bois|agricole/.test(key)) return "land";
-  if (/parking|garage|box/.test(key)) return "parking";
-  if (/commerce|commercial|bureau|local/.test(key)) return "commercial";
-  if (/immeuble|batiment|building/.test(key)) return "building";
-  if (/mixte|mixed/.test(key)) return "mixed";
-  if (key === "other" || key === "autre") return "other";
-  return "unknown";
 }
 
 function procedureContext(sale: AuctionSale): ProcedureContext {
@@ -1277,7 +1243,7 @@ function buildKnownBySource(fields: CompletenessFieldResult[]): Record<string, s
  * notarial, state or online profile by itself.
  */
 export function getListingCompleteness(sale: AuctionSale): ListingCompletenessResult {
-  const propertyType = normalizedPropertyType(sale.property_type);
+  const propertyType = propertyFamily(sale.property_type);
   const context = procedureContext(sale);
   const profile = selectProfile(sale, context);
   const documents = collectSaleDocuments(sale);
@@ -1399,5 +1365,3 @@ export function getListingCompleteness(sale: AuctionSale): ListingCompletenessRe
     notApplicableReason: "Le non-applicable sort du score ; l’inaccessible reste inconnu.",
   };
 }
-
-export const computeListingCompleteness = getListingCompleteness;

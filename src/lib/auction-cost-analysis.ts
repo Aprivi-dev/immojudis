@@ -2,10 +2,10 @@ import type { AcquisitionCostResult } from "@/lib/profitability";
 import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
 import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
-import { cleanText } from "@/lib/clean-text";
-import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
+import type { AuctionSale } from "@/lib/types";
+import { cleanText, type TextCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -32,11 +32,6 @@ export type AuctionCostAnalysis = {
   summary: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 const COST_KEY =
@@ -262,7 +257,7 @@ function consignationFromSourceText(sale: AuctionSale): AuctionCostSourceAmount 
   }
   const texts = [
     ...sources.map((item) => ({ text: cleanText(item.value), source: item.source })),
-    { text: sale.source_description ?? sale.description, source: "Description source" },
+    ...collectSaleTextCandidates(sale, { descriptions: "one" }),
   ];
   for (const { text, source } of texts) {
     if (!text) continue;
@@ -329,35 +324,13 @@ function flattenSaleSources(
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates;
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
+  // Sans blocs source : `dedicatedFeeSources` les lit à part, champ par champ.
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    documents: sale.documents_rich,
+    risks: sale.risks,
+    riskOptions: { excerptsOnly: true },
+  });
 }
 
 function moneyValue(value: unknown): number | null {

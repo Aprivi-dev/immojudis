@@ -119,3 +119,27 @@ def test_fetch_json_uses_the_api_timeout(monkeypatch) -> None:
 
     assert dvf_download.fetch_json("https://www.data.gouv.fr/api/1/datasets/x/") == {"resources": []}
     assert opener.calls[0][1] == 60
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, "ImmojudisBot/1.0 (+https://immojudis.com/contact)"), ("ImmojudisBot/2.0", "ImmojudisBot/2.0")],
+)
+def test_download_identifies_the_crawler_like_the_collection(monkeypatch, configured, expected) -> None:
+    """Le User-Agent vient de ``src.config.user_agent``, avec le même repli que la collecte."""
+    if configured is None:
+        monkeypatch.delenv("AUCTION_USER_AGENT", raising=False)
+    else:
+        monkeypatch.setenv("AUCTION_USER_AGENT", configured)
+    sent: list[str | None] = []
+
+    class RecordingOpener(FakeOpener):
+        def open(self, request: urllib.request.Request, timeout: float | None = None):
+            sent.append(request.get_header("User-agent"))
+            return super().open(request, timeout)
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: RecordingOpener(FakeResponse(b"{}")))
+
+    dvf_download.fetch_json("https://www.data.gouv.fr/api/1/datasets/statistiques-dvf/")
+
+    assert sent == [expected]

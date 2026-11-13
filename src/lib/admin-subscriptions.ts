@@ -3,11 +3,15 @@ import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
-export { assertAdminAuth };
+import { asRecord, asRecordOrNull } from "@/lib/guards";
+import type { AdminPageQuery } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
+import { NotFoundError } from "@/lib/api-errors";
+import { isUuid } from "@/lib/uuid";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 type UserSubscriptionInsert = Database["public"]["Tables"]["user_subscriptions"]["Insert"];
@@ -76,14 +80,10 @@ export type AdminSubscriptionSummary = {
   updatedAt: string;
 };
 
-export type AdminSubscriptionListResponse = {
+export type AdminSubscriptionListResponse = AdminPageMeta & {
   subscriptions: AdminSubscriptionSummary[];
-  totalCount: number;
   activeCount: number;
   truncated: boolean;
-  offset: number;
-  limit: number;
-  hasMore: boolean;
 };
 
 export type AdminSubscriptionGrantResponse = {
@@ -94,20 +94,19 @@ export type AdminSubscriptionGrantResponse = {
   };
 };
 
+/** Une page des accès ; `offset` et `limit` sont validés par `adminPageQuerySchema` (route). */
 export async function listAdminSubscriptions(
   authToken: string,
-  { offset = 0, limit = 50 }: { offset?: number; limit?: number } = {},
+  { offset = 0, limit = ADMIN_PAGE_SIZE }: Partial<AdminPageQuery> = {},
 ): Promise<AdminSubscriptionListResponse> {
   await assertAdminAuth(authToken);
-  const safeOffset = Math.max(0, Math.floor(offset));
-  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
 
   const [{ data, error, count }, { count: activeCount, error: activeError }] = await Promise.all([
     supabaseAdmin
       .from("user_subscriptions")
       .select("*", { count: "exact" })
       .order("updated_at", { ascending: false })
-      .range(safeOffset, safeOffset + safeLimit - 1),
+      .range(offset, offset + limit - 1),
     supabaseAdmin
       .from("user_subscriptions")
       .select("user_id", { count: "exact", head: true })
@@ -119,17 +118,14 @@ export async function listAdminSubscriptions(
   if (activeError) throw activeError;
 
   const emailByUserId = await getEmailsByUserId((data ?? []).map((row) => row.user_id));
-  const totalCount = count ?? data?.length ?? 0;
+  const total = count ?? data?.length ?? 0;
   return {
     subscriptions: (data ?? []).map((row) =>
       subscriptionToSummary(row, emailByUserId.get(row.user_id) ?? null),
     ),
-    totalCount,
     activeCount: activeCount ?? 0,
-    truncated: totalCount > (data?.length ?? 0),
-    offset: safeOffset,
-    limit: safeLimit,
-    hasMore: safeOffset + (data?.length ?? 0) < totalCount,
+    truncated: total > (data?.length ?? 0),
+    ...adminPageMeta({ offset, limit, total }),
   };
 }
 
@@ -176,11 +172,13 @@ export function withManualGrant(
   metadata: Json | null | undefined,
   grant: Record<string, unknown>,
 ): Record<string, unknown> {
-  const base = jsonObject(metadata);
-  const previous = base.manual_grant;
+  const base = asRecord(metadata);
   const history = Array.isArray(base.manual_grant_history) ? base.manual_grant_history : [];
-  const entries = [...(isRecord(previous) ? [previous] : []), ...history]
-    .filter(isRecord)
+  const entries = [base.manual_grant, ...history]
+    .flatMap((entry) => {
+      const record = asRecordOrNull(entry);
+      return record ? [record] : [];
+    })
     .map(({ note: _note, target_email: _targetEmail, ...entry }) => entry);
   return {
     ...base,
@@ -237,8 +235,7 @@ async function upsertGrant(payload: UserSubscriptionInsert): Promise<UserSubscri
 
 /**
  * Attribution avec motif : la ligne et le motif (`app_private.manual_grant_notes`, jamais lisible par le
- * compte) s'écrivent dans la même transaction (`grant_manual_subscription`). Sans la fonction (migration
- * 20261108190000 pas encore appliquée), l'attribution est refusée : le motif ne retourne jamais dans la ligne.
+ * compte) s'écrivent dans la même transaction (`grant_manual_subscription`) : le motif n'entre jamais dans la ligne.
  */
 async function grantWithNote({
   payload,
@@ -260,21 +257,10 @@ async function grantWithNote({
     p_metadata: payload.metadata ?? {},
     p_note: input.note ?? undefined,
   });
-  if (error) {
-    if (isMissingRpcError(error)) {
-      throw new Error(
-        "Le motif ne peut pas encore être enregistré (migration en attente) : attribution non faite. Réessayez sans motif ou après la migration.",
-      );
-    }
-    throw error;
-  }
+  if (error) throw error;
   const row = await getSubscriptionByUserId(userId);
   if (!row) throw new Error("Abonnement introuvable après l'attribution.");
   return row;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function getSubscriptionByUserId(userId: string): Promise<UserSubscriptionRow | null> {
@@ -292,7 +278,7 @@ async function findAuthUser(target: string): Promise<User> {
   const normalizedTarget = target.trim();
   if (isUuid(normalizedTarget)) {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(normalizedTarget);
-    if (error || !data.user) throw new Error("Utilisateur introuvable.");
+    if (error || !data.user) throw new NotFoundError("Utilisateur introuvable.");
     return data.user;
   }
 
@@ -305,7 +291,7 @@ async function findAuthUser(target: string): Promise<User> {
     if (data.users.length < 1000) break;
   }
 
-  throw new Error("Utilisateur introuvable pour cet email.");
+  throw new NotFoundError("Utilisateur introuvable pour cet email.");
 }
 
 async function getEmailsByUserId(userIds: string[]): Promise<Map<string, string | null>> {
@@ -335,16 +321,4 @@ function subscriptionToSummary(
     createdAt: subscription.created_at,
     updatedAt: subscription.updated_at,
   };
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function jsonObject(value: Json | null | undefined): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

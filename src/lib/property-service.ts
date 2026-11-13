@@ -40,7 +40,7 @@ export async function getPropertyByIdOrSlug(
   };
 }
 
-export function propertyToCard(property: Property): PropertyCard {
+function propertyToCard(property: Property): PropertyCard {
   return {
     id: property.id,
     slug: property.slug,

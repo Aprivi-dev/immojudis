@@ -3,6 +3,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminLawyerReferralRequests,
@@ -14,11 +15,19 @@ import type {
   AdminLawyerReferralUpdateInput,
 } from "@/lib/admin-lawyer-referrals";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { contactMethodLabel } from "@/lib/lawyer-contact-method";
+import {
+  formatPrice,
+  formatShortDate,
+  formatShortDateTime,
+  formatStartingPrice,
+} from "@/lib/format";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
 
-const QUERY_KEY = ["admin-lawyer-referral-requests"] as const;
+export const LAWYER_REFERRAL_REQUESTS_QUERY_KEY = ["admin-lawyer-referral-requests"] as const;
 
 const STATUS_OPTIONS: Array<[ReferralStatus, string]> = [
   ["new", "Nouvelle"],
@@ -33,7 +42,7 @@ export function AdminLawyerReferralRequestsPanel() {
   const queryClient = useQueryClient();
   const [offset, setOffset] = useState(0);
   const requestsQuery = useQuery({
-    queryKey: [...QUERY_KEY, offset],
+    queryKey: [...LAWYER_REFERRAL_REQUESTS_QUERY_KEY, offset],
     queryFn: () => fetchAdminLawyerReferralRequests({ offset }),
     staleTime: 30_000,
   });
@@ -44,17 +53,16 @@ export function AdminLawyerReferralRequestsPanel() {
     requests.filter((request) =>
       ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
     ).length;
-  const totalCount = requestsQuery.data?.totalCount ?? requests.length;
 
   const updateMutation = useMutation({
     mutationFn: (data: AdminLawyerReferralUpdateInput) =>
       updateAdminLawyerReferralRequest({ data }),
     onSuccess: async () => {
       toast.success("Demande avocat mise à jour.");
-      await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: LAWYER_REFERRAL_REQUESTS_QUERY_KEY });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Mise à jour impossible");
+      toast.error(queryErrorMessage(error, "Mise à jour impossible"));
     },
   });
 
@@ -91,16 +99,14 @@ export function AdminLawyerReferralRequestsPanel() {
 
       {requestsQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {requestsQuery.error instanceof Error
-            ? requestsQuery.error.message
-            : "Chargement impossible"}
+          {queryErrorMessage(requestsQuery.error, "Chargement impossible")}
         </div>
       ) : null}
       {requestsQuery.data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
-          . Le compteur des demandes ouvertes couvre toute la file.
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur{" "}
+          {requestsQuery.data.total}. Le compteur des demandes ouvertes couvre toute la file.
         </p>
       ) : null}
 
@@ -125,17 +131,15 @@ export function AdminLawyerReferralRequestsPanel() {
           </div>
         )}
       </div>
-      {requestsQuery.data && totalCount > 0 ? (
+      {requestsQuery.data ? (
         <AdminPagination
-          offset={offset}
-          count={requests.length}
-          totalCount={totalCount}
-          hasMore={requestsQuery.data.hasMore}
+          label="demandes avocat"
+          offset={requestsQuery.data.offset}
+          limit={requestsQuery.data.limit}
+          total={requestsQuery.data.total}
+          shown={requests.length}
           busy={requestsQuery.isFetching}
-          onPrevious={() =>
-            setOffset((current) => Math.max(0, current - requestsQuery.data!.limit))
-          }
-          onNext={() => setOffset((current) => current + requestsQuery.data!.limit)}
+          onOffsetChange={setOffset}
         />
       ) : null}
     </section>
@@ -164,7 +168,7 @@ function LawyerReferralRequestCard({
           <div className="flex flex-wrap items-center gap-2">
             <ReferralStatusPill status={request.status} />
             <span className="text-xs text-muted-foreground">
-              {formatDateTime(request.createdAt)}
+              {formatShortDateTime(request.createdAt)}
             </span>
             <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
               {request.matchingStatus}
@@ -181,9 +185,11 @@ function LawyerReferralRequestCard({
             <span>
               {request.sale.tribunal ?? request.sale.tribunalCode ?? "Tribunal à préciser"}
             </span>
-            <span>{formatPrice(request.sale.startingPriceEur)}</span>
+            <span>{formatStartingPrice(request.sale.startingPriceEur)}</span>
             <span>
-              {request.sale.saleDate ? formatDate(request.sale.saleDate) : "Audience à préciser"}
+              {request.sale.saleDate
+                ? formatShortDate(request.sale.saleDate)
+                : "Audience à préciser"}
             </span>
           </div>
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
@@ -204,9 +210,9 @@ function LawyerReferralRequestCard({
             </p>
           ) : null}
           <div className="mt-3 text-xs text-muted-foreground">
-            Assignée : {request.assignedAt ? formatDateTime(request.assignedAt) : "—"} · Envoyée :{" "}
-            {request.sentAt ? formatDateTime(request.sentAt) : "—"} · Réponse :{" "}
-            {request.respondedAt ? formatDateTime(request.respondedAt) : "—"}
+            Assignée : {request.assignedAt ? formatShortDateTime(request.assignedAt) : "—"} ·
+            Envoyée : {request.sentAt ? formatShortDateTime(request.sentAt) : "—"} · Réponse :{" "}
+            {request.respondedAt ? formatShortDateTime(request.respondedAt) : "—"}
           </div>
           {request.emailDelivery ? (
             <div className="mt-2 text-xs text-muted-foreground">
@@ -292,17 +298,11 @@ function LawyerReferralRequestCard({
 
 function ReferralStatusPill({ status }: { status: ReferralStatus }) {
   const done = status === "responded" || status === "closed";
-  const blocked = status === "cancelled";
-  const tone = done
-    ? "border-emerald-300/20 bg-success-tint text-success"
-    : blocked
-      ? "border-red-300/20 bg-danger-tint text-danger"
-      : "border-amber-300/20 bg-warning-tint text-warning";
-
+  const tone = done ? "success" : status === "cancelled" ? "danger" : "warning";
   return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
+    <AdminPill tone={tone}>
       {STATUS_OPTIONS.find(([option]) => option === status)?.[1] ?? status}
-    </span>
+    </AdminPill>
   );
 }
 
@@ -323,42 +323,10 @@ function lawyerOptionLabel(lawyer: AdminLawyerReferralLawyerOption): string {
     .join(" · ");
 }
 
-function contactMethodLabel(value: AdminLawyerReferralSummary["preferredContactMethod"]): string {
-  if (value === "phone") return "Téléphone";
-  if (value === "either") return "Email ou téléphone";
-  return "Email";
-}
-
 function emailDeliveryLabel(
   status: NonNullable<AdminLawyerReferralSummary["emailDelivery"]>["status"],
 ) {
   if (status === "sent") return "envoyé";
   if (status === "failed") return "échec";
   return "non envoyé";
-}
-
-function formatPrice(value: number | null): string {
-  if (!value) return "Prix à préciser";
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }

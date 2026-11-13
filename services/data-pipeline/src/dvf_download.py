@@ -8,12 +8,13 @@ out of the workflow YAML so it can be unit tested without network access.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from src.config import user_agent
 
 DVF_DOWNLOAD_TIMEOUT_SECONDS = 120
 DVF_API_TIMEOUT_SECONDS = 60
@@ -60,10 +61,7 @@ class _AllowListedRedirectHandler(urllib.request.HTTPRedirectHandler):
 def _open(url: str, *, timeout: float):  # type: ignore[no-untyped-def]
     validate_dvf_resource_url(url)
     opener = urllib.request.build_opener(_AllowListedRedirectHandler())
-    headers = {}
-    user_agent = (os.environ.get("AUCTION_USER_AGENT") or "").strip()
-    if user_agent:
-        headers["User-Agent"] = user_agent
+    headers = {"User-Agent": user_agent()}
     return opener.open(urllib.request.Request(url, headers=headers), timeout=timeout)
 
 

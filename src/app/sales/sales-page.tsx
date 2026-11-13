@@ -4,6 +4,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { SearchPage } from "@/components/search/SearchPage";
 import { searchParamsToRecord } from "@/lib/navigation";
+import { catalogueSearch } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 
 const subscribeNothing = () => () => undefined;
@@ -47,7 +48,8 @@ export function SalesPage({
   const queryString =
     staticQuery !== undefined && !hydrated ? staticQuery : searchParams.toString();
   const search = useMemo(
-    () => validateSalesSearch(searchParamsToRecord(new URLSearchParams(queryString))),
+    () =>
+      catalogueSearch(validateSalesSearch(searchParamsToRecord(new URLSearchParams(queryString)))),
     [queryString],
   );
   return <SearchPage search={search} serverSeeded={serverSeeded} serverToday={today} />;

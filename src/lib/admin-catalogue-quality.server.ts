@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildAdminCatalogueQualityView,
@@ -14,7 +14,6 @@ import {
 } from "@/lib/admin-catalogue-quality";
 import { readAdminCeilingCoverageSales } from "@/lib/admin-pepites";
 
-const CROSS_SOURCE_ALERT_KEY = "catalogue.duplicates.cross_source";
 /** Groupes à trois sources ou plus listés dans le panneau. */
 const THREE_SOURCE_EXAMPLES = 10;
 
@@ -35,41 +34,14 @@ async function readCeilingCoverage(now: Date): Promise<CeilingCoverageView | nul
   }
 }
 
-/** « La fonction n'existe pas » (migration pas encore appliquée) : PostgREST `PGRST202`, PostgreSQL `42883`. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
-/**
- * D12 : doublons entre sources, par public.admin_cross_source_duplicates_summary (20261112100100). Tant que la
- * fonction n'est pas déployée : le détail du dernier passage de l'alerte `catalogue.duplicates.cross_source`
- * (écrit seulement quand l'alerte s'est ouverte), sinon rien.
- */
+/** D12 : doublons entre sources, par public.admin_cross_source_duplicates_summary. */
 async function readCrossSourceDuplicates(): Promise<CrossSourceDuplicatesView | null> {
   try {
     const { data, error } = await supabaseAdmin.rpc("admin_cross_source_duplicates_summary", {
       p_limit: THREE_SOURCE_EXAMPLES,
     });
-    if (!error) {
-      return buildCrossSourceDuplicates(data as unknown as CrossSourceDuplicatesPayload | null, {
-        kind: "function",
-      });
-    }
-    if (!isMissingFunction(error)) throw error;
-    const alert = await supabaseAdmin
-      .from("operational_alerts")
-      .select("last_seen_at,details")
-      .eq("alert_key", CROSS_SOURCE_ALERT_KEY)
-      .order("last_seen_at", { ascending: false })
-      .limit(1);
-    if (alert.error) throw alert.error;
-    const row = alert.data?.[0];
-    return row
-      ? buildCrossSourceDuplicates(row.details as CrossSourceDuplicatesPayload, {
-          kind: "alert",
-          seenAt: row.last_seen_at,
-        })
-      : null;
+    if (error) throw error;
+    return buildCrossSourceDuplicates(data as unknown as CrossSourceDuplicatesPayload | null);
   } catch (error) {
     console.warn(
       JSON.stringify({
@@ -93,8 +65,7 @@ export async function getAdminCatalogueQuality(
   authToken: string,
   now = new Date(),
 ): Promise<AdminCatalogueQualityView> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const [snapshotResult, alertsResult, ceilingCoverage, crossSourceDuplicates] = await Promise.all([
     supabaseAdmin

@@ -12,14 +12,14 @@ import { normalizeLawyerIdentity, resolveCnbDatasetBarKey } from "@/lib/lawyer-b
  * `siren|123456789`. Elle ne contient aucune adresse email.
  */
 
-export const INFORMATION_AGENT_IDENTITY_ROLES = [
+const INFORMATION_AGENT_IDENTITY_ROLES = [
   "lawyer",
   "notary",
   "commissaire_de_justice",
   "manager",
 ] as const;
 
-export type InformationAgentIdentityRole = (typeof INFORMATION_AGENT_IDENTITY_ROLES)[number];
+type InformationAgentIdentityRole = (typeof INFORMATION_AGENT_IDENTITY_ROLES)[number];
 
 export type InformationAgentIdentity = {
   /**

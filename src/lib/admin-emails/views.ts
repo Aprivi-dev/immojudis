@@ -1,4 +1,5 @@
 import type { EmailTemplateSummary } from "@/lib/email-templates/registry";
+import { formatDateTime } from "@/lib/format/dates";
 import type { EmailAddressesReport, WebhookStatus } from "./addresses";
 import type { DnsLookup } from "./dns";
 import type { ResendFailure } from "./resend";
@@ -13,8 +14,8 @@ import type { ResendFailure } from "./resend";
 export type EmailViewTone = "ok" | "bad" | "warn" | "neutral";
 export type EmailViewBadge = { text: string; tone: EmailViewTone };
 /** `bad` : ligne en rouge (valeur manquante, enregistrement non vérifié). */
-export type EmailViewLine = { text: string; mono?: boolean; bad?: boolean };
-export type EmailViewItem = {
+type EmailViewLine = { text: string; mono?: boolean; bad?: boolean };
+type EmailViewItem = {
   title: string;
   /** Nom technique (variable d'environnement, clé de gabarit), en police à chasse fixe. */
   code?: string;
@@ -60,12 +61,6 @@ const DNS_STATES = {
 
 const dnsTone = (lookup: DnsLookup<unknown> | undefined): EmailViewTone =>
   lookup?.status === "present" ? "ok" : lookup?.status === "absent" ? "bad" : "warn";
-
-const checkedAtFormat = new Intl.DateTimeFormat("fr-FR", {
-  dateStyle: "long",
-  timeStyle: "short",
-  timeZone: "Europe/Paris",
-});
 
 export function buildAddressesView(report: EmailAddressesReport): EmailListView {
   const addresses: EmailViewSection = {
@@ -185,7 +180,7 @@ export function buildAddressesView(report: EmailAddressesReport): EmailListView 
   }
 
   return {
-    footnote: `Vérifié le ${checkedAtFormat.format(new Date(report.checkedAt))} (résultat gardé 60 s). La boîte de contact (Google Workspace) n’utilise pas Resend : elle n’apparaît pas ici.`,
+    footnote: `Vérifié le ${formatDateTime(report.checkedAt)} (résultat gardé 60 s). La boîte de contact (Google Workspace) n’utilise pas Resend : elle n’apparaît pas ici.`,
     alerts: report.alerts.map((alert) => alert.message),
     sections: [addresses, secrets, domains, dns, webhooks],
   };

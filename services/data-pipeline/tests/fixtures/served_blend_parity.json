@@ -1,0 +1,192 @@
+{
+  "description": "Served model + comparables blend, shared by services/data-pipeline/tests/test_valuation_served_blend.py and the TypeScript serving code src/lib/hybrid-market-valuation.ts (resolveModelWeight, geometricBlend, applyActiveHybridModel). Expected values are computed by src/valuation_served_blend.py. testMapePct null: no finite test_mape_pct in the training metrics. Regenerate only when the blend itself changes.",
+  "modelWeight": [
+    {
+      "label": "strong comparables, no test MAPE",
+      "qualityScore": 90,
+      "testMapePct": null,
+      "expected": 0.35
+    },
+    {
+      "label": "strong tier lower bound",
+      "qualityScore": 78,
+      "testMapePct": null,
+      "expected": 0.35
+    },
+    {
+      "label": "just below the strong tier",
+      "qualityScore": 77.9,
+      "testMapePct": null,
+      "expected": 0.45
+    },
+    {
+      "label": "fair tier lower bound",
+      "qualityScore": 58,
+      "testMapePct": null,
+      "expected": 0.45
+    },
+    {
+      "label": "just below the fair tier",
+      "qualityScore": 57.9,
+      "testMapePct": null,
+      "expected": 0.6
+    },
+    {
+      "label": "weak comparables",
+      "qualityScore": 10,
+      "testMapePct": null,
+      "expected": 0.6
+    },
+    {
+      "label": "adjustment +0.06",
+      "qualityScore": 90,
+      "testMapePct": 10.0,
+      "expected": 0.41
+    },
+    {
+      "label": "adjustment capped at +0.08",
+      "qualityScore": 10,
+      "testMapePct": 4.0,
+      "expected": 0.6799999999999999
+    },
+    {
+      "label": "weak comparables, MAPE 10",
+      "qualityScore": 10,
+      "testMapePct": 10.0,
+      "expected": 0.6599999999999999
+    },
+    {
+      "label": "pivot MAPE, no adjustment",
+      "qualityScore": 58,
+      "testMapePct": 16.0,
+      "expected": 0.45
+    },
+    {
+      "label": "cap 0.45 from 25 % MAPE",
+      "qualityScore": 10,
+      "testMapePct": 25.0,
+      "expected": 0.45
+    },
+    {
+      "label": "cap 0.45 at 30 % MAPE",
+      "qualityScore": 10,
+      "testMapePct": 30.0,
+      "expected": 0.45
+    },
+    {
+      "label": "cap 0.3 from 35 % MAPE",
+      "qualityScore": 10,
+      "testMapePct": 35.0,
+      "expected": 0.3
+    },
+    {
+      "label": "adjustment floored at -0.12 under the 0.3 cap",
+      "qualityScore": 90,
+      "testMapePct": 40.0,
+      "expected": 0.22999999999999998
+    },
+    {
+      "label": "fair tier, MAPE 40",
+      "qualityScore": 58,
+      "testMapePct": 40.0,
+      "expected": 0.3
+    }
+  ],
+  "blend": [
+    {
+      "label": "comparables only",
+      "modelWeight": 0.0,
+      "comparable": {
+        "p10": 2500.0,
+        "p50": 3000.0,
+        "p90": 3600.0
+      },
+      "model": {
+        "p10": 4000.0,
+        "p50": 5000.0,
+        "p90": 6000.0
+      },
+      "expected": {
+        "p10": 2499.9999999999995,
+        "p50": 2999.9999999999977,
+        "p90": 3599.999999999998
+      }
+    },
+    {
+      "label": "model only",
+      "modelWeight": 1.0,
+      "comparable": {
+        "p10": 2500.0,
+        "p50": 3000.0,
+        "p90": 3600.0
+      },
+      "model": {
+        "p10": 4000.0,
+        "p50": 5000.0,
+        "p90": 6000.0
+      },
+      "expected": {
+        "p10": 3999.9999999999995,
+        "p50": 5000.000000000004,
+        "p90": 5999.999999999995
+      }
+    },
+    {
+      "label": "strong tier weight",
+      "modelWeight": 0.35,
+      "comparable": {
+        "p10": 2500.0,
+        "p50": 3000.0,
+        "p90": 3600.0
+      },
+      "model": {
+        "p10": 2800.0,
+        "p50": 3400.0,
+        "p90": 4100.0
+      },
+      "expected": {
+        "p10": 2601.1555061229437,
+        "p50": 3134.3423918053986,
+        "p90": 3767.6536750527
+      }
+    },
+    {
+      "label": "weak tier weight",
+      "modelWeight": 0.6,
+      "comparable": {
+        "p10": 1800.0,
+        "p50": 2200.0,
+        "p90": 2700.0
+      },
+      "model": {
+        "p10": 2000.0,
+        "p50": 2600.0,
+        "p90": 3300.0
+      },
+      "expected": {
+        "p10": 1917.463031028365,
+        "p50": 2431.941260755027,
+        "p90": 3045.466801164656
+      }
+    },
+    {
+      "label": "inverted model quantiles are clamped around p50",
+      "modelWeight": 0.5,
+      "comparable": {
+        "p10": 3000.0,
+        "p50": 3000.0,
+        "p90": 3000.0
+      },
+      "model": {
+        "p10": 6000.0,
+        "p50": 1000.0,
+        "p90": 500.0
+      },
+      "expected": {
+        "p10": 1732.0508075688763,
+        "p50": 1732.0508075688763,
+        "p90": 1732.0508075688763
+      }
+    }
+  ]
+}

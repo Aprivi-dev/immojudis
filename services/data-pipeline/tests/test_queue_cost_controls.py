@@ -22,8 +22,7 @@ def _queue(monkeypatch):
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda *a, **kw: 1)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda *a: None)
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda *a: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda *a: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda *a, **kw: None)
     monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", lambda *a, **kw: finished.append(kw))
     return sale, jobs, finished
 
@@ -84,8 +83,7 @@ def test_deterministic_cooldown_defers_only_its_sale_and_keeps_batch_progress(mo
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda *_a, **_kw: 1)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda *_a: None)
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda *_a: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda *_a: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda *_a, **_kw: None)
     monkeypatch.setattr(
         queued_runner,
         "defer_budget_jobs",

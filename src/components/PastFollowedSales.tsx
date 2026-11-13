@@ -35,6 +35,7 @@ import {
   type BalanceGroup,
   type CeilingGap,
 } from "@/lib/snapshot-balance";
+import { downloadBlob } from "@/lib/download-blob";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
@@ -480,14 +481,7 @@ function DeadlinesBlock({ snapshot }: { snapshot: FollowedSaleSnapshot }) {
     setPending(true);
     try {
       const file = await downloadSnapshotDeadlines({ snapshotId: snapshot.id });
-      const url = URL.createObjectURL(file.blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.filename;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(file.blob, file.filename);
     } catch (failure) {
       toast.error(userMessage(failure, "L’export de l’échéancier est indisponible."));
     } finally {

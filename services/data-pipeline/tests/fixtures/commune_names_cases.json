@@ -1,0 +1,77 @@
+{
+  "description": "Reference cases of normalize_commune_name (services/data-pipeline/src/reference_data/names.py, read by tests/test_reference_data.py) and of its mirror normalizeCommuneName (src/lib/commune-names.ts): both must produce the stored reference_communes.name_normalized value.",
+  "normalize": [
+    {
+      "input": "Saint-Étienne",
+      "expected": "saint etienne"
+    },
+    {
+      "input": "ST ETIENNE",
+      "expected": "saint etienne"
+    },
+    {
+      "input": "Ste-Foy-lès-Lyon",
+      "expected": "sainte foy les lyon"
+    },
+    {
+      "input": "L'Haÿ-les-Roses",
+      "expected": "l hay les roses"
+    },
+    {
+      "input": "Fontaine-St-Martin",
+      "expected": "fontaine saint martin"
+    },
+    {
+      "input": null,
+      "expected": ""
+    },
+    {
+      "input": "",
+      "expected": ""
+    },
+    {
+      "input": "ST-QUENTIN",
+      "expected": "saint quentin"
+    },
+    {
+      "input": "Ste Marie-aux-Mines",
+      "expected": "sainte marie aux mines"
+    },
+    {
+      "input": "Cœuvres-et-Valsery",
+      "expected": "c uvres et valsery"
+    },
+    {
+      "input": "Æ",
+      "expected": ""
+    },
+    {
+      "input": "Le Mans",
+      "expected": "le mans"
+    },
+    {
+      "input": "Paris 8ème",
+      "expected": "paris 8eme"
+    },
+    {
+      "input": "  Saint   Jean-de-Luz  ",
+      "expected": "saint jean de luz"
+    },
+    {
+      "input": "Saint-Martin-de-Ré",
+      "expected": "saint martin de re"
+    },
+    {
+      "input": "STE",
+      "expected": "ste"
+    },
+    {
+      "input": "Ste-",
+      "expected": "ste"
+    },
+    {
+      "input": "Bastia (2B)",
+      "expected": "bastia 2b"
+    }
+  ]
+}

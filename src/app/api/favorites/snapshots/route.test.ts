@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -41,7 +42,7 @@ describe("/api/favorites/snapshots", () => {
   });
 
   it("exige un compte connecté", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: No token provided"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: No token provided"));
     const response = await GET(new Request("https://immojudis.test/api/favorites/snapshots"));
     expect(response.status).toBe(401);
     expect(mocks.list).not.toHaveBeenCalled();
@@ -91,7 +92,7 @@ describe("PUT /api/favorites/snapshots (bilan après adjudication)", () => {
   });
 
   it("exige un compte connecté", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: No token provided"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: No token provided"));
     const response = await put({ id: SNAPSHOT_ID, personalStatus: "won" });
     expect(response.status).toBe(401);
     expect(mocks.update).not.toHaveBeenCalled();

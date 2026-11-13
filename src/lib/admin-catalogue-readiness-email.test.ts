@@ -135,7 +135,7 @@ describe("file d'enrichissement : file de travail de l'agent d'information", () 
       [toConfirmId, "B"],
     ]);
     expect(overview.items.every((item) => item.informationAgentBlockedReason === null)).toBe(true);
-    expect(overview.queueTotal).toBe(4);
+    expect(overview).toMatchObject({ total: 4, offset: 0, limit: 50, hasMore: false });
     expect(overview.classCounts).toEqual({ A: 2, B: 1, C: 1, D: 3 });
   });
 

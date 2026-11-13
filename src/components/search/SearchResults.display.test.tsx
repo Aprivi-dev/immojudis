@@ -38,12 +38,12 @@ const aixSale = {
   media: [],
 } as unknown as AuctionSale;
 
-function renderCard(onToggleComparison = vi.fn()) {
+function renderCard(onToggleComparison = vi.fn(), sale: AuctionSale = aixSale) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <ListingCard
-        sale={aixSale}
+        sale={sale}
         returnTo="/sales"
         locked={false}
         analysisLocked={false}
@@ -121,5 +121,25 @@ describe("tableau de /sales", () => {
     const row = screen.getAllByRole("rowheader")[0];
     expect(row.textContent).toContain("Aix-en-Provence");
     expect(document.body.textContent).not.toContain("Aix-En-Provence");
+  });
+});
+
+describe("carte de /sales : repère « Annonce bien renseignée »", () => {
+  it("s'affiche sur une annonce du palier haut, avec sa réserve et le lien vers le classement", async () => {
+    renderCard(vi.fn(), { ...aixSale, completeness_tier: 1 });
+    // Pastille chargée à part (`next/dynamic`) : elle arrive après le premier rendu du test.
+    expect(await screen.findByText("Annonce bien renseignée")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "À propos du repère « Annonce bien renseignée »" }),
+    );
+    expect(screen.getByRole("note").textContent).toContain("ni une vérification ni une garantie");
+    expect(screen.getByRole("link", { name: "Comment ça marche ?" }).getAttribute("href")).toBe(
+      "/classement-des-annonces",
+    );
+  });
+
+  it.each([0, null, undefined])("ne s'affiche pas pour un palier %s", (tier) => {
+    renderCard(vi.fn(), { ...aixSale, completeness_tier: tier });
+    expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
   });
 });

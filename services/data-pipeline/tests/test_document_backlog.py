@@ -8,8 +8,8 @@ from decimal import Decimal
 import pytest
 
 from src import document_backlog as backlog
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 
 
 def _sale(url: str, **fields: object) -> AuctionSale:

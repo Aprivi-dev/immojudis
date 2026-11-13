@@ -1,5 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
-import { PublicApiError } from "@/lib/api-errors";
+import { PublicApiError, ServiceUnavailableError } from "@/lib/api-errors";
 import { listPepiteSaleIds } from "@/lib/pepite-sale-ids";
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
 import type { AuctionSale, SortKey } from "@/lib/types";
@@ -135,7 +135,9 @@ function previewSearchError(error: unknown): Error {
       : ({} as { message?: unknown; code?: unknown });
   const detail = typeof message === "string" && message ? message : "erreur inconnue";
   const suffix = typeof code === "string" && code ? ` (code ${code})` : "";
-  return new Error(`Recherche d'aperçu en échec : ${detail}${suffix}`, { cause: error });
+  return new ServiceUnavailableError(`Recherche d'aperçu en échec : ${detail}${suffix}`, {
+    cause: error,
+  });
 }
 
 async function readPreviewRows(
@@ -162,7 +164,7 @@ export const MAX_PEPITE_SCAN_ROWS = 3_000;
 const PEPITE_SCAN_PAGE_SIZE = 100;
 /** Pages lues en parallèle au plus : la base ne reçoit jamais une rafale de quinze appels. */
 export const PEPITE_SCAN_CONCURRENCY = 4;
-export const PEPITE_SCAN_TOO_WIDE_MESSAGE =
+const PEPITE_SCAN_TOO_WIDE_MESSAGE =
   "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.";
 
 /**

@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { normalizeOptOutEmail } from "@/lib/information-agent-opt-out";
+import { normalizeSignedLinkEmail } from "@/lib/information-agent-signed-link";
+import { chunks } from "@/lib/chunks";
 
 /**
  * Accès et effacement pour un professionnel contacté par l'agent d'information, sans compte.
@@ -13,7 +14,7 @@ import { normalizeOptOutEmail } from "@/lib/information-agent-opt-out";
  */
 
 export const PROFESSIONAL_PRIVACY_SOURCE = "information_agent_professional_link";
-export const PROFESSIONAL_REQUEST_TYPES = ["access", "erasure"] as const;
+const PROFESSIONAL_REQUEST_TYPES = ["access", "erasure"] as const;
 export type ProfessionalRequestType = (typeof PROFESSIONAL_REQUEST_TYPES)[number];
 
 const PAGE_SIZE = 1000;
@@ -36,7 +37,7 @@ async function fetchAll<T>(page: (from: number, to: number) => PageResult<T>): P
   const rows: T[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
     const { data, error } = await page(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message || "Lecture impossible.");
+    if (error) throw new Error("Professional data read failed", { cause: error });
     rows.push(...(data ?? []));
     if ((data?.length ?? 0) < PAGE_SIZE) break;
   }
@@ -54,7 +55,7 @@ export async function createProfessionalPrivacyRequest({
   email: string;
   requestType: ProfessionalRequestType;
 }): Promise<{ created: boolean }> {
-  const requesterEmail = normalizeOptOutEmail(email);
+  const requesterEmail = normalizeSignedLinkEmail(email);
   const { count, error: countError } = await supabaseAdmin
     .from("data_subject_requests")
     .select("id", { count: "exact", head: true })
@@ -102,20 +103,18 @@ async function professionalScope(email: string): Promise<Scope> {
     caseIds: cases.map((row) => row.id),
     // `ilike` ne sert qu'à réduire la lecture : l'égalité exacte décide.
     missionIds: missions
-      .filter((row) => normalizeOptOutEmail(row.recipient_email) === email)
+      .filter((row) => normalizeSignedLinkEmail(row.recipient_email) === email)
       .map((row) => row.id),
   };
 }
 
+/** Lectures par paquets de 100 identifiants, l'une après l'autre. */
 async function inChunks<R>(
   values: string[],
   read: (chunk: string[]) => Promise<R[]>,
-  chunkSize = 100,
 ): Promise<R[]> {
   const rows: R[] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    rows.push(...(await read(values.slice(index, index + chunkSize))));
-  }
+  for (const chunk of chunks(values)) rows.push(...(await read(chunk)));
   return rows;
 }
 
@@ -135,18 +134,13 @@ export type ProfessionalDataExport = {
   emailLog: Array<Record<string, unknown>>;
 };
 
-/** « La table n'existe pas » : migration du journal des envois pas encore appliquée, donc rien à lire ni à effacer. */
-function isMissingTable(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST205" || error?.code === "42P01";
-}
-
 /**
  * Copie des données détenues pour une adresse : dossiers, demandes, messages échangés, messages reçus
  * sans dossier ouvert, journal des emails envoyés à cette adresse, pièces déposées (métadonnées, pas le contenu), informations extraites et fiche du registre. N'inclut ni
  * l'identité ni l'adresse des personnes qui ont fait la demande à Immojudis.
  */
 export async function collectProfessionalData(rawEmail: string): Promise<ProfessionalDataExport> {
-  const email = normalizeOptOutEmail(rawEmail);
+  const email = normalizeSignedLinkEmail(rawEmail);
   const { caseIds, missionIds } = await professionalScope(email);
 
   const cases = await inChunks(caseIds, async (chunk) => {
@@ -241,21 +235,14 @@ export async function collectProfessionalData(rawEmail: string): Promise<Profess
   );
 
   // Journal des emails envoyés à cette adresse (`to_address`, minuscules). Sans corps : seules les métadonnées.
-  const emailLog: Array<Record<string, unknown>> = [];
-  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
+  const emailLog = await fetchAll((from, to) =>
+    supabaseAdmin
       .from("email_send_log")
       .select("id,template_key,category,mode,subject,status,bounce_type,created_at,last_event_at")
       .eq("to_address", email)
       .order("id")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      if (isMissingTable(error)) break;
-      throw new Error(error.message || "Lecture impossible.");
-    }
-    emailLog.push(...(data ?? []));
-    if ((data?.length ?? 0) < PAGE_SIZE) break;
-  }
+      .range(from, to),
+  );
 
   return {
     generatedAt: new Date().toISOString(),
@@ -288,7 +275,7 @@ export type ProfessionalErasureReport = {
  * nouveau la solliciter. Idempotent : relancé après un échec partiel, il reprend où il s'est arrêté.
  */
 export async function eraseProfessionalData(rawEmail: string): Promise<ProfessionalErasureReport> {
-  const email = normalizeOptOutEmail(rawEmail);
+  const email = normalizeSignedLinkEmail(rawEmail);
   const { caseIds, missionIds } = await professionalScope(email);
   const deletedRows: Record<string, number> = {};
 
@@ -313,7 +300,7 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     const { error } = await supabaseAdmin
       .from("sale_retention_storage_queue")
       .upsert([...queue.values()], { onConflict: "bucket,object_path", ignoreDuplicates: true });
-    if (error) throw new Error(`Mise en file des fichiers impossible : ${error.message}`);
+    if (error) throw new Error("Professional erasure: storage queue failed", { cause: error });
   }
 
   // 2. Opposition d'abord : si la suite échoue, l'adresse n'est de toute façon plus contactée. La
@@ -341,7 +328,9 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     },
     { onConflict: "scope_sale_id,normalized_email" },
   );
-  if (oppositionError) throw new Error(`Opposition impossible : ${oppositionError.message}`);
+  if (oppositionError) {
+    throw new Error("Professional erasure: opposition failed", { cause: oppositionError });
+  }
 
   // 2 bis. Fiches du registre propres à une vente (`scope_sale_id` non nul) : elles portent le nom
   //        et la source du professionnel pour cette vente. Seule la ligne globale opposée reste.
@@ -351,11 +340,7 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     .eq("normalized_email", email)
     .not("scope_sale_id", "is", null)
     .neq("opposition_status", "opposed");
-  if (contactsError) {
-    throw new Error(
-      `Effacement impossible dans information_agent_contacts : ${contactsError.message}`,
-    );
-  }
+  if (contactsError) throw erasureFailure("information_agent_contacts", contactsError);
   deletedRows["information_agent_contacts"] = contactCount ?? 0;
 
   // 2 ter. Messages reçus de cette adresse sans dossier ouvert (aucune pièce n'y est conservée).
@@ -363,11 +348,7 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     .from("information_agent_unrouted_messages")
     .delete({ count: "exact" })
     .eq("sender_email", email);
-  if (unroutedError) {
-    throw new Error(
-      `Effacement impossible dans information_agent_unrouted_messages : ${unroutedError.message}`,
-    );
-  }
+  if (unroutedError) throw erasureFailure("information_agent_unrouted_messages", unroutedError);
   deletedRows["information_agent_unrouted_messages"] = unroutedCount ?? 0;
 
   // 2 quater. Journal des emails envoyés à cette adresse (aucun corps n'y est conservé).
@@ -375,10 +356,8 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     .from("email_send_log")
     .delete({ count: "exact" })
     .eq("to_address", email);
-  if (emailLogError && !isMissingTable(emailLogError)) {
-    throw new Error(`Effacement impossible dans email_send_log : ${emailLogError.message}`);
-  }
-  deletedRows["email_send_log"] = emailLogError ? 0 : (emailLogCount ?? 0);
+  if (emailLogError) throw erasureFailure("email_send_log", emailLogError);
+  deletedRows["email_send_log"] = emailLogCount ?? 0;
 
   // 3. Dossiers (messages, pièces, informations extraites, tâches d'analyse en cascade), puis demandes.
   deletedRows["information_agent_cases"] = await deleteByIds("information_agent_cases", caseIds);
@@ -400,8 +379,13 @@ async function deleteByIds(
       .from(table)
       .delete({ count: "exact" })
       .in("id", ids.slice(index, index + 100));
-    if (error) throw new Error(`Effacement impossible dans ${table} : ${error.message}`);
+    if (error) throw erasureFailure(table, error);
     deleted += count ?? 0;
   }
   return deleted;
+}
+
+/** Erreur interne (message neutre, jamais montré) ; l'erreur de la base reste en `cause` pour le journal. */
+function erasureFailure(table: string, cause: unknown): Error {
+  return new Error(`Professional erasure failed on ${table}`, { cause });
 }

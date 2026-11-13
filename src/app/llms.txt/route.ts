@@ -1,6 +1,6 @@
 import { buildLlmsTxt } from "@/lib/llms-txt";
 import { isSiteIndexable } from "@/lib/seo-indexing";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 
 // Read at every request: the indexing switch (SEO_INDEXING_ENABLED) is an environment variable
 // that is flipped without a rebuild, like in robots.ts and src/proxy.ts.
@@ -19,7 +19,7 @@ export function GET() {
   if (!isSiteIndexable()) {
     return new Response("Not found\n", { status: 404, headers: { "content-type": TEXT } });
   }
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   return new Response(buildLlmsTxt(origin), {
     headers: {
       "content-type": TEXT,

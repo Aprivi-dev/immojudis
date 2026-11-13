@@ -5,10 +5,8 @@ type DbError = { code?: string; message: string } | null;
 const db = vi.hoisted(() => ({
   /** Réponse de `sync_sale_communes()` : une ligne de trois compteurs. */
   counts: { n_with_code: 0, n_changed: 0, n_written: 0 },
-  /** Erreur de la fonction (`PGRST202` : migration en retard). */
+  /** Erreur de la fonction. */
   rpcError: null as DbError,
-  /** Erreur de la lecture de contrôle de la table (fonction absente seulement). */
-  probeError: null as DbError,
   rpcCalls: [] as Array<{ name: string; args: unknown }>,
   tables: [] as string[],
 }));
@@ -20,25 +18,18 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       if (db.rpcError) return { data: null, error: db.rpcError };
       return { data: [db.counts], error: null };
     },
-    from: (table: string) => ({
-      select: () => ({
-        limit: async () => {
-          db.tables.push(table);
-          return db.probeError ? { data: null, error: db.probeError } : { data: [], error: null };
-        },
-      }),
-    }),
+    from: (table: string) => {
+      db.tables.push(table);
+      throw new Error(`unexpected table read: ${table}`);
+    },
   },
 }));
 
 import { pipelineCommuneOf, syncSaleCommunes } from "./sale-communes-sync.server";
 
-const NOW = new Date("2026-11-10T12:00:00.000Z");
-
 beforeEach(() => {
   db.counts = { n_with_code: 0, n_changed: 0, n_written: 0 };
   db.rpcError = null;
-  db.probeError = null;
   db.rpcCalls = [];
   db.tables = [];
 });
@@ -97,7 +88,7 @@ describe("syncSaleCommunes : recopie faite dans la base", () => {
   it("une seule instruction SQL, sans relire raw_payload ni écrire ligne à ligne", async () => {
     db.counts = { n_with_code: 1800, n_changed: 12, n_written: 12 };
 
-    const result = await syncSaleCommunes(NOW);
+    const result = await syncSaleCommunes();
 
     expect(result).toEqual({
       withCode: 1800,
@@ -105,7 +96,6 @@ describe("syncSaleCommunes : recopie faite dans la base", () => {
       deferred: 0,
       rejected: 0,
       busy: false,
-      notMigrated: false,
     });
     expect(db.rpcCalls).toEqual([{ name: "sync_sale_communes", args: undefined }]);
     expect(db.tables).toEqual([]);
@@ -113,42 +103,41 @@ describe("syncSaleCommunes : recopie faite dans la base", () => {
 
   it("les lignes à écrire que la base a sautées (vente verrouillée) sont comptées « différées »", async () => {
     db.counts = { n_with_code: 10, n_changed: 5, n_written: 3 };
-    expect(await syncSaleCommunes(NOW)).toMatchObject({ written: 3, deferred: 2, busy: false });
+    expect(await syncSaleCommunes()).toMatchObject({ written: 3, deferred: 2, busy: false });
   });
 
   it("rien à écrire : aucune ligne écrite", async () => {
     db.counts = { n_with_code: 1800, n_changed: 0, n_written: 0 };
-    expect(await syncSaleCommunes(NOW)).toMatchObject({ withCode: 1800, written: 0, deferred: 0 });
+    expect(await syncSaleCommunes()).toMatchObject({ withCode: 1800, written: 0, deferred: 0 });
   });
 
   it.each(["57014", "55P03", "40P01"])(
     "verrou ou délai (%s) : la recopie est reportée à la passe suivante, la passe n'échoue pas",
     async (code) => {
       db.rpcError = { code, message: "canceling statement due to statement timeout" };
-      expect(await syncSaleCommunes(NOW)).toMatchObject({
-        busy: true,
-        written: 0,
-        notMigrated: false,
-      });
+      expect(await syncSaleCommunes()).toMatchObject({ busy: true, written: 0 });
     },
   );
 
   it("une autre erreur de la base fait échouer la passe, avec son code seul", async () => {
     db.rpcError = { code: "42501", message: "permission denied for table auction_sales" };
-    const failure = await syncSaleCommunes(NOW).catch((error: unknown) => error as Error);
+    const failure = await syncSaleCommunes().catch((error: unknown) => error as Error);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toBe("Synchronisation des communes refusée (code 42501)");
   });
 
-  it("fonction absente (migration en retard) mais table présente : recopie sautée, la passe continue", async () => {
+  it("fonction absente : la passe échoue avec son code, sans sonder la table", async () => {
     db.rpcError = { code: "PGRST202", message: "Could not find the function" };
-    expect(await syncSaleCommunes(NOW)).toMatchObject({ notMigrated: false, written: 0 });
-    expect(db.tables).toEqual(["auction_sale_communes"]);
+    await expect(syncSaleCommunes()).rejects.toThrow(
+      "Synchronisation des communes refusée (code PGRST202)",
+    );
+    expect(db.tables).toEqual([]);
   });
 
-  it("fonction et table absentes : migration en retard", async () => {
-    db.rpcError = { code: "PGRST202", message: "Could not find the function" };
-    db.probeError = { code: "PGRST205", message: "Could not find the table" };
-    expect(await syncSaleCommunes(NOW)).toMatchObject({ notMigrated: true, written: 0 });
+  it("table absente : la passe échoue avec son code", async () => {
+    db.rpcError = { code: "42P01", message: 'relation "auction_sale_communes" does not exist' };
+    await expect(syncSaleCommunes()).rejects.toThrow(
+      "Synchronisation des communes refusée (code 42P01)",
+    );
   });
 });

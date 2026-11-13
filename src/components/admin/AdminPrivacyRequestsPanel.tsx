@@ -4,6 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
+import { formatShortDate } from "@/lib/format/dates";
+import { formatPriceWithCents } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import {
   executeAdminContractWithdrawal,
@@ -12,13 +16,14 @@ import {
   fetchAdminProfessionalPrivacyExport,
   updateAdminPrivacyRequest,
 } from "@/lib/client-api";
+import { downloadBlob } from "@/lib/download-blob";
 import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type {
   PrivacyRequestAdminSummary,
   PrivacyRequestAdminUpdate,
   PrivacyRequestStatus,
 } from "@/lib/privacy-requests";
-import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { AdminPagination } from "@/components/admin/AdminPagination";
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "received", label: "Reçue" },
@@ -28,11 +33,13 @@ const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "rejected", label: "Rejetée / clôturée" },
 ];
 
+export const PRIVACY_REQUESTS_QUERY_KEY = ["admin-privacy-requests"] as const;
+
 export function AdminPrivacyRequestsPanel() {
   const queryClient = useQueryClient();
   const [offset, setOffset] = useState(0);
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ["admin-privacy-requests", offset],
+    queryKey: [...PRIVACY_REQUESTS_QUERY_KEY, offset],
     queryFn: () => fetchAdminPrivacyRequests({ offset }),
     staleTime: 30_000,
   });
@@ -40,26 +47,22 @@ export function AdminPrivacyRequestsPanel() {
     mutationFn: (input: PrivacyRequestAdminUpdate) => updateAdminPrivacyRequest(input),
     onSuccess: async () => {
       toast.success("Demande mise à jour.");
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
-      toast.error(
-        mutationError instanceof Error ? mutationError.message : "Mise à jour impossible",
-      );
+      toast.error(queryErrorMessage(mutationError, "Mise à jour impossible"));
     },
   });
   const withdrawal = useMutation({
     mutationFn: executeAdminContractWithdrawal,
     onSuccess: async (result) => {
       toast.success(
-        `Rétractation exécutée : ${(result.refundedCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} remboursés.`,
+        `Rétractation exécutée : ${formatPriceWithCents(result.refundedCents / 100)} remboursés.`,
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
-      toast.error(
-        mutationError instanceof Error ? mutationError.message : "Rétractation impossible",
-      );
+      toast.error(queryErrorMessage(mutationError, "Rétractation impossible"));
     },
   });
   const erasure = useMutation({
@@ -69,26 +72,21 @@ export function AdminPrivacyRequestsPanel() {
       toast.success(
         "Effacement exécuté : données du demandeur supprimées (compte et client Stripe, s'il en avait).",
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Effacement impossible");
+      toast.error(queryErrorMessage(mutationError, "Effacement impossible"));
     },
   });
   const professionalExport = useMutation({
     mutationFn: fetchAdminProfessionalPrivacyExport,
     onSuccess: (result) => {
       const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `donnees-professionnel-${result.generatedAt.slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `donnees-professionnel-${result.generatedAt.slice(0, 10)}.json`);
       toast.success("Export des données du professionnel téléchargé.");
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Export impossible");
+      toast.error(queryErrorMessage(mutationError, "Export impossible"));
     },
   });
   const requests = data?.requests ?? [];
@@ -102,7 +100,6 @@ export function AdminPrivacyRequestsPanel() {
       (request) =>
         !["completed", "rejected"].includes(request.status) && new Date(request.dueAt) < new Date(),
     ).length;
-  const totalCount = data?.totalCount ?? requests.length;
 
   return (
     <section className="admin-panel mt-6 rounded-lg p-5 sm:p-6">
@@ -134,13 +131,13 @@ export function AdminPrivacyRequestsPanel() {
       {isLoading ? <p className="mt-5 text-sm text-muted-foreground">Chargement…</p> : null}
       {error ? (
         <p className="mt-5 text-sm text-danger">
-          {error instanceof Error ? error.message : "Demandes indisponibles"}
+          {queryErrorMessage(error, "Demandes indisponibles")}
         </p>
       ) : null}
       {data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {data.total}
           . Les compteurs ouverts et en retard couvrent toute la file.
         </p>
       ) : null}
@@ -166,15 +163,15 @@ export function AdminPrivacyRequestsPanel() {
           />
         ))}
       </div>
-      {data && totalCount > 0 ? (
+      {data ? (
         <AdminPagination
-          offset={offset}
-          count={requests.length}
-          totalCount={totalCount}
-          hasMore={data.hasMore}
+          label="demandes RGPD et rétractations"
+          offset={data.offset}
+          limit={data.limit}
+          total={data.total}
+          shown={requests.length}
           busy={isFetching}
-          onPrevious={() => setOffset((current) => Math.max(0, current - data.limit))}
-          onNext={() => setOffset((current) => current + data.limit)}
+          onOffsetChange={setOffset}
         />
       ) : null}
     </section>
@@ -221,19 +218,15 @@ function PrivacyRequestEditor({
       </p>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <Clock className="h-3.5 w-3.5 text-gold-text" />
-        Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
+        Reçue le {formatShortDate(request.submittedAt)} · échéance {formatShortDate(request.dueAt)}
         {request.deadline ? (
-          <span
-            className={`rounded-full border px-2 py-0.5 font-semibold ${
-              request.deadline.overdue
-                ? "border-red-300/30 bg-red-400/10 text-red-100"
-                : request.deadline.dueSoon
-                  ? "border-amber-300/30 bg-amber-400/10 text-amber-100"
-                  : "border-white/10 text-muted-foreground"
-            }`}
+          <AdminPill
+            tone={
+              request.deadline.overdue ? "danger" : request.deadline.dueSoon ? "warning" : "neutral"
+            }
           >
             {privacyDeadlineLabel(request.deadline)}
-          </span>
+          </AdminPill>
         ) : null}
       </div>
 
@@ -419,12 +412,4 @@ function PrivacyRequestEditor({
       </div>
     </article>
   );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
 }

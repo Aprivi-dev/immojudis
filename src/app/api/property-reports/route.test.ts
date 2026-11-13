@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeSupabase, type FakeRow, type FakeSupabase } from "@/test/fake-supabase";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -10,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -154,5 +155,18 @@ describe("/api/property-reports", () => {
     const [{ auth, input }] = mocks.save.mock.calls[0];
     expect(auth.userId).toBe("user-1");
     expect(input).toEqual({ saleId: SALE, reportKind: "opportunity", includeEnvironment: false });
+  });
+
+  it("answers 500 with the generic message when the report cannot be built for an unknown reason", async () => {
+    mocks.save.mockRejectedValue(new Error("upstream timeout"));
+
+    const response = await call(POST, "POST", { body: { saleId: SALE } });
+
+    expect(response.status).toBe(500);
+    expectNoStore(response);
+    expect(await response.json()).toMatchObject({
+      error: "Rapport impossible.",
+      code: "INTERNAL_ERROR",
+    });
   });
 });

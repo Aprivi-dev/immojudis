@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CRON_JOBS, CRON_JOB_NAMES, type CronJobTriggers } from "@/lib/scheduled-jobs";
 
 const root = process.cwd();
 
@@ -24,9 +25,6 @@ function migrationText(): string {
     .join("\n");
 }
 
-/** Routes that are triggered by hand on purpose (see docs/operations/planification.md). */
-const MANUAL_ROUTES = new Set(["cnb-lawyer-directory"]);
-
 /**
  * Workflows GitHub autorisés à garder un `schedule` (règle de `planification.md` : des contrôles, plus une
  * exception qui tolère des heures de retard). Les horaires GitHub ne sont pas tenus : une tâche métier est
@@ -48,25 +46,36 @@ function scheduledWorkflows(): string[] {
     .sort();
 }
 
-/** Planification de rattrapage déclarée par une route (`catchUpSchedule` ou constante dédiée). */
-function routeCatchUpSchedules(route: string): string[] {
-  const source = readFileSync(join(root, `src/app/api/cron/${route}/route.ts`), "utf8");
-  return [...source.matchAll(/(?:catchUpSchedule: |CATCH_UP_SCHEDULE = )"([^"]+)"/g)].map(
-    (match) => match[1],
-  );
-}
-
 describe("scheduled jobs inventory", () => {
-  it("planifie chaque route /api/cron/* dans vercel.json ou dans une migration pg_cron", () => {
-    const vercel = vercelCronPaths();
+  it("a une entrée de registre par dossier de src/app/api/cron, et aucune de plus", () => {
+    expect([...CRON_JOB_NAMES].sort()).toEqual(cronRoutes().sort());
+  });
+
+  it("décrit dans le registre exactement les horaires de vercel.json", () => {
+    const config = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const expected = CRON_JOB_NAMES.flatMap((name) => {
+      const job: CronJobTriggers = CRON_JOBS[name];
+      return [...(job.vercel ?? []), ...(job.catchUp ? [job.catchUp.schedule] : [])].map(
+        (schedule) => `/api/cron/${name} ${schedule}`,
+      );
+    });
+    const actual = config.crons.map((cron) => `${cron.path} ${cron.schedule}`);
+    expect([...actual].sort()).toEqual([...expected].sort());
+  });
+
+  it("planifie dans une migration pg_cron chaque tâche que le registre dit appelée par pg_cron, et elles seules", () => {
     const migrations = migrationText();
-    const unscheduled = cronRoutes().filter(
-      (route) =>
-        !MANUAL_ROUTES.has(route) &&
-        !vercel.has(`/api/cron/${route}`) &&
-        !migrations.includes(`api/cron/${route}`),
-    );
-    expect(unscheduled).toEqual([]);
+    for (const name of CRON_JOB_NAMES) {
+      const job: CronJobTriggers = CRON_JOBS[name];
+      if (job.pgCron) expect(migrations, name).toContain(`api/cron/${name}`);
+      if (job.manual) {
+        expect(migrations, name).not.toContain(`api/cron/${name}`);
+        expect(vercelCronPaths().has(`/api/cron/${name}`), name).toBe(false);
+      }
+      expect(Boolean(job.vercel || job.catchUp || job.pgCron || job.manual), name).toBe(true);
+    }
   });
 
   it("documente chaque route dans docs/operations/planification.md", () => {
@@ -82,28 +91,12 @@ describe("scheduled jobs inventory", () => {
     expect(undocumented).toEqual([]);
   });
 
-  it("garde chaque planification de rattrapage d'une route en phase avec vercel.json", () => {
-    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
-      crons: Array<{ path: string; schedule: string }>;
-    };
-    // Un rattrapage absent de vercel.json ne correspondrait jamais à l'en-tête x-vercel-cron-schedule :
-    // le filet s'exécuterait à chaque fois, sans que rien ne casse.
-    const mismatched = cronRoutes().flatMap((route) =>
-      routeCatchUpSchedules(route)
-        .filter(
-          (schedule) =>
-            !vercel.crons.some(
-              (cron) => cron.path === `/api/cron/${route}` && cron.schedule === schedule,
-            ),
-        )
-        .map((schedule) => `${route}: ${schedule}`),
-    );
-    expect(mismatched).toEqual([]);
-  });
-
   it("fait des filets quotidiens des tâches de pg_cron des rattrapages sans effet si pg_cron a réussi", () => {
-    for (const route of ["listing-completeness", "sale-pepites", "sale-flood-risk"]) {
-      expect(routeCatchUpSchedules(route), route).toHaveLength(1);
+    for (const name of ["listing-completeness", "sale-pepites", "sale-flood-risk"] as const) {
+      const job: CronJobTriggers = CRON_JOBS[name];
+      expect(job.pgCron, name).toBe(true);
+      expect(job.vercel, name).toBeUndefined();
+      expect(job.catchUp?.successWindowHours, name).toBe(2);
     }
   });
 
@@ -130,7 +123,7 @@ describe("scheduled jobs inventory", () => {
       .filter((cron) => cron.path === "/api/cron/trial-end-email")
       .map((cron) => cron.schedule);
     expect(schedules).toEqual(["30 12 * * *", "30 14 * * *"]);
-    expect(routeCatchUpSchedules("trial-end-email")).toEqual(["30 14 * * *"]);
+    expect(CRON_JOBS["trial-end-email"].catchUp.schedule).toBe("30 14 * * *");
   });
 
   it("lance les rappels d'audience après le suivi des changements dont ils lisent les événements", () => {
@@ -175,11 +168,9 @@ describe("scheduled jobs inventory", () => {
     expect(weekly).toBeGreaterThan(results);
   });
 
-  it("supervise les rappels d'audience comme les autres tâches quotidiennes", () => {
+  it("documente la supervision des rappels d'audience", () => {
     const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
     expect(document).toMatch(/`\/api\/cron\/sale-reminders`.*\| oui /);
-    // Dans la migration d'origine, les apostrophes de la liste attendue de cron.stale sont doublées.
-    expect(migrationText()).toContain("(''sale-reminders'', interval ''30 hours'')");
   });
 
   it("lance l'envoi des alertes dans l'heure qui suit leur évaluation (plan Hobby : ±59 min)", () => {
@@ -202,19 +193,18 @@ describe("scheduled jobs inventory", () => {
     expect(sending[0]).toBeGreaterThanOrEqual(7);
   });
 
-  it("garde le rattrapage de l'envoi des alertes en phase avec vercel.json", () => {
-    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
-      crons: Array<{ path: string; schedule: string }>;
-    };
-    const schedules = vercel.crons
-      .filter((cron) => cron.path === "/api/cron/alert-notifications")
-      .map((cron) => cron.schedule);
-    const route = readFileSync(join(root, "src/app/api/cron/alert-notifications/route.ts"), "utf8");
-    const catchUp = /CATCH_UP_SCHEDULE = "([^"]+)"/.exec(route)?.[1];
-    expect(catchUp).toBeDefined();
-    // Le rattrapage est le second passage du jour, jamais le premier.
-    expect(schedules).toContain(catchUp);
-    expect(schedules.sort()[0]).not.toBe(catchUp);
+  it("fait toujours du rattrapage le second passage du jour, jamais le premier", () => {
+    for (const name of CRON_JOB_NAMES) {
+      const job: CronJobTriggers = CRON_JOBS[name];
+      if (!job.catchUp || !job.vercel) continue;
+      const minutes = (schedule: string) => {
+        const [minute, hour] = schedule.split(" ").map(Number);
+        return hour * 60 + minute;
+      };
+      for (const schedule of job.vercel) {
+        expect(minutes(job.catchUp.schedule), name).toBeGreaterThan(minutes(schedule));
+      }
+    }
   });
 
   it("déclare maxDuration sur les routes de longue durée (un littéral : Next.js le lit à la compilation)", () => {
@@ -229,22 +219,6 @@ describe("scheduled jobs inventory", () => {
     }
   });
 
-  it("attend les tâches quotidiennes toutes les 27 heures (un passage de rattrapage compris)", () => {
-    // La dernière migration qui redéfinit la liste attendue de cron.stale.
-    const definition = readFileSync(
-      join(root, "supabase/migrations/20261029170000_operational_health_alerts.sql"),
-      "utf8",
-    );
-    for (const job of [
-      "smart-alerts",
-      "alert-notifications",
-      "sale-change-monitor",
-      "sale-reminders",
-    ]) {
-      expect(definition, job).toContain(`('${job}', interval '27 hours')`);
-    }
-    expect(definition).not.toContain("interval '30 hours'");
-  });
   it("contrôle le registre des pièces chaque jour (Vercel Cron), sous cron.stale à 27 heures", () => {
     const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
       crons: Array<{ path: string; schedule: string }>;

@@ -2,20 +2,25 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { getCourtAuctionSummaries } from "@/lib/auction-scenarios.server";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 /** Three years of adjudications per court (Licitor and DVF), for the Analyse offer. */
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "tribunals.auction-summaries");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "tribunals.auction-summaries",
+    fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.tribunal-auction-summaries",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -25,15 +30,6 @@ export async function GET(request: Request) {
       "Les statistiques d’adjudication sont réservées à l’offre Analyse.",
     );
     const courts = await getCourtAuctionSummaries();
-    return apiJson({ generatedAt: new Date().toISOString(), courts }, context, {
-      headers: { "cache-control": "private, no-store", vary: "authorization" },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    return response;
-  }
-}
+    return { generatedAt: new Date().toISOString(), courts };
+  },
+);

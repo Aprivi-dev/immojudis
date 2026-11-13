@@ -26,12 +26,13 @@ from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 
 from src.extraction_corpus import CORPUS_SCHEMA_VERSION, classify_outcome, evaluate_corpus, values_equal
 from src.normalize import normalize_occupancy_status, normalize_property_type
+from src.sha256_digest import is_lowercase_sha256
+from src.text_folding import strip_accents
 
 SAMPLE_PATH = Path(__file__).resolve().parents[1] / "config" / "qualification-sample-20260912.json"
 LEGACY_REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v1"
 REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v2"
 SUPPORTED_REVIEW_SCHEMA_VERSIONS = frozenset({LEGACY_REVIEW_SCHEMA_VERSION, REVIEW_SCHEMA_VERSION})
-SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 NONVISIBLE_HTML_TAGS = ("script", "style", "template", "noscript")
 AGRASC_FICHE_PROPS_PREFIX = "React.createElement(FicheProduitApp,"
@@ -121,7 +122,7 @@ def _file_sha256(path: Path) -> str:
 def _timestamp(value: Any, description: str) -> datetime:
     text = _require_text(value, description)
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError as exc:
         raise ValueError(f"{description} must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -328,7 +329,7 @@ def _validate_ai_review(
         raise ValueError(f"{description} prompt_record_status is unsupported")
     prompt_sha256 = review.get("prompt_sha256")
     if prompt_record_status == "retained":
-        if not isinstance(prompt_sha256, str) or not SHA256_RE.fullmatch(prompt_sha256):
+        if not is_lowercase_sha256(prompt_sha256):
             raise ValueError(f"{description} prompt_sha256 must be a lowercase SHA-256 digest")
     elif prompt_sha256 is not None:
         raise ValueError(f"{description} cannot claim a prompt digest when the prompt was not retained")
@@ -336,7 +337,7 @@ def _validate_ai_review(
     if review.get("capture_sha256") != capture_sha256:
         raise ValueError(f"{description} capture_sha256 must identify the frozen capture")
     output_sha256 = review.get("output_sha256")
-    if not isinstance(output_sha256, str) or not SHA256_RE.fullmatch(output_sha256):
+    if not is_lowercase_sha256(output_sha256):
         raise ValueError(f"{description} output_sha256 must be a lowercase SHA-256 digest")
     if review.get("blind_to_prediction") is not True:
         raise ValueError(f"{description} must be blind_to_prediction")
@@ -378,7 +379,7 @@ def _captured_case(case: Mapping[str, Any]) -> tuple[dict[str, Any], str, dateti
     if not isinstance(capture, Mapping) or not isinstance(prediction, Mapping):
         raise ValueError("captured case needs capture and prediction snapshots")
     capture_sha256 = capture.get("sha256")
-    if not isinstance(capture_sha256, str) or not SHA256_RE.fullmatch(capture_sha256):
+    if not is_lowercase_sha256(capture_sha256):
         raise ValueError("capture needs a lowercase SHA-256 digest")
     private_ref = _require_text(capture.get("private_ref"), "capture private_ref")
     capture_path = Path(private_ref)
@@ -726,8 +727,7 @@ def _ai_values_equal(field: str, first: Any, second: Any) -> bool:
 
     if field == "city" and isinstance(first, str) and isinstance(second, str):
         def folded_city(value: str) -> str:
-            decomposed = unicodedata.normalize("NFKD", value)
-            return re.sub(r"\s+", " ", "".join(char for char in decomposed if not unicodedata.combining(char))).strip().casefold()
+            return re.sub(r"\s+", " ", strip_accents(value)).strip().casefold()
 
         return folded_city(first) == folded_city(second)
     if field == "property_type":
@@ -1038,7 +1038,7 @@ def _ai_arbitration_case_stats(
         raise ValueError("AI adjudication prompt_record_status is unsupported")
     prompt_sha256 = adjudication.get("prompt_sha256")
     if prompt_record_status == "retained":
-        if not isinstance(prompt_sha256, str) or not SHA256_RE.fullmatch(prompt_sha256):
+        if not is_lowercase_sha256(prompt_sha256):
             raise ValueError("AI adjudication prompt_sha256 must be a lowercase SHA-256 digest")
     elif prompt_sha256 is not None:
         raise ValueError("AI adjudication cannot claim a prompt digest when the prompt was not retained")

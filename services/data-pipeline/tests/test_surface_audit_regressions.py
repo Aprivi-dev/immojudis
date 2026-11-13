@@ -5,7 +5,6 @@ Principe : une valeur manquante est acceptable, une valeur fausse ne l'est pas.
 
 from decimal import Decimal
 
-import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.asset_normalization import normalize_asset_features
 from src.enrichment.surface_reasoning import (
     apply_surface_reasoning_to_sale,
@@ -14,7 +13,7 @@ from src.enrichment.surface_reasoning import (
     reason_about_surfaces,
 )
 from src.models import AuctionSale
-from src.pdf_fact_extraction import _extract_surface_candidates_with_evidence
+from src.pdf_surface_patterns import _extract_surface_candidates_with_evidence
 
 
 def _sale(property_type: str, **fields: object) -> AuctionSale:

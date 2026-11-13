@@ -4,6 +4,7 @@ import FileSpreadsheet from "lucide-react/dist/esm/icons/file-spreadsheet.js";
 import { useState } from "react";
 import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { fetchAdminLawyerStatement } from "@/lib/client-api/admin";
+import { downloadBlob } from "@/lib/download-blob";
 import {
   buildLawyerStatementCsv,
   lawyerStatementCsvFilename,
@@ -17,14 +18,7 @@ export const LAWYER_STATEMENT_QUERY_KEY = "admin-lawyer-statement";
 /** Télécharge le CSV (BOM UTF-8 pour l'ouverture directe dans un tableur en français). */
 function downloadCsv(filename: string, content: string) {
   const bom = String.fromCharCode(0xfeff);
-  const url = URL.createObjectURL(new Blob([bom, content], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([bom, content], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 /**

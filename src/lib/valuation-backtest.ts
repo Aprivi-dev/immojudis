@@ -1,25 +1,19 @@
 import "server-only";
-import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import {
   analyzeMarketCandidates,
   resolveMarketPropertySegment,
   type MarketEngineCandidate,
 } from "@/lib/market-estimation-engine";
-import { DVF_PUBLIC_SOURCE_URL } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
-import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/plans";
-import { cleanSaleTitle } from "@/lib/sale-title";
-import { getSaleSurface } from "@/lib/surface";
-import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
-import { propertyTypeFamily } from "@/lib/property-type-family";
+import { matchesPropertyFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
-import { averageRounded } from "@/lib/rounding";
+import { averageRounded, roundToTenth } from "@/lib/rounding";
+import { quantileSorted } from "@/lib/stats";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
 
-type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
 export type DvfBacktestTransaction = Pick<
   DvfTransactionRow,
@@ -42,25 +36,16 @@ export type DvfBacktestTransaction = Pick<
   | "source"
 > & { source_url?: string | null };
 
-const REFERENCE_SALE_COLUMNS =
-  "id,title,city,department,postal_code,address,property_type,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,latitude,longitude";
-
 const DVF_BACKTEST_COLUMNS =
   "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
 
-export const valuationBacktestQuerySchema = z.object({
-  saleId: z.string().guid(),
-  radiusM: z.coerce.number().int().min(300).max(2_000).default(1_000),
-  months: z.coerce.number().int().min(12).max(84).default(48),
-  maxTests: z.coerce.number().int().min(5).max(80).default(30),
-});
+/** Source citée pour une transaction qui ne porte pas sa propre adresse de source. */
+const DVF_PUBLIC_SOURCE_URL =
+  "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/";
 
-export type ValuationBacktestQueryInput = z.input<typeof valuationBacktestQuerySchema>;
-export type ValuationBacktestQuery = z.output<typeof valuationBacktestQuerySchema>;
+type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
 
-export type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
-
-export type ValuationBacktestPoint = {
+type ValuationBacktestPoint = {
   transactionId: string;
   saleDate: string;
   city: string | null;
@@ -81,7 +66,7 @@ export type ValuationBacktestPoint = {
   distanceM: number | null;
 };
 
-export type ValuationBacktestSummary = {
+type ValuationBacktestSummary = {
   status: ValuationBacktestStatus;
   confidenceLabel: string;
   testedTransactions: number;
@@ -111,19 +96,6 @@ export type ValuationBacktestResult = {
   limitations: string[];
 };
 
-export type ValuationBacktestResponse = {
-  ok: true;
-  sale: {
-    id: string;
-    title: string | null;
-    city: string | null;
-    department: string | null;
-    propertyType: string | null;
-    surfaceM2: number | null;
-  };
-  backtest: ValuationBacktestResult;
-};
-
 export type ValuationBacktestSaleContext = {
   department: string | null;
   propertyType: string | null;
@@ -131,78 +103,6 @@ export type ValuationBacktestSaleContext = {
   latitude: number | null;
   longitude: number | null;
 };
-
-export async function getValuationBacktest({
-  auth,
-  input,
-  now = new Date(),
-}: {
-  auth: SupabaseAuthContext;
-  input: ValuationBacktestQuery;
-  now?: Date;
-}): Promise<ValuationBacktestResponse> {
-  await assertValuationBacktestAvailable(auth);
-
-  const sale = await getReferenceSale(auth, input.saleId);
-  const latitude = finiteNumber(sale.latitude);
-  const longitude = finiteNumber(sale.longitude);
-  if (latitude == null || longitude == null) {
-    throw new Error("Backtest indisponible : la vente n'est pas géocodée.");
-  }
-
-  const transactions = await fetchBacktestTransactions({
-    sale,
-    latitude,
-    longitude,
-    radiusM: input.radiusM,
-    months: input.months,
-    maxTests: input.maxTests,
-    now,
-  });
-  const surface = getSaleSurface(sale);
-  const backtest = buildValuationBacktest({
-    transactions,
-    reference: { latitude, longitude },
-    subject: {
-      propertyType: sale.property_type,
-      surfaceM2: surface.value,
-    },
-    options: {
-      radiusM: input.radiusM,
-      months: input.months,
-      maxTests: input.maxTests,
-      now,
-    },
-  });
-
-  await recordFeatureUsageEvent({
-    auth,
-    eventKey: "valuation.backtest_viewed",
-    subjectType: "auction_sale",
-    subjectId: sale.id,
-    metadata: {
-      status: backtest.summary.status,
-      tested_transactions: backtest.summary.testedTransactions,
-      usable_tests: backtest.summary.usableTests,
-      median_absolute_error_pct: backtest.summary.medianAbsoluteErrorPct,
-      radius_m: input.radiusM,
-      months: input.months,
-    },
-  });
-
-  return {
-    ok: true,
-    sale: {
-      id: sale.id,
-      title: cleanSaleTitle(sale.title),
-      city: sale.city,
-      department: sale.department,
-      propertyType: sale.property_type,
-      surfaceM2: surface.value,
-    },
-    backtest,
-  };
-}
 
 export async function buildValuationBacktestForSale({
   sale,
@@ -254,26 +154,6 @@ export async function buildValuationBacktestForSale({
   });
 }
 
-async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
-  if (auth.isAdmin || auth.accountTier === "premium") return;
-
-  const { data, error } = await auth.supabase
-    .from("user_subscriptions")
-    .select("plan_code,status,current_period_end")
-    .eq("user_id", auth.userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  const plan =
-    data && isPlanPeriodActive(data.status, data.current_period_end)
-      ? normalizePlanCode(data.plan_code)
-      : "decouverte";
-
-  if (!featureIncluded(plan, "property.soldComparables")) {
-    throw new Error("Backtest de valorisation réservé à l’offre Analyse.");
-  }
-}
-
 export function buildValuationBacktest({
   transactions,
   reference,
@@ -291,7 +171,7 @@ export function buildValuationBacktest({
   };
 }): ValuationBacktestResult {
   const now = options.now ?? new Date();
-  const oldestTestDate = addMonthsDate(now, -options.months);
+  const oldestTestDate = addUtcCalendarMonths(now, -options.months);
   const normalized = transactions
     .map((transaction) => normalizeTransaction(transaction, reference))
     .filter((transaction): transaction is NormalizedBacktestTransaction => transaction != null)
@@ -301,7 +181,7 @@ export function buildValuationBacktest({
     .sort((a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime());
   const eligibleTests = normalized
     .filter((transaction) => new Date(transaction.saleDate).getTime() >= oldestTestDate.getTime())
-    .filter((transaction) => propertyTypeMatches(transaction.propertyType, subject.propertyType))
+    .filter((transaction) => matchesPropertyFamily(transaction.propertyType, subject.propertyType))
     .filter((transaction) => surfaceComparable(transaction.surfaceM2, subject.surfaceM2))
     .slice(0, options.maxTests);
   const points = eligibleTests.map((test) =>
@@ -337,21 +217,6 @@ export function buildValuationBacktest({
   };
 }
 
-async function getReferenceSale(
-  auth: SupabaseAuthContext,
-  saleId: string,
-): Promise<AppSaleRow & { id: string }> {
-  const { data, error } = await auth.supabase
-    .from("v_auction_sales_app")
-    .select(REFERENCE_SALE_COLUMNS)
-    .eq("id", saleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou non accessible.");
-  return data as AppSaleRow & { id: string };
-}
-
 async function fetchBacktestTransactions({
   sale,
   latitude,
@@ -371,7 +236,9 @@ async function fetchBacktestTransactions({
 }): Promise<DvfBacktestTransaction[]> {
   const bbox = bboxAround(latitude, longitude, radiusM);
   const comparableLookbackMonths = Math.min(36, months);
-  const minSaleDate = addMonths(now, -(months + comparableLookbackMonths));
+  const minSaleDate = addUtcCalendarMonths(now, -(months + comparableLookbackMonths))
+    .toISOString()
+    .slice(0, 10);
   let query = supabaseAdmin
     .from("dvf_transactions")
     .select(DVF_BACKTEST_COLUMNS)
@@ -502,8 +369,8 @@ function buildBacktestSummary({
     .map((point) => point.absoluteErrorPct)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
     .sort((a, b) => a - b);
-  const medianError = percentileRounded(errors, 0.5, 1);
-  const p75Error = percentileRounded(errors, 0.75, 1);
+  const medianError = roundToTenth(quantileSorted(errors, 0.5));
+  const p75Error = roundToTenth(quantileSorted(errors, 0.75));
   const intervalCoveragePct = shareTrue(
     usable
       .map((point) => point.withinPredictionInterval)
@@ -731,12 +598,6 @@ function surfaceComparable(surfaceM2: number, subjectSurfaceM2: number | null): 
   return deltaPct <= 60;
 }
 
-function propertyTypeMatches(value: string | null, reference: string | null): boolean {
-  const referenceFamily = propertyTypeFamily(reference);
-  if (referenceFamily === "unknown") return true;
-  return propertyTypeFamily(value) === referenceFamily;
-}
-
 function bboxAround(lat: number, lng: number, radiusM: number) {
   const dLat = radiusM / 111_000;
   const dLng = radiusM / (111_000 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
@@ -746,28 +607,6 @@ function bboxAround(lat: number, lng: number, radiusM: number) {
     lngMin: lng - dLng,
     lngMax: lng + dLng,
   };
-}
-
-function addMonths(date: Date, months: number): string {
-  return addMonthsDate(date, months).toISOString().slice(0, 10);
-}
-
-function addMonthsDate(date: Date, months: number): Date {
-  const copy = new Date(date);
-  copy.setUTCMonth(copy.getUTCMonth() + months);
-  return copy;
-}
-
-function percentileRounded(values: number[], percentile: number, digits = 0): number | null {
-  if (!values.length) return null;
-  const index = (values.length - 1) * percentile;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const value =
-    lower === upper
-      ? values[lower]
-      : values[lower] + (values[upper] - values[lower]) * (index - lower);
-  return round(value, digits);
 }
 
 function shareUnder(values: number[], threshold: number): number | null {

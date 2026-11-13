@@ -58,6 +58,15 @@ describe("queryKeys", () => {
       "dep",
     ]);
     expect(queryKeys.saleAnalysisSets("u1")).toEqual(["sale-analysis-sets", "u1"]);
+    expect(queryKeys.valuePreview("s1")).toEqual(["value-preview", "s1"]);
+    expect(queryKeys.lawyerQuestions("s1", "analysis", "u1")).toEqual([
+      "lawyer-questions",
+      "s1",
+      "analysis",
+      "u1",
+    ]);
+    expect(queryKeys.courtAuctionSummaries()).toEqual(["court-auction-summaries"]);
+    expect(queryKeys.billingOffer("u1")).toEqual(["billing-offer", "u1"]);
     expect(queryKeys.publicationRequestsWorkspace("u1")).toEqual([
       "publication-requests",
       "workspace",
@@ -110,6 +119,10 @@ describe("queryKeys", () => {
     const prefix = queryKeys.searchFavoriteStatusForUser("u1");
     const full = queryKeys.searchFavoriteStatus("u1", ["a"]);
     expect(full.slice(0, prefix.length)).toEqual([...prefix]);
+
+    const salePrefix = queryKeys.saleDetailForSale("s1");
+    expect(salePrefix).toEqual(["sale-detail", "s1"]);
+    expect(queryKeys.saleDetail("s1", "u1", "analysis").slice(0, 2)).toEqual([...salePrefix]);
 
     const allRequests = queryKeys.publicationRequestsAll();
     expect(queryKeys.publicationRequests("u1").slice(0, 1)).toEqual([...allRequests]);

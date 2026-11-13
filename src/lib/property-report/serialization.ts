@@ -1,6 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
-import type { Json } from "@/integrations/supabase/types";
-import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import {
+  formatDate,
+  formatPercent,
+  formatPrice,
+  formatPricePerM2,
+  formatSurface,
+  propertyTypeLabel,
+} from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
 import type {
   AuctionSale,
@@ -9,13 +14,9 @@ import type {
   SaleRisk,
   SaleScoreFactor,
 } from "@/lib/types";
-import { buildCeilingSnapshot } from "./analysis";
-import {
-  AppSaleRow,
-  PlanEntitlements,
-  SavedPropertyReport,
-  SavedReportRow,
-} from "../property-reports";
+import type { buildCeilingSnapshot } from "./ceiling-snapshot";
+import { AppSaleRow, SavedPropertyReport, SavedReportRow } from "../property-reports";
+import type { PlanEntitlements } from "@/lib/plans";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { redactPersonalText, redactSaleTexts } from "@/lib/personal-data-filter";
 import { rentabilityLabel } from "@/lib/profitability";
@@ -132,8 +133,9 @@ export function opportunitySummary({
   const parts: string[] = [];
   if (score != null) parts.push(`score ${score}/100`);
   if (apparentDiscountPct != null)
-    parts.push(`décote apparente ${formatPercent(apparentDiscountPct)}`);
-  if (grossYieldPct != null) parts.push(`rendement brut estimé ${formatPercent(grossYieldPct)}`);
+    parts.push(`décote apparente ${formatReportPercent(apparentDiscountPct)}`);
+  if (grossYieldPct != null)
+    parts.push(`rendement brut estimé ${formatReportPercent(grossYieldPct)}`);
   if (!ceilingAvailable) parts.push("plafond à compléter");
   return parts.length ? parts.join(" · ") : "Données à compléter avant décision.";
 }
@@ -157,10 +159,6 @@ export function saleLocation(sale: AuctionSale): string | null {
 export function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
-}
-
-export function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }
 
 export function normalizeSourceTrace(value: unknown): SourceTraceEntry[] {
@@ -232,35 +230,8 @@ export function normalizeNearbyCategoryLabels(value: unknown): string[] {
     .slice(0, 8);
 }
 
-export function normalizeOccupancyEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const excerpt = stringOrNumberValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" | ");
-    })
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-export function normalizeDpeEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const excerpt = stringOrNumberValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" | ");
-    })
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-export function normalizeRenovationEvidence(value: unknown): string[] {
+/** Pièces justificatives d'une analyse (occupation, DPE, travaux) : « libellé | source | extrait ». */
+export function normalizeEvidence(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
@@ -373,7 +344,7 @@ export function normalizeMarketComparableRows(value: unknown): string[] {
         type,
         totalPrice != null ? formatPrice(totalPrice) : null,
         pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
+        surface != null ? formatSurface(surface) : null,
         distance != null ? `${Math.round(distance)} m` : null,
       ]
         .filter(Boolean)
@@ -425,7 +396,7 @@ export function normalizeActiveComparableItems(value: unknown): string[] {
         saleDate ? formatDate(saleDate) : null,
         startingPrice != null ? formatPrice(startingPrice) : null,
         pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
+        surface != null ? formatSurface(surface) : null,
       ]
         .filter(Boolean)
         .join(" | ");
@@ -480,10 +451,9 @@ export function clampScore(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-export function formatPercent(value: unknown): string {
-  const number = numberValue(value);
-  if (number == null) return "—";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(number)} %`;
+/** Pourcentage d'un rapport (PDF et lien partagé), de 0 à 100, une décimale au plus ; « — » s'il manque. */
+export function formatReportPercent(value: unknown): string {
+  return formatPercent(numberValue(value), 1);
 }
 
 export function formatRenovationBudgetRange(range: Record<string, unknown>): string {
@@ -525,20 +495,6 @@ export function reportPdfIdentity(report: Pick<SavedReportRow, "id" | "title">):
   return { title, filename: `${slugify(title)}-${report.id.slice(0, 8)}.pdf` };
 }
 
-export function createShareToken(): string {
-  return randomBytes(24).toString("base64url");
-}
-
-/** Only this digest is stored; the raw token is shown once, when the link is created. */
-export function hashShareToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-export function normalizeShareToken(value: string): string | null {
-  const token = value.trim();
-  return /^[A-Za-z0-9_-]{24,120}$/.test(token) ? token : null;
-}
-
 export function normalizeShareExpiresAt(value: string | null | undefined): string | null {
   const now = new Date();
   const date = value ? new Date(value) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000);
@@ -568,6 +524,9 @@ function reportStatusLabel(status: string): string {
     missing: "Non renseigné",
     pass: "Vérifié",
     fail: "Point à résoudre",
+    // Points de contrôle de l'estimation (`valuation-audit.ts`).
+    ok: "OK",
+    risk: "Risque",
   };
   return labels[status] ?? "À vérifier";
 }

@@ -1,18 +1,20 @@
 import "server-only";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { recentSaleChanges, type SaleChangeTopic } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
-import { calendarDaysBetween, nextParisMidnight, parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey, startOfParisDay } from "@/lib/paris-time";
+import { addDays, calendarDaysBetween } from "@/lib/calendar-day";
+import { formatWeekdayDate } from "@/lib/format/dates";
 import {
   isSourceCheckStale,
   publicLocation,
   publicTitle,
   rotateRecipients,
-  weekdayLongDate,
   type FollowedSale,
 } from "@/lib/sale-reminders";
 import { saleHearingTime, seoPropertyLabel } from "@/lib/seo";
@@ -22,6 +24,12 @@ import {
   type WeeklyDigestContent,
   type WeeklyDigestSaleItem,
 } from "@/lib/weekly-digest-emails";
+import {
+  EMAIL_PASS_BUDGET_MS,
+  followedSalesInWindow,
+  readOncePerSale,
+  runEmailPass,
+} from "@/lib/email-campaign-pass";
 
 /**
  * Récapitulatif hebdomadaire « Ma semaine » : un seul email par semaine et par compte, envoyé par le
@@ -50,7 +58,7 @@ export const MAX_DEFERRAL_DAYS = 2;
 /** Fenêtre des audiences annoncées. */
 export const AUDIENCE_WINDOW_DAYS = 14;
 /** Les changements et les nouvelles ventes plus anciens ne sont pas repris. */
-export const LOOKBACK_DAYS = 7;
+const LOOKBACK_DAYS = 7;
 /** Éléments listés par rubrique : au-delà, « … et N autres » et le lien vers « Mes favoris ». */
 export const MAX_AUDIENCES = 10;
 export const MAX_CHANGES = 10;
@@ -60,17 +68,10 @@ const MAX_EXAMINED_SALES = 30;
 /** Départements d'alertes pris en compte par personne. */
 const MAX_DEPARTMENTS = 3;
 const DAY_MS = 86_400_000;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
 /** Les changements montrent seulement leur libellé : jamais de montant ni de date (voir la fiche). */
 const MASKED_TOPICS: ReadonlySet<SaleChangeTopic> = new Set<SaleChangeTopic>(["price", "date"]);
 
 // -- Calendrier ---------------------------------------------------------------------------------------
-
-function addDays(dayKey: string, days: number): string {
-  const [year, month, day] = dayKey.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-}
 
 /** Jour de la semaine d'un jour civil (AAAA-MM-JJ), ISO 8601 : 1 = lundi ... 7 = dimanche. */
 export function isoWeekday(dayKey: string): number {
@@ -103,14 +104,9 @@ export function dueDigest(
   return { dueDay, weekKey: isoWeekKey(dueDay), lag };
 }
 
-/** Début du jour civil courant à Paris : sert à savoir si un email est déjà parti aujourd'hui. */
-export function parisDayStart(now: Date): Date {
-  return nextParisMidnight(addDays(parisDateKey(now), -1));
-}
-
 // -- Accès aux données ---------------------------------------------------------------------------------
 
-export type WeeklyDigestSettings = { userId: string; weekday: number };
+type WeeklyDigestSettings = { userId: string; weekday: number };
 
 export type NewSaleSummary = {
   id: string;
@@ -167,7 +163,7 @@ export interface WeeklyDigestStore {
 }
 
 /** Raison courte d'un envoi en échec, conservée au journal à la place du texte d'erreur. */
-export const WEEKLY_DIGEST_FAILURE_CODES = [
+const WEEKLY_DIGEST_FAILURE_CODES = [
   "email_unavailable",
   "email_lookup_failed",
   "message_build_failed",
@@ -191,7 +187,7 @@ export function upcomingAudienceFor(
   if (!Number.isFinite(hearing.getTime())) return null;
   const days = calendarDaysBetween(parisDateKey(now), parisDateKey(hearing));
   if (days == null || days < 0 || days > AUDIENCE_WINDOW_DAYS) return null;
-  const dateText = weekdayLongDate(row.sale_date);
+  const dateText = formatWeekdayDate(row.sale_date, null);
   if (!dateText) return null;
   const time = row.date_only === false ? saleHearingTime(row.sale_date) : null;
   return {
@@ -228,31 +224,14 @@ export async function buildDigestContent({
     : new Set<string>();
   const followedVisible = followed.filter((sale) => visible.has(sale.id));
 
-  // Une seule lecture de la date publique par vente et par passage.
-  const calendarCache = new Map<string, Promise<SaleCalendarRow | null>>();
-  const calendarOf = (saleId: string) => {
-    let cached = calendarCache.get(saleId);
-    if (!cached) {
-      cached = store.calendarEvent(saleId);
-      calendarCache.set(saleId, cached);
-    }
-    return cached;
-  };
+  const calendarOf = readOncePerSale((saleId) => store.calendarEvent(saleId));
 
   // 1. Audiences des 14 prochains jours : la date stockée tombe dans la fenêtre, puis la base confirme
   // que la date est sourcée et que la vente a été revérifiée à la source récemment.
-  const todayKey = parisDateKey(now);
-  const inWindow: Array<{ sale: FollowedSale; days: number }> = [];
-  for (const sale of followedVisible) {
-    if (!sale.saleDate) continue;
-    const stored = new Date(sale.saleDate);
-    if (!Number.isFinite(stored.getTime())) continue;
-    const days = calendarDaysBetween(todayKey, parisDateKey(stored));
-    if (days == null || days < 0 || days > AUDIENCE_WINDOW_DAYS) continue;
-    inWindow.push({ sale, days });
-  }
-  inWindow.sort((a, b) => a.days - b.days || a.sale.id.localeCompare(b.sale.id));
-  const examined = inWindow.slice(0, MAX_EXAMINED_SALES).map(({ sale }) => sale);
+  const { sales: examined } = followedSalesInWindow(followedVisible, now, {
+    maxDays: AUDIENCE_WINDOW_DAYS,
+    limit: MAX_EXAMINED_SALES,
+  });
   const verifiedAt = examined.length
     ? await store.lastVerifiedAt(examined.map((sale) => sale.id))
     : new Map<string, string | null>();
@@ -385,7 +364,7 @@ export function assertWeeklyDigestComplete(summary: WeeklyDigestRunSummary): voi
     const missing = summary.missingConfig.length
       ? ` (variable(s) manquante(s) : ${summary.missingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Récapitulatif hebdomadaire : ${summary.due} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }
@@ -453,7 +432,7 @@ export async function runWeeklyDigest({
   // récapitulatif au lendemain (voir l'en-tête du fichier).
   const emailedToday = await store.usersEmailedSince(
     pending.map(({ userId }) => userId),
-    parisDayStart(now),
+    startOfParisDay(now),
   );
   const weekKeyOf = new Map(pending.map(({ userId, weekKey }) => [userId, weekKey]));
   const sendable = pending.filter(({ userId }) => !emailedToday.has(userId));
@@ -463,7 +442,7 @@ export async function runWeeklyDigest({
     now,
   );
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const weekKey = weekKeyOf.get(userId) as string;
     const content = await buildDigestContent({ store, userId, now, stats: summary });
@@ -545,21 +524,7 @@ export async function runWeeklyDigest({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
-    const settledBatch = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settledBatch.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence de contenu : le passage échoue
-      // pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Récapitulatif hebdomadaire : lecture impossible.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Weekly digest" });
+  summary.truncated = pass.truncated;
   return summary;
 }

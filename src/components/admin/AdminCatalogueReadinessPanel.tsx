@@ -5,6 +5,7 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import MailPlus from "lucide-react/dist/esm/icons/mail-plus.js";
 import { useEffect, useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import {
@@ -15,6 +16,7 @@ import { adminClampOffset } from "@/lib/admin-pagination";
 import Link from "next/link";
 import { saleDetailPath } from "@/lib/navigation";
 import { runAdminCatalogueReadinessActionClient } from "@/lib/client-api";
+import { AdminPill } from "@/components/admin/admin-pill";
 import type {
   CatalogueReadinessQueueItem,
   CatalogueReadinessStatus,
@@ -45,8 +47,8 @@ export function AdminCatalogueReadinessPanel({
   // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
   useEffect(() => {
     const data = query.data;
-    if (data && data.items.length === 0 && data.queueOffset > 0) {
-      setPageOffset(adminClampOffset(data.queueOffset, data.queueLimit, data.queueTotal));
+    if (data && data.items.length === 0 && data.offset > 0) {
+      setPageOffset(adminClampOffset(data.offset, data.limit, data.total));
     }
   }, [query.data]);
   const action = useMutation({
@@ -55,7 +57,7 @@ export function AdminCatalogueReadinessPanel({
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Décision de maturité enregistrée.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
 
   if (query.isPending) {
@@ -65,9 +67,7 @@ export function AdminCatalogueReadinessPanel({
     return (
       <section className="rounded-xl border bg-white p-5">
         <p role="alert" className="text-sm text-red-700">
-          {query.error instanceof Error
-            ? query.error.message
-            : "La file de maturité est indisponible."}
+          {queryErrorMessage(query.error, "La file de maturité est indisponible.")}
         </p>
         <button className="admin-button-secondary mt-3" onClick={() => void query.refetch()}>
           Réessayer
@@ -83,8 +83,8 @@ export function AdminCatalogueReadinessPanel({
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">File d’enrichissement</h2>
           <p className="mt-1 text-sm text-brand-navy/60">
-            {overview.queueTotal} dossier{overview.queueTotal > 1 ? "s" : ""} à reprendre avec un
-            contact : avocats, puis greffes, puis adresses à confirmer.
+            {overview.total} dossier{overview.total > 1 ? "s" : ""} à reprendre avec un contact :
+            avocats, puis greffes, puis adresses à confirmer.
           </p>
           {overview.classCounts ? (
             <p className="mt-1 text-xs text-brand-navy/55">
@@ -110,9 +110,9 @@ export function AdminCatalogueReadinessPanel({
         )}
         <AdminPagination
           label="file d’enrichissement"
-          offset={overview.queueOffset}
-          limit={overview.queueLimit}
-          total={overview.queueTotal}
+          offset={overview.offset}
+          limit={overview.limit}
+          total={overview.total}
           shown={overview.items.length}
           busy={query.isFetching}
           onOffsetChange={setPageOffset}
@@ -174,14 +174,12 @@ function QueueLine({
               {item.readinessScore == null ? "Non scorée" : `${item.readinessScore}/100`}
             </span>
             {item.contactClass && item.contactClass !== "D" ? (
-              <span className="rounded-full border px-2 py-0.5 text-xs">
-                {CONTACT_CLASS_LABELS[item.contactClass]}
-              </span>
+              <AdminPill>{CONTACT_CLASS_LABELS[item.contactClass]}</AdminPill>
             ) : null}
             {item.override ? (
-              <span className="rounded-full border px-2 py-0.5 text-[11px]">
+              <AdminPill>
                 Dérogation : {item.override === "publish" ? "publier" : "retenir"}
-              </span>
+              </AdminPill>
             ) : null}
           </div>
           <h3 className="mt-2 truncate font-semibold">{title}</h3>
@@ -302,18 +300,18 @@ function QueueLine({
 }
 
 function ReadinessPill({ status }: { status: CatalogueReadinessStatus }) {
-  const config = {
-    unassessed: ["Non évaluée", "border-slate-300 bg-slate-50 text-slate-700"],
-    internal_only: ["Interne", "border-red-200 bg-red-50 text-red-700"],
-    needs_enrichment: ["À enrichir", "border-amber-200 bg-amber-50 text-amber-800"],
-    premium_ready: ["Prête Analyse", "border-emerald-200 bg-emerald-50 text-emerald-700"],
-  }[status];
+  const [label, tone] = (
+    {
+      unassessed: ["Non évaluée", "neutral"],
+      internal_only: ["Interne", "danger"],
+      needs_enrichment: ["À enrichir", "warning"],
+      premium_ready: ["Prête Analyse", "success"],
+    } as const
+  )[status];
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${config[1]}`}
-    >
+    <AdminPill tone={tone}>
       {status === "premium_ready" ? <CheckCircle className="size-3" /> : null}
-      {config[0]}
-    </span>
+      {label}
+    </AdminPill>
   );
 }

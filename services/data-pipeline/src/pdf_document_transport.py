@@ -9,12 +9,6 @@ from urllib.parse import urlparse
 import httpcore
 import httpx
 
-from src.encheres_publiques_guard import (  # noqa: F401
-    EncheresPubliquesAccessNotAuthorized,
-    require_encheres_publiques_documents_access,
-    require_encheres_publiques_url_access,
-)
-
 
 @dataclass(frozen=True)
 class PublicDocumentTarget:
@@ -155,11 +149,3 @@ def resolve_public_document_target(
         port=port,
         addresses=tuple(sorted(addresses)),
     )
-
-
-def is_safe_public_document_url(url: str) -> bool:
-    try:
-        resolve_public_document_target(url)
-    except ValueError:
-        return False
-    return True

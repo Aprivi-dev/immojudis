@@ -1,6 +1,7 @@
 import { z } from "zod/mini";
+import { formatNumericDate } from "@/lib/format/dates";
 
-export const PILOT_KINDS = ["tribunal", "notary", "state"] as const;
+const PILOT_KINDS = ["tribunal", "notary", "state"] as const;
 export type PilotKind = (typeof PILOT_KINDS)[number];
 
 export type PilotFact = {
@@ -148,7 +149,7 @@ export function buildPilotPacket({
   const lines = [
     `# ${definition.packetLabel} — ${saleTitle}`,
     "",
-    `Dossier généré le ${new Date().toLocaleDateString("fr-FR")}. Les données publiées et les hypothèses de l'utilisateur doivent être vérifiées dans les pièces officielles.`,
+    `Dossier généré le ${formatNumericDate(new Date().toISOString())}. Les données publiées et les hypothèses de l'utilisateur doivent être vérifiées dans les pièces officielles.`,
     saleUrl ? `Annonce : ${saleUrl}` : "Annonce : lien indisponible",
     "",
     "## Hypothèses de l'investisseur",

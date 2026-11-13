@@ -14,11 +14,12 @@ import {
   type SaleWorkspacePrivateNotes,
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
+import { asJson } from "@/lib/supabase-json";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type SaleWorkspaceInsert = Database["public"]["Tables"]["sale_workspaces"]["Insert"];
 
-export const workspaceNotesSchema = z
+const workspaceNotesSchema = z
   .object({
     general: z.string().max(5000).default(""),
     occupation: z.string().max(5000).default(""),
@@ -32,7 +33,7 @@ export const workspaceNotesSchema = z
   // donne un objet neuf à chaque lecture (le `.default()` de zod 4 la renverrait telle quelle).
   .prefault(DEFAULT_WORKSPACE_NOTES);
 
-export const documentReviewSchema = z
+const documentReviewSchema = z
   .object({
     status: z.enum(DOCUMENT_REVIEW_STATUSES).default(DEFAULT_DOCUMENT_REVIEW.status),
     note: z.string().max(3000).default(DEFAULT_DOCUMENT_REVIEW.note),
@@ -52,7 +53,7 @@ export const documentReviewSchema = z
   })
   .prefault(DEFAULT_DOCUMENT_REVIEW);
 
-export const documentReviewsSchema = z.record(z.string(), documentReviewSchema).default({});
+const documentReviewsSchema = z.record(z.string(), documentReviewSchema).default({});
 
 export const saleWorkspaceInputSchema = z.object({
   saleId: z.string().guid(),
@@ -68,8 +69,6 @@ export const saleWorkspaceInputSchema = z.object({
   nextAction: z.string().trim().max(300).nullable().optional(),
   nextActionDueAt: z.string().datetime().nullable().optional(),
 });
-
-export type SaleWorkspaceInput = z.input<typeof saleWorkspaceInputSchema>;
 export type SaleWorkspacePayload = z.output<typeof saleWorkspaceInputSchema>;
 
 export type SaleWorkspace = Omit<
@@ -262,10 +261,6 @@ function normalizeStatus(value: string): SaleWorkspaceStatus {
   return SALE_WORKSPACE_STATUSES.includes(value as SaleWorkspaceStatus)
     ? (value as SaleWorkspaceStatus)
     : "watching";
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }
 
 function hasInput<K extends keyof SaleWorkspacePayload>(

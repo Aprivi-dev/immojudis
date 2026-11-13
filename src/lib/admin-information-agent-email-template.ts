@@ -1,11 +1,9 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
-import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
-import {
-  informationAgentAddressOrigin,
-  informationAgentControllerIdentity,
-} from "@/lib/information-agent-compliance";
+import { informationAgentAddressOrigin } from "@/lib/information-agent-compliance";
+import { buildInformationAgentLegalFooter } from "@/lib/information-agent/message-guards";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -23,7 +21,7 @@ import {
   type InformationAgentEmailTemplateSummary,
   type InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type TemplateRow = Database["public"]["Tables"]["information_agent_email_templates"]["Row"];
 
@@ -51,7 +49,7 @@ export type AdminInformationAgentEmailTemplateAction = z.output<
 export async function getAdminInformationAgentEmailTemplateWorkspace(
   authToken: string,
 ): Promise<InformationAgentEmailTemplateWorkspace> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const { data, error } = await supabaseAdmin
     .from("information_agent_email_templates")
     .select("*")
@@ -60,7 +58,7 @@ export async function getAdminInformationAgentEmailTemplateWorkspace(
   if (error) throw error;
   const templates = (data ?? []).map(templateSummaryFromRow);
   const published = templates.find((template) => template.status === "published");
-  if (!published) throw new Error("Aucun template d’email publié.");
+  if (!published) throw new Error("No published information-agent email template");
 
   return {
     published,
@@ -84,7 +82,7 @@ export async function runAdminInformationAgentEmailTemplateAction({
   authToken: string;
   input: AdminInformationAgentEmailTemplateAction;
 }) {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "preview") {
     return previewTemplate(input.template);
   }
@@ -172,7 +170,9 @@ async function saveDraft({
       .select("id")
       .maybeSingle();
     if (error) throw error;
-    if (!data) throw new Error("Ce brouillon n’est plus modifiable. Rechargez la page.");
+    if (!data) {
+      throw new PublicApiError("Ce brouillon n’est plus modifiable. Rechargez la page.", 409);
+    }
     return;
   }
 
@@ -191,10 +191,13 @@ async function publishDraft({ adminId, draftId }: { adminId: string; draftId: st
     .eq("id", draftId)
     .single();
   if (draftError) throw draftError;
-  if (draft.status !== "draft") throw new Error("Ce template n’est plus un brouillon.");
+  if (draft.status !== "draft") {
+    throw new PublicApiError("Ce template n’est plus un brouillon.", 409);
+  }
   if (Number(draft.revision) < MIN_COMPLIANT_TEMPLATE_REVISION) {
-    throw new Error(
+    throw new PublicApiError(
       `Ce brouillon est antérieur à la révision ${MIN_COMPLIANT_TEMPLATE_REVISION} : un modèle publié avant elle serait ignoré. Appliquez la migration de mise en conformité des gabarits.`,
+      409,
     );
   }
   const content = parseInformationAgentEmailTemplateContent({
@@ -226,7 +229,6 @@ async function publishDraft({ adminId, draftId }: { adminId: string; draftId: st
 async function previewTemplate(template: InformationAgentEmailTemplateContent) {
   const previewAppUrl =
     resolveSiteOrigin(process.env, "https://immojudis.com") ?? "https://immojudis.com";
-  const controller = informationAgentControllerIdentity();
   const exampleOrigin = informationAgentAddressOrigin({
     sourceName: "licitor",
     sourceUrl: "https://www.licitor.com/annonce/exemple.html",
@@ -246,21 +248,14 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
     caseReference: "IJ-EXEMPLE",
     appUrl: previewAppUrl,
     // The legal footer is added to every real send; show it so the template can be validated whole.
-    legalFooter: {
-      controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
-      controllerAddress: controller?.address ?? "[Adresse à configurer]",
-      contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
+    // Ce qui manque à la configuration apparaît en repère « à configurer » (l'aperçu du modèle ne bloque rien).
+    legalFooter: buildInformationAgentLegalFooter({
+      appUrl: previewAppUrl,
+      email: null,
+      addressOrigin: exampleOrigin,
       saleReference: "Appartement T3 à Bordeaux — Tribunal judiciaire de Bordeaux",
-      addressOrigin: exampleOrigin.text,
-      addressOriginUrl: exampleOrigin.url,
-      automatedSearch: exampleOrigin.automated,
-      aiProvider: informationAgentAiProvider(),
-      privacyUrl: new URL("/privacy", previewAppUrl).toString(),
-      optOutUrl: new URL(
-        "/api/information-agent/opt-out?e=exemple&t=exemple",
-        previewAppUrl,
-      ).toString(),
-    },
+      preview: { blockers: [] },
+    }),
   });
   return {
     preview: {

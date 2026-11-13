@@ -1,20 +1,14 @@
-import { validSaleDate } from "@/lib/search/sale-date-range";
+import { validCalendarDay } from "@/lib/calendar-day";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
+import { DPE_CLASSES, type DpeClass } from "@/lib/dpe";
 import { propertyTypeLabel } from "@/lib/format";
-import { geocodeAddress, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { getSaleSurface } from "@/lib/surface";
+import { geocodeAddress, type GeoPoint } from "@/lib/geo";
 import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
-import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
+import { summarizeSalesSample, type SalesSampleSummary } from "@/lib/sales-statistics-summary";
 import { compactPrice } from "@/lib/search/search-filters";
 import { RESULTS_VIEW_PARAM, parseResultsView, type ResultsView } from "@/lib/search/results-view";
-import {
-  boundedPrice,
-  stableUrlRecord,
-  type SalesSearchParams,
-} from "@/lib/search/search-url-state";
+import { boundedPrice, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel, type SaleTypeFilter } from "@/lib/sale-types";
 
 export type SearchDraft = {
@@ -55,7 +49,6 @@ export type SearchStatistics = {
   medianPrice: number | null;
   medianPricePerM2: number | null;
   averageScore: number | null;
-  upcomingSales: number;
   dpeCounts: Record<DpeClass, number>;
   dpeKnownCount: number;
 };
@@ -134,8 +127,8 @@ export function emptySearchDraft(): SearchDraft {
 
 export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): SalesSearchParams {
   return {
-    minSaleDate: validSaleDate(draft.minSaleDate),
-    maxSaleDate: validSaleDate(draft.maxSaleDate),
+    minSaleDate: validCalendarDay(draft.minSaleDate),
+    maxSaleDate: validCalendarDay(draft.maxSaleDate),
     saleType: parseSaleType(draft.saleType),
     sort: current.sort,
     viewport: current.viewport,
@@ -212,7 +205,7 @@ export function historyModeForDraftChange(previous: SearchDraft, next: SearchDra
     : "replace";
 }
 
-export function stringifyNumber(value: number | undefined) {
+function stringifyNumber(value: number | undefined) {
   return value == null ? "" : String(value);
 }
 
@@ -248,7 +241,7 @@ export function surfaceRangeError(draft: Pick<SearchDraft, "minSqft" | "maxSqft"
   return min != null && max != null && min > max ? MIN_SURFACE_ABOVE_MAX_MESSAGE : null;
 }
 
-export function cleanString(value: string) {
+function cleanString(value: string) {
   return value.trim() || undefined;
 }
 
@@ -256,101 +249,19 @@ export function toggleValue(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
-export { stableUrlRecord };
-
-export function downloadBlob(blob: Blob, filename: string) {
-  if (typeof document === "undefined") return;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
+/** Le résumé de la page affichée, par la même règle que les statistiques du serveur. */
 export function buildSearchStatistics(sales: AuctionSale[]): SearchStatistics {
-  const prices = sales
-    .map((sale) => sale.starting_price_eur)
-    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
-  const pricePerM2Values = sales
-    .map((sale) => pricePerM2(sale.starting_price_eur, getSaleSurface(sale).value))
-    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
-  const scores = sales
-    .map((sale) => sale.investment_score)
-    .filter((value): value is number => value != null && Number.isFinite(value));
-  const dpeCounts = DPE_CLASSES.reduce(
-    (acc, dpeClass) => {
-      acc[dpeClass] = 0;
-      return acc;
-    },
-    {} as Record<DpeClass, number>,
-  );
-  let dpeKnownCount = 0;
-  sales.forEach((sale) => {
-    const dpe = extractDpe(sale).class;
-    if (!dpe) return;
-    dpeCounts[dpe] += 1;
-    dpeKnownCount += 1;
-  });
-  const now = Date.now();
-
-  return {
-    medianPrice: median(prices),
-    medianPricePerM2: median(pricePerM2Values),
-    averageScore: scores.length
-      ? scores.reduce((total, value) => total + value, 0) / scores.length
-      : null,
-    upcomingSales: sales.filter(
-      (sale) => sale.sale_date && new Date(sale.sale_date).getTime() >= now,
-    ).length,
-    dpeCounts,
-    dpeKnownCount,
-  };
+  return searchStatisticsFromServer(summarizeSalesSample(sales));
 }
 
-export function searchStatisticsFromServer(
-  summary: SalesStatisticsResponse["summary"],
-): SearchStatistics {
+export function searchStatisticsFromServer(summary: SalesSampleSummary): SearchStatistics {
   return {
     medianPrice: summary.medianPriceEur,
     medianPricePerM2: summary.medianPricePerM2,
     averageScore: summary.averageInvestmentScore,
-    upcomingSales: summary.upcomingSales,
     dpeCounts: summary.dpeCounts,
     dpeKnownCount: summary.dpeKnownCount,
   };
-}
-
-export function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return Math.round(sorted[middle]);
-  return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
-}
-
-export function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    setMatches(media.matches);
-
-    const onChange = () => setMatches(media.matches);
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", onChange);
-      return () => media.removeEventListener("change", onChange);
-    }
-    if (typeof media.addListener === "function") {
-      media.addListener(onChange);
-      return () => media.removeListener(onChange);
-    }
-    return undefined;
-  }, [query]);
-
-  return matches;
 }
 
 /** Affichage des résultats (cartes ou tableau) lu dans l'adresse courante, à côté des filtres. */
@@ -422,9 +333,7 @@ export async function watchedZoneInputFromSearch(
   return null;
 }
 
-export function alertDefaultsFromSearch(
-  search: SalesSearchParams,
-): WatchedZoneInput["alertDefaults"] {
+function alertDefaultsFromSearch(search: SalesSearchParams): WatchedZoneInput["alertDefaults"] {
   return {
     maxPriceEur: search.maxPrice ?? null,
     minSurfaceM2: search.minSqft ?? null,
@@ -439,6 +348,6 @@ export function alertDefaultsFromSearch(
   };
 }
 
-export function clampZoneName(value: string): string {
+function clampZoneName(value: string): string {
   return value.trim().slice(0, 120) || "Zone surveillée";
 }

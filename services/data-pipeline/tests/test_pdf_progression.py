@@ -18,6 +18,7 @@ from src.pdf_progress import (
     read_modern_cache,
     stale_complete_document_urls,
 )
+from src.sale_local_files import sale_storage_id
 from src.storage import supabase_client as storage
 
 selection = importlib.import_module("src.pdf_document_selection")
@@ -85,11 +86,11 @@ def _record_pass(
     selected: list[dict[str, str]],
     payloads: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    cache_path = Path(pdf_enrichment.PDF_TEXTS_DIR) / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    cache_path = Path(pdf_enrichment.PDF_TEXTS_DIR) / f"{sale_storage_id(sale)}.json"
     previous_cache = read_modern_cache(cache_path) if cache_path.exists() else []
     merged = merge_modern_payloads(previous_cache, payloads, documents=sale.documents)
-    pdf_enrichment._write_pdf_text_cache(sale, merged)
-    selection._store_document_analysis_status(
+    pdf_fact_extraction.write_pdf_text_cache(sale, merged)
+    selection.store_document_analysis_status(
         sale,
         selected,
         payloads,
@@ -105,7 +106,7 @@ def test_writer_progresses_sixteen_documents_in_bounded_passes(monkeypatch, tmp_
     pass_sizes: list[int] = []
 
     for _ in range(3):
-        selected = selection._select_documents_for_extraction(sale.documents, sale=sale)
+        selected = selection.select_documents_for_extraction(sale.documents, sale=sale)
         current = [_payload(document) for document in selected]
         pass_sizes.append(len(selected))
         selected_urls.extend(document["url"] for document in selected)
@@ -117,7 +118,7 @@ def test_writer_progresses_sixteen_documents_in_bounded_passes(monkeypatch, tmp_
     assert sale.raw_payload["document_analysis"]["pending_document_urls"] == []
     assert sale.raw_payload["document_analysis"]["last_successful_check_at"]
     assert documents_are_current(sale)
-    cache = json.loads((tmp_path / f"{pdf_enrichment.sale_storage_id(sale)}.json").read_text())
+    cache = json.loads((tmp_path / f"{sale_storage_id(sale)}.json").read_text())
     assert len(cache) == 16
     assert {item["url"] for item in cache} == set(selected_urls)
 
@@ -139,7 +140,7 @@ def test_legacy_progress_and_legacy_cache_do_not_advance_cursor(monkeypatch, tmp
         ],
     }
 
-    selected = selection._select_documents_for_extraction(sale.documents, sale=sale)
+    selected = selection.select_documents_for_extraction(sale.documents, sale=sale)
     assert [document["url"] for document in selected] == [document["url"] for document in sale.documents]
 
     legacy = {
@@ -180,7 +181,7 @@ def test_sha_change_reopens_a_complete_document(monkeypatch, tmp_path: Path) -> 
     }
     sale.raw_payload["document_analysis"] = analysis
     first["sha256"] = hashlib.sha256(b"new-bytes").hexdigest()
-    selected = selection._select_documents_for_extraction(sale.documents, sale=sale)
+    selected = selection.select_documents_for_extraction(sale.documents, sale=sale)
     assert first["url"] in {document["url"] for document in selected}
 
 
@@ -194,7 +195,7 @@ def test_recovered_terminal_marker_is_cleared_by_new_success(monkeypatch, tmp_pa
         "blocked_document_urls": [document["url"]],
     }
     payload = _payload(document)
-    selection._store_document_analysis_status(
+    selection.store_document_analysis_status(
         sale,
         [document],
         [payload],
@@ -248,7 +249,7 @@ def test_terminal_http_exclusions_revalidate_by_url_but_social_skips_stay_skippe
 
     stale = stale_complete_document_urls(sale.raw_payload["document_analysis"], sale.documents)
     assert stale == {blocked_url, permanent_url, empty_url}
-    selected = selection._select_documents_for_extraction(
+    selected = selection.select_documents_for_extraction(
         sale.documents,
         sale=sale,
         revalidate_urls=stale,
@@ -257,7 +258,7 @@ def test_terminal_http_exclusions_revalidate_by_url_but_social_skips_stay_skippe
 
     # A fresh recheck updates only the attempted terminal URLs. The social
     # candidate remains a deterministic skip and is never put back in scope.
-    _store = selection._store_document_analysis_status
+    _store = selection.store_document_analysis_status
     _store(
         sale,
         [],
@@ -279,10 +280,10 @@ def test_cold_partial_restore_materializes_modern_checkpoint_without_promoting_m
 ) -> None:
     _isolate_pdf_cache(monkeypatch, tmp_path)
     sale = _sale_with_documents()
-    selected = selection._select_documents_for_extraction(sale.documents, sale=sale)
+    selected = selection.select_documents_for_extraction(sale.documents, sale=sale)
     payloads = [_payload(document) for document in selected]
     _record_pass(sale, selected, payloads)
-    cache_path = tmp_path / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    cache_path = tmp_path / f"{sale_storage_id(sale)}.json"
     cache_path.unlink()
 
     row = {
@@ -298,7 +299,7 @@ def test_cold_partial_restore_materializes_modern_checkpoint_without_promoting_m
         "load_settings",
         lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
-    monkeypatch.setattr(storage, "_read_persisted_pdf_rows_rest", lambda *_args: [row])
+    monkeypatch.setattr(storage, "read_persisted_pdf_rows_rest", lambda *_args: [row])
 
     restored = storage.restore_persisted_pdf_progress_for_sale(sale)
     assert len(restored) == 6

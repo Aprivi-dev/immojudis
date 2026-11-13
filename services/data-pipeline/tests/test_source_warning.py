@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from test_main import _raw_sale, _settings
 
-from src import autonomous_runner, main
+from src import autonomous_runner, main, sale_finalization
 from src.source_health import (
     SOURCE_WARNING_EXIT_CODE,
     failed_sources,
@@ -71,16 +71,15 @@ def _run(monkeypatch, scraper, *, upsert=lambda sales, **kwargs: len(sales), pub
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **k: set())
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", scraper)
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", pdf)
     monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *a, **k: main.LLMEnrichmentStats())
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *a, **k: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **k: len(sales))
     return main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=publish))
@@ -164,13 +163,12 @@ def _autonomous(monkeypatch, returncode: int, source: str = "licitor"):
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess, "run", lambda command, **kwargs: SimpleNamespace(returncode=returncode)
     )
-    return autonomous_runner.execute(run_id), updates
+    return autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())), updates
 
 
 def test_scheduled_run_keeps_its_succeeded_status_but_forwards_the_warning(monkeypatch) -> None:

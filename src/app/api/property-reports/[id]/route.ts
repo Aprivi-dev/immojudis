@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -11,51 +10,27 @@ import {
   updatePropertyReport,
 } from "@/lib/property-reports";
 
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
-
-const PRIVATE_AUTH_HEADERS = {
-  "cache-control": "private, no-store",
-  vary: "authorization",
-};
-
-export async function GET(request: Request, { params }: RouteParams) {
-  try {
-    const { id } = await params;
+export const GET = apiRoute<{ id: string }>(
+  { scope: "api.property-reports.read", fallbackMessage: "Rapport indisponible" },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await getPropertyReport({ auth, reportId: id });
-    return NextResponse.json(response, { headers: PRIVATE_AUTH_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "property-reports.id", {
-      fallbackMessage: "Rapport indisponible",
-    });
-  }
-}
+    return getPropertyReport({ auth, reportId: params.id });
+  },
+);
 
-export async function PATCH(request: Request, { params }: RouteParams) {
-  try {
-    const { id } = await params;
+export const PATCH = apiRoute<{ id: string }>(
+  { scope: "api.property-reports.update", fallbackMessage: "Rapport impossible à modifier" },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = propertyReportUpdateSchema.parse(await request.json());
-    const response = await updatePropertyReport({ auth, reportId: id, input });
-    return NextResponse.json(response);
-  } catch (error) {
-    return apiRouteError(error, request, "property-reports.id", {
-      fallbackMessage: "Rapport impossible à modifier",
-    });
-  }
-}
+    return updatePropertyReport({ auth, reportId: params.id, input });
+  },
+);
 
-export async function DELETE(request: Request, { params }: RouteParams) {
-  try {
-    const { id } = await params;
+export const DELETE = apiRoute<{ id: string }>(
+  { scope: "api.property-reports.delete", fallbackMessage: "Rapport impossible à supprimer" },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await deletePropertyReport({ auth, reportId: id });
-    return NextResponse.json(response);
-  } catch (error) {
-    return apiRouteError(error, request, "property-reports.id", {
-      fallbackMessage: "Rapport impossible à supprimer",
-    });
-  }
-}
+    return deletePropertyReport({ auth, reportId: params.id });
+  },
+);

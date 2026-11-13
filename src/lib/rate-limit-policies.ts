@@ -125,7 +125,3 @@ export const SALES_API_FEED_DAILY_ROWS = 5_000;
 
 /** Maximum number of lawyer profiles returned by one directory call. */
 export const LAWYER_DIRECTORY_PAGE_SIZE = 50;
-
-/** Edge cache lifetime of the public directory and offer responses, in seconds. */
-export const PUBLIC_DIRECTORY_CACHE_SECONDS = 3600;
-export const BILLING_OFFER_CACHE_SECONDS = 300;

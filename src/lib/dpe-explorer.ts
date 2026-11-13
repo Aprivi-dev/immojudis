@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { optionalQueryText } from "@/lib/optional-query-text";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
@@ -18,18 +19,13 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToExplorer } from "@/lib/dpe-diagnostic-row";
 import { emptyDpeCounts } from "@/lib/dpe-counts";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 const DPE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,starting_price_eur,sale_date,updated_at,latitude,longitude,documents_rich,source_blocks,source_name,source_url";
 
 type DpeSaleRow = SelectedRow<AppSaleRow, typeof DPE_COLUMNS>;
-
-const optionalText = (max = 140) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().trim().max(max).optional(),
-  );
 
 const booleanParam = z.preprocess((value) => {
   if (value === "true") return true;
@@ -38,9 +34,9 @@ const booleanParam = z.preprocess((value) => {
 }, z.boolean());
 
 export const dpeExplorerQuerySchema = z.object({
-  department: optionalText(12),
-  city: optionalText(140),
-  propertyType: optionalText(80),
+  department: optionalQueryText(12),
+  city: optionalQueryText(140),
+  propertyType: optionalQueryText(80),
   dpeClasses: z.preprocess(
     (value) =>
       typeof value === "string"
@@ -54,8 +50,6 @@ export const dpeExplorerQuerySchema = z.object({
   includeMap: booleanParam.default(true),
   limit: z.coerce.number().int().min(1).max(500).default(120),
 });
-
-export type DpeExplorerQueryInput = z.input<typeof dpeExplorerQuerySchema>;
 export type DpeExplorerQuery = z.output<typeof dpeExplorerQuerySchema>;
 
 export type DpeExplorerItem = {
@@ -127,13 +121,13 @@ export async function getDpeExplorer({
 }): Promise<DpeExplorerResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "dpe.latest")) {
-    throw new Error("Explorateur DPE réservé à l’offre Analyse.");
+    throw new ForbiddenError("Explorateur DPE réservé à l’offre Analyse.");
   }
   if (input.dpeClasses.length && !featureIncluded(plan.plan, "dpe.filters")) {
-    throw new Error("Filtres DPE réservés à l’offre Analyse.");
+    throw new ForbiddenError("Filtres DPE réservés à l’offre Analyse.");
   }
   if (input.includeMap && !featureIncluded(plan.plan, "dpe.map")) {
-    throw new Error("Carte DPE réservée à l’offre Analyse.");
+    throw new ForbiddenError("Carte DPE réservée à l’offre Analyse.");
   }
 
   const rows = await queryDpeSales({ auth, input });
@@ -146,7 +140,7 @@ export async function getDpeExplorer({
   const mapPoints = input.includeMap ? buildDpeMapPoints(items) : [];
   const summary = buildDpeExplorerSummary(items, mapPoints);
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "dpe.explorer_viewed",
     subjectType: "dpe_explorer_scope",

@@ -113,6 +113,23 @@ def test_online_voluntary_sale_reads_buyer_fees_extension_and_floor_price() -> N
     assert display["procedure"]["deadline"]["kind"] == "sale_window_close"
 
 
+def test_stored_inverted_window_is_not_displayed_and_the_sale_date_is_the_deadline() -> None:
+    """Créneau stocké avant le lot 14 (clôture avant l'ouverture) : affiché comme la collecte l'écrit aujourd'hui."""
+    raw = {
+        "source_name": "encheres_publiques",
+        "source_url": URL,
+        "raw_text": "Type de vente: En ligne - Vente volontaire",
+        "sale_date": "2026-11-01T09:00:00+00:00",
+        "source_sale_schedule": {"opens_at": "2026-11-02T17:00:00+00:00", "closes_at": "2026-11-01T09:00:00+00:00"},
+        "source_blocks": {"organisateur": "Étude Fictive"},
+    }
+
+    procedure = extract_encheres_publiques_characteristics(raw)["source_blocks"]["caracteristiques_bien"]["procedure"]
+
+    assert "window" not in procedure
+    assert procedure["deadline"] == {"at": "2026-11-01T09:00:00+00:00", "kind": "adjudication"}
+
+
 def test_refresh_ignores_other_sources_and_empty_blocks() -> None:
     assert refresh_encheres_publiques_raw_sale({"source_name": "vench", "source_blocks": {"description": "x"}}) is False
     assert refresh_encheres_publiques_raw_sale({"source_name": "encheres_publiques"}) is False

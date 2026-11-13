@@ -1,4 +1,5 @@
-import { evaluateOperationalHealth, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { evaluateOperationalHealth } from "@/lib/operational-health-job";
 import { dispatchDuePipeline } from "@/lib/pipeline-dispatch";
 
 export async function GET(request: Request) {

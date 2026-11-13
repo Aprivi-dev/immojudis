@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
+import { formatWeekdayDate } from "@/lib/format/dates";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
@@ -11,14 +12,21 @@ import {
 } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import { SALE_CALENDAR_DISCLAIMER, type SaleCalendarRow } from "@/lib/sale-calendar";
-import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
 import {
   buildSaleReminderMessage,
   type SaleReminderItem,
   type SaleReminderKind,
 } from "@/lib/sale-reminder-emails";
-import { saleRemindersMode, type SaleRemindersMode } from "@/lib/sale-reminders-mode";
+import { saleRemindersMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { saleHearingTime, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
+import {
+  EMAIL_PASS_BUDGET_MS,
+  followedSalesInWindow,
+  readOncePerSale,
+  runEmailPass,
+} from "@/lib/email-campaign-pass";
 
 /**
  * Rappels d'audience (J-7, J-1) et avertissements graves sur les ventes qu'une personne suit
@@ -47,7 +55,7 @@ const REMINDER_DAYS: ReadonlyArray<{ days: number; kind: "audience_j7" | "audien
 ];
 
 /** Les événements de changement plus anciens ne sont plus relus (le cron passe chaque jour). */
-export const WARNING_LOOKBACK_HOURS = 72;
+const WARNING_LOOKBACK_HOURS = 72;
 /** Au plus ce nombre d'éléments par email : au-delà, un second email part (rien n'est perdu). */
 export const MAX_REMINDER_ITEMS_PER_EMAIL = 10;
 /**
@@ -68,12 +76,9 @@ const MAX_FOLLOWED_SALES_PER_USER = 300;
  * Un rappel d'audience (J-7, J-1) n'est envoyé que si la vente a été revue à la source depuis moins
  * de ce délai : une date que personne n'a revérifiée depuis plus d'un jour et demi peut être périmée.
  */
-export const MAX_SOURCE_CHECK_AGE_HOURS = 36;
+const MAX_SOURCE_CHECK_AGE_HOURS = 36;
 /** Au-delà de cette part de rappels d'audience écartés faute de vérification récente, le passage échoue. */
-export const MAX_STALE_SKIP_SHARE = 0.2;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
-const PARIS_TIME_ZONE = "Europe/Paris";
+const MAX_STALE_SKIP_SHARE = 0.2;
 const DATE_TO_CONFIRM = "Nouvelle date à confirmer auprès de l’avocat poursuivant.";
 
 export type FollowedSale = { id: string; saleDate: string | null };
@@ -99,7 +104,7 @@ export type SaleReminderFailureCode = (typeof SALE_REMINDER_FAILURE_CODES)[numbe
 
 /** Accès aux données : réel en production (`sale-reminders-store.ts`), simulé dans les tests. */
 export interface SaleReminderStore {
-  /** Personnes ayant un consentement actif et daté aux rappels. */
+  /** Personnes ayant un consentement actif, daté et versionné aux rappels. */
   listConsentingUserIds(): Promise<string[]>;
   /** Parmi ces personnes, les administrateurs (mode `internal`). */
   filterAdminUserIds(userIds: string[]): Promise<Set<string>>;
@@ -126,7 +131,7 @@ export interface SaleReminderStore {
     saleId: string;
     kind: SaleReminderKind;
     dedupeKey: string;
-    mode: Exclude<SaleRemindersMode, "off">;
+    mode: Exclude<EmailFeatureMode, "off">;
     payload: Record<string, unknown>;
   }): Promise<string | null>;
   markSent(ids: string[], args: { messageId: string | null; at: Date }): Promise<void>;
@@ -137,7 +142,7 @@ export interface SaleReminderStore {
 }
 
 export type SaleReminderRunSummary = {
-  mode: SaleRemindersMode;
+  mode: EmailFeatureMode;
   /** Vrai quand l'envoi d'emails est configuré (clé Resend, expéditeur, adresse du site). */
   configured: boolean;
   consentingUsers: number;
@@ -164,7 +169,7 @@ export type SaleReminderRunSummary = {
   skipped: "off" | "not_configured" | null;
 };
 
-function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
+function emptySummary(mode: EmailFeatureMode): SaleReminderRunSummary {
   return {
     mode,
     configured: false,
@@ -185,7 +190,7 @@ function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
   };
 }
 
-export type DetectedReminder = {
+type DetectedReminder = {
   kind: SaleReminderKind;
   saleId: string;
   dedupeKey: string;
@@ -205,18 +210,6 @@ function parseDate(value: unknown): Date | null {
   if (typeof value !== "string") return null;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date : null;
-}
-
-export function weekdayLongDate(value: string): string | null {
-  const date = parseDate(value);
-  if (!date) return null;
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: PARIS_TIME_ZONE,
-  }).format(date);
 }
 
 /** « Maison à Bordeaux » : le type de bien et la commune publics, jamais l'adresse. */
@@ -251,7 +244,7 @@ export function audienceReminderFor(
   const dayKey = parisDateKey(hearing);
   const days = calendarDaysBetween(parisDateKey(now), dayKey);
   const match = REMINDER_DAYS.find((reminder) => reminder.days === days);
-  const dateText = weekdayLongDate(row.sale_date);
+  const dateText = formatWeekdayDate(row.sale_date, null);
   if (!match || !dateText) return null;
   const time = row.date_only === false ? saleHearingTime(row.sale_date) : null;
   return {
@@ -317,7 +310,7 @@ export function isSourceCheckStale(lastVerifiedAt: string | null, now: Date): bo
 }
 
 /** Ce qui est à rappeler à une personne aujourd'hui (avant le dédoublonnage du journal). */
-export async function detectRemindersForUser({
+async function detectRemindersForUser({
   store,
   userId,
   now,
@@ -340,33 +333,17 @@ export async function detectRemindersForUser({
     const key = `${reminder.saleId}|${reminder.kind}|${reminder.dedupeKey}`;
     if (!detected.has(key)) detected.set(key, reminder);
   };
-  // Une seule lecture de la date publique par vente et par passage.
-  const calendarCache = new Map<string, Promise<SaleCalendarRow | null>>();
-  const calendarOf = (saleId: string) => {
-    let cached = calendarCache.get(saleId);
-    if (!cached) {
-      cached = store.calendarEvent(saleId);
-      calendarCache.set(saleId, cached);
-    }
-    return cached;
-  };
+  const calendarOf = readOncePerSale((saleId) => store.calendarEvent(saleId));
 
   // 1. Rappels d'audience : seulement les ventes dont la date stockée tombe dans la fenêtre (les plus
   // proches d'abord, MAX_FOLLOWED_SALES_PER_USER au plus), puis la base confirme que la date est
   // sourcée et que la vente a été revérifiée à la source récemment.
-  const todayKey = parisDateKey(now);
-  const maxDays = Math.max(...REMINDER_DAYS.map((reminder) => reminder.days));
-  const inWindow: Array<{ sale: FollowedSale; days: number }> = [];
-  for (const sale of followedVisible) {
-    const storedDate = parseDate(sale.saleDate);
-    if (!storedDate) continue;
-    const days = calendarDaysBetween(todayKey, parisDateKey(storedDate));
-    if (days == null || days < 0 || days > maxDays) continue;
-    inWindow.push({ sale, days });
-  }
-  inWindow.sort((a, b) => a.days - b.days || a.sale.id.localeCompare(b.sale.id));
-  if (stats && inWindow.length > MAX_FOLLOWED_SALES_PER_USER) stats.truncatedUsers += 1;
-  const examined = inWindow.slice(0, MAX_FOLLOWED_SALES_PER_USER).map(({ sale }) => sale);
+  const inWindow = followedSalesInWindow(followedVisible, now, {
+    maxDays: Math.max(...REMINDER_DAYS.map((reminder) => reminder.days)),
+    limit: MAX_FOLLOWED_SALES_PER_USER,
+  });
+  if (stats && inWindow.truncated) stats.truncatedUsers += 1;
+  const examined = inWindow.sales;
   const verifiedAt = examined.length
     ? await store.lastVerifiedAt(examined.map((sale) => sale.id))
     : new Map<string, string | null>();
@@ -403,7 +380,7 @@ export async function detectRemindersForUser({
     const row = await calendarOf(event.saleId);
     const newDate =
       warning.kind === "date_changed" && row?.exportable && row.sale_date
-        ? weekdayLongDate(row.sale_date)
+        ? formatWeekdayDate(row.sale_date, null)
         : null;
     const detail =
       warning.kind === "date_changed"
@@ -494,7 +471,7 @@ export async function runSaleReminders({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
-  mode?: SaleRemindersMode;
+  mode?: EmailFeatureMode;
   /** Passage de rattrapage (09:15) : il part de l'autre moitié de l'ordre des personnes. */
   catchUp?: boolean;
 }): Promise<SaleReminderRunSummary> {
@@ -519,7 +496,7 @@ export async function runSaleReminders({
   summary.recipients = recipients.length;
   recipients = rotateRecipients(recipients, now, catchUp);
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const detected = await detectRemindersForUser({ store, userId, now, stats: summary });
     summary.candidates += detected.length;
@@ -617,22 +594,8 @@ export async function runSaleReminders({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
-    const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settled.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence de rappel : le passage
-      // échoue pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Rappels d'audience : lecture impossible.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Sale reminders" });
+  summary.truncated = pass.truncated;
 
   summary.purgedJournalRows = await store.purgeJournal();
   return summary;

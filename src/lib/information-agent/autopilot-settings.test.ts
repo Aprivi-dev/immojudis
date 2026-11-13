@@ -97,7 +97,7 @@ describe("compteurs du pilote : envois par structure sur un domaine partagé", (
     await expect(loadAutopilotStats(NOW)).rejects.toThrow("base indisponible");
     mocks.error = null;
     mocks.rows = null;
-    await expect(loadAutopilotStats(NOW)).rejects.toThrow("indisponible");
+    await expect(loadAutopilotStats(NOW)).rejects.toThrow("returned no data");
   });
 
   it("au-delà de 1 000 lignes : compte rendu incomplet, sans erreur, et le pilote n'écrit plus en domaine partagé", async () => {

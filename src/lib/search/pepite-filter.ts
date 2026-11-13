@@ -14,7 +14,7 @@
  * (`pepitesActive`) et aucune pastille ne s'affiche.
  */
 export const PEPITE_IDS_API_PATH = "/api/catalogue/pepites";
-export const PEPITE_FILTER_UNAVAILABLE_MESSAGE =
+const PEPITE_FILTER_UNAVAILABLE_MESSAGE =
   "Le filtre « Pépites seulement » est momentanément indisponible. Retirez-le ou réessayez dans un instant.";
 
 const CACHE_MS = 5 * 60_000;

@@ -10,9 +10,6 @@ import {
   marketDiscountPct,
 } from "@/lib/market-gap";
 
-// Les prédicats d'occupation vivent dans `occupancy-status.ts` ; ils restent exportés d'ici.
-export { isOccupiedOccupancyStatus, isVacantOccupancyStatus };
-
 /**
  * Écart au marché en trois bandes, pour la fiche publique (sans compte). Aucun chiffre : ni
  * pourcentage, ni valeur, ni fourchette. Le détail reste à l'offre Analyse et au compte gratuit.
@@ -35,11 +32,11 @@ export { isOccupiedOccupancyStatus, isVacantOccupancyStatus };
  * l'en-tête de la migration 20261029120000) ; ce module en garde les seuils, que
  * `market-gap-band.test.ts` compare à ceux de la migration.
  */
-export const MARKET_GAP_BANDS = ["under", "near", "above"] as const;
+const MARKET_GAP_BANDS = ["under", "near", "above"] as const;
 export type MarketGapBand = (typeof MARKET_GAP_BANDS)[number];
 
 /** Les raisons pour lesquelles la fiche ne situe pas la mise à prix. */
-export const MARKET_GAP_INSUFFICIENT_BANDS = [
+const MARKET_GAP_INSUFFICIENT_BANDS = [
   "insufficient_surface",
   "insufficient_type",
   "insufficient",
@@ -64,13 +61,10 @@ const PUBLIC_MARKET_GAP_BANDS: readonly string[] = [
  * 20261029120000). Mesure du 20/10/2026 sur 1 547 ventes : 26 % des bandes exploitables reposaient
  * sur 4 ou 5 comparables et 8 % sur un rayon de plus d'un kilomètre.
  *
- * Nombre minimal de ventes comparables quand l'intervalle vient de la méthode jackknife locale
- * (`predictionInterval.method = "local_jackknife"`, qui suppose au moins 6 résidus dans
- * `conformalPredictionInterval` du moteur d'estimation).
+ * Nombre minimal de ventes comparables : `MARKET_JACKKNIFE_MIN_COMPARABLES` quand l'intervalle vient de la
+ * méthode jackknife locale (`predictionInterval.method = "local_jackknife"`),
+ * `MARKET_NON_JACKKNIFE_MIN_COMPARABLES` sinon (`market-comparable-minimums.ts`).
  */
-export const MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE = MARKET_JACKKNIFE_MIN_COMPARABLES;
-/** Sans la méthode jackknife (marge fixe du type de bien, ou intervalle du modèle LightGBM). */
-export const MARKET_GAP_BAND_MIN_COMPARABLES = MARKET_NON_JACKKNIFE_MIN_COMPARABLES;
 /** Échantillon effectif minimal (le moteur d'estimation se contente de 3). */
 export const MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE = 5;
 /**
@@ -141,8 +135,8 @@ export function passesPublicMarketGapGate(input: MarketGapGateInput): boolean {
   }
   const minComparables =
     input.intervalMethod === "local_jackknife"
-      ? MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE
-      : MARKET_GAP_BAND_MIN_COMPARABLES;
+      ? MARKET_JACKKNIFE_MIN_COMPARABLES
+      : MARKET_NON_JACKKNIFE_MIN_COMPARABLES;
   return (
     (comparableCount as number) >= minComparables &&
     (effectiveSampleSize as number) >= MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE &&

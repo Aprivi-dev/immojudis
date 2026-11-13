@@ -1,32 +1,11 @@
-import { useEffect, useState } from "react";
-import { fetchBillingOffer } from "@/lib/client-billing";
-import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
+import { useBillingOffer } from "@/hooks/use-billing-offer";
 
 /**
- * Whether the Analyse subscription can really be bought today: the legal
- * identity is published and the approved Stripe price is configured. `null`
- * while this is still unknown, so no trial is promised before it is verified.
+ * Whether the Analyse subscription can really be bought today. `null` while this is still unknown,
+ * so no trial is promised before it is verified; an offer that cannot be read counts as closed.
  */
 export function useAnalysisCheckoutOpen(): boolean | null {
-  const [open, setOpen] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!legalPublisherConfigurationStatus().ready) {
-      setOpen(false);
-      return;
-    }
-    fetchBillingOffer()
-      .then((offer) => {
-        if (active) setOpen(offer.configured);
-      })
-      .catch(() => {
-        if (active) setOpen(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return open;
+  const { offer } = useBillingOffer();
+  if (offer.status === "loading") return null;
+  return offer.status === "ready" && offer.open;
 }

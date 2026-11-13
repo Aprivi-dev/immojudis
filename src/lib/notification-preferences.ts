@@ -4,8 +4,11 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
-import { saleResultsOfferedTo, weeklyDigestOfferedTo } from "@/lib/email-feature-mode";
-import { saleRemindersOfferedTo } from "@/lib/sale-reminders-mode";
+import {
+  saleRemindersOfferedTo,
+  saleResultsOfferedTo,
+  weeklyDigestOfferedTo,
+} from "@/lib/email-feature-mode";
 
 type NotificationPreferenceRow =
   Database["public"]["Tables"]["user_notification_preferences"]["Row"];
@@ -30,7 +33,7 @@ export const WEEKLY_DIGEST_CONSENT_TEXT_VERSION = "2026-10-20.2";
 export const SALE_RESULTS_CONSENT_TEXT_VERSION = "2026-10-20.2";
 
 /** Jour d'envoi du récapitulatif tant que la personne n'a rien choisi : le mardi (ISO 8601 : 2). */
-export const DEFAULT_WEEKLY_DIGEST_WEEKDAY = 2;
+const DEFAULT_WEEKLY_DIGEST_WEEKDAY = 2;
 
 export const WEEKLY_DIGEST_NOT_OFFERED_MESSAGE =
   "Le récapitulatif hebdomadaire n’est pas encore proposé : votre consentement ne peut pas être enregistré pour le moment.";
@@ -252,13 +255,6 @@ export function buildNotificationPreferencePatch({
         ? timestamp
         : current.alertEmailRevokedAt,
   };
-}
-
-/** Rappels d'audience: l'email part seulement avec un consentement actif et daté. */
-export function canSendSaleReminder(
-  preferences: Pick<NotificationPreferences, "saleRemindersEnabled" | "saleRemindersConsentedAt">,
-): boolean {
-  return Boolean(preferences.saleRemindersEnabled && preferences.saleRemindersConsentedAt);
 }
 
 /**

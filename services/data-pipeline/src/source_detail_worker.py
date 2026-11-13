@@ -33,6 +33,7 @@ from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
     finish_auction_enrichment_job_in_supabase,
 )
+from src.timestamps import assumed_utc_timestamp, aware_timestamp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -355,7 +356,7 @@ def source_detail_source_enabled(source_name: str, settings: dict[str, Any]) -> 
     if not db_url:
         return False
     try:
-        with storage._shared_postgres_connection(db_url) as db:
+        with storage.shared_postgres_connection(db_url) as db:
             row = db.execute(
                 """select c.enabled,c.source_details_enabled,s.enabled,s.suspended_until
                    from public.auction_pipeline_control c
@@ -373,16 +374,8 @@ def source_detail_source_enabled(source_name: str, settings: dict[str, Any]) -> 
         return False
     if suspended_until is None:
         return True
-    if isinstance(suspended_until, datetime):
-        deadline = suspended_until
-    else:
-        try:
-            deadline = datetime.fromisoformat(str(suspended_until).replace("Z", "+00:00"))
-        except ValueError:
-            return False
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    return deadline <= datetime.now(UTC)
+    deadline = assumed_utc_timestamp(suspended_until)
+    return deadline is not None and deadline <= datetime.now(UTC)
 
 
 def release_source_detail_job_without_attempt(
@@ -402,7 +395,7 @@ def release_source_detail_job_without_attempt(
         )
         return
     attempt = job.get("attempt_count")
-    retry_deadline = _aware_timestamp(retry_not_before)
+    retry_deadline = aware_timestamp(retry_not_before)
     next_attempt_sql = ""
     params: list[Any] = [reason[:1000], str(job.get("id") or "")]
     if retry_deadline is not None and retry_deadline > datetime.now(UTC):
@@ -454,7 +447,7 @@ def report_source_detail_refusal(
         )
         return
     now = datetime.now(UTC)
-    retry_not_before = _aware_timestamp(coverage.get("retry_not_before"))
+    retry_not_before = aware_timestamp(coverage.get("retry_not_before"))
     observed_http_refusals = _nonnegative_int(coverage.get("access_denials"))
     try:
         with storage.connect(db_url) as db:
@@ -476,8 +469,8 @@ def report_source_detail_refusal(
             http_refusals = max(previous_http_refusals, observed_http_refusals)
             persistent = observed_http_refusals >= 2 or refusal_tasks >= 2
 
-            existing_suspension = _aware_timestamp(row[1])
-            existing_inventory_deadline = _aware_timestamp(row[2])
+            existing_suspension = aware_timestamp(row[1])
+            existing_inventory_deadline = aware_timestamp(row[2])
             retry_deadline = max(
                 (candidate for candidate in (retry_not_before, existing_suspension) if candidate is not None),
                 default=now,
@@ -578,7 +571,7 @@ def _client_retry_not_before(source_name: str, detail_url: str, clients: dict[st
     """Return a shared client's future Retry-After deadline, if any."""
     client = _client_for_job(source_name, detail_url, clients)
     metrics = _client_metrics(client)
-    return _aware_timestamp(metrics.get("retry_not_before"))
+    return aware_timestamp(metrics.get("retry_not_before"))
 
 
 def _client_metrics(client: Any | None) -> dict[str, Any]:
@@ -589,24 +582,11 @@ def _client_metrics(client: Any | None) -> dict[str, Any]:
         return {}
     try:
         result = metrics()
-    except Exception:
+    except Exception as exc:
+        # The counters only date a retry: their failure must not change the outcome of the detail read.
+        LOGGER.warning("Source client metrics unavailable: %s", type(exc).__name__)
         return {}
     return dict(result) if isinstance(result, dict) else {}
-
-
-def _aware_timestamp(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        candidate = value
-    elif isinstance(value, str):
-        try:
-            candidate = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    else:
-        return None
-    if candidate.tzinfo is None or candidate.utcoffset() is None:
-        return None
-    return candidate.astimezone(UTC)
 
 
 def _nonnegative_int(value: object) -> int:
@@ -656,7 +636,7 @@ def _retry_not_before_for_failure(
     if failure_kind != "transient":
         return None
     now = datetime.now(UTC)
-    retry_deadline = _aware_timestamp(metrics.get("retry_not_before"))
+    retry_deadline = aware_timestamp(metrics.get("retry_not_before"))
     # Preserve an already-recorded provider deadline when it is in the past;
     # the queue finish function still applies its normal thirty-minute floor.
     if retry_deadline is not None and retry_deadline <= now:

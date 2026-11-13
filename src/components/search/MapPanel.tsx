@@ -1078,7 +1078,7 @@ function buildPopupHtml(
     <article class="immo-mapbox-popup-card">
       ${
         imageUrl
-          ? `<img class="immo-mapbox-popup-image" src="${escapeAttribute(
+          ? `<img class="immo-mapbox-popup-image" src="${escapeHtml(
               imageUrl,
             )}" alt="" loading="lazy" decoding="async" referrerpolicy="strict-origin-when-cross-origin" />`
           : ""
@@ -1087,7 +1087,7 @@ function buildPopupHtml(
         <strong class="immo-mapbox-popup-price">${escapeHtml(
           formatStartingPrice(sale.starting_price_eur),
         )}</strong>
-        <a class="immo-mapbox-popup-title" href="${escapeAttribute(detailUrl)}">${escapeHtml(
+        <a class="immo-mapbox-popup-title" href="${escapeHtml(detailUrl)}">${escapeHtml(
           saleTitle,
         )}</a>
         <p class="immo-mapbox-popup-location">${escapeHtml(location)}</p>
@@ -1112,11 +1112,11 @@ function buildPopupHtml(
           ${sale.sale_date ? `<span>${escapeHtml(formatDate(sale.sale_date))}</span>` : ""}
           ${
             !access.analysisLocked && dpe.class
-              ? `<span style="background:${escapeAttribute(
+              ? `<span style="background:${escapeHtml(
                   dpeTheme?.background ?? "#eef3f5",
-                )};border-color:${escapeAttribute(
+                )};border-color:${escapeHtml(
                   dpeTheme?.border ?? "transparent",
-                )};color:${escapeAttribute(dpeTheme?.foreground ?? MAP_PALETTE.navy)}">DPE ${escapeHtml(
+                )};color:${escapeHtml(dpeTheme?.foreground ?? MAP_PALETTE.navy)}">DPE ${escapeHtml(
                   dpe.class,
                 )}</span>`
               : ""
@@ -1133,7 +1133,7 @@ function buildPopupHtml(
             : ""
         }
         ${access.preview ? '<p class="immo-mapbox-popup-location">Position approximative · fiche complète avec un compte gratuit</p>' : ""}
-        <a class="immo-mapbox-popup-link" href="${escapeAttribute(detailUrl)}">Voir le détail</a>
+        <a class="immo-mapbox-popup-link" href="${escapeHtml(detailUrl)}">Voir le détail</a>
       </div>
     </article>
   `;
@@ -1194,8 +1194,4 @@ function MapControlButton({
       <Icon className="h-5 w-5" />
     </button>
   );
-}
-
-function escapeAttribute(value: string) {
-  return escapeHtml(value);
 }

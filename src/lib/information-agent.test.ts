@@ -1,23 +1,36 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { describe, expect, it, vi } from "vitest";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
 import {
   assertInformationAgentCanaryRecipient,
-  assertUnverifiedSendWithinIdempotencyWindow,
   assertInformationAgentOutboundEnabled,
+  informationAgentAppOrigin,
+} from "@/lib/information-agent/config";
+import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
+import {
+  assertUnverifiedSendWithinIdempotencyWindow,
+  InformationAgentSentButUnrecordedError,
+  InformationAgentUnverifiedSendError,
+  omitUnverifiedSendOutcome,
+} from "@/lib/information-agent/send";
+import {
   buildInformationRequestDraft,
   createAdminInformationAgentDraft,
+} from "@/lib/information-agent/draft";
+import {
   detectInformationGaps,
-  discoverInformationAgentContacts,
-  informationAgentAdminActionSchema,
-  informationAgentAppOrigin,
-  informationAgentCreateSchema,
-  informationAgentPreviewFingerprint,
-  omitUnverifiedSendOutcome,
-  runAdminInformationAgentAction,
-  selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
-  withoutProfessionSuffix,
-  withSignature,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent-questions";
+import {
+  discoverInformationAgentContacts,
+  selectInformationAgentContact,
+} from "@/lib/information-agent/contact-resolution";
+import {
+  informationAgentAdminActionSchema,
+  informationAgentCreateSchema,
+} from "@/lib/information-agent/schemas";
+import { informationAgentPreviewFingerprint } from "@/lib/information-agent/message-guards";
+import { withoutProfessionSuffix, withSignature } from "@/lib/information-agent/draft-checks";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
@@ -42,7 +55,9 @@ function previewed<T extends Parameters<typeof informationAgentPreviewFingerprin
   return { ...content, previewFingerprint: fingerprint };
 }
 
-vi.mock("@/lib/email-alerts", () => ({
+vi.mock("@/lib/email-alerts", async (importOriginal) => ({
+  ResendRejectedError: (await importOriginal<typeof import("@/lib/email-alerts")>())
+    .ResendRejectedError,
   sendResendEmail: emailMocks.sendResendEmail,
 }));
 
@@ -171,6 +186,7 @@ describe("supervised information agent", () => {
     "notary_sent",
     "record_fails",
     "already_sent",
+    "approval_cap",
     "timeout",
   ] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
@@ -340,6 +356,10 @@ describe("supervised information agent", () => {
         (table) => new ApprovalQuery(table) as never,
       );
       vi.mocked(supabaseAdmin.rpc).mockImplementation((async (name: string) => {
+        if (name === "approve_information_agent_mission_admin" && scenario === "approval_cap") {
+          // Plafond atteint dans la fonction d'approbation (atomique) : son texte n'est jamais repris.
+          return { data: null, error: { code: "53400", message: "Plafond de 30 validations" } };
+        }
         if (name === "approve_information_agent_mission_admin") {
           return {
             data: [
@@ -415,10 +435,15 @@ describe("supervised information agent", () => {
             expect.objectContaining({ p_daily_cap: 30 }),
           );
           return;
+        } else if (scenario === "approval_cap") {
+          await expect(operation).rejects.toBeInstanceOf(AdminDailyApprovalCapError);
+          await expect(operation).rejects.toMatchObject({ status: 409 });
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          return;
         } else if (scenario === "timeout") {
           // Resend n'a pas répondu à temps : l'email est peut-être parti. Ni « sent », ni un échec
           // ordinaire : la demande est marquée à vérifier (le délai de 30 jours reste tenu).
-          await expect(operation).rejects.toThrow("Envoi à vérifier");
+          await expect(operation).rejects.toBeInstanceOf(InformationAgentUnverifiedSendError);
           expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
           expect(emailMocks.sendResendEmail.mock.calls[0][0].idempotencyKey).toBe(
             "immojudis-information-agent-case-33333333-3333-4333-8333-333333333333",
@@ -429,7 +454,7 @@ describe("supervised information agent", () => {
           expect(mission.metadata).toMatchObject({ send_outcome: "unverified" });
         } else if (scenario === "record_fails") {
           // Resend accepted the email: the mission stays sent, so no retry and the cooldown holds.
-          await expect(operation).rejects.toThrow("Ne renvoyez pas ce message");
+          await expect(operation).rejects.toBeInstanceOf(InformationAgentSentButUnrecordedError);
           expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
           expect(mission.status).toBe("sent");
           expect(mission.provider_message_id).toBe("provider-message-id");
@@ -850,7 +875,7 @@ describe("supervised information agent", () => {
         auth: { isAdmin: false } as never,
         input: { saleId: "11111111-1111-4111-8111-111111111111" },
       }),
-    ).rejects.toThrow("Forbidden: accès administrateur requis.");
+    ).rejects.toThrow(AdminRequiredError);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   tensionAttribution,
   type HousingTension,
 } from "@/lib/housing-tension";
+import { formatRentPerM2 } from "@/lib/format/numbers";
 import type { RentReference, RentReferenceSource, RentSegment } from "@/lib/rent-reference";
 import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-notice";
 import {
@@ -36,12 +37,7 @@ const PLACE_PHRASES: Record<Exclude<RentReferenceSource, "department_estimate">,
   anil_department_median: "Dans le département",
 };
 
-const rentFormat = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
 const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-const perM2 = (value: number) => `${rentFormat.format(value)} €/m²`;
 
 /**
  * Section « Marché local » de la fiche publique : les chiffres du bloc « Marché locatif » (loyer
@@ -85,7 +81,8 @@ export function SalePublicRentalMarket({
           <p className={styles.say}>
             {PLACE_PHRASES[anil.source as keyof typeof PLACE_PHRASES] ?? "Dans le secteur"}, le
             loyer d’annonce {SEGMENT_PHRASES[anil.segment ?? "apt_all"]} est estimé à{" "}
-            <span className={styles.mark}>{perM2(anil.rentPerM2)}</span> par mois, charges comprises
+            <span className={styles.mark}>{formatRentPerM2(anil.rentPerM2)}</span> par mois, charges
+            comprises
             {observations != null ? (
               <>
                 , d’après <span className={styles.mark}>{countFormat.format(observations)}</span>{" "}
@@ -97,15 +94,15 @@ export function SalePublicRentalMarket({
           {bounds && tick != null ? (
             <div className={styles.range}>
               <p className="sr-only">
-                Fourchette de {perM2(bounds[0])} à {perM2(bounds[1])}.
+                Fourchette de {formatRentPerM2(bounds[0])} à {formatRentPerM2(bounds[1])}.
               </p>
               <div className={styles.rangeTrack} aria-hidden>
                 <span className={styles.rangeTick} style={{ left: `${tick}%` }} />
               </div>
               <div className={styles.rangeLabels} aria-hidden>
-                <span>{perM2(bounds[0])}</span>
-                <b>{perM2(anil.rentPerM2)} estimé</b>
-                <span>{perM2(bounds[1])}</span>
+                <span>{formatRentPerM2(bounds[0])}</span>
+                <b>{formatRentPerM2(anil.rentPerM2)} estimé</b>
+                <span>{formatRentPerM2(bounds[1])}</span>
               </div>
             </div>
           ) : null}

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from src.freshness import document_fingerprint, documents_are_current
 from src.normalize import normalize_sale
-from src.pdf_enrichment import sale_storage_id
+from src.sale_local_files import sale_storage_id
 
 
 def test_document_fingerprint_stays_stable_during_partial_checkpoint() -> None:

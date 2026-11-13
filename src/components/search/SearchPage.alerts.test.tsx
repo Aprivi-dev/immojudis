@@ -31,7 +31,6 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/client-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/client-api")>()),
-  fetchAccessPlan: state.fetchAccessPlan,
   fetchSalesAiReviewProjections: vi.fn(async () => ({ projections: [] })),
   fetchNotificationPreferences: vi.fn(async () => ({ preferences: { alertEmailEnabled: false } })),
 }));
@@ -39,8 +38,8 @@ vi.mock("@/lib/client-billing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/client-billing")>()),
   fetchAccessPlan: state.fetchAccessPlan,
 }));
-vi.mock("@/lib/queries", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/queries")>()),
+vi.mock("@/lib/alert-queries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/alert-queries")>()),
   getAlerts: state.getAlerts,
 }));
 vi.mock("@/lib/search/search-service", () => ({

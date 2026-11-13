@@ -11,7 +11,7 @@ import {
 } from "@/lib/environment-reference";
 
 /** Maximum distance between the listing and the station used for each measure. */
-export const CLIMATE_STATION_RADIUS_KM = {
+const CLIMATE_STATION_RADIUS_KM = {
   temperature: 40,
   precipitation: 30,
   sunshine: 70,

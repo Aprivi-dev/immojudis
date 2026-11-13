@@ -7,7 +7,7 @@ import type {
   CeilingCoverageView,
   CrossSourceDuplicatesView,
 } from "@/lib/admin-catalogue-quality";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 
 // Vert sous le seuil, rouge au-dessus ; neutre pour une tendance ou une mesure absente.
 const TONES: Record<string, string> = {
@@ -15,21 +15,16 @@ const TONES: Record<string, string> = {
   alert: "bg-danger-tint text-danger",
 };
 
+export const CATALOGUE_QUALITY_QUERY_KEY = ["admin-catalogue-quality"] as const;
+
 /**
  * Contrôles qualité du catalogue : mesures du dernier cliché quotidien de la sentinelle, seuils et alertes
  * `catalogue.quality.*` ouvertes. Tout arrive mis en forme par le serveur (`/api/admin/catalogue-quality`).
  */
 export function AdminCatalogueQualityPanel() {
   const query = useQuery({
-    queryKey: ["admin-catalogue-quality"],
-    queryFn: async () =>
-      readJson<AdminCatalogueQualityView>(
-        await fetch("/api/admin/catalogue-quality", {
-          signal: AbortSignal.timeout(30_000),
-          headers: await authHeaders(),
-          cache: "no-store",
-        }),
-      ),
+    queryKey: CATALOGUE_QUALITY_QUERY_KEY,
+    queryFn: () => apiRequest<AdminCatalogueQualityView>("/api/admin/catalogue-quality"),
     staleTime: 60_000,
   });
   const view = query.data;

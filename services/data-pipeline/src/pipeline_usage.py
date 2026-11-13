@@ -11,7 +11,8 @@ import httpx
 import psycopg
 from psycopg.types.json import Jsonb
 
-from src.config import load_settings
+from src.config import autonomous_run_id, load_settings
+from src.storage.postgrest_helpers import rest_headers
 
 PINNED_MODEL = 'zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4'
 RATE_SOURCE = 'https://replicate.com/pricing#hardware; L40S 0.000975 USD/s; checked 2026-09-12'
@@ -153,8 +154,8 @@ def _utc_day_start() -> datetime:
 
 
 def _spend_groups_via_postgres(db_url: str, since: datetime) -> list[tuple[str, int, int, int, int]]:
-    from src.storage.supabase_client import _shared_postgres_connection
-    with _shared_postgres_connection(db_url) as db:
+    from src.storage.supabase_client import shared_postgres_connection
+    with shared_postgres_connection(db_url) as db:
         rows = db.execute(
             """select model, count(*),
                       count(*) filter (where coalesce(input_tokens_estimate,0)=0 and coalesce(output_tokens_estimate,0)=0),
@@ -174,7 +175,7 @@ def _spend_groups_via_rest(settings: dict, since: datetime) -> list[tuple[str, i
     for page in range(_BUDGET_REST_MAX_PAGES):
         response = httpx.get(
             f'{base_url}/rest/v1/llm_usage_events',
-            headers={'apikey': api_key, 'Authorization': f'Bearer {api_key}'},
+            headers=rest_headers(api_key),
             params={
                 'select': 'model,input_tokens_estimate,output_tokens_estimate',
                 'created_at': f'gte.{since.isoformat()}',
@@ -235,12 +236,12 @@ def reserve_prediction(model: str, *, input_token_ceiling: int, output_token_cei
     enforce_daily_budget(
         model, input_token_ceiling=input_token_ceiling, output_token_ceiling=output_token_ceiling
     )
-    run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
+    run_id = autonomous_run_id()
     if not run_id:
         return None
-    from src.storage.supabase_client import _shared_postgres_connection
+    from src.storage.supabase_client import shared_postgres_connection
     try:
-        with _shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
+        with shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
             return str(db.execute(
                 'select public.reserve_pipeline_prediction(%s,%s,%s,%s)',
                 (run_id, model, input_token_ceiling, output_token_ceiling),
@@ -283,17 +284,17 @@ def _prediction_cost(model: str, prediction: dict, metrics: dict) -> tuple[Decim
 
 
 def record_prediction(prediction: dict, *, reservation: str | None = None, model: str | None = None) -> None:
-    run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
+    run_id = autonomous_run_id()
     if not run_id:
         return
-    from src.storage.supabase_client import _shared_postgres_connection
+    from src.storage.supabase_client import shared_postgres_connection
     metrics = {key:value for key,value in (prediction.get('metrics') or {}).items()
                if key in {'predict_time','total_time','input_token_count','output_token_count','image_count',
                           'token_input_count','token_output_count'}
                and isinstance(value,(int,float)) and math.isfinite(value) and value>=0}
     model = model or str(prediction.get('model') or PINNED_MODEL)
     cost, rate_source = _prediction_cost(model, prediction, metrics)
-    with _shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
+    with shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
         db.execute("""update public.auction_pipeline_usage set prediction_id=coalesce(%s,prediction_id),
           status=%s,metrics=%s,estimated_usd=case when model=%s then coalesce(%s::numeric,estimated_usd) else estimated_usd end,
           rate_source=coalesce(%s,rate_source),updated_at=now() where run_id=%s and (id=%s or prediction_id=%s)""",

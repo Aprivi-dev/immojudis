@@ -34,8 +34,8 @@ vi.mock("next/dynamic", () => ({
 
 vi.mock("@/lib/upcoming-hearings.server", () => ({
   tryLoadUpcomingHearings: mocks.hearings,
-  mustFailOnHearingsReadError: mocks.mustFail,
 }));
+vi.mock("@/lib/runtime-phase", () => ({ isProductionRuntime: mocks.mustFail }));
 vi.mock("@/lib/public-tribunal-directory.server", () => ({
   tryLoadPublicTribunalDirectory: async () => ({ status: "ok", items: [] }),
 }));

@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from fake_publication import inside_publication
+
 from src.config import load_settings
 from src.freshness import record_source_checks, settle_source_change_without_documents
 from src.models import AuctionSale
@@ -84,7 +86,7 @@ def test_source_check_records_detail_proof_only_for_validated_detail():
 
 
 def test_pending_documentary_flag_survives_a_later_operational_rescan():
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
 
     source_url = "https://example.test/documentary-then-operational"
     base = {
@@ -103,7 +105,7 @@ def test_pending_documentary_flag_survives_a_later_operational_rescan():
     )
     incoming = deepcopy(base)
     incoming["starting_price_eur"] = 90000
-    _preserve_known_enrichment_payloads(
+    preserve_known_enrichment_payloads(
         [incoming], {source_url: {"raw_payload": known_payload}},
     )
     record_source_checks([incoming], {source_url: {"raw_payload": known_payload}})
@@ -117,20 +119,21 @@ def _publish(monkeypatch, sale):
 
     events = []
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
-    monkeypatch.setattr(
-        storage,
-        "_upsert_with_rest",
-        lambda _url, _key, rows: events.append(("write", rows[0]["raw_payload"].copy())),
+    inside_publication(
+        monkeypatch,
+        on_write=lambda table, rows, _conflict: (
+            events.append(("write", rows[0]["raw_payload"].copy())) if table == "auction_sales" else None
+        ),
     )
-    monkeypatch.setattr(storage, "_write_fact_claims_rest", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(storage, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, "_write_fact_claims_postgres", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         storage,
         "_enqueue_due_enrichment",
         lambda rows, *_args: events.append(("enqueue", rows[0].raw_payload.copy())),
     )
-    assert storage._write_sale_revisions([sale], load_settings(), refresh_last_seen=False) == 1
+    assert storage._write_sale_revisions([sale], refresh_last_seen=False) == 1
     assert [event[0] for event in events] == ["write", "enqueue"]
     return events
 

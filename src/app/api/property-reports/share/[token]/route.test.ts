@@ -1,3 +1,4 @@
+import { NotFoundError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ enforceIp: vi.fn(), shared: vi.fn() }));
@@ -27,12 +28,12 @@ describe("GET /api/property-reports/share/[token]", () => {
     const response = await call();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     await expect(response.json()).resolves.toEqual({ report: { id: "report-1" } });
   });
 
   it("answers 404 for an unknown or expired link", async () => {
-    mocks.shared.mockRejectedValue(new Error("Rapport partagé introuvable ou expiré."));
+    mocks.shared.mockRejectedValue(new NotFoundError("Rapport partagé introuvable ou expiré."));
 
     expect((await call()).status).toBe(404);
   });

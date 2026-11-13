@@ -1,5 +1,4 @@
 import "server-only";
-import { Resend, type EmailBouncedEvent, type EmailComplainedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   revokeEmailAlertConsent,
@@ -8,7 +7,14 @@ import {
   revokeWeeklyDigestConsent,
 } from "@/lib/email-alerts";
 import { informationAgentSenderAddress } from "@/lib/information-agent-inbound/delivery-events";
-import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
+import {
+  captureFailure,
+  EMAIL_DELIVERY_LOG_EVENTS,
+  recordEmailDeliveryEvent,
+} from "@/lib/email-delivery-log";
+import { ConfigurationError } from "@/lib/api-errors";
+import { readVerifiedResendWebhook } from "@/lib/resend-webhook";
+import { normalizeEmail } from "@/lib/account";
 
 /**
  * Rebonds et plaintes des emails envoyés aux comptes (alertes, rappels d'audience, récapitulatif,
@@ -33,7 +39,12 @@ import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-l
  *
  * Les journaux ne portent aucune adresse.
  */
-export type AccountEmailDeliveryEvent = EmailBouncedEvent | EmailComplainedEvent;
+
+/**
+ * Évènements à abonner sur ce webhook dans Resend (l'onglet « Adresses » le vérifie) : rebonds et plaintes,
+ * plus les évènements du journal des envois, que ce webhook écrit tous.
+ */
+export const ACCOUNT_EMAIL_WEBHOOK_EVENTS: readonly string[] = EMAIL_DELIVERY_LOG_EVENTS;
 
 export type AccountEmailDeliveryAction = {
   kind: "bounce_permanent" | "complaint";
@@ -48,31 +59,11 @@ export type AccountEmailWebhookResult = {
   revokedAccounts?: number;
 };
 
-const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
-
-export class InvalidAccountEmailWebhookSignatureError extends Error {
-  constructor() {
-    super("Signature webhook invalide.");
-    this.name = "InvalidAccountEmailWebhookSignatureError";
-  }
-}
-
-export class AccountEmailWebhookPayloadTooLargeError extends Error {
-  constructor() {
-    super("Corps du webhook trop volumineux.");
-    this.name = "AccountEmailWebhookPayloadTooLargeError";
-  }
-}
-
-function normalizeAddress(value: string | null | undefined): string {
-  return (value ?? "").trim().toLowerCase();
-}
-
 /** Adresse nue d'un expéditeur (« Immojudis <alertes@immojudis.com> » donne l'adresse seule). */
 function bareAddress(value: string | null | undefined): string {
   const text = value ?? "";
   const match = /<([^<>]+)>/.exec(text);
-  return normalizeAddress(match ? match[1] : text);
+  return normalizeEmail(match ? match[1] : text);
 }
 
 /**
@@ -120,24 +111,6 @@ async function findAccountId(email: string): Promise<string | null> {
   return typeof data === "string" ? data : null;
 }
 
-async function readBoundedBody(request: Request): Promise<string> {
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > MAX_WEBHOOK_BODY_BYTES) {
-    throw new AccountEmailWebhookPayloadTooLargeError();
-  }
-  const body = await request.text();
-  if (new TextEncoder().encode(body).byteLength > MAX_WEBHOOK_BODY_BYTES) {
-    throw new AccountEmailWebhookPayloadTooLargeError();
-  }
-  return body;
-}
-
-function requiredHeader(request: Request, name: string): string {
-  const value = request.headers.get(name);
-  if (!value) throw new InvalidAccountEmailWebhookSignatureError();
-  return value;
-}
-
 export async function processAccountEmailDeliveryWebhook({
   request,
   env = process.env,
@@ -152,24 +125,10 @@ export async function processAccountEmailDeliveryWebhook({
   recordDelivery?: (event: { type: string; created_at?: string; data?: unknown }) => Promise<void>;
 }): Promise<AccountEmailWebhookResult> {
   const webhookSecret = env.RESEND_ACCOUNT_WEBHOOK_SECRET?.trim();
-  if (!webhookSecret) throw new Error("Configuration du webhook des emails de compte incomplète.");
+  if (!webhookSecret)
+    throw new ConfigurationError("Configuration du webhook des emails de compte incomplète.");
 
-  const payload = await readBoundedBody(request);
-  let event: { type: string; data?: unknown };
-  try {
-    // La vérification n'appelle pas l'API de Resend : la clé n'est qu'un paramètre du constructeur.
-    event = new Resend("re_signature_verification_only").webhooks.verify({
-      payload,
-      headers: {
-        id: requiredHeader(request, "svix-id"),
-        timestamp: requiredHeader(request, "svix-timestamp"),
-        signature: requiredHeader(request, "svix-signature"),
-      },
-      webhookSecret,
-    });
-  } catch {
-    throw new InvalidAccountEmailWebhookSignatureError();
-  }
+  const event = await readVerifiedResendWebhook(request, webhookSecret);
 
   // Le journal passe APRÈS la logique de consentement : une panne ou une lenteur du journal ne la retarde jamais.
   // Son échec remonte quand même (500) pour que le fournisseur rejoue l'évènement, les retraits étant idempotents.

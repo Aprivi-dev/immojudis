@@ -8,6 +8,8 @@
  * fournisseur absent de la liste ci-dessous, l'envoi est refusé tant que le pied, la politique de
  * confidentialité et le registre ne l'ont pas nommé.
  */
+import { ConfigurationError } from "@/lib/api-errors";
+
 export type InformationAgentAiProvider = {
   /** Identifiant de configuration (`LLM_PROVIDER`). */
   id: string;
@@ -29,7 +31,7 @@ export function informationAgentAiProvider(
   const id = env.LLM_PROVIDER?.trim().toLowerCase() || DEFAULT_INFORMATION_AGENT_AI_PROVIDER_ID;
   const provider = KNOWN_AI_PROVIDERS[id];
   if (!provider) {
-    throw new Error(
+    throw new ConfigurationError(
       `Prestataire d’IA « ${id} » non identifié : nommez-le dans le pied du message (information-agent-ai-provider.ts), la politique de confidentialité et le registre avant tout envoi.`,
     );
   }

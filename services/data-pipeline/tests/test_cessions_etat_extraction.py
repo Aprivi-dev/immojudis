@@ -20,7 +20,12 @@ from src.sources.cessions_etat_extraction import (
     observed_at_for,
     refresh_cessions_raw_sale,
 )
-from src.sources.cessions_etat_labels import attachment_kind, parse_bool, parse_count, parse_surface
+from src.sources.cessions_etat_labels import (
+    attachment_kind,
+    parse_bool,
+    parse_count,
+    parse_single_surface_with_area_units,
+)
 from src.sources.cessions_etat_page import direction_email, parse_cessions_page, parse_map_popup
 from src.sources.cessions_etat_procedure import analyse_procedure, find_dates, select_schedule
 
@@ -353,10 +358,10 @@ def test_unknown_labels_and_old_label_variants() -> None:
 
 
 def test_label_value_helpers() -> None:
-    assert str(parse_surface("1 ha 62 a 46 ca")) == "16246"
-    assert str(parse_surface("48 m2 environ")) == "48"
-    assert str(parse_surface("27 044")) == "27044"
-    assert parse_surface("78 et 124 m²") is None
+    assert str(parse_single_surface_with_area_units("1 ha 62 a 46 ca")) == "16246"
+    assert str(parse_single_surface_with_area_units("48 m2 environ")) == "48"
+    assert str(parse_single_surface_with_area_units("27 044")) == "27044"
+    assert parse_single_surface_with_area_units("78 et 124 m²") is None
     assert parse_bool("non constructible") is False
     assert parse_bool("Oui") is True
     assert parse_bool("voir certificat d urbanisme") is None

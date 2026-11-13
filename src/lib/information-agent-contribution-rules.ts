@@ -46,7 +46,7 @@ export function isContributionFieldName(value: unknown): value is ContributionFi
  * Même expression que `z.string().email()` de zod 3 (le serveur applique aussi `.email()` : un test
  * compare les deux). Un `type="email"` du navigateur accepte davantage (`a@b`, `a@b.c`).
  */
-export const CONTRIBUTION_EMAIL_PATTERN =
+const CONTRIBUTION_EMAIL_PATTERN =
   /^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9-]*\.)+[A-Z]{2,}$/i;
 
 export function isValidContributionEmail(value: string): boolean {

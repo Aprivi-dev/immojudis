@@ -20,23 +20,6 @@ export type AccountProfile = {
   updated_at?: string;
 };
 
-export const ACCOUNT_TYPE_OPTIONS: Array<{
-  value: AccountType;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "b2c",
-    label: "Investisseur particulier",
-    description: "Consulter les fiches, favoris et alertes avant d'enchérir.",
-  },
-  {
-    value: "b2b",
-    label: "Professionnel",
-    description: "Référencer une vente, déposer les pièces et préparer sa visibilité.",
-  },
-];
-
 export const PROFESSIONAL_ROLE_OPTIONS: Array<{
   value: ProfessionalRole;
   label: string;
@@ -48,11 +31,11 @@ export const PROFESSIONAL_ROLE_OPTIONS: Array<{
   { value: "other", label: "Autre professionnel" },
 ];
 
-export function isAccountType(value: unknown): value is AccountType {
+function isAccountType(value: unknown): value is AccountType {
   return value === "b2c" || value === "b2b";
 }
 
-export function isProfessionalRole(value: unknown): value is ProfessionalRole {
+function isProfessionalRole(value: unknown): value is ProfessionalRole {
   return (
     value === "lawyer" ||
     value === "notary" ||
@@ -62,7 +45,7 @@ export function isProfessionalRole(value: unknown): value is ProfessionalRole {
   );
 }
 
-export function isProfessionalStatus(value: unknown): value is ProfessionalStatus {
+function isProfessionalStatus(value: unknown): value is ProfessionalStatus {
   return (
     value === "not_applicable" ||
     value === "pending" ||
@@ -75,7 +58,7 @@ export function normalizeEmail(email: string | null | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
-export function hasAdminRole(value: unknown): boolean {
+function hasAdminRole(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const metadata = value as { app_metadata?: { role?: unknown }; user_role?: unknown };
   return metadata.app_metadata?.role === "admin" || metadata.user_role === "admin";

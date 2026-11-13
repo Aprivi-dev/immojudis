@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NotFoundError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -6,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   saleFeatureDoor: vi.fn(),
   getPassages: vi.fn(),
   recordUsage: vi.fn(),
+  publicationVisible: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -13,7 +15,13 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
-vi.mock("@/lib/property-reports", () => ({ saleFeatureDoor: mocks.saleFeatureDoor }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  saleFeatureDoor: mocks.saleFeatureDoor,
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({
+  assertSalePublicationVisible: mocks.publicationVisible,
+}));
 vi.mock("@/lib/sale-passages.server", () => ({ getSalePassages: mocks.getPassages }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.recordUsage }));
 
@@ -53,7 +61,7 @@ describe("GET /api/sales/[id]/passages", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.enforce.mockResolvedValue(1);
     mocks.getPassages.mockResolvedValue(passages);
-    mocks.recordUsage.mockResolvedValue(undefined);
+    mocks.publicationVisible.mockResolvedValue(undefined);
   });
 
   it("serves the full history to Analyse, read through the full catalogue view", async () => {
@@ -73,11 +81,11 @@ describe("GET /api/sales/[id]/passages", () => {
 
   it("serves the full history of a sale the account unlocked, without the full view", async () => {
     mocks.saleFeatureDoor.mockResolvedValue("unlock");
-    const from = accountSeeing({ v_auction_sales_discovery: true });
+    const from = accountSeeing({ v_auction_sales_unlocked: true });
 
     const response = await call();
 
-    expect(from).toHaveBeenCalledWith("v_auction_sales_discovery");
+    expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
     expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
     expect(await response.json()).toMatchObject({ access: "full" });
     expect(mocks.getPassages).toHaveBeenCalledWith(saleId, 80000);
@@ -99,6 +107,18 @@ describe("GET /api/sales/[id]/passages", () => {
     accountSeeing({});
 
     expect((await call()).status).toBe(404);
+    expect(mocks.getPassages).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a quarantined sale whatever the door, before reading the history", async () => {
+    mocks.saleFeatureDoor.mockResolvedValue(null);
+    accountSeeing({ v_auction_sales_discovery: true });
+    mocks.publicationVisible.mockRejectedValue(
+      new NotFoundError("Vente introuvable ou inaccessible."),
+    );
+
+    expect((await call()).status).toBe(404);
+    expect(mocks.publicationVisible).toHaveBeenCalledWith(saleId);
     expect(mocks.getPassages).not.toHaveBeenCalled();
   });
 });

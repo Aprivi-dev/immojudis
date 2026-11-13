@@ -1,6 +1,7 @@
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { serverEnv } from "@/lib/env";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Définition unique de « les paiements sont ouverts » pour l'offre Analyse.
@@ -28,16 +29,25 @@ export type AnalysisCheckoutReadiness = {
   missing: string[];
 };
 
-const PRICE_ID_PATTERN = /^price_[A-Za-z0-9]+$/;
+/**
+ * Price des nouveaux abonnements Analyse (`STRIPE_ANALYSIS_PRICE_ID`) s'il a la forme d'un Price
+ * Stripe (`price_…`) ; `undefined` s'il est absent ou mal formé. Seule lecture de la variable pour
+ * le checkout et pour l'ouverture des paiements.
+ */
+export function analysisPriceId(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): string | undefined {
+  const priceId = serverEnv(env).stripe.analysisPriceId;
+  return priceId && /^price_[A-Za-z0-9]+$/.test(priceId) ? priceId : undefined;
+}
 
 export function analysisCheckoutReadiness(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): AnalysisCheckoutReadiness {
   const config = serverEnv(env);
-  const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
   const missing = [
     ...(config.stripe.secretKey ? [] : ["STRIPE_SECRET_KEY"]),
-    ...(priceId && PRICE_ID_PATTERN.test(priceId) ? [] : ["STRIPE_ANALYSIS_PRICE_ID"]),
+    ...(analysisPriceId(env) ? [] : ["STRIPE_ANALYSIS_PRICE_ID"]),
     ...(config.stripe.webhookSecret ? [] : ["STRIPE_WEBHOOK_SECRET"]),
     ...legalConfigurationStatus(env).missing,
     ...resolveEmailAlertDeliveryConfig(env).missing,
@@ -54,7 +64,7 @@ export function assertAnalysisCheckoutOpen(
 ): void {
   const readiness = analysisCheckoutReadiness(env);
   if (readiness.missing.length > 0) {
-    throw new Error(
+    throw new ConfigurationError(
       `Configuration du paiement incomplète: ${readiness.missing.join(", ")}. Le checkout est suspendu.`,
     );
   }

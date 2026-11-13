@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from fake_sale_base import FakeSaleBase, patch_publication
 
-from src import base_reads
+from src import base_reads, known_enrichment
 from src import main as pipeline
 from src.asset_normalization import normalize_asset_features
 from src.freshness import record_source_checks
@@ -111,7 +111,7 @@ def collect(raw: dict[str, Any], known: dict[str, dict[str, Any]]) -> AuctionSal
     """Ce que fait la collecte d'une vente brute avant de la publier (``publish_factual_batch``)."""
     raws = [raw]
     pipeline._hydrate_known_unchanged_sales(raws, known)
-    pipeline._preserve_known_enrichment_payloads(raws, known)
+    known_enrichment.preserve_known_enrichment_payloads(raws, known)
     record_source_checks(raws, known)
     sale = normalize_sale(raw)
     normalize_asset_features(sale)
@@ -425,11 +425,11 @@ def test_a_failed_transaction_then_a_retry_writes_what_a_pass_without_failure_wr
             def broken(*_args, **_kwargs):
                 raise RuntimeError("canceling statement due to statement timeout")
 
-            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", broken)
+            monkeypatch.setattr(storage, "_upsert_asset_tables", broken)
             with pytest.raises(RuntimeError):
                 storage.upsert_sales_to_supabase([deepcopy(sale)])
             assert groups(base.rows[URL]) == groups(state)  # la transaction a bien été annulée
-            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr(storage, "_upsert_asset_tables", lambda *_args, **_kwargs: None)
         storage.upsert_sales_to_supabase([deepcopy(sale)])
         assert base_reads.moved_groups(base.rows[URL]["id"]) == frozenset()
         assert base_reads.suppressed_count() == 0
@@ -640,7 +640,7 @@ def _fail_the_next_write_after_the_sale_row(monkeypatch) -> None:
         if calls["count"] == 1:
             raise RuntimeError("canceling statement due to statement timeout")
 
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", failing_once)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", failing_once)
 
 
 def test_a_validated_publication_is_confirmed_before_a_later_write_is_rolled_back(base, monkeypatch) -> None:
@@ -797,28 +797,3 @@ def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, mo
     # La référence est restée celle d'avant : la lecture suivante voit un mouvement, ce qui ne peut que retenir.
     storage.upsert_sales_to_supabase([sale])
     assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
-
-
-def test_the_rest_fallback_says_in_the_log_that_it_wrote_sales(monkeypatch, caplog) -> None:
-    """Hors production : ni transaction, ni verrou, ni garde. Si ce chemin écrit, le journal le dit."""
-    sent: list[dict[str, Any]] = []
-    monkeypatch.setattr(storage, "load_settings", lambda: {
-        "supabase_url": "https://supabase.test", "supabase_service_role_key": "not-a-real-key", "supabase_db_url": None,
-    })
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
-    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
-    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest",
-                 "_enqueue_due_enrichment"):
-        monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)
-    sale = AuctionSale.model_validate({key: value for key, value in stored_row(**POSED).items() if value is not None})
-
-    with caplog.at_level("WARNING"):
-        storage.upsert_sales_to_supabase([sale])
-
-    assert len(sent) == 1
-    assert "REST fallback wrote 1 sales without transaction, lock or echo guard" in [
-        record.getMessage() for record in caplog.records
-    ]
-    # Rien n'est noté pour la garde sur ce chemin, donc pas d'avertissement d'écriture hors portée non plus.
-    assert [record for record in caplog.records if record.name == "src.base_reads"] == []

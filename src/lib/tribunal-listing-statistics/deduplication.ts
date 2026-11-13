@@ -1,5 +1,6 @@
 import "server-only";
-import { normalizeOccupationStatus } from "@/lib/tribunal-listing-statistics";
+import { occupancyClass } from "@/lib/occupancy-status";
+import { listingPropertyClass } from "@/lib/tribunal-listing-statistics";
 import {
   normalizeLabel,
   normalizeLegalReference,
@@ -275,10 +276,8 @@ function saleRichnessScore(sale: StoredListingSale): number {
     sale.city,
     sale.saleDate,
     sale.startingPriceEur,
-    sale.propertyType && isKnownPropertyType(sale.propertyType) ? sale.propertyType : null,
-    sale.occupancyStatus && normalizeOccupationStatus(sale.occupancyStatus)
-      ? sale.occupancyStatus
-      : null,
+    listingPropertyClass(sale.propertyType) != null ? sale.propertyType : null,
+    sale.occupancyStatus && occupancyClass(sale.occupancyStatus) ? sale.occupancyStatus : null,
     sale.lawyerName,
     sale.publicationAt,
     sale.firstSeenAt,
@@ -303,18 +302,13 @@ function saleRichnessScore(sale: StoredListingSale): number {
 }
 
 function firstKnownPropertyType(group: StoredListingSale[]): string | null {
-  return group.find((sale) => isKnownPropertyType(sale.propertyType))?.propertyType ?? null;
-}
-
-function firstKnownOccupancy(group: StoredListingSale[]): string | null {
   return (
-    group.find((sale) => normalizeOccupationStatus(sale.occupancyStatus))?.occupancyStatus ?? null
+    group.find((sale) => listingPropertyClass(sale.propertyType) != null)?.propertyType ?? null
   );
 }
 
-function isKnownPropertyType(value: string | null | undefined): boolean {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  return Boolean(normalized && normalized !== "unknown");
+function firstKnownOccupancy(group: StoredListingSale[]): string | null {
+  return group.find((sale) => occupancyClass(sale.occupancyStatus))?.occupancyStatus ?? null;
 }
 
 function unionVisitDates(group: StoredListingSale[]): unknown[] {
@@ -425,19 +419,9 @@ function samePositiveStartingPrice(left: number | null, right: number | null): b
 }
 
 function sameKnownPropertyClass(left: string | null | undefined, right: string | null | undefined) {
-  const leftClass = propertyClass(left);
-  const rightClass = propertyClass(right);
+  const leftClass = listingPropertyClass(left);
+  const rightClass = listingPropertyClass(right);
   return leftClass == null || rightClass == null || leftClass === rightClass;
-}
-
-function propertyClass(value: string | null | undefined): string | null {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (!normalized || normalized === "unknown") return null;
-  if (/appartement|apartment|studio|loft/.test(normalized)) return "apartment";
-  if (/maison|house|villa|pavillon/.test(normalized)) return "house";
-  // The source vocabulary for parking, garages, buildings and commercial
-  // units is not stable enough to make those labels identity conflicts.
-  return "other";
 }
 
 function materiallyDifferentSurface(left: StoredListingSale, right: StoredListingSale): boolean {

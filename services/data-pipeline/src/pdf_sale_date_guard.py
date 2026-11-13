@@ -1,8 +1,17 @@
+"""Date de vente lue dans une pièce jointe (ou, pour un appel d'offres, sur la page) : garde et affectation.
+
+La garde écarte une date invraisemblable ; l'affectation n'écrit que ce que la garde laisse passer, avec sa trace.
+Partagé par la lecture des pièces (``src.pdf_fact_extraction``) et l'échéance d'un appel d'offres
+(``src.pdf_offer_deadline``).
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 
 from src.models import AuctionSale
+from src.normalize import normalize_status
+from src.pdf_fact_scope import pdf_record_fact_projection
 
 # A PDF date already in the past is far more often a misread (judgment date,
 # previous hearing, diagnostic date) than the sale itself: applying it would
@@ -48,3 +57,25 @@ def reject_past_pdf_sale_date(sale: AuctionSale, parsed: datetime, sale_date: di
         **{key: value for key, value in sale_date.items() if key != "value"},
     }
     return True
+
+
+def assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
+    parsed = sale_date.get("value")
+    if not isinstance(parsed, datetime) or reject_past_pdf_sale_date(sale, parsed, sale_date):
+        return
+    sale.sale_date = parsed
+    sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
+    pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
+    if sale.status in {"", "unknown"} or (sale_date.get("offer_deadline_expired") and sale.status in {"active", "upcoming"}):
+        previous_status = sale.status or "unknown"
+        projected_status = normalize_status(None, parsed)
+        sale.status = projected_status
+        if projected_status != previous_status:
+            pdf_record_fact_projection(
+                sale,
+                ["status"],
+                candidate=sale_date,
+                baseline=previous_status,
+                previous_value=previous_status,
+                payload_keys=("pdf_sale_date_extraction",),
+            )

@@ -20,6 +20,7 @@ from src import source_withdrawal
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
 from src.config import load_settings, require_encheres_publiques_access
 from src.sources.agrasc_urls import classify_agrasc_operator_url
+from src.sources.cloud_transport import relay_url
 from src.sources.common import parse_html
 
 SOURCES = ('avoventes', 'licitor', 'vench', 'info_encheres', 'encheres_publiques',
@@ -76,7 +77,7 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
         raise ValueError('Invalid source or audit budget')
     # Source retirée du catalogue : aucun audit réseau. L'audit ne lit la base que si SUPABASE_DB_URL est
     # fourni (identifiants effacés plus bas) : sans lui, l'état par défaut (aucune source retirée) s'applique.
-    source_withdrawal.require_source_active(source, os.environ.get('SUPABASE_DB_URL'))
+    source_withdrawal.require_source_active(source, load_settings().get('supabase_db_url'))
     if source == "encheres_publiques":
         # Guard before importing the collector or installing the audit send
         # hook, so an unauthorized audit cannot reach the provider at all.
@@ -103,7 +104,7 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
         nonlocal budget_exhausted
         # The outer request represents the source response. Counting the inner
         # relay request too duplicates pages and assigns them a Supabase URL.
-        if str(request.url) == os.environ.get('SOURCE_FETCH_RELAY_URL'):
+        if str(request.url) == relay_url():
             return original_send(client, request, **kwargs)
         if len(trace) >= max_requests or time.monotonic() - started >= max_seconds:
             budget_exhausted = True

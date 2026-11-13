@@ -6,6 +6,8 @@ import hashlib
 from decimal import Decimal
 from pathlib import Path
 
+from fake_publication import inside_publication
+
 from src.models import AuctionSale
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import pdf_document_evidence as evidence
@@ -145,22 +147,13 @@ def test_cold_publication_marks_persisted_documents_read_and_others_pending(monk
         ]
     )
     monkeypatch.setattr(storage, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        storage,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
     writes: list[list[dict[str, object]]] = []
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda _url, _key, table, payload, on_conflict: writes.append(payload) if table == "auction_documents" else None,
+    inside_publication(
+        monkeypatch,
+        connection,
+        lambda table, payload, _conflict: writes.append(payload) if table == "auction_documents" else None,
     )
-    token = storage._PUBLICATION_CONNECTION.set(connection)
-    try:
-        assert storage.upsert_documents_to_supabase([sale], persisted_pdf_texts={}) == 3
-    finally:
-        storage._PUBLICATION_CONNECTION.reset(token)
+    assert storage.upsert_documents_to_supabase([sale], persisted_pdf_texts={}) == 3
 
     rows = {row["document_url"]: row for row in writes[0]}
     ccv = rows["https://example.test/ccv.pdf"]

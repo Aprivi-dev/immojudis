@@ -167,3 +167,22 @@ it("refuses to re-enable a source withdrawn from the catalogue", async () => {
   expect(response.status).toBe(409);
   expect((await response.json()).error).toContain("retirée du catalogue");
 });
+
+it("returns not found for an unknown source", async () => {
+  mocks.auth.mockResolvedValue({ isAdmin: true });
+  const update = vi.fn();
+  mocks.from.mockReturnValue({ update });
+  update.mockReturnValue({
+    eq: () => ({
+      select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+    }),
+  });
+  const response = await PATCH(
+    new Request("https://example.test/api/admin/pipeline", {
+      method: "PATCH",
+      body: JSON.stringify({ source: "inconnue", enabled: false }),
+    }),
+  );
+  expect(response.status).toBe(404);
+  expect(await response.json()).toMatchObject({ ok: false, error: "Source inconnue" });
+});

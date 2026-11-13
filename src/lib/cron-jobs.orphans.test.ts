@@ -25,7 +25,8 @@ vi.mock("@/lib/operational-alerts", () => ({
   deliverOperationalAlertNotifications: vi.fn(),
 }));
 
-import { ORPHANED_RUN_AFTER_MS, closeOrphanedRuns, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { ORPHANED_RUN_AFTER_MS, closeOrphanedRuns } from "@/lib/monitored-job.server";
 
 describe("exécutions orphelines des tâches planifiées", () => {
   beforeEach(() => {

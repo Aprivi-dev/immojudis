@@ -1,9 +1,12 @@
 """Plan and apply a narrow repair of source-extracted property facts.
 
-This module intentionally does not read from a database.  A caller supplies a
-JSON snapshot of ``auction_sales`` rows, the plan mode produces a signed plan
-and a private backup, and the apply mode replays that plan through one
-optimistic-concurrency guarded PostgREST PATCH per row.
+This module intentionally does not read sales from a database.  A caller
+supplies a JSON snapshot of ``auction_sales`` rows, the plan mode produces a
+signed plan and a private backup, and the apply mode replays that plan through
+one optimistic-concurrency guarded PostgREST PATCH per row.  Facts are derived
+as the recompute does (``sale_finalization.derive_sale_facts``); its department
+fallback may read the ``reference_communes`` table, read-only, when
+``SUPABASE_DB_URL`` is set.
 
 Only physical property fields and the ``raw_payload`` evidence envelope may be
 written.  Prices, dates, sale status, location/geocoding, valuation, editorial
@@ -25,11 +28,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.asset_normalization import normalize_asset_features
-from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
-from src.extraction_profiles import attach_source_property_features
-from src.recompute_scoring import _sale_from_storage_row
-from src.sale_procedure import classify_sale_procedure
+from src.config import load_settings
+from src.lot_scope import LOT_SELECTION_KEY
+from src.sale_finalization import derive_sale_facts
+from src.storage.postgrest_helpers import rest_headers
+from src.stored_sales import sale_from_storage_row
 
 BACKFILL_SCHEMA_VERSION = "source_extraction_backfill_v1"
 BACKFILL_NAMESPACE = "source_extraction_backfill"
@@ -240,25 +243,6 @@ def load_rows(path: str | Path) -> list[dict[str, Any]]:
     return _rows_from_document(_read_json(Path(path)))
 
 
-def _surface_context(sale: Any) -> str:
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    source_blocks = payload.get("source_blocks")
-    block_values = (
-        [value for key, value in source_blocks.items() if str(key) != "listing_completeness"]
-        if isinstance(source_blocks, dict)
-        else []
-    )
-    values: list[object] = [
-        sale.title,
-        sale.description,
-        sale.raw_text,
-        payload.get("source_description"),
-        *block_values,
-    ]
-    parts = dict.fromkeys(str(value).strip() for value in values if value and str(value).strip())
-    return "\n".join(parts)
-
-
 def _bounded_editorial_value(value: Any, *, budget: int = MAX_EDITORIAL_TEXT_CHARS, depth: int = 0) -> Any:
     """Bound source-editorial material before regex/profile extraction.
 
@@ -336,6 +320,8 @@ def _editorial_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "source_evidence_provenance",
         "source_conflicts",
         "documents",
+        # Lot de l'URL d'une page Licitor à plusieurs lots : sans lui, chaque lecture prendrait la page entière.
+        LOT_SELECTION_KEY,
     )
     return {
         key: _bounded_editorial_value(payload[key])
@@ -350,17 +336,14 @@ def _recompute_sale(row: Mapping[str, Any]) -> Any:
     # Several enrichers update nested ``source_blocks`` in place.  Hydrate a
     # deep copy so planning never mutates the operator's input snapshot (or the
     # backup that was written from it).
-    sale = _sale_from_storage_row(copy.deepcopy(dict(row)))
+    sale = sale_from_storage_row(copy.deepcopy(dict(row)))
     sale.raw_payload = _editorial_payload(sale.raw_payload)
     sale.raw_text = _bounded_editorial_value(sale.raw_text)
     sale.description = _bounded_editorial_value(sale.description)
     sale.title = _bounded_editorial_value(sale.title)
-    classify_sale_procedure(sale)
-    context = _surface_context(sale)
-    if context:
-        extract_and_apply_deterministic_surface_reasoning(sale, context)
-    normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
+    # Comme le recalcul (``src.recompute_scoring``) : seuls les champs physiques et les preuves de
+    # ``BACKFILL_NAMESPACE`` sont réécrits ; tribunal et département recalculés ici ne le sont jamais.
+    derive_sale_facts(sale)
     return sale
 
 
@@ -714,7 +697,7 @@ def _load_and_verify_backup(plan: Mapping[str, Any], backup_path: str | Path) ->
 
 
 def _default_request(method: str, url: str, **kwargs: Any) -> HttpResponse:
-    # Lazy import keeps plan mode entirely offline and makes the no-connection
+    # Lazy import keeps plan mode free of HTTP requests and makes that
     # guarantee explicit: this is an HTTP request only in apply mode.
     import httpx
 
@@ -769,13 +752,7 @@ def apply_plan(
             "id": f"eq.{operation_id}",
             "updated_at": f"eq.{observed}",
         }
-        headers = {
-            "apikey": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Prefer": "return=representation",
-        }
+        headers = rest_headers(api_key, prefer="return=representation")
         try:
             response = request(
                 "PATCH",
@@ -810,12 +787,6 @@ def apply_plan(
     }
 
 
-# Explicit aliases make the operator-facing intent clear to callers that use
-# this module as a library rather than through the CLI.
-build_backfill_plan = build_plan
-apply_backfill_plan = apply_plan
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Backfill borné des attributs physiques extraits des sources.")
     parser.add_argument(
@@ -829,8 +800,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", help="Chemin du plan produit; défaut: source-extraction-backfill-plan.json.")
     parser.add_argument("--backup", required=True, help="Sauvegarde privée obligatoire (mode 0600).")
     parser.add_argument("--apply-plan", metavar="PLAN.json", help="Applique un plan signé existant.")
-    parser.add_argument("--postgrest-url", default=os.getenv("SUPABASE_URL"))
-    parser.add_argument("--api-key", default=os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    settings = load_settings()
+    parser.add_argument("--postgrest-url", default=settings.get("supabase_url"))
+    parser.add_argument("--api-key", default=settings.get("supabase_service_role_key"))
     return parser
 
 
@@ -867,8 +839,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("--input est obligatoire avec --plan", file=sys.stderr)
             return 2
         output = output or "source-extraction-backfill-plan.json"
-        if not output:
-            output = "source-extraction-backfill-plan.json"
         plan = plan_backfill(
             load_rows(input_path),
             plan_path=output,
@@ -893,9 +863,7 @@ __all__ = [
     "PlanInputError",
     "PlanIntegrityError",
     "apply_plan",
-    "apply_backfill_plan",
     "build_plan",
-    "build_backfill_plan",
     "load_plan",
     "load_rows",
     "main",

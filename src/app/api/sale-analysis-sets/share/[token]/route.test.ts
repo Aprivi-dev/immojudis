@@ -1,3 +1,4 @@
+import { NotFoundError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ enforceIp: vi.fn(), shared: vi.fn() }));
@@ -31,7 +32,9 @@ describe("GET /api/sale-analysis-sets/share/[token]", () => {
   });
 
   it("answers 404 for an unknown or expired link", async () => {
-    mocks.shared.mockRejectedValue(new Error("Comparaison partagée introuvable ou expirée."));
+    mocks.shared.mockRejectedValue(
+      new NotFoundError("Comparaison partagée introuvable ou expirée."),
+    );
 
     const response = await call();
 

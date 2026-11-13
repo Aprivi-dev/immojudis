@@ -422,20 +422,20 @@ def test_a_storage_failure_removes_the_files_of_the_photo_being_copied_only() ->
 # --------------------------------------------------------------------------------------------------
 
 
-def test_the_switch_off_only_applies_withdrawals() -> None:
+def test_the_switch_off_only_applies_withdrawals(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PDF_PHOTOS_ENABLED", "false")
     store = FakeStore()
     store.hidden_deleted = 2
     store.candidates = [_candidate()]
 
-    summary = run_pdf_photos(
-        PassLimits(), settings=SETTINGS, store=store, storage=FakeStorage(), env={"PDF_PHOTOS_ENABLED": "false"}
-    )
+    summary = run_pdf_photos(PassLimits(), settings=SETTINGS, store=store, storage=FakeStorage())
 
     assert summary.stop_reason == "disabled" and summary.hidden_deleted == 2
     assert store.selected_with == [] and store.scans == [] and store.stale_calls == 0
 
 
 def test_withdrawals_delete_the_photos_of_a_withdrawn_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PDF_PHOTOS_ENABLED", "off")
     monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"licitor"}))
     store = FakeStore()
     store.rows = [
@@ -444,15 +444,16 @@ def test_withdrawals_delete_the_photos_of_a_withdrawn_source(monkeypatch: pytest
         {"id": "3", "sale_id": SALE_ID, "document_url": DOCUMENT_URL, "source_name": "cessions_etat", "observations": []},
     ]
 
-    summary = run_pdf_photos(
-        PassLimits(), settings=SETTINGS, store=store, storage=FakeStorage(), env={"PDF_PHOTOS_ENABLED": "off"}
-    )
+    summary = run_pdf_photos(PassLimits(), settings=SETTINGS, store=store, storage=FakeStorage())
 
     assert store.deleted == ["1", "2"] and summary.withdrawn_deleted == 2
     assert store.withdrawn_scans == [(SALE_ID, DOCUMENT_URL), (SALE_ID, "https://www.licitor.com/doc.pdf")]
 
 
-def test_a_pass_records_each_document_and_skips_the_deferred_one(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_pass_records_each_document_and_skips_the_deferred_one(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PDF_PHOTOS_ENABLED", raising=False)
     store = FakeStore()
     store.candidates = [_candidate(), _candidate(document_url="https://cessions.example.test/pv.pdf", label="PV descriptif")]
     calls: list[bytes] = []
@@ -467,7 +468,6 @@ def test_a_pass_records_each_document_and_skips_the_deferred_one(capsys: pytest.
         store=store,
         storage=FakeStorage(),
         downloader=FakeDownloader(),  # type: ignore[arg-type]
-        env={},
         extract=extract,
     )
 
@@ -479,12 +479,14 @@ def test_a_pass_records_each_document_and_skips_the_deferred_one(capsys: pytest.
     assert [event["event"] for event in events] == ["pdf_photos", "pdf_photos"]
 
 
-def test_the_pass_requires_the_supabase_url_when_on() -> None:
+def test_the_pass_requires_the_supabase_url_when_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PDF_PHOTOS_ENABLED", raising=False)
     with pytest.raises(RuntimeError, match="SUPABASE_URL"):
-        run_pdf_photos(PassLimits(), settings={**SETTINGS, "supabase_url": ""}, store=FakeStore(), env={})
+        run_pdf_photos(PassLimits(), settings={**SETTINGS, "supabase_url": ""}, store=FakeStore())
 
 
-def test_a_budget_already_spent_stops_before_any_download() -> None:
+def test_a_budget_already_spent_stops_before_any_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PDF_PHOTOS_ENABLED", raising=False)
     store = FakeStore()
     store.candidates = [_candidate()]
     ticks = iter([0.0, 1000.0, 1000.0, 1000.0])
@@ -496,7 +498,6 @@ def test_a_budget_already_spent_stops_before_any_download() -> None:
         store=store,
         storage=FakeStorage(),
         downloader=downloader,  # type: ignore[arg-type]
-        env={},
         clock=lambda: next(ticks),
     )
 
@@ -508,9 +509,12 @@ def test_a_budget_already_spent_stops_before_any_download() -> None:
 # --------------------------------------------------------------------------------------------------
 
 
-def test_the_switch_is_on_by_default() -> None:
-    assert pass_enabled({}) and pass_enabled({"PDF_PHOTOS_ENABLED": "true"})
-    assert not any(pass_enabled({"PDF_PHOTOS_ENABLED": value}) for value in ("false", "0", "no", "OFF"))
+def test_the_switch_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PDF_PHOTOS_ENABLED", raising=False)
+    assert pass_enabled()
+    for value, expected in (("true", True), ("", True), ("false", False), ("0", False), ("no", False), (" OFF ", False)):
+        monkeypatch.setenv("PDF_PHOTOS_ENABLED", value)
+        assert pass_enabled() is expected
 
 
 def test_the_pdf_downloader_asks_for_a_pdf_and_checks_its_first_bytes() -> None:
@@ -530,6 +534,9 @@ def test_paths_and_public_url_follow_the_site_form() -> None:
     assert photo_paths(SALE_ID, _sha("e"), single=True) == (f"documents/{SALE_ID}/{'e' * 16}-640.webp",) * 2
     with pytest.raises(ValueError):
         photo_paths("not-a-uuid", _sha("e"), single=False)
+    # Empreinte exacte : un saut de ligne final n'est plus accepté.
+    with pytest.raises(ValueError, match="invalid sha256"):
+        photo_paths(SALE_ID, _sha("e") + "\n", single=False)
     assert public_url(SUPABASE_URL + "/", "documents/x.webp") == (
         f"{SUPABASE_URL}/storage/v1/object/public/sale-photos/documents/x.webp"
     )

@@ -1,9 +1,9 @@
 import { useId } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@/lib/toast";
-import { fetchNotificationPreferences, updateNotificationPreferences } from "@/lib/client-api";
-import * as queryKeys from "@/lib/query-keys";
-import { userMessage } from "@/lib/user-messages";
+import { useNotificationPreferenceToggle } from "@/hooks/use-notification-preference-toggle";
+import {
+  consentOffered,
+  useNotificationPreferencesQuery,
+} from "@/hooks/use-notification-preferences";
 
 /** Jours proposés, dans l'ordre de la semaine (ISO 8601 : 1 = lundi ... 7 = dimanche). */
 const WEEKDAYS = [
@@ -31,34 +31,21 @@ const WEEKDAYS = [
  * case et aucun envoi n'est garanti.
  */
 export function WeeklyDigestToggle({ userId, className }: { userId: string; className: string }) {
-  const queryClient = useQueryClient();
   const weekdayId = useId();
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId),
-    queryFn: fetchNotificationPreferences,
-    staleTime: 60_000,
-  });
-  const mutation = useMutation({
-    mutationFn: updateNotificationPreferences,
-    onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
-      if (variables.weeklyDigestEnabled !== undefined) {
-        toast.success(
-          variables.weeklyDigestEnabled
-            ? "Récapitulatif hebdomadaire activé"
-            : "Récapitulatif hebdomadaire retiré",
-        );
-      } else {
-        toast.success("Jour du récapitulatif enregistré");
-      }
-    },
-    onError: (error) =>
-      toast.error(userMessage(error, "Récapitulatif hebdomadaire : enregistrement impossible")),
+  const preferencesQuery = useNotificationPreferencesQuery(userId);
+  const mutation = useNotificationPreferenceToggle(userId, {
+    saved: (update) =>
+      update.weeklyDigestEnabled === undefined
+        ? "Jour du récapitulatif enregistré"
+        : update.weeklyDigestEnabled
+          ? "Récapitulatif hebdomadaire activé"
+          : "Récapitulatif hebdomadaire retiré",
+    failed: "Récapitulatif hebdomadaire : enregistrement impossible",
   });
 
   const data = preferencesQuery.data;
   const enabled = data?.preferences.weeklyDigestEnabled ?? false;
-  if (!data || (data.weeklyDigestAvailable !== true && !enabled)) return null;
+  if (!data || !consentOffered(data.weeklyDigestAvailable, enabled)) return null;
   const weekday = data.preferences.weeklyDigestWeekday ?? 2;
 
   return (

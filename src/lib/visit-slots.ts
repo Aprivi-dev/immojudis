@@ -149,7 +149,7 @@ export function parseVisitSlot(value: unknown): VisitSlot | null {
 }
 
 /** Les textes de `visit_dates` : une liste de textes, ou un seul texte. */
-export function visitDateTexts(value: unknown): string[] {
+function visitDateTexts(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [value];
   return values.map(cleanVisitText).filter((text): text is string => text !== null);
 }

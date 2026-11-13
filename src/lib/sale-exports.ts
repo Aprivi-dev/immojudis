@@ -1,7 +1,6 @@
 import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
 import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
@@ -24,7 +23,7 @@ import { apiAccessAllowed, featureIncluded } from "@/lib/plans";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, RateLimitError } from "@/lib/api-errors";
 import {
   enforceDailyOperationLimits,
   enforceUserRateLimit,
@@ -50,6 +49,7 @@ import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import { cleanScalarText as cleanString } from "@/lib/dpe";
+import { asJson } from "@/lib/supabase-json";
 
 const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
@@ -235,7 +235,7 @@ export async function exportSalesCsv({
 }): Promise<SalesCsvExport> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
-    throw new Error("Export CSV réservé à l’offre Analyse.");
+    throw new ForbiddenError("Export CSV réservé à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -290,7 +290,7 @@ export async function exportSalesApiFeed({
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
   if (!apiAccessAllowed(auth, plan.plan)) {
-    throw new Error("API ventes réservée à l’administration.");
+    throw new ForbiddenError("API ventes réservée à l’administration.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -505,7 +505,7 @@ async function recordSalesDataExport({
   });
   if (error) throw error;
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: exportKind === "sales_csv" ? "sales.csv_exported" : "sales.api_feed_requested",
     subjectType: "sale_search",
@@ -800,8 +800,4 @@ function csvCell(value: string | number | null | undefined): string {
     typeof value === "string" && /^[=+\-@]/.test(normalized) ? `'${normalized}` : normalized;
   if (!/[",\n;]/.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }

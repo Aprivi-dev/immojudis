@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isNonProductionVercelDeployment, resolveSiteOrigin } from "@/lib/site-url";
+import { isNonProductionVercelDeployment, resolveSiteOrigin, siteOrigin } from "@/lib/site-url";
+import { SITE_URL_ENV_NAMES } from "@/lib/env";
+import { ConfigurationError } from "@/lib/api-errors";
 
 describe("canonical site URL", () => {
   it("uses one normalized origin with explicit precedence", () => {
@@ -38,20 +40,38 @@ describe("canonical site URL", () => {
     ).toBe("https://immojudis.com");
   });
 
-  it("rejects unsupported protocols and embedded credentials", () => {
+  it("rejects unsupported protocols and embedded credentials as a configuration error", () => {
     expect(() => resolveSiteOrigin({ SITE_URL: "javascript:alert(1)" })).toThrow(
-      "URL canonique invalide",
+      "Invalid canonical URL",
     );
     expect(() => resolveSiteOrigin({ SITE_URL: "https://user:secret@example.test" })).toThrow(
-      "URL canonique non autorisée",
+      "Canonical URL not allowed",
     );
     expect(() => resolveSiteOrigin({ SITE_URL: "https://example.test/app" })).toThrow(
-      "sans chemin",
+      "without a path",
+    );
+    expect(() => resolveSiteOrigin({ SITE_URL: "https://example.test/app" })).toThrow(
+      ConfigurationError,
     );
   });
 
   it("returns the explicit local fallback when no URL is configured", () => {
     expect(resolveSiteOrigin({}, "http://localhost:3000/")).toBe("http://localhost:3000");
+  });
+});
+
+describe("siteOrigin (pages, sitemaps, robots.txt)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("reads the configured origin of the running process", () => {
+    for (const name of SITE_URL_ENV_NAMES) vi.stubEnv(name, "");
+    vi.stubEnv("SITE_URL", "https://immojudis.fr/");
+    expect(siteOrigin()).toBe("https://immojudis.fr");
+  });
+
+  it("falls back to the local development origin when none is configured", () => {
+    for (const name of SITE_URL_ENV_NAMES) vi.stubEnv(name, "");
+    expect(siteOrigin()).toBe("http://localhost:3000");
   });
 });
 

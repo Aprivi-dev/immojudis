@@ -9,7 +9,6 @@ import {
   buildNotificationPreferencePatch,
   buildSaleReminderPreferencePatch,
   canCreateEmailAlertNotification,
-  canSendSaleReminder,
   notificationPreferenceUpdateSchema,
   SALE_REMINDERS_CONSENT_TEXT_VERSION,
   SALE_REMINDERS_NOT_OFFERED_MESSAGE,
@@ -191,24 +190,6 @@ describe("rappels d'audience : consentement distinct", () => {
         timestamp: "2026-10-20T10:00:00.000Z",
       }).sale_reminders_revoked_at,
     ).toBeNull();
-  });
-
-  it("n'envoie qu'avec un consentement actif et daté", () => {
-    expect(
-      canSendSaleReminder({
-        saleRemindersEnabled: true,
-        saleRemindersConsentedAt: "2026-10-19T10:00:00.000Z",
-      }),
-    ).toBe(true);
-    expect(
-      canSendSaleReminder({ saleRemindersEnabled: true, saleRemindersConsentedAt: null }),
-    ).toBe(false);
-    expect(
-      canSendSaleReminder({
-        saleRemindersEnabled: false,
-        saleRemindersConsentedAt: "2026-10-19T10:00:00.000Z",
-      }),
-    ).toBe(false);
   });
 
   it("ne mélange pas les deux consentements dans le patch", () => {

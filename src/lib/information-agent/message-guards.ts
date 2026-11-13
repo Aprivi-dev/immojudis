@@ -7,32 +7,55 @@ import {
   type InformationAgentFooterStructure,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
-import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
-import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
+import {
+  informationAgentAiProvider,
+  type InformationAgentAiProvider,
+} from "@/lib/information-agent-ai-provider";
+import { INFORMATION_AGENT_OPT_OUT_PATH } from "@/lib/information-agent-link-paths";
+import {
+  buildInformationAgentOptOutUrl,
+  INFORMATION_AGENT_PORTAL_SECRET_MISSING_MESSAGE,
+  informationAgentPortalSecret,
+} from "@/lib/information-agent-signed-link";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { courtRegistryDailyCap } from "@/lib/information-agent/court-registry-fallback";
+import { InformationAgentInvalidContactEmailError } from "@/lib/information-agent/contacts";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 /**
- * Garde-fous du message sortant de l'agent d'information (identité du responsable de traitement, pied
- * art. 14 RGPD, empreinte de l'aperçu), extraits de `information-agent.ts` qui les réexporte.
+ * Garde-fous du message sortant de l'agent d'information : identité du responsable de traitement, pied
+ * art. 14 RGPD, empreinte de l'aperçu.
  */
 
 /** Refuses to send while the data controller identity (art. 14 GDPR) is not configured. */
 export function assertInformationAgentControllerIdentity(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
-  if (!informationAgentControllerIdentity(env)) {
-    throw new Error(
-      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
-    );
-  }
+  if (!informationAgentControllerIdentity(env)) throw controllerIdentityMissing();
 }
 
-export function informationAgentPortalSecret(env: Readonly<Record<string, string | undefined>>) {
-  const secret = env.INFORMATION_AGENT_PORTAL_SECRET?.trim();
-  return secret && Buffer.byteLength(secret, "utf8") >= 32 ? secret : null;
+function controllerIdentityMissing(): ConfigurationError {
+  return new ConfigurationError(
+    "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
+  );
 }
 
+/** Repères affichés dans un aperçu à la place de ce qui n'est pas encore configuré. */
+const PREVIEW_PLACEHOLDERS = {
+  controllerName: "[Responsable de traitement à configurer]",
+  controllerAddress: "[Adresse à configurer]",
+  contactEmail: "[Contact à configurer]",
+} as const;
+
+/**
+ * Pied légal (art. 14 RGPD) d'un email de l'agent, seule construction du pied : envoi, aperçu d'une mission
+ * et aperçu du modèle.
+ *
+ * À l'envoi, tout élément manquant (identité du responsable, secret du lien d'opposition, prestataire d'IA
+ * nommé) lève une erreur. En aperçu (`preview`), l'élément manquant est remplacé par un repère « à configurer »
+ * et son motif est ajouté à `preview.blockers` : l'administrateur voit le message entier et ce qui bloque.
+ * `email: null` (aperçu du modèle, sans destinataire) donne un lien d'opposition d'exemple.
+ */
 export function buildInformationAgentLegalFooter({
   appUrl,
   email,
@@ -40,25 +63,36 @@ export function buildInformationAgentLegalFooter({
   saleReference = null,
   structureOpposition = null,
   env = process.env,
+  preview,
 }: {
   appUrl: string;
-  email: string;
+  email: string | null;
   addressOrigin: InformationAgentAddressOrigin;
   /** L'opposition de cette adresse vaudra pour toute sa structure (`missionRecipient().structureOpposition`). */
   structureOpposition?: InformationAgentFooterStructure | null;
   saleReference?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
+  preview?: { blockers: string[] };
 }): InformationAgentLegalFooter {
+  const refuse = (error: Error) => {
+    if (!preview) throw error;
+    preview.blockers.push(error.message);
+  };
   const controller = informationAgentControllerIdentity(env);
-  if (!controller) assertInformationAgentControllerIdentity(env);
-  const secret = informationAgentPortalSecret(env);
-  if (!secret) throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  if (!controller) refuse(controllerIdentityMissing());
+  const optOut = optOutUrl({ appUrl, email, env, refuse });
+  let aiProvider: InformationAgentAiProvider;
+  try {
+    // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
+    aiProvider = informationAgentAiProvider(env);
+  } catch (error) {
+    refuse(error as Error);
+    aiProvider = informationAgentAiProvider({});
+  }
   return {
-    controllerName: controller!.name,
-    controllerAddress: controller!.address,
-    contactEmail: controller!.contactEmail,
+    controllerName: controller?.name ?? PREVIEW_PLACEHOLDERS.controllerName,
+    controllerAddress: controller?.address ?? PREVIEW_PLACEHOLDERS.controllerAddress,
+    contactEmail: controller?.contactEmail ?? PREVIEW_PLACEHOLDERS.contactEmail,
     saleReference,
     addressOrigin: addressOrigin.text,
     // Message à un greffe : variante « greffe » du pied, avec le plafond réellement appliqué (configuration).
@@ -68,11 +102,39 @@ export function buildInformationAgentLegalFooter({
     automatedSearchSource: addressOrigin.searchSource,
     structureAddress: addressOrigin.structureAddress ?? null,
     structureOpposition: addressOrigin.courtRegistry ? null : structureOpposition,
-    // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
-    aiProvider: informationAgentAiProvider(env),
+    aiProvider,
     privacyUrl: new URL("/privacy", appUrl).toString(),
-    optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
+    optOutUrl: optOut,
   };
+}
+
+function optOutUrl({
+  appUrl,
+  email,
+  env,
+  refuse,
+}: {
+  appUrl: string;
+  email: string | null;
+  env: Readonly<Record<string, string | undefined>>;
+  refuse: (error: Error) => void;
+}): string {
+  const placeholder = new URL(INFORMATION_AGENT_OPT_OUT_PATH, appUrl);
+  if (email === null) {
+    placeholder.search = "?e=exemple&t=exemple";
+    return placeholder.toString();
+  }
+  const secret = informationAgentPortalSecret(env);
+  if (!secret) {
+    refuse(new ConfigurationError(INFORMATION_AGENT_PORTAL_SECRET_MISSING_MESSAGE));
+    return placeholder.toString();
+  }
+  const normalized = normalizedEmail(email);
+  if (!normalized) {
+    refuse(new InformationAgentInvalidContactEmailError());
+    return placeholder.toString();
+  }
+  return buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret });
 }
 
 const PREVIEW_FINGERPRINT_CONTEXT = "immojudis:information-agent:preview:v1";
@@ -136,14 +198,13 @@ export function assertInformationAgentPreviewFingerprint({
   };
 }): void {
   const expected = informationAgentPreviewFingerprint({ adminId, ...input });
-  if (!expected) {
-    throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
-  }
+  if (!expected) throw new ConfigurationError(INFORMATION_AGENT_PORTAL_SECRET_MISSING_MESSAGE);
   const received = Buffer.from(input.previewFingerprint ?? "", "hex");
   const reference = Buffer.from(expected, "hex");
   if (received.length !== reference.length || !timingSafeEqual(received, reference)) {
-    throw new Error(
+    throw new PublicApiError(
       "Le message a changé depuis l’aperçu, ou aucun aperçu n’a été affiché : affichez l’aperçu de la version finale avant d’envoyer.",
+      409,
     );
   }
 }

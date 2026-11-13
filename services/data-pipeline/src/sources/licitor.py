@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.french_dates import MONTH_PATTERN
 from src.information_sufficiency import excluded_contact_reason
 from src.normalize import (
     clean_text,
@@ -27,8 +27,9 @@ from src.sources.common import (
     extract_surface,
     is_allowed_origin_url,
     is_plausible_email,
-    normalize_surface_number,  # noqa: F401 - normaliseur des surfaces partagé par les sources (test de parité)
     parse_html,
+    source_budget_deadline,
+    source_budget_expired,
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.licitor_extraction import (
@@ -174,21 +175,6 @@ class RobotsRules:
         return len(matched_allow) >= len(matched_disallow)
 
 
-def _source_budget_deadline() -> float | None:
-    raw = os.getenv(SOURCE_BUDGET_ENV)
-    if not raw:
-        return None
-    try:
-        seconds = float(raw)
-    except ValueError:
-        return None
-    return time.monotonic() + seconds if seconds > 0 else None
-
-
-def _source_budget_expired(deadline: float | None) -> bool:
-    return deadline is not None and time.monotonic() >= deadline
-
-
 def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[str, Any]]) -> list[str]:
     """Fiches à lire dans l'ordre où elles comptent le plus : audiences les plus proches d'abord.
 
@@ -211,14 +197,10 @@ def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[
     return sorted(detail_urls, key=sale_day)
 
 
-def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_licitor_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details: bool = True, known: dict[str, str] | None = None) -> ScrapeResult:
     """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()
-    deadline = _source_budget_deadline()
+    deadline = source_budget_deadline(SOURCE_BUDGET_ENV)
     client = LicitorClient(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
@@ -259,7 +241,7 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
     deferred = 0
     for detail_url in _nearest_sales_first(to_fetch, listing_by_url):
         summary = listing_by_url[detail_url]
-        if _source_budget_expired(deadline):
+        if source_budget_expired(deadline):
             deferred += 1
             summary["_detail_fetch_failed"] = True
             summary["source_detail_status"] = "deferred"
@@ -588,31 +570,6 @@ def parse_licitor_detail_html(
     return sale
 
 
-def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
-    detail_urls: list[str] = []
-
-    for start_url in _start_urls_for_target_departments():
-        pending = deque([start_url])
-        visited: set[str] = set()
-        while pending and len(visited) < max_pages:
-            page_url = pending.popleft()
-            if page_url in visited:
-                continue
-            visited.add(page_url)
-            try:
-                html = client.get(page_url)
-            except Exception as exc:
-                LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
-                errors.append(f"{page_url}: {exc}")
-                continue
-            page_detail_urls, next_urls = parse_licitor_list_html(html, page_url)
-            detail_urls.extend(page_detail_urls)
-            pending.extend(url for url in next_urls if url not in visited and url not in pending)
-        if pending:
-            errors.append(f"Pagination incomplete at {start_url}: page limit {max_pages}")
-    return _unique(detail_urls)
-
-
 def _collect_list_sales(client: LicitorClient, max_pages: int, errors: list[str]) -> list[dict[str, Any]]:
     raw_sales: list[dict[str, Any]] = []
     client.catalogue_evidence = CatalogueEvidence("licitor")
@@ -775,8 +732,7 @@ def _extract_list_sale_date(lines: list[str]) -> str | None:
         if not candidate and index + 1 < len(lines):
             candidate = lines[index + 1]
         if candidate and re.search(
-            r"\b(?:\d{1,2}|1er)\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
-            r"septembre|octobre|novembre|décembre|decembre)\s+20\d{2}\b",
+            rf"\b(?:\d{{1,2}}|1er)\s+(?:{MONTH_PATTERN})\s+20\d{{2}}\b",
             candidate,
             re.I,
         ):
@@ -1099,11 +1055,6 @@ def _append_image(images: list[str], value: object | None, source_url: str) -> N
     if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$", lowered):
         return
     images.append(absolute)
-
-
-def _is_disallowed_document_url(url: str) -> bool:
-    path = urlparse(url).path
-    return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
 
 
 def _extract_surface_m2(text: str) -> str | None:

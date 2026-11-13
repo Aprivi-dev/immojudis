@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -7,11 +8,11 @@ import {
   resolveAnalysisOfferLabel,
   STRIPE_CHECKOUT_TRIAL_OFFERED,
 } from "@/lib/analysis-offer";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveAnalysisCheckoutAvailability } from "@/lib/billing";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
-import { BILLING_OFFER_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 /**
  * Exposes only the non-sensitive presentation state needed before checkout.
@@ -21,9 +22,9 @@ import { BILLING_OFFER_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-lim
  * at the edge for five minutes. A signed-in caller gets a private, uncached answer
  * because the trial eligibility depends on the account.
  */
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.billing.offer");
-  try {
+export const GET = apiRoute(
+  { scope: "api.billing.offer", fallbackMessage: "Offre indisponible.", fallbackStatus: 503 },
+  async (request) => {
     await enforceIpRateLimit({
       request,
       bucketKey: "billing.offer",
@@ -39,26 +40,17 @@ export async function GET(request: Request) {
       const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
       trialAvailable = (await resolveAnalysisCheckoutAvailability(auth)).trialAvailable;
     }
-    return apiJson(
-      {
-        configured,
-        trialDays: ANALYSIS_TRIAL_DAYS,
-        trialAvailable,
-        label: resolveAnalysisOfferLabel(),
+    const body = {
+      configured,
+      trialDays: ANALYSIS_TRIAL_DAYS,
+      trialAvailable,
+      label: resolveAnalysisOfferLabel(),
+    };
+    if (personalized) return body;
+    return NextResponse.json(body, {
+      headers: {
+        "cache-control": "public, s-maxage=300, stale-while-revalidate=60",
       },
-      context,
-      {
-        headers: {
-          "cache-control": personalized
-            ? "private, no-store"
-            : `public, s-maxage=${BILLING_OFFER_CACHE_SECONDS}, stale-while-revalidate=60`,
-        },
-      },
-    );
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Offre indisponible.",
-      fallbackStatus: 503,
     });
-  }
-}
+  },
+);

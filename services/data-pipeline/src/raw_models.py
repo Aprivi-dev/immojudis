@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from src.models import compact_validation_error
 from src.repeated_surface_guard import drop_repeated_foreign_surfaces
 from src.sources.agrasc_urls import is_allowed_agrasc_source_url
 from src.sources.common import is_allowed_origin_url
@@ -139,20 +140,12 @@ def validate_raw_sales(
             model.model_validate(sale)
         except ValidationError as exc:
             marker = sale.get("source_url") or sale.get("external_id") or "unknown"
-            errors.append(f"validation {marker}: {_compact_validation_error(exc)}")
+            errors.append(f"validation {marker}: {compact_validation_error(exc)}")
             continue
         valid.append(sale)
     # Même surface décimale sur des ventes de villes différentes : lecture d'une vente voisine, non publiée.
     drop_repeated_foreign_surfaces(source_name, valid)
     return valid
-
-
-def _compact_validation_error(exc: ValidationError) -> str:
-    parts: list[str] = []
-    for item in exc.errors():
-        loc = ".".join(str(part) for part in item.get("loc", ())) or "root"
-        parts.append(f"{loc}: {item.get('msg')}")
-    return "; ".join(parts)
 
 
 def _has_text(value: str | None) -> bool:

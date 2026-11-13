@@ -155,7 +155,7 @@ describe("fiche lue par le navigateur : copie hébergée de la photo", () => {
                 ],
                 error: null,
               }
-            : { data: null, error: { code: "PGRST202", message: fn } },
+            : { data: null, error: null },
       ),
     );
 

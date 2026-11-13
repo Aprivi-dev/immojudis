@@ -26,7 +26,7 @@ from src.sources.cessions_etat_labels import (
     lookup_nature,
     parse_bool,
     parse_count,
-    parse_surface,
+    parse_single_surface_with_area_units,
     parse_year,
 )
 from src.sources.cessions_etat_page import CessionsPage, Characteristic, direction_email, parse_cessions_page
@@ -37,6 +37,7 @@ from src.sources.cessions_etat_procedure import (
     published_price,
     select_schedule,
 )
+from src.timestamps import assumed_utc_timestamp
 
 FEATURES_SCHEMA_VERSION = "cessions_etat_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -56,14 +57,6 @@ _BUILT_CUE_RE = re.compile(
     r"plateaux?|carrez|construction|villa|pavillon"
 )
 _SERVICE_NAME_RE = re.compile(r"\b(?:service|p[oô]le|prie|direction|ddfip|drfip|dgfip|division|bureau|sgami)\b", re.I)
-
-
-def parse_observed_at(value: object | None) -> datetime | None:
-    try:
-        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _natures(page: CessionsPage) -> list[tuple[str, str, str]]:
@@ -99,7 +92,7 @@ def _typed_value(kind: str, value: str) -> Any:
     if kind == "year":
         return parse_year(value) or value
     if kind == "surface":
-        surface = parse_surface(value)
+        surface = parse_single_surface_with_area_units(value)
         return decimal_text(surface) if surface is not None else value
     if kind == "bool_text":
         # « oui » -> True ; « non constructible » -> {present: False, text} ; texte libre -> texte.
@@ -143,7 +136,7 @@ def _tile_scope(value: Decimal, nature_type: str | None, page: CessionsPage, des
         return "land"
     if "built" in near:
         return "built"
-    land_tile = parse_surface(page.value("land_surface_m2"))
+    land_tile = parse_single_surface_with_area_units(page.value("land_surface_m2"))
     if land_tile is not None and abs(land_tile - value) > 1:
         return "built"
     built_numbers = {number for number, scope in described if scope == "built"}
@@ -175,12 +168,12 @@ def _surfaces(page: CessionsPage, natures: list[tuple[str, str, str]]) -> dict[s
     totals: dict[str, Decimal] = {}
     tiles = [item for item in page.characteristics if item.kind == "surface"]
     if not any(item.key == "surface_m2" for item in tiles) and page.headline_surface:
-        headline = parse_surface(page.headline_surface)
+        headline = parse_single_surface_with_area_units(page.headline_surface)
         if headline is not None:
             tiles.append(Characteristic("surface_m2", "Surface", page.headline_surface, "surfaces", "surface",
                                         page.natures[0] if page.natures else None))
     for item in tiles:
-        value = parse_surface(item.value)
+        value = parse_single_surface_with_area_units(item.value)
         if value is None:
             continue
         if item.key in {"land_surface_m2", "outbuildings_surface_m2"}:
@@ -461,13 +454,13 @@ def extract_cessions_fields(
 
 def observed_at_for(raw_sale: dict[str, Any]) -> datetime | None:
     """Instant d'observation du texte stocké (pour lire « Fini dans N jours »)."""
-    explicit = parse_observed_at(raw_sale.get("source_page_observed_at"))
+    explicit = assumed_utc_timestamp(raw_sale.get("source_page_observed_at"))
     if explicit:
         return explicit
     checks = raw_sale.get("source_checks") if isinstance(raw_sale.get("source_checks"), dict) else {}
     check = checks.get(str(raw_sale.get("source_url") or "")) if checks else None
     if isinstance(check, dict) and check.get("detail_status") == "complete":
-        return parse_observed_at(check.get("checked_at"))
+        return assumed_utc_timestamp(check.get("checked_at"))
     return None
 
 

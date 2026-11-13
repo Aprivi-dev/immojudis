@@ -30,6 +30,10 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Any
 
+# Aucun import de ``src`` en tête de module, et ce n'est pas pour un cycle : un processus de préparation importe ce
+# module avant ``_init_worker``, et ``src.pdf_enrichment`` lit le délai par hôte à son propre import. Chaque fonction
+# importe donc ce qu'elle utilise, une fois le délai réglé.
+
 LOGGER = logging.getLogger(__name__)
 
 PREFETCH_WORKERS_ENV = "DOCUMENT_BACKLOG_PREFETCH_WORKERS"
@@ -64,17 +68,12 @@ def _init_worker(host_delay_seconds: float) -> None:
 def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[str, Any]:
     """Download a sale's documents and read their pages into the local caches. Never writes to the database."""
     from src.config import PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
-    from src.pdf_enrichment import (
-        PdfEnrichmentStats,
-        _read_document_text_cache,
-        _select_documents_for_extraction,
-        download_documents,
-        extract_attached_document,
-        pdf_deadline_scope,
-        sale_storage_id,
-    )
-    from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
+    from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, pdf_deadline_scope
+    from src.pdf_document_selection import select_documents_for_extraction
+    from src.pdf_document_text_cache import read_document_text_cache
+    from src.pdf_enrichment import PdfEnrichmentStats, download_documents, extract_attached_document
     from src.pdf_progress import restore_pdf_page_caches_from_manifest
+    from src.sale_local_files import sale_storage_id
     from src.storage.supabase_client import fetch_sale_for_data_refresh
 
     started = time.monotonic()
@@ -102,10 +101,15 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
                 ocr_language=str(settings["pdf_ocr_language"]),
             )
             revalidate = {str(item.get("url") or "") for item in downloaded}
-            for document in _select_documents_for_extraction(downloaded, sale=sale, revalidate_urls=revalidate):
+            for document in select_documents_for_extraction(downloaded, sale=sale, revalidate_urls=revalidate):
                 result["documents"] += 1
                 file_path = Path(document["file_path"])
-                if _read_document_text_cache(document, file_path):
+                if read_document_text_cache(
+                    document,
+                    file_path,
+                    cache_root=PDF_DOCUMENT_TEXTS_DIR,
+                    ocr_enabled=bool(settings["pdf_ocr_enabled"]),
+                ):
                     result["cached"] += 1
                     continue
                 for _ in range(MAX_ROUNDS_PER_DOCUMENT):
@@ -136,21 +140,21 @@ def restore_checkpointed_pages(sale: Any, downloaded: list[dict[str, Any]]) -> N
     Page caches are keyed by file content and never go stale; the locked pass rebuilds the manifest itself.
     """
     from src.config import load_settings
-    from src.storage import supabase_client as storage
+    from src.storage.supabase_client import (
+        newest_restorable_pdf_progress,
+        read_persisted_pdf_rows_rest,
+        restore_pdf_page_caches_for_documents,
+    )
 
     settings = load_settings()
     supabase_url, api_key = settings.get("supabase_url"), settings.get("supabase_service_role_key")
     source_url = str(getattr(sale, "source_url", "") or "")
     if not supabase_url or not api_key or not source_url or not downloaded:
         return
-    rows = storage._read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
-    for row in sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True):
-        restored = storage._validated_persisted_pdf_texts(sale, row) or storage._validated_persisted_pdf_progress(
-            sale, row
-        )
-        if restored:
-            storage._restore_pdf_page_caches_for_documents(restored, downloaded)
-            return
+    rows = read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+    restored = newest_restorable_pdf_progress(sale, rows)
+    if restored:
+        restore_pdf_page_caches_for_documents(restored, downloaded)
 
 
 class DocumentPrefetcher:

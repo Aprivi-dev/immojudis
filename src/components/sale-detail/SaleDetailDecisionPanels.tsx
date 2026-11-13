@@ -25,6 +25,7 @@ import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
+import * as queryKeys from "@/lib/query-keys";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -225,7 +226,7 @@ export function DiscoveryDecisionPanel({
   const { user, loading: authLoading } = useAuth();
   // The value route requires an account: a visitor never gets an answer from it.
   const preview = useQuery({
-    queryKey: ["value-preview", sale.id],
+    queryKey: queryKeys.valuePreview(sale.id),
     queryFn: () => fetchValuePreview(sale.id),
     enabled: Boolean(user),
     staleTime: 60 * 60_000,

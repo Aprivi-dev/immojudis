@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import type { SaleFeedbackBySale } from "@/lib/admin-sale-signal-feedback";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import { saleDetailPath } from "@/lib/navigation";
 import {
   SALE_SIGNAL_REASON_LABELS,
@@ -39,14 +40,7 @@ export function AdminSaleFeedbackPanel({
 }) {
   const query = useQuery({
     queryKey: ["admin-sale-feedback"],
-    queryFn: async () =>
-      readJson<SaleFeedbackBySale>(
-        await fetch("/api/admin/sale-feedback", {
-          signal: AbortSignal.timeout(30_000),
-          headers: await authHeaders(),
-          cache: "no-store",
-        }),
-      ),
+    queryFn: () => apiRequest<SaleFeedbackBySale>("/api/admin/sale-feedback"),
     staleTime: 60_000,
   });
   const rows = (query.data?.rows ?? []).filter((row) => signals.includes(row.signal));
@@ -119,7 +113,7 @@ export function AdminSaleFeedbackPanel({
                   <td className="px-2 py-2">{saleFeedbackReasonLabel(row.reason)}</td>
                   <td className="px-2 py-2 font-semibold tabular-nums">{row.count}</td>
                   <td className="px-2 py-2 tabular-nums">
-                    {row.lastAt ? formatDateTime(row.lastAt) : "—"}
+                    {row.lastAt ? formatShortDateTime(row.lastAt) : "—"}
                   </td>
                   {showVersion ? <td className="px-2 py-2">{row.ruleVersion ?? "—"}</td> : null}
                 </tr>

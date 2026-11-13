@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type {
   SaleAnalysisSetInput,
   SaleAnalysisSetListResponse,
@@ -6,65 +6,35 @@ import type {
   SaleComparisonShareResponse,
 } from "@/lib/sale-analysis-sets";
 
-export async function fetchSaleAnalysisSets(
-  args: {
-    includeArchived?: boolean;
-  } = {},
-): Promise<SaleAnalysisSetListResponse> {
-  const search = new URLSearchParams();
-  if (args.includeArchived) search.set("includeArchived", "true");
-  const response = await fetch(
-    `/api/sale-analysis-sets${search.size ? `?${search.toString()}` : ""}`,
-    {
-      headers: await authHeaders(),
-    },
-  );
-
-  return readJson<SaleAnalysisSetListResponse>(response);
+export function fetchSaleAnalysisSets(): Promise<SaleAnalysisSetListResponse> {
+  return apiRequest<SaleAnalysisSetListResponse>("/api/sale-analysis-sets");
 }
 
-export async function createSaleAnalysisSet(args: {
+export function createSaleAnalysisSet(args: {
   data: SaleAnalysisSetInput;
 }): Promise<SaleAnalysisSetResponse> {
-  const response = await fetch("/api/sale-analysis-sets", {
+  return apiRequest<SaleAnalysisSetResponse>("/api/sale-analysis-sets", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<SaleAnalysisSetResponse>(response);
 }
 
-export async function deleteSaleAnalysisSet(args: { setId: string }): Promise<{ ok: true }> {
-  const response = await fetch(`/api/sale-analysis-sets/${args.setId}`, {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
-
-  return readJson<{ ok: true }>(response);
+export function deleteSaleAnalysisSet(args: { setId: string }): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>(`/api/sale-analysis-sets/${args.setId}`, { method: "DELETE" });
 }
 
-export async function enableSaleComparisonShare(args: {
+export function enableSaleComparisonShare(args: {
   setId: string;
 }): Promise<SaleComparisonShareResponse> {
-  const response = await fetch(`/api/sale-analysis-sets/${args.setId}/share`, {
+  return apiRequest<SaleComparisonShareResponse>(`/api/sale-analysis-sets/${args.setId}/share`, {
     method: "POST",
-    headers: await authHeaders(),
   });
-
-  return readJson<SaleComparisonShareResponse>(response);
 }
 
-export async function disableSaleComparisonShare(args: {
+export function disableSaleComparisonShare(args: {
   setId: string;
 }): Promise<SaleComparisonShareResponse> {
-  const response = await fetch(`/api/sale-analysis-sets/${args.setId}/share`, {
+  return apiRequest<SaleComparisonShareResponse>(`/api/sale-analysis-sets/${args.setId}/share`, {
     method: "DELETE",
-    headers: await authHeaders(),
   });
-
-  return readJson<SaleComparisonShareResponse>(response);
 }

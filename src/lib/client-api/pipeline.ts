@@ -1,37 +1,19 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
-export async function fetchPipelineStatus(): Promise<PipelineStatus> {
-  return readJson(
-    await fetch("/api/admin/pipeline", {
-      signal: AbortSignal.timeout(30_000),
-      headers: await authHeaders(),
-      cache: "no-store",
-    }),
-  );
-}
-export async function setPipelineSourceEnabled(source: string, enabled: boolean): Promise<void> {
-  await readJson(
-    await fetch("/api/admin/pipeline", {
-      method: "PATCH",
-      headers: await authHeaders(),
-      body: JSON.stringify({ source, enabled }),
-    }),
-  );
+export function fetchPipelineStatus(): Promise<PipelineStatus> {
+  return apiRequest<PipelineStatus>("/api/admin/pipeline");
 }
 
-export async function updatePipelineControl(
+export async function setPipelineSourceEnabled(source: string, enabled: boolean): Promise<void> {
+  await apiRequest("/api/admin/pipeline", { method: "PATCH", body: { source, enabled } });
+}
+
+export function updatePipelineControl(
   changes: Partial<PipelineControlSettings>,
 ): Promise<PipelineStatus["control"]> {
-  const response = await fetch("/api/admin/pipeline/control", {
+  return apiRequest<PipelineStatus["control"]>("/api/admin/pipeline/control", {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(changes),
-    signal: AbortSignal.timeout(10_000),
+    body: changes,
   });
-
-  return readJson<PipelineStatus["control"]>(response);
 }

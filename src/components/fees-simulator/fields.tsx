@@ -1,29 +1,9 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
+import { formatPriceWithCents, formatShareAsPercent } from "@/lib/format/numbers";
 import { DMTO_TABLE_DATE, type AcquisitionCostResult } from "@/lib/profitability";
 import { formatScaleDate } from "./scale-date";
-
-export const euro = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-/** Un prix d'adjudication maximal est un nombre entier d'euros. */
-export const euroWhole = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
-const percent = new Intl.NumberFormat("fr-FR", {
-  style: "percent",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
 
 export const FIELD_CLASSES =
   "min-h-11 w-full min-w-0 rounded-lg border border-field-border bg-white px-3 text-base tabular-nums focus-visible:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
@@ -109,7 +89,7 @@ function Line({ label, detail, value }: { label: string; detail?: string; value:
         {label}
         {detail ? <span className="block text-xs text-ink-soft">{detail}</span> : null}
       </dt>
-      <dd className="shrink-0 font-semibold tabular-nums">{euro.format(value)}</dd>
+      <dd className="shrink-0 font-semibold tabular-nums">{formatPriceWithCents(value)}</dd>
     </div>
   );
 }
@@ -121,12 +101,12 @@ export function CostLines({ costs }: { costs: AcquisitionCostResult }) {
       <Line label="Prix d’adjudication" value={costs.price} />
       <Line
         label="Émoluments proportionnels de vente, TTC (avocat poursuivant : 3/4 ; avocat de l’adjudicataire : 1/4)"
-        detail={`HT : ${euro.format(costs.emolumentsHT)}`}
+        detail={`HT : ${formatPriceWithCents(costs.emolumentsHT)}`}
         value={costs.emolumentsTTC}
       />
       <Line
         label="Droits de mutation"
-        detail={`Taux de ${percent.format(costs.registrationRate)} (tableau au ${formatScaleDate(DMTO_TABLE_DATE)})`}
+        detail={`Taux de ${formatShareAsPercent(costs.registrationRate, 2)} (tableau au ${formatScaleDate(DMTO_TABLE_DATE)})`}
         value={costs.registrationDuties}
       />
       <Line label="Contribution de sécurité immobilière" value={costs.csi} />

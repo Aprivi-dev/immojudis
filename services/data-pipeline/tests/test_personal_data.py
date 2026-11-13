@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
+from fake_publication import direct_publication
 
 from src.enrichment.prompts import build_user_prompt
 from src.models import AuctionSale
@@ -124,16 +125,14 @@ def _sale_with_names() -> AuctionSale:
 def test_upsert_writes_redacted_text_and_keeps_the_in_memory_sale(monkeypatch: pytest.MonkeyPatch) -> None:
     sale = _sale_with_names()
     captured: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    direct_publication(
+        monkeypatch,
+        lambda table, payload, _conflict: captured.extend(payload) if table == "auction_sales" else None,
     )
-    monkeypatch.setattr(supabase_client, "_upsert_with_rest", lambda _url, _key, payload: captured.extend(payload))
-    monkeypatch.setattr(supabase_client, "_write_fact_claims_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_write_fact_claims_postgres", lambda *args, **kwargs: 0)
     monkeypatch.setattr(supabase_client, "_enqueue_due_enrichment", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *args, **kwargs: None)
 
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
 

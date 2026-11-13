@@ -14,7 +14,7 @@
 export const UNVERSIONED_ASSET_CACHE_CONTROL =
   "public, max-age=86400, stale-while-revalidate=604800";
 
-export const UNVERSIONED_ASSET_SOURCES = ["/media/:path*", "/brand/:path*"] as const;
+const UNVERSIONED_ASSET_SOURCES = ["/media/:path*", "/brand/:path*"] as const;
 
 export type AssetCacheRule = {
   source: string;

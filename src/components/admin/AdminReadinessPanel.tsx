@@ -4,12 +4,14 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import Clipboard from "lucide-react/dist/esm/icons/clipboard.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
+import { formatPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
-import { formatAdminShortDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
 
-const READINESS_QUERY_KEY = ["admin-readiness"] as const;
+export const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
 export function AdminReadinessPanel() {
   const readinessQuery = useQuery({
@@ -46,9 +48,7 @@ export function AdminReadinessPanel() {
 
       {readinessQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {readinessQuery.error instanceof Error
-            ? readinessQuery.error.message
-            : "Diagnostic indisponible"}
+          {queryErrorMessage(readinessQuery.error, "Diagnostic indisponible")}
         </div>
       ) : null}
 
@@ -58,7 +58,9 @@ export function AdminReadinessPanel() {
           <div className="mt-4 grid gap-3 text-sm">
             <DiagnosticLine
               label="Dernière vérification"
-              value={readiness?.checkedAt ? formatDateTime(readiness.checkedAt) : "Chargement"}
+              value={
+                readiness?.checkedAt ? formatCompactDateTime(readiness.checkedAt) : "Chargement"
+              }
             />
             <DiagnosticLine
               label="Migration attendue"
@@ -80,7 +82,7 @@ export function AdminReadinessPanel() {
               label="Contrôle santé"
               value={
                 readiness?.operations.lastHealthRunAt
-                  ? formatDateTime(readiness.operations.lastHealthRunAt)
+                  ? formatCompactDateTime(readiness.operations.lastHealthRunAt)
                   : "Non vérifié"
               }
             />
@@ -147,7 +149,7 @@ export function AdminReadinessPanel() {
                 <div className="min-w-0">
                   <div className="truncate font-mono text-foreground">{alert.key}</div>
                   <div className="mt-1 text-muted-foreground">
-                    {alert.category} · {formatDateTime(alert.lastSeenAt)}
+                    {alert.category} · {formatCompactDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
                 <span className="text-foreground">{alert.severity}</span>
@@ -208,18 +210,8 @@ function ReadinessBadge({ status }: { status: ReadinessStatus }) {
 
 function ReadinessPill({ status }: { status: ReadinessStatus }) {
   const label = status === "ready" ? "Prêt" : status === "warning" ? "À vérifier" : "Bloquant";
-  const tone =
-    status === "ready"
-      ? "border-emerald-300/20 bg-success-tint text-success"
-      : status === "warning"
-        ? "border-amber-300/20 bg-warning-tint text-warning"
-        : "border-red-300/20 bg-danger-tint text-danger";
-
-  return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] ${tone}`}>
-      {label}
-    </span>
-  );
+  const tone = status === "ready" ? "success" : status === "warning" ? "warning" : "danger";
+  return <AdminPill tone={tone}>{label}</AdminPill>;
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {
@@ -241,5 +233,5 @@ function formatOperationalSlo(
   operations: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["operations"] | null,
 ): string {
   if (!operations || operations.successRatePercent == null) return "Non calculé";
-  return `${operations.successRatePercent.toFixed(3)} % / ${operations.sloTargetPercent} %`;
+  return `${formatPercent(operations.successRatePercent, 3, 3)} / ${formatPercent(operations.sloTargetPercent, 3)}`;
 }

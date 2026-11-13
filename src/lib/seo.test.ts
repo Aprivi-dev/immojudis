@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/lib/format/dates";
 import type { AuctionSale } from "@/lib/types";
 import { resetWithdrawnSources, setWithdrawnSources } from "@/lib/withdrawn-sources";
 import {
@@ -48,6 +49,20 @@ describe("sale headline", () => {
     expect(saleHeadline(sale())).toBe(
       "Appartement 50 m² à Romainville (93) – vente au tribunal le 20 octobre 2026",
     );
+  });
+
+  it("writes the hearing date exactly like formatDate (Paris time, day key not shifted)", () => {
+    for (const saleDate of [
+      "2026-10-20",
+      "2026-12-31T23:30:00Z",
+      "2026-07-14T22:30:00Z",
+      "2026-11-01T09:30:00Z",
+    ]) {
+      expect(saleHeadline(sale({ sale_date: saleDate }))).toMatch(
+        new RegExp(` le ${formatDate(saleDate, null)}$`),
+      );
+    }
+    expect(saleHeadline(sale({ sale_date: "pas une date" }))).not.toContain(" le ");
   });
 
   it("describes the other procedures without inventing a tribunal", () => {

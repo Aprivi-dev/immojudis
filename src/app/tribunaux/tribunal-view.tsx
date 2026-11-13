@@ -10,7 +10,7 @@ import {
   type DepartmentSale,
 } from "@/lib/department-pages";
 import { departmentIn } from "@/lib/department-grammar";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { pathWithSearch } from "@/lib/navigation";
 import {
@@ -19,7 +19,7 @@ import {
   type PublicTribunalActivity,
 } from "@/lib/public-tribunal-activity";
 import { understandingResources } from "@/lib/resource-related";
-import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
+import { saleHearingTime, seoSurface } from "@/lib/seo";
 import {
   TRIBUNAL_PAGES_PATH,
   atTribunalPhrase,
@@ -71,8 +71,8 @@ export function TribunalView({
   const priceFigure = tribunalPriceFigure(tribunal);
   const place = tribunalPlaceName(tribunal.searchName || tribunal.name);
   const longName = tribunalLongName(tribunal);
-  const updated = seoLongDate(generatedAt.toISOString());
-  const nextDate = seoLongDate(nextAudience);
+  const updated = formatDate(generatedAt.toISOString(), null);
+  const nextDate = formatDate(nextAudience, "Non connue");
   // Un tribunal sans nom lisible : la recherche par nom ne le trouverait pas (le « nom » est son code).
   const searchHref = hasReadableTribunalName(tribunal)
     ? pathWithSearch("/sales", { tribunal: tribunal.searchName })
@@ -147,7 +147,7 @@ export function TribunalView({
             </div>
             <div>
               <dt className="text-sm text-ink-soft">Prochaine audience</dt>
-              <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Non connue"}</dd>
+              <dd className="mt-1 text-lg font-semibold">{nextDate}</dd>
             </div>
             <div>
               <dt className="text-sm text-ink-soft">
@@ -232,7 +232,7 @@ export function TribunalView({
             <ul className="mt-3 divide-y divide-line">
               {sales.map((sale) => {
                 const dateText = departmentSaleDateText(sale, {
-                  date: seoLongDate(sale.saleDate),
+                  date: formatDate(sale.saleDate, null),
                   time: saleHearingTime(sale.saleDate),
                 });
                 const surface = seoSurface(sale.surfaceM2);

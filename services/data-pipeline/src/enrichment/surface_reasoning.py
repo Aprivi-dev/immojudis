@@ -17,7 +17,7 @@ from src.enrichment.surface_text_rules import (
     value_belongs_to_other_object,
     value_is_ground_area,
 )
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
     _surface_evidence_for_value,
@@ -638,7 +638,7 @@ def apply_surface_reasoning_to_sale(
     sale.raw_payload["surface_analysis"] = result.model_dump(mode="json")
     if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
         # Plusieurs bâtiments sans bâtiment principal identifié : aucune des surfaces n'est celle du bien.
-        _add_quality_flag(sale, "surface_contradiction")
+        add_quality_flag(sale.quality_flags, "surface_contradiction")
     selected = result.selected
     if selected is None or selected.validation_status not in {"verified", "partial"}:
         # Rien de retenu : une valeur que le texte écrit encore reste en place. Une sélection contredite non.
@@ -689,13 +689,13 @@ def apply_surface_reasoning_to_sale(
         if flag not in {"surface_contradiction", "surface_unit_or_consistency_warning"}
     ]
     if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
-        _add_quality_flag(sale, "surface_contradiction")
+        add_quality_flag(sale.quality_flags, "surface_contradiction")
     if selected.kind.startswith("calculated_"):
-        _add_quality_flag(sale, "surface_calculated_from_rooms")
+        add_quality_flag(sale.quality_flags, "surface_calculated_from_rooms")
     if selected.warnings:
-        _add_quality_flag(sale, "surface_unit_or_consistency_warning")
+        add_quality_flag(sale.quality_flags, "surface_unit_or_consistency_warning")
     if result.contradictions:
-        _add_quality_flag(sale, "surface_contradiction")
+        add_quality_flag(sale.quality_flags, "surface_contradiction")
     return result
 
 
@@ -1312,7 +1312,3 @@ def _unique_strings(values: list[str]) -> list[str]:
         unique.append(normalized)
     return unique
 
-
-def _add_quality_flag(sale: AuctionSale, flag: str) -> None:
-    if flag not in sale.quality_flags:
-        sale.quality_flags.append(flag)

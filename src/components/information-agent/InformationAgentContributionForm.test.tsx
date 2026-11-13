@@ -25,17 +25,20 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+const SESSION = {
+  caseReference: "CASE-1234",
+  subject: "Informations sur le bien",
+  questions: ["Quelles sont les prochaines dates de visite ?"],
+  maxFiles: 10,
+  maxFileBytes: 20 * 1024 * 1024,
+  maxSubmissionBytes: 40 * 1024 * 1024,
+  maxPortalBytes: 480 * 1024 * 1024,
+  maxPortalFiles: 12,
+  optOutPath: OPT_OUT_PATH,
+};
+
 function referenceResponse() {
-  return jsonResponse({
-    caseReference: "CASE-1234",
-    subject: "Informations sur le bien",
-    questions: ["Quelles sont les prochaines dates de visite ?"],
-    maxFileBytes: 20 * 1024 * 1024,
-    maxSubmissionBytes: 40 * 1024 * 1024,
-    maxPortalBytes: 480 * 1024 * 1024,
-    maxPortalFiles: 12,
-    optOutPath: OPT_OUT_PATH,
-  });
+  return jsonResponse(SESSION);
 }
 
 function renderContribution() {
@@ -260,6 +263,26 @@ describe("InformationAgentContributionForm", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("dépasse la limite de 20 Mo");
     expect(screen.queryByText("large.pdf")).toBeNull();
+  });
+
+  it("applique les limites de fichiers reçues du serveur", async () => {
+    mocks.fetch.mockResolvedValueOnce(
+      jsonResponse({ ...SESSION, maxFiles: 1, maxFileBytes: 1024 }),
+    );
+    renderContribution();
+    await screen.findByText("CASE-1234");
+    const pdf = (name: string, size: number) =>
+      new File([new Uint8Array(size)], name, { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Pièces jointes"), {
+      target: { files: [pdf("large.pdf", 1025)] },
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain("dépasse la limite de");
+    fireEvent.change(screen.getByLabelText("Pièces jointes"), {
+      target: { files: [pdf("a.pdf", 10), pdf("b.pdf", 10)] },
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Vous pouvez joindre au maximum 1 fichiers.",
+    );
   });
 
   it("explique comment joindre un document Word, qui n'est pas accepté", async () => {
@@ -557,8 +580,7 @@ describe("InformationAgentContributionForm", () => {
     it("n'affiche pas l'opposition avec une adresse externe", async () => {
       mocks.fetch.mockResolvedValueOnce(
         jsonResponse({
-          caseReference: "CASE-1234",
-          subject: "Informations sur le bien",
+          ...SESSION,
           optOutPath: "https://evil.example/opt-out?e=1",
         }),
       );

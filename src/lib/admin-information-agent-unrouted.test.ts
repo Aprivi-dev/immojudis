@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -83,13 +84,13 @@ describe("messages non rattachés côté administrateur", () => {
   it("refuse la liste et l'action à un compte qui n'est pas administrateur", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false, userId: "user-1" });
 
-    await expect(listAdminInformationAgentUnrouted("token")).rejects.toThrow("Forbidden");
+    await expect(listAdminInformationAgentUnrouted("token")).rejects.toThrow(AdminRequiredError);
     await expect(
       runAdminInformationAgentUnroutedAction({
         authToken: "token",
         input: { action: "mark_handled", messageId: MESSAGE_ID },
       }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.tables).toEqual([]);
   });
 

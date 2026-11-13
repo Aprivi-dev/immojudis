@@ -2,13 +2,13 @@
 import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo
 
+from src.french_dates import PARIS
 from src.lot_scope import lot_selected
 from src.models import AuctionSale
+from src.timestamps import sale_window
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
-PARIS = ZoneInfo("Europe/Paris")
 
 
 def is_date_only(raw_date: object, precision: object = None) -> bool:
@@ -53,7 +53,6 @@ def retention_deadline(sale: AuctionSale):
     """
     import re
     from datetime import UTC, datetime, timedelta
-    from zoneinfo import ZoneInfo
 
     if re.search(r'\b(postponed|reported|report[eé]e?)\b', str(sale.status or '') + ' ' + str(sale.raw_payload.get('status') or ''), re.I):
         return None
@@ -65,14 +64,10 @@ def retention_deadline(sale: AuctionSale):
     for schedule in (procedure.get('sale_window'), procedure.get('sale_session'), sale.raw_payload.get('source_sale_schedule')):
         if schedule is None:
             continue
-        try:
-            start = datetime.fromisoformat(schedule['opens_at'])
-            end = datetime.fromisoformat(schedule['closes_at'])
-            if start.tzinfo is None or end.tzinfo is None or end <= start:
-                return None
-            return end.astimezone(UTC) + timedelta(hours=24)
-        except (KeyError, TypeError, ValueError):
-            return None
+        # Le premier créneau présent décide, sans repli sur le suivant ni sur ``sale_date`` (contrairement au
+        # catalogue) : inexploitable, il ne prouve aucune fin et la vente est gardée.
+        window = sale_window(schedule)
+        return window[1].astimezone(UTC) + timedelta(hours=24) if window else None
     if sale.sale_date is None:
         return None
     sale_datetime = sale.sale_date.replace(tzinfo=UTC) if sale.sale_date.tzinfo is None else sale.sale_date
@@ -83,9 +78,9 @@ def retention_deadline(sale: AuctionSale):
     ).lower()
     if is_date_only(raw_date, precision):
         next_paris_midnight = datetime.combine(
-            sale_datetime.astimezone(ZoneInfo('Europe/Paris')).date() + timedelta(days=1),
+            sale_datetime.astimezone(PARIS).date() + timedelta(days=1),
             datetime.min.time(),
-            ZoneInfo('Europe/Paris'),
+            PARIS,
         )
         return next_paris_midnight.astimezone(UTC) + timedelta(hours=24)
     return sale_datetime.astimezone(UTC) + timedelta(hours=24)
@@ -108,7 +103,6 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
     """
     import os
     from datetime import UTC, datetime, timedelta
-    from zoneinfo import ZoneInfo
 
     if sale.sale_date is None:
         return None
@@ -126,15 +120,10 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
         procedure.get("sale_session"),
         raw_payload.get("source_sale_schedule"),
     ):
-        if not isinstance(schedule, dict):
-            continue
-        try:
-            start = datetime.fromisoformat(str(schedule["opens_at"]).replace("Z", "+00:00"))
-            end = datetime.fromisoformat(str(schedule["closes_at"]).replace("Z", "+00:00"))
-            if start.tzinfo is not None and end.tzinfo is not None and end > start:
-                return end.astimezone(UTC)
-        except (KeyError, TypeError, ValueError):
-            continue
+        # Un créneau inexploitable laisse la main au suivant, puis à ``sale_date``.
+        window = sale_window(schedule)
+        if window is not None:
+            return window[1].astimezone(UTC)
 
     raw_date = str(raw_payload.get("sale_date") or "")
     precision = (
@@ -153,18 +142,18 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
     if not date_only:
         return sale_datetime.astimezone(UTC)
 
-    local_date = sale_datetime.astimezone(ZoneInfo("Europe/Paris")).date()
+    local_date = sale_datetime.astimezone(PARIS).date()
     if selected_policy == "start_of_day":
         return datetime.combine(
             local_date,
             datetime.min.time(),
-            ZoneInfo("Europe/Paris"),
+            PARIS,
         ).astimezone(UTC)
 
     next_paris_midnight = datetime.combine(
         local_date + timedelta(days=1),
         datetime.min.time(),
-        ZoneInfo("Europe/Paris"),
+        PARIS,
     )
     return next_paris_midnight.astimezone(UTC)
 

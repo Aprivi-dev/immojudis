@@ -13,14 +13,15 @@ import {
 import { normalizeWorkspace, type SaleWorkspace } from "@/lib/sale-workspaces";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const AUDIENCE_TRACKING_WORKSPACE_LIMIT = 200;
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 
-export type AudienceTrackingUrgency = "past" | "today" | "week" | "month" | "later" | "unknown";
-export type AudienceTrackingActionStatus = "none" | "overdue" | "due_soon" | "scheduled";
-export type AudienceTrackingReadiness =
+type AudienceTrackingUrgency = "past" | "today" | "week" | "month" | "later" | "unknown";
+type AudienceTrackingActionStatus = "none" | "overdue" | "due_soon" | "scheduled";
+type AudienceTrackingReadiness =
   | "ready"
   | "needs_work"
   | "urgent"
@@ -30,14 +31,14 @@ export type AudienceTrackingReadiness =
   | "closed"
   | "archived";
 
-export type AudienceTrackingChecklistMetrics = {
+type AudienceTrackingChecklistMetrics = {
   total: number;
   done: number;
   open: number;
   progressPct: number;
 };
 
-export type AudienceTrackingDocumentMetrics = {
+type AudienceTrackingDocumentMetrics = {
   expected: number;
   tracked: number;
   total: number;
@@ -73,7 +74,7 @@ export type AudienceTrackingItem = {
   priorityScore: number;
 };
 
-export type AudienceTrackingSummary = {
+type AudienceTrackingSummary = {
   totalWorkspaces: number;
   activeWorkspaces: number;
   upcomingAudiences: number;
@@ -128,7 +129,7 @@ export async function getAudienceTracking({
 }): Promise<AudienceTrackingResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.audienceTracking")) {
-    throw new Error("Suivi d'audience réservé à l’offre Analyse.");
+    throw new ForbiddenError("Suivi d'audience réservé à l’offre Analyse.");
   }
 
   const workspaceRows = await loadWorkspaceRows(auth, includeArchived);
@@ -149,7 +150,7 @@ export async function getAudienceTracking({
     },
   });
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "workspace.audience_tracking_viewed",
     subjectType: "workspace_dashboard",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from src.storage.column_sets import UPSERT_COLUMNS
 
+# ``raw_payload`` is not a column of this list: the snapshot never reads it whole, only the keys projected by
+# ``_known_sale_postgres_select`` below.
 KNOWN_SALE_DETAIL_SELECT = ",".join(
     (
         "id",
@@ -57,17 +59,15 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "occupancy_status",
         "documents",
         "raw_text",
-        "raw_payload",
     )
 )
 
 
-# The REST fallback keeps the historical projection above because PostgREST
-# cannot express the JSONB allow-list below.  The direct PostgreSQL preflight
-# only needs fields used by the source fallback and enrichment preservation;
-# forwarding arbitrary scraper payload keys here was the main source of the
-# full-snapshot egress.  Keep the list explicit so a new preservation contract
-# has to opt in rather than silently re-expanding every row.
+# The direct PostgreSQL preflight only needs fields used by the source fallback
+# and enrichment preservation; forwarding arbitrary scraper payload keys here
+# was the main source of the full-snapshot egress.  Keep the list explicit so a
+# new preservation contract has to opt in rather than silently re-expanding
+# every row.
 KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "source_checks",
     "source_checks_by_source",
@@ -187,14 +187,6 @@ KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION = _build_known_sale_raw_payload_projecti
 )
 
 
-KNOWN_SALE_POSTGRES_SELECT = ",".join(
-    (
-        KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
-        KNOWN_SALE_RAW_PAYLOAD_PROJECTION,
-    )
-)
-
-
 def _known_sale_postgres_select(
     *,
     compact_presence: bool,
@@ -207,14 +199,13 @@ def _known_sale_postgres_select(
     ``auction_sales`` rather than those views, so hydrate the same projection
     here only after the helper's presence has been confirmed.
     """
-    scalar_projection = KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0]
     payload_projection = (
         KNOWN_SALE_RAW_PAYLOAD_PROJECTION
         if include_enrichment_payload
         else KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION
     )
     if not compact_presence:
-        return ",".join((scalar_projection, payload_projection))
+        return ",".join((KNOWN_SALE_DETAIL_SELECT, payload_projection))
     compact_payload = (
         "jsonb_set("
         f"{payload_projection.removesuffix(' as raw_payload')},"
@@ -222,7 +213,7 @@ def _known_sale_postgres_select(
         "coalesce(app_private.auction_sale_source_presence_json(id),'{}'::jsonb),"
         "true) as raw_payload"
     )
-    return ",".join((scalar_projection, compact_payload))
+    return ",".join((KNOWN_SALE_DETAIL_SELECT, compact_payload))
 
 
 # Enrichment writes the full record back: a partial SELECT would erase price,

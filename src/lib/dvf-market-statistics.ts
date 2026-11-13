@@ -5,7 +5,7 @@ import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 
 type StatisticRow = Database["public"]["Tables"]["dvf_market_statistics"]["Row"];
 type StatisticSegment = StatisticRow["segment"];
-export type DvfGeographyLevel = "department" | "epci" | "commune";
+type DvfGeographyLevel = "department" | "epci" | "commune";
 
 export type DvfMarketStatisticLocation = {
   code: string;

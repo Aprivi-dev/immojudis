@@ -39,8 +39,7 @@ describe("sitemap sales page", () => {
   });
 
   it("never takes the technical updated_at for a modification date", async () => {
-    // The previous contract of the RPC (before the migration that adds content_changed_at): a database
-    // that has not been migrated yet must produce no date at all, not a false one.
+    // A row without content_changed_at produces no date at all, not a false one.
     const rpc = vi.fn().mockResolvedValue({
       data: [{ id: "a", updated_at: "2026-10-18T08:00:00Z", total_count: "1" }],
       error: null,
@@ -49,23 +48,20 @@ describe("sitemap sales page", () => {
     expect(page.sales).toEqual([{ id: "a", lastModified: null }]);
   });
 
-  it("falls back to the preview view while the RPC is not deployed", async () => {
-    const range = vi.fn().mockResolvedValue({ data: [{ id: "a" }], count: 1, error: null });
+  it("throws when the RPC is missing: no fallback on the preview view", async () => {
+    const from = vi.fn();
     const client = {
       rpc: vi.fn().mockResolvedValue({
         data: null,
         error: { code: "PGRST202", message: "Could not find the function" },
       }),
-      from: () => ({ select: () => ({ order: () => ({ range }) }) }),
+      from,
     } as unknown as Client;
-    expect(await fetchSitemapSalePage(client, 0)).toEqual({
-      sales: [{ id: "a", lastModified: null }],
-      total: 1,
-    });
-    expect(range).toHaveBeenCalledWith(0, 999);
+    await expect(fetchSitemapSalePage(client, 0)).rejects.toMatchObject({ code: "PGRST202" });
+    expect(from).not.toHaveBeenCalled();
   });
 
-  it("does not hide a real database error behind the fallback", async () => {
+  it("does not hide a real database error", async () => {
     const client = {
       rpc: vi.fn().mockResolvedValue({ data: null, error: { code: "57014", message: "timeout" } }),
     } as unknown as Client;

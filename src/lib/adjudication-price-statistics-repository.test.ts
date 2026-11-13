@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 
 const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
 
@@ -7,7 +8,6 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
-  adjudicationPriceStatisticsEnabled,
   getAdjudicationPriceStatisticsDirectory,
   getAdjudicationPriceStatisticsForSale,
 } from "@/lib/adjudication-price-statistics-repository";
@@ -34,11 +34,17 @@ describe("adjudication price statistics repository", () => {
     else process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED = previousFlag;
   });
 
-  it("n’active la publication que pour la valeur exacte true", () => {
-    expect(adjudicationPriceStatisticsEnabled("true")).toBe(true);
-    expect(adjudicationPriceStatisticsEnabled("TRUE")).toBe(false);
-    expect(adjudicationPriceStatisticsEnabled("1")).toBe(false);
-    expect(adjudicationPriceStatisticsEnabled("")).toBe(false);
+  it("n’active la publication que pour la valeur exacte true", async () => {
+    for (const value of ["TRUE", "1", "", " true"]) {
+      process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED = value;
+      await expect(getAdjudicationPriceStatisticsDirectory()).rejects.toBeInstanceOf(
+        ServiceUnavailableError,
+      );
+      await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toBeInstanceOf(
+        ServiceUnavailableError,
+      );
+    }
+    expect(serverFrom).not.toHaveBeenCalled();
   });
 
   it("refuse un identifiant de retour arrière invalide avant toute lecture", async () => {
@@ -57,9 +63,9 @@ describe("adjudication price statistics repository", () => {
     });
     const nationalQuery = fakeQuery({ data: null, error: null });
     serverFrom.mockReturnValueOnce(saleQuery.query).mockReturnValueOnce(nationalQuery.query);
-    await expect(getAdjudicationPriceStatisticsForSale(SALE_ID)).rejects.toThrow(
-      "No reviewed national",
-    );
+    const failure = getAdjudicationPriceStatisticsForSale(SALE_ID);
+    await expect(failure).rejects.toThrow("No reviewed national");
+    await expect(failure).rejects.toBeInstanceOf(ServiceUnavailableError);
     expect(nationalQuery.state.filters).toContainEqual(["build_id", BUILD_ID]);
     expect(serverFrom).toHaveBeenCalledTimes(2);
   });

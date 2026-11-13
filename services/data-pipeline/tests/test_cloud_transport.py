@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.source_task_deadline import SourceTaskDeadlineExceeded, source_task_deadline_scope
-from src.sources.cloud_transport import SourceRelayTransport, configured_transport
+from src.sources.cloud_transport import SourceRelayTransport, configured_transport, relay_url
 
 
 def test_relay_preserves_source_status_and_never_forwards_authorization():
@@ -90,6 +90,18 @@ def test_relay_configuration_is_opt_in_and_scoped(monkeypatch):
     assert configured_transport("https://www.licitor.com") is None
     with pytest.raises(ValueError):
         configured_transport("https://www.petitesaffiches.fr")
+
+
+def test_relay_url_is_the_trimmed_endpoint_the_transport_uses(monkeypatch):
+    """L'audit de couverture reconnaît les requêtes vers le relais avec cette même adresse."""
+    monkeypatch.delenv("SOURCE_FETCH_RELAY_URL", raising=False)
+    assert relay_url() == ""
+    monkeypatch.setenv("SOURCE_FETCH_RELAY_URL", " https://example.supabase.co/relay\n")
+    monkeypatch.setenv("SOURCE_FETCH_RELAY_TOKEN", "test")
+    assert relay_url() == "https://example.supabase.co/relay"
+    transport = configured_transport("https://www.petitesaffiches.fr")
+    assert isinstance(transport, SourceRelayTransport) and transport.endpoint == relay_url()
+    transport.client.close()
 
 
 def test_relay_redirect_is_checked_by_source_guard(monkeypatch):

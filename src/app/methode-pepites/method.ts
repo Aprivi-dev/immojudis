@@ -23,16 +23,13 @@ import {
   PEPITE_MAX_EVALUATION_AGE_HOURS,
   PEPITE_MAX_HABITABLE_SURFACE_M2,
   PEPITE_MIN_VALUE_COMPARABLES,
-  PEPITE_LATEST_RULE_VERSION,
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
+  PEPITE_PRICE_COURT_ONLY_FROM_SALES,
+  PEPITE_SMOOTHING_WEIGHT_SALES,
 } from "@/lib/pepite-policy";
 import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
 
 /**
- * Adresse et seuils publiés sur « Comment repérons-nous les pépites ? ».
+ * Seuils publiés sur « Comment repérons-nous les pépites ? ».
  *
  * Les seuils sont ceux de la règle `pepite-v1`, validée par le fondateur le 26/10/2026 (compte-rendu
  * `docs/equipe/2026-10-26-plafond-tous-types-et-selection.md`), repris tels quels par `pepite-v1.1` (règle
@@ -44,32 +41,22 @@ import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
  * page change avec elle, et le test de la page (`page.test.tsx`) doit être mis à jour dans le même
  * geste. Le module de la règle ne lit ni la base ni le catalogue : la page non plus.
  */
-export { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 /**
  * Lissage des ventes comparables, tel que le calcule la base (fonction `app_private.court_auction_scenarios`,
- * migration `supabase/migrations/20261101120100_auction_scenarios_reliability.sql`). Ces valeurs sont recopiées
- * du SQL : si la migration change, les changer ici et le texte de la page dans le même geste.
+ * migration `supabase/migrations/20261101120100_auction_scenarios_reliability.sql`). Les valeurs viennent des
+ * constantes de la règle, que `pepite-contracts.test.ts` compare au SQL.
  * - moins de `minNationalSales` ventes comparables en France : aucun chiffre ;
  * - moins de `minCourtSales` ventes au tribunal : part nationale seule ; sinon
  *   (ventes du tribunal + `smoothingWeightSales` x part nationale) / (ventes du tribunal + `smoothingWeightSales`) ;
  * - fourchette de prix : ventes du tribunal seules à partir de `priceCourtOnlyFromSales`, nationales en dessous.
- * `minNationalSales` et `minCourtSales` viennent de `src/lib/auction-scenarios.ts` (test de dérive dans la page).
  */
 export const PEPITE_SMOOTHING = {
   minNationalSales: MIN_NATIONAL_SAMPLE,
   minCourtSales: MIN_COURT_SAMPLE,
-  smoothingWeightSales: 15,
-  priceCourtOnlyFromSales: 20,
+  smoothingWeightSales: PEPITE_SMOOTHING_WEIGHT_SALES,
+  priceCourtOnlyFromSales: PEPITE_PRICE_COURT_ONLY_FROM_SALES,
 } as const;
-
-export {
-  PEPITE_LATEST_RULE_VERSION,
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
-};
 
 /**
  * Date d'entrée en vigueur du contrôle du risque d'inondation (règle `pepite-v2.1`, avant elle `pepite-v2`, jamais

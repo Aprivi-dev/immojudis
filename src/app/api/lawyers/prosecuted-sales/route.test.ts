@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { AuthRequiredError, RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
-    if (!header) throw new Error("Unauthorized: No authorization header provided");
+    if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
   requireSupabaseAuthContext: mocks.auth,

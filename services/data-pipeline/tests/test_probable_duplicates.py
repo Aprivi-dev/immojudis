@@ -9,7 +9,7 @@ from src import probable_duplicates
 from src.normalize import normalize_sale
 from src.position_quality import PROBABLE_DUPLICATE, preserved_position_flags, remove_flags
 from src.probable_duplicates import MAX_WRITES_PER_PASS, flag_probable_duplicates, plan_flag_updates
-from src.storage import duplicate_sweep
+from src.storage import duplicate_sweep, postgrest_helpers
 from src.storage.duplicate_sweep import DuplicateMergeGroup, DuplicateRowSummary, DuplicateSweepPlan
 
 
@@ -180,8 +180,9 @@ class _Response:
         return self._payload
 
 
-def _run(monkeypatch, *, plan, flagged_pages, write: bool, patch_status: int = 200):
+def _run(monkeypatch, *, plan, flagged_pages, write: bool, patch_status: int | list[int] = 200):
     patches: list[dict[str, object]] = []
+    statuses = iter(patch_status) if isinstance(patch_status, list) else None
     gets: list[dict[str, object]] = []
     monkeypatch.setattr(
         probable_duplicates,
@@ -200,10 +201,11 @@ def _run(monkeypatch, *, plan, flagged_pages, write: bool, patch_status: int = 2
 
     def fake_patch(url, **kwargs):
         patches.append({"url": url, **kwargs})
-        return _Response(status_code=patch_status)
+        return _Response(status_code=next(statuses) if statuses is not None else patch_status)
 
     monkeypatch.setattr(probable_duplicates.httpx, "get", fake_get)
     monkeypatch.setattr(probable_duplicates.httpx, "patch", fake_patch)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
     code = flag_probable_duplicates(write=write)
     return code, patches, gets
 
@@ -251,10 +253,29 @@ def test_an_unreadable_flag_list_writes_nothing_and_fails(monkeypatch) -> None:
 def test_a_failed_write_is_reported_and_the_others_still_go_through(monkeypatch) -> None:
     plan = _plan((_summary("kept"), (_summary("copy-1"), _summary("copy-2"))))
 
-    code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=500)
+    code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=400)
 
     assert code == 1
     assert len(patches) == 2
+
+
+def test_a_transient_write_failure_is_retried_by_the_shared_rest_writer(monkeypatch) -> None:
+    """Même règle que les autres écritures REST (``postgrest_request_with_retries``) : la liste écrite est complète."""
+    plan = _plan((_summary("kept"), (_summary("copy"),)))
+
+    code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=[503, 204])
+
+    assert code == 0
+    assert [patch["json"] for patch in patches] == [{"quality_flags": [PROBABLE_DUPLICATE]}] * 2
+
+
+def test_a_write_still_failing_after_the_retries_is_reported(monkeypatch) -> None:
+    plan = _plan((_summary("kept"), (_summary("copy"),)))
+
+    code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=500)
+
+    assert code == 1
+    assert len(patches) == postgrest_helpers.POSTGREST_REQUEST_ATTEMPTS
 
 
 def test_the_number_of_writes_per_pass_is_capped(monkeypatch) -> None:

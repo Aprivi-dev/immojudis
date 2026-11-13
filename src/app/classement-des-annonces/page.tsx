@@ -15,7 +15,7 @@ import {
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { pageMetadata } from "@/lib/page-metadata";
-import { PEPITE_METHOD_PATH } from "@/app/methode-pepites/method";
+import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
   LAWYER_RANKING_HREF,
   LAWYER_RANKING_LINK_LABEL,

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -37,9 +38,11 @@ function render({
   subscriptionOpen?: boolean;
 }) {
   const markup = renderToString(
-    <LaunchOfferProvider initialActive={trialOpen}>
-      <OffersPage initialSubscriptionOpen={subscriptionOpen} />
-    </LaunchOfferProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <LaunchOfferProvider initialActive={trialOpen}>
+        <OffersPage initialSubscriptionOpen={subscriptionOpen} />
+      </LaunchOfferProvider>
+    </QueryClientProvider>,
   );
   return { markup, text: visibleText(markup) };
 }

@@ -5,8 +5,14 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
-import { parisDateKey } from "@/lib/sale-countdown";
+import {
+  formatDate,
+  formatShortDate,
+  formatStartingPrice,
+  isQualifiedPropertyType,
+  propertyTypeLabel,
+} from "@/lib/format";
+import { parisDateKey } from "@/lib/paris-time";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
@@ -20,8 +26,7 @@ import type { AuctionSale } from "@/lib/types";
 
 /** Titre de carte : « Appartement », « Maison »… ; « Bien » quand le type n'est pas qualifié. */
 export function cardTypeLabel(propertyType: string | null | undefined): string {
-  const label = propertyTypeLabel(propertyType);
-  return label === "Bien à qualifier" ? "Bien" : label;
+  return isQualifiedPropertyType(propertyType) ? propertyTypeLabel(propertyType) : "Bien";
 }
 
 /** « Département 33 » pour un code, le nom tel quel sinon (« Gironde »). */
@@ -70,7 +75,7 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
 export const LISTING_LAUNCH_OFFER_LINE = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’offre Analyse`;
 
 /** Mention d'une cession domaniale dont la source ne publie aucun prix. */
-export const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";
+const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";
 
 /** Cession domaniale (`venueType` « state ») sans prix publié : `starting_price_eur` absent ou nul. */
 export function stateSaleWithoutPrice(sale: AuctionSale): boolean {
@@ -156,22 +161,14 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
   return formatDate(sale.sale_date);
 }
 
-const SHORT_DATE = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "short",
-  timeZone: "Europe/Paris",
-  year: "numeric",
-});
-
 /**
  * Date courte de la case « Vente le » d'une carte : « 6 nov. 2026 » ; « Vente passée » et « Date à
- * confirmer » comme `listingDateLabel`. `now` est injectable pour les tests.
+ * confirmer » comme `listingDateLabel`.
  */
-export function listingShortDateLabel(sale: AuctionSale, now: Date = new Date()): string {
-  const long = listingDateLabel(sale, now);
-  if (long === PAST_SALE_LABEL || !sale.sale_date) return long;
-  const date = new Date(sale.sale_date);
-  return Number.isFinite(date.getTime()) ? SHORT_DATE.format(date) : long;
+export function listingShortDateLabel(sale: AuctionSale): string {
+  const long = listingDateLabel(sale);
+  if (long === PAST_SALE_LABEL) return long;
+  return formatShortDate(sale.sale_date, long);
 }
 
 /**

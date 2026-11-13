@@ -31,7 +31,7 @@ export type InformationAgentOperationsView = {
   roundtrip: { verifiedAt: string | null; label: string; stale: boolean };
 };
 
-export const ROUNDTRIP_MAX_AGE_DAYS = 30;
+const ROUNDTRIP_MAX_AGE_DAYS = 30;
 
 function percent(part: number, whole: number): string {
   return whole > 0 ? ` (${Math.round((part * 1000) / whole) / 10} %)`.replace(".", ",") : "";

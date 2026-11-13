@@ -7,8 +7,7 @@
  * notariale, le service de l'État d'une cession, l'avocat poursuivant sinon. Un notaire ou un avocat cité à
  * un autre titre (conseil d'une partie, syndic, liquidateur…) n'est jamais retenu.
  */
-import { normalizedEmail } from "@/lib/information-agent/email-address";
-import { findEmailsInText } from "@/lib/information-agent/email-in-text";
+import { normalizedEmailsInText } from "@/lib/information-agent/email-in-text";
 import {
   INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
   informationAgentAddressKind,
@@ -17,8 +16,9 @@ import {
   type InformationAgentStructureKind,
 } from "@/lib/information-agent/contact-structure";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
+import { asRecord } from "@/lib/guards";
 
-export const INFORMATION_AGENT_ORGANIZER_TYPES = [
+const INFORMATION_AGENT_ORGANIZER_TYPES = [
   "pursuing_lawyer",
   "notary",
   "state_service",
@@ -30,7 +30,7 @@ export type InformationAgentOrganizerType = (typeof INFORMATION_AGENT_ORGANIZER_
 export type InformationAgentListingBlockName = "contact" | "manager" | "lawyer";
 
 /** Une adresse publiée et la personne (ou le service) à laquelle l'annonce l'associe. */
-export type InformationAgentListingContactRecord = {
+type InformationAgentListingContactRecord = {
   email: string;
   name: string | null;
   /** Chemin du champ lu, pour la provenance (`source_property_features.contact.email`…). */
@@ -95,25 +95,8 @@ export type InformationAgentListingContactBlock = {
   lawyer: InformationAgentListingContactRecord[];
 };
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 180) : null;
-}
-
-function emailsOf(value: unknown): string[] {
-  if (typeof value !== "string") return [];
-  return [
-    ...new Set(
-      findEmailsInText(value)
-        .map(normalizedEmail)
-        .filter((email): email is string => Boolean(email)),
-    ),
-  ];
 }
 
 /** `organizer_type` de la procédure de vente ; toute valeur absente ou hors liste vaut `unknown`. */
@@ -153,7 +136,7 @@ export function readInformationAgentListingContactBlock(
     block: InformationAgentListingBlockName,
   ): InformationAgentListingContactRecord[] => {
     const value = asRecord(root[block]);
-    return emailsOf(value.email).map((email) => ({
+    return normalizedEmailsInText(value.email).map((email) => ({
       email,
       name: text(value.name),
       field: `source_property_features.${block}.email`,
@@ -173,7 +156,7 @@ export function readInformationAgentListingContactBlock(
   };
   // La boîte du service d'abord, quelle que soit sa forme : c'est l'adresse que le pipeline désigne pour une
   // demande d'information. Elle n'a pas de nom de personne.
-  for (const email of emailsOf(manager.direction_email)) {
+  for (const email of normalizedEmailsInText(manager.direction_email)) {
     addManager({
       email,
       name: null,
@@ -196,7 +179,7 @@ export function readInformationAgentListingContactBlock(
       const name =
         text(person.name) ??
         text([text(person.prenom), text(person.nom)].filter(Boolean).join(" "));
-      for (const email of emailsOf(person.email)) {
+      for (const email of normalizedEmailsInText(person.email)) {
         people.push({
           email,
           name,
@@ -214,7 +197,7 @@ export function readInformationAgentListingContactBlock(
     people[0] = { ...people[0], principal: true };
   }
   people.forEach(addManager);
-  for (const email of emailsOf(manager.email)) {
+  for (const email of normalizedEmailsInText(manager.email)) {
     addManager({
       email,
       name: managerRecords.length ? null : managerName,

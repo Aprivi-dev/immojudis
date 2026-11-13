@@ -1,44 +1,26 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type {
   WatchedZoneInput,
   WatchedZoneResponse,
   WatchedZonesResponse,
 } from "@/lib/watched-zones";
 
-export async function fetchWatchedZones(
+export function fetchWatchedZones(
   args: {
     includeInactive?: boolean;
   } = {},
 ): Promise<WatchedZonesResponse> {
   const search = new URLSearchParams();
   if (args.includeInactive) search.set("includeInactive", "true");
-  const response = await fetch(`/api/watched-zones${search.size ? `?${search.toString()}` : ""}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<WatchedZonesResponse>(response);
+  return apiRequest<WatchedZonesResponse>(
+    `/api/watched-zones${search.size ? `?${search.toString()}` : ""}`,
+  );
 }
 
-export async function createWatchedZone(args: {
-  data: WatchedZoneInput;
-}): Promise<WatchedZoneResponse> {
-  const response = await fetch("/api/watched-zones", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<WatchedZoneResponse>(response);
+export function createWatchedZone(args: { data: WatchedZoneInput }): Promise<WatchedZoneResponse> {
+  return apiRequest<WatchedZoneResponse>("/api/watched-zones", { method: "POST", body: args.data });
 }
 
-export async function deleteWatchedZone(args: { zoneId: string }): Promise<{ ok: true }> {
-  const response = await fetch(`/api/watched-zones/${args.zoneId}`, {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
-
-  return readJson<{ ok: true }>(response);
+export function deleteWatchedZone(args: { zoneId: string }): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>(`/api/watched-zones/${args.zoneId}`, { method: "DELETE" });
 }

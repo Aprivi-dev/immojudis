@@ -9,19 +9,18 @@ import {
 } from "@/lib/flood-risk";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { DEFAULT_RENTED_DISCOUNT_PCT } from "@/lib/bid-ceiling-defaults";
+import { formatPrice } from "@/lib/format/numbers";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { pageMetadata } from "@/lib/page-metadata";
 import { activePepiteRuleVersion, pepiteV2EnabledFromEnv } from "@/lib/pepite-rule-switch.server";
+import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
-  PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
   PEPITE_V12_RULE_PARAMS,
   pepiteV12EffectiveClause,
   pepiteV2EffectiveClause,
 } from "./method";
 import { MethodSection as Section } from "@/components/MethodSection";
-
-const euros = new Intl.NumberFormat("fr-FR");
 
 const PAGE_TITLE = "Comment repérons-nous les pépites ?";
 
@@ -340,7 +339,7 @@ function PageContent() {
             <li>
               <strong>Taille et valeur.</strong> Le bien ne dépasse pas {v12.maxHabitableSurfaceM2}{" "}
               m² habitables et sa valeur estimée ne dépasse pas{" "}
-              {euros.format(v12.maxCentralValueEur)} €.
+              {formatPrice(v12.maxCentralValueEur)}.
             </li>
             <li>
               <strong>Copropriété.</strong> Aucune pièce du dossier lue par Immojudis ne mentionne

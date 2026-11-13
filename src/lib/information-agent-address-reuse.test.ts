@@ -172,6 +172,17 @@ describe("réemploi d'une adresse publiée sur une autre annonce", () => {
     expect(select([row({ sale_date: null, last_seen_at: null })]).status).toBe("none");
   });
 
+  // Avant le lot 12, `setUTCMonth` débordait sur le mois suivant (31 août → « 31 février » = 3 mars) :
+  // la fenêtre perdait jusqu'à 3 jours en fin de mois.
+  it("compte 6 mois au calendrier : le 31 août remonte au 28 février", () => {
+    expect(addressReuseCutoff(new Date("2026-08-31T12:00:00Z")).toISOString()).toBe(
+      "2026-02-28T12:00:00.000Z",
+    );
+    expect(addressReuseCutoff(new Date("2026-10-31T12:00:00Z")).toISOString()).toBe(
+      "2026-04-30T12:00:00.000Z",
+    );
+  });
+
   it("admet une vente à venir ou récente même si l'observation est ancienne", () => {
     const upcoming = row({
       sale_date: "2026-12-01T09:00:00Z",
@@ -379,7 +390,7 @@ describe("lecture en base", () => {
         now: NOW,
         timeoutMs: 30,
       }),
-    ).rejects.toThrow("trop longue");
+    ).rejects.toThrow("time budget");
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 });

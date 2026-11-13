@@ -102,6 +102,16 @@ describe("pointsToVerify", () => {
       expect(keys(card({ app_surface_m2: null, sale_date: "2026-10-01T09:00:00Z" }))).toEqual([]);
     });
 
+    it("garde les points d'une audience d'aujourd'hui, avant comme après son heure", () => {
+      // NOW : 19/10 à 12 h à Paris. Audience le même jour à 14 h, puis à 9 h : jour de Paris non passé.
+      expect(keys(card({ app_surface_m2: null, sale_date: "2026-10-19T12:00:00Z" }))).toEqual([
+        "surface",
+      ]);
+      expect(keys(card({ app_surface_m2: null, sale_date: "2026-10-19T07:00:00Z" }))).toEqual([
+        "surface",
+      ]);
+    });
+
     it("garde une vente reportée, dont la date est à reconfirmer", () => {
       expect(keys(card({ status: "postponed", sale_date: null }))).toEqual(["date"]);
     });

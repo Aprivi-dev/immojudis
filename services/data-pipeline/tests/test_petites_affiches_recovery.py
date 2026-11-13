@@ -58,8 +58,8 @@ def test_budget_stop_flushes_a_partial_partition_cursor_without_certifying_inven
         lambda partition, payload: saved.append((partition, payload)) or True,
     )
     remaining = iter((False, False, True))
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: 1.0)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: next(remaining))
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: 1.0)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: next(remaining))
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -101,8 +101,8 @@ def test_resumed_page_after_nine_hours_keeps_snapshot_evidence_but_requires_fres
     }
     monkeypatch.setattr(petites_affiches.source_checkpoint, "load_source_cursor", lambda partition: cursor)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -130,8 +130,8 @@ def test_failed_page_cursor_resumes_once_without_losing_page_counter(monkeypatch
         "save_source_cursor",
         lambda partition, payload: saved.append(payload) or True,
     )
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     first = petites_affiches.scrape_petites_affiches_aquitaine_result()
     assert first.coverage["partitions"][0]["pages_fetched"] == 1
@@ -240,9 +240,8 @@ class _Result:
 
 def test_finish_source_reports_partial_scope_and_publication_ledger(monkeypatch) -> None:
     db = _FinishDB()
-    monkeypatch.setattr("src.autonomous_runner._postgres_connect", lambda url: nullcontext(db))
 
-    finish_source("db", "run")
+    finish_source("db", "run", connect=lambda url: nullcontext(db))
 
     assert db.state_update is not None
     assert db.state_update[0] == "partial"
@@ -272,8 +271,8 @@ def test_pages_without_any_readable_card_are_an_error_with_a_diagnosis_not_a_cle
     _patch_source(monkeypatch)
     monkeypatch.setattr(petites_affiches, "PoliteHttpClient", ChangedMarkupClient)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -338,8 +337,8 @@ def test_a_list_of_unknown_cards_is_collected_without_error(monkeypatch) -> None
     _patch_source(monkeypatch)
     monkeypatch.setattr(petites_affiches, "PoliteHttpClient", UnknownCardsClient)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -360,8 +359,8 @@ def test_a_post_answering_200_without_card_falls_back_to_a_national_get(monkeypa
     _patch_source(monkeypatch, departments=petites_affiches.FRANCE_DEPARTMENTS)
     monkeypatch.setattr(petites_affiches, "PoliteHttpClient", GetFallbackClient)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -379,8 +378,8 @@ def test_a_failing_get_fallback_keeps_the_diagnosis_of_the_first_answer(monkeypa
     _patch_source(monkeypatch, departments=petites_affiches.FRANCE_DEPARTMENTS)
     monkeypatch.setattr(petites_affiches, "PoliteHttpClient", BrokenGetClient)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 
@@ -412,8 +411,8 @@ def test_a_blocked_page_is_told_apart_from_a_changed_markup() -> None:
 def test_a_catalogue_with_cards_raises_no_such_error(monkeypatch) -> None:
     _patch_source(monkeypatch)
     monkeypatch.setattr(petites_affiches.source_checkpoint, "save_source_cursor", lambda *args: True)
-    monkeypatch.setattr(petites_affiches, "_source_budget_deadline", lambda: None)
-    monkeypatch.setattr(petites_affiches, "_source_budget_expired", lambda deadline: False)
+    monkeypatch.setattr(petites_affiches, "source_budget_deadline", lambda _env: None)
+    monkeypatch.setattr(petites_affiches, "source_budget_expired", lambda deadline: False)
 
     result = petites_affiches.scrape_petites_affiches_aquitaine_result()
 

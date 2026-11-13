@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, field_validator
 
 from src.null_text import is_null_text, null_if_placeholder
 
@@ -151,3 +151,21 @@ class AuctionSale(BaseModel):
             elif isinstance(value, datetime):
                 data[key] = value.isoformat()
         return data
+
+
+def add_quality_flag(flags: list[str], flag: str) -> None:
+    """Ajoute ``flag`` en fin de ``flags`` s'il n'y est pas : l'ordre d'arrivée est gardé, sans doublon.
+
+    ``flags`` est ``AuctionSale.quality_flags`` ou la liste de la vente brute qui deviendra ce champ.
+    """
+    if flag not in flags:
+        flags.append(flag)
+
+
+def compact_validation_error(exc: ValidationError) -> str:
+    """Erreurs de validation Pydantic sur une ligne : ``champ: message; ...``."""
+    parts: list[str] = []
+    for item in exc.errors():
+        loc = ".".join(str(part) for part in item.get("loc", ())) or "root"
+        parts.append(f"{loc}: {item.get('msg')}")
+    return "; ".join(parts)

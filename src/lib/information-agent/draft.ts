@@ -1,4 +1,6 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -56,15 +58,17 @@ import {
 import { informationAgentAudienceTemplate } from "@/lib/information-agent/recipient-templates";
 import {
   assertInformationAgentContactAllowed,
-  contactCandidateSnapshot,
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
   INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE,
   loadOpposedInformationAgentIdentityKeys,
-  normalizedEmail,
   persistInformationAgentContactObservations,
-  selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
-import { COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD } from "@/lib/information-agent/court-registry-fallback";
+import {
+  contactCandidateSnapshot,
+  selectInformationAgentContact,
+} from "@/lib/information-agent/contact-resolution";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import {
   assertCourtRegistryDraftAllowed,
   COURT_REGISTRY_DRAFT_OPTIONS,
@@ -85,7 +89,6 @@ import {
   listFactsForCases,
   loadOwnedMission,
   missionFromRow,
-  requireInformationAgentAdmin,
 } from "@/lib/information-agent/mission-store";
 import type {
   informationAgentCreateSchema,
@@ -211,7 +214,7 @@ export async function createAdminInformationAgentDraft({
   /** Pilote automatique : jamais de recherche réseau ni de greffe, mission marquée `trigger = autopilot`. */
   trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminResponse> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   assertIssuedAutopilotTrigger(trigger);
 
   const [sale, emailTemplate] = await Promise.all([
@@ -226,7 +229,7 @@ export async function createAdminInformationAgentDraft({
   // Les questions dépendent du destinataire (recipient-questions.ts) : elles sont arrêtées une fois celui-ci
   // connu. Sans lacune ni question choisie, rien n'est lu ni enregistré.
   if (!(requestedQuestionKeys ?? gaps).length) {
-    throw new Error(INFORMATION_AGENT_NO_GAP_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_NO_GAP_MESSAGE, 400);
   }
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
@@ -281,21 +284,26 @@ export async function createAdminInformationAgentDraft({
     candidatesSkippedForOpposition,
   });
   if (trigger && (courtFallback || foundContact)) {
-    throw new Error(
+    throw new PublicApiError(
       "Le pilote automatique n'écrit ni à un greffe ni à une adresse retrouvée par recherche.",
+      409,
     );
   }
   const recipientEmail =
     explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
     if (candidatesSkippedForOpposition > 0 && !contactCandidates.length) {
-      throw new Error(
+      throw new PublicApiError(
         [...opposedKeys].some(isInformationAgentStructureKey)
           ? INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE
           : INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+        409,
       );
     }
-    throw new Error(missingRecipientMessage(contactCandidates.length, search.noAddressNote));
+    throw new PublicApiError(
+      missingRecipientMessage(contactCandidates.length, search.noAddressNote),
+      400,
+    );
   }
   const selectedByEmail =
     courtFallback?.candidate ??
@@ -346,7 +354,7 @@ export async function createAdminInformationAgentDraft({
   if (
     requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))
   ) {
-    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE, 400);
   }
   const questionKeys =
     requestedQuestionKeys ??
@@ -355,10 +363,11 @@ export async function createAdminInformationAgentDraft({
     );
   const audienceTemplate = informationAgentAudienceTemplate(questionAudience);
   if (!questionKeys.length) {
-    throw new Error(
+    throw new PublicApiError(
       audienceTemplate
         ? INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE
         : INFORMATION_AGENT_NO_GAP_MESSAGE,
+      400,
     );
   }
   // Refused now rather than at the preview, after the admin has read the whole draft.
@@ -430,7 +439,7 @@ export async function createAdminInformationAgentDraft({
           method: explicitRecipientEmail
             ? "admin_override"
             : courtFallback
-              ? COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD
+              ? INFORMATION_AGENT_COURT_REGISTRY_FALLBACK
               : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
           candidates: (courtFallback ? [courtFallback.candidate] : contactCandidates)
@@ -461,10 +470,10 @@ export async function createAdminInformationAgentDraft({
         saleId: sale.id,
         candidates: [recordedContact],
       });
-    } catch {
+    } catch (error) {
       // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
       await cancelMission({ adminId: auth.userId, missionId: data.id }).catch(() => undefined);
-      throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
+      throw new PublicApiError(ADDRESS_NOT_RECORDED_MESSAGE, 503, { cause: error });
     }
   }
   // « Régénérer » replaces the previous draft for this sale and address: cancel it, so the queue

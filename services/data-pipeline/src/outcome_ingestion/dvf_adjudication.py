@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -21,10 +20,14 @@ from src.dvf_import import (
     raw_dvf_mutation_group_signature,
     raw_dvf_mutation_identity_signature,
 )
+from src.text_folding import ascii_alnum_words, strip_accents
 
 DVF_OFFICIAL_SOURCE_NAME = "dvf_dgfip"
 DVF_OFFICIAL_DATASET_URL = "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
 DVF_ADJUDICATION_RECORD_KIND = "auction_result_candidate"
+DVF_ADJUDICATION_SCHEMA_VERSION = "dvf_adjudication_candidate_v1"
+# Nature de mutation écrite dans la projection, exigée par le dépôt et vérifiée par le rapprochement.
+DVF_ADJUDICATION_MUTATION_NATURE = "Adjudication"
 
 
 @dataclass(frozen=True)
@@ -58,8 +61,8 @@ class DvfAdjudicationCandidate:
     def normalized_data(self) -> dict[str, object]:
         """JSON-safe source projection; money stays decimal text, never float."""
         return {
-            "schema_version": "dvf_adjudication_candidate_v1",
-            "mutation_nature": "Adjudication",
+            "schema_version": DVF_ADJUDICATION_SCHEMA_VERSION,
+            "mutation_nature": DVF_ADJUDICATION_MUTATION_NATURE,
             "sale_date": self.sale_date.isoformat(),
             "total_price_eur": format(self.total_price_eur, "f"),
             "property_type": self.property_type,
@@ -413,9 +416,7 @@ def _is_adjudication_row(row: dict[str, str]) -> bool:
 def _normalized_text(value: str | None) -> str:
     if not value:
         return ""
-    decomposed = unicodedata.normalize("NFKD", value)
-    without_marks = "".join(character for character in decomposed if not unicodedata.combining(character))
-    return re.sub(r"[^a-z0-9]+", " ", without_marks.casefold()).strip()
+    return ascii_alnum_words(strip_accents(value).casefold())
 
 
 def _normalized_parcel_id(value: str | None) -> str:

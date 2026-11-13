@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import base64
 import math
-import os
 import re
 import time
 import unicodedata
@@ -20,7 +19,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
-from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
+from src.config import is_true_value
+from src.document_reading import sold_lot_from_sale
+from src.french_dates import MONTH_ABBREVIATIONS, MONTH_NUMBERS
 from src.information_agent_review_signals import (
     REVIEW_REASON_LABELS,
     ROOMS_FOLLOW_RE,
@@ -43,9 +44,6 @@ SEMANTIC_MAX_OUTPUT_TOKENS = 1_024
 # date de vente distinguée d'une date de visite ou de renvoi, DPE distingué du GES, type de bien non déduit
 # d'un mot composé. Seule l'étiquette change : aucune réanalyse n'est déclenchée par ce numéro.
 SEMANTIC_PROCESSOR_VERSION = "semantic_evidence_v3"
-# Comme la lecture des documents (`document_reading.MIN_QUOTE_CHARS`) : une citation plus courte ne prouve
-# rien seule. Elle n'est pas jetée, mais part en relecture avec le motif `short_citation`.
-MIN_SEMANTIC_EXCERPT_CHARS = MIN_QUOTE_CHARS
 MAX_VISION_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_PHOTO_DESCRIPTION_CHARS = 800
 MAX_PHOTO_OBSERVATIONS = 8
@@ -1001,35 +999,7 @@ def _property_type_is_coherent(value: str, excerpt: str) -> bool:
     return False
 
 
-_FRENCH_MONTHS = {
-    "janvier": 1,
-    "janv": 1,
-    "février": 2,
-    "fevrier": 2,
-    "févr": 2,
-    "fevr": 2,
-    "mars": 3,
-    "avril": 4,
-    "avr": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "juil": 7,
-    "août": 8,
-    "aout": 8,
-    "aoû": 8,
-    "aou": 8,
-    "septembre": 9,
-    "sept": 9,
-    "octobre": 10,
-    "oct": 10,
-    "novembre": 11,
-    "nov": 11,
-    "décembre": 12,
-    "decembre": 12,
-    "déc": 12,
-    "dec": 12,
-}
+_FRENCH_MONTHS = MONTH_NUMBERS | MONTH_ABBREVIATIONS
 
 
 def _date_is_grounded(expected: date, evidence_excerpt: str) -> bool:
@@ -1147,10 +1117,8 @@ def run_configured_semantic_analysis(
     separately gated :func:`run_configured_photo_analysis` owns the documented
     Qwen3.7-Plus image input path.
     """
-    if not _setting_enabled(settings.get("information_agent_evidence_semantic_enabled")):
-        raw = os.getenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED")
-        if not _setting_enabled(raw):
-            return SemanticAnalysis("disabled", [])
+    if not is_true_value(settings.get("information_agent_evidence_semantic_enabled")):
+        return SemanticAnalysis("disabled", [])
     try:
         from src.enrichment.llm_client import create_llm_client
 
@@ -1258,10 +1226,8 @@ def run_configured_photo_analysis(
     ocr_text: str | None = None,
 ) -> PhotoSemanticAnalysis:
     """Use the existing Replicate client for one explicitly enabled photo pass."""
-    if not _setting_enabled(settings.get("information_agent_evidence_vision_enabled")):
-        raw = os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED")
-        if not _setting_enabled(raw):
-            return PhotoSemanticAnalysis("disabled")
+    if not is_true_value(settings.get("information_agent_evidence_vision_enabled")):
+        return PhotoSemanticAnalysis("disabled")
     data_url = image_bytes_to_data_url(content, mime_type)
     if data_url is None:
         return PhotoSemanticAnalysis("unavailable", error_code="VISION_IMAGE_FORMAT_UNSUPPORTED")
@@ -1318,12 +1284,6 @@ def _validate_photo_text(value: object, maximum: int) -> str | None:
     if any(term in lowered for term in PHOTO_FORBIDDEN_CLAIM_TERMS):
         return None
     return text
-
-
-def _setting_enabled(value: object) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return value is True
 
 
 __all__ = [

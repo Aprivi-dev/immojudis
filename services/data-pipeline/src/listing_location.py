@@ -19,7 +19,8 @@ ni « Avocat poursuivant » (cabinet), qui contiennent eux aussi des rues.
 from __future__ import annotations
 
 import re
-import unicodedata
+
+from src.text_folding import to_ascii
 
 # Types de voie reconnus dans une adresse déjà extraite (colonne ``address``).
 _STREET_TYPES = (
@@ -54,7 +55,7 @@ _BLOCK_END_LABELS = ("date de mise en vente", "adresse de la vente", "descriptif
 
 
 def _fold(value: str) -> str:
-    return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower().strip()
+    return to_ascii(value).lower().strip()
 
 
 def _clean(value: str | None) -> str:

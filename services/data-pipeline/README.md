@@ -34,7 +34,6 @@ La source prioritaire est Avoventes. Licitor est collecté normalement (source d
     `coverage.fallback.incomplete_reasons`.
   - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
   - `src/sources/notaires.py` : scraper Immobilier.notaires.fr via l'API publique des annonces VAE/VNI.
-  - `src/sources/cabinet_generic.py` : point d'extension pour les pages de cabinets locaux.
 
 ## Installation
 
@@ -113,15 +112,26 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 Si ces variables sont absentes, le pipeline collecte, normalise, déduplique et exporte seulement les fichiers locaux.
 
-Pour les écritures directes du pipeline, ajouter aussi l'URL Postgres Supabase :
+Pour écrire le catalogue, ajouter aussi l'URL Postgres Supabase (obligatoire dès que
+`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont renseignées) :
 
 ```bash
 SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
 ```
 
-Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
-Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
-factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
+Le catalogue (ventes, tables dérivées comme `auction_risks`, documents, score
+factors, surfaces, observations, suppressions après fusion) ne s'écrit qu'en
+Postgres direct, dans une transaction : il n'y a pas de chemin d'écriture REST.
+Sans `SUPABASE_DB_URL` alors que `SUPABASE_URL` et la clé de service sont
+renseignées, le démarrage d'un traitement qui écrit le catalogue échoue
+(`DirectDatabaseMissing`, levée par le verrou d'écriture du catalogue ou par la
+première écriture). La lecture des ventes connues, la reprise d'un run demandé
+(`--run-id`) et la clôture d'un run passent aussi par Postgres direct, sans repli
+REST. L'API REST service-role reste utilisée pour d'autres lectures, la création
+d'un run sans identifiant, sa progression, les files, le cadastre et le DPE. Seul
+le drapeau `probable_duplicate` (`src.probable_duplicates`) écrit encore
+`auction_sales` en REST, hors du verrou d'écriture : son workflow ne reçoit pas
+`SUPABASE_DB_URL`.
 
 Le port 6543 (pooler en mode transaction) convient aux écritures, mais pas au
 verrou d'écriture du catalogue (`src/catalogue_lock.py`), qui est un verrou
@@ -236,8 +246,6 @@ Ce que la garde note d'une écriture :
   d'un appelant ne confirme rien elle-même ;
 - si la base ne rend pas une ligne par ligne envoyée, rien n'est noté pour le lot et
   une ligne de journal le dit ;
-- le repli REST (hors production) n'a ni verrou ni lecture sous verrou : la garde
-  n'y agit pas et rien n'y est noté.
 
 Quand un groupe est repris de la base, ce qui décrit la même valeur le suit : pour
 la surface, `habitable_surface_m2`, `carrez_surface_m2`, `surface_scope`,
@@ -271,8 +279,6 @@ Hors périmètre de la garde, à connaître :
 - la mémoire de la garde n'est remise à zéro que par `main._open_run`. Les traitements
   qui n'ouvrent pas de passage (relecture de fiche, lecture des pièces, vérification)
   gardent celle de leur processus ;
-- le repli REST (hors production) écrit sans transaction, sans verrou et sans garde ;
-  une ligne de journal (`REST fallback wrote … sales …`) le dit quand il sert ;
 
 - `lawyer_contact` repris de la ligne connue (carte notaires inchangée) n'est pas un
   groupe de la garde : il est réécrit tel que lu ;
@@ -280,7 +286,7 @@ Hors périmètre de la garde, à connaître :
   pendant le passage et que la vente en mémoire n'en a pas, l'écriture la vide (hors
   champ tenu, que la base retient) ;
 - au recalcul, `visit_dates` est repris brut de l'instantané
-  (`recompute_scoring._sale_from_storage_row`) : pour un instantané Licitor à
+  (`stored_sales.sale_from_storage_row`) : pour un instantané Licitor à
   plusieurs lots pris avant le 03/11/2026, ce sont les visites de la page entière.
 
 Limite connue : après une fusion entre sources, la vente en mémoire porte le
@@ -675,7 +681,7 @@ migration `20261117100700`, qui ne montre que la dernière génération par vent
   version 2 sont masquées, quel que soit leur champ. C'est pourquoi une vente sans
   instantané n'émet rien en version 3 : elle garde toutes celles de la version 2 ;
 - les observations d'une vente partent dans la transaction de sa publication, en
-  une fois (le repli REST, hors production, écrit par lots).
+  une fois.
 
 Le mode par défaut est une lecture sans écriture Supabase :
 
@@ -1158,7 +1164,7 @@ du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
 ### Copier la photo principale des ventes
 
-Étape séparée de la collecte (jamais dans `_finalize_sale_for_app`, aucune écriture dans
+Étape séparée de la collecte (jamais dans `finalize_sale_for_app`, aucune écriture dans
 `auction_sales`). Tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true`, aucune photo n'est
 téléchargée ni copiée, mais les retraits s'appliquent quand même (un retrait n'attend pas la
 réactivation) :

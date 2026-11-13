@@ -46,7 +46,7 @@ describe("déclencheur opaque", () => {
         fetchImpl: fetch,
         trigger: forged,
       }),
-    ).rejects.toThrow("Déclencheur d'envoi automatique non reconnu.");
+    ).rejects.toThrow("Unrecognized autopilot send trigger");
     expect(from).not.toHaveBeenCalled();
   });
 
@@ -57,7 +57,7 @@ describe("déclencheur opaque", () => {
         input: { saleId: "11111111-1111-4111-8111-111111111111" },
         trigger: forged,
       }),
-    ).rejects.toThrow("non reconnu");
+    ).rejects.toThrow("Unrecognized autopilot send trigger");
     expect(from).not.toHaveBeenCalled();
   });
 

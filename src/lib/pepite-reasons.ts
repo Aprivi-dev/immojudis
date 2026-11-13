@@ -25,6 +25,7 @@ import {
   type PepiteCriterionId,
   type PepiteRegimeKey,
 } from "@/lib/pepite-policy";
+import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 
 /**
  * Libellé d'administration d'un risque élevé : jamais affiché au public (la vente n'est pas une pépite). Ce texte
@@ -33,9 +34,6 @@ import {
 const FLOOD_HIGH_ADMIN_LABEL =
   "Exclue : bien situé dans la zone inondée par une crue fréquente (territoire à risque important d’inondation, scénario « forte probabilité »).";
 
-const percent = (share: number) => `${Math.round(share * 100)} %`;
-/** Un montant rond en euros, avec une espace insécable entre les milliers : 1 500 000 donne « 1 500 000 € ». */
-const euros = (amount: number) => `${new Intl.NumberFormat("fr-FR").format(amount)} €`;
 /** Une part (0 à 1) en dixièmes : 0,7 donne 7 (« 7 ventes sur 10 »). */
 const tenths = (share: number) => Math.round(share * 10);
 
@@ -100,7 +98,7 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
   },
   gap_significant: {
     pass: "Mise à prix dans la plage plausible par rapport à la valeur estimée",
-    fail: `Écart aberrant entre la mise à prix et la valeur estimée (mise à prix sous ${percent(PEPITE_EXTREME_START_RATIO_MIN)} ou au-dessus de ${percent(PEPITE_EXTREME_START_RATIO_MAX)} de la valeur)`,
+    fail: `Écart aberrant entre la mise à prix et la valeur estimée (mise à prix sous ${formatShareAsPercent(PEPITE_EXTREME_START_RATIO_MIN)} ou au-dessus de ${formatShareAsPercent(PEPITE_EXTREME_START_RATIO_MAX)} de la valeur)`,
   },
   property_type_supported: {
     pass: "Ni terrain seul ni actif mixte",
@@ -115,20 +113,20 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: "Honoraires de négociation ou frais de publicité non lus (valeur par défaut) : coût d'achat sous-estimé",
   },
   low_start_strong_estimate: {
-    pass: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : estimation de fiabilité forte`,
-    fail: `Mise à prix sous ${percent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : une estimation de fiabilité forte est exigée`,
+    pass: `Mise à prix sous ${formatShareAsPercent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : estimation de fiabilité forte`,
+    fail: `Mise à prix sous ${formatShareAsPercent(PEPITE_LOW_STARTING_PRICE_SHARE)} de la valeur : une estimation de fiabilité forte est exigée`,
   },
   size_value_supported: {
-    pass: `Bien d’au plus ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables et de valeur estimée d’au plus ${euros(PEPITE_MAX_CENTRAL_VALUE_EUR)}`,
-    fail: `Bien de plus de ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables, ou de valeur estimée supérieure à ${euros(PEPITE_MAX_CENTRAL_VALUE_EUR)} : hors du périmètre où l’estimation est fiable`,
+    pass: `Bien d’au plus ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables et de valeur estimée d’au plus ${formatPrice(PEPITE_MAX_CENTRAL_VALUE_EUR)}`,
+    fail: `Bien de plus de ${PEPITE_MAX_HABITABLE_SURFACE_M2} m² habitables, ou de valeur estimée supérieure à ${formatPrice(PEPITE_MAX_CENTRAL_VALUE_EUR)} : hors du périmètre où l’estimation est fiable`,
   },
   market_liquid: {
     pass: `Marché local liquide : au moins ${PEPITE_MARKET_MIN_SALES_12_MONTHS} ventes de logements du même type dans la commune sur 12 mois (ou aucune donnée de marché pour la commune)`,
     fail: `Marché local peu liquide : moins de ${PEPITE_MARKET_MIN_SALES_12_MONTHS} ventes de logements du même type dans la commune sur 12 mois`,
   },
   market_not_declining: {
-    pass: `Prix du marché local sans baisse de plus de ${percent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (ou tendance non évaluable : moins de ${PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR} ventes une des deux années, ou aucune donnée)`,
-    fail: `Prix du marché local en baisse de plus de ${percent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (prix médian au m² de la commune)`,
+    pass: `Prix du marché local sans baisse de plus de ${formatShareAsPercent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (ou tendance non évaluable : moins de ${PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR} ventes une des deux années, ou aucune donnée)`,
+    fail: `Prix du marché local en baisse de plus de ${formatShareAsPercent(PEPITE_MARKET_MAX_DECLINE_SHARE)} en ${PEPITE_MARKET_TREND_YEARS} ans (prix médian au m² de la commune)`,
   },
   flood_risk_known: {
     pass: "Risque d’inondation contrôlé, ou sans objet pour la commune",
@@ -171,8 +169,8 @@ export const PEPITE_CRITERION_LABELS: Record<PepiteCriterionId, { pass: string; 
     fail: `Part des ventes comparables adjugées au tribunal sous l'enchère plafond (hors lots non adjugés) insuffisante : moins de ${tenths(PEPITE_CHANCE_MIN_SHARE)} sur 10 (ou plafond sous la mise à prix)`,
   },
   test_c_cost: {
-    pass: `Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
-    fail: `Coût d'achat estimé pas assez sous la valeur : coût total, frais compris, au-dessus de ${percent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${percent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    pass: `Coût d'achat estimé nettement sous la valeur : coût total, frais compris, d'au plus ${formatShareAsPercent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${formatShareAsPercent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
+    fail: `Coût d'achat estimé pas assez sous la valeur : coût total, frais compris, au-dessus de ${formatShareAsPercent(PEPITE_COST_MAX_SHARE_COURT)} de la valeur estimée (${formatShareAsPercent(PEPITE_COST_MAX_SHARE_NOTARY)} en vente notariale)`,
   },
   ceiling_above_start: {
     pass: "Plafond de référence au moins égal à la mise à prix (vente à la bougie)",
@@ -199,14 +197,14 @@ export function pepitePassLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey 
 export function pepiteConfirmLabel(id: PepiteCriterionId, regime?: PepiteRegimeKey | null): string {
   const later = "à confirmer à la prochaine mise à jour";
   if (id === "test_b_chance") {
-    return `Part des ventes comparables adjugées sous l'${regime === "notary_online" ? "offre" : "enchère"} plafond (hors lots non adjugés) toujours au-dessus du seuil de maintien (${percent(PEPITE_CHANCE_EXIT_SHARE)}), ${later}`;
+    return `Part des ventes comparables adjugées sous l'${regime === "notary_online" ? "offre" : "enchère"} plafond (hors lots non adjugés) toujours au-dessus du seuil de maintien (${formatShareAsPercent(PEPITE_CHANCE_EXIT_SHARE)}), ${later}`;
   }
   if (id === "test_c_cost") {
     const exit =
       regime && regime !== "tribunal"
         ? PEPITE_COST_EXIT_SHARE_NOTARY
         : PEPITE_COST_EXIT_SHARE_COURT;
-    return `Coût d'achat estimé toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${percent(exit)} de la valeur estimée), ${later}`;
+    return `Coût d'achat estimé toujours sous le seuil de maintien (coût total, frais compris, d'au plus ${formatShareAsPercent(exit)} de la valeur estimée), ${later}`;
   }
   return `Critère proche de son seuil de maintien, ${later}`;
 }

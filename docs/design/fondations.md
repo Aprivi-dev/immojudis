@@ -73,19 +73,19 @@ plafond.
 
 Composant `Badge` (`tone` : `neutral`, `gold`, `success`, `warning`, `danger`, `info`, `pepite`).
 
-- **Deux pastilles au plus** par carte, photo comprise : si « Débloquée », « Pépite » et « Vu » s'appliquent à la même vente, « Vu » disparaît de la photo. La pastille « Pépite » est opaque blanche, bordure et logo or, texte `gold-text`, sans animation : elle se distingue du fond or plein de « Débloquée » et de l'encart « Sponsorisé ».
+- **Pastilles d'une carte** (décision du propriétaire du 13/11/2026, qui remplace « deux pastilles au plus par carte ») : deux au plus sur la photo ; en tête du texte, le type de vente et l'échéance ; sous les faits, le repère « Annonce bien renseignée », pour les seules annonces du palier haut du classement par complétude. Si « Débloquée », « Pépite » et « Vu » s'appliquent à la même vente, « Vu » disparaît de la photo. La pastille « Pépite » est opaque blanche, bordure et logo or, texte `gold-text`, sans animation : elle se distingue du fond or plein de « Débloquée » et de l'encart « Sponsorisé ».
 - La couleur seulement pour ce qui demande l'attention ; toujours un libellé, souvent une icône.
 
-| Information                                  | Ton                                            | Où                                                     |
-| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
-| Type de vente (tribunal, notaire, domaniale) | `neutral` avec icône                           | Carte et fiche                                         |
-| Vente aujourd'hui                            | `danger`                                       | Carte et fiche                                         |
-| Vente dans 7 jours ou moins                  | `warning`                                      | Carte et fiche                                         |
-| Points à vérifier                            | `warning`                                      | Fiche seulement                                        |
-| Donnée recoupée                              | `success`                                      | Fiche seulement                                        |
-| Heure à confirmer                            | texte simple sous la date                      | Carte et fiche                                         |
-| Pépite                                       | `pepite` avec le logo de pépite (`PepiteIcon`) | Photo des cartes (haut gauche), tableau (icône), fiche |
-| Qualité de l'annonce                         | —                                              | **Fiche seulement** (retirée des cartes de /sales)     |
+| Information                                  | Ton                                            | Où                                                                                                  |
+| -------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Type de vente (tribunal, notaire, domaniale) | `neutral` avec icône                           | Carte et fiche                                                                                      |
+| Vente aujourd'hui                            | `danger`                                       | Carte et fiche                                                                                      |
+| Vente dans 7 jours ou moins                  | `warning`                                      | Carte et fiche                                                                                      |
+| Points à vérifier                            | `warning`                                      | Fiche seulement                                                                                     |
+| Donnée recoupée                              | `success`                                      | Fiche seulement                                                                                     |
+| Heure à confirmer                            | texte simple sous la date                      | Carte et fiche                                                                                      |
+| Pépite                                       | `pepite` avec le logo de pépite (`PepiteIcon`) | Photo des cartes (haut gauche), tableau (icône), fiche                                              |
+| Qualité de l'annonce                         | —                                              | Fiche ; cartes de /sales : repère « Annonce bien renseignée » (palier haut, décision du 13/11/2026) |
 
 ## Annonce sans photo
 

@@ -1,55 +1,31 @@
-import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminSubscriptionGrantInputSchema,
   grantAdminSubscription,
   listAdminSubscriptions,
 } from "@/lib/admin-subscriptions";
-import { adminErrorResponse } from "@/lib/api-route-errors";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
+import { adminPageQuerySchema } from "@/lib/admin-page-query";
+import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-async function handleGET(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const offset = Number(url.searchParams.get("offset") ?? 0);
-    const limit = Number(url.searchParams.get("limit") ?? 50);
-    if (
-      !Number.isInteger(offset) ||
-      offset < 0 ||
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 100
-    ) {
-      throw new Error("Pagination abonnements invalide.");
-    }
-    const response = await listAdminSubscriptions(bearerTokenFromRequest(request), {
-      offset,
-      limit,
-    });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error, { fallbackMessage: "Erreur admin abonnement" });
-  }
-}
+export const GET = adminRoute(
+  { scope: "admin.subscriptions.read", fallbackMessage: "Erreur admin abonnement" },
+  async (request) => {
+    const authToken = bearerTokenFromRequest(request);
+    const page = adminPageQuerySchema.parse(
+      Object.fromEntries(new URL(request.url).searchParams.entries()),
+    );
+    return listAdminSubscriptions(authToken, page);
+  },
+);
 
-async function handlePOST(request: Request) {
-  try {
+export const POST = adminRoute(
+  { scope: "admin.subscriptions.grant", fallbackMessage: "Erreur admin abonnement" },
+  async (request) => {
     const authToken = bearerTokenFromRequest(request);
     const input = adminSubscriptionGrantInputSchema.parse(await request.json());
-    const response = await grantAdminSubscription({
-      authToken,
-      input,
-    });
-    return NextResponse.json(response);
-  } catch (error) {
-    return adminErrorResponse(error, { fallbackMessage: "Erreur admin abonnement" });
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
-export const POST = withAdminDeadline(handlePOST);
+    return grantAdminSubscription({ authToken, input });
+  },
+);

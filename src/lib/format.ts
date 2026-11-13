@@ -1,13 +1,31 @@
 export {
   formatPrice,
   formatStartingPrice,
+  formatPriceWithCents,
   formatCurrency,
   formatNumber,
   formatPropertyArea,
   formatPricePerM2,
+  formatRentPerM2,
   formatSurface,
+  formatPercent,
+  formatShareAsPercent,
 } from "./format/numbers";
-export { formatDate, formatDateTime } from "./format/dates";
+export {
+  formatDate,
+  formatDateTime,
+  formatWeekdayDate,
+  formatWeekday,
+  formatShortDate,
+  formatShortDateTime,
+  formatNumericDate,
+  formatNumericDateTime,
+  formatDayMonth,
+} from "./format/dates";
 export { formatCompactAddress } from "./format/address";
-export { occupancyLabel, propertyTypeLabel } from "./format/property-labels";
+export {
+  isQualifiedPropertyType,
+  occupancyLabel,
+  propertyTypeLabel,
+} from "./format/property-labels";
 export { documentTypeLabel } from "./format/documents";

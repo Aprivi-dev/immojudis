@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -10,12 +9,17 @@ import {
   saleWorkspaceInputSchema,
   upsertSaleWorkspace,
 } from "@/lib/sale-workspaces";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 
 const saleIdSchema = z.string().guid();
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "sale-workspace",
+    fallbackMessage: "Dossier de suivi indisponible",
+    emptyBody: { workspace: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await assertFeatureEntitlement(
       auth,
@@ -24,20 +28,17 @@ export async function GET(request: Request) {
     );
     const url = new URL(request.url);
     const saleId = saleIdSchema.parse(url.searchParams.get("saleId"));
-    const response = await getSaleWorkspace({ auth, saleId });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-workspace", {
-      fallbackMessage: "Dossier de suivi indisponible",
-      extra: { workspace: null },
-    });
-  }
-}
+    return getSaleWorkspace({ auth, saleId });
+  },
+);
 
-export async function PUT(request: Request) {
-  try {
+export const PUT = apiRoute(
+  {
+    scope: "sale-workspace",
+    fallbackMessage: "Dossier de suivi impossible",
+    emptyBody: { workspace: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await assertFeatureEntitlement(
       auth,
@@ -45,14 +46,6 @@ export async function PUT(request: Request) {
       "Espace de suivi réservé à l’offre Analyse.",
     );
     const input = saleWorkspaceInputSchema.parse(await request.json());
-    const response = await upsertSaleWorkspace({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-workspace", {
-      fallbackMessage: "Dossier de suivi impossible",
-      extra: { workspace: null },
-    });
-  }
-}
+    return upsertSaleWorkspace({ auth, input });
+  },
+);

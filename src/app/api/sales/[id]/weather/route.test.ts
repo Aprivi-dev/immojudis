@@ -108,6 +108,11 @@ describe("public sale weather route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "Vente introuvable.",
+      code: "NOT_FOUND",
+    });
     expect(mocks.weather).not.toHaveBeenCalled();
   });
 
@@ -117,6 +122,9 @@ describe("public sale weather route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("12");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({ ok: false, code: "RATE_LIMITED" });
     expect(mocks.location).not.toHaveBeenCalled();
   });
 
@@ -126,6 +134,10 @@ describe("public sale weather route", () => {
     });
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Identifiant de vente invalide.",
+      code: "INVALID_REQUEST",
+    });
     expect(mocks.enforceIp).not.toHaveBeenCalled();
   });
 });

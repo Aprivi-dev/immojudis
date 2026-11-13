@@ -85,6 +85,8 @@ describe("buildPublicAdjudicationPrices", () => {
       sampleSize: 80,
       aboveStartingRate: 0.625,
     });
+    // Même libellé que la fiche et la recherche (`propertyTypeLabel`) : « Parking » avant le lot 10.
+    expect(result?.propertyTypes.at(-1)?.label).toBe("Garage / Parking");
   });
 
   it("ne publie rien quand l'échantillon national est sous le seuil", () => {

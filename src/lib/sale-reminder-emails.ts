@@ -66,7 +66,7 @@ export function buildSaleReminderMessage({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): ResendEmailMessage & { unsubscribeUrl: string } {
-  if (items.length === 0) throw new Error("Aucun rappel à envoyer.");
+  if (items.length === 0) throw new Error("Sale reminder email: no item to send.");
   const unsubscribeUrl = `${appUrl}/api/notification-preferences/unsubscribe?token=${encodeURIComponent(
     createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env }),
   )}`;

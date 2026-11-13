@@ -13,6 +13,7 @@ from src.information_agent_semantic import (
     build_photo_user_prompt,
     build_semantic_user_prompt,
     image_bytes_to_data_url,
+    run_configured_photo_analysis,
     run_configured_semantic_analysis,
     validate_semantic_facts,
 )
@@ -312,6 +313,25 @@ def test_configured_semantic_pass_uses_one_json_attempt(monkeypatch) -> None:
 
     assert result.status == "completed"
     assert result.facts == []
+
+
+def test_semantic_pass_reads_its_gate_from_the_settings_only(monkeypatch) -> None:
+    """La variable est lue par ``load_settings`` : une clé éteinte ne laisse passer aucun appel au modèle."""
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", "true")
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: pytest.fail("no model call"))
+
+    for settings in ({}, {"information_agent_evidence_semantic_enabled": False}):
+        result = run_configured_semantic_analysis([{"page": 1, "text": "Surface habitable : 87 m2"}], settings)
+        assert result.status == "disabled"
+
+
+def test_photo_pass_reads_its_gate_from_the_settings_only(monkeypatch) -> None:
+    """La variable est lue par ``load_settings`` : une clé éteinte ne laisse passer aucun appel payant."""
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", "true")
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: pytest.fail("no paid vision call"))
+
+    for settings in ({}, {"information_agent_evidence_vision_enabled": False}):
+        assert run_configured_photo_analysis(b"\x89PNG", "image/png", settings).status == "disabled"
 
 
 def test_photo_pass_keeps_only_observable_bounded_descriptions() -> None:

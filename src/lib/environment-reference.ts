@@ -40,7 +40,7 @@ export type CommuneRiskProfile = {
   sourceUrl: string;
 };
 
-export type CommuneRiskUnavailable = {
+type CommuneRiskUnavailable = {
   status: "unavailable";
   reason: "location_missing" | "commune_not_found" | "profile_missing" | "source_unavailable";
 };
@@ -94,7 +94,7 @@ export type ClimateHistory = {
   sourceUrl: string;
 };
 
-export type ClimateUnavailable = {
+type ClimateUnavailable = {
   status: "unavailable";
   reason: "location_missing" | "no_station_nearby" | "source_unavailable";
 };

@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from src.config import DEFAULT_USER_AGENT, load_settings
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "API Carto Cadastre"
@@ -82,8 +82,7 @@ def enrich_cadastre_sales(
             )
         except Exception as exc:
             LOGGER.warning("Cadastre enrichment failed for %s: %s", sale.source_url, exc)
-            if "cadastre_enrichment_failed" not in sale.quality_flags:
-                sale.quality_flags.append("cadastre_enrichment_failed")
+            add_quality_flag(sale.quality_flags, "cadastre_enrichment_failed")
     return rows
 
 

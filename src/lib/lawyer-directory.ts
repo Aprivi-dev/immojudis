@@ -14,8 +14,7 @@ import {
 import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
-
-export { resolveCnbDatasetBarKey };
+import { ConfigurationError, NotFoundError } from "@/lib/api-errors";
 
 type LawyerRow = Pick<
   Database["public"]["Tables"]["referenced_lawyers"]["Row"],
@@ -160,7 +159,7 @@ export async function listLawyerDirectory(
     try {
       sale = await getSaleSector(query.saleId);
     } catch (error) {
-      if (process.env.NODE_ENV !== "development" || !isMissingSupabaseServerConfiguration(error)) {
+      if (process.env.NODE_ENV !== "development" || !(error instanceof ConfigurationError)) {
         throw error;
       }
     }
@@ -194,7 +193,7 @@ export async function listLawyerDirectory(
     if (response.error) throw response.error;
     data = response.data;
   } catch (error) {
-    if (process.env.NODE_ENV === "development" && isMissingSupabaseServerConfiguration(error)) {
+    if (process.env.NODE_ENV === "development" && error instanceof ConfigurationError) {
       const demo = demoLawyerDirectory(query, sale);
       const demoPage = paginateLawyerDirectory(demo.lawyers, query.page);
       return { ...demo, lawyers: demoPage.items, pagination: demoPage.pagination };
@@ -388,7 +387,7 @@ async function getSaleSector(saleId: string): Promise<SaleSector> {
 
   if (error) throw error;
   if (!data?.id || isPublicationQuarantined(data.raw_payload, data.status)) {
-    throw new Error("Vente introuvable.");
+    throw new NotFoundError("Vente introuvable.");
   }
   return data as SaleSector;
 }
@@ -704,10 +703,6 @@ function safeWebsiteUrl(value: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-function isMissingSupabaseServerConfiguration(error: unknown) {
-  return error instanceof Error && error.message.includes("Missing Supabase environment variable");
 }
 
 function clean(value: string | null | undefined) {

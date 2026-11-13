@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -13,7 +14,14 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
-vi.mock("@/lib/property-reports", () => ({ saleFeatureDoor: mocks.door }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  assertFeatureEntitlementVia: async (...args: unknown[]) => {
+    const door = await mocks.door(...args);
+    if (!door) throw new ForbiddenError("Les questions pour l’avocat sont réservées.");
+    return { plan: { plan: door === "plan" ? "analyse" : "decouverte" }, door };
+  },
+}));
 vi.mock("@/lib/auction-fact-claims", () => ({ readSaleFactClaims: mocks.claims }));
 vi.mock("@/lib/sale-publication-guard", () => ({ assertSalePublicationVisible: mocks.visible }));
 
@@ -71,7 +79,12 @@ describe("GET /api/sales/[id]/lawyer-questions", () => {
     expect(body.questions.map((entry) => entry.key)).toContain("documents");
     expect(JSON.stringify(body)).not.toMatch(/\bnous\b/);
     expect(from).toHaveBeenCalledWith("v_auction_sales_app");
-    expect(mocks.door).toHaveBeenCalledWith(expect.anything(), "property.documentReading", saleId);
+    expect(mocks.door).toHaveBeenCalledWith(
+      expect.anything(),
+      "property.documentReading",
+      expect.any(String),
+      { saleId },
+    );
     expect(mocks.visible).toHaveBeenCalledWith(saleId);
   });
 

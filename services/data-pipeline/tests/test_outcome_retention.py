@@ -5,9 +5,11 @@ from datetime import timedelta
 import pytest
 
 from src.outcome_ingestion.artifact_store import RawArtifactStorageError
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME
 from src.outcome_ingestion.retention import (
     ClaimedPurgeJob,
     OutcomeRetentionError,
+    OutcomeRetentionRepository,
     OutcomeRetentionWorker,
     PurgeTarget,
     _uuid_text,
@@ -180,3 +182,52 @@ def test_uuid_validation_is_log_safe() -> None:
     with pytest.raises(OutcomeRetentionError, match="job id is invalid") as raised:
         _uuid_text("private invalid value", "job id")
     assert "private invalid value" not in str(raised.value)
+
+
+class _RecordingCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def __enter__(self) -> _RecordingCursor:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, statement: str, parameters: object = None) -> None:
+        self.calls.append((statement, parameters))
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return []
+
+
+class _RecordingConnection:
+    def __init__(self, cursor: _RecordingCursor) -> None:
+        self._cursor = cursor
+
+    def __enter__(self) -> _RecordingConnection:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def cursor(self) -> _RecordingCursor:
+        return self._cursor
+
+    def commit(self) -> None:
+        return None
+
+
+def test_expired_artifact_selection_reads_the_judilibre_source_name_from_the_contract() -> None:
+    cursor = _RecordingCursor()
+    repository = OutcomeRetentionRepository(
+        "postgresql://example",
+        connect=lambda _url: _RecordingConnection(cursor),
+    )
+
+    assert repository.enqueue_expired_judilibre_artifacts(retention_period=timedelta(days=730), limit=10) == 0
+
+    statement, parameters = cursor.calls[0]
+    assert "'judilibre'" not in statement
+    assert "where source.name = %s" in statement
+    assert parameters == (JUDILIBRE_SOURCE_NAME, 730 * 86_400, 10)

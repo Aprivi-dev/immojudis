@@ -15,7 +15,7 @@ import { CEILING_SWITCHED_OFF_REASON } from "./ceiling-snapshot";
  * (`regime` absent) est un rapport du tribunal, toujours ouvert ; `regime: null` est déjà un rapport
  * sans plafond.
  */
-export function isClosedCeilingRegime(
+function isClosedCeilingRegime(
   ceiling: Record<string, unknown>,
   regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
 ): boolean {

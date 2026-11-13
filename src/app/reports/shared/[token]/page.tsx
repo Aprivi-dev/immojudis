@@ -10,17 +10,43 @@ import {
 import { SharedReportSignup } from "@/components/SharedReportSignup";
 import { StatusPage } from "@/components/StatusPage";
 import { Card, Eyebrow, PageTitle, buttonClasses } from "@/components/ui/primitives";
-import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
+import {
+  formatCompactAddress,
+  formatDate,
+  formatNumber,
+  formatPrice,
+  formatPricePerM2,
+  formatStartingPrice,
+} from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
-import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
+import { safeExternalHttpUrl } from "@/lib/external-url";
 import { reportIndicativeNotice, reportWording } from "@/lib/property-report/report-wording";
 import { RentSourceNotice } from "@/components/RentSourceNotice";
 import { reportRentReference } from "@/lib/property-report/rent-notice";
 import {
+  formatReportPercent,
   formatRenovationBudgetRange,
+  normalizeCadastralReferences,
+  normalizeNearbyCategoryLabels,
+  normalizeStringList,
   opportunityScoreLabel,
 } from "@/lib/property-report/serialization";
+import {
+  activeComparableLines,
+  audienceChecklistLines,
+  demographicSignalLines,
+  dpeSourceLabel,
+  evidenceLines,
+  legalAttentionLines,
+  locationQualityLabel,
+  marketComparableLines,
+  neighborhoodSignalLines,
+  renovationPriorityLabel,
+  urbanPlanningLines,
+  valuationCheckpointLines,
+} from "@/lib/property-report/shared-report-view";
 import { rentabilityLabel } from "@/lib/profitability";
 
 type PageParams = {
@@ -88,11 +114,11 @@ export default async function SharedReportPage({ params }: PageParams) {
   const analysis = report.analysis;
   const valueEstimate = asRecord(analysis.valueEstimate);
   const marketComparables = asRecord(analysis.marketComparablesAnalysis);
-  const retainedComparables = normalizeMarketComparableRows(marketComparables.retainedComparables);
-  const addressHistory = normalizeMarketComparableRows(marketComparables.addressHistory);
+  const retainedComparables = marketComparableLines(marketComparables.retainedComparables);
+  const addressHistory = marketComparableLines(marketComparables.addressHistory);
   const marketComparablesActions = normalizeStringList(marketComparables.nextActions);
   const valuationAudit = asRecord(analysis.valuationAudit);
-  const valuationCheckpoints = normalizeValuationCheckpoints(valuationAudit.checkpoints);
+  const valuationCheckpoints = valuationCheckpointLines(valuationAudit.checkpoints);
   const valuationActions = normalizeStringList(valuationAudit.nextActions);
   const valuationRiskFlags = normalizeStringList(valuationAudit.riskFlags);
   const valuationLimitations = normalizeStringList(valuationAudit.limitations);
@@ -111,36 +137,37 @@ export default async function SharedReportPage({ params }: PageParams) {
   const limitations = report.limitations;
   const cadastral = asRecord(analysis.cadastralAnalysis);
   const cadastralReferences = normalizeCadastralReferences(cadastral.references);
+  const landSurfaceM2 = numberValue(cadastral.landSurfaceM2);
   const cadastralActions = normalizeStringList(cadastral.nextActions);
   const cadastralSources = normalizeStringList(cadastral.sources);
   const nearbyServices = asRecord(analysis.nearbyServices);
   const nearbyCategories = normalizeNearbyCategoryLabels(nearbyServices.categories);
   const nearbyActions = normalizeStringList(nearbyServices.nextActions);
   const demographicAnalysis = asRecord(analysis.demographicAnalysis);
-  const demographicSignals = normalizeDemographicSignals(demographicAnalysis.signals);
+  const demographicSignals = demographicSignalLines(demographicAnalysis.signals);
   const demographicActions = normalizeStringList(demographicAnalysis.nextActions);
   const demographicMissingData = normalizeStringList(demographicAnalysis.missingData);
   const demographicLimitations = normalizeStringList(demographicAnalysis.limitations);
   const occupancyAnalysis = asRecord(analysis.occupancyAnalysis);
-  const occupancyEvidence = normalizeEvidence(occupancyAnalysis.evidence);
+  const occupancyEvidence = evidenceLines(occupancyAnalysis.evidence);
   const occupancyActions = normalizeStringList(occupancyAnalysis.nextActions);
   const auctionCostAnalysis = asRecord(analysis.auctionCostAnalysis);
   const auctionCostSignals = normalizeStringList(auctionCostAnalysis.sourceFeeSignals);
   const auctionCostActions = normalizeStringList(auctionCostAnalysis.nextActions);
   const consignation = asRecord(auctionCostAnalysis.consignation);
   const legalAttentionAnalysis = asRecord(analysis.legalAttentionAnalysis);
-  const legalAttentionItems = normalizeLegalAttentionItems(legalAttentionAnalysis.items);
+  const legalAttentionItems = legalAttentionLines(legalAttentionAnalysis.items);
   const legalAttentionActions = normalizeStringList(legalAttentionAnalysis.nextActions);
   const urbanPlanningAnalysis = asRecord(analysis.urbanPlanningAnalysis);
-  const urbanPlanningItems = normalizeUrbanPlanningItems(urbanPlanningAnalysis.items);
+  const urbanPlanningItems = urbanPlanningLines(urbanPlanningAnalysis.items);
   const urbanPlanningActions = normalizeStringList(urbanPlanningAnalysis.nextActions);
   const urbanPlanningMissingChecks = normalizeStringList(urbanPlanningAnalysis.missingChecks);
   const urbanPlanningLimitations = normalizeStringList(urbanPlanningAnalysis.limitations);
   const dpe = asRecord(analysis.dpe);
-  const dpeEvidence = normalizeEvidence(dpe.evidence);
+  const dpeEvidence = evidenceLines(dpe.evidence);
   const dpeActions = normalizeStringList(dpe.nextActions);
   const renovationAnalysis = asRecord(analysis.renovationAnalysis);
-  const renovationEvidence = normalizeEvidence(renovationAnalysis.evidence);
+  const renovationEvidence = evidenceLines(renovationAnalysis.evidence);
   const renovationActions = normalizeStringList(renovationAnalysis.nextActions);
   const renovationBudgetRange = formatRenovationBudgetRange(
     asRecord(renovationAnalysis.budgetRange),
@@ -148,20 +175,18 @@ export default async function SharedReportPage({ params }: PageParams) {
   const streetFacadeAnalysis = asRecord(analysis.streetFacadeAnalysis);
   const streetFacadeActions = normalizeStringList(streetFacadeAnalysis.nextActions);
   const streetFacadeLimitations = normalizeStringList(streetFacadeAnalysis.limitations);
-  const streetLevelUrl = externalUrl(streetFacadeAnalysis.streetLevelUrl);
-  const aerial3dUrl = externalUrl(streetFacadeAnalysis.aerial3dUrl);
-  const mapUrl = externalUrl(streetFacadeAnalysis.mapUrl);
+  const streetLevelUrl = safeExternalHttpUrl(streetFacadeAnalysis.streetLevelUrl);
+  const aerial3dUrl = safeExternalHttpUrl(streetFacadeAnalysis.aerial3dUrl);
+  const mapUrl = safeExternalHttpUrl(streetFacadeAnalysis.mapUrl);
   const neighborhoodAnalysis = asRecord(analysis.neighborhoodAnalysis);
   const neighborhoodDimensions = normalizeStringList(neighborhoodAnalysis.dimensions);
-  const neighborhoodSignals = normalizeNeighborhoodSignals(neighborhoodAnalysis.signals);
+  const neighborhoodSignals = neighborhoodSignalLines(neighborhoodAnalysis.signals);
   const neighborhoodActions = normalizeStringList(neighborhoodAnalysis.nextActions);
   const activeComparablesAnalysis = asRecord(analysis.activeComparablesAnalysis);
-  const activeComparableItems = normalizeActiveComparableItems(activeComparablesAnalysis.items);
+  const activeComparableItems = activeComparableLines(activeComparablesAnalysis.items);
   const activeComparableActions = normalizeStringList(activeComparablesAnalysis.nextActions);
   const audienceReadinessAnalysis = asRecord(analysis.audienceReadinessAnalysis);
-  const audienceChecklistItems = normalizeAudienceChecklistItems(
-    audienceReadinessAnalysis.checklist,
-  );
+  const audienceChecklistItems = audienceChecklistLines(audienceReadinessAnalysis.checklist);
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
   const ceiling = asRecord(report.ceiling);
   const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
@@ -191,7 +216,9 @@ export default async function SharedReportPage({ params }: PageParams) {
         <section className="grid gap-4 border-b border-border py-5 sm:grid-cols-2">
           <SharedMetric
             label="Localisation"
-            value={joinValues(sale.address, sale.city, sale.department)}
+            value={formatCompactAddress(
+              [sale.address, sale.city, sale.department].map(stringValue),
+            )}
           />
           <SharedMetric
             label={wording.venueLabel}
@@ -299,7 +326,7 @@ export default async function SharedReportPage({ params }: PageParams) {
               ))}
               <SharedMetric
                 label="Marge de sécurité"
-                value={formatPercent(numberValue(ceiling.safetyDiscountPct))}
+                value={formatReportPercent(ceiling.safetyDiscountPct)}
               />
               <SharedMetric
                 label="Base retenue"
@@ -492,7 +519,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label="Décote apparente"
-            value={formatPercent(numberValue(opportunity.apparentDiscountPct))}
+            value={formatReportPercent(opportunity.apparentDiscountPct)}
           />
           <SharedMetric
             label="Valeur médiane estimée"
@@ -504,7 +531,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 ? "Rendement brut potentiel, charges comprises"
                 : "Rendement brut potentiel"
             }
-            value={formatPercent(numberValue(opportunity.grossYieldPct))}
+            value={formatReportPercent(opportunity.grossYieldPct)}
           />
           <SharedMetric
             label="Score rentabilité"
@@ -516,7 +543,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label={rentReference ? "Rendement estimé, charges comprises" : "Rendement net estimé"}
-            value={formatPercent(numberValue(rentabilityScore.netYieldPct))}
+            value={formatReportPercent(rentabilityScore.netYieldPct)}
           />
           <SharedMetric
             label="Cashflow mensuel"
@@ -609,7 +636,7 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Surface terrain"
-                value={formatSurfaceM2(numberValue(cadastral.landSurfaceM2))}
+                value={landSurfaceM2 == null ? "À confirmer" : `${formatNumber(landSurfaceM2)} m²`}
               />
             </div>
             <SharedList items={cadastralReferences} />
@@ -638,12 +665,9 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Priorité travaux"
-                value={renovationPriorityLabel(stringOrNumberValue(dpe.renovationPriority, ""))}
+                value={renovationPriorityLabel(dpe.renovationPriority)}
               />
-              <SharedMetric
-                label="Source"
-                value={dpeSourceLabel(stringOrNumberValue(dpe.source, ""))}
-              />
+              <SharedMetric label="Source" value={dpeSourceLabel(dpe.source)} />
             </div>
             <SharedList items={dpeEvidence} limit={4} />
             <SharedList items={dpeActions} limit={3} muted />
@@ -658,9 +682,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Priorité"
-                value={renovationPriorityLabel(
-                  stringOrNumberValue(renovationAnalysis.priority, ""),
-                )}
+                value={renovationPriorityLabel(renovationAnalysis.priority)}
               />
               <SharedMetric
                 label="Budget indicatif"
@@ -877,9 +899,7 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Localisation"
-                value={locationQualityLabel(
-                  stringOrNumberValue(nearbyServices.locationQuality, ""),
-                )}
+                value={locationQualityLabel(nearbyServices.locationQuality)}
               />
             </div>
             <SharedList items={nearbyCategories} />
@@ -1094,310 +1114,6 @@ function SharedExternalLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function normalizeStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
-}
-
-function normalizeCadastralReferences(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const section = stringOrNumberValue(record.section, "");
-      const number = stringOrNumberValue(record.number, "");
-      const raw = stringOrNumberValue(record.raw, "");
-      const prefix = stringOrNumberValue(record.prefix, "");
-      if (section && number) return `Section ${prefix ? `${prefix} ` : ""}${section} n° ${number}`;
-      return raw;
-    })
-    .filter(Boolean);
-}
-
-function normalizeNearbyCategoryLabels(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const status = stringOrNumberValue(record.status, "");
-      if (status !== "mentioned") return "";
-      return stringOrNumberValue(record.label, "");
-    })
-    .filter(Boolean);
-}
-
-function normalizeEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const excerpt = stringOrNumberValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeNeighborhoodSignals(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const status = neighborhoodSignalStatusLabel(stringOrNumberValue(record.status, ""));
-      const source = stringOrNumberValue(record.source, "");
-      const detail = stringOrNumberValue(record.detail, "");
-      return [status, label, source, detail].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeDemographicSignals(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const status = demographicSignalStatusLabel(stringOrNumberValue(record.status, ""));
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const detail = stringOrNumberValue(record.detail, "");
-      const impact = stringOrNumberValue(record.impact, "");
-      return [status, label, source, detail, impact].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeLegalAttentionItems(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const priority = stringOrNumberValue(record.priority, "");
-      const label = stringOrNumberValue(record.label, "");
-      const reason = stringOrNumberValue(record.reason, "");
-      const action = stringOrNumberValue(record.action, "");
-      return [
-        priority ? priorityLabel(priority) : null,
-        label,
-        reason,
-        action ? `Action : ${action}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeUrbanPlanningItems(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const priority = priorityLabel(stringOrNumberValue(record.priority, ""));
-      const status = urbanPlanningStatusLabel(stringOrNumberValue(record.status, ""));
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const detail = stringOrNumberValue(record.detail, "");
-      const action = stringOrNumberValue(record.action, "");
-      return [priority, status, label, source, detail, action ? `Action : ${action}` : null]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeMarketComparableRows(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const date = stringOrNumberValue(record.date, "");
-      const type = stringOrNumberValue(record.type, "Bien");
-      const totalPrice = numberValue(record.totalPriceEur);
-      const pricePerM2 = numberValue(record.pricePerM2);
-      const surface = numberValue(record.surfaceM2);
-      const distance = numberValue(record.distanceM);
-      return [
-        date ? formatDate(date) : null,
-        type,
-        totalPrice != null ? formatPrice(totalPrice) : null,
-        pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
-        distance != null ? `${Math.round(distance)} m` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeValuationCheckpoints(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const status = valuationStatusLabel(stringOrNumberValue(record.status, ""));
-      const label = stringOrNumberValue(record.label, "");
-      const detail = stringOrNumberValue(record.detail, "");
-      const action = stringOrNumberValue(record.action, "");
-      return [status, label, detail, action ? `Action : ${action}` : null]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeActiveComparableItems(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const title = stringOrNumberValue(record.title, "Bien actif");
-      const city = stringOrNumberValue(record.city, "");
-      const saleDate = stringOrNumberValue(record.saleDate, "");
-      const startingPrice = numberValue(record.startingPriceEur);
-      const pricePerM2 = numberValue(record.pricePerM2);
-      const surface = numberValue(record.surfaceM2);
-      const matchLabel = stringOrNumberValue(record.matchLabel, "");
-      const matchScore = numberValue(record.matchScore);
-      return [
-        matchLabel && matchScore != null ? `${matchLabel} (${matchScore}/100)` : matchLabel,
-        title,
-        city,
-        saleDate ? formatDate(saleDate) : null,
-        startingPrice != null ? formatStartingPrice(startingPrice) : null,
-        pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
-        surface != null ? `${Math.round(surface)} m²` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeAudienceChecklistItems(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const status = audienceChecklistStatusLabel(stringOrNumberValue(record.status, ""));
-      const priority = priorityLabel(stringOrNumberValue(record.priority, ""));
-      const detail = stringOrNumberValue(record.detail, "");
-      const action = stringOrNumberValue(record.action, "");
-      return [status, priority, label, detail, action ? `Action : ${action}` : null]
-        .filter(Boolean)
-        .join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function priorityLabel(value: string): string {
-  const labels: Record<string, string> = {
-    high: "Prioritaire",
-    medium: "À vérifier",
-    low: "Contrôle",
-  };
-  return labels[value] ?? value;
-}
-
-function audienceChecklistStatusLabel(value: string): string {
-  const labels: Record<string, string> = {
-    done: "OK",
-    to_do: "À faire",
-    watch: "À vérifier",
-  };
-  return labels[value] ?? value;
-}
-
-function urbanPlanningStatusLabel(value: string): string {
-  const labels: Record<string, string> = {
-    documented: "Documenté",
-    to_verify: "À confirmer",
-    missing: "Manquant",
-  };
-  return labels[value] ?? value;
-}
-
-function renovationPriorityLabel(value: string): string {
-  const labels: Record<string, string> = {
-    low: "Faible",
-    medium: "À calibrer",
-    high: "Prioritaire",
-    unknown: "À qualifier",
-  };
-  return labels[value] ?? "À confirmer";
-}
-
-function dpeSourceLabel(value: string): string {
-  const labels: Record<string, string> = {
-    source_blocks: "Données source",
-    documents: "Pièces du dossier",
-    risk_evidence: "Preuves de risques",
-  };
-  return labels[value] ?? "À confirmer";
-}
-
-function locationQualityLabel(value: string): string {
-  const labels: Record<string, string> = {
-    coordinates: "Coordonnées disponibles",
-    address: "Adresse disponible",
-    commune: "Commune disponible",
-    missing: "À géocoder",
-  };
-  return labels[value] ?? "À confirmer";
-}
-
-function neighborhoodSignalStatusLabel(value: string): string {
-  const labels: Record<string, string> = {
-    positive: "Atout",
-    watch: "À vérifier",
-    to_enrich: "À enrichir",
-  };
-  return labels[value] ?? value;
-}
-
-function demographicSignalStatusLabel(value: string): string {
-  const labels: Record<string, string> = {
-    source_signal: "Signal source",
-    proxy: "Proxy",
-  };
-  return labels[value] ?? value;
-}
-
-function valuationStatusLabel(value: string): string {
-  const labels: Record<string, string> = {
-    ok: "OK",
-    watch: "À surveiller",
-    risk: "Risque",
-    missing: "Manquant",
-  };
-  return labels[value] ?? value;
-}
-
-function formatSurfaceM2(value: number | null): string {
-  if (value == null) return "À confirmer";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} m²`;
-}
-
 function formatKnownPrice(value: number | null): string {
   return value == null ? "À confirmer" : formatPrice(value);
-}
-
-function formatPercent(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} %`;
-}
-
-function externalUrl(value: unknown): string {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim();
-  return trimmed.startsWith("https://") || trimmed.startsWith("http://") ? trimmed : "";
-}
-
-function joinValues(...values: unknown[]): string {
-  return values
-    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
-    .join(", ");
 }

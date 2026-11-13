@@ -1,7 +1,7 @@
 import { publicEnv } from "@/lib/env";
 import { propertyImages, shouldRejectPropertyImageSize } from "@/lib/sale-media";
 import type { AuctionSale, SaleMedia, SaleMediaMirror } from "@/lib/types";
-import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { errorDetailForLog as errorMessage } from "@/lib/error-detail-for-log";
 
 /**
  * Copies hébergées des photos principales (test d'hébergement). Le pipeline copie la photo en WebP
@@ -12,7 +12,7 @@ import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
  * l'affichage ; tout le reste (source retirée, doublons, crédit, repli) continue de lire l'origine.
  * Sans copie, interrupteur éteint, erreur ou délai dépassé : la page est celle d'avant.
  */
-export const PHOTO_MIRROR_BUCKET = "sale-photos";
+const PHOTO_MIRROR_BUCKET = "sale-photos";
 /**
  * Délai du rendu serveur au-delà duquel on affiche les photos des sources plutôt que d'attendre les
  * copies : la page n'attend personne.
@@ -31,7 +31,7 @@ export const PHOTO_MIRROR_ISR_TIMEOUT_MS = 1_500;
  */
 export const PHOTO_MIRROR_BROWSER_TIMEOUT_MS = 1_500;
 /** Photos d'une fiche dont on cherche la copie : celles que l'écran montre en premier. */
-export const PHOTO_MIRROR_DETAIL_PHOTOS = 3;
+const PHOTO_MIRROR_DETAIL_PHOTOS = 3;
 /** Copies déjà connues du navigateur (URL d'origine vers copie), au plus. */
 export const PHOTO_MIRROR_MEMORY_MAX = 500;
 /** La fonction SQL ignore tout ce qui dépasse. */

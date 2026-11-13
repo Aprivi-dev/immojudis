@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { discoverInformationAgentContacts } from "@/lib/information-agent";
+import { discoverInformationAgentContacts } from "@/lib/information-agent/contact-resolution";
 import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/integrations/supabase/client.server", () => ({

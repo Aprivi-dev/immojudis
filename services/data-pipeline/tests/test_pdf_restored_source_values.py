@@ -6,7 +6,7 @@ produit le 11/11/2026 deux violations de ``auction_sales_occupancy_status_check`
 deux erreurs « '>' not supported between 'str' and 'int' » (« 85,5 », encheres_immobilieres). Relue sans le
 contexte de la collecte, elle donnait à un lot Licitor la mise à prix, la surface ou les pièces d'un autre lot.
 
-Les instantanés de ces tests sont posés par le vrai code de la collecte (``_preserve_known_enrichment_payloads``)
+Les instantanés de ces tests sont posés par le vrai code de la collecte (``known_enrichment.preserve_known_enrichment_payloads``)
 sur des ventes brutes : celles des parseurs de chaque source, la fiche Licitor réelle à deux lots et les lignes
 Licitor réelles à lots numérotés. La valeur attendue est celle de ``normalize_sale(vente brute)``.
 """
@@ -24,11 +24,12 @@ from typing import Any
 import pytest
 import time_machine
 
-from src import main, pdf_fact_scope
+from src import known_enrichment, main, pdf_fact_scope
 from src.models import AuctionSale
 from src.normalize import OCCUPANCY_ENUM, normalize_sale
-from src.pdf_enrichment import _invalidate_replaced_document_facts, enrich_sale_from_pdf_text
-from src.pdf_fact_scope import _clear_pdf_fact_projections, _pdf_record_fact_projection
+from src.pdf_enrichment import _invalidate_replaced_document_facts
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
+from src.pdf_fact_scope import _clear_pdf_fact_projections, pdf_record_fact_projection
 from src.recompute_scoring import _recomputed_sale_from_storage_row
 from src.sources import licitor_lots
 from src.sources.licitor import parse_licitor_detail_html
@@ -40,7 +41,7 @@ DOCUMENT_URL = "https://example.test/restored/cahier.pdf"
 # Valeurs admises par la contrainte CHECK de auction_sales.property_type (migration 20260520202829).
 PROPERTY_TYPES = {"apartment", "house", "building", "land", "commercial", "parking", "mixed", "other", "unknown"}
 RESTORABLE = tuple(
-    field for field in main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if field not in {"source_name", "source_url", "raw_text"}
+    field for field in known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if field not in {"source_name", "source_url", "raw_text"}
 )
 STORED_ROWS = json.loads(
     (Path(__file__).parent / "fixtures" / "licitor_lignes_stockees_lots_numerotes.json").read_text(encoding="utf-8")
@@ -80,8 +81,8 @@ def _published(raw: dict[str, Any]) -> tuple[AuctionSale, AuctionSale]:
     """La vente publiée par la collecte après lecture de sa fiche, et la lecture de référence de la vente brute."""
     reference = normalize_sale(copy.deepcopy(raw))
     published = copy.deepcopy(raw)
-    main._preserve_known_enrichment_payloads([published], {})
-    assert set(published["source_factual_snapshot"]) == set(main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
+    known_enrichment.preserve_known_enrichment_payloads([published], {})
+    assert set(published["source_factual_snapshot"]) == set(known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
     return normalize_sale(published), reference
 
 
@@ -103,13 +104,13 @@ def _restore_everything(sale: AuctionSale) -> None:
     """Chaque champ restaurable reçoit une valeur de pièce tracée, puis toutes les projections sont effacées."""
     for field in RESTORABLE:
         setattr(sale, field, _piece_value(sale, field))
-    _pdf_record_fact_projection(sale, RESTORABLE, evidence="pièce", document_url=DOCUMENT_URL)
+    pdf_record_fact_projection(sale, RESTORABLE, evidence="pièce", document_url=DOCUMENT_URL)
     assert _clear_pdf_fact_projections(sale)["cleared"] == set(RESTORABLE)
 
 
 def _restore(sale: AuctionSale, field: str) -> object:
     setattr(sale, field, _piece_value(sale, field))
-    _pdf_record_fact_projection(sale, [field], evidence="pièce", document_url=DOCUMENT_URL)
+    pdf_record_fact_projection(sale, [field], evidence="pièce", document_url=DOCUMENT_URL)
     assert _clear_pdf_fact_projections(sale)["cleared"] == {field}
     return getattr(sale, field)
 
@@ -309,7 +310,7 @@ def test_the_title_of_the_sale_is_used_when_the_stored_payload_has_none() -> Non
 
 
 def test_the_fields_trusted_without_a_lot_are_those_the_lot_reading_writes() -> None:
-    lot_fields = set(licitor_lots._LOT_FIELDS) & set(main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
+    lot_fields = set(licitor_lots._LOT_FIELDS) & set(known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
 
     assert pdf_fact_scope._LOT_WRITTEN_SNAPSHOT_FIELDS == lot_fields | {"visit_dates", "sale_date", "status"}
 
@@ -405,7 +406,7 @@ def test_a_complete_reread_leaves_collection_values_on_the_sale() -> None:
     sale, _ = _published(raw)
     sale.documents = [{"label": "Cahier des charges", "url": DOCUMENT_URL}]
     sale.occupancy_status, sale.surface_m2, sale.property_type, sale.rooms_count = "occupied", Decimal("90"), "house", 5
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         ["occupancy_status", "surface_m2", "property_type", "rooms_count"],
         evidence="ancienne lecture",
@@ -434,10 +435,10 @@ def test_a_trace_baseline_is_restored_as_the_serialized_value_it_is() -> None:
     # Sans instantané, la ligne de base de la trace est remise : un décimal sérialisé, pas un texte de page.
     # « 45000.00 » y vaut 45 000, et n'est pas relu comme un nombre à séparateur de milliers.
     sale = _bare_sale(starting_price_eur=Decimal("52000"), rooms_count=5)
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale, ["starting_price_eur"], evidence="pièce", document_url=DOCUMENT_URL, baseline=Decimal("45000.00")
     )
-    _pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline=3)
+    pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline=3)
 
     assert _clear_pdf_fact_projections(sale)["cleared"] == {"starting_price_eur", "rooms_count"}
 
@@ -447,10 +448,10 @@ def test_a_trace_baseline_is_restored_as_the_serialized_value_it_is() -> None:
 
 def test_an_unreadable_trace_baseline_is_restored_empty() -> None:
     sale = _bare_sale(starting_price_eur=Decimal("52000"), rooms_count=5)
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale, ["starting_price_eur"], evidence="pièce", document_url=DOCUMENT_URL, baseline="prix sur demande"
     )
-    _pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline="T3")
+    pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline="T3")
 
     _clear_pdf_fact_projections(sale)
 
@@ -465,7 +466,7 @@ def test_a_snapshot_that_cannot_be_read_restores_empty_and_lets_the_pass_go_on(m
         )
         assert (reference.surface_m2, reference.occupancy_status, reference.status) == (Decimal("85.5"), "vacant", "upcoming")
         sale.surface_m2, sale.occupancy_status, sale.status = Decimal("90"), "occupied", "postponed"
-        _pdf_record_fact_projection(
+        pdf_record_fact_projection(
             sale, ["surface_m2", "occupancy_status", "status"], evidence="pièce", document_url=DOCUMENT_URL
         )
 

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { privacyDeadlineLabel, privacyDeadlineStatus } from "./privacy-deadline";
@@ -173,7 +174,7 @@ describe("erasure execution (P4-10)", () => {
     expect(report.request.status).toBe("completed");
   });
 
-  describe("deployment order: tables of migrations not applied yet", () => {
+  describe("a table that cannot be erased fails the erasure, before the auth user is deleted", () => {
     const missing = { code: "PGRST205", message: "Could not find the table in the schema cache" };
 
     it.each([
@@ -183,33 +184,32 @@ describe("erasure execution (P4-10)", () => {
       "sale_result_dispatches",
       "launch_offer_end_notices",
       "launch_offer_end_notice_optouts",
-    ])(
-      "does not fail the erasure when %s does not exist yet (nothing to erase there)",
-      async (table) => {
-        state.deleteErrors[table] = missing;
-        const report = await executePrivacyErasure({ auth: admin, input });
-        expect(report.authUserDeleted).toBe(true);
-        expect(report.deletedRows[`${table}.user_id`]).toBe(0);
-        expect(state.deleteUser).toHaveBeenCalled();
-      },
-    );
-
-    it("accepts the PostgreSQL undefined_table code too", async () => {
-      state.deleteErrors.sale_result_dispatches = { code: "42P01", message: "does not exist" };
-      const report = await executePrivacyErasure({ auth: admin, input });
-      expect(report.deletedRows["sale_result_dispatches.user_id"]).toBe(0);
+    ])("fails the erasure when %s is missing, and keeps the account", async (table) => {
+      state.deleteErrors[table] = missing;
+      await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
+        `Erasure failed in ${table}`,
+      );
+      expect(state.deleteUser).not.toHaveBeenCalled();
     });
 
-    it("still fails for any other missing table, or any other error", async () => {
+    it("fails on the PostgreSQL undefined_table code too", async () => {
+      state.deleteErrors.sale_result_dispatches = { code: "42P01", message: "does not exist" };
+      await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
+        "Erasure failed in sale_result_dispatches",
+      );
+      expect(state.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it("fails for any other missing table, or any other error", async () => {
       state.deleteErrors.user_alerts = missing;
       await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
-        "Effacement impossible dans user_alerts",
+        "Erasure failed in user_alerts",
       );
       expect(state.deleteUser).not.toHaveBeenCalled();
 
       state.deleteErrors = { sale_signal_feedback: { code: "XX000", message: "boom" } };
       await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
-        "Effacement impossible dans sale_signal_feedback",
+        "Erasure failed in sale_signal_feedback",
       );
       expect(state.deleteUser).not.toHaveBeenCalled();
     });
@@ -249,31 +249,38 @@ describe("erasure execution (P4-10)", () => {
       "a non-admin caller",
       () => ({ ...admin, isAdmin: false }) as unknown as SupabaseAuthContext,
       {},
-      "Forbidden",
+      AdminRequiredError,
+      403,
     ],
     [
       "another request type",
       () => admin,
       { request_type: "access" },
       "pas une demande d'effacement",
+      409,
     ],
     [
       "an unverified identity",
       () => admin,
       { identity_status: "authenticated" },
       "Vérifiez l'identité",
+      409,
     ],
-    ["a closed request", () => admin, { status: "completed" }, "déjà clôturée"],
-    ["an already deleted account", () => admin, { user_id: null }, "n'existe plus"],
+    ["a closed request", () => admin, { status: "completed" }, "déjà clôturée", 409],
+    ["an already deleted account", () => admin, { user_id: null }, "n'existe plus", 404],
     [
       "a wrong confirmation email",
       () => admin,
       { requester_email: "other@example.test" },
       "ne correspond pas",
+      400,
     ],
-  ])("refuses %s", async (_label, makeAuth, override, message) => {
+  ])("refuses %s", async (_label, makeAuth, override, message, status) => {
     state.requestRow = request(override);
     await expect(executePrivacyErasure({ auth: makeAuth(), input })).rejects.toThrow(message);
+    await expect(executePrivacyErasure({ auth: makeAuth(), input })).rejects.toMatchObject({
+      status,
+    });
     expect(state.deleteUser).not.toHaveBeenCalled();
     expect(state.stripeDel).not.toHaveBeenCalled();
   });
@@ -281,6 +288,9 @@ describe("erasure execution (P4-10)", () => {
   it("never erases an administrator account", async () => {
     state.role = "admin";
     await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow("administrateur");
+    await expect(executePrivacyErasure({ auth: admin, input })).rejects.toMatchObject({
+      status: 409,
+    });
     expect(state.deleteUser).not.toHaveBeenCalled();
   });
 });

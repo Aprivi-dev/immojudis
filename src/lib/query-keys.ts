@@ -1,11 +1,16 @@
 /**
- * React Query key factory.
+ * React Query key factory of the site and the account pages.
  *
- * Every key is built here so that `useQuery`, `invalidateQueries` and
- * `setQueryData` agree on the exact same tuple. The array contents and their
- * order are part of the contract: invalidation relies on prefix matching, and
- * `catalogPlaceholder` reads the access scope at index 2 of the catalogue keys.
- * Do not reorder elements when editing a key.
+ * `useQuery`, `invalidateQueries` and `setQueryData` read these keys from here so that they agree
+ * on the exact same tuple. The array contents and their order are part of the contract:
+ * invalidation relies on prefix matching, and `catalogPlaceholder` reads the access scope at index
+ * 2 of the catalogue keys. Do not reorder elements when editing a key.
+ *
+ * The administration keeps its keys next to its panels, which export them for the pages that show
+ * them; only the keys several of its views read are shared, in `admin-query-keys.ts` (and in
+ * `information-agent-queries.ts` for the agent views). This module is copied whole into every chunk
+ * that reads a key, and their fifty keys here weighed 2.1 kB more on /sales and on the sale page,
+ * 4.7 kB on each administration page and 82 kB in total (measured 13/11/2026).
  */
 
 type Id = string | null | undefined;
@@ -19,9 +24,9 @@ export type SaleAccessMode = "discovery" | "unlocked" | "analysis";
 
 /*
  * Each key is its own named export, and consumers read them through a namespace import
- * (`import * as queryKeys from "@/lib/query-keys"`, then `queryKeys.favorites(userId)`). The bundler
- * then keeps only the keys a chunk actually uses: this module used to be one object literal that was
- * copied whole into ~20 client chunks (about 5 kB each).
+ * (`import * as queryKeys from "@/lib/query-keys"`, then `queryKeys.favorites(userId)`). Turbopack
+ * still copies the whole module, not only the keys a chunk uses: about 2.7 kB in each of 17 client
+ * chunks (measured 13/11/2026).
  */
 
 // Account, alerts and notifications
@@ -33,6 +38,8 @@ export const alertNotifications = (userId: string) => ["alert-notifications", us
 export const notificationPreferences = (userId: string) =>
   ["notification-preferences", userId] as const;
 export const privacyRequests = () => ["privacy-requests"] as const;
+/** Offre Analyse publique ; l'essai proposé dépend du compte, d'où le compte dans la clé. */
+export const billingOffer = (userKey: Id) => ["billing-offer", userKey] as const;
 
 // Favorites
 export const favorites = (userId: Id) => ["favorites", userId] as const;
@@ -80,6 +87,12 @@ export const searchLawyerPlacement = (city: Id, department: Id) =>
 // Sale detail
 export const saleDetail = (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
   ["sale-detail", saleId, sessionKey, mode] as const;
+/** Prefix of {@link saleDetail} for every account and view of a sale. */
+export const saleDetailForSale = (saleId: string) => ["sale-detail", saleId] as const;
+/** Aperçu de la valeur d'une vente : partagé par le panneau de prix et le repère marché de la fiche. */
+export const valuePreview = (saleId: string) => ["value-preview", saleId] as const;
+export const lawyerQuestions = (saleId: string, access: SaleAccessMode, userKey: string) =>
+  ["lawyer-questions", saleId, access, userKey] as const;
 /** Liste publique des identifiants des pépites (une lecture par page de résultats ou par fiche). */
 export const pepiteSaleIds = () => ["pepite-sale-ids"] as const;
 export const pepiteFloodExposedIds = () => ["pepite-flood-exposed-ids"] as const;
@@ -145,12 +158,9 @@ export const lawyerProsecutedSales = (userKey: Id, lawyerIds: readonly string[])
 export const saleAnalysisSets = (userId: string) => ["sale-analysis-sets", userId] as const;
 
 // Tribunal and adjudication statistics
-export const tribunalJudicialActivityPlan = (userId: Id) =>
-  ["tribunal-judicial-activity-plan", userId] as const;
 export const tribunalJudicialActivityDirectory = (historyMonths: number) =>
   ["tribunal-judicial-activity-directory", historyMonths] as const;
-export const adjudicationStatisticsPlan = (userId: Id) =>
-  ["adjudication-statistics-plan", userId] as const;
+export const courtAuctionSummaries = () => ["court-auction-summaries"] as const;
 export const adjudicationPriceStatisticsDirectory = (userId: Id) =>
   ["adjudication-price-statistics-directory", userId] as const;
 
@@ -162,7 +172,3 @@ export const publicationRequestsWorkspace = (userId: Id) =>
   ["publication-requests", "workspace", userId] as const;
 export const publicationRequest = (requestId: string | null | undefined) =>
   ["publication-request", requestId] as const;
-
-// Admin quality dashboards
-export const adminQualityReport = () => ["admin-quality-report"] as const;
-export const adminValuationOverview = () => ["admin-valuation-overview"] as const;

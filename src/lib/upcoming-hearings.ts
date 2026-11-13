@@ -1,9 +1,6 @@
-import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
-import {
-  HEARINGS_DEPARTMENT_PARAM,
-  validHearingDepartment,
-  type HearingDepartment,
-} from "@/lib/hearings-department";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
+import type { HearingDepartment } from "@/lib/hearings-department";
 import { saleHearingTime } from "@/lib/seo";
 import { tribunalLongNameFromRaw } from "@/lib/tribunal-pages";
 import { parseFiniteNumber as finite } from "@/lib/finite-number";
@@ -32,7 +29,7 @@ export const HEARINGS_RPC_DAYS = HEARINGS_WINDOW_DAYS - 1;
  * dessous elle reste consultable, en `noindex, follow` : trois audiences font une page qui a
  * quelque chose à montrer, une ou deux, une page mince (même raisonnement que les départements).
  */
-export const HEARINGS_PAGE_MIN_HEARINGS = 3;
+const HEARINGS_PAGE_MIN_HEARINGS = 3;
 
 /** Ligne de `get_public_upcoming_hearings`. Les nombres arrivent parfois en chaîne de PostgREST. */
 export type UpcomingHearingRow = {
@@ -143,7 +140,7 @@ export function dedupeHearings(hearings: readonly PublicHearing[]): PublicHearin
   return kept;
 }
 
-export type HearingTribunalGroup = {
+type HearingTribunalGroup = {
   key: string;
   label: string;
   tribunalCode: string | null;
@@ -222,8 +219,6 @@ export function windowHearings(
     laterCount: later.length,
   };
 }
-
-export { HEARINGS_DEPARTMENT_PARAM, validHearingDepartment, type HearingDepartment };
 
 /** Les départements qui ont au moins une audience dans les fenêtres, par ordre de code, avec leur nombre. */
 export function hearingDepartments(windows: HearingWindows): HearingDepartment[] {

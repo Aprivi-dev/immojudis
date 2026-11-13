@@ -5,6 +5,7 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "@/lib/tribunal-pages";
 import { dedupeHearings, mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
 import { parseFiniteNumber as finite } from "@/lib/finite-number";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Prochaines ventes d'un tribunal, lues comme un visiteur anonyme avec la fonction publique
@@ -28,10 +29,9 @@ export type TribunalSaleRow = {
   /**
    * Identifiant de groupe : le plus petit identifiant des lignes de la liste qui partagent une adresse
    * source normalisée (de proche en proche). Il reconnaît la même vente publiée deux fois sans rien
-   * révéler de l'adresse. Absent tant que la migration 20261031100100 n'est pas appliquée : la liste
-   * fonctionne alors sans dédoublonnage.
+   * révéler de l'adresse.
    */
-  source_group?: unknown;
+  source_group: string;
 };
 
 type TribunalRpcClient = {
@@ -117,7 +117,7 @@ type ReadTribunalSales = {
 
 async function readTribunalSales(tribunalCode: string): Promise<ReadTribunalSales> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await (client as unknown as TribunalRpcClient).rpc(
     "get_public_tribunal_sales",
     { p_tribunal_code: tribunalCode, p_limit: TRIBUNAL_PAGE_LISTED_SALES },
@@ -136,9 +136,8 @@ const cachedTribunalSales = unstable_cache(readTribunalSales, ["tribunal-pages",
 export type TribunalSalesResult = ({ status: "ok" } & ReadTribunalSales) | { status: "error" };
 
 /**
- * Les prochaines ventes d'un tribunal. Ne lève pas : la fonction peut manquer (migration pas
- * encore appliquée) ou la base être indisponible ; la page garde alors ses chiffres, qui viennent
- * d'ailleurs, et renvoie vers la recherche.
+ * Les prochaines ventes d'un tribunal. Ne lève pas : la base peut être indisponible ; la page garde
+ * alors ses chiffres, qui viennent d'ailleurs, et renvoie vers la recherche.
  */
 export async function tryLoadTribunalSales(tribunalCode: string): Promise<TribunalSalesResult> {
   try {

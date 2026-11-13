@@ -8,11 +8,11 @@ import {
   hearingsPageDescription,
   isHearingsPageIndexable,
   mapHearingRows,
-  validHearingDepartment,
   windowHearings,
   type PublicHearing,
   type UpcomingHearingRow,
 } from "./upcoming-hearings";
+import { validHearingDepartment } from "./hearings-department";
 
 /** Mardi 20 octobre 2026, 10 h à Paris (heure d'été). */
 const NOW = new Date("2026-10-20T08:00:00Z");

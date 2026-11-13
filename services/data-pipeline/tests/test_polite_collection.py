@@ -15,6 +15,7 @@ from src.document_politeness import (
     DocumentRobotsDisallowed,
     DocumentRobotsUnavailable,
 )
+from src.pdf_permanent_failure import PermanentDocumentFailure
 from src.sources import common
 from src.sources.common import RobotsRules
 
@@ -374,7 +375,7 @@ def test_robots_disallowed_document_is_a_permanent_failure_without_a_request(pol
 
     monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", Refuse())
 
-    with pytest.raises(pdf_enrichment.PermanentDocumentFailure) as error:
+    with pytest.raises(PermanentDocumentFailure) as error:
         pdf_enrichment._download_document_response(
             "https://docs.example.test/private/a.pdf", headers={}, timeout_seconds=5
         )
@@ -434,3 +435,24 @@ def test_licitor_pre_check_prefers_the_live_robots_file(politeness_on, monkeypat
     # The live file wins over the offline mirror, in both directions.
     assert pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/annonce/1.pdf")
     assert not pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/1.pdf")
+
+
+def test_document_pause_never_outlives_the_pdf_deadline(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from src import pdf_deadline
+    from src.document_politeness import pause_within_deadline
+
+    clock = FakeClock()
+    fake_time = SimpleNamespace(monotonic=clock, sleep=clock.sleep)
+    monkeypatch.setattr(document_politeness, "time", fake_time)
+    monkeypatch.setattr(pdf_deadline, "time", fake_time)
+
+    pause_within_deadline(2.0)  # sans échéance : la pause entière
+    assert clock.slept == [2.0]
+
+    clock.slept.clear()
+    with pdf_deadline.pdf_deadline_scope(clock.now + 1.5):
+        with pytest.raises(pdf_deadline.PdfDeadlineExceeded, match="waiting between document requests"):
+            pause_within_deadline(5.0)
+    assert clock.slept == [1.5]

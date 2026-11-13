@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { trimmedStringValue } from "@/lib/guards";
 
-export const CNB_DATASET_API_URL =
+const CNB_DATASET_API_URL =
   "https://www.data.gouv.fr/api/1/datasets/annuaire-des-avocats-de-france/";
 export const CNB_DATASET_PAGE_URL =
   "https://www.data.gouv.fr/datasets/annuaire-des-avocats-de-france";
@@ -69,12 +69,12 @@ export async function fetchLatestCnbDatasetResource(): Promise<CnbDatasetResourc
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) {
-    throw new Error(`Métadonnées CNB indisponibles (${response.status}).`);
+    throw new Error(`CNB dataset metadata unavailable (HTTP ${response.status})`);
   }
 
   const payload = (await response.json()) as { resources?: unknown };
   if (!Array.isArray(payload.resources)) {
-    throw new Error("Le catalogue CNB ne contient aucune ressource exploitable.");
+    throw new Error("CNB dataset metadata has no resource list");
   }
   return selectLatestCnbDatasetResource(payload.resources as DataGouvResource[]);
 }
@@ -86,14 +86,14 @@ export function selectLatestCnbDatasetResource(resources: DataGouvResource[]): C
     .sort((left, right) => resourceTimestamp(right) - resourceTimestamp(left));
 
   const latest = candidates[0];
-  if (!latest) throw new Error("Aucun export CSV officiel du CNB n'a été trouvé.");
+  if (!latest) throw new Error("No official CNB CSV export found");
   return latest;
 }
 
 export async function fetchCnbCsv(resource: CnbDatasetResource): Promise<Uint8Array> {
   const resourceUrl = new URL(resource.url);
   if (resourceUrl.protocol !== "https:" || resourceUrl.hostname !== "static.data.gouv.fr") {
-    throw new Error("L'URL de l'export CNB n'est pas une URL data.gouv.fr autorisée.");
+    throw new Error("CNB export URL is not an allowed data.gouv.fr URL");
   }
 
   const response = await fetch(resourceUrl, {
@@ -101,15 +101,15 @@ export async function fetchCnbCsv(resource: CnbDatasetResource): Promise<Uint8Ar
     headers: { accept: "text/csv,text/plain;q=0.9" },
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`Export CNB indisponible (${response.status}).`);
+  if (!response.ok) throw new Error(`CNB export unavailable (HTTP ${response.status})`);
 
   const declaredSize = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredSize) && declaredSize > MAX_CSV_BYTES) {
-    throw new Error("L'export CNB dépasse la taille maximale autorisée.");
+    throw new Error("CNB export exceeds the maximum size");
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength > MAX_CSV_BYTES) {
-    throw new Error("L'export CNB dépasse la taille maximale autorisée.");
+    throw new Error("CNB export exceeds the maximum size");
   }
   return bytes;
 }
@@ -140,12 +140,12 @@ export function parseCnbRealEstateLawyers(
     }
   }
   if (!headerIndexes) {
-    throw new Error("L'export CNB ne contient pas de ligne d'en-tête reconnue.");
+    throw new Error("CNB export has no recognised header row");
   }
 
   const missingHeaders = REQUIRED_HEADERS.filter((header) => !headerIndexes.has(header));
   if (missingHeaders.length) {
-    throw new Error(`Colonnes CNB absentes : ${missingHeaders.join(", ")}.`);
+    throw new Error(`CNB export misses columns: ${missingHeaders.join(", ")}`);
   }
 
   const importedAtIso = importedAt.toISOString();
@@ -211,7 +211,7 @@ export function parseCnbRealEstateLawyers(
 
   const result = Array.from(lawyers.values());
   if (!result.length || result.length > 5_000) {
-    throw new Error(`Nombre de spécialistes CNB incohérent : ${result.length}.`);
+    throw new Error(`Unexpected CNB specialist count: ${result.length}`);
   }
   return result;
 }
@@ -304,7 +304,7 @@ function* parseSemicolonRows(csv: string): Generator<string[]> {
     }
   }
 
-  if (quoted) throw new Error("L'export CNB contient une valeur CSV non terminée.");
+  if (quoted) throw new Error("CNB export has an unterminated CSV value");
   if (field.length || row.length) {
     row.push(field);
     if (row.some((value) => value.length > 0)) yield row;

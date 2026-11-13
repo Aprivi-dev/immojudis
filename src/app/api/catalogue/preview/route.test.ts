@@ -132,6 +132,15 @@ describe("GET /api/catalogue/preview", () => {
     });
   });
 
+  // Avant le lot 12, `garage` (ancienne valeur d'une adresse partagée) partait tel quel : aucun résultat.
+  it("lit l'ancienne valeur `garage` du type de bien comme le code `parking`", async () => {
+    await GET(request("/api/catalogue/preview?homeTypes=garage,parking"));
+
+    expect(rpcCalls("search_auction_sales_preview_v3")[0]![1]).toMatchObject({
+      p_property_types: ["parking"],
+    });
+  });
+
   it("n'affiche pas les ventes d'exemple de l'accueil et envoie les départements d'une région", async () => {
     mocks.rpc.mockImplementation((name: string) =>
       Promise.resolve(
@@ -227,7 +236,7 @@ describe("GET /api/catalogue/preview", () => {
 
     expect(response.status).toBe(400);
     expect(response.headers.get("x-request-id")).toBe("req-erreur-1");
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   describe("copies de photos en échec", () => {
@@ -343,7 +352,7 @@ describe("GET /api/catalogue/preview", () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("9");
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
@@ -386,7 +395,7 @@ describe("GET /api/catalogue/preview", () => {
       const response = await GET(request("/api/catalogue/preview?pepite=true"));
       expect(response.status).toBe(429);
       expect(response.headers.get("retry-after")).toBe("17");
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(mocks.rpc).not.toHaveBeenCalled();
     });
 
@@ -426,7 +435,7 @@ describe("GET /api/catalogue/preview", () => {
       );
       const response = await GET(request("/api/catalogue/preview?pepite=true"));
       expect(response.status).toBe(503);
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(JSON.stringify(await response.json())).not.toContain("statement timeout");
     });
 
@@ -505,7 +514,7 @@ describe("GET /api/catalogue/preview", () => {
 
       expect(response.status).toBe(400);
       expect(body).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(mocks.rpc).not.toHaveBeenCalled();
       expect(mocks.enforceIp).not.toHaveBeenCalled();
     });
@@ -561,7 +570,7 @@ describe("GET /api/catalogue/preview", () => {
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(JSON.stringify(body)).not.toContain("refused");
     expect(body).toMatchObject({ ok: false, error: "Catalogue indisponible." });
   });

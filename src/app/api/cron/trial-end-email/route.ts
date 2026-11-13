@@ -2,7 +2,7 @@ import { runMonitoredCron } from "@/lib/cron-jobs";
 import { assertTrialEndNoticesComplete, runTrialEndNotices } from "@/lib/trial-end-notices";
 
 // Quelques lectures et un envoi Resend par compte ; le passage s'arrête de lui-même après 50 s
-// (`TRIAL_END_BUDGET_MS`) puis échoue pour être vu. Next.js veut un littéral ici.
+// (`EMAIL_PASS_BUDGET_MS`) puis échoue pour être vu. Next.js veut un littéral ici.
 export const maxDuration = 60;
 
 /**
@@ -12,7 +12,6 @@ export const maxDuration = 60;
  * tard : la file ne reprend un envoi que dans les 23 heures du premier essai, car la clé d'idempotence de
  * Resend ne protège d'un doublon que pendant 24 heures.
  */
-const CATCH_UP_SCHEDULE = "30 14 * * *";
 
 /**
  * Email unique de fin d'essai gratuit (J+5). Passe chaque jour à 12:30 UTC, après les envois d'alertes
@@ -27,14 +26,9 @@ const CATCH_UP_SCHEDULE = "30 14 * * *";
  * compté dans `needsReview` du compte rendu, pour une reprise à la main.
  */
 export async function GET(request: Request) {
-  return runMonitoredCron(
-    request,
-    "trial-end-email",
-    async () => {
-      const summary = await runTrialEndNotices();
-      assertTrialEndNoticesComplete(summary);
-      return { ...summary };
-    },
-    { catchUpSchedule: CATCH_UP_SCHEDULE },
-  );
+  return runMonitoredCron(request, "trial-end-email", async () => {
+    const summary = await runTrialEndNotices();
+    assertTrialEndNoticesComplete(summary);
+    return { ...summary };
+  });
 }

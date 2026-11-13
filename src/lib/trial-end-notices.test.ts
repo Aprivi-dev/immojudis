@@ -147,7 +147,7 @@ describe("runTrialEndNotices", () => {
       "2026-11-11",
       "trial_end",
     );
-    expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/1 envoi\(s\) en échec/);
+    expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/1 of 2 sends failed/);
   });
 
   it("note une adresse indisponible, sans rien envoyer", async () => {
@@ -188,7 +188,7 @@ describe("runTrialEndNotices", () => {
   it("s'arrête de lui-même au bout de son délai et le dit", async () => {
     const summary = await run({ mode: "on", budgetMs: -1 });
     expect(summary).toMatchObject({ sent: 0, interrupted: true });
-    expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/interrompu/);
+    expect(() => assertTrialEndNoticesComplete(summary)).toThrow(/stopped by its time budget/);
   });
 
   it("lève quand la file est illisible", async () => {

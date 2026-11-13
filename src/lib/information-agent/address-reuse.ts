@@ -1,11 +1,12 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
 import {
   isInformationAgentExcludedAddress,
   isInformationAgentExcludedSourceUrl,
 } from "@/lib/information-agent/excluded-addresses";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { emailRecallsName, isGenericEmailLocal } from "@/lib/information-agent/firm-site-extract";
 import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 
@@ -19,7 +20,7 @@ import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
  * Plusieurs adresses différentes chez les annonces concordantes : ambiguïté, rien n'est retenu.
  */
 
-export const ADDRESS_REUSE_MAX_AGE_MONTHS = 6;
+const ADDRESS_REUSE_MAX_AGE_MONTHS = 6;
 const MAX_ROWS = 200;
 const MAX_PHONES = 3;
 /** Durée maximale de la lecture en base quand l'appelant ne fixe pas de budget. */
@@ -62,9 +63,7 @@ export function isSameInformationAgentProfessional(
 }
 
 export function addressReuseCutoff(now: Date): Date {
-  const cutoff = new Date(now.getTime());
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - ADDRESS_REUSE_MAX_AGE_MONTHS);
-  return cutoff;
+  return addUtcCalendarMonths(now, -ADDRESS_REUSE_MAX_AGE_MONTHS);
 }
 
 function parsedDate(value: string | null | undefined): number | null {
@@ -77,7 +76,7 @@ function parsedDate(value: string | null | undefined): number | null {
  * Date de référence d'une annonce : la plus récente de sa date de vente et de sa dernière
  * observation. Une vente à venir est donc récente.
  */
-export function listingReferenceTime(row: {
+function listingReferenceTime(row: {
   sale_date?: string | null;
   last_seen_at?: string | null;
 }): number | null {
@@ -218,7 +217,7 @@ export async function findReusableInformationAgentAddress({
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error("Lecture des annonces du professionnel trop longue.")),
+      () => reject(new Error("Address reuse read exceeded its time budget")),
       Math.max(1, timeoutMs),
     );
   });
@@ -243,7 +242,7 @@ export async function findReusableInformationAgentAddress({
   const rows = new Map<string, ReusableAddressRow>();
   for (const { data, error } of results) {
     if (error) throw error;
-    if (!data) throw new Error("Annonces du professionnel indisponibles.");
+    if (!data) throw new Error("Address reuse read returned no data");
     // Une lecture tronquée peut cacher une seconde adresse : on ne réemploie rien (et on le dit).
     if (data.length >= MAX_ROWS) {
       console.warn(

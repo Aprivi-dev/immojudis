@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GOOD_COURT_SAMPLE, MIN_COURT_SAMPLE, type AuctionScenario } from "@/lib/auction-scenarios";
+import { MIN_COURT_SAMPLE, type AuctionScenario } from "@/lib/auction-scenarios";
 import {
   PEPITE_BLOCKING_CRITERIA,
   PEPITE_CHANCE_EXIT_SHARE,
@@ -10,8 +10,6 @@ import {
   PEPITE_EXTREME_START_RATIO_MIN,
   PEPITE_COST_MAX_SHARE_COURT,
   PEPITE_COST_MAX_SHARE_NOTARY,
-  PEPITE_COURT_COMPLETE_BELOW_SALES,
-  PEPITE_COURT_REPLACE_BELOW_SALES,
   PEPITE_CRITERIA,
   PEPITE_DATA_CRITERIA,
   PEPITE_DATA_GRACE_HOURS,
@@ -20,7 +18,7 @@ import {
   PEPITE_LOW_STARTING_PRICE_SHARE,
   PEPITE_MIN_HOURS_BETWEEN_EVALUATIONS,
   PEPITE_MIN_VALUE_COMPARABLES,
-  PEPITE_LATEST_RULE_VERSION,
+  PEPITE_SMOOTHING_WEIGHT_SALES,
   PEPITE_V1_RULE_VERSION,
   PEPITE_V2_RULE_VERSION,
   applyPepiteStability,
@@ -127,7 +125,6 @@ function missedOf(evaluation: PepiteEvaluation): PepiteCriterionId[] {
 
 describe("constantes de la règle pepite", () => {
   it("reprennent les seuils du compte-rendu", () => {
-    expect(PEPITE_LATEST_RULE_VERSION).toBe("pepite-v2.1");
     expect(PEPITE_V2_RULE_VERSION).toBe("pepite-v2");
     expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(PEPITE_CHANCE_MIN_SHARE).toBe(0.7);
@@ -156,9 +153,13 @@ describe("constantes de la règle pepite", () => {
     expect(PEPITE_COST_MAX_SHARE_NOTARY).toBeLessThan(PEPITE_COST_MAX_SHARE_COURT);
   });
 
-  it("restent d'accord avec les seuils des scénarios d'adjudication de la base", () => {
-    expect(PEPITE_COURT_COMPLETE_BELOW_SALES).toBe(GOOD_COURT_SAMPLE);
-    expect(PEPITE_COURT_REPLACE_BELOW_SALES).toBe(MIN_COURT_SAMPLE);
+  it("complètent le tribunal par le national dès MIN_COURT_SAMPLE ventes, et le remplacent en dessous", () => {
+    const chanceSample = (courtSample: number) =>
+      evaluatePepite(court({ scenarios: { ...court().scenarios!, courtSample } })).metrics
+        .chanceSample;
+
+    expect(chanceSample(MIN_COURT_SAMPLE)).toBe(MIN_COURT_SAMPLE + PEPITE_SMOOTHING_WEIGHT_SALES);
+    expect(chanceSample(MIN_COURT_SAMPLE - 1)).toBe(court().scenarios!.nationalSample);
   });
 
   it("rangent chaque critère de données et chaque signal bloquant dans le catalogue", () => {

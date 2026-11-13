@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiFetch, apiRequest } from "@/lib/client-api-core";
 import { supabase } from "@/integrations/supabase/client";
 
 export type PublicationRequestStatus = "pending" | "approved" | "rejected";
@@ -77,14 +77,8 @@ export type PublicationRequestFields = {
   files: File[];
 };
 
-export async function fetchPublicationRequestsClient(
-  page = 1,
-): Promise<PublicationRequestListResponse> {
-  const response = await fetch(`/api/publication-requests?page=${page}`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<PublicationRequestListResponse>(response);
+export function fetchPublicationRequestsClient(page = 1): Promise<PublicationRequestListResponse> {
+  return apiRequest(`/api/publication-requests?page=${page}`);
 }
 
 export async function fetchAllPublicationRequestsClient(): Promise<{
@@ -101,32 +95,25 @@ export async function fetchAllPublicationRequestsClient(): Promise<{
   }
 }
 
-export async function fetchPublicationRequestClient(
+export function fetchPublicationRequestClient(
   requestId: string,
 ): Promise<{ request: PublicationRequestDetail }> {
-  const response = await fetch(`/api/publication-requests/${encodeURIComponent(requestId)}`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<{ request: PublicationRequestDetail }>(response);
+  return apiRequest(`/api/publication-requests/${encodeURIComponent(requestId)}`);
 }
 
 export async function submitPublicationRequestClient(
   fields: PublicationRequestFields,
 ): Promise<{ request: PublicationRequestSummary }> {
-  const headers = await authHeaders();
-  const uploadResponse = await fetch("/api/publication-requests", {
+  const uploadTarget = await apiRequest<PublicationUploadTarget>("/api/publication-requests", {
     method: "PUT",
-    headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify({
+    body: {
       files: fields.files.map((file) => ({
         name: file.name,
         size: file.size,
         mime_type: file.type,
       })),
-    }),
+    },
   });
-  const uploadTarget = await readJson<PublicationUploadTarget>(uploadResponse);
 
   try {
     const documents = [];
@@ -147,10 +134,9 @@ export async function submitPublicationRequestClient(
       });
     }
 
-    const response = await fetch("/api/publication-requests", {
+    return await apiRequest<{ request: PublicationRequestSummary }>("/api/publication-requests", {
       method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({
+      body: {
         requestId: uploadTarget.requestId,
         fields: {
           title: fields.title,
@@ -166,24 +152,18 @@ export async function submitPublicationRequestClient(
           promotionOptions: fields.promotionOptions,
         },
         documents,
-      }),
+      },
     });
-    return readJson<{ request: PublicationRequestSummary }>(response);
   } catch (error) {
-    await cleanupPublicationRequestUploads(uploadTarget.requestId, headers);
+    await cleanupPublicationRequestUploads(uploadTarget.requestId);
     throw error;
   }
 }
 
-async function cleanupPublicationRequestUploads(
-  requestId: string,
-  headers: HeadersInit,
-): Promise<void> {
-  await fetch("/api/publication-requests", {
-    method: "DELETE",
-    headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify({ requestId }),
-  }).catch(() => undefined);
+async function cleanupPublicationRequestUploads(requestId: string): Promise<void> {
+  await apiFetch("/api/publication-requests", { method: "DELETE", body: { requestId } }).catch(
+    () => undefined,
+  );
 }
 
 function emptyToNull(value: string): string | null {

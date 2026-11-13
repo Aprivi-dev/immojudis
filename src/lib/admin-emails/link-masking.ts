@@ -1,4 +1,5 @@
 import { Parser } from "htmlparser2";
+import { escapeHtml } from "@/lib/guards";
 
 /**
  * Contenu d'un email affiché dans l'Historique : aucun lien d'action ne doit rester actif ni lisible.
@@ -182,14 +183,6 @@ const MAX_INPUT_CHARS = 600_000;
 const MAX_OUTPUT_CHARS = 1_200_000;
 const MAX_DEPTH = 200;
 const MAX_CLEAN_ROUNDS = 10;
-
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
 /** CSS sans rien qui charge une ressource ou exécute : nettoyé jusqu'à stabilité, vide sinon. */
 function cleanCss(css: string): string {

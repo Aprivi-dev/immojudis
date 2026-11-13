@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -41,16 +42,16 @@ describe("interrupteur admin de l'offre de lancement", () => {
 
   it("refuse un compte qui n'est pas administrateur, en lecture comme en écriture", async () => {
     mocks.auth.mockResolvedValue({ ...adminAuth(), isAdmin: false });
-    await expect(getAdminLaunchOffer("token")).rejects.toThrow("Forbidden");
+    await expect(getAdminLaunchOffer("token")).rejects.toThrow(AdminRequiredError);
     await expect(
       setAdminLaunchOffer({ authToken: "token", input: { active: false } }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.userRpc).not.toHaveBeenCalled();
     expect(mocks.adminRpc).not.toHaveBeenCalled();
   });
 
   it("refuse une session invalide", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
     await expect(getAdminLaunchOffer("bad")).rejects.toThrow("Unauthorized");
   });
 

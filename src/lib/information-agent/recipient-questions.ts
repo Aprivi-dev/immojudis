@@ -10,6 +10,7 @@
  * Rien n'est demandé sur le vendeur, le débiteur, l'origine du bien ou la procédure. Le texte du message de
  * chaque destinataire est dans `recipient-templates.ts`.
  */
+import { PublicApiError } from "@/lib/api-errors";
 import {
   INFORMATION_AGENT_QUESTIONS,
   informationAgentQuestionText,
@@ -22,7 +23,7 @@ import {
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
 
-export const INFORMATION_AGENT_QUESTION_AUDIENCES = [
+const INFORMATION_AGENT_QUESTION_AUDIENCES = [
   "lawyer",
   "notary",
   "state_service",
@@ -94,7 +95,7 @@ export function informationAgentQuestionAudience(recipient: {
   return recipient.role === "lawyer" ? "lawyer" : "other";
 }
 
-export function isInformationAgentQuestionAudience(
+function isInformationAgentQuestionAudience(
   value: unknown,
 ): value is InformationAgentQuestionAudience {
   return (INFORMATION_AGENT_QUESTION_AUDIENCES as readonly unknown[]).includes(value);
@@ -114,7 +115,7 @@ export function informationAgentQuestionTextFor(
   context?: InformationAgentQuestionContext,
 ): string {
   if (!isInformationAgentQuestionAllowed(audience, key)) {
-    throw new Error(`Question « ${key} » non admise pour ce destinataire.`);
+    throw new Error("Question key not allowed for this recipient audience");
   }
   if (audience === "notary" || audience === "state_service") {
     return LISTING_FIELD_QUESTION_TEXT[audience][key] ?? informationAgentQuestionText(key, context);
@@ -122,11 +123,6 @@ export function informationAgentQuestionTextFor(
   return informationAgentQuestionText(key, context);
 }
 
-/**
- * Affiché tel quel à l'administrateur : il doit passer `isPublicErrorMessage` (`api-errors.ts`), qui masque
- * tout message contenant un marqueur technique. « non reconnu » contenait « econn » et était remplacé par
- * « Erreur admin ».
- */
 export const INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE =
   "Destinataire du brouillon non identifié : régénérez le brouillon avec le bouton “Régénérer le brouillon”.";
 
@@ -145,13 +141,13 @@ export function assertInformationAgentQuestionsAllowed(
   // Valeur absente (brouillon antérieur à ce champ) ou inconnue : rien ne dit à qui ce brouillon s'adresse,
   // donc ni quelles questions ni quel envoi sont admis. Refus, jamais de valeur supposée.
   if (!isInformationAgentQuestionAudience(audience)) {
-    throw new Error(INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE, 409);
   }
   // Avocat et destinataire sans liste propre : inchangé, aucune question n'est écartée ici (les brouillons
   // antérieurs peuvent porter d'anciennes clés). Seule la liste courte est une restriction à rejouer.
   if (audience === "lawyer" || audience === "other") return;
   const allowed: readonly string[] = INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE[audience];
   if (questionKeys.some((key) => !allowed.includes(key))) {
-    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE, 400);
   }
 }

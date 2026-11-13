@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -15,7 +16,8 @@ import {
 } from "@/lib/information-agent/autopilot-settings";
 import { buildAutopilotView, type AutopilotView } from "@/lib/information-agent/autopilot-view";
 import { asObject } from "@/lib/information-agent/mission-store";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
 
 /**
  * Panneau du pilote automatique (administrateurs). Lecture : modèle de vue déjà mis en forme. Écriture : les
@@ -59,18 +61,6 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
-
-/**
- * Erreur d'une RPC du pilote : seuls les refus métier voulus par les fonctions (droit, paramètre, état) sont montrés ;
- * toute autre erreur de la base devient un message générique (le détail reste dans le journal serveur).
- */
-function rpcFailure(error: { code?: string; message?: string }): Error {
-  if (error.code === "42501" || error.code === "22023" || error.code === "55000") {
-    return new Error(error.message ?? "Action refusée.");
-  }
-  console.error(JSON.stringify({ scope: "admin.autopilot", code: error.code ?? null }));
-  return new Error("Action impossible.");
-}
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
   const [settings, stats] = await Promise.all([loadAutopilotSettings(), loadAutopilotStats(now)]);
@@ -121,7 +111,7 @@ export async function getAdminAutopilotView(
     now = new Date(),
   }: { env?: Readonly<Record<string, string | undefined>>; now?: Date } = {},
 ): Promise<AutopilotView> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const [{ settings, stats, report }, events, prepared] = await Promise.all([
     readiness(now, env),
     loadRecentAutopilotEvents(20),
@@ -139,14 +129,15 @@ export async function runAdminAutopilotAction({
   input: AdminAutopilotAction;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<AutopilotView> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
     if (input.mode === "live") {
       const { report } = await readiness(new Date(), env);
       if (!report.ready) {
         const failed = report.checks.filter((check) => !check.ok).map((check) => check.label);
-        throw new Error(
+        throw new PublicApiError(
           `Mode réel refusé, contrôle de préparation non satisfait : ${failed.join(" ; ")}.`,
+          409,
         );
       }
     }
@@ -154,7 +145,7 @@ export async function runAdminAutopilotAction({
       p_mode: input.mode,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else if (input.action === "update_settings") {
     const {
       capTotalOverride,
@@ -174,19 +165,19 @@ export async function runAdminAutopilotAction({
       p_changes: changes,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else if (input.action === "emergency_stop") {
     // Toujours permis : aucune condition, motif facultatif.
     const { error } = await auth.supabase.rpc("stop_information_agent_autopilot", {
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else {
     const { error } = await auth.supabase.rpc("attest_information_agent_aipd", {
       p_version: input.version,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   }
   return getAdminAutopilotView(authToken, { env });
 }

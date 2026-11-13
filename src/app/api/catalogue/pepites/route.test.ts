@@ -51,12 +51,13 @@ describe("GET /api/catalogue/pepites", () => {
   });
 
   it.each(["PGRST202", "42883"])(
-    "fonction absente (%s, migration pas appliquée) : aucune pépite, sans erreur",
+    "fonction absente (%s) : une panne visible (503, non gardée), jamais « aucune pépite »",
     async (code) => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
       mocks.rpc.mockResolvedValue({ data: null, error: { code, message: "absente" } });
       const response = await call();
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ ids: [], exposedIds: [] });
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
     },
   );
 
@@ -85,7 +86,7 @@ describe("GET /api/catalogue/pepites", () => {
       exposedIds: [],
     });
     // Une réponse dégradée n'est gardée ni par le CDN ni par le navigateur.
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     // Le code seul est journalisé (jamais le message de la base).
     const logged = vi
       .mocked(console.warn)
@@ -100,7 +101,7 @@ describe("GET /api/catalogue/pepites", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "57014", message: "timeout" } });
     const response = await call();
     expect(response.status).toBe(503);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect((await response.json()).ids).toBeUndefined();
   });
 

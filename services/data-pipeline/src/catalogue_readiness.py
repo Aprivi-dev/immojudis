@@ -8,7 +8,6 @@ user.
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ from typing import Any
 
 from src.admission import quarantine_reason
 from src.models import AuctionSale
+from src.text_folding import strip_accents
 
 CATALOGUE_READINESS_POLICY_VERSION = "premium_readiness_v1"
 PREMIUM_READINESS_THRESHOLD = 75
@@ -217,11 +217,6 @@ def apply_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
     return result
 
 
-def calculate_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
-    """Backward-friendly public entry point that also stores the result."""
-    return apply_catalogue_readiness(sale)
-
-
 def _status_for(score: int, blockers: list[str], confidence: Decimal | None) -> str:
     if score < NEEDS_ENRICHMENT_THRESHOLD:
         return "internal_only"
@@ -419,9 +414,7 @@ def _is_state_sale(sale: AuctionSale) -> bool:
         sale.sale_legal_framework,
     )
     normalized = {
-        "".join(
-            char for char in unicodedata.normalize("NFKD", _text(value).lower()) if not unicodedata.combining(char)
-        ).replace("-", "_")
+        strip_accents(_text(value).lower()).replace("-", "_")
         for value in values
     }
     return bool(normalized & {"cessions_etat", "state", "etat", "domaines"})
@@ -474,8 +467,3 @@ def _number(value: float) -> int | float:
 
 def _unique(values: Iterator[str] | list[str]) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if value))
-
-
-# Short aliases keep imports readable for callers that use ``evaluate`` as the
-# verb while retaining one implementation and one policy version.
-evaluate_catalogue_readiness = assess_catalogue_readiness

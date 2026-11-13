@@ -121,19 +121,20 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
 def prepare_source_revision(existing, raw: dict):
     """Reconcile a verified detail without losing identity or advancing a DB lease."""
     from src.freshness import SOURCE_EXTRACTION_VERSION, record_source_checks
-    from src.main import _finalize_sale_for_app, _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
     from src.normalize import normalize_sale
     from src.publication_identity import conflicting_identity, merge_revision
+    from src.sale_finalization import finalize_sale_for_app
 
     fetched_url = str(raw.get('source_url') or '')
     if not fetched_url or raw.get('_detail_fetch_failed'):
         raise ValueError('Source detail was not verified')
     known = {fetched_url: existing.to_storage_dict()}
-    _preserve_known_enrichment_payloads([raw], known)
+    preserve_known_enrichment_payloads([raw], known)
     record_source_checks([raw], known, capture='source_detail')
     incoming = normalize_sale(raw)
     incoming.last_run_id = existing.last_run_id
-    _finalize_sale_for_app(incoming, geocode=False)
+    finalize_sale_for_app(incoming, geocode=False)
     old_check = (existing.raw_payload.get('source_checks') or {}).get(fetched_url) or {}
     new_check = (raw.get('source_checks') or {}).get(fetched_url) or {}
     unchanged = bool(old_check.get('fingerprint')) and old_check.get('fingerprint') == new_check.get('fingerprint') and old_check.get('extractor_version') == SOURCE_EXTRACTION_VERSION
@@ -220,7 +221,7 @@ def publish_source_revision(sale, job: dict, settings: dict) -> bool:
         db.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
         token = storage._PUBLICATION_CONNECTION.set(db)
         try:
-            storage._write_sale_revisions([sale], settings, refresh_last_seen=False)
+            storage._write_sale_revisions([sale], refresh_last_seen=False)
             db.execute("""update public.auction_enrichment_jobs set status='completed',locked_at=null,
               last_error=null,completed_at=now(),updated_at=now() where id=%s""", (job['id'],))
         finally:

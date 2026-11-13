@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { investorProfileInputSchema } from "@/lib/investor-profile-input";
 import {
   deleteInvestorProfile,
@@ -16,41 +15,27 @@ import {
 // filtrée sur le compte authentifié (`auth.userId`, voir `investor-profile-store`), jamais mise en
 // cache, jamais envoyée par email.
 
-const PRIVATE_HEADERS = { "cache-control": "private, no-store" };
-
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.investor-profile.read", fallbackMessage: "Profil indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await getInvestorProfile({ auth });
-    return NextResponse.json(response, { headers: PRIVATE_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "investor-profile", {
-      fallbackMessage: "Profil indisponible",
-    });
-  }
-}
+    return getInvestorProfile({ auth });
+  },
+);
 
-export async function PUT(request: Request) {
-  try {
+export const PUT = apiRoute(
+  { scope: "api.investor-profile.save", fallbackMessage: "Enregistrement du profil impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = investorProfileInputSchema.parse(await request.json());
-    const response = await saveInvestorProfile({ auth, input });
-    return NextResponse.json(response, { headers: PRIVATE_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "investor-profile", {
-      fallbackMessage: "Enregistrement du profil impossible",
-    });
-  }
-}
+    return saveInvestorProfile({ auth, input });
+  },
+);
 
-export async function DELETE(request: Request) {
-  try {
+export const DELETE = apiRoute(
+  { scope: "api.investor-profile.delete", fallbackMessage: "Effacement du profil impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await deleteInvestorProfile({ auth });
-    return NextResponse.json(response, { headers: PRIVATE_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "investor-profile", {
-      fallbackMessage: "Effacement du profil impossible",
-    });
-  }
-}
+    return deleteInvestorProfile({ auth });
+  },
+);

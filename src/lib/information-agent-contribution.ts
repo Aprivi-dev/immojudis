@@ -10,13 +10,24 @@ import {
   contributionBodyText,
   type ContributionFieldName,
 } from "@/lib/information-agent-contribution-rules";
+import { ConfigurationError, PublicApiError, RateLimitError } from "@/lib/api-errors";
+import {
+  INFORMATION_AGENT_QUESTIONS,
+  informationAgentQuestionText,
+  type InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
+import {
+  informationAgentOptOutPath,
+  normalizeSignedLinkEmail,
+  requireInformationAgentPortalSecret,
+} from "@/lib/information-agent-signed-link";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { resolveSiteOrigin } from "@/lib/site-url";
-import {
-  detectInformationAgentContactOptOut,
-  extractInformationAgentFacts,
-  persistFactCandidates,
-} from "@/lib/information-agent-inbound";
+import { publicLegalPublisher } from "@/lib/legal-documents";
+import { detectInformationAgentContactOptOut } from "@/lib/information-agent-inbound/reply-intent";
+import { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
+import { persistFactCandidates } from "@/lib/information-agent-inbound/attachments";
 import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
 import {
   createInformationAgentContributionToken,
@@ -24,14 +35,15 @@ import {
 } from "./information-agent-contribution-token";
 
 const BUCKET = "information-agent-evidence";
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
-const MAX_FILES = 10;
+const MEGABYTE = 1024 * 1024;
+/** Limites d'un dépôt, transmises à la page par `informationAgentContributionPage`. */
+export const MAX_FILE_BYTES = 20 * MEGABYTE;
+export const MAX_SUBMISSION_BYTES = 40 * MEGABYTE;
+export const MAX_FILES = 10;
 const UPLOAD_TICKET_LIFETIME_MS = 2 * 60 * 60 * 1000;
-export const PORTAL_UPLOAD_RESERVATION_BYTES = 40 * 1024 * 1024;
-export const PORTAL_UPLOAD_QUOTA_FILES = 12;
-export const PORTAL_UPLOAD_QUOTA_BYTES =
-  PORTAL_UPLOAD_RESERVATION_BYTES * PORTAL_UPLOAD_QUOTA_FILES;
+const PORTAL_UPLOAD_RESERVATION_BYTES = 40 * MEGABYTE;
+const PORTAL_UPLOAD_QUOTA_FILES = 12;
+const PORTAL_UPLOAD_QUOTA_BYTES = PORTAL_UPLOAD_RESERVATION_BYTES * PORTAL_UPLOAD_QUOTA_FILES;
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -55,14 +67,15 @@ export type ContributionSession = {
   informationCase: InformationCase;
 };
 
-export class InformationAgentContributionError extends Error {
+/** Refus du dépôt, montré tel quel sur la page (`{ error, field }`). */
+export class InformationAgentContributionError extends PublicApiError {
   constructor(
     message: string,
-    public readonly status: number,
+    status: number,
     /** Champ du formulaire en cause : le navigateur le met en évidence. */
     public readonly field?: ContributionFieldName,
   ) {
-    super(message);
+    super(message, status);
     this.name = "InformationAgentContributionError";
   }
 }
@@ -110,13 +123,10 @@ export function informationAgentContributionUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const origin = resolveSiteOrigin(env);
-  const secret = contributionSecret(env);
-  if (!origin) throw new Error("Origine du site indisponible pour le lien de dépôt.");
+  const secret = requireInformationAgentPortalSecret(env);
+  if (!origin) throw new ConfigurationError("Site origin missing for the contribution link.");
   if (new URL(origin).protocol !== "https:") {
-    throw new InformationAgentContributionError(
-      "Le dépôt sécurisé nécessite une adresse HTTPS pour le site.",
-      503,
-    );
+    throw new ConfigurationError("The contribution link requires an HTTPS site origin.");
   }
   if (!mission.case_id) {
     throw new InformationAgentContributionError(
@@ -160,7 +170,7 @@ export async function loadInformationAgentContribution(
   if (!z.string().guid().safeParse(missionId).success || !/^[a-f0-9]{64}$/.test(token)) {
     throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
   }
-  const secret = contributionSecret(env);
+  const secret = requireInformationAgentPortalSecret(env);
   const { data: mission, error: missionError } = await supabaseAdmin
     .from("information_agent_missions")
     .select("*")
@@ -198,7 +208,7 @@ export async function loadInformationAgentContribution(
     throw new InformationAgentContributionError("Ce dossier n'accepte plus de dépôt.", 410);
   }
   if (
-    informationCase.normalized_recipient_email !== normalizeRecipientEmail(mission.recipient_email)
+    informationCase.normalized_recipient_email !== normalizeSignedLinkEmail(mission.recipient_email)
   ) {
     throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
   }
@@ -206,6 +216,32 @@ export async function loadInformationAgentContribution(
     throw new InformationAgentContributionError("Lien de dépôt invalide.", 404);
   }
   return { mission, informationCase };
+}
+
+/**
+ * Ce que la page de dépôt reçoit : la référence de suivi de l'email, les questions posées (celles enregistrées
+ * avec la mission), les limites du dépôt et le lien signé d'opposition du destinataire de cette mission (celui
+ * du pied de l'email), que la page garde en mémoire.
+ */
+export function informationAgentContributionPage(
+  { mission, informationCase }: ContributionSession,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return {
+    caseReference: informationAgentCaseReference(informationCase.id),
+    subject: informationCase.subject,
+    questions: mission.question_keys
+      .filter((key): key is InformationAgentQuestionKey =>
+        Object.hasOwn(INFORMATION_AGENT_QUESTIONS, key),
+      )
+      .map((key) => informationAgentQuestionText(key)),
+    maxFiles: MAX_FILES,
+    maxFileBytes: MAX_FILE_BYTES,
+    maxSubmissionBytes: MAX_SUBMISSION_BYTES,
+    maxPortalBytes: PORTAL_UPLOAD_QUOTA_BYTES,
+    maxPortalFiles: PORTAL_UPLOAD_QUOTA_FILES,
+    optOutPath: informationAgentOptOutPath(mission.recipient_email, env),
+  };
 }
 
 export async function prepareInformationAgentContributionUpload({
@@ -229,7 +265,7 @@ export async function prepareInformationAgentContributionUpload({
   // Generate the private ticket first. If Storage is unavailable, no durable
   // quota slot is consumed; callers only receive the token after reservation.
   const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(path);
-  if (error || !data?.token) throw error ?? new Error("Autorisation de dépôt indisponible.");
+  if (error || !data?.token) throw error ?? new Error("Signed upload URL missing from storage");
   const { data: quotaRows, error: quotaError } = await supabaseAdmin.rpc(
     "reserve_information_agent_portal_upload",
     {
@@ -241,7 +277,7 @@ export async function prepareInformationAgentContributionUpload({
   );
   if (quotaError) throwPortalUploadQuotaError(quotaError);
   const quota = quotaRows?.[0];
-  if (!quota) throw new Error("Réservation de dépôt indisponible.");
+  if (!quota) throw new Error("Portal upload reservation returned no row");
   return {
     bucket: BUCKET,
     path,
@@ -269,16 +305,13 @@ const RELEASE_GRACE_MS = 15 * 60 * 1000;
  * exister : l'objet orphelin est d'abord supprimé du stockage, la réservation n'est libérée
  * qu'ensuite. Sans cela, douze essais suffisaient à fermer le dépôt d'un dossier pour toujours.
  */
-export async function releaseExpiredInformationAgentPortalUploads(
-  caseId: string,
-  now = new Date(),
-): Promise<number> {
+async function releaseExpiredInformationAgentPortalUploads(caseId: string): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_portal_upload_reservations")
     .select("id,storage_path")
     .eq("case_id", caseId)
     .eq("status", "reserved")
-    .lt("expires_at", new Date(now.getTime() - RELEASE_GRACE_MS).toISOString())
+    .lt("expires_at", new Date(Date.now() - RELEASE_GRACE_MS).toISOString())
     .limit(50);
   if (error) throw error;
   const expired = data ?? [];
@@ -320,11 +353,10 @@ async function consumeInformationAgentPortalUpload({
 function throwPortalUploadQuotaError(error: PortalUploadQuotaRpcError): never {
   const message = error.message ?? "";
   if (message.includes("INFORMATION_AGENT_PORTAL_QUOTA_EXCEEDED")) {
+    const contactEmail = publicLegalPublisher().contactEmail;
     throw new InformationAgentContributionError(
-      `La capacité de dépôt de ce dossier est atteinte (12 fichiers). Répondez plutôt à l’email reçu${
-        process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim()
-          ? ` ou écrivez à ${process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL.trim()}`
-          : ""
+      `La capacité de dépôt de ce dossier est atteinte (${PORTAL_UPLOAD_QUOTA_FILES} fichiers). Répondez plutôt à l’email reçu${
+        contactEmail ? ` ou écrivez à ${contactEmail}` : ""
       }.`,
       413,
     );
@@ -345,7 +377,7 @@ function throwPortalUploadQuotaError(error: PortalUploadQuotaRpcError): never {
       400,
     );
   }
-  throw new Error(message || "Contrôle de capacité de dépôt indisponible.");
+  throw new Error("Portal upload quota check failed", { cause: error });
 }
 
 export async function submitInformationAgentContribution({
@@ -366,7 +398,10 @@ export async function submitInformationAgentContribution({
     throw new InformationAgentContributionError(CONTRIBUTION_FIELD_MESSAGES.empty, 400, "note");
   }
   if (input.files.reduce((total, file) => total + file.size, 0) > MAX_SUBMISSION_BYTES) {
-    throw new InformationAgentContributionError("Le dépôt dépasse 40 Mo au total.", 400);
+    throw new InformationAgentContributionError(
+      `Le dépôt dépasse ${MAX_SUBMISSION_BYTES / MEGABYTE} Mo au total.`,
+      400,
+    );
   }
   if (new Set(input.files.map((file) => file.path)).size !== input.files.length) {
     throw new InformationAgentContributionError(
@@ -683,7 +718,7 @@ function createUploadTicket(
   env: NodeJS.ProcessEnv,
 ): string {
   const issuedAt = Date.now();
-  const digest = createHmac("sha256", contributionSecret(env))
+  const digest = createHmac("sha256", requireInformationAgentPortalSecret(env))
     .update(JSON.stringify([caseId, path, filename, size, mimeType, issuedAt]))
     .digest("hex");
   return `${issuedAt}.${digest}`;
@@ -703,7 +738,7 @@ function verifyUploadTicket(
   ) {
     return false;
   }
-  const expected = createHmac("sha256", contributionSecret(env))
+  const expected = createHmac("sha256", requireInformationAgentPortalSecret(env))
     .update(JSON.stringify([caseId, file.path, file.filename, file.size, file.mimeType, issuedAt]))
     .digest("hex");
   return timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(expected, "hex"));
@@ -737,7 +772,7 @@ function displayFilename(value: string): string {
   );
 }
 
-export function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
+function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
   if (!bytes.length) return false;
   if (mimeType === "application/pdf") {
     return bytes.length >= 5 && new TextDecoder().decode(bytes.subarray(0, 5)) === "%PDF-";
@@ -788,7 +823,7 @@ async function enforceContributionRateLimit(
       windowSeconds,
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Trop de demandes")) {
+    if (error instanceof RateLimitError) {
       throw new InformationAgentContributionError(
         "Limite de dépôts atteinte pour ce dossier.",
         429,
@@ -796,16 +831,4 @@ async function enforceContributionRateLimit(
     }
     throw error;
   }
-}
-
-function contributionSecret(env: NodeJS.ProcessEnv): string {
-  const secret = env.INFORMATION_AGENT_PORTAL_SECRET?.trim();
-  if (!secret || Buffer.byteLength(secret, "utf8") < 32) {
-    throw new InformationAgentContributionError("Dépôt temporairement indisponible.", 503);
-  }
-  return secret;
-}
-
-function normalizeRecipientEmail(value: string): string {
-  return value.trim().toLowerCase();
 }

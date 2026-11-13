@@ -21,14 +21,13 @@ import type { ConsignationRule, FeeRegime, FeeRegimeLabels } from "@/lib/fee-reg
 // Définis dans `fee-regime-notary-scale.ts` (sans textes) et réexportés ici.
 export {
   NOTARY_AUCTION_EMOLUMENT_BRACKETS,
-  NOTARY_AUCTION_ORGANIZATION_FEE_RATE,
   NOTARY_EMOLUMENT_SCALE_DATE,
   NOTARY_EMOLUMENT_SCALE_REFERENCE,
   NOTARY_ONLINE_EMOLUMENT_BRACKETS,
 } from "@/lib/fee-regime-notary-scale";
 
 /** Garantie à déposer : lue dans l'annonce, sinon 20 % de la mise à prix, montant à confirmer. */
-export const NOTARY_AUCTION_CONSIGNATION_RULE: ConsignationRule = {
+const NOTARY_AUCTION_CONSIGNATION_RULE: ConsignationRule = {
   rate: 0.2,
   minimum: 0,
   reference: "valeur par défaut (conditions de la vente)",
@@ -36,18 +35,18 @@ export const NOTARY_AUCTION_CONSIGNATION_RULE: ConsignationRule = {
 };
 
 /** Surenchère d'une vente à la bougie quand l'annonce la prévoit : au moins 10 %, sous 10 jours. */
-export const NOTARY_AUCTION_OVERBID = { minimumIncreasePct: 10, windowDays: 10 } as const;
+const NOTARY_AUCTION_OVERBID = { minimumIncreasePct: 10, windowDays: 10 } as const;
 /** Paiement du prix d'une vente à la bougie : sous 45 jours. */
-export const NOTARY_AUCTION_PAYMENT_DAYS = 45;
+const NOTARY_AUCTION_PAYMENT_DAYS = 45;
 
 const OUTSIDE_DISBURSEMENTS = "Hors débours et formalités du notaire.";
 const RELEASE_OUTSIDE_COURT =
   "Bien occupé, délai et coût à confirmer : hors vente judiciaire, il n’y a pas de titre d’expulsion automatique.";
 /** Mention obligatoire d'une vente interactive. */
-export const NOTARY_ONLINE_RESERVE_NOTICE =
+const NOTARY_ONLINE_RESERVE_NOTICE =
   "Le vendeur n’est pas tenu de retenir la meilleure offre ; prix de réserve inconnu.";
 
-export const NOTARY_AUCTION_FEE_REGIME_LABELS: FeeRegimeLabels = {
+const NOTARY_AUCTION_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...NOTARY_AUCTION_FEE_REGIME_TERMS,
   referencePriceTerm: "mise à prix",
   bidVerb: "enchérir",
@@ -104,7 +103,7 @@ export const NOTARY_AUCTION_FEE_REGIME_LABELS: FeeRegimeLabels = {
   },
 };
 
-export const NOTARY_ONLINE_FEE_REGIME_LABELS: FeeRegimeLabels = {
+const NOTARY_ONLINE_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...NOTARY_ONLINE_FEE_REGIME_TERMS,
   referencePriceTerm: "première offre possible",
   bidVerb: "faire une offre allant",

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn(), rpc: vi.fn() }));
@@ -170,7 +171,7 @@ describe("buildAdminCatalogueQualityView", () => {
     );
     expect(view.snapshot?.isToday).toBe(false);
     expect(view.snapshot?.title).toMatch(
-      /^Pas encore de cliché aujourd’hui : dernier cliché du 04 novembre 2026/,
+      /^Pas encore de cliché aujourd’hui : dernier cliché du 4 novembre 2026/,
     );
   });
 
@@ -194,12 +195,12 @@ describe("buildAdminCatalogueQualityView", () => {
       now,
     );
     expect(view.snapshot).toMatchObject({ isToday: true, liveSales: "862" });
-    expect(view.snapshot?.title).toMatch(/^Cliché du 05 novembre 2026/);
+    expect(view.snapshot?.title).toMatch(/^Cliché du 5 novembre 2026/);
     expect(view.alerts).toEqual([
       {
         key: alertKey("licitor_lot_mismatch"),
         label: "Lots Licitor discordants avec leur carte",
-        seen: expect.stringMatching(/^Ouverte le 03 novembre 2026 .*, vue le 05 novembre 2026/),
+        seen: expect.stringMatching(/^Ouverte le 3 novembre 2026 .*, vue le 5 novembre 2026/),
         detail: "7 au dernier passage",
       },
       {
@@ -311,24 +312,21 @@ describe("buildCrossSourceDuplicates (D12)", () => {
   const plainText = (value: unknown) => JSON.stringify(value).replace(/\s/g, " ");
 
   it("reprend les groupes, les lignes, les seuils de la base et les groupes à trois sources", () => {
-    const view = buildCrossSourceDuplicates(
-      {
-        groups: 72,
-        lines: 152,
-        thresholds: { warning_groups: 100, critical_groups: 200 },
-        three_source_groups: 1,
-        three_source_examples: [
-          {
-            sale_day: "2026-12-12",
-            starting_price_eur: 95000,
-            city_key: "lyon",
-            line_count: 3,
-            source_count: 3,
-          },
-        ],
-      },
-      { kind: "function" },
-    )!;
+    const view = buildCrossSourceDuplicates({
+      groups: 72,
+      lines: 152,
+      thresholds: { warning_groups: 100, critical_groups: 200 },
+      three_source_groups: 1,
+      three_source_examples: [
+        {
+          sale_day: "2026-12-12",
+          starting_price_eur: 95000,
+          city_key: "lyon",
+          line_count: 3,
+          source_count: 3,
+        },
+      ],
+    })!;
     expect(view.groups).toBe("72");
     expect(view.lines).toBe("152");
     expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
@@ -341,21 +339,19 @@ describe("buildCrossSourceDuplicates (D12)", () => {
   });
 
   it("passe au rouge au seuil d'avertissement de la base, sans le changer", () => {
-    const view = buildCrossSourceDuplicates(
-      { groups: 100, lines: 210, warning_groups: 100, critical_groups: 200 },
-      { kind: "alert", seenAt: "2026-11-07T10:00:00Z" },
-    )!;
+    const view = buildCrossSourceDuplicates({
+      groups: 100,
+      lines: 210,
+      thresholds: { warning_groups: 100, critical_groups: 200 },
+    })!;
     expect(view.state).toBe("alert");
     expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
     expect(view.threeSourceGroups).toBe("—");
-    expect(view.note).toContain("attend la migration 20261112100100");
   });
 
   it("ne rend rien sans mesure", () => {
-    expect(buildCrossSourceDuplicates(null, { kind: "function" })).toBeNull();
-    expect(
-      buildCrossSourceDuplicates({ groups: null, lines: null }, { kind: "function" }),
-    ).toBeNull();
+    expect(buildCrossSourceDuplicates(null)).toBeNull();
+    expect(buildCrossSourceDuplicates({ groups: null, lines: null })).toBeNull();
   });
 });
 
@@ -364,7 +360,7 @@ describe("getAdminCatalogueQuality", () => {
 
   it("ne lit rien pour un compte qui n'est pas administrateur", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false });
-    await expect(getAdminCatalogueQuality("token")).rejects.toThrow(/Forbidden/);
+    await expect(getAdminCatalogueQuality("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
@@ -489,7 +485,8 @@ describe("getAdminCatalogueQuality", () => {
     ).not.toContain("update");
   });
 
-  it("lit le dernier passage de l'alerte tant que la fonction n'est pas déployée", async () => {
+  it("sans la fonction, la mesure des doublons est indisponible : aucun repli sur l'alerte", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.auth.mockResolvedValue({ isAdmin: true });
     const builder = (result: unknown) => {
       const query: Record<string, unknown> = {};
@@ -518,8 +515,7 @@ describe("getAdminCatalogueQuality", () => {
 
     const view = await getAdminCatalogueQuality("token", new Date("2026-11-05T09:30:00Z"));
 
-    expect(view.crossSourceDuplicates).toMatchObject({ groups: "120", state: "alert" });
-    expect(view.crossSourceDuplicates?.note).toContain("Dernier passage de l’alerte");
+    expect(view.crossSourceDuplicates).toBeNull();
     expect(view.ceilingCoverage).toBeNull();
   });
 });

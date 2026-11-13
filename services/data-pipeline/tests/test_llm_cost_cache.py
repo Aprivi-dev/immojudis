@@ -11,9 +11,9 @@ from src.config import load_settings
 from src.enrichment import extract_structured as extraction
 from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale_with_llm
 from src.models import AuctionSale
-from src.pdf_enrichment import sale_storage_id
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.pipeline_usage import PINNED_MODEL
+from src.sale_local_files import sale_storage_id
 
 
 class FakeClient:
@@ -246,7 +246,7 @@ def _document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AuctionSa
             },
         },
     )
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
     text = "Surface documentée."
     pdf_payload = {
         "url": sale.documents[0]["url"],
@@ -268,7 +268,7 @@ def _document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AuctionSa
         json.dumps([pdf_payload]),
         encoding="utf-8",
     )
-    _store_document_analysis_status(sale, sale.documents, [pdf_payload])
+    store_document_analysis_status(sale, sale.documents, [pdf_payload])
     contexts = extraction.load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
     settings = load_settings()
     sale.raw_payload["llm_fact_input_key"] = extraction._fact_input_cache_key(
@@ -329,7 +329,7 @@ def test_fact_manifest_rejects_changed_evidence_or_versions(
 
 def test_verified_facts_for_nonempty_pdf_survive_empty_pdf_and_cache_loss(tmp_path, monkeypatch):
     from src.freshness import documents_are_current
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     sale = _document_sale(tmp_path, monkeypatch)
     monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
@@ -354,7 +354,7 @@ def test_verified_facts_for_nonempty_pdf_survive_empty_pdf_and_cache_loss(tmp_pa
     }
     sale.documents.append({"url": empty_pdf["url"], "label": empty_pdf["label"]})
     cache_path.write_text(json.dumps([valid_pdf, empty_pdf]), encoding="utf-8")
-    _store_document_analysis_status(sale, sale.documents, [valid_pdf, empty_pdf])
+    store_document_analysis_status(sale, sale.documents, [valid_pdf, empty_pdf])
     sale.raw_payload["llm_fact_context_manifest"] = extraction._fact_context_manifest(sale)
 
     assert documents_are_current(sale)

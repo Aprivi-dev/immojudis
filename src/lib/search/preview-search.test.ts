@@ -130,7 +130,6 @@ describe("public preview search", () => {
     });
 
     it("une panne de la liste n'est pas une liste vide : elle est levée, donc jamais gardée en cache", async () => {
-      // PGRST205 (objet introuvable) vaut « migration absente » (`isMissingDatabaseObject`, règle unique).
       for (const error of [{ code: "57014" }, { code: "XX000" }, { code: "PGRST301" }]) {
         const { rpc } = client({ data: null, error });
         await expect(runPreviewSearch({ rpc }, { pepite: true })).rejects.toBe(error);
@@ -138,18 +137,17 @@ describe("public preview search", () => {
       }
     });
 
-    it("sans pépite (mode shadow, fonction absente), rend aucune vente sans lire le catalogue", async () => {
-      for (const result of [
-        { data: [], error: null },
-        { data: null, error: { code: "PGRST202" } },
-        { data: null, error: { code: "42883" } },
-      ]) {
-        const { rpc } = client(result);
-        await expect(runPreviewSearch({ rpc }, { pepite: true })).resolves.toEqual({
-          items: [],
-          count: 0,
-        });
-        expect(searchCalls(rpc)).toHaveLength(0);
+    it("sans pépite (mode shadow), rend aucune vente sans lire le catalogue ; une fonction absente est une panne", async () => {
+      const { rpc } = client({ data: [], error: null });
+      await expect(runPreviewSearch({ rpc }, { pepite: true })).resolves.toEqual({
+        items: [],
+        count: 0,
+      });
+      expect(searchCalls(rpc)).toHaveLength(0);
+      for (const error of [{ code: "PGRST202" }, { code: "42883" }]) {
+        const missing = client({ data: null, error });
+        await expect(runPreviewSearch({ rpc: missing.rpc }, { pepite: true })).rejects.toBe(error);
+        expect(searchCalls(missing.rpc)).toHaveLength(0);
       }
     });
 

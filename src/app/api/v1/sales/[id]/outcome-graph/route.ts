@@ -3,23 +3,26 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { getOutcomeGraphForecastForSale } from "@/lib/outcome-graph-repository";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const paramsSchema = z.object({ id: z.string().guid() });
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const context = createApiRequestContext(request, "outcome-graph.forecast");
-  try {
+export const GET = apiRoute<{ id: string }>(
+  {
+    scope: "outcome-graph.forecast",
+    fallbackMessage: "Prévision de l’audience indisponible.",
+    versionedApi: true,
+  },
+  async (request, { api, params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.sale-outcome-graph",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -28,10 +31,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       "property.outcomeGraph",
       "Prévision Outcome Graph réservée à l’offre Analyse.",
     );
-    const { id: saleId } = paramsSchema.parse(await params);
+    const { id: saleId } = paramsSchema.parse(params);
     const forecast = await getOutcomeGraphForecastForSale(saleId);
 
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "outcome_graph.viewed",
       subjectType: "auction_sale",
@@ -44,10 +47,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
 
-    return apiJson({ forecast }, context, { headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    return apiError(saleNotFoundAsPublicError(error), context, {
-      fallbackMessage: "Prévision de l’audience indisponible.",
-    });
-  }
-}
+    return { forecast };
+  },
+);

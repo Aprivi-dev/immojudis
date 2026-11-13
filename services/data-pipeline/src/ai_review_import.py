@@ -33,7 +33,13 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid5
 
-from src.ai_review_projection import AI_REVIEW_FIELD_KEYS, build_ai_review_projection_rows
+from src.ai_review_projection import (
+    AI_REVIEW_FIELD_KEYS,
+    build_ai_review_projection_rows,
+    required_digest,
+    required_https,
+    required_text,
+)
 from src.real_extraction_review import _timestamp, _validate_ai_review, ai_review_output_sha256
 
 try:  # pragma: no cover - psycopg is installed by the production runner.
@@ -163,7 +169,7 @@ def validate_ai_review_manifest(
 
     if manifest.get("schema_version") != "immojudis.real-extraction-review.v2":
         raise ValueError("AI review manifest must use schema v2")
-    sample_sha256 = _required_digest(manifest.get("sample_sha256"), "sample_sha256")
+    sample_sha256 = required_digest(manifest.get("sample_sha256"), "sample_sha256")
     if sample_sha256 != EXPECTED_SAMPLE_SHA256:
         raise ValueError("AI review sample digest is not the approved frozen sample")
     expected_fields = manifest.get("ai_review_expected_fields")
@@ -184,9 +190,9 @@ def validate_ai_review_manifest(
     for case in cases:
         if not isinstance(case, Mapping):
             raise ValueError("AI review cases must be objects")
-        case_id = _required_text(case.get("id"), "case id")
-        source_name = _required_text(case.get("source"), f"source for case {case_id}")
-        source_url = _required_https(case.get("source_url"), f"source_url for case {case_id}")
+        case_id = required_text(case.get("id"), "case id")
+        source_name = required_text(case.get("source"), f"source for case {case_id}")
+        source_url = required_https(case.get("source_url"), f"source_url for case {case_id}")
         if len(case_id) > 200 or len(source_name) > 64 or len(source_url) > 4096:
             raise ValueError(f"AI review identity fields are too long for case {case_id}")
         if case_id in seen_ids:
@@ -230,7 +236,7 @@ def build_ai_review_import_plan(
     """Build a fail-closed, idempotent plan without performing database I/O."""
 
     if manifest_sha256:
-        _required_digest(manifest_sha256, "manifest_sha256")
+        required_digest(manifest_sha256, "manifest_sha256")
         if manifest_sha256 not in APPROVED_MANIFEST_SHA256S:
             raise ValueError("AI review manifest digest is not the approved frozen artifact")
     capture_provenance_errors: dict[str, str] = {}
@@ -612,18 +618,18 @@ def _build_case_status_rows(
 
     sale_index: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     for sale in sales:
-        source_name = _required_text(sale.get("source_name"), "sale source_name")
-        source_url = _required_https(sale.get("source_url"), "sale source_url")
+        source_name = required_text(sale.get("source_name"), "sale source_name")
+        source_url = required_https(sale.get("source_url"), "sale source_url")
         sale_index.setdefault((source_name, source_url), []).append(sale)
     rows: list[dict[str, Any]] = []
     for case in manifest["cases"]:
         assert isinstance(case, Mapping)
-        case_id = _required_text(case.get("id"), "case id")
-        source_name = _required_text(case.get("source"), f"source for case {case_id}")
-        source_url = _required_https(case.get("source_url"), f"source_url for case {case_id}")
+        case_id = required_text(case.get("id"), "case id")
+        source_name = required_text(case.get("source"), f"source for case {case_id}")
+        source_url = required_https(case.get("source_url"), f"source_url for case {case_id}")
         access = case["access"]
         assert isinstance(access, Mapping)
-        access_state = _required_text(access.get("state"), f"access state for {case_id}")
+        access_state = required_text(access.get("state"), f"access state for {case_id}")
         matches = sale_index.get((source_name, source_url), [])
         mapping_status = "exact" if len(matches) == 1 else "ambiguous" if len(matches) > 1 else "unmapped"
         sale_id = _sale_uuid_text(matches[0].get("id")) if mapping_status == "exact" else None
@@ -640,7 +646,7 @@ def _build_case_status_rows(
         if access_state == CAPTURED_STATE:
             if not isinstance(capture, Mapping):
                 raise ValueError(f"captured case {case_id} has no capture")
-            capture_sha256 = _required_digest(capture.get("sha256"), f"capture sha256 for {case_id}")
+            capture_sha256 = required_digest(capture.get("sha256"), f"capture sha256 for {case_id}")
         reason = access.get("reason")
         if reason is not None and not isinstance(reason, str):
             raise ValueError(f"access reason for {case_id} must be text")
@@ -670,8 +676,8 @@ def _attach_canonical_content_hashes(
     sale_index: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     for sale in sales:
         key = (
-            _required_text(sale.get("source_name"), "sale source_name"),
-            _required_https(sale.get("source_url"), "sale source_url"),
+            required_text(sale.get("source_name"), "sale source_name"),
+            required_https(sale.get("source_url"), "sale source_url"),
         )
         sale_index.setdefault(key, []).append(sale)
     for row in rows:
@@ -745,8 +751,8 @@ def _validate_captured_case(
     capture = case.get("capture")
     if not isinstance(capture, Mapping):
         raise ValueError(f"captured case {case_id} has no capture")
-    capture_sha256 = _required_digest(capture.get("sha256"), f"capture sha256 for {case_id}")
-    endpoint = _required_https(capture.get("endpoint"), f"capture endpoint for {case_id}")
+    capture_sha256 = required_digest(capture.get("sha256"), f"capture sha256 for {case_id}")
+    endpoint = required_https(capture.get("endpoint"), f"capture endpoint for {case_id}")
     if not endpoint:
         raise ValueError(f"capture endpoint for {case_id} is empty")
     captured_at = _timestamp(capture.get("captured_at"), f"capture captured_at for {case_id}")
@@ -913,8 +919,8 @@ def _validate_redirect_chain(
     for index, hop in enumerate(chain, start=1):
         if not isinstance(hop, Mapping):
             raise ValueError(f"capture redirect_chain hop {index} is invalid for {case_id}")
-        hop_from = _required_https(hop.get("from"), f"capture redirect_chain hop {index} source for {case_id}")
-        hop_to = _required_https(hop.get("to"), f"capture redirect_chain hop {index} target for {case_id}")
+        hop_from = required_https(hop.get("from"), f"capture redirect_chain hop {index} source for {case_id}")
+        hop_to = required_https(hop.get("to"), f"capture redirect_chain hop {index} target for {case_id}")
         status = hop.get("status")
         if isinstance(status, bool) or not isinstance(status, int) or status not in REDIRECT_STATUSES:
             raise ValueError(f"capture redirect_chain hop {index} has an invalid status for {case_id}")
@@ -1047,30 +1053,10 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _required_text(value: Any, description: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{description} must be non-empty text")
-    return value.strip()
-
-
-def _required_https(value: Any, description: str) -> str:
-    text = _required_text(value, description)
-    if not text.startswith("https://"):
-        raise ValueError(f"{description} must use HTTPS")
-    return text
-
-
-def _required_digest(value: Any, description: str) -> str:
-    text = _required_text(value, description)
-    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
-        raise ValueError(f"{description} must be a lowercase SHA-256 digest")
-    return text
-
-
 def _optional_digest(value: Any, description: str) -> str | None:
     if value is None or value == "":
         return None
-    return _required_digest(value, description)
+    return required_digest(value, description)
 
 
 def _safe_export_reason(value: Any) -> str | None:

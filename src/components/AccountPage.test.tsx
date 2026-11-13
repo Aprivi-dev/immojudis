@@ -14,7 +14,6 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { id: "u1", email: 
 vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: mocks.plan }));
 vi.mock("@/lib/client-api", () => ({
   fetchSaleUnlocksOverview: mocks.overview,
-  fetchAccessPlan: mocks.plan,
   fetchNotificationPreferences: mocks.preferences,
   updateNotificationPreferences: mocks.updatePreferences,
 }));

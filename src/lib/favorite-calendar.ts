@@ -8,12 +8,11 @@ import {
 } from "@/lib/sale-calendar";
 import { PLANNING_CALENDAR_MAX_SALES } from "@/lib/favorite-planning";
 import { assertSaleFavoritesAvailable } from "@/lib/favorites";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { saleDeadlines } from "@/lib/sale-deadlines";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { visitSlots, type VisitSlot } from "@/lib/visit-slots";
-import { isMissingCalendarFunction as isMissingFunction } from "@/lib/sale-calendar-rpc";
 
 /**
  * Export `.ics` de toutes les audiences suivies, en un fichier (« Mon planning », `/favoris`).
@@ -64,7 +63,7 @@ async function followedSaleIds(
 
 async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalendarRow[]> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Base de données non configurée.");
+  if (!client) throw new ConfigurationError("Base de données non configurée.");
   const rows: SaleCalendarRow[] = [];
   for (let start = 0; start < saleIds.length; start += RPC_BATCH_SIZE) {
     const batch = saleIds.slice(start, start + RPC_BATCH_SIZE);
@@ -72,11 +71,7 @@ async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalenda
       batch.map((saleId) => client.rpc("get_public_sale_calendar_event", { p_sale_id: saleId })),
     );
     for (const { data, error } of answers) {
-      if (error) {
-        // La migration n'est pas déployée : pas d'export plutôt qu'une date devinée.
-        if (isMissingFunction(error)) throw new Error("Calendrier non configuré.");
-        throw error;
-      }
+      if (error) throw error;
       const row = (Array.isArray(data) ? data[0] : data) as SaleCalendarRow | null | undefined;
       if (row) rows.push(row);
     }

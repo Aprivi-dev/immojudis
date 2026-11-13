@@ -1,6 +1,7 @@
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { buildPreviewSearchArgs } from "./preview-search";
 import {
+  MAX_PRICE_EUR,
   salesSearchToUrlRecord,
   validateSalesSearch,
   type SalesSearchParams,
@@ -63,20 +64,15 @@ const MAX_ROOMS_FILTER = 20;
  */
 export const PREVIEW_PAGE_SIZES = [24, 50, 100] as const;
 
-/**
- * Plafond des prix de la route, en euros : 100 millions. Aucune mise à prix n'en approche, et une
- * valeur plus grande (`1e30`, `99999999999999`) ne sert qu'à ouvrir une entrée de cache de plus.
- */
-export const MAX_PRICE_FILTER_EUR = 100_000_000;
-
 function isPageSize(value: number): boolean {
   return (PREVIEW_PAGE_SIZES as readonly number[]).includes(value);
 }
 
 /**
- * Prix envoyé à la route : entier d'euros dans [0, 100 000 000]. Le champ de saisie accepte « 150 000,5 »
- * ou « 1e30 » : on envoie la valeur entière équivalente (« au moins 1 234,5 € » = au moins 1 235 €,
- * « au plus 1 234,5 € » = au plus 1 234 €), jamais une valeur que la route refuserait.
+ * Prix envoyé à la route : entier d'euros dans [0, MAX_PRICE_EUR], le plafond de la page (une valeur
+ * plus grande ne servirait qu'à ouvrir une entrée de cache de plus). Le champ de saisie accepte
+ * « 150 000,5 » ou « 1e30 » : on envoie la valeur entière équivalente (« au moins 1 234,5 € » = au
+ * moins 1 235 €, « au plus 1 234,5 € » = au plus 1 234 €), jamais une valeur que la route refuserait.
  */
 function canonicalPriceFilter(
   value: string | number | boolean,
@@ -84,7 +80,7 @@ function canonicalPriceFilter(
 ): string | number | boolean {
   if (typeof value !== "number" || !Number.isFinite(value)) return value;
   const rounded = bound === "min" ? Math.ceil(value) : Math.floor(value);
-  return Math.min(MAX_PRICE_FILTER_EUR, Math.max(0, rounded));
+  return Math.min(MAX_PRICE_EUR, Math.max(0, rounded));
 }
 
 /**
@@ -151,8 +147,8 @@ const INTEGER_FIELDS: Record<string, { min: number; max: number }> = {
   limit: { min: 1, max: Number.MAX_SAFE_INTEGER },
   minBeds: { min: 0, max: 20 },
   minBaths: { min: 0, max: 20 },
-  minPrice: { min: 0, max: MAX_PRICE_FILTER_EUR },
-  maxPrice: { min: 0, max: MAX_PRICE_FILTER_EUR },
+  minPrice: { min: 0, max: MAX_PRICE_EUR },
+  maxPrice: { min: 0, max: MAX_PRICE_EUR },
 };
 const STRICT_INTEGER = /^(?:0|[1-9][0-9]{0,15})$/;
 
@@ -186,11 +182,21 @@ function longestItem(values: readonly string[] | null): number {
   return values?.reduce((longest, value) => Math.max(longest, value.length), 0) ?? 0;
 }
 
+/**
+ * La page demandée est au-delà de ce que lit la fonction SQL (`maxOffset`) : la route la refuse, et
+ * le navigateur, qui fait le même calcul sur la recherche envoyée, propose de revenir à la page 1
+ * (`SearchRejectedError.outOfRange`) sans relire le texte du refus.
+ */
+export function previewSearchPageOutOfRange(search: SalesSearchParams): boolean {
+  const { p_offset } = buildPreviewSearchArgs(search);
+  return p_offset < 0 || p_offset > RPC_LIMITS.maxOffset;
+}
+
 /** Message du premier critère hors limites de la fonction SQL, ou `null`. */
 export function previewSearchLimitViolation(search: SalesSearchParams): string | null {
   const args = buildPreviewSearchArgs(search);
   if (args.p_limit < 1 || args.p_limit > RPC_LIMITS.maxLimit) return "Taille de page invalide.";
-  if (args.p_offset < 0 || args.p_offset > RPC_LIMITS.maxOffset) return "Page hors limites.";
+  if (previewSearchPageOutOfRange(search)) return "Page hors limites.";
   if ((args.p_departments?.length ?? 0) > RPC_LIMITS.departments) return "Zone trop large.";
   if ((args.p_keywords?.length ?? 0) > RPC_LIMITS.keywords) return "Trop de mots-clés.";
   if ((args.p_property_types?.length ?? 0) > RPC_LIMITS.propertyTypes)

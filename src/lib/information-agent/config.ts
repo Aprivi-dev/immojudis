@@ -1,6 +1,7 @@
 import "server-only";
 import { isNotaryMailDomain } from "@/lib/information-agent/contact-structure";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 // Configuration d'envoi de l'agent et garde-fous d'environnement (interrupteur, canari). Extraits
 // de `information-agent.ts` sans changement de comportement.
@@ -13,7 +14,7 @@ export const INFORMATION_AGENT_CANARY_ONLY_MESSAGE =
 
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
   if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
-    throw new Error(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE, 409);
   }
 }
 
@@ -40,7 +41,7 @@ export function assertInformationAgentNotarySendAllowed(
     return;
   }
   if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {
-    throw new Error(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE, 409);
   }
 }
 
@@ -51,7 +52,7 @@ export function assertInformationAgentCanaryRecipient(
 ): void {
   if (env.INFORMATION_AGENT_OUTBOUND_CANARY_ONLY === "false") return;
   if (email.trim().toLowerCase() !== "delivered@resend.dev") {
-    throw new Error(INFORMATION_AGENT_CANARY_ONLY_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_CANARY_ONLY_MESSAGE, 409);
   }
 }
 
@@ -66,7 +67,7 @@ export function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = proc
   const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !from || !inboundDomain) {
-    throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");
+    throw new ConfigurationError("Configuration d'envoi et de réception de l'agent incomplète.");
   }
   return { apiKey, from, inboundDomain, appUrl: informationAgentAppOrigin(env) };
 }
@@ -80,8 +81,4 @@ export function informationAgentAppOrigin(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   return resolveSiteOrigin(env, "https://immojudis.com") ?? "https://immojudis.com";
-}
-
-export function informationAgentCaseReference(caseId: string): string {
-  return `IJ-${caseId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
 }

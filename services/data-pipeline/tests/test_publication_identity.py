@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from fake_publication import inside_publication
 from sale_table_columns import MODEL_COLUMN_TYPES, add_model_columns
 
 from src import base_reads
@@ -131,7 +132,7 @@ def test_cross_source_operational_revision_does_not_certify_unknown_pending_flag
 def test_source_detail_revision_keeps_documentary_invalidation_through_write_and_enqueue(monkeypatch):
     from copy import deepcopy
 
-    from src import main, source_detail
+    from src import sale_finalization, source_detail
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
     from src.storage import supabase_client as storage
@@ -161,7 +162,7 @@ def test_source_detail_revision_keeps_documentary_invalidation_through_write_and
         llm_display_status='pending',
     )
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     revised = source_detail.prepare_source_revision(existing, {
         **base,
         'starting_price_eur': 90000,
@@ -174,23 +175,22 @@ def test_source_detail_revision_keeps_documentary_invalidation_through_write_and
 
     events = []
     monkeypatch.setattr(storage, 'tribunal_reference_rows', lambda _: [])
-    monkeypatch.setattr(
-        storage,
-        '_upsert_with_rest',
-        lambda _url, _key, rows: events.append(('write', deepcopy(rows[0]['raw_payload']))),
+    inside_publication(
+        monkeypatch,
+        on_write=lambda table, rows, _conflict: (
+            events.append(('write', deepcopy(rows[0]['raw_payload']))) if table == 'auction_sales' else None
+        ),
     )
-    monkeypatch.setattr(storage, '_write_fact_claims_rest', lambda *args, **kwargs: 0)
-    monkeypatch.setattr(storage, '_sync_normalized_sale_tables_with_rest', lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, '_upsert_asset_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_write_fact_claims_postgres', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, '_sync_normalized_sale_tables', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_upsert_asset_tables', lambda *args, **kwargs: None)
     monkeypatch.setattr(
         storage,
         '_enqueue_due_enrichment',
         lambda rows, *_args: events.append(('enqueue', deepcopy(rows[0].raw_payload)),),
     )
 
-    from src.config import load_settings
-
-    assert storage._write_sale_revisions([revised], load_settings(), refresh_last_seen=False) == 1
+    assert storage._write_sale_revisions([revised], refresh_last_seen=False) == 1
     assert [kind for kind, _payload in events] == ['write', 'enqueue']
     for _kind, payload in events:
         assert payload['source_content_changed'] is True
@@ -202,7 +202,7 @@ def test_source_detail_revision_keeps_documentary_invalidation_through_write_and
 def test_source_detail_operational_revision_of_a_sale_without_documents_is_settled_at_write(monkeypatch):
     from copy import deepcopy
 
-    from src import main, source_detail
+    from src import sale_finalization, source_detail
     from src.config import load_settings
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
@@ -240,7 +240,7 @@ def test_source_detail_operational_revision_of_a_sale_without_documents_is_settl
         llm_prompt_version=settings['llm_prompt_version'],
     )
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     revised = source_detail.prepare_source_revision(existing, {
         **base,
         'starting_price_eur': 90000,
@@ -253,21 +253,22 @@ def test_source_detail_operational_revision_of_a_sale_without_documents_is_settl
 
     events = []
     monkeypatch.setattr(storage, 'tribunal_reference_rows', lambda _: [])
-    monkeypatch.setattr(
-        storage,
-        '_upsert_with_rest',
-        lambda _url, _key, rows: events.append(('write', deepcopy(rows[0]['raw_payload']))),
+    inside_publication(
+        monkeypatch,
+        on_write=lambda table, rows, _conflict: (
+            events.append(('write', deepcopy(rows[0]['raw_payload']))) if table == 'auction_sales' else None
+        ),
     )
-    monkeypatch.setattr(storage, '_write_fact_claims_rest', lambda *args, **kwargs: 0)
-    monkeypatch.setattr(storage, '_sync_normalized_sale_tables_with_rest', lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, '_upsert_asset_tables_with_rest', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_write_fact_claims_postgres', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, '_sync_normalized_sale_tables', lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, '_upsert_asset_tables', lambda *args, **kwargs: None)
     monkeypatch.setattr(
         storage,
         '_enqueue_due_enrichment',
         lambda rows, *_args: events.append(('enqueue', deepcopy(rows[0].raw_payload)),),
     )
 
-    assert storage._write_sale_revisions([revised], settings, refresh_last_seen=False) == 1
+    assert storage._write_sale_revisions([revised], refresh_last_seen=False) == 1
     assert [kind for kind, _payload in events] == ['write', 'enqueue']
     for _kind, payload in events:
         assert 'llm_display_origin' not in payload

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { Resend } from "resend";
 import { RateLimitError } from "@/lib/api-errors";
 import { deliverContact, type ContactState } from "@/lib/contact-message";
+import { serverEnv } from "@/lib/env";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { enforceGlobalRateLimit, enforceIpRateLimit } from "@/lib/rate-limit";
 import { CONTACT_RATE_LIMITS } from "@/lib/rate-limit-policies";
@@ -40,9 +41,8 @@ export async function sendContactMessage(
   _previous: ContactState,
   formData: FormData,
 ): Promise<ContactState> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const to = process.env.CONTACT_EMAIL_TO?.trim() || publicLegalPublisher().contactEmail;
-  const from = process.env.CONTACT_EMAIL_FROM?.trim();
+  const { resendApiKey: apiKey, contactTo, contactFrom: from } = serverEnv().email;
+  const to = contactTo || publicLegalPublisher().contactEmail;
   const resend = apiKey ? new Resend(apiKey) : null;
 
   return deliverContact(

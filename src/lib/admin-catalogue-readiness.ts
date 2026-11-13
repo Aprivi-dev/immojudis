@@ -2,17 +2,16 @@ import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { adminPageQueryShape } from "@/lib/admin-page-query";
-import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
+import { adminPageQueryShape, type AdminPageQuery } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import type { Json } from "@/integrations/supabase/types";
 import {
   classifyInformationAgentSaleContacts,
   type InformationAgentSaleContactClass,
 } from "@/lib/admin-information-agent-sale";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { asRecord as jsonObject } from "@/lib/guards";
-
-const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 
 export type CatalogueReadinessStatus =
   | "unassessed"
@@ -52,7 +51,11 @@ export type CatalogueReadinessQueueItem = {
   overrideExpiresAt: string | null;
 };
 
-export type CatalogueReadinessOverview = {
+/**
+ * Page de la file des dossiers à reprendre : `total` compte ceux pour lesquels l'agent a un contact
+ * (classes A, B et C), toutes pages.
+ */
+export type CatalogueReadinessOverview = AdminPageMeta & {
   policy: {
     enforcementEnabled: boolean;
     policyVersion: string;
@@ -64,10 +67,6 @@ export type CatalogueReadinessOverview = {
   activeSales: number;
   pendingEvaluations: number;
   canEnableEnforcement: boolean;
-  /** Dossiers à reprendre pour lesquels l'agent a un contact (classes A, B et C), toutes pages. */
-  queueTotal: number;
-  queueOffset: number;
-  queueLimit: number;
   items: CatalogueReadinessQueueItem[];
   /** Nombre de dossiers par classe de contact (approximation SQL, la page est revérifiée). */
   classCounts?: Record<InformationAgentSaleContactClass, number>;
@@ -142,11 +141,9 @@ export type AdminCatalogueReadinessAction = z.output<typeof adminCatalogueReadin
 
 export async function getAdminCatalogueReadinessOverview(
   authToken: string,
-  options: { offset?: number; limit?: number } = {},
+  { offset = 0, limit = ADMIN_PAGE_SIZE }: Partial<AdminPageQuery> = {},
 ): Promise<CatalogueReadinessOverview> {
-  await requireAdmin(authToken);
-  const offset = Math.max(0, options.offset ?? 0);
-  const limit = Math.max(1, Math.min(ADMIN_PAGE_MAX_LIMIT, options.limit ?? ADMIN_PAGE_SIZE));
+  await assertAdminAuth(authToken);
   const [
     { data: policy, error: policyError },
     { data: queueData, error: queueError },
@@ -213,9 +210,7 @@ export async function getAdminCatalogueReadinessOverview(
     activeSales: activeCount,
     pendingEvaluations,
     canEnableEnforcement: pendingEvaluations === 0,
-    queueTotal: queue.total,
-    queueOffset: offset,
-    queueLimit: limit,
+    ...adminPageMeta({ offset, limit, total: queue.total }),
     items,
     classCounts: queue.counts,
     impossibleItems,
@@ -226,7 +221,7 @@ async function countActiveSales(status?: CatalogueReadinessStatus): Promise<numb
   let query = supabaseAdmin
     .from("auction_sales")
     .select("id", { count: "exact", head: true })
-    .in("status", ACTIVE_SALE_STATUSES);
+    .in("status", OPEN_SALE_STATUSES);
   if (status) query = query.eq("premium_readiness_status", status);
   const { count, error } = await query;
   if (error) throw error;
@@ -237,7 +232,7 @@ async function countPendingEvaluations(policyVersion: string): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from("auction_sales")
     .select("id", { count: "exact", head: true })
-    .in("status", ACTIVE_SALE_STATUSES)
+    .in("status", OPEN_SALE_STATUSES)
     .or(
       `premium_readiness_status.eq.unassessed,premium_readiness_evaluated_at.is.null,premium_readiness_policy_version.is.null,premium_readiness_policy_version.neq.${policyVersion}`,
     );
@@ -294,7 +289,7 @@ export async function runAdminCatalogueReadinessAction({
   authToken: string;
   input: AdminCatalogueReadinessAction;
 }): Promise<CatalogueReadinessOverview> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_enforcement") {
     const { error } = await auth.supabase.rpc("set_catalogue_readiness_enforcement", {
       p_enabled: input.enabled,

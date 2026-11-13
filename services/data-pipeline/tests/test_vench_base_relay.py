@@ -11,7 +11,7 @@ from copy import deepcopy
 from decimal import Decimal
 from pathlib import Path
 
-from src import main as pipeline
+from src import known_enrichment
 from src.base_reads import RELAYED_FIELDS_KEY, mark_relayed, relayed_fields, snapshot_relayed_fields
 from src.fact_claims import build_fact_claim_candidates
 from src.freshness import record_source_checks
@@ -67,7 +67,7 @@ def collect(known_row: dict, previous_payload: dict | None = None, **page) -> di
     raw = restricted_page(**page)
     known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
     _filter_catalog_sales([raw], known)
-    pipeline._preserve_known_enrichment_payloads([raw], known)
+    known_enrichment.preserve_known_enrichment_payloads([raw], known)
     record_source_checks([raw], known)
     return raw
 
@@ -212,7 +212,7 @@ def test_without_the_mark_the_same_base_change_looked_like_a_source_change() -> 
         known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
         _filter_catalog_sales([raw], known)
         raw.pop(RELAYED_FIELDS_KEY)
-        pipeline._preserve_known_enrichment_payloads([raw], known)
+        known_enrichment.preserve_known_enrichment_payloads([raw], known)
         record_source_checks([raw], known)
         return raw
 
@@ -284,7 +284,7 @@ def test_the_restricted_page_fixture_takes_its_surface_from_the_stored_row() -> 
     known = {URL: stored()}
 
     _filter_catalog_sales([raw], known)
-    pipeline._preserve_known_enrichment_payloads([raw], known)
+    known_enrichment.preserve_known_enrichment_payloads([raw], known)
 
     assert {"surface_m2", "rooms_count", "occupancy_status"} <= relayed_fields(raw)
     assert "surface_m2" not in raw["source_factual_snapshot"]

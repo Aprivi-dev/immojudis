@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { ConfigurationError } from "./api-errors";
 import { InformationAgentContributionError } from "./information-agent-contribution";
 import {
   CONTRIBUTION_FIELD_MESSAGES,
@@ -87,7 +88,7 @@ export function contributionFieldErrorFromZod(error: z.ZodError): {
 
 /**
  * Réponse d'erreur des routes de dépôt. Une erreur de validation dit quel champ est en cause ;
- * une erreur serveur (500) est journalisée sans donnée personnelle (type et code seulement).
+ * une erreur serveur (500, 503) est journalisée sans donnée personnelle (type et code seulement).
  */
 export function contributionErrorResponse(error: unknown, scope = "contribution") {
   let status = 500;
@@ -100,6 +101,10 @@ export function contributionErrorResponse(error: unknown, scope = "contribution"
   } else if (error instanceof z.ZodError) {
     status = 400;
     ({ field, message } = contributionFieldErrorFromZod(error));
+  } else if (error instanceof ConfigurationError) {
+    // Secret ou origine du site absents : le dépôt reprendra une fois la configuration corrigée.
+    status = 503;
+    message = "Dépôt temporairement indisponible.";
   }
   if (status >= 500) {
     logInformationAgentRouteError(`information-agent.${scope}`, error, { status });

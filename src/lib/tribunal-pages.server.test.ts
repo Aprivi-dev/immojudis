@@ -26,6 +26,8 @@ const ROW = {
   starting_price_eur: "40500",
   surface_m2: 52.5,
   status: "upcoming",
+  // Sans doublon, chaque vente est seule dans son groupe d'adresses sources.
+  source_group: "00000000-0000-4000-8000-000000000001",
 };
 
 describe("mapTribunalSaleRows", () => {
@@ -50,6 +52,7 @@ describe("mapTribunalSaleRows", () => {
       ["postponed", "unknown", null, "", "upcoming"].map((status, index) => ({
         ...ROW,
         id: `00000000-0000-4000-8000-00000000010${index}`,
+        source_group: `00000000-0000-4000-8000-00000000010${index}`,
         status,
       })),
     );
@@ -99,8 +102,16 @@ describe("mapTribunalSaleRows", () => {
 });
 
 describe("mapTribunalSaleRows : doublons", () => {
-  const A = { ...ROW, id: "245b5afe-0000-4000-8000-000000000001" };
-  const B = { ...ROW, id: "003d1fe7-0000-4000-8000-000000000002" };
+  const A = {
+    ...ROW,
+    id: "245b5afe-0000-4000-8000-000000000001",
+    source_group: "245b5afe-0000-4000-8000-000000000001",
+  };
+  const B = {
+    ...ROW,
+    id: "003d1fe7-0000-4000-8000-000000000002",
+    source_group: "003d1fe7-0000-4000-8000-000000000002",
+  };
 
   it("réunit deux lignes qui partagent une clé d'adresse source, et garde la première", () => {
     // La base normalise et condense les adresses : une même annonce a la même clé.
@@ -148,7 +159,7 @@ describe("mapTribunalSaleRows : doublons", () => {
     ]);
   });
 
-  it("fonctionne sans adresses sources (migration pas encore appliquée) : aucune fusion", () => {
+  it("deux ventes chacune seule dans son groupe d'adresses sources : aucune fusion", () => {
     expect(mapTribunalSaleRows([A, B])).toHaveLength(2);
   });
 });

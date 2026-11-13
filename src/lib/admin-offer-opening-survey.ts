@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
@@ -10,11 +10,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * individuelle. Les repères de prix sont déclaratifs et viennent d'une liste d'attente qui s'est choisie
  * elle-même : ils ne mesurent pas une intention d'achat.
  *
- * Même protection que le reste du pilotage : jeton vérifié, rôle administrateur, client de service. Une mesure
- * impossible (migration pas encore appliquée, panne) vaut `null` et s'affiche « non mesuré », jamais zéro. La
- * règle « moins de 5 » est une règle d'affichage de la page.
+ * Même protection que le reste du pilotage : jeton vérifié, rôle administrateur, client de service. Une lecture
+ * en échec remonte ; la route de pilotage répond alors `unavailableOfferOpeningSurvey()`, tout « non mesuré »,
+ * jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
-export type SurveyCount = number | null;
+type SurveyCount = number | null;
 
 export type OfferOpeningSurveySummary = {
   generatedAt: string | null;
@@ -104,26 +104,17 @@ export function parseOfferOpeningSurvey(raw: unknown): OfferOpeningSurveySummary
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 /** Comme `getAdminBidCeilings` : jeton et rôle administrateur vérifiés, puis lecture avec le client de service. */
 export async function getAdminOfferOpeningSurvey(
   authToken: string,
   now = new Date(),
 ): Promise<OfferOpeningSurveySummary> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_offer_opening_survey_summary", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableOfferOpeningSurvey();
-    throw error;
-  }
+  if (error) throw error;
   return parseOfferOpeningSurvey(data);
 }
 
@@ -132,7 +123,7 @@ export async function getAdminOfferOpeningSurvey(
  * de son accord, le profil qu'elle a déclaré et l'adresse de son compte, pour la contacter. Rien d'autre :
  * ni ses repères de prix, ni l'identifiant du compte.
  */
-export type OfferOpeningInterviewee = {
+type OfferOpeningInterviewee = {
   consentedAt: string;
   profile: string | null;
   email: string;
@@ -140,7 +131,7 @@ export type OfferOpeningInterviewee = {
 
 export type OfferOpeningInterviewees = {
   /** Personnes qui ont accepté un entretien et n'ont rien retiré (peut dépasser la liste rendue). */
-  total: number | null;
+  total: number;
   interviewees: OfferOpeningInterviewee[];
 };
 
@@ -173,22 +164,17 @@ export function parseOfferOpeningInterviewees(raw: unknown): OfferOpeningIntervi
  * (migration 20261110180100). Lecture seule, administrateur seulement : jeton vérifié, rôle administrateur
  * et double authentification (`auth.isAdmin`) AVANT toute lecture ; la base refuse tout autre rôle que le
  * service. La consultation est journalisée sans contenu (qui a lu, combien de lignes), jamais une adresse.
- * Fonction de base absente (migration pas encore appliquée) : liste vide et total inconnu.
  */
 export async function getAdminOfferOpeningInterviewees(
   authToken: string,
   limit = 200,
 ): Promise<OfferOpeningInterviewees> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  const auth = await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_offer_opening_interviewees", {
     p_limit: limit,
   });
-  if (error) {
-    if (isMissingFunction(error)) return { total: null, interviewees: [] };
-    throw error;
-  }
+  if (error) throw error;
   const list = parseOfferOpeningInterviewees(data);
   console.info(
     JSON.stringify({

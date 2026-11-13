@@ -79,7 +79,7 @@ export const FACT_CLAIM_DATABASE_ERROR_CODES = {
   },
 } as const satisfies Record<string, Translation>;
 
-export type FactClaimDatabaseErrorCode = keyof typeof FACT_CLAIM_DATABASE_ERROR_CODES;
+type FactClaimDatabaseErrorCode = keyof typeof FACT_CLAIM_DATABASE_ERROR_CODES;
 
 /** Repli par SQLSTATE, pour une erreur qui ne porte pas un code de la liste fermée. */
 const SQLSTATE_FALLBACK: Record<string, Translation> = {

@@ -32,13 +32,8 @@ def test_observation_batch_deduplicates_urls_and_keeps_admissible_rows(monkeypat
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgres_upsert",
-        lambda _db_url, _table, payload, on_conflict: calls.append(payload),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_rest_parented_observation_payload",
-        lambda _url, _key, payload: payload,
+        "_postgres_upsert_observations_with_parent_guard",
+        lambda _db_url, payload, on_conflict: calls.append(payload) or len(payload),
     )
 
     sale = _sale(
@@ -78,17 +73,13 @@ def test_observation_batch_does_not_regress_when_stale_retry_follows_newer_versi
         lambda: {
             "supabase_url": "https://supabase.test",
             "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
         },
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: captured.append(payload),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_rest_parented_observation_payload",
-        lambda _url, _key, payload: payload,
+        "_postgres_upsert_observations_with_parent_guard",
+        lambda _db_url, payload, on_conflict: captured.append(payload) or len(payload),
     )
 
     newer = _sale(
@@ -266,11 +257,11 @@ def test_observation_batch_fails_closed_when_direct_parent_guard_fails(monkeypat
         },
     )
 
-    def fail_postgres(_db_url, _table, payload, on_conflict):
+    def fail_postgres(_db_url, payload, on_conflict):
         postgres_calls.append(payload)
         raise RuntimeError("test direct-write failure")
 
-    monkeypatch.setattr(supabase_client, "_postgres_upsert", fail_postgres)
+    monkeypatch.setattr(supabase_client, "_postgres_upsert_observations_with_parent_guard", fail_postgres)
     monkeypatch.setattr(
         supabase_client,
         "_postgrest_upsert",
@@ -283,30 +274,6 @@ def test_observation_batch_fails_closed_when_direct_parent_guard_fails(monkeypat
         ])
     assert len(postgres_calls) == 1
     assert rest_calls == []
-
-
-def test_rest_observation_parent_guard_filters_unknown_canonicals(monkeypatch) -> None:
-    class Response:
-        is_error = False
-        status_code = 200
-        text = ""
-        request = None
-
-        @staticmethod
-        def json():
-            return [{"source_url": "https://sale.test/persisted"}]
-
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_request_with_retries",
-        lambda *args, **kwargs: Response(),
-    )
-    payload = [
-        {"source_url": "https://source.test/ok", "canonical_source_url": "https://sale.test/persisted"},
-        {"source_url": "https://source.test/missing", "canonical_source_url": "https://sale.test/quarantined"},
-    ]
-
-    assert supabase_client._rest_parented_observation_payload("https://supabase.test", "secret", payload) == [payload[0]]
 
 
 def test_observations_skip_missing_canonical_parent_inside_parent_guard(monkeypatch) -> None:

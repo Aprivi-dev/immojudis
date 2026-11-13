@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: { id: state.userId }, loading: false }),
 }));
-vi.mock("@/lib/queries", () => ({
+vi.mock("@/lib/alert-queries", () => ({
   getAlerts: state.list,
   updateAlert: state.update,
   deleteAlert: state.remove,
@@ -27,8 +27,8 @@ vi.mock("@/lib/client-api", () => ({
   deleteWatchedZone: vi.fn(),
   createWatchedZone: vi.fn(),
   evaluateAlertMatches: state.evaluate,
-  fetchAccessPlan: async () => ({ plan: state.plan }),
 }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: async () => ({ plan: state.plan }) }));
 vi.mock("@/lib/toast", () => ({ toast: state.toast }));
 const openNotifications = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/notification-center-events", () => ({

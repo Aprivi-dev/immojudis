@@ -17,7 +17,7 @@ import type { EngineStageEntry, FieldDecision } from "@/lib/information-agent/ev
 /** Écart toléré entre une valeur publiée et la vérité (arrondi d'une surface décimale). */
 const VALUE_TOLERANCE = 0.01;
 
-export type EngineState = "etat_attendu" | "etat_reel";
+type EngineState = "etat_attendu" | "etat_reel";
 
 /**
  * Défaut connu : reconnu par sa signature complète (configuration, état, cas, champ, valeur, message qui
@@ -37,7 +37,7 @@ export type KnownDefect = {
   cause: string;
 };
 
-export type FalsePublication = Omit<
+type FalsePublication = Omit<
   KnownDefect,
   "configuration" | "groupe" | "cause" | "published_value"
 > & {

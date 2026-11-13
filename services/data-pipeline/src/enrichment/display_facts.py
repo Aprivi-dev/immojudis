@@ -24,7 +24,6 @@ PROPERTY_TYPE_LABELS = {
     "mixed": "ensemble mixte",
 }
 JUDICIAL_FRAMEWORKS = {"judicial_seizure", "judicial_partition", "insolvency", "judicial"}
-NON_JUDICIAL_SOURCES = {"notaires", "cessions_etat", "agrasc"}
 VERIFIED_STATUSES = {"verified", "cross_checked"}
 FIXED_PRICE_RE = re.compile(r"\bvente\s+au\s+prix\b|\bpas\s+d['’]\s*ench[eè]res?\b", re.I)
 AMI_RE = re.compile(r"\bappel\s+[àa]\s+manifestation\s+d['’]\s*int[ée]r[êe]t\b", re.I)
@@ -197,7 +196,8 @@ def _judicial_label(sale: Any) -> str:
     return f"vente judiciaire aux enchères ({tribunal})" if tribunal else "vente judiciaire aux enchères"
 
 
-def _decimal(value: Any) -> Decimal | None:
+def positive_decimal(value: Any) -> Decimal | None:
+    """Montant ou surface strictement positif et fini ; ``None`` pour tout le reste (booléens compris)."""
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -221,7 +221,7 @@ def known_offer_amounts(sale: Any) -> list[Decimal]:
                 )
     amounts: list[Decimal] = []
     for candidate in candidates:
-        number = _decimal(candidate)
+        number = positive_decimal(candidate)
         if number is not None and number not in amounts:
             amounts.append(number)
     return amounts

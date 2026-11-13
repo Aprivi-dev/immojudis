@@ -5,10 +5,7 @@ const mocks = vi.hoisted(() => ({
   runMonitoredCron: vi.fn(),
 }));
 
-vi.mock("@/lib/cron-jobs", async () => ({
-  positiveNumberFromEnv: (
-    await vi.importActual<typeof import("@/lib/cron-jobs")>("@/lib/cron-jobs")
-  ).positiveNumberFromEnv,
+vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
 }));
 vi.mock("@/lib/listing-completeness-batch", () => ({
@@ -43,7 +40,8 @@ describe("listing completeness cron route", () => {
     expect(await response.json()).toEqual({ evaluated: 3 });
     expect(mocks.runMonitoredCron).toHaveBeenCalledTimes(1);
     expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("listing-completeness");
-    expect(mocks.runListingCompletenessBatch).toHaveBeenCalledWith({ limit: 300 });
+    // Sans variable, la bibliothèque applique sa propre taille de lot par défaut.
+    expect(mocks.runListingCompletenessBatch).toHaveBeenCalledWith({ limit: undefined });
   });
 
   it("fait du passage quotidien de vercel.json un filet, sans effet si pg_cron a réussi dans les 2 h", async () => {
@@ -51,10 +49,8 @@ describe("listing completeness cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
-      catchUpSchedule: "50 5 * * *",
-      catchUpSuccessWindowHours: 2,
-    });
+    // Le rattrapage vient du registre (`CRON_JOBS["listing-completeness"]`), sous le nom de la tâche.
+    expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("listing-completeness");
   });
 
   it("lit la taille du lot dans l'environnement", async () => {

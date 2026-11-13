@@ -5,24 +5,22 @@ import os
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fake_publication import capture_enqueued_jobs
 from psycopg.types.json import Jsonb
 from test_autonomy_postgres import setup
 
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _store_document_analysis_status
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
-from src.pdf_fact_extraction import _write_pdf_text_cache
+from src.pdf_document_selection import store_document_analysis_status
+from src.pdf_fact_extraction import write_pdf_text_cache
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import supabase_client as storage
+from src.storage.pdf_persistence_rows import _fresh_complete_pdf_fingerprint
 from src.storage.supabase_client import _postgres_connect
 
 
 def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     rows = []
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda url, key, table, payload, conflict: rows.extend(payload),
-    )
+    capture_enqueued_jobs(monkeypatch, rows)
     settings = {
         "llm_prompt_version": "test-prompt",
         "llm_fact_prompt_version": "test-fact-prompt",
@@ -63,7 +61,7 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
             "failed_pages": [2],
         }],
     }
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     old_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
@@ -103,7 +101,7 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     }
     current["value"] = True
     rows.clear()
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     fresh_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
@@ -119,7 +117,7 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     sale.raw_payload["document_analysis"]["last_successful_check_at"] = refreshed_at
     sale.raw_payload["document_analysis"]["cache_proof"]["verified_at"] = refreshed_at
     rows.clear()
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     assert {
         row["job_type"]: row["input_hash"]
         for row in rows
@@ -127,7 +125,7 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     } == fresh_hashes
 
     sale.raw_payload["document_analysis"]["documents_extracted"] = 0
-    assert storage._fresh_complete_pdf_fingerprint(sale, documents_current=True) is None
+    assert _fresh_complete_pdf_fingerprint(sale, documents_current=True) is None
 
 
 def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
@@ -146,11 +144,7 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
     monkeypatch.setattr("src.pdf_fact_extraction.PDF_TEXTS_DIR", tmp_path)
     rows: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, _conflict: rows.extend(payload),
-    )
+    capture_enqueued_jobs(monkeypatch, rows)
 
     source_url = "https://example.test/mixed-pdf-proof"
     extracted_url = f"{source_url}/pv.pdf"
@@ -202,7 +196,7 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
             },
         ],
     }
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     old_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
@@ -249,13 +243,13 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
         "complete": True,
         "extraction_status": "empty",
     }
-    _store_document_analysis_status(sale, documents, [extracted_payload, empty_payload])
-    _write_pdf_text_cache(sale, [extracted_payload, empty_payload])
+    store_document_analysis_status(sale, documents, [extracted_payload, empty_payload])
+    write_pdf_text_cache(sale, [extracted_payload, empty_payload])
 
     assert storage.documents_are_current(sale)
-    assert storage._fresh_complete_pdf_fingerprint(sale, documents_current=True)
+    assert _fresh_complete_pdf_fingerprint(sale, documents_current=True)
     rows.clear()
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     fresh_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
@@ -268,7 +262,7 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     # identities; the terminal empty document is not included in the proof.
     sale.raw_payload["document_analysis"]["checked_at"] = datetime.now(UTC).isoformat()
     sale.raw_payload["document_analysis"]["cache_proof"]["verified_at"] = datetime.now(UTC).isoformat()
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     assert len(rows) == 2
     assert {
         (row["job_type"], row["input_hash"])
@@ -331,7 +325,7 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
                 # Use the real Python job generator to materialize the prior
                 # generation, then make its exhausted state explicit.
                 monkeypatch.setattr(storage, "PDF_RETRY_GENERATION", old_generation)
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
+                storage._enqueue_due_enrichment([sale])
                 old_hash = db.execute(
                     """select input_hash from auction_enrichment_jobs
                        where source_url=%s and job_type='pdf'""",
@@ -350,8 +344,8 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
                 # second scan must hit the real unique constraint, not create
                 # another replay row.
                 monkeypatch.setattr(storage, "PDF_RETRY_GENERATION", new_generation)
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
+                storage._enqueue_due_enrichment([sale])
+                storage._enqueue_due_enrichment([sale])
             finally:
                 storage._PUBLICATION_CONNECTION.reset(token)
 
@@ -475,7 +469,7 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
             )
             token = storage._PUBLICATION_CONNECTION.set(db)
             try:
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
+                storage._enqueue_due_enrichment([sale])
             finally:
                 storage._PUBLICATION_CONNECTION.reset(token)
 
@@ -498,8 +492,8 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
 
             # Use the production status writer and aggregate cache writer. The
             # file SHA remains exactly the same as the incomplete profile.
-            _store_document_analysis_status(sale, [document], [payload])
-            _write_pdf_text_cache(sale, [payload])
+            store_document_analysis_status(sale, [document], [payload])
+            write_pdf_text_cache(sale, [payload])
             db.execute(
                 """update auction_enrichment_jobs
                    set status='completed', attempt_count=1, completed_at=now()
@@ -509,7 +503,7 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
 
             token = storage._PUBLICATION_CONNECTION.set(db)
             try:
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
+                storage._enqueue_due_enrichment([sale])
             finally:
                 storage._PUBLICATION_CONNECTION.reset(token)
 
@@ -527,11 +521,11 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
             # A cold/materialized replay can refresh operational timestamps,
             # including verified_at, but the same complete proof must keep the
             # same dependent hash.
-            _store_document_analysis_status(sale, [document], [payload])
-            _write_pdf_text_cache(sale, [payload])
+            store_document_analysis_status(sale, [document], [payload])
+            write_pdf_text_cache(sale, [payload])
             token = storage._PUBLICATION_CONNECTION.set(db)
             try:
-                storage._enqueue_due_enrichment([sale], "unused", "unused")
+                storage._enqueue_due_enrichment([sale])
             finally:
                 storage._PUBLICATION_CONNECTION.reset(token)
 

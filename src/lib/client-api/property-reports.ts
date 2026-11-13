@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiDownload, apiRequest } from "@/lib/client-api-core";
 import type {
   PropertyReportListResponse,
   PropertyReportRequestInput,
@@ -7,101 +7,62 @@ import type {
   PropertyReportUpdateInput,
 } from "@/lib/property-reports";
 
-export async function fetchPropertyReports(
+export function fetchPropertyReports(
   args: {
     saleId?: string;
   } = {},
 ): Promise<PropertyReportListResponse> {
   const search = new URLSearchParams();
   if (args.saleId) search.set("saleId", args.saleId);
-  const url = `/api/property-reports${search.size ? `?${search.toString()}` : ""}`;
-
-  const response = await fetch(url, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<PropertyReportListResponse>(response);
+  return apiRequest<PropertyReportListResponse>(
+    `/api/property-reports${search.size ? `?${search.toString()}` : ""}`,
+  );
 }
 
-export async function savePropertyReport(args: {
+export function savePropertyReport(args: {
   data: PropertyReportRequestInput;
 }): Promise<PropertyReportSaveResponse> {
-  const response = await fetch("/api/property-reports", {
+  return apiRequest<PropertyReportSaveResponse>("/api/property-reports", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<PropertyReportSaveResponse>(response);
 }
 
-export async function updatePropertyReport(args: {
+export function updatePropertyReport(args: {
   reportId: string;
   data: PropertyReportUpdateInput;
 }): Promise<PropertyReportSaveResponse> {
-  const response = await fetch(`/api/property-reports/${args.reportId}`, {
+  return apiRequest<PropertyReportSaveResponse>(`/api/property-reports/${args.reportId}`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<PropertyReportSaveResponse>(response);
 }
 
 export async function exportPropertyReportPdf(args: {
   reportId: string;
 }): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`/api/property-reports/${args.reportId}/export`, {
-    method: "POST",
-    headers: await authHeaders(),
-  });
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
-  }
-
-  const filename =
-    response.headers
-      .get("content-disposition")
-      ?.match(/filename="([^"]+)"/)?.[1]
-      ?.trim() || "rapport-immojudis.pdf";
-
-  return {
-    blob: await response.blob(),
-    filename,
-  };
+  const { blob, filename } = await apiDownload(
+    `/api/property-reports/${args.reportId}/export`,
+    { method: "POST" },
+    "rapport-immojudis.pdf",
+  );
+  return { blob, filename };
 }
 
-export async function enablePropertyReportShare(args: {
+export function enablePropertyReportShare(args: {
   reportId: string;
   expiresAt?: string | null;
 }): Promise<PropertyReportShareResponse> {
-  const response = await fetch(`/api/property-reports/${args.reportId}/share`, {
+  return apiRequest<PropertyReportShareResponse>(`/api/property-reports/${args.reportId}/share`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ expiresAt: args.expiresAt ?? null }),
+    body: { expiresAt: args.expiresAt ?? null },
   });
-
-  return readJson<PropertyReportShareResponse>(response);
 }
 
-export async function disablePropertyReportShare(args: {
+export function disablePropertyReportShare(args: {
   reportId: string;
 }): Promise<PropertyReportShareResponse> {
-  const response = await fetch(`/api/property-reports/${args.reportId}/share`, {
+  return apiRequest<PropertyReportShareResponse>(`/api/property-reports/${args.reportId}/share`, {
     method: "DELETE",
-    headers: await authHeaders(),
   });
-
-  return readJson<PropertyReportShareResponse>(response);
 }

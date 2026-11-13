@@ -1,8 +1,7 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
  * Deux indicateurs de lecture pour la page admin « Pilotage », sur les données déjà enregistrées
@@ -15,10 +14,10 @@ import { isMissingRpcError } from "@/lib/postgrest-errors";
  *   avant de toucher au prix de l'offre Analyse).
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
- * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
- * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
+ * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
+ * `unavailableActivation()`, tout « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
-export type ActivationCount = number | null;
+type ActivationCount = number | null;
 
 export type ActivationWindow = {
   days: 7 | 30;
@@ -32,7 +31,7 @@ export type ActivationWindow = {
   createdAlert: ActivationCount;
 };
 
-export type UnlockThresholdMonth = {
+type UnlockThresholdMonth = {
   /** Début du mois de Paris (ISO). */
   monthStart: string | null;
   /** Vrai pour le mois en cours (compté depuis le 1er seulement). */
@@ -84,7 +83,7 @@ const thresholdSchema = z.object({
 
 const WINDOW_DAYS = [7, 30] as const;
 
-export function unavailableUnlockThreshold(): UnlockThreshold {
+function unavailableUnlockThreshold(): UnlockThreshold {
   return {
     discoveryAccounts: null,
     months: [
@@ -159,24 +158,19 @@ export async function getAdminActivation(
   authToken: string,
   now = new Date(),
 ): Promise<AdminActivation> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const [activation, threshold] = await Promise.all([
     supabaseAdmin.rpc("admin_pilotage_activation", { p_now: now.toISOString() }),
     supabaseAdmin.rpc("admin_pilotage_unlock_threshold", { p_now: now.toISOString() }),
   ]);
-  // Une fonction absente (migration pas encore appliquée) ne mesure rien ; toute autre erreur remonte.
   for (const { error } of [activation, threshold]) {
-    if (error && !isMissingRpcError(error)) throw error;
+    if (error) throw error;
   }
-  const fallback = unavailableActivation();
-  const windows = activation.error ? null : parseActivationWindows(activation.data);
+  const windows = parseActivationWindows(activation.data);
   return {
-    generatedAt: windows?.generatedAt ?? null,
-    windows: windows?.windows ?? fallback.windows,
-    unlockThreshold: threshold.error
-      ? fallback.unlockThreshold
-      : parseUnlockThreshold(threshold.data),
+    generatedAt: windows.generatedAt,
+    windows: windows.windows,
+    unlockThreshold: parseUnlockThreshold(threshold.data),
   };
 }

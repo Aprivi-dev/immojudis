@@ -9,7 +9,7 @@
  * base se modifie ici, et nulle part ailleurs.
  */
 
-export const FACT_CLAIM_DECISION_ACTIONS = ["accept", "reject", "withdraw", "oppose"] as const;
+const FACT_CLAIM_DECISION_ACTIONS = ["accept", "reject", "withdraw", "oppose"] as const;
 export type FactClaimDecisionAction = (typeof FACT_CLAIM_DECISION_ACTIONS)[number];
 
 /** Motifs admis par la base pour un rejet, avec leur libellé. */

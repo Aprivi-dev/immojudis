@@ -7,6 +7,7 @@ from typing import Any
 
 from src.models import AuctionSale
 from src.normalize import clean_text
+from src.timestamps import sale_window
 from src.tribunal_labels import NOTARIAL_VENUE_PHRASE
 
 SALE_PROCEDURE_SCHEMA_VERSION = "sale_procedure_v1"
@@ -148,24 +149,19 @@ def classify_sale_procedure(
 
     # An audience's published start/end is not an online bidding interval.
     schedule = sale.raw_payload.get("source_sale_schedule")
-    if isinstance(schedule, dict):
-        try:
-            start = datetime.fromisoformat(schedule["opens_at"])
-            end = datetime.fromisoformat(schedule["closes_at"])
-            if start.tzinfo is not None and end.tzinfo is not None and end > start:
-                schedule_key = (
-                    "sale_window"
-                    if schedule.get("schedule_type") == "sale_window"
-                    or (venue_type == "notary" and participation_mode == "online")
-                    else "sale_session"
-                )
-                procedure[schedule_key] = {
-                    "opens_at": start.isoformat(),
-                    "closes_at": end.isoformat(),
-                    "source_url": sale.source_url,
-                }
-        except (KeyError, TypeError, ValueError):
-            pass
+    window = sale_window(schedule)
+    if window is not None:
+        schedule_key = (
+            "sale_window"
+            if schedule.get("schedule_type") == "sale_window"
+            or (venue_type == "notary" and participation_mode == "online")
+            else "sale_session"
+        )
+        procedure[schedule_key] = {
+            "opens_at": window[0].isoformat(),
+            "closes_at": window[1].isoformat(),
+            "source_url": sale.source_url,
+        }
 
     sale.sale_venue_type = venue_type
     sale.sale_legal_framework = legal_framework

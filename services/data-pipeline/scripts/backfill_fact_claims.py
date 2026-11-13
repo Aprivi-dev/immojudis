@@ -59,6 +59,7 @@ from src.config import PROCESSED_DIR, load_settings  # noqa: E402
 from src.fact_claims import materialize_fact_claim_rows  # noqa: E402
 from src.models import AuctionSale  # noqa: E402
 from src.storage.supabase_client import connect  # noqa: E402
+from src.timestamps import assumed_utc_timestamp  # noqa: E402
 
 # Alias de compatibilité : des tests patchent ce nom de module.
 _postgres_connect = connect
@@ -263,19 +264,9 @@ def _bounded_positive(value: str, maximum: int, label: str) -> int:
     return parsed
 
 
-def _as_utc(value: object, *, default: datetime = EPOCH) -> datetime:
-    if isinstance(value, datetime):
-        parsed = value
-    elif value:
-        try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            return default
-    else:
-        return default
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+def _as_utc(value: object) -> datetime:
+    """L'instant de ``value``, ou ``EPOCH`` pour une valeur absente ou illisible (clé de tri et de reprise)."""
+    return assumed_utc_timestamp(value) or EPOCH
 
 
 def _canonical_uuid(value: object) -> str | None:

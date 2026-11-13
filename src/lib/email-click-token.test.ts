@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 import {
   createEmailClickToken,
   EMAIL_CLICK_TOKEN_TTL_DAYS,
@@ -52,8 +53,9 @@ describe("jeton de lien suivi d'un email", () => {
     expect(
       readEmailClickToken(token(), { now, env: { SUPABASE_SERVICE_ROLE_KEY: "autre" } }),
     ).toBeNull();
-    // Sans aucun secret : rien n'est cru.
+    // Sans aucun secret : rien n'est cru, et rien ne peut être signé (configuration manquante, 503).
     expect(readEmailClickToken(token(), { now, env: {} })).toBeNull();
+    expect(() => token({ env: {} })).toThrow(ConfigurationError);
   });
 
   it("refuse un jeton dont le contenu a été changé sous la même signature", () => {
