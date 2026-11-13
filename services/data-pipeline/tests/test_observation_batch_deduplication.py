@@ -32,8 +32,8 @@ def test_observation_batch_deduplicates_urls_and_keeps_admissible_rows(monkeypat
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgres_upsert",
-        lambda _db_url, _table, payload, on_conflict: calls.append(payload),
+        "_postgres_upsert_observations_with_parent_guard",
+        lambda _db_url, payload, on_conflict: calls.append(payload) or len(payload),
     )
 
     sale = _sale(
@@ -78,8 +78,8 @@ def test_observation_batch_does_not_regress_when_stale_retry_follows_newer_versi
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgres_upsert",
-        lambda _db_url, _table, payload, on_conflict: captured.append(payload),
+        "_postgres_upsert_observations_with_parent_guard",
+        lambda _db_url, payload, on_conflict: captured.append(payload) or len(payload),
     )
 
     newer = _sale(
@@ -257,11 +257,11 @@ def test_observation_batch_fails_closed_when_direct_parent_guard_fails(monkeypat
         },
     )
 
-    def fail_postgres(_db_url, _table, payload, on_conflict):
+    def fail_postgres(_db_url, payload, on_conflict):
         postgres_calls.append(payload)
         raise RuntimeError("test direct-write failure")
 
-    monkeypatch.setattr(supabase_client, "_postgres_upsert", fail_postgres)
+    monkeypatch.setattr(supabase_client, "_postgres_upsert_observations_with_parent_guard", fail_postgres)
     monkeypatch.setattr(
         supabase_client,
         "_postgrest_upsert",

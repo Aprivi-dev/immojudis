@@ -125,8 +125,13 @@ Postgres direct, dans une transaction : il n'y a pas de chemin d'écriture REST.
 Sans `SUPABASE_DB_URL` alors que `SUPABASE_URL` et la clé de service sont
 renseignées, le démarrage d'un traitement qui écrit le catalogue échoue
 (`DirectDatabaseMissing`, levée par le verrou d'écriture du catalogue ou par la
-première écriture). L'API REST service-role reste utilisée pour des lectures, le
-suivi des runs et des files, le cadastre et le DPE.
+première écriture). La lecture des ventes connues, la reprise d'un run demandé
+(`--run-id`) et la clôture d'un run passent aussi par Postgres direct, sans repli
+REST. L'API REST service-role reste utilisée pour d'autres lectures, la création
+d'un run sans identifiant, sa progression, les files, le cadastre et le DPE. Seul
+le drapeau `probable_duplicate` (`src.probable_duplicates`) écrit encore
+`auction_sales` en REST, hors du verrou d'écriture : son workflow ne reçoit pas
+`SUPABASE_DB_URL`.
 
 Le port 6543 (pooler en mode transaction) convient aux écritures, mais pas au
 verrou d'écriture du catalogue (`src/catalogue_lock.py`), qui est un verrou

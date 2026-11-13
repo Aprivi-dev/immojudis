@@ -42,6 +42,7 @@ from src.config import (
     PDF_TEXTS_DIR,
     direct_database_url,
     load_settings,
+    supabase_configured,
 )
 from src.court_competence import tribunal_reference_rows
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
@@ -95,7 +96,7 @@ from src.storage.fact_claim_rows import (
 )
 from src.storage.known_sale_projection import (
     DATA_REFRESH_SALE_SELECT,
-    KNOWN_SALE_DETAIL_SELECT,
+    KNOWN_SALE_DETAIL_SELECT,  # noqa: F401  (re-exported)
     KNOWN_SALE_POSTGRES_SELECT,  # noqa: F401
     KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS,  # noqa: F401
     KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION,  # noqa: F401
@@ -818,47 +819,22 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
 
 def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> str | None:
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
+    if not supabase_configured(settings):
         return run_id
-    now = datetime.now(UTC).isoformat()
-    payload = {
-        "status": "running",
-        "source": source,
-        "use_llm": use_llm,
-        "started_at": now,
-        "finished_at": None,
-        "updated_at": now,
-    }
-    try:
-        response = _postgrest_request_with_retries(
-            "PATCH",
-            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-            "auction_runs",
-            params={"id": f"eq.{run_id}"},
-            headers=_rest_headers(str(key), prefer="return=minimal"),
-            json=payload,
-            timeout=POSTGREST_TIMEOUT,
-        )
-    except httpx.TransportError as exc:
-        LOGGER.warning("Supabase run start transport failed: %s", exc)
-        response = None
-    if response is None or response.is_error:
-        if response is not None:
-            LOGGER.warning("Supabase run start failed (%s): %s", response.status_code, response.text[:200])
-        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
-            with _postgres_connect(str(settings["supabase_db_url"])) as db:
-                row = db.execute(
-                    """update public.auction_runs
-                       set status='running', source=%s, use_llm=%s, started_at=now(),
-                           finished_at=null, updated_at=now()
-                       where id=%s returning id""",
-                    (source, use_llm, run_id),
-                ).fetchone()
-            return run_id if row else None
-        return None
-    return run_id
+    db_url = direct_database_url(settings)
+
+    def write() -> Any:
+        with _postgres_connect(db_url) as db:
+            return db.execute(
+                """update public.auction_runs
+                   set status='running', source=%s, use_llm=%s, started_at=now(),
+                       finished_at=null, updated_at=now()
+                   where id=%s returning id""",
+                (source, use_llm, run_id),
+            ).fetchone()
+
+    row = retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run start")
+    return run_id if row else None
 
 
 def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
@@ -1381,49 +1357,26 @@ def finish_run_in_supabase(
     if not run_id:
         return
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
+    if not supabase_configured(settings):
         return
-    now = datetime.now(UTC).isoformat()
-    payload = {
-        "status": status,
-        "finished_at": now,
-        "updated_at": now,
-        "summary": summary,
-        "errors": errors or {},
-    }
-    try:
-        response = _postgrest_request_with_retries(
-            "PATCH",
-            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-            "auction_runs",
-            params={"id": f"eq.{run_id}"},
-            headers=_rest_headers(str(key), prefer="return=minimal"),
-            json=_sanitize_postgrest_payload(payload),
-            timeout=POSTGREST_TIMEOUT,
-        )
-    except httpx.TransportError as exc:
-        LOGGER.warning("Supabase run finish transport failed: %s", exc)
-        response = None
-    if response is None or response.is_error:
-        if response is not None:
-            LOGGER.warning("Supabase run finish failed (%s): %s", response.status_code, response.text[:200])
-        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
-            with _postgres_connect(str(settings["supabase_db_url"])) as db:
-                db.execute(
-                    """update public.auction_runs
-                       set status=%s, finished_at=now(), updated_at=now(),
-                           summary=coalesce(summary,'{}'::jsonb) || %s,
-                           errors=coalesce(errors,'{}'::jsonb) || %s
-                       where id=%s""",
-                    (
-                        status,
-                        Jsonb(_sanitize_postgrest_payload(summary)),
-                        Jsonb(_sanitize_postgrest_payload(errors or {})),
-                        run_id,
-                    ),
-                )
+    db_url = direct_database_url(settings)
+    params = (
+        status,
+        Jsonb(_sanitize_postgrest_payload(summary)),
+        Jsonb(_sanitize_postgrest_payload(errors or {})),
+        run_id,
+    )
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            db.execute(
+                """update public.auction_runs
+                   set status=%s, finished_at=now(), updated_at=now(), summary=%s, errors=%s
+                   where id=%s""",
+                params,
+            )
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run finish")
 
 
 def update_run_progress_in_supabase(
@@ -2383,8 +2336,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
         payload.append(row)
     if not payload:
         return 0
-    persisted = _postgres_upsert(db_url, "auction_observations", payload, on_conflict="source_url")
-    return persisted if isinstance(persisted, int) else len(payload)
+    return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict="source_url")
 
 
 def fetch_enriched_content_hashes(
@@ -2616,6 +2568,9 @@ KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT = "60s"
 # Client-side limit: the server one does not apply when the pooler holds the query or the connection vanished.
 KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS = 90.0
+# Start and finish of a run are idempotent updates: a dropped connection is retried instead of turning a
+# published run into a failed one (the former REST path gave it a second chance the same way).
+RUN_TRACKING_RETRY_DELAYS: tuple[float, ...] = (2.0, 5.0, 10.0)
 KNOWN_SALE_DETAIL_RETRY_DELAYS = (5.0, 20.0)
 
 
@@ -2746,60 +2701,17 @@ def fetch_known_sale_details(
     The default collection index keeps scalar source facts and freshness proof
     but omits the wide enrichment JSONB.  Pass ``source_urls`` and
     ``include_enrichment_payload=True`` after source discovery to hydrate only
-    rows that will be reconciled in this run.  The REST fallback intentionally
-    keeps its historical full projection because PostgREST cannot express the
-    same reviewed-alias/source_urls predicate safely.
+    rows that will be reconciled in this run.
     """
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
     requested_urls = _unique_source_urls(source_urls) if source_urls is not None else []
     if source_urls is not None and not requested_urls:
         return {}
-    if db_url:
-        relevant_aliases, all_rows = _read_known_sales_snapshot_with_retries(
-            str(db_url), source_urls, requested_urls, include_enrichment_payload
-        )
-    else:
-        if not url or not key:
-            return {}
-        reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
-        relevant_aliases = (
-            reviewed_aliases.aliases_for_urls(requested_urls)
-            if source_urls is not None
-            else tuple(reviewed_aliases.by_alias_url.values())
-        )
-        endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-        all_rows = []
-        offset = 0
-        while True:
-            try:
-                response = _postgrest_request_with_retries(
-                    "GET",
-                    endpoint,
-                    "known_sale_details",
-                    params={
-                        "select": KNOWN_SALE_DETAIL_SELECT,
-                        "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
-                        "offset": str(offset),
-                    },
-                    headers=_rest_headers(str(key), prefer="count=none"),
-                    timeout=30,
-                )
-                if response.is_error:
-                    raise RuntimeError(
-                        f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
-                    )
-                rows = response.json()
-                if not isinstance(rows, list):
-                    raise ReviewedAliasRegistryError("Malformed auction_sales detail response")
-            except httpx.HTTPError as exc:
-                raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
-            all_rows.extend(rows)
-            if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
-                break
-            offset += KNOWN_SALE_DETAIL_PAGE_SIZE
+    if not supabase_configured(settings):
+        return {}
+    relevant_aliases, all_rows = _read_known_sales_snapshot_with_retries(
+        direct_database_url(settings), source_urls, requested_urls, include_enrichment_payload
+    )
 
     for row in all_rows:
         if not isinstance(row, dict):
@@ -3073,13 +2985,11 @@ def _postgres_upsert(
     table: str,
     payload: list[dict[str, object]],
     on_conflict: str,
-) -> int | None:
+) -> None:
     if psycopg is None or sql is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     if not payload:
-        return 0
-    if table == "auction_observations":
-        return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict)
+        return
     conflict_columns = tuple(column.strip() for column in on_conflict.split(",") if column.strip())
     if not conflict_columns:
         raise ValueError("Postgres upsert requires at least one conflict column")
@@ -3101,7 +3011,6 @@ def _postgres_upsert(
     with _postgres_connect(db_url) as connection:
         with connection.cursor() as cursor:
             cursor.executemany(insert_statement, rows)
-    return None
 
 
 def _statement_timeout_options(db_url: str, statement_timeout_ms: int | None) -> str | None:

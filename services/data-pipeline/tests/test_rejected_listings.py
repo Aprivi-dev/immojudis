@@ -297,7 +297,9 @@ def test_the_observation_rows_never_carry_the_technical_keys(monkeypatch) -> Non
     written: list[dict] = []
     monkeypatch.setattr(storage, "load_settings", lambda: {
         "supabase_url": "https://db.test", "supabase_service_role_key": "k", "supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(storage, "_postgres_upsert", lambda _db, _table, rows, **_kw: written.extend(rows) or len(rows))
+    monkeypatch.setattr(
+        storage, "_postgres_upsert_observations_with_parent_guard", lambda _db, rows, **_kw: written.extend(rows) or len(rows)
+    )
 
     assert storage.upsert_observations_to_supabase([sale]) == 1
     assert written and not set(TECHNICAL) & set(written[0]["raw_payload"])
