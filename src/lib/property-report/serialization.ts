@@ -14,7 +14,7 @@ import type {
   SaleRisk,
   SaleScoreFactor,
 } from "@/lib/types";
-import { buildCeilingSnapshot } from "./analysis";
+import type { buildCeilingSnapshot } from "./ceiling-snapshot";
 import { AppSaleRow, SavedPropertyReport, SavedReportRow } from "../property-reports";
 import type { PlanEntitlements } from "@/lib/plans";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";

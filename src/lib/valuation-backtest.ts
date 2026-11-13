@@ -15,10 +15,11 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
-import { propertyTypeFamily } from "@/lib/property-type-family";
+import { matchesPropertyFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
 import { averageRounded } from "@/lib/rounding";
-import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
+import { readSaleThroughDoor } from "@/lib/entitlements.server";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -142,7 +143,12 @@ export async function getValuationBacktest({
 }): Promise<ValuationBacktestResponse> {
   await assertValuationBacktestAvailable(auth);
 
-  const sale = await getReferenceSale(auth, input.saleId);
+  const sale = await readSaleThroughDoor<AppSaleRow & { id: string }>(
+    auth,
+    input.saleId,
+    "plan",
+    REFERENCE_SALE_COLUMNS,
+  );
   const latitude = finiteNumber(sale.latitude);
   const longitude = finiteNumber(sale.longitude);
   if (latitude == null || longitude == null) {
@@ -300,7 +306,7 @@ export function buildValuationBacktest({
     .sort((a, b) => new Date(b.saleDate).getTime() - new Date(a.saleDate).getTime());
   const eligibleTests = normalized
     .filter((transaction) => new Date(transaction.saleDate).getTime() >= oldestTestDate.getTime())
-    .filter((transaction) => propertyTypeMatches(transaction.propertyType, subject.propertyType))
+    .filter((transaction) => matchesPropertyFamily(transaction.propertyType, subject.propertyType))
     .filter((transaction) => surfaceComparable(transaction.surfaceM2, subject.surfaceM2))
     .slice(0, options.maxTests);
   const points = eligibleTests.map((test) =>
@@ -334,21 +340,6 @@ export function buildValuationBacktest({
       "Un faible volume de tests ou une erreur élevée impose de renforcer la fourchette par des références manuelles.",
     ],
   };
-}
-
-async function getReferenceSale(
-  auth: SupabaseAuthContext,
-  saleId: string,
-): Promise<AppSaleRow & { id: string }> {
-  const { data, error } = await auth.supabase
-    .from("v_auction_sales_app")
-    .select(REFERENCE_SALE_COLUMNS)
-    .eq("id", saleId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.id) throw new NotFoundError("Vente introuvable ou non accessible.");
-  return data as AppSaleRow & { id: string };
 }
 
 async function fetchBacktestTransactions({
@@ -728,12 +719,6 @@ function surfaceComparable(surfaceM2: number, subjectSurfaceM2: number | null): 
   if (!subjectSurfaceM2 || subjectSurfaceM2 <= 0) return true;
   const deltaPct = Math.abs((surfaceM2 - subjectSurfaceM2) / subjectSurfaceM2) * 100;
   return deltaPct <= 60;
-}
-
-function propertyTypeMatches(value: string | null, reference: string | null): boolean {
-  const referenceFamily = propertyTypeFamily(reference);
-  if (referenceFamily === "unknown") return true;
-  return propertyTypeFamily(value) === referenceFamily;
 }
 
 function bboxAround(lat: number, lng: number, radiusM: number) {

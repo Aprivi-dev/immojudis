@@ -4,7 +4,8 @@ import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import type { MarketEstimate } from "@/lib/market.server";
 import { MARKET_GAP_WITHHELD_OCCUPIED } from "@/lib/market-gap";
 import { buildValuePreview } from "@/lib/value-preview";
-import { buildCeilingSnapshot, buildOpportunityAnalysis } from "./analysis";
+import { buildOpportunityAnalysis } from "./analysis";
+import { buildCeilingSnapshot } from "./ceiling-snapshot";
 import { deriveOpportunityScore } from "./serialization";
 
 const SURFACE = 80;

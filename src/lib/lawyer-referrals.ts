@@ -450,9 +450,9 @@ function lawyerRowToRecipient(row: ReferralMatchedLawyerRow): ReferralRecipient 
 }
 
 /** "active" or "trial" only while the placement window is open; anything else is "none". */
-function placementOf(row: ReferralMatchedLawyerRow, now = new Date()): LawyerReferralPlacement {
+function placementOf(row: ReferralMatchedLawyerRow): LawyerReferralPlacement {
   const status = row.paid_placement_status;
-  if ((status === "active" || status === "trial") && paidPlacementIsActive(row, now)) return status;
+  if ((status === "active" || status === "trial") && paidPlacementIsActive(row)) return status;
   return "none";
 }
 

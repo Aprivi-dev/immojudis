@@ -1,8 +1,6 @@
 import { labelFingerprint } from "@/lib/label-fingerprint";
 import { parisDateKey } from "@/lib/paris-time";
-export { labelFingerprint };
-// Repris par `tribunal-judicial-activity.ts`, qui le lisait ici avant `@/lib/paris-time`.
-export { parisDateKey as parisDayKey };
+
 /**
  * Conservative identity of one judicial lot across announcements.
  *

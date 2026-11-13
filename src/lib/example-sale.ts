@@ -1053,13 +1053,6 @@ export function getExampleSaleRecords(
 }
 
 /**
- * Figures of the Bordeaux example as the home page presents them. They are
- * computed with the same ceiling engine and default scenario as the example page
- * (refresh works, standard fees, default profile), never typed twice, so the two
- * pages cannot disagree. Amounts are rounded to 100 €, consistently: value -
- * fees and works - margin = ceiling.
- */
-/**
  * Les choix de départ du calcul de l'enchère plafond d'un exemple, avant tout réglage du visiteur :
  * le niveau de travaux que l'annonce décrit (Bordeaux : « Rafraîchissement à prévoir »). Les chiffres
  * de l'accueil partent des mêmes choix, si bien que /annonce-exemple affiche le même plafond.
@@ -1072,6 +1065,13 @@ export function exampleCeilingChoices(key: ExampleSaleKey): CeilingUserChoices {
   };
 }
 
+/**
+ * Figures of the Bordeaux example as the home page presents them. They are
+ * computed with the same ceiling engine and default scenario as the example page
+ * (refresh works, standard fees, default profile), never typed twice, so the two
+ * pages cannot disagree. Amounts are rounded to 100 €, consistently: value -
+ * fees and works - margin = ceiling.
+ */
 export function exampleHeadlineFigures() {
   const { sale, marketEstimate } = EXAMPLE_SALE_RECORDS.bordeaux;
   const surface = sale.app_surface_m2 ?? 0;

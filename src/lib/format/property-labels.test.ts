@@ -63,8 +63,10 @@ describe("propertyTypeLabel", () => {
     expect(propertyTypeLabel(null)).toBe("Bien");
   });
 
-  it("keeps a human-written label untouched", () => {
-    expect(propertyTypeLabel("Château")).toBe("Château");
+  it("keeps a human-written label that no family recognises untouched", () => {
+    expect(propertyTypeLabel("Péniche")).toBe("Péniche");
+    // Le château est une maison depuis la famille commune (lot 9 A), comme pour les loyers.
+    expect(propertyTypeLabel("Château")).toBe("Maison");
   });
 });
 

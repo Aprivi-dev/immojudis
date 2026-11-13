@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "./public-sale-summary";
+import { fetchPublicSaleSummary } from "./public-sale-summary";
+import { UUID_PATTERN } from "./uuid";
 
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const row = {
@@ -90,7 +91,7 @@ describe("public sale summary", () => {
     expect(await fetchPublicSaleSummary({ rpc }, "not-a-uuid")).toEqual({ kind: "missing" });
     expect(await fetchPublicSaleSummary({ rpc }, "../../etc/passwd")).toEqual({ kind: "missing" });
     expect(rpc).not.toHaveBeenCalled();
-    expect(SALE_ID_PATTERN.test("00000000-0000-0000-0000-000000000000")).toBe(true);
+    expect(UUID_PATTERN.test("00000000-0000-0000-0000-000000000000")).toBe(true);
   });
 
   it("throws when the function is missing: no legacy preview any more", async () => {

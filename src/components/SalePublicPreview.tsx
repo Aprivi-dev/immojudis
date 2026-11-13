@@ -29,7 +29,7 @@ import {
   LAWYER_ROOMS_LABEL,
   lawyerSourceForDisplayedValue,
 } from "@/lib/lawyer-fact-sources";
-import { isPastSaleDay } from "@/lib/sale-countdown";
+import { isPastParisDay } from "@/lib/paris-time";
 import { formatDate, formatPrice, formatPricePerM2, formatShortDate } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
@@ -375,7 +375,7 @@ export function SalePublicPreview({
   // lit sa propre date.
   const pastDate = useSyncExternalStore(
     subscribeNever,
-    () => isPastSaleDay(preview.sale_date),
+    () => isPastParisDay(preview.sale_date),
     () => false,
   );
   const hearingTime = saleHearingTime(preview.sale_date);

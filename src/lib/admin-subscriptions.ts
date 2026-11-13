@@ -10,6 +10,7 @@ import { asRecord, asRecordOrNull } from "@/lib/guards";
 import type { AdminPageQuery } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { NotFoundError } from "@/lib/api-errors";
+import { isUuid } from "@/lib/uuid";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 type UserSubscriptionInsert = Database["public"]["Tables"]["user_subscriptions"]["Insert"];
@@ -319,10 +320,6 @@ function subscriptionToSummary(
     createdAt: subscription.created_at,
     updatedAt: subscription.updated_at,
   };
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function asJson(value: unknown): Json {

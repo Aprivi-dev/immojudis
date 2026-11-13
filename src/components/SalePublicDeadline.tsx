@@ -3,11 +3,9 @@
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import { useSyncExternalStore } from "react";
 import { Badge, type BadgeTone } from "@/components/ui/primitives";
-import {
-  calendarDaysBetween,
-  parisDateKey,
-  resolveSaleCountdownTarget,
-} from "@/lib/sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
+import { resolveSaleCountdownTarget } from "@/lib/sale-countdown";
 import { saleHearingTime } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 

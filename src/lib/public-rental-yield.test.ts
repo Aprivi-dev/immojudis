@@ -4,10 +4,6 @@ import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
 
-import {
-  YIELD_AT_STARTING_PRICE_LABEL,
-  yieldText,
-} from "@/components/sale-detail/RentalMarketBlock";
 import { estimateSaleGrossYieldRange } from "@/lib/geo";
 import {
   PUBLIC_YIELD_LABEL,
@@ -44,18 +40,20 @@ const RELIABLE: RentReference = {
 };
 
 describe("rendement brut de la fiche publique (calculé par le serveur)", () => {
-  it("dit la même chose, avec les mêmes mots, que le bloc « Marché locatif » des comptes", () => {
-    expect(PUBLIC_YIELD_LABEL).toBe(YIELD_AT_STARTING_PRICE_LABEL);
-    const range = { centralPct: 6, lowPct: 4.5, highPct: 8 };
-    for (const reliability of ["reliable", "indicative"] as const) {
-      expect(publicYieldText(range, reliability)).toBe(yieldText(range, reliability));
-      const noBounds = { ...range, lowPct: null, highPct: null };
-      expect(publicYieldText(noBounds, reliability)).toBe(yieldText(noBounds, reliability));
-    }
+  it("écrit la valeur centrale et sa fourchette pour une référence fiable, la fourchette seule sinon", () => {
+    expect(PUBLIC_YIELD_LABEL).toBe("Rendement brut à la mise à prix (charges comprises)");
+    const range = { centralPct: 6, lowPct: 8, highPct: 4.5 };
+    expect(plain(publicYieldText(range, "reliable") ?? undefined)).toBe(
+      "6,0 % (de 4,5 % à 8,0 % selon la fourchette de loyer)",
+    );
+    expect(plain(publicYieldText(range, "indicative") ?? undefined)).toBe("entre 4,5 % et 8,0 %");
+    const noBounds = { ...range, lowPct: null, highPct: null };
+    expect(plain(publicYieldText(noBounds, "reliable") ?? undefined)).toBe("6,0 %");
+    expect(publicYieldText(noBounds, "indicative")).toBeNull();
     const computed = estimateSaleGrossYieldRange(SALE, 50, RELIABLE)!;
     expect(publicRentalYield(SALE, RELIABLE)).toEqual({
       kind: "yield",
-      text: yieldText(computed, "reliable"),
+      text: publicYieldText(computed, "reliable"),
     });
     expect(publicRentalYield(SALE, RELIABLE)?.text).toMatch(
       /^\d+,\d % \(de \d+,\d % à \d+,\d % selon la fourchette de loyer\)$/,

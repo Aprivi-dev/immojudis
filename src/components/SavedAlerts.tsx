@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { useAuth } from "@/hooks/use-auth";
-import { createAlert, getAlerts, updateAlert, deleteAlert } from "@/lib/queries";
+import { createAlert, getAlerts, updateAlert, deleteAlert } from "@/lib/alert-queries";
 import {
   createWatchedZone,
   deleteWatchedZone,

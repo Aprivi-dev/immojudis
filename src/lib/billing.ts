@@ -11,7 +11,8 @@ import {
   recordCommercialAcceptance,
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
-import { assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
+import { analysisPriceId, assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
+import { serverEnv } from "@/lib/env";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import {
@@ -57,19 +58,14 @@ const STRIPE_API_VERSION = "2026-06-24.dahlia";
 /** Legacy one-time access (30 days) retained for validating historical webhooks. */
 export const ANALYSIS_ACCESS_DAYS = 30;
 
-function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
-  const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
-  if (!priceId) {
-    throw new ConfigurationError(
-      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 59 € / mois.",
-    );
-  }
-  if (!/^price_[A-Za-z0-9]+$/.test(priceId)) {
-    throw new ConfigurationError(
-      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID invalide.",
-    );
-  }
-  return priceId;
+function resolveAnalysisPriceId(): string {
+  const priceId = analysisPriceId();
+  if (priceId) return priceId;
+  throw new ConfigurationError(
+    serverEnv().stripe.analysisPriceId
+      ? "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID invalide."
+      : "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 59 € / mois.",
+  );
 }
 
 let stripeClient: Stripe | undefined;
@@ -78,13 +74,13 @@ const ANALYSIS_ALREADY_ATTACHED_MESSAGE =
   "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.";
 
 function stripeSecretKey(): string {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = serverEnv().stripe.secretKey;
   if (!key) throw new ConfigurationError("Stripe n'est pas configuré: STRIPE_SECRET_KEY manquant.");
   return key;
 }
 
 function stripeWebhookSecret(): string {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secret = serverEnv().stripe.webhookSecret;
   if (!secret)
     throw new ConfigurationError("Stripe webhook non configuré: STRIPE_WEBHOOK_SECRET manquant.");
   return secret;
@@ -1156,7 +1152,8 @@ async function retrieveCurrentSubscription(
 export function analysisSubscriptionPriceIds(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): string[] {
-  return [env.STRIPE_ANALYSIS_PRICE_ID, ...(env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS ?? "").split(",")]
+  const { analysisPriceId: current, legacyAnalysisPriceIds } = serverEnv(env).stripe;
+  return [current, ...(legacyAnalysisPriceIds ?? "").split(",")]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
 }
@@ -1184,7 +1181,7 @@ export function isRecognisedAnalysisPrice(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
   if (!price || !isAnalysisSubscriptionPrice(price.id, env)) return false;
-  if (price.id === env.STRIPE_ANALYSIS_PRICE_ID?.trim()) {
+  if (price.id === serverEnv(env).stripe.analysisPriceId) {
     return price.unit_amount === ANALYSIS_RECURRING_PRICE_CENTS;
   }
   return true;

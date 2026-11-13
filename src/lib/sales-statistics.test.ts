@@ -1,5 +1,21 @@
-import { describe, expect, it } from "vitest";
-import { buildSalesStatisticsResponse, buildSalesStatisticsSummary } from "@/lib/sales-statistics";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  plan: vi.fn(),
+  getSales: vi.fn(),
+  loadRents: vi.fn(),
+  usage: vi.fn(),
+}));
+
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/queries", () => ({ getSales: mocks.getSales }));
+vi.mock("@/lib/rent-reference.server", () => ({
+  createRentLookupSession: () => ({ load: mocks.loadRents }),
+}));
+vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.usage }));
+vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
+
+import { buildSalesStatisticsSummary, getSalesStatistics } from "@/lib/sales-statistics";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
 
@@ -18,174 +34,117 @@ function makeSale(overrides: Partial<AuctionSale> = {}): AuctionSale {
   };
 }
 
-describe("sales statistics rents", () => {
-  const reference = (rentPerM2: number) => ({
-    rentPerM2,
-    source: "anil_commune" as const,
-    reliability: "reliable" as const,
-    segment: "apt_all" as const,
-    communeCode: "23096",
-    lowPerM2: null,
-    highPerM2: null,
-    observations: 100,
-    vintage: 2025,
-    sourceUpdatedOn: "2025-12-11",
-  });
+const auth = { userId: "user-1", supabase: {} } as never;
+
+/** Les repères que le panneau « Repères sur votre recherche » affiche, et rien d'autre. */
+const DISPLAYED_KEYS = [
+  "averageInvestmentScore",
+  "capped",
+  "dpeCounts",
+  "dpeKnownCount",
+  "medianPriceEur",
+  "medianPricePerM2",
+  "sampleSize",
+];
+
+describe("statistiques de la recherche (route /api/sales/statistics)", () => {
   const sales = [
     makeSale({ id: "a", department: "23", starting_price_eur: 100_000, app_surface_m2: 50 }),
     makeSale({ id: "b", department: "23", starting_price_eur: 100_000, app_surface_m2: 50 }),
   ];
 
-  it("averages the yields of the commune rents, and leaves a department without rent out", () => {
-    expect(buildSalesStatisticsSummary(sales).averageGrossYieldPct).toBeNull();
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.plan.mockResolvedValue({ plan: "analyse" });
+    mocks.getSales.mockResolvedValue(sales);
+    mocks.loadRents.mockResolvedValue(() => null);
+  });
 
-    const summary = buildSalesStatisticsSummary(
-      sales,
-      false,
-      new Date("2026-07-06T00:00:00.000Z"),
-      (sale) => (sale.id === "a" ? reference(12) : reference(6)),
+  it("ne rend que les repères affichés, sans lire de loyer ni calculer de rendement", async () => {
+    const response = await getSalesStatistics({ auth, search: {} });
+
+    expect(Object.keys(response)).toEqual(["summary"]);
+    expect(Object.keys(response.summary).sort()).toEqual(DISPLAYED_KEYS);
+    expect(mocks.loadRents).not.toHaveBeenCalled();
+  });
+
+  it("ne lit les loyers de la carte ANIL que pour le filtre « rendement minimal »", async () => {
+    await getSalesStatistics({ auth, search: { minYield: 5 } });
+
+    expect(mocks.loadRents).toHaveBeenCalledTimes(1);
+    expect(mocks.loadRents).toHaveBeenCalledWith(sales);
+  });
+
+  it("mesure l'usage avec la taille de l'échantillon et les filtres de l'URL", async () => {
+    await getSalesStatistics({ auth, search: { department: "23" } });
+
+    expect(mocks.usage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: "sales.statistics_viewed",
+        metadata: { sample_size: 2, capped: false, filters: { department: "23" } },
+      }),
     );
-
-    // About 6.2 % and 3.1 %.
-    expect(summary.averageGrossYieldPct).toBeCloseTo(4.7, 1);
-    expect(summary.medianGrossYieldPct).toBeCloseTo(4.7, 1);
   });
 
-  it("carries the mandatory credit next to the yields", () => {
-    const response = buildSalesStatisticsResponse({ sales, capped: false, search: {} });
+  it("reste réservée à l'offre Analyse", async () => {
+    mocks.plan.mockResolvedValue({ plan: "decouverte" });
 
-    expect(response.meta.rentAttribution).toBe(
-      "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin.",
-    );
-  });
-
-  it("says honestly what the yields are made of: ANIL, department, or both", () => {
-    const build = (rents?: (sale: { id: string }) => ReturnType<typeof reference> | null) =>
-      buildSalesStatisticsResponse({ sales, capped: false, search: {}, rents }).meta.rentBasis;
-    const department = {
-      rentPerM2: 14,
-      source: "department_estimate" as const,
-      reliability: "indicative" as const,
-    };
-
-    expect(build((sale) => (sale.id ? reference(12) : null))).toBe("anil");
-    expect(build((sale) => (sale.id === "a" ? reference(12) : department) as never)).toBe("mixed");
-    expect(build(undefined)).toBe("department");
-    // Department 23 has no department rent: those sales have no yield and do not vote.
-    expect(
-      buildSalesStatisticsResponse({
-        sales: [makeSale({ id: "x", department: "33" })],
-        capped: false,
-        search: {},
-      }).meta.rentBasis,
-    ).toBe("department");
-  });
-
-  it("leaves a property that is not a dwelling out of the yields", () => {
-    const land = makeSale({ id: "terrain", department: "23", property_type: "land" });
-    const summary = buildSalesStatisticsSummary([land], false, undefined, () => reference(12));
-
-    expect(summary.averageGrossYieldPct).toBeNull();
+    await expect(getSalesStatistics({ auth, search: {} })).rejects.toMatchObject({ status: 403 });
+    expect(mocks.getSales).not.toHaveBeenCalled();
   });
 });
 
 describe("sales statistics", () => {
   it("builds aggregate search statistics from judicial sales", () => {
-    const summary = buildSalesStatisticsSummary(
-      [
-        makeSale({
-          id: "sale-1",
-          department: "33",
-          property_type: "house",
-          starting_price_eur: 100_000,
-          app_surface_m2: 50,
-          investment_score: 70,
-          source_blocks: { dpe_classe: "C" },
-        }),
-        makeSale({
-          id: "sale-2",
-          department: "33",
-          property_type: "apartment",
-          starting_price_eur: 200_000,
-          app_surface_m2: 100,
-          investment_score: 80,
-          sale_date: "2026-06-01T09:00:00.000Z",
-          source_blocks: { dpe_classe: "D" },
-          adjudication_price_eur: 230_000,
-          status: "adjudicated",
-        }),
-        makeSale({
-          id: "sale-3",
-          department: "75",
-          property_type: "apartment",
-          starting_price_eur: 300_000,
-          app_surface_m2: null,
-          investment_score: null,
-          source_blocks: null,
-        }),
-      ],
-      false,
-      new Date("2026-07-06T00:00:00.000Z"),
-    );
+    const summary = buildSalesStatisticsSummary([
+      makeSale({
+        id: "sale-1",
+        department: "33",
+        property_type: "house",
+        starting_price_eur: 100_000,
+        app_surface_m2: 50,
+        investment_score: 70,
+        source_blocks: { dpe_classe: "C" },
+      }),
+      makeSale({
+        id: "sale-2",
+        department: "33",
+        property_type: "apartment",
+        starting_price_eur: 200_000,
+        app_surface_m2: 100,
+        investment_score: 80,
+        sale_date: "2026-06-01T09:00:00.000Z",
+        source_blocks: { dpe_classe: "D" },
+        adjudication_price_eur: 230_000,
+        status: "adjudicated",
+      }),
+      makeSale({
+        id: "sale-3",
+        department: "75",
+        property_type: "apartment",
+        starting_price_eur: 300_000,
+        app_surface_m2: null,
+        investment_score: null,
+        source_blocks: null,
+      }),
+    ]);
 
     expect(summary).toMatchObject({
       sampleSize: 3,
       capped: false,
       medianPriceEur: 200_000,
-      averagePriceEur: 200_000,
       medianPricePerM2: 2_000,
       averageInvestmentScore: 75,
-      medianInvestmentScore: 75,
-      upcomingSales: 2,
-      adjudicatedSales: 1,
       dpeKnownCount: 2,
     });
     expect(summary.dpeCounts).toMatchObject({
       C: 1,
       D: 1,
     });
-    expect(summary.averageGrossYieldPct).not.toBeNull();
   });
 
-  it("returns ranked property, department and status segments", () => {
-    const response = buildSalesStatisticsResponse({
-      sales: [
-        makeSale({
-          id: "sale-1",
-          department: "33",
-          property_type: "apartment",
-          status: "active",
-        }),
-        makeSale({
-          id: "sale-2",
-          department: "33",
-          property_type: "apartment",
-          status: "active",
-        }),
-        makeSale({
-          id: "sale-3",
-          department: "75",
-          property_type: "house",
-          status: "adjudicated",
-        }),
-      ],
-      capped: true,
-      search: { department: "33" },
-      now: new Date("2026-07-06T00:00:00.000Z"),
-    });
-
-    expect(response.summary.capped).toBe(true);
-    expect(response.segments.propertyTypes[0]).toMatchObject({
-      key: "apartment",
-      count: 2,
-      sharePct: 66.7,
-    });
-    expect(response.segments.departments[0]).toMatchObject({
-      key: "33",
-      count: 2,
-    });
-    expect(response.meta.filters).toMatchObject({
-      department: "33",
-    });
+  it("dit si l'échantillon a atteint le plafond de lecture", () => {
+    expect(buildSalesStatisticsSummary([makeSale()], true).capped).toBe(true);
+    expect(buildSalesStatisticsSummary([]).sampleSize).toBe(0);
   });
 });

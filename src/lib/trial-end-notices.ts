@@ -9,7 +9,7 @@ import {
 } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { trialEndEmailMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { buildTrialEndMessage } from "@/lib/trial-end-email";
 import { EMAIL_PASS_BUDGET_MS } from "@/lib/email-campaign-pass";
 

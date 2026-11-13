@@ -8,11 +8,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   courtAliasMatchesOfficialName,
-  deduplicateTribunalListingSales,
   extractTribunalIdentityAddress,
   extractTribunalLegalReference,
   getTribunalListingStatistics,
 } from "@/lib/tribunal-listing-statistics-repository";
+import { deduplicateTribunalListingSales } from "@/lib/tribunal-listing-statistics/deduplication";
 
 type DeduplicationSale = Parameters<typeof deduplicateTribunalListingSales>[0][number];
 

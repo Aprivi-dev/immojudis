@@ -16,6 +16,7 @@ import {
 } from "@/lib/email-layout";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { PublicApiError } from "@/lib/api-errors";
+import { contactMethodLabel } from "@/lib/lawyer-contact-method";
 import type { AdminPageQuery } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { formatPrice } from "@/lib/format/numbers";
@@ -744,12 +745,6 @@ function normalizeEmailDelivery(value: unknown): AdminLawyerReferralEmailDeliver
     detail: trimmedStringValue(delivery.detail),
     attemptedAt: trimmedStringValue(delivery.attemptedAt) ?? "",
   };
-}
-
-function contactMethodLabel(value: LawyerReferralRow["preferred_contact_method"]): string {
-  if (value === "phone") return "Téléphone";
-  if (value === "either") return "Email ou téléphone";
-  return "Email";
 }
 
 function referencedLawyerToOption(

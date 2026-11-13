@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
-import { createSupabaseSaleReminderStore } from "@/lib/sale-reminders-store";
+import { createSupabaseSaleReminderStore, dispatchJournalMarks } from "@/lib/sale-reminders-store";
 import type { FollowedSnapshot, SaleResultStore } from "@/lib/sale-results";
 import { EMAIL_PASS_MAX_CONSENTING_USERS } from "@/lib/email-campaign-pass";
 
@@ -97,28 +97,6 @@ export function createSupabaseSaleResultStore(): SaleResultStore {
       return typeof data === "string" && data ? data : null;
     },
 
-    async markSent(ids, { messageId, at }) {
-      if (!ids.length) return;
-      const { error } = await supabaseAdmin
-        .from("sale_result_dispatches")
-        .update({
-          status: "sent",
-          message_id: messageId,
-          sent_at: at.toISOString(),
-          updated_at: at.toISOString(),
-          error: null,
-        })
-        .in("id", ids);
-      if (error) throw error;
-    },
-
-    async markFailed(ids, { error: code }) {
-      if (!ids.length) return;
-      const { error } = await supabaseAdmin
-        .from("sale_result_dispatches")
-        .update({ status: "failed", error: code, updated_at: new Date().toISOString() })
-        .in("id", ids);
-      if (error) throw error;
-    },
+    ...dispatchJournalMarks("sale_result_dispatches"),
   };
 }

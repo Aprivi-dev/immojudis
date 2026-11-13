@@ -60,7 +60,6 @@ export type CourtRegistryFallback = {
  */
 export async function findCourtRegistryFallback(
   sale: CourtRegistryFallbackSaleInput,
-  now: Date = new Date(),
 ): Promise<CourtRegistryFallback | null> {
   const courtCode = sale.tribunal_code?.trim();
   if (!courtCode) return null;
@@ -90,7 +89,7 @@ export async function findCourtRegistryFallback(
         source: {
           kind: INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
           url: null,
-          observedAt: now.toISOString(),
+          observedAt: new Date().toISOString(),
           observedBy: "agent",
         },
       },

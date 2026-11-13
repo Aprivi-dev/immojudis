@@ -94,12 +94,8 @@ export function emailHeading(
 }
 
 /** Lien tertiaire : `goldText`, souligné, 600. `html` est déjà échappé. */
-export function emailLink(
-  href: string,
-  html: string,
-  options: { breakAll?: boolean } = {},
-): string {
-  return `<a href="${attr(href)}" class="ej-link" style="color:${C.goldText};text-decoration:underline;font-weight:600;${options.breakAll ? "word-break:break-all;overflow-wrap:anywhere;" : ""}">${html}</a>`;
+export function emailLink(href: string, html: string): string {
+  return `<a href="${attr(href)}" class="ej-link" style="color:${C.goldText};text-decoration:underline;font-weight:600;">${html}</a>`;
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 import { favoriteDossierStatusLabel } from "@/lib/favorite-dossier-shared";
 import type { FavoriteSale } from "@/lib/favorites";
 import * as queryKeys from "@/lib/query-keys";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import {
   recentSaleChanges,
   type DescribedSaleChange,

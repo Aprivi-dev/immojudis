@@ -374,7 +374,7 @@ describe("page d'un tribunal : indexation", () => {
       ],
     });
     const metadata = await generateMetadata(params("tribunal-judiciaire-bobigny"));
-    expect(String(metadata.description)).toContain("1 décembre 2026");
+    expect(String(metadata.description)).toContain("1er décembre 2026");
     expect(String(metadata.description)).not.toContain("20 octobre 2026");
   });
 });
@@ -475,7 +475,7 @@ describe("page d'un tribunal : contenu", () => {
     });
     render(await Page(params("tribunal-judiciaire-bobigny")));
     const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
-    expect(figures.textContent).toContain("1 décembre 2026");
+    expect(figures.textContent).toContain("1er décembre 2026");
     expect(figures.textContent).not.toContain("20 octobre 2026");
     const list = screen.getByRole("region", { name: "Les 2 prochaines ventes" });
     expect(list.textContent).toContain("Vente reportée · nouvelle date à confirmer");

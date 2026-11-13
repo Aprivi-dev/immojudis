@@ -32,9 +32,10 @@ import {
   type FactClaimWithdrawReason,
 } from "@/lib/fact-claim-decisions";
 import { toast } from "@/lib/toast";
+import { UUID_SOURCE } from "@/lib/uuid";
 
 const QUERY_KEY = ["admin-fact-claim-decisions"] as const;
-const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UUID_IN_TEXT = new RegExp(UUID_SOURCE, "i");
 
 const ACTION_LABELS: Record<FactClaimDecisionAction, string> = {
   accept: "Accepter l’observation",
@@ -118,7 +119,7 @@ export function AdminFactClaimDecisionPanel() {
   const submitSaleFilter = (event: FormEvent) => {
     event.preventDefault();
     const text = saleInput.trim();
-    const match = UUID_PATTERN.exec(text);
+    const match = UUID_IN_TEXT.exec(text);
     if (text && !match) {
       setSaleInputError("Identifiant de vente non reconnu. Collez l’adresse de la fiche.");
       return;

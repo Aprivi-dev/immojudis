@@ -10,6 +10,7 @@ import {
   stripeAccessPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
+import { serverEnv } from "@/lib/env";
 import { isPlanPeriodActive } from "@/lib/plans";
 
 /**
@@ -251,7 +252,7 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
       stripeSubscriptions: stripeResult.subscriptions,
       rows,
       acceptedPriceIds: analysisSubscriptionPriceIds(),
-      currentPriceId: process.env.STRIPE_ANALYSIS_PRICE_ID?.trim() || null,
+      currentPriceId: serverEnv().stripe.analysisPriceId ?? null,
       listComplete: !stripeResult.truncated,
     }),
   };
@@ -264,7 +265,7 @@ const ALERT_SAMPLE_SIZE = 10;
 export function billingReconciliationConfigured(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
-  return Boolean(env.STRIPE_SECRET_KEY?.trim()) && analysisSubscriptionPriceIds(env).length > 0;
+  return Boolean(serverEnv(env).stripe.secretKey) && analysisSubscriptionPriceIds(env).length > 0;
 }
 
 /**

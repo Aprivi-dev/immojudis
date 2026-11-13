@@ -47,7 +47,7 @@ export const TRIAL_END_NO_CHARGE_TEXT =
 export function trialEndDayLabel(endsAt: string | Date): string {
   const date = endsAt instanceof Date ? endsAt : new Date(endsAt);
   if (Number.isNaN(date.getTime())) throw new Error("Trial end email: invalid end date.");
-  return formatDate(date.toISOString()).replace(/^1 /, "1er ");
+  return formatDate(date.toISOString());
 }
 
 export function trialEndSubject(endsAt: string | Date, internal: boolean): string {

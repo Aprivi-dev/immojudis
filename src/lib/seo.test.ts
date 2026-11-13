@@ -52,7 +52,12 @@ describe("sale headline", () => {
   });
 
   it("writes the hearing date exactly like formatDate (Paris time, day key not shifted)", () => {
-    for (const saleDate of ["2026-10-20", "2026-12-31T23:30:00Z", "2026-07-14T22:30:00Z"]) {
+    for (const saleDate of [
+      "2026-10-20",
+      "2026-12-31T23:30:00Z",
+      "2026-07-14T22:30:00Z",
+      "2026-11-01T09:30:00Z",
+    ]) {
       expect(saleHeadline(sale({ sale_date: saleDate }))).toMatch(
         new RegExp(` le ${formatDate(saleDate, null)}$`),
       );

@@ -1,5 +1,6 @@
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
-import { propertyTypeFamily } from "@/lib/property-type-family";
+import { matchesPropertyFamily } from "@/lib/property-type-family";
+import { quantileSorted } from "@/lib/stats";
 export type DvfComparableCandidate = {
   id: string;
   saleDate: string;
@@ -173,9 +174,13 @@ export function buildDvfComparableAnalysis({
   // liste affichée (n° 23). Avant, la médiane changeait avec le nombre de lignes demandées.
   const displayed = scored.slice(0, limit);
   const sortedPrices = scored.map((candidate) => candidate.pricePerM2).sort((a, b) => a - b);
-  const p25 = percentileRounded(sortedPrices, 0.25);
-  const median = percentileRounded(sortedPrices, 0.5);
-  const p75 = percentileRounded(sortedPrices, 0.75);
+  const roundedQuantile = (p: number) => {
+    const value = quantileSorted(sortedPrices, p);
+    return value == null ? null : Math.round(value);
+  };
+  const p25 = roundedQuantile(0.25);
+  const median = roundedQuantile(0.5);
+  const p75 = roundedQuantile(0.75);
   const weightedAverage = weightedAveragePrice(scored);
   const confidence = assessConfidence({
     scored,
@@ -279,7 +284,7 @@ function normalizeCandidate({
     pricePerM2,
     monthsOld,
     surfaceDeltaPct,
-    typeMatch: comparableTypeMatch(candidate.propertyType, subject.propertyType),
+    typeMatch: matchesPropertyFamily(candidate.propertyType, subject.propertyType),
   };
 }
 
@@ -431,8 +436,8 @@ function removeOutliers(values: NormalizedComparable[]): {
 } {
   if (values.length < 7) return { values, removed: 0 };
   const prices = values.map((value) => value.pricePerM2).sort((a, b) => a - b);
-  const p25 = percentile(prices, 0.25);
-  const p75 = percentile(prices, 0.75);
+  const p25 = quantileSorted(prices, 0.25)!;
+  const p75 = quantileSorted(prices, 0.75)!;
   const iqr = p75 - p25;
   if (iqr <= 0) return { values, removed: 0 };
   const lower = Math.max(MIN_PRICE_PER_M2, p25 - 1.5 * iqr);
@@ -654,20 +659,6 @@ function missingAnalysis({
   };
 }
 
-function percentileRounded(sortedAsc: number[], p: number): number | null {
-  if (sortedAsc.length === 0) return null;
-  return Math.round(percentile(sortedAsc, p));
-}
-
-function percentile(sortedAsc: number[], p: number): number {
-  if (sortedAsc.length === 0) return 0;
-  const idx = (sortedAsc.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sortedAsc[lo];
-  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
-}
-
 function monthDistance(from: Date, to: Date): number {
   const ms = Math.max(0, to.getTime() - from.getTime());
   return ms / (1000 * 60 * 60 * 24 * 30.4375);
@@ -675,17 +666,6 @@ function monthDistance(from: Date, to: Date): number {
 
 function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function comparableTypeMatch(
-  candidateType: string | null | undefined,
-  subjectType: string | null | undefined,
-): boolean {
-  const subjectFamily = propertyTypeFamily(subjectType);
-  const candidateFamily = propertyTypeFamily(candidateType);
-  if (subjectFamily === "unknown") return true;
-  if (candidateFamily === "unknown") return false;
-  return candidateFamily === subjectFamily;
 }
 
 function formatPerM2(value: number): string {

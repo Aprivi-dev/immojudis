@@ -22,8 +22,6 @@ import {
   withPhotoMirror,
   type PhotoMirrorClient,
 } from "./photo-mirror";
-export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
-export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
 const DISCOVERY_VIEW = DISCOVERY_VIEW_NAME as typeof DETAIL_VIEW;

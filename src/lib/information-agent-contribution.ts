@@ -24,6 +24,7 @@ import {
 import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { publicLegalPublisher } from "@/lib/legal-documents";
 import { detectInformationAgentContactOptOut } from "@/lib/information-agent-inbound/reply-intent";
 import { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
 import { persistFactCandidates } from "@/lib/information-agent-inbound/attachments";
@@ -304,16 +305,13 @@ const RELEASE_GRACE_MS = 15 * 60 * 1000;
  * exister : l'objet orphelin est d'abord supprimé du stockage, la réservation n'est libérée
  * qu'ensuite. Sans cela, douze essais suffisaient à fermer le dépôt d'un dossier pour toujours.
  */
-async function releaseExpiredInformationAgentPortalUploads(
-  caseId: string,
-  now = new Date(),
-): Promise<number> {
+async function releaseExpiredInformationAgentPortalUploads(caseId: string): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_portal_upload_reservations")
     .select("id,storage_path")
     .eq("case_id", caseId)
     .eq("status", "reserved")
-    .lt("expires_at", new Date(now.getTime() - RELEASE_GRACE_MS).toISOString())
+    .lt("expires_at", new Date(Date.now() - RELEASE_GRACE_MS).toISOString())
     .limit(50);
   if (error) throw error;
   const expired = data ?? [];
@@ -355,11 +353,10 @@ async function consumeInformationAgentPortalUpload({
 function throwPortalUploadQuotaError(error: PortalUploadQuotaRpcError): never {
   const message = error.message ?? "";
   if (message.includes("INFORMATION_AGENT_PORTAL_QUOTA_EXCEEDED")) {
+    const contactEmail = publicLegalPublisher().contactEmail;
     throw new InformationAgentContributionError(
       `La capacité de dépôt de ce dossier est atteinte (${PORTAL_UPLOAD_QUOTA_FILES} fichiers). Répondez plutôt à l’email reçu${
-        process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim()
-          ? ` ou écrivez à ${process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL.trim()}`
-          : ""
+        contactEmail ? ` ou écrivez à ${contactEmail}` : ""
       }.`,
       413,
     );

@@ -1166,9 +1166,9 @@ function normalizeEmail(value: string): string {
 
 const STALE_DRAFT_DAYS = 3;
 
-function isStaleDraft(createdAt: string, now = Date.now()): boolean {
+function isStaleDraft(createdAt: string): boolean {
   const created = Date.parse(createdAt);
-  return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
+  return Number.isFinite(created) && Date.now() - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function SourceRefreshStatus({

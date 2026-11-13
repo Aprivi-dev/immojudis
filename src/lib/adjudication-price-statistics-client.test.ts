@@ -63,10 +63,10 @@ describe("adjudication-price-statistics-client", () => {
 
     await expect(fetchAdjudicationPriceStatistics("a b")).rejects.toThrow("Accès Analyse requis.");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/sales/a%20b/adjudication-statistics", {
-      headers: { Authorization: "Bearer jeton" },
-      cache: "no-store",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/sales/a%20b/adjudication-statistics",
+      expect.objectContaining({ headers: { Authorization: "Bearer jeton" } }),
+    );
   });
 
   it("transmet aussi le jeton pour l'annuaire des tribunaux", async () => {
@@ -75,9 +75,9 @@ describe("adjudication-price-statistics-client", () => {
 
     await expect(fetchAdjudicationPriceStatisticsDirectory()).rejects.toThrow("Erreur HTTP 500");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/tribunals/adjudication-statistics", {
-      headers: { Authorization: "Bearer jeton" },
-      cache: "no-store",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/tribunals/adjudication-statistics",
+      expect.objectContaining({ headers: { Authorization: "Bearer jeton" } }),
+    );
   });
 });

@@ -1,10 +1,11 @@
 import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
 import { departmentCode } from "@/lib/department-code";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
-import { formatDate } from "@/lib/format/dates";
+import { formatDate, formatDayLongMonth } from "@/lib/format/dates";
 import { formatPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
+import { median } from "@/lib/stats";
 import type { SaleVenueType } from "@/lib/types";
 import { parseTimestamp as timestamp } from "@/lib/timestamp";
 
@@ -163,13 +164,6 @@ export function topCities(
   return [...byKey.values()]
     .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, "fr"))
     .slice(0, limit);
-}
-
-export function medianOf(values: number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
@@ -382,12 +376,9 @@ export function groupDepartmentSalesByWeek(
       const label =
         key === currentKey
           ? "Semaine en cours"
-          : `Semaine du ${new Intl.DateTimeFormat("fr-FR", {
-              day: "numeric",
-              month: "long",
-              ...(start.getUTCFullYear() !== currentYear ? { year: "numeric" } : {}),
-              timeZone: "UTC",
-            }).format(start)}`;
+          : `Semaine du ${
+              start.getUTCFullYear() !== currentYear ? formatDate(key) : formatDayLongMonth(key)
+            }`;
       week = { key, label, sales: [] };
       weeks.set(key, week);
     }
@@ -453,7 +444,7 @@ export function aggregateDepartments(
       upcomingCount: sorted.length,
       nextSaleDate: nextSale?.saleDate ?? null,
       nextSaleVenueType: nextSale?.venueType ?? null,
-      medianStartingPriceEur: medianOf(tribunalPrices),
+      medianStartingPriceEur: median(tribunalPrices),
       medianSampleSize: tribunalPrices.length,
       types: [...typeCounts]
         .map(([label, count]) => ({ label, count }))

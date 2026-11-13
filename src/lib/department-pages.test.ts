@@ -24,13 +24,13 @@ import {
   indexableDepartments,
   isDepartmentPageIndexable,
   isParisToday,
-  medianOf,
   normalizeDepartmentCity,
   parisDateBlock,
   topCities,
   type DepartmentSaleInput,
 } from "./department-pages";
 import { departmentCode } from "./department-code";
+import { median } from "./stats";
 import type { SaleVenueType } from "./types";
 
 function sale(id: string, overrides: Partial<DepartmentSaleInput> = {}): DepartmentSaleInput {
@@ -418,12 +418,12 @@ describe("communes les plus présentes", () => {
   });
 });
 
-describe("medianOf", () => {
+describe("médiane des mises à prix (stats.median)", () => {
   it("rend la médiane, ou null sans valeur", () => {
-    expect(medianOf([])).toBeNull();
-    expect(medianOf([5])).toBe(5);
-    expect(medianOf([9, 1, 5])).toBe(5);
-    expect(medianOf([1, 2, 3, 10])).toBe(2.5);
+    expect(median([])).toBeNull();
+    expect(median([5])).toBe(5);
+    expect(median([9, 1, 5])).toBe(5);
+    expect(median([1, 2, 3, 10])).toBe(2.5);
   });
 });
 

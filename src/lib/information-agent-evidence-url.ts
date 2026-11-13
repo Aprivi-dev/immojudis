@@ -1,13 +1,13 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
+import { UUID_SOURCE } from "@/lib/uuid";
 
 const APPROVED_EVIDENCE_BUCKET = "information-agent-approved";
 export const APPROVED_EVIDENCE_URL_TTL_SECONDS = 10 * 60;
 
-const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const APPROVED_PATH = new RegExp(
-  `^(${UUID})/${UUID}/(?:photo|piece-jointe)-[0-9a-f-]{36}\\.(?:webp|pdf)$`,
+  `^(${UUID_SOURCE})/${UUID_SOURCE}/(?:photo|piece-jointe)-[0-9a-f-]{36}\\.(?:webp|pdf)$`,
 );
 
 export function parseApprovedEvidencePath(value: string | null): { saleId: string } | null {

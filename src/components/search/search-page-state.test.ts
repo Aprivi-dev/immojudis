@@ -147,7 +147,6 @@ describe("résumé de la page affichée", () => {
 
     expect(statistics.medianPrice).toBe(100_001);
     expect(statistics.averageScore).toBe(62);
-    expect(statistics.upcomingSales).toBe(2);
     expect(statistics.dpeKnownCount).toBe(2);
     expect(statistics.dpeCounts.C).toBe(2);
   });
@@ -157,7 +156,6 @@ describe("résumé de la page affichée", () => {
       medianPrice: null,
       medianPricePerM2: null,
       averageScore: null,
-      upcomingSales: 0,
       dpeKnownCount: 0,
     });
   });

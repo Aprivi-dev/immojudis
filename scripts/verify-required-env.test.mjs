@@ -11,7 +11,8 @@ import {
   DEFAULT_ANALYSIS_OFFER_LABEL,
 } from "../src/lib/analysis-offer";
 import { legalConfigurationStatus } from "../src/lib/legal-documents";
-import { resolveSiteOrigin, SITE_URL_ENV_NAMES } from "../src/lib/site-url";
+import { SITE_URL_ENV_NAMES } from "../src/lib/env";
+import { resolveSiteOrigin } from "../src/lib/site-url";
 import {
   ANALYSIS_RECURRING_PRICE_CENTS,
   analysisOfferLabelAmountsCents as scriptAmounts,

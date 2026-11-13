@@ -1,9 +1,10 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
-import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 type UrbanPlanningSignalKind =
   | "zoning"
@@ -55,11 +56,6 @@ export type UrbanPlanningAnalysis = {
   decisionImpact: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 type SignalDefinition = {
@@ -382,7 +378,8 @@ function collectTextCandidates({
     );
   }
   for (const risk of risks) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
+    for (const text of riskTexts(risk, { withType: true, excerptsOnly: true }))
+      addCandidate(candidates, text, "Preuves de risques");
   }
 
   return candidates.filter((candidate) =>
@@ -400,19 +397,6 @@ function dedicatedSourceFields(blocks: Record<string, unknown>) {
         path,
       ),
   );
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_type, risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {

@@ -2,7 +2,7 @@ import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
@@ -43,11 +43,6 @@ export type DemographicAnalysis = {
   decisionImpact: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 type SignalDefinition = {

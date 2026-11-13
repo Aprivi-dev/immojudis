@@ -4,7 +4,8 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { publishedDay, sourceVisitExcerpt } from "./listing-evidence";
-import { calendarDaysBetween, parisDateKey } from "./sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
 import { cleanDateForListing, cleanListingAddress, cleanVisitText } from "./listing-data-cleanup";
 
 export function listingAddress(sale: AuctionSale): string {

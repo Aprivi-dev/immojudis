@@ -187,10 +187,28 @@ export function createSupabaseSaleReminderStore(): SaleReminderStore {
       return typeof data === "string" && data ? data : null;
     },
 
-    async markSent(ids, { messageId, at }) {
+    ...dispatchJournalMarks("sale_reminder_dispatches"),
+
+    userEmail: (userId) => readUserEmail(userId),
+
+    async purgeJournal() {
+      const { data, error } = await supabaseAdmin.rpc("purge_sale_reminder_dispatches");
+      if (error) throw error;
+      return typeof data === "number" ? data : 0;
+    },
+  };
+}
+
+/**
+ * Issue d'un envoi notée dans son journal (rappels d'audience, alertes de résultat) : les deux
+ * tables ont les mêmes colonnes d'état et changent ensemble.
+ */
+export function dispatchJournalMarks(table: "sale_reminder_dispatches" | "sale_result_dispatches") {
+  return {
+    async markSent(ids: string[], { messageId, at }: { messageId: string | null; at: Date }) {
       if (!ids.length) return;
       const { error } = await supabaseAdmin
-        .from("sale_reminder_dispatches")
+        .from(table)
         .update({
           status: "sent",
           message_id: messageId,
@@ -202,21 +220,13 @@ export function createSupabaseSaleReminderStore(): SaleReminderStore {
       if (error) throw error;
     },
 
-    async markFailed(ids, { error: detail }) {
+    async markFailed(ids: string[], { error: detail }: { error: string }) {
       if (!ids.length) return;
       const { error } = await supabaseAdmin
-        .from("sale_reminder_dispatches")
+        .from(table)
         .update({ status: "failed", error: detail, updated_at: new Date().toISOString() })
         .in("id", ids);
       if (error) throw error;
-    },
-
-    userEmail: (userId) => readUserEmail(userId),
-
-    async purgeJournal() {
-      const { data, error } = await supabaseAdmin.rpc("purge_sale_reminder_dispatches");
-      if (error) throw error;
-      return typeof data === "number" ? data : 0;
     },
   };
 }

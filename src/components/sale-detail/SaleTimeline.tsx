@@ -5,21 +5,18 @@ import { listingSaleStatus, saleTimeConflict } from "@/lib/listing-evidence";
 import { formatDayMonth, formatPrice } from "@/lib/format";
 import { getSaleProcedure, paymentDeadlineLabel, saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleKeyFacts } from "@/lib/sale-key-facts";
+import { saleHearingTime } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 import { lowerFirst } from "./FirstAuctionGuide";
 import styles from "./SaleOverview.module.css";
 
-const TIME = new Intl.DateTimeFormat("fr-FR", {
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "Europe/Paris",
-});
-
-/** « 19 nov. » et « 14 h 30 », ou `null` pour une date illisible. */
-function shortDate(value: string): { day: string; time: string } | null {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return { day: formatDayMonth(value), time: TIME.format(date).replace(":", " h ") };
+/**
+ * « 19 nov. » et « 9 h 30 » (`saleHearingTime` : pas d'heure pour une audience datée sans heure),
+ * ou `null` pour une date illisible.
+ */
+function shortDate(value: string): { day: string; time: string | null } | null {
+  if (!Number.isFinite(new Date(value).getTime())) return null;
+  return { day: formatDayMonth(value), time: saleHearingTime(value) };
 }
 
 /**
@@ -93,8 +90,9 @@ export function SaleTimeline({
               <Terme terme="adjudication">Audience d’adjudication</Terme>
             </strong>
             <span>
-              à {hearing.time}
-              {procedure.venueName ? `, ${procedure.venueName}` : ""}
+              {[hearing.time ? `à ${hearing.time}` : null, procedure.venueName]
+                .filter(Boolean)
+                .join(", ")}
             </span>
           </span>
         </li>

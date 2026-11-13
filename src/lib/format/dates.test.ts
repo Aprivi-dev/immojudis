@@ -30,7 +30,7 @@ describe("dates affichées à l'heure de Paris", () => {
     // Hiver (UTC+1) : 22 h 30 UTC est encore la veille à Paris, 23 h 30 UTC déjà le lendemain.
     expect(formatNumericDateTime("2026-01-15T22:30:00.000Z")).toBe("15/01/2026 23:30");
     expect(formatNumericDateTime("2026-01-15T23:30:00.000Z")).toBe("16/01/2026 00:30");
-    expect(formatDate("2026-12-31T23:30:00.000Z")).toBe("1 janvier 2027");
+    expect(formatDate("2026-12-31T23:30:00.000Z")).toBe("1er janvier 2027");
     // Été (UTC+2) : 22 h 30 UTC est déjà le lendemain à Paris.
     expect(formatShortDate("2026-07-14T22:30:00.000Z")).toBe("15 juil. 2026");
     expect(formatDayMonth("2026-07-14T22:30:00.000Z")).toBe("15 juil.");
@@ -50,11 +50,23 @@ describe("dates affichées à l'heure de Paris", () => {
 
   it("ne décale jamais un jour civil AAAA-MM-JJ", () => {
     expect(formatDate("2026-03-05")).toBe("5 mars 2026");
-    expect(formatDate("2026-01-01")).toBe("1 janvier 2026");
+    expect(formatDate("2026-01-01")).toBe("1er janvier 2026");
     expect(formatShortDate("2026-03-29")).toBe("29 mars 2026");
     expect(formatNumericDate("2026-10-25")).toBe("25/10/2026");
     expect(formatNumericDate("2026-12-31")).toBe("31/12/2026");
     expect(formatWeekdayDate("2026-11-06")).toBe("vendredi 6 novembre 2026");
+  });
+
+  it("écrit « 1er » le premier du mois quand le mois est en toutes lettres, « 1 » sinon", () => {
+    const first = "2026-11-01T13:05:00.000Z";
+    expect(formatDate(first)).toBe("1er novembre 2026");
+    expect(formatDateTime(first)).toBe("1er novembre 2026 à 14:05");
+    expect(formatWeekdayDate(first)).toBe("dimanche 1er novembre 2026");
+    expect(formatShortDate(first)).toBe("1 nov. 2026");
+    expect(formatDayMonth(first)).toBe("1 nov.");
+    expect(formatNumericDate(first)).toBe("01/11/2026");
+    expect(formatDate("2026-11-11T13:05:00.000Z")).toBe("11 novembre 2026");
+    expect(formatDate("2026-11-21T13:05:00.000Z")).toBe("21 novembre 2026");
   });
 
   it("rend le texte de repli pour une valeur absente ou illisible", () => {

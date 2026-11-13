@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SaleCalendarButton } from "./SaleCalendarButton";
 
 const mocks = vi.hoisted(() => ({ authHeaders: vi.fn() }));
-vi.mock("@/lib/client-api-core", () => ({ authHeaders: mocks.authHeaders }));
+vi.mock("@/lib/client-api-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/client-api-core")>()),
+  authHeaders: mocks.authHeaders,
+}));
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 

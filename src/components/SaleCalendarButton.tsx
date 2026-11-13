@@ -3,7 +3,7 @@
 import { useState } from "react";
 import CalendarPlus from "lucide-react/dist/esm/icons/calendar-plus.js";
 import { Button } from "@/components/ui/primitives";
-import { authHeaders } from "@/lib/client-api-core";
+import { authHeaders, readJson } from "@/lib/client-api-core";
 import { downloadBlob } from "@/lib/download-blob";
 import { userMessage } from "@/lib/user-messages";
 
@@ -47,10 +47,7 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
     setMessage(null);
     try {
       const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/calendar`);
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw Object.assign(new Error(payload?.error ?? ""), { status: response.status });
-      }
+      if (!response.ok) await readJson<unknown>(response);
       downloadBlob(await response.blob(), filenameFrom(response));
       void reportExport(saleId);
     } catch (error) {

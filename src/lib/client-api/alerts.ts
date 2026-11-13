@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type {
   AlertNotificationListResponse,
   AlertNotificationSummary,
@@ -10,25 +10,19 @@ import type {
 } from "@/lib/notification-preferences";
 import type { SaleChangeEventListResponse } from "@/lib/sale-change-monitor";
 
-export async function evaluateAlertMatches(
+export function evaluateAlertMatches(
   args: {
     saleLimit?: number;
     persist?: boolean;
   } = {},
 ): Promise<PublicAlertEvaluationResponse> {
-  const response = await fetch("/api/alerts/matches", {
+  return apiRequest<PublicAlertEvaluationResponse>("/api/alerts/matches", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args),
+    body: args,
   });
-
-  return readJson<PublicAlertEvaluationResponse>(response);
 }
 
-export async function fetchAlertNotifications(
+export function fetchAlertNotifications(
   args: {
     limit?: number;
     includeDismissed?: boolean;
@@ -39,34 +33,22 @@ export async function fetchAlertNotifications(
   if (args.limit) search.set("limit", String(args.limit));
   if (args.includeDismissed) search.set("includeDismissed", "true");
   if (args.includeQueued) search.set("includeQueued", "true");
-
-  const response = await fetch(
+  return apiRequest<AlertNotificationListResponse>(
     `/api/alerts/notifications${search.size ? `?${search.toString()}` : ""}`,
-    {
-      headers: await authHeaders(),
-    },
   );
-
-  return readJson<AlertNotificationListResponse>(response);
 }
 
-export async function updateAlertNotification(args: {
+export function updateAlertNotification(args: {
   notificationId: string;
   action: "read" | "unread" | "dismiss" | "restore";
 }): Promise<{ notification: AlertNotificationSummary }> {
-  const response = await fetch("/api/alerts/notifications", {
+  return apiRequest<{ notification: AlertNotificationSummary }>("/api/alerts/notifications", {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args),
+    body: args,
   });
-
-  return readJson<{ notification: AlertNotificationSummary }>(response);
 }
 
-export async function fetchSaleChangeEvents(
+export function fetchSaleChangeEvents(
   args: {
     limit?: number;
     includeDismissed?: boolean;
@@ -77,35 +59,20 @@ export async function fetchSaleChangeEvents(
   if (args.limit) search.set("limit", String(args.limit));
   if (args.includeDismissed) search.set("includeDismissed", "true");
   if (args.saleId) search.set("saleId", args.saleId);
-  const response = await fetch(
+  return apiRequest<SaleChangeEventListResponse>(
     `/api/sale-change-events${search.size ? `?${search.toString()}` : ""}`,
-    {
-      headers: await authHeaders(),
-    },
   );
-
-  return readJson<SaleChangeEventListResponse>(response);
 }
 
-export async function fetchNotificationPreferences(): Promise<NotificationPreferencesResponse> {
-  const response = await fetch("/api/notification-preferences", {
-    headers: await authHeaders(),
-  });
-
-  return readJson<NotificationPreferencesResponse>(response);
+export function fetchNotificationPreferences(): Promise<NotificationPreferencesResponse> {
+  return apiRequest<NotificationPreferencesResponse>("/api/notification-preferences");
 }
 
-export async function updateNotificationPreferences(
+export function updateNotificationPreferences(
   data: NotificationPreferenceUpdateInput,
 ): Promise<NotificationPreferencesResponse> {
-  const response = await fetch("/api/notification-preferences", {
+  return apiRequest<NotificationPreferencesResponse>("/api/notification-preferences", {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(data),
+    body: data,
   });
-
-  return readJson<NotificationPreferencesResponse>(response);
 }

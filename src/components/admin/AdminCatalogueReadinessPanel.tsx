@@ -16,6 +16,7 @@ import { adminClampOffset } from "@/lib/admin-pagination";
 import Link from "next/link";
 import { saleDetailPath } from "@/lib/navigation";
 import { runAdminCatalogueReadinessActionClient } from "@/lib/client-api";
+import { AdminPill } from "@/components/admin/admin-pill";
 import type {
   CatalogueReadinessQueueItem,
   CatalogueReadinessStatus,
@@ -301,18 +302,18 @@ function QueueLine({
 }
 
 function ReadinessPill({ status }: { status: CatalogueReadinessStatus }) {
-  const config = {
-    unassessed: ["Non évaluée", "border-slate-300 bg-slate-50 text-slate-700"],
-    internal_only: ["Interne", "border-red-200 bg-red-50 text-red-700"],
-    needs_enrichment: ["À enrichir", "border-amber-200 bg-amber-50 text-amber-800"],
-    premium_ready: ["Prête Analyse", "border-emerald-200 bg-emerald-50 text-emerald-700"],
-  }[status];
+  const [label, tone] = (
+    {
+      unassessed: ["Non évaluée", "neutral"],
+      internal_only: ["Interne", "danger"],
+      needs_enrichment: ["À enrichir", "warning"],
+      premium_ready: ["Prête Analyse", "success"],
+    } as const
+  )[status];
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${config[1]}`}
-    >
+    <AdminPill tone={tone}>
       {status === "premium_ready" ? <CheckCircle className="size-3" /> : null}
-      {config[0]}
-    </span>
+      {label}
+    </AdminPill>
   );
 }

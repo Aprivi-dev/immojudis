@@ -1,5 +1,6 @@
-import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
-import { validHearingDepartment, type HearingDepartment } from "@/lib/hearings-department";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
+import type { HearingDepartment } from "@/lib/hearings-department";
 import { saleHearingTime } from "@/lib/seo";
 import { tribunalLongNameFromRaw } from "@/lib/tribunal-pages";
 import { parseFiniteNumber as finite } from "@/lib/finite-number";
@@ -218,8 +219,6 @@ export function windowHearings(
     laterCount: later.length,
   };
 }
-
-export { validHearingDepartment, type HearingDepartment };
 
 /** Les départements qui ont au moins une audience dans les fenêtres, par ordre de code, avec leur nombre. */
 export function hearingDepartments(windows: HearingWindows): HearingDepartment[] {

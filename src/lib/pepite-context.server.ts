@@ -16,6 +16,7 @@ import {
 } from "@/lib/pepite-policy";
 import type { RentLookup } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
+import { chunks } from "@/lib/chunks";
 
 /**
  * Lectures de la règle `pepite-v1.2` et suivantes, pour un lot de ventes (rôle de service, jamais un appel réseau
@@ -30,19 +31,10 @@ import type { AuctionSale } from "@/lib/types";
  * doivent pas passer pour une absence).
  */
 
-const URL_CHUNK = 100;
-
-function chunks<T>(items: readonly T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < items.length; index += size)
-    result.push(items.slice(index, index + size));
-  return result;
-}
-
 /** Diagnostics ADEME rapprochés de ces ventes, par `source_url` de la vente. */
 async function readDpeDiagnostics(sourceUrls: readonly string[]) {
   const bySource = new Map<string, ReturnType<typeof pepiteDpeDiagnostic>[]>();
-  for (const urls of chunks([...new Set(sourceUrls)], URL_CHUNK)) {
+  for (const urls of chunks([...new Set(sourceUrls)])) {
     const { data, error } = await supabaseAdmin
       .from("auction_dpe_diagnostics")
       .select("source_url, diagnostic_number, dpe_class, established_at, confidence")

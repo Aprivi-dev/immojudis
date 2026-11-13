@@ -1,6 +1,7 @@
 import { flattenKeyValues } from "@/lib/analysis-text";
-import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
+import type { AuctionSale, SaleDocumentRich } from "@/lib/types";
 import { cleanText } from "@/lib/clean-text";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 export type CadastralReference = {
   prefix?: string | null;
@@ -243,7 +244,7 @@ function textCandidatesFromSale(sale: AuctionSale): TextCandidate[] {
   }
 
   for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) {
+    for (const text of riskTexts(risk, { excerptsOnly: true, matchedTerms: true })) {
       addCandidate(candidates, text, "Preuves de risques", "inferred");
     }
   }
@@ -520,24 +521,6 @@ function addCandidate(
 ) {
   const text = cleanText(value);
   if (text) candidates.push({ text, source, confidence });
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(
-      occurrence.document_label,
-      occurrence.document_type,
-      occurrence.excerpt,
-      occurrence.matched_terms,
-    );
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function normalizeSection(value: unknown): string | null {

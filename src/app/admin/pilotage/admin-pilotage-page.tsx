@@ -8,6 +8,7 @@ import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui"
 import { useAuth } from "@/hooks/use-auth";
 import { formatDate, formatPrice, formatShareAsPercent, formatShortDateTime } from "@/lib/format";
 import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
+import { PLAN_LIMITS } from "@/lib/plans";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type {
@@ -765,20 +766,23 @@ function ActivationCard({ activation }: { activation: AdminActivation | null }) 
 }
 
 /**
- * Part des comptes Découverte qui atteignent les 3 déblocages du mois : la mesure à lire avant toute
- * décision sur le prix ou sur un pass (n° 97). Pendant l'essai, aucun déblocage n'est consommé : les
- * chiffres ne commencent à compter qu'à la fin des premiers essais.
+ * Part des comptes Découverte qui atteignent le quota de déblocages du mois : la mesure à lire avant
+ * toute décision sur le prix ou sur un pass (n° 97). Pendant l'essai, aucun déblocage n'est consommé :
+ * les chiffres ne commencent à compter qu'à la fin des premiers essais. Le seuil compté par la base
+ * (`admin_pilotage_unlock_threshold`) est celui du quota : un test vérifie l'accord.
  */
+const QUOTA = PLAN_LIMITS.decouverte.monthlyUnlocks;
+
 function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null }) {
   const discovery = threshold?.discoveryAccounts ?? null;
   return (
     <AdminPanel className="mt-6 p-5">
-      <AdminSectionHeading title="Comptes Découverte à 3 déblocages" />
+      <AdminSectionHeading title={`Comptes Découverte à ${QUOTA} déblocages`} />
       <p className="mt-1 text-sm text-brand-navy/70">
         Parmi les comptes Découverte (adresse confirmée, sans accès Analyse ni essai en cours) :
-        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les
-        3 déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux mois.
-        Administrateurs exclus.
+        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les{" "}
+        {QUOTA} déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux
+        mois. Administrateurs exclus.
       </p>
       <p className="mt-2 text-sm">
         <span className="text-brand-navy/70">Comptes Découverte aujourd’hui : </span>
@@ -791,9 +795,12 @@ function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null 
               label: "ont débloqué au moins une vente",
               text: formatCount(month?.unlockedOne ?? null),
             },
-            { label: "ont atteint 3 déblocages", text: formatCount(month?.reachedThree ?? null) },
             {
-              label: "Part des comptes Découverte à 3 déblocages",
+              label: `ont atteint ${QUOTA} déblocages`,
+              text: formatCount(month?.reachedThree ?? null),
+            },
+            {
+              label: `Part des comptes Découverte à ${QUOTA} déblocages`,
               text: formatShare(month?.reachedThree ?? null, discovery),
             },
             {

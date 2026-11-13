@@ -1,10 +1,8 @@
 /**
  * Primitives statistiques communes. Module pur : aucune dépendance, aucun accès réseau ni base.
  *
- * Wilson d'abord : la règle des pépites (`pepite-policy.ts`) et les statistiques des tribunaux
- * (`tribunal-listing-statistics.ts`) en avaient chacune une copie, avec chacune sa constante. Les
- * percentiles (9 variantes dans le code) viendront ici ensuite, un par un, avec leur test de
- * caractérisation.
+ * L'intervalle de Wilson (la règle des pépites et les statistiques des tribunaux en avaient chacune
+ * une copie, avec chacune sa constante), puis les quantiles et la médiane (une dizaine de copies).
  */
 
 /** Quantile de la loi normale centrée réduite à 97,5 % : intervalle de Wilson à 95 %. */
@@ -30,4 +28,41 @@ export function wilsonInterval95(
     low: Math.max(0, (center - margin) / denominator),
     high: Math.min(1, (center + margin) / denominator),
   };
+}
+
+/**
+ * Quantile `p` (entre 0 et 1) d'une liste déjà triée par ordre croissant, par interpolation linéaire
+ * entre les deux rangs voisins (type 7 de Hyndman et Fan, celui de R et de NumPy par défaut).
+ * `null` pour une liste vide.
+ */
+export function quantileSorted(sortedAsc: readonly number[], p: number): number | null {
+  if (!sortedAsc.length) return null;
+  const position = (sortedAsc.length - 1) * p;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sortedAsc[lower];
+  return sortedAsc[lower] + (sortedAsc[upper] - sortedAsc[lower]) * (position - lower);
+}
+
+function finiteSorted(values: readonly number[]): number[] {
+  return values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+}
+
+/**
+ * Quantile `p` d'une liste dans un ordre quelconque (voir `quantileSorted`), sans ses valeurs non
+ * finies ; `null` s'il n'en reste aucune.
+ */
+export function quantile(values: readonly number[], p: number): number | null {
+  return quantileSorted(finiteSorted(values), p);
+}
+
+/**
+ * Médiane, sans les valeurs non finies : la valeur centrale, ou la moyenne des deux valeurs
+ * centrales pour un compte pair ; `null` s'il ne reste aucune valeur.
+ */
+export function median(values: readonly number[]): number | null {
+  const sorted = finiteSorted(values);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }

@@ -528,8 +528,7 @@ export function ListingStatistics({
   const localScope = localScopeFor(prices, activityResponse?.court.code);
   const nationalScope = prices?.national?.scopeType === "national" ? prices.national : null;
   const unresolvedCourt =
-    activityQuery.error instanceof Error &&
-    activityQuery.error.name === "TribunalCourtUnresolvedError";
+    (activityQuery.error as { code?: unknown } | null)?.code === "COURT_UNRESOLVED";
   const titleCourt =
     activityResponse?.court.name ??
     (activityQuery.error

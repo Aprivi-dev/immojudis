@@ -26,7 +26,6 @@ function asObject(value: Json): Record<string, Json | undefined> {
  */
 export async function assertInformationAgentSaleCurrent(
   mission: Pick<MissionRow, "sale_id" | "sale_snapshot">,
-  now = new Date(),
 ): Promise<void> {
   if (!mission.sale_id) return;
   const { data, error } = await supabaseAdmin
@@ -42,7 +41,7 @@ export async function assertInformationAgentSaleCurrent(
     );
   }
   const saleTime = data.sale_date ? Date.parse(data.sale_date) : Number.NaN;
-  if (Number.isFinite(saleTime) && saleTime + 24 * 60 * 60 * 1000 < now.getTime()) {
+  if (Number.isFinite(saleTime) && saleTime + 24 * 60 * 60 * 1000 < Date.now()) {
     throw new PublicApiError(
       "La date annoncée de la vente est passée : la demande n’a plus d’objet.",
       409,

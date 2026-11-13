@@ -1,10 +1,8 @@
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import { useEffect, useState } from "react";
-import {
-  calendarDaysBetween,
-  parisDateKey,
-  resolveSaleCountdownTarget,
-} from "@/lib/sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
+import { resolveSaleCountdownTarget } from "@/lib/sale-countdown";
 import type { AuctionSale } from "@/lib/types";
 
 function diffParts(target: number, now: number) {

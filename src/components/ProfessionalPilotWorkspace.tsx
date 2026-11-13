@@ -24,7 +24,7 @@ import {
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { downloadBlob } from "@/lib/download-blob";
-import { isUuid } from "@/lib/sale-workspace-shared";
+import { isPersistedSale } from "@/lib/example-sale-identity";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
@@ -68,7 +68,7 @@ export function ProfessionalPilotWorkspace({
   const storageKey = `immojudis:professional-pilot:v1:${user?.id ?? "guest"}:${sale.id}`;
   const activeStorageKey = useRef(storageKey);
   const hydrated = hydratedKey === storageKey;
-  const canSync = !publicDemo && !authLoading && Boolean(user) && isUuid(sale.id);
+  const canSync = !publicDemo && !authLoading && Boolean(user) && isPersistedSale(sale);
   const workspaceQuery = useQuery({
     queryKey: queryKeys.professionalPilotWorkspace(user?.id ?? null, sale.id),
     queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),

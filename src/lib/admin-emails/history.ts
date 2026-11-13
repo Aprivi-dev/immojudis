@@ -9,6 +9,7 @@ import { formatNumericDateTime } from "@/lib/format/dates";
 import { readResendApiKey } from "./env";
 import { maskActionLinks, toInertEmailDocument } from "./link-masking";
 import { fetchResendEmail, type ResendFailure } from "./resend";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Onglet « Historique » du module Emails : emails envoyés (journal `email_send_log`) et reçus (réponses de
@@ -98,7 +99,6 @@ function authEmailLabel(row: { template_key: string; subject: string }): string 
 const rowLabel = (row: { template_key: string; subject: string }) =>
   authEmailLabel(row) ?? templateLabel(row.template_key);
 
-const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CURSOR_PATTERN = /^(\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i;
 
 export class EmailHistoryInputError extends PublicApiError {
@@ -111,7 +111,7 @@ export class EmailHistoryInputError extends PublicApiError {
 function parseCursor(raw: string | null): { at: string; id: string } | null {
   if (!raw) return null;
   const match = CURSOR_PATTERN.exec(raw);
-  if (!match || !ID_PATTERN.test(match[2]) || Number.isNaN(Date.parse(match[1]))) {
+  if (!match || !isUuid(match[2]) || Number.isNaN(Date.parse(match[1]))) {
     throw new EmailHistoryInputError("Curseur invalide.");
   }
   return { at: match[1], id: match[2] };
@@ -312,7 +312,7 @@ export async function readEmailMessage({
   const separator = id.indexOf(":");
   const source = id.slice(0, separator);
   const rowId = id.slice(separator + 1);
-  if (separator < 0 || !ID_PATTERN.test(rowId) || !["log", "case", "unrouted"].includes(source)) {
+  if (separator < 0 || !isUuid(rowId) || !["log", "case", "unrouted"].includes(source)) {
     throw new EmailHistoryInputError("Identifiant invalide.");
   }
 

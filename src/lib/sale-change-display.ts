@@ -1,4 +1,4 @@
-import { formatPrice } from "@/lib/format";
+import { formatDate, formatPrice } from "@/lib/format";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 
 /**
@@ -25,23 +25,13 @@ export type DescribedSaleChange = {
   detail: string | null;
 };
 
-const PARIS_TIME_ZONE = "Europe/Paris";
-
 /**
  * Même sortie que `formatDate(value, null)` (`format/dates.ts`, vérifié par le test). Copie gardée
  * exprès : importer `format/dates` ici change le découpage de Turbopack et alourdit le JavaScript
  * client total d'environ 78 ko (mesuré le 13/11/2026), au-delà du plafond.
  */
 function longDay(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: PARIS_TIME_ZONE,
-  }).format(date);
+  return typeof value === "string" ? formatDate(value, null) : null;
 }
 
 function finiteNumber(value: unknown): number | null {

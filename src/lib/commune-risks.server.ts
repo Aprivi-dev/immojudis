@@ -203,10 +203,7 @@ const PROFILE_COLUMNS =
   "code_insee,commune_name,risks,catnat_total,catnat_by_type,catnat_recent,prevention_plans,seismic_zone,radon_class,gaspar_snapshot,zoning_checked_at,source_url";
 
 /** GASPAR profile of a commune, completed once with its seismic zone and radon class. */
-export async function getCommuneRiskProfile(
-  commune: ResolvedCommune,
-  options: { fetcher?: FetchLike; now?: Date } = {},
-): Promise<CommuneRiskResult> {
+export async function getCommuneRiskProfile(commune: ResolvedCommune): Promise<CommuneRiskResult> {
   const { data, error } = await supabaseAdmin
     .from("commune_risk_profiles")
     .select(PROFILE_COLUMNS)
@@ -215,9 +212,9 @@ export async function getCommuneRiskProfile(
   if (error) return { status: "unavailable", reason: "source_unavailable" };
   if (!data) return { status: "unavailable", reason: "profile_missing" };
   let row = data as ProfileRow;
-  const now = options.now ?? new Date();
+  const now = new Date();
   if (needsZoning(row, now)) {
-    row = await completeZoning(row, options.fetcher ?? fetch, now);
+    row = await completeZoning(row, fetch, now);
   }
   return {
     status: "ready",

@@ -18,6 +18,7 @@ import type {
 } from "@/lib/information-agent-email-template";
 // Le jeton seul : le module du modèle embarque zod, que l'éditeur n'a pas à télécharger.
 import { templateVariableToken } from "@/lib/information-agent-email-template-token";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 const TEMPLATE_QUERY_KEY = ["admin-information-agent-email-template"] as const;
 
@@ -195,15 +196,14 @@ function InformationAgentTemplateEditor({
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             {workspace.publishedIgnored ? (
-              <StatusBadge
-                label={`Publié · v${workspace.published.revision} (ignoré)`}
-                tone="amber"
-              />
+              <AdminPill tone="warning">
+                Publié · v{workspace.published.revision} (ignoré)
+              </AdminPill>
             ) : (
-              <StatusBadge label={`Publié · v${workspace.published.revision}`} tone="green" />
+              <AdminPill tone="success">Publié · v{workspace.published.revision}</AdminPill>
             )}
             {workspace.draft ? (
-              <StatusBadge label={`Brouillon · v${workspace.draft.revision}`} tone="amber" />
+              <AdminPill tone="warning">Brouillon · v{workspace.draft.revision}</AdminPill>
             ) : null}
           </div>
         </div>
@@ -545,17 +545,5 @@ function OrderButton({
     >
       {children}
     </button>
-  );
-}
-
-function StatusBadge({ label, tone }: { label: string; tone: "green" | "amber" }) {
-  return (
-    <span
-      className={`rounded-full px-3 py-1.5 font-semibold ${
-        tone === "green" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-      }`}
-    >
-      {label}
-    </span>
   );
 }

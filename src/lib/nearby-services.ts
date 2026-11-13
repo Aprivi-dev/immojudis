@@ -1,6 +1,6 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale } from "@/lib/types";
-import { cleanText } from "@/lib/clean-text";
+import { cleanText, type TextCandidate } from "@/lib/clean-text";
 
 type NearbyServiceCategoryKey =
   | "transport"
@@ -30,11 +30,6 @@ export type NearbyServicesAnalysis = {
   source: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 type CategoryDefinition = {

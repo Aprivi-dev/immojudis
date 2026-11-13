@@ -2,9 +2,18 @@
 // statistiques de la fiche). Mêmes règles que l'écriture chaînée de zod (objets `strict` devenus
 // `strictObject`, `.refine` devenu `.check(z.refine(...))`), avec bien moins de code envoyé.
 import { z } from "zod/mini";
-import { publishedDay } from "@/lib/listing-evidence";
+import { occupancyClass } from "@/lib/occupancy-status";
+import { median, quantile } from "@/lib/stats";
+import {
+  addUtcCalendarMonths,
+  assertValidDate,
+  hasVisitDate,
+  hearingCalendar,
+} from "@/lib/tribunal-statistics-dates";
+import { propertyFamily } from "@/lib/property-type-family";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
-import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
+import { labelFingerprint } from "@/lib/label-fingerprint";
+import { parisDateKey } from "@/lib/paris-time";
 import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
 import { roundWithEpsilon as round } from "@/lib/rounding";
 import { PublicApiError } from "@/lib/api-errors";
@@ -386,7 +395,7 @@ export function buildTribunalJudicialActivity(input: {
   ).length;
   const hearingDayCounts = new Map<string, number>();
   for (const sale of upcoming) {
-    const day = parisDayKey(sale.parsedSaleDate);
+    const day = parisDateKey(sale.parsedSaleDate);
     hearingDayCounts.set(day, (hearingDayCounts.get(day) ?? 0) + 1);
   }
   const hearingDays = [...hearingDayCounts.keys()].sort();
@@ -397,7 +406,10 @@ export function buildTribunalJudicialActivity(input: {
       (24 * 60 * 60 * 1_000)
     );
   });
-  const hearingCalendar = buildHearingCalendar(upcoming, upcoming90End);
+  const calendar = hearingCalendar(
+    upcoming.map((sale) => sale.parsedSaleDate),
+    upcoming90End,
+  );
 
   const response: TribunalJudicialActivityResponse = {
     court,
@@ -428,7 +440,7 @@ export function buildTribunalJudicialActivity(input: {
           : null,
       ),
       occupation: occupationStats(past),
-      hearingCalendar,
+      hearingCalendar: calendar,
       communes: observedCommunes(past),
       medianDiscoveryLeadDays: sampleMetric(observedLeadDays, median(observedLeadDays)),
       discoveryLeadRangeDays: rangeMetric(observedLeadDays),
@@ -482,7 +494,7 @@ function occupationStats(sales: ParsedTribunalJudicialActivitySale[]) {
   const counts = new Map<(typeof statuses)[number], number>(statuses.map((status) => [status, 0]));
   let knownSales = 0;
   for (const sale of sales) {
-    const status = normalizeOccupationStatus(sale.occupationStatus);
+    const status = occupancyClass(sale.occupationStatus);
     if (!status) continue;
     counts.set(status, (counts.get(status) ?? 0) + 1);
     knownSales += 1;
@@ -498,63 +510,6 @@ function occupationStats(sales: ParsedTribunalJudicialActivitySale[]) {
       }))
       .filter((entry) => entry.count > 0),
   };
-}
-
-function normalizeOccupationStatus(
-  value: string | null | undefined,
-): "vacant" | "occupied" | "rented" | null {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (normalized === "vacant" || normalized === "rented") return normalized;
-  // Outcome Graph vocabulary: tenant_occupied / occupied_other.
-  if (normalized === "tenant_occupied") return "rented";
-  if (
-    normalized === "occupied" ||
-    normalized === "owner_occupied" ||
-    normalized === "occupied_other" ||
-    normalized === "squatted"
-  ) {
-    return "occupied";
-  }
-  return null;
-}
-
-function hasVisitDate(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.some((item) => typeof item === "string" && publishedVisitDay(item) !== null)
-  );
-}
-
-function publishedVisitDay(value: string): string | null {
-  const parsed = publishedDay(value);
-  if (parsed) return parsed;
-  const match = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/.exec(value.trim());
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const candidate = new Date(Date.UTC(year, month - 1, day, 12));
-  if (
-    !Number.isFinite(candidate.getTime()) ||
-    candidate.getUTCFullYear() !== year ||
-    candidate.getUTCMonth() !== month - 1 ||
-    candidate.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return candidate.toISOString().slice(0, 10);
-}
-
-function buildHearingCalendar(sales: ParsedTribunalJudicialActivitySale[], upcoming90End: Date) {
-  const counts = new Map<string, number>();
-  for (const sale of sales) {
-    if (sale.parsedSaleDate >= upcoming90End) continue;
-    const date = parisDayKey(sale.parsedSaleDate);
-    counts.set(date, (counts.get(date) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, salesCount]) => ({ date, sales: salesCount }));
 }
 
 function observedCommunes(sales: ParsedTribunalJudicialActivitySale[]) {
@@ -607,8 +562,8 @@ function propertyTypeSales(
   const grouped = new Map<string, ParsedTribunalJudicialActivitySale[]>();
   for (const sale of sales) {
     // An unknown type is not "other": it is left out of type breakdowns.
-    const propertyType = sale.propertyType?.trim().toLocaleLowerCase("fr-FR");
-    if (!propertyType || propertyType === "unknown") continue;
+    const propertyType = propertyFamily(sale.propertyType);
+    if (propertyType === "unknown") continue;
     const existing = grouped.get(propertyType);
     if (existing) existing.push(sale);
     else grouped.set(propertyType, [sale]);
@@ -689,21 +644,6 @@ function rangeMetric(
   };
 }
 
-function median(values: number[]): number | null {
-  return quantile(values, 0.5);
-}
-
-function quantile(values: number[], probability: number): number | null {
-  if (!values.length) return null;
-  const ordered = [...values].sort((left, right) => left - right);
-  const position = (ordered.length - 1) * probability;
-  const lowerIndex = Math.floor(position);
-  const upperIndex = Math.ceil(position);
-  const lower = ordered[lowerIndex]!;
-  const upper = ordered[upperIndex]!;
-  return lower + (upper - lower) * (position - lowerIndex);
-}
-
 function reliability(sampleSize: number): {
   level: TribunalJudicialActivityResponse["reliability"]["level"];
   label: string;
@@ -712,27 +652,4 @@ function reliability(sampleSize: number): {
   if (sampleSize < 20) return { level: "indicative", label: "Activité indicative" };
   if (sampleSize < 50) return { level: "descriptive", label: "Activité descriptive" };
   return { level: "strong", label: "Échantillon étendu" };
-}
-
-function assertValidDate(value: Date, label: string): void {
-  if (!Number.isFinite(value.getTime())) throw new Error(`${label} must be a valid date.`);
-}
-
-function addUtcCalendarMonths(value: Date, months: number): Date {
-  const targetMonthStart = new Date(
-    Date.UTC(
-      value.getUTCFullYear(),
-      value.getUTCMonth() + months,
-      1,
-      value.getUTCHours(),
-      value.getUTCMinutes(),
-      value.getUTCSeconds(),
-      value.getUTCMilliseconds(),
-    ),
-  );
-  const lastTargetDay = new Date(
-    Date.UTC(targetMonthStart.getUTCFullYear(), targetMonthStart.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  targetMonthStart.setUTCDate(Math.min(value.getUTCDate(), lastTargetDay));
-  return targetMonthStart;
 }

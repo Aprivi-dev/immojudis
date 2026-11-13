@@ -80,9 +80,3 @@ export const DEFAULT_SALE_CHECKLIST = [
   "Valider le financement",
   "Transmettre les consignes à l'avocat",
 ] as const;
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string | null | undefined): boolean {
-  return Boolean(value && UUID_PATTERN.test(value));
-}

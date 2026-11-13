@@ -1,4 +1,5 @@
-import { authHeaders, readJson, responseError } from "@/lib/client-api-core";
+import { chunks } from "@/lib/chunks";
+import { apiDownload, apiFetch, apiRequest, readJson, responseError } from "@/lib/client-api-core";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -15,6 +16,7 @@ import type {
   SaleUnlockStatus,
   SaleUnlocksOverview,
 } from "@/lib/sale-unlocks";
+import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
@@ -33,66 +35,42 @@ export async function fetchSalesAiReviewProjections(
   saleIds: readonly string[],
 ): Promise<SaleAiReviewResponse> {
   if (saleIds.length === 0) return { projections: [] };
-  const headers = await authHeaders();
-  const batches: string[][] = [];
-  for (let start = 0; start < saleIds.length; start += 100) {
-    batches.push(saleIds.slice(start, start + 100));
-  }
   const results = await Promise.all(
-    batches.map(async (batch) => {
+    chunks(saleIds).map((batch) => {
       const search = new URLSearchParams();
       for (const saleId of batch) search.append("id", saleId);
-      const response = await fetch(`/api/sales/ai-review?${search.toString()}`, {
-        headers,
-        cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
-      });
-      return readJson<SaleAiReviewResponse>(response);
+      return apiRequest<SaleAiReviewResponse>(`/api/sales/ai-review?${search.toString()}`);
     }),
   );
   return { projections: results.flatMap((result) => result.projections) };
 }
 
-export async function fetchSaleAiReviewProjections(saleId: string): Promise<SaleAiReviewResponse> {
+export function fetchSaleAiReviewProjections(saleId: string): Promise<SaleAiReviewResponse> {
   return fetchSalesAiReviewProjections([saleId]);
 }
 
-export async function fetchSaleFactReliabilities(
-  saleId: string,
-): Promise<SaleFactReliabilitiesResponse> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/facts`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return readJson<SaleFactReliabilitiesResponse>(response);
+export function fetchSaleFactReliabilities(saleId: string): Promise<SaleFactReliabilitiesResponse> {
+  return apiRequest<SaleFactReliabilitiesResponse>(
+    `/api/sales/${encodeURIComponent(saleId)}/facts`,
+  );
 }
 
-export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/value-preview`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return readJson<ValuePreview>(response);
+export function fetchValuePreview(saleId: string): Promise<ValuePreview> {
+  return apiRequest<ValuePreview>(`/api/sales/${encodeURIComponent(saleId)}/value-preview`);
 }
 
 /** Where the account stands this month and whether this sale is unlocked. Consumes nothing. */
 export async function fetchSaleUnlockStatus(saleId: string): Promise<SaleUnlockStatus> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
-  });
-  return (await readJson<{ status: SaleUnlockStatus }>(response)).status;
+  return (
+    await apiRequest<{ status: SaleUnlockStatus }>(
+      `/api/sales/${encodeURIComponent(saleId)}/unlock`,
+    )
+  ).status;
 }
 
 /** The month so far (used, reset date) and the sales this account unlocked. Consumes nothing. */
-export async function fetchSaleUnlocksOverview(): Promise<SaleUnlocksOverview> {
-  const response = await fetch("/api/sale-unlocks", {
-    headers: await authHeaders(),
-    cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
-  });
-  return readJson<SaleUnlocksOverview>(response);
+export function fetchSaleUnlocksOverview(): Promise<SaleUnlocksOverview> {
+  return apiRequest<SaleUnlocksOverview>("/api/sale-unlocks");
 }
 
 /** The monthly quota is spent: carries the counter so the page can explain it. */
@@ -100,7 +78,7 @@ export class SaleUnlockQuotaReachedError extends Error {
   readonly status: SaleUnlockStatus;
 
   constructor(status: SaleUnlockStatus) {
-    super("Vous avez utilisé tous vos déblocages de ce mois-ci.");
+    super(SALE_UNLOCK_QUOTA_MESSAGE);
     this.name = "SaleUnlockQuotaReachedError";
     this.status = status;
   }
@@ -108,11 +86,9 @@ export class SaleUnlockQuotaReachedError extends Error {
 
 /** Unlocks this sale (idempotent: an already unlocked sale consumes nothing). */
 export async function unlockSaleRequest(saleId: string): Promise<SaleUnlockResult> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
+  const response = await apiFetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
     method: "POST",
-    headers: await authHeaders(),
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
+    timeoutMs: 15_000,
   });
   if (response.status === 409) {
     const payload = (await response
@@ -126,36 +102,24 @@ export async function unlockSaleRequest(saleId: string): Promise<SaleUnlockResul
   return (await readJson<{ result: SaleUnlockResult }>(response)).result;
 }
 
-export async function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/document-reading`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return readJson<DocumentReadingResponse>(response);
+export function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
+  return apiRequest<DocumentReadingResponse>(
+    `/api/sales/${encodeURIComponent(saleId)}/document-reading`,
+  );
 }
 
-export async function fetchSalePassages(saleId: string): Promise<SalePassagesResponse> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/passages`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return readJson<SalePassagesResponse>(response);
+export function fetchSalePassages(saleId: string): Promise<SalePassagesResponse> {
+  return apiRequest<SalePassagesResponse>(`/api/sales/${encodeURIComponent(saleId)}/passages`);
 }
 
-export async function fetchAuctionScenarios(saleId: string): Promise<AuctionScenariosResponse> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/auction-scenarios`, {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  return readJson<AuctionScenariosResponse>(response);
+export function fetchAuctionScenarios(saleId: string): Promise<AuctionScenariosResponse> {
+  return apiRequest<AuctionScenariosResponse>(
+    `/api/sales/${encodeURIComponent(saleId)}/auction-scenarios`,
+  );
 }
 
-export async function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAuctionSummary[] }> {
-  const response = await fetch("/api/v1/tribunals/auction-summaries", {
-    headers: await authHeaders(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  return readJson<{ courts: CourtAuctionSummary[] }>(response);
+export function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAuctionSummary[] }> {
+  return apiRequest<{ courts: CourtAuctionSummary[] }>("/api/v1/tribunals/auction-summaries");
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {
@@ -166,16 +130,11 @@ export async function fetchPrecomputedMarketEstimate(args: {
    */
   enteredSurface?: boolean;
 }): Promise<SaleMarketContext> {
-  const response = await fetch("/api/market-estimate", {
+  const response = await apiFetch("/api/market-estimate", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({
-      saleId: args.saleId,
-      ...(args.enteredSurface ? { enteredSurface: true } : {}),
-    }),
+    body: { saleId: args.saleId, ...(args.enteredSurface ? { enteredSurface: true } : {}) },
+    // `maxDuration = 60` de la route.
+    timeoutMs: 60_000,
   });
 
   const payload = (await response.json().catch(() => null)) as SaleMarketContext | null;
@@ -185,41 +144,29 @@ export async function fetchPrecomputedMarketEstimate(args: {
   return payload;
 }
 
-export async function fetchOutcomeGraphForecast(args: {
+export function fetchOutcomeGraphForecast(args: {
   saleId: string;
 }): Promise<{ forecast: OutcomeGraphForecast }> {
-  const response = await fetch(`/api/v1/sales/${encodeURIComponent(args.saleId)}/outcome-graph`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<{ forecast: OutcomeGraphForecast }>(response);
+  return apiRequest<{ forecast: OutcomeGraphForecast }>(
+    `/api/v1/sales/${encodeURIComponent(args.saleId)}/outcome-graph`,
+  );
 }
 
-export async function fetchSaleUrbanismeCadastre(saleId: string): Promise<{
+export function fetchSaleUrbanismeCadastre(saleId: string): Promise<{
   cadastralParcels: StructuredCadastralParcel[];
   urbanPlanningSignals: StructuredUrbanPlanningSignal[];
 }> {
-  const response = await fetch(`/api/v1/sales/${encodeURIComponent(saleId)}/urbanisme-cadastre`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<{
+  return apiRequest<{
     cadastralParcels: StructuredCadastralParcel[];
     urbanPlanningSignals: StructuredUrbanPlanningSignal[];
-  }>(response);
+  }>(`/api/v1/sales/${encodeURIComponent(saleId)}/urbanisme-cadastre`);
 }
 
-export async function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {
-  const response = await fetch("/api/admin/valuation-models", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-  return readJson<ValuationAdminResponse>(response);
+export function fetchValuationAdminOverview(): Promise<ValuationAdminResponse> {
+  return apiRequest<ValuationAdminResponse>("/api/admin/valuation-models");
 }
 
-export async function fetchDpeExplorer(args: {
+export function fetchDpeExplorer(args: {
   department?: string;
   city?: string;
   propertyType?: string;
@@ -235,52 +182,31 @@ export async function fetchDpeExplorer(args: {
   if (args.includeMap != null) params.set("includeMap", String(args.includeMap));
   if (args.limit) params.set("limit", String(args.limit));
 
-  const response = await fetch(`/api/dpe/explorer?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<DpeExplorerResponse>(response);
+  return apiRequest<DpeExplorerResponse>(`/api/dpe/explorer?${params.toString()}`);
 }
 
-export async function fetchSalesStatistics(args: {
-  search: SalesSearchParams;
-}): Promise<SalesStatisticsResponse> {
+/** Les critères de la recherche, en paramètres d'URL (les vides ne sont pas envoyés). */
+function searchQuery(search: SalesSearchParams): string {
   const params = new URLSearchParams();
-  Object.entries(salesSearchToUrlRecord(args.search)).forEach(([key, value]) => {
+  Object.entries(salesSearchToUrlRecord(search)).forEach(([key, value]) => {
     if (value != null && value !== "") params.set(key, String(value));
   });
-  const response = await fetch(
-    `/api/sales/statistics${params.size ? `?${params.toString()}` : ""}`,
-    {
-      headers: await authHeaders(),
-    },
-  );
+  return params.size ? `?${params.toString()}` : "";
+}
 
-  return readJson<SalesStatisticsResponse>(response);
+export function fetchSalesStatistics(args: {
+  search: SalesSearchParams;
+}): Promise<SalesStatisticsResponse> {
+  return apiRequest<SalesStatisticsResponse>(`/api/sales/statistics${searchQuery(args.search)}`);
 }
 
 export async function exportSalesCsv(args: {
   search: SalesSearchParams;
 }): Promise<{ blob: Blob; filename: string }> {
-  const params = new URLSearchParams();
-  Object.entries(salesSearchToUrlRecord(args.search)).forEach(([key, value]) => {
-    if (value != null && value !== "") params.set(key, String(value));
-  });
-  const url = `/api/sales/export${params.size ? `?${params.toString()}` : ""}`;
-  const response = await fetch(url, {
-    headers: await authHeaders(),
-  });
-
-  if (!response.ok) await readJson<unknown>(response);
-
-  const filename =
-    response.headers
-      .get("content-disposition")
-      ?.match(/filename="([^"]+)"/)?.[1]
-      ?.trim() || "immojudis-ventes.csv";
-
-  return {
-    blob: await response.blob(),
-    filename,
-  };
+  const { blob, filename } = await apiDownload(
+    `/api/sales/export${searchQuery(args.search)}`,
+    {},
+    "immojudis-ventes.csv",
+  );
+  return { blob, filename };
 }

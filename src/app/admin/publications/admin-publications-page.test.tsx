@@ -98,6 +98,27 @@ describe("AdminPublicationsPage", () => {
     });
   }, 20_000);
 
+  it("shows the status of each request as an admin pill", async () => {
+    mocks.publicationResult.mockResolvedValue({
+      requests: (["approved", "rejected"] as const).map((status) => ({
+        id: status,
+        title: `${status} publication`,
+        status,
+        created_at: "2026-10-04T12:00:00Z",
+        document_types: [],
+        promotion_options: [],
+        submitted_documents: [],
+      })),
+      total: 2,
+      pendingCount: 0,
+      hasMore: false,
+    });
+
+    renderPublications();
+    expect((await screen.findByText("Validée", {}, SLOW)).className).toContain("text-success");
+    expect(screen.getByText("Refusée").className).toContain("text-danger");
+  });
+
   it("only loads the publication requests, nothing from the other views", async () => {
     renderPublications();
     await screen.findByText("Aucune demande ne correspond aux filtres.");

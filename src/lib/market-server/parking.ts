@@ -4,7 +4,8 @@ import type { BuildEstimateInput, MarketEstimate } from "@/lib/market-server/typ
 import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
 import { MarketEstimateError } from "@/lib/market-server/errors";
 import { haversineMeters } from "@/lib/market-server/geometry";
-import { quantile, roundTo } from "@/lib/market-server/numbers";
+import { roundTo } from "@/lib/market-server/numbers";
+import { quantileSorted } from "@/lib/stats";
 import { fetchCommune, officialDvfCommuneCode } from "@/lib/market-server/sources";
 import { recentEnough } from "@/lib/market-server/radius-analysis";
 import { salesSamplePeriod } from "@/lib/market-server/sample-period";
@@ -54,9 +55,9 @@ export async function buildParkingEstimate(input: BuildEstimateInput): Promise<M
   const filtered = filterParkingOutliers(nearby);
   const selected = filtered.sales.length ? filtered.sales : nearby;
   const prices = selected.map((sale) => sale.unitPrice).sort((a, b) => a - b);
-  const median = quantile(prices, 0.5);
-  const empiricalP10 = quantile(prices, 0.1);
-  const empiricalP90 = quantile(prices, 0.9);
+  const median = quantileSorted(prices, 0.5)!;
+  const empiricalP10 = quantileSorted(prices, 0.1)!;
+  const empiricalP90 = quantileSorted(prices, 0.9)!;
   const low = Math.max(1_000, Math.min(empiricalP10, median * 0.5));
   const high = Math.max(empiricalP90, median * 1.8);
   const roundedMedian = roundTo(median, 500);
@@ -161,8 +162,8 @@ function filterParkingOutliers<T extends DataGouvParkingSale>(
 } {
   if (sales.length < 8) return { sales, removed: 0 };
   const logs = sales.map((sale) => Math.log(sale.unitPrice)).sort((a, b) => a - b);
-  const q1 = quantile(logs, 0.25);
-  const q3 = quantile(logs, 0.75);
+  const q1 = quantileSorted(logs, 0.25)!;
+  const q3 = quantileSorted(logs, 0.75)!;
   const spread = q3 - q1;
   const lower = Math.exp(q1 - 1.5 * spread);
   const upper = Math.exp(q3 + 1.5 * spread);

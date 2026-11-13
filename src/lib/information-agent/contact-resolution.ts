@@ -17,7 +17,7 @@ import {
   type InformationAgentStructureKind,
 } from "@/lib/information-agent/contact-structure";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
-import { findEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
+import { normalizedEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
 import { isInformationAgentExcludedAddress } from "@/lib/information-agent/excluded-addresses";
 import {
   informationAgentImpliedOrganizerType,
@@ -218,7 +218,10 @@ export function resolveInformationAgentListingContacts(
   const lawyerBlockAddresses = new Set(
     blocks.flatMap((block) => block.lawyer.map((record) => record.email)),
   );
-  const lawyerAddresses = new Set([...extractEmails(sale.lawyer_contact), ...lawyerBlockAddresses]);
+  const lawyerAddresses = new Set([
+    ...normalizedEmailsInText(sale.lawyer_contact),
+    ...lawyerBlockAddresses,
+  ]);
   const accepted = new Set<string>();
   const otherPeople = new Set<string>();
   blocks.forEach((block, blockIndex) => {
@@ -320,7 +323,7 @@ export function resolveInformationAgentListingContacts(
   }
 
   for (const observation of observations) {
-    for (const email of extractEmails(observation.value)) {
+    for (const email of normalizedEmailsInText(observation.value)) {
       if (barred.has(email)) continue;
       if (isInformationAgentExcludedAddress(email)) {
         refuse("excluded_address");
@@ -646,19 +649,8 @@ function addContactObservation(
   observation: ContactObservation,
 ) {
   if (typeof observation.value !== "string" || !observation.value.trim()) return;
-  if (!extractEmails(observation.value).length) return;
+  if (!normalizedEmailsInText(observation.value).length) return;
   observations.push(observation);
-}
-
-function extractEmails(value: unknown): string[] {
-  if (typeof value !== "string") return [];
-  return [
-    ...new Set(
-      findEmailsInText(value)
-        .map(normalizedEmail)
-        .filter((email): email is string => Boolean(email)),
-    ),
-  ];
 }
 
 function inferContactRole(value: string): InformationAgentContactRole {

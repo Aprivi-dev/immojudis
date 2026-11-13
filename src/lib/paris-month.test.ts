@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatDayLongMonth } from "./format/dates";
 import { parisDayMonthLabel, parisMonthName, parisMonthWindow } from "./paris-month";
 
 describe("parisMonthWindow", () => {
@@ -65,5 +66,16 @@ describe("libellés en heure de Paris", () => {
       "1er novembre",
     );
     expect(parisDayMonthLabel("2026-11-12T12:00:00.000Z")).toBe("12 novembre");
+  });
+
+  it("écrit le jour et le mois comme formatDayLongMonth (même règle du « 1er »)", () => {
+    for (const iso of [
+      "2026-10-31T23:00:00.000Z",
+      "2026-11-12T12:00:00.000Z",
+      "2026-03-31T22:00:00.000Z",
+      "2026-12-31T23:30:00.000Z",
+    ]) {
+      expect(parisDayMonthLabel(iso)).toBe(formatDayLongMonth(iso));
+    }
   });
 });

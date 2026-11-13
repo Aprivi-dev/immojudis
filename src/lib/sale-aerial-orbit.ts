@@ -1,8 +1,6 @@
 import type { AuctionSale } from "@/lib/types";
 import { reliableBuildingPosition, type BuildingPositionSale } from "@/lib/building-position";
 
-export { hasNumberedStreetAddress, hasReliableBuildingPosition } from "@/lib/building-position";
-
 /**
  * Rayon d'incertitude, en mètres, selon la précision : un point d'adresse (numéro interpolé le long
  * de la voie) peut être décalé de quelques dizaines de mètres, le centre d'une parcelle cadastrale

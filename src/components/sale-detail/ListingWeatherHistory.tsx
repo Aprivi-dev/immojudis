@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ClimateHistory, ClimateResult, ClimateStationRef } from "@/lib/environment-reference";
 import styles from "./ListingEnvironment.module.css";
 import * as queryKeys from "@/lib/query-keys";
+import { readJson } from "@/lib/client-api-core";
 
 export function ListingWeatherHistory({
   saleId,
@@ -16,8 +17,7 @@ export function ListingWeatherHistory({
     queryKey: queryKeys.saleWeather(saleId),
     queryFn: async ({ signal }) => {
       const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/weather`, { signal });
-      if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
-      return (await response.json()) as { weather: ClimateResult };
+      return readJson<{ weather: ClimateResult }>(response);
     },
     enabled,
     staleTime: 24 * 60 * 60_000,

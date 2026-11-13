@@ -3,6 +3,7 @@ import { discoverInformationAgentContacts } from "@/lib/information-agent/contac
 import {
   emailInTextPattern,
   findEmailsInText,
+  normalizedEmailsInText,
   replaceEmailsInText,
 } from "@/lib/information-agent/email-in-text";
 import type { AuctionSale } from "@/lib/types";
@@ -75,5 +76,17 @@ describe("découverte de contact sur une adresse collée au téléphone", () => 
     expect(discoverInformationAgentContacts(sale).map((candidate) => candidate.email)).toEqual([
       "maitre.dupont@cabinet-dupont.fr",
     ]);
+  });
+});
+
+describe("adresses normalisées d'un texte", () => {
+  it("rend chaque adresse une fois, normalisée, et rien pour une valeur qui n'est pas du texte", () => {
+    expect(
+      normalizedEmailsInText(
+        "Maitre.Dupont@Cabinet.fr ou maitre.dupont@cabinet.fr, accueil@etude.fr",
+      ),
+    ).toEqual(["maitre.dupont@cabinet.fr", "accueil@etude.fr"]);
+    expect(normalizedEmailsInText(null)).toEqual([]);
+    expect(normalizedEmailsInText({ email: "a@b.fr" })).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analysisCheckoutReadiness,
+  analysisPriceId,
   assertAnalysisCheckoutOpen,
 } from "@/lib/analysis-checkout-readiness";
 
@@ -64,5 +65,19 @@ describe("analysisCheckoutReadiness", () => {
     expect(readiness.missing).toEqual(
       expect.arrayContaining(["NEXT_PUBLIC_LEGAL_ENTITY_NAME", "RESEND_API_KEY"]),
     );
+  });
+});
+
+describe("analysisPriceId", () => {
+  it("rend le Price s'il a la forme d'un Price Stripe, sans les espaces autour", () => {
+    expect(analysisPriceId({ STRIPE_ANALYSIS_PRICE_ID: " price_1AnalysisTest " })).toBe(
+      "price_1AnalysisTest",
+    );
+  });
+
+  it("ne rend rien pour un Price absent, vide ou mal formé", () => {
+    for (const value of [undefined, "", "  ", "prod_1Analysis", "price_with-dash"]) {
+      expect(analysisPriceId({ STRIPE_ANALYSIS_PRICE_ID: value }), String(value)).toBeUndefined();
+    }
   });
 });

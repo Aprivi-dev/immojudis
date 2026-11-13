@@ -14,6 +14,7 @@ import { parseTimestamp as dateToTimestamp } from "@/lib/timestamp";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
+import { AdminPill } from "@/components/admin/admin-pill";
 
 type CoverageDraft = {
   tribunalCode: string;
@@ -503,17 +504,7 @@ function CompactField({
 }
 
 function StatusPill({ label, active }: { label: string; active: boolean }) {
-  return (
-    <span
-      className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] ${
-        active
-          ? "border-emerald-300/20 bg-success-tint text-success"
-          : "border-amber-300/20 bg-warning-tint text-warning"
-      }`}
-    >
-      {label}
-    </span>
-  );
+  return <AdminPill tone={active ? "success" : "warning"}>{label}</AdminPill>;
 }
 
 function emptyCoverageDraft(): CoverageDraft {

@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type {
   AdminDashboardCountsData,
   AdminDashboardRunsData,
@@ -44,13 +44,8 @@ import type {
  * Chaque vue admin ne demande que la section du tableau de bord qu'elle affiche : `runs` est
  * rapide, `counts` fait six comptages exacts.
  */
-async function fetchAdminDashboardSection<T>(section: AdminDashboardSection): Promise<T> {
-  const response = await fetch(`/api/admin/dashboard?section=${section}`, {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<T>(response);
+function fetchAdminDashboardSection<T>(section: AdminDashboardSection): Promise<T> {
+  return apiRequest<T>(`/api/admin/dashboard?section=${section}`);
 }
 
 export function fetchAdminDashboardRuns(): Promise<AdminDashboardRunsData> {
@@ -61,16 +56,11 @@ export function fetchAdminDashboardCounts(): Promise<AdminDashboardCountsData> {
   return fetchAdminDashboardSection<AdminDashboardCountsData>("counts");
 }
 
-export async function fetchAdminDataQuality(): Promise<DataQualityReport> {
-  const response = await fetch("/api/admin/data-quality", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<DataQualityReport>(response);
+export function fetchAdminDataQuality(): Promise<DataQualityReport> {
+  return apiRequest<DataQualityReport>("/api/admin/data-quality");
 }
 
-export async function fetchAdminPublicationRequests(
+export function fetchAdminPublicationRequests(
   input: Partial<AdminPublicationQuery> = {},
 ): Promise<AdminPublicationRequestsResponse> {
   const search = new URLSearchParams();
@@ -78,217 +68,129 @@ export async function fetchAdminPublicationRequests(
   search.set("search", input.search ?? "");
   search.set("offset", String(input.offset ?? 0));
   search.set("limit", String(input.limit ?? 30));
-  const response = await fetch("/api/admin/publications?" + search.toString(), {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<AdminPublicationRequestsResponse>(response);
+  return apiRequest<AdminPublicationRequestsResponse>(
+    "/api/admin/publications?" + search.toString(),
+  );
 }
 
-export async function reviewAdminPublicationRequest(
+export function reviewAdminPublicationRequest(
   input: AdminPublicationReviewInput,
 ): Promise<AdminPublicationReviewResponse> {
-  const response = await fetch("/api/admin/publications", {
+  return apiRequest<AdminPublicationReviewResponse>("/api/admin/publications", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(input),
-    cache: "no-store",
+    body: input,
   });
-  return readJson<AdminPublicationReviewResponse>(response);
 }
 
-export async function startAdminScrollRequest(args: {
+export function startAdminScrollRequest(args: {
   data: { source: AdminScrollSource; mode?: AdminScrollMode; limit?: number };
 }): Promise<StartScrollResult> {
-  const response = await fetch("/api/admin/scroll", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<StartScrollResult>(response);
+  return apiRequest<StartScrollResult>("/api/admin/scroll", { method: "POST", body: args.data });
 }
 
-export async function fetchAdminReadiness(): Promise<AdminOperationalReadinessResponse> {
-  const response = await fetch("/api/admin/readiness", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<AdminOperationalReadinessResponse>(response);
+export function fetchAdminReadiness(): Promise<AdminOperationalReadinessResponse> {
+  return apiRequest<AdminOperationalReadinessResponse>("/api/admin/readiness");
 }
 
-export async function fetchAdminReferencedLawyers(): Promise<AdminReferencedLawyerListResponse> {
-  const response = await fetch("/api/admin/lawyers", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<AdminReferencedLawyerListResponse>(response);
+export function fetchAdminReferencedLawyers(): Promise<AdminReferencedLawyerListResponse> {
+  return apiRequest<AdminReferencedLawyerListResponse>("/api/admin/lawyers");
 }
 
-export async function saveAdminReferencedLawyer(args: {
+export function saveAdminReferencedLawyer(args: {
   data: AdminReferencedLawyerInput;
 }): Promise<AdminReferencedLawyerSaveResponse> {
-  const response = await fetch("/api/admin/lawyers", {
+  return apiRequest<AdminReferencedLawyerSaveResponse>("/api/admin/lawyers", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<AdminReferencedLawyerSaveResponse>(response);
 }
 
-export async function fetchAdminLawyerReferralRequests(
+export function fetchAdminLawyerReferralRequests(
   input: { offset?: number; limit?: number } = {},
 ): Promise<AdminLawyerReferralListResponse> {
   const search = new URLSearchParams({
     offset: String(input.offset ?? 0),
     limit: String(input.limit ?? 50),
   });
-  const response = await fetch("/api/admin/lawyer-referrals?" + search.toString(), {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<AdminLawyerReferralListResponse>(response);
+  return apiRequest<AdminLawyerReferralListResponse>(
+    "/api/admin/lawyer-referrals?" + search.toString(),
+  );
 }
 
-export async function updateAdminLawyerReferralRequest(args: {
+export function updateAdminLawyerReferralRequest(args: {
   data: AdminLawyerReferralUpdateInput;
 }): Promise<AdminLawyerReferralUpdateResponse> {
-  const response = await fetch("/api/admin/lawyer-referrals", {
+  return apiRequest<AdminLawyerReferralUpdateResponse>("/api/admin/lawyer-referrals", {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<AdminLawyerReferralUpdateResponse>(response);
 }
 
-export async function fetchAdminSubscriptions(
+export function fetchAdminSubscriptions(
   input: { offset?: number; limit?: number } = {},
 ): Promise<AdminSubscriptionListResponse> {
   const search = new URLSearchParams({
     offset: String(input.offset ?? 0),
     limit: String(input.limit ?? 50),
   });
-  const response = await fetch("/api/admin/subscriptions?" + search.toString(), {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-  });
-
-  return readJson<AdminSubscriptionListResponse>(response);
+  return apiRequest<AdminSubscriptionListResponse>("/api/admin/subscriptions?" + search.toString());
 }
 
-export async function grantAdminSubscription(args: {
+export function grantAdminSubscription(args: {
   data: AdminSubscriptionGrantInput;
 }): Promise<AdminSubscriptionGrantResponse> {
-  const response = await fetch("/api/admin/subscriptions", {
+  return apiRequest<AdminSubscriptionGrantResponse>("/api/admin/subscriptions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<AdminSubscriptionGrantResponse>(response);
 }
 
-export async function fetchAdminPilotage(): Promise<AdminPilotageResponse> {
-  const response = await fetch("/api/admin/pilotage", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<AdminPilotageResponse>(response);
+export function fetchAdminPilotage(): Promise<AdminPilotageResponse> {
+  return apiRequest<AdminPilotageResponse>("/api/admin/pilotage");
 }
 
 /**
  * Personnes qui ont accepté un entretien (questionnaire de la liste d'attente), administrateur
  * seulement. Chargée à la demande : elle porte des adresses email, la réponse de « Pilotage » non.
  */
-export async function fetchAdminOfferOpeningInterviewees(): Promise<OfferOpeningInterviewees> {
-  const response = await fetch("/api/admin/offer-opening-interviewees", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<OfferOpeningInterviewees>(response);
+export function fetchAdminOfferOpeningInterviewees(): Promise<OfferOpeningInterviewees> {
+  return apiRequest<OfferOpeningInterviewees>("/api/admin/offer-opening-interviewees");
 }
 
 /** Relevé mensuel des avocats référencés (`month` : AAAA-MM), administrateur seulement. */
-export async function fetchAdminLawyerStatement(month: string): Promise<LawyerStatement> {
-  const response = await fetch(`/api/admin/lawyers/statement?month=${encodeURIComponent(month)}`, {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<LawyerStatement>(response);
+export function fetchAdminLawyerStatement(month: string): Promise<LawyerStatement> {
+  return apiRequest<LawyerStatement>(
+    `/api/admin/lawyers/statement?month=${encodeURIComponent(month)}`,
+  );
 }
 
-export async function fetchAdminLaunchOffer(): Promise<AdminLaunchOfferState> {
-  const response = await fetch("/api/admin/launch-offer", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<AdminLaunchOfferState>(response);
+export function fetchAdminLaunchOffer(): Promise<AdminLaunchOfferState> {
+  return apiRequest<AdminLaunchOfferState>("/api/admin/launch-offer");
 }
 
-export async function setAdminLaunchOfferClient(active: boolean): Promise<AdminLaunchOfferState> {
-  const response = await fetch("/api/admin/launch-offer", {
+export function setAdminLaunchOfferClient(active: boolean): Promise<AdminLaunchOfferState> {
+  return apiRequest<AdminLaunchOfferState>("/api/admin/launch-offer", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ active }),
+    body: { active },
   });
-
-  return readJson<AdminLaunchOfferState>(response);
 }
 
-export async function fetchAdminOfferOpeningAudience(): Promise<OfferOpeningAudience> {
-  const response = await fetch("/api/admin/offer-opening-notifier", {
-    signal: AbortSignal.timeout(30_000),
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<OfferOpeningAudience>(response);
+export function fetchAdminOfferOpeningAudience(): Promise<OfferOpeningAudience> {
+  return apiRequest<OfferOpeningAudience>("/api/admin/offer-opening-notifier");
 }
 
 /** Envoi d'essai du message d'ouverture à l'adresse de l'administrateur. */
-export async function sendAdminOfferOpeningTest(): Promise<OfferOpeningTestResult> {
-  const response = await fetch("/api/admin/offer-opening-notifier", {
+export function sendAdminOfferOpeningTest(): Promise<OfferOpeningTestResult> {
+  return apiRequest<OfferOpeningTestResult>("/api/admin/offer-opening-notifier", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ action: "test" }),
+    body: { action: "test" },
   });
-
-  return readJson<OfferOpeningTestResult>(response);
 }
 
 /** Envoie un lot (200 au plus) à la liste d'attente ; relancé, il ne reprend que les non prévenus. */
-export async function sendAdminOfferOpeningBatch(): Promise<OfferOpeningSendResult> {
-  const response = await fetch("/api/admin/offer-opening-notifier", {
+export function sendAdminOfferOpeningBatch(): Promise<OfferOpeningSendResult> {
+  return apiRequest<OfferOpeningSendResult>("/api/admin/offer-opening-notifier", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ action: "send", confirm: true }),
+    body: { action: "send", confirm: true },
   });
-
-  return readJson<OfferOpeningSendResult>(response);
 }

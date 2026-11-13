@@ -2,6 +2,7 @@ import { validCalendarDay } from "./calendar-day";
 import { saleDateBoundary } from "./search/sale-date-range";
 import { departmentCode } from "@/lib/department-code";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
+import { propertyFamily } from "@/lib/property-type-family";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import {
   frenchSearchTerms,
@@ -194,9 +195,14 @@ export function departmentFromSearchQuery(query: string | null | undefined): str
     : null;
 }
 
+/**
+ * Maison ou immeuble avec un terrain ou un jardin connu (critère `require_house_with_land`, que la
+ * colonne décrit ainsi). Le titre ne sert que si le type de bien n'est pas qualifié.
+ */
 export function isHouseWithLand(sale: AuctionSale): boolean {
-  const type = `${sale.property_type ?? ""} ${sale.title ?? ""}`.toLowerCase();
-  const houseLike = /house|maison|villa|immeuble|building/.test(type);
+  const typed = propertyFamily(sale.property_type);
+  const family = typed === "unknown" || typed === "other" ? propertyFamily(sale.title) : typed;
+  const houseLike = family === "house" || family === "building";
   return houseLike && (Boolean(sale.has_garden) || (sale.land_surface_m2 ?? 0) > 0);
 }
 

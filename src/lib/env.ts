@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 /**
- * Single place where the application reads its environment variables (P4-14).
+ * Environment variables of the application (P4-14): the server variables are declared, validated
+ * and normalised here, and a new server variable is declared here. Not every read goes through
+ * this module yet:
+ * - browser variables (`NEXT_PUBLIC_*`: Mapbox, Street View, legal identity, offer label…) are
+ *   read where they are used, by static member accesses that Next.js inlines at build time;
+ * - functions that take their source as a parameter (`env = process.env`) read the source they
+ *   are given, `process.env` being only the default;
+ * - build and runtime flags (`NODE_ENV`, `NEXT_PHASE`, `VERCEL_*`) and a few server variables not
+ *   declared here yet (email diagnostics of the admin, Géorisques token, DVF base URL…).
  *
  * - `publicEnv()` is safe in browser code: it reads ONLY `process.env.NEXT_PUBLIC_*`
  *   through static member accesses, which Next.js inlines at build time. Never add a
@@ -101,6 +109,8 @@ const SERVER_KEYS = [
   "PIPELINE_CALLBACK_SECRET",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_ANALYSIS_PRICE_ID",
+  "STRIPE_ANALYSIS_LEGACY_PRICE_IDS",
   "REPLICATE_API_TOKEN",
   "LLM_PROMPT_VERSION",
   "RESEND_API_KEY",
@@ -148,6 +158,9 @@ const SERVER_KEYS = [
   "RATE_LIMIT_IP_SALT",
   ...SITE_URL_ENV_NAMES,
   "ADJUDICATION_PRICE_STATISTICS_ENABLED",
+  "ADJUDICATION_PRICE_STATISTICS_BUILD_ID",
+  "CONTACT_EMAIL_TO",
+  "CONTACT_EMAIL_FROM",
 ] as const;
 
 /**
@@ -266,12 +279,18 @@ export function serverEnv(source?: EnvSource) {
      * fermé par défaut : ouvert seulement sur la chaîne exacte `true`. Seule lecture de la variable.
      */
     adjudicationPriceStatisticsEnabled: env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true",
+    /** Construction épinglée des statistiques de prix d'adjudication (UUID) ; absente : la dernière publiée. */
+    adjudicationPriceStatisticsBuildId: env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID,
     cronSecret: env.CRON_SECRET,
     /** Secret dédié aux rappels du pipeline (`/api/pipeline/revalidate-sale`) ; absent : repli sur `cronSecret`. */
     pipelineCallbackSecret: env.PIPELINE_CALLBACK_SECRET,
     stripe: {
       secretKey: env.STRIPE_SECRET_KEY,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+      /** Price des nouveaux abonnements Analyse, tel quel : `analysisPriceId` en vérifie la forme. */
+      analysisPriceId: env.STRIPE_ANALYSIS_PRICE_ID,
+      /** Anciens Price encore facturés à des abonnés, séparés par des virgules. */
+      legacyAnalysisPriceIds: env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS,
     },
     replicateApiToken: env.REPLICATE_API_TOKEN,
     llmPromptVersion: env.LLM_PROMPT_VERSION,
@@ -282,6 +301,9 @@ export function serverEnv(source?: EnvSource) {
       transactionalFrom: env.TRANSACTIONAL_EMAIL_FROM,
       /** Expéditeur « ne pas répondre » des emails automatiques (alertes, rappels…) ; absent : l'expéditeur actuel. */
       noReplyFrom: env.NOREPLY_EMAIL_FROM,
+      /** Formulaire de contact : destinataire (absent : l'adresse de contact légale) et expéditeur. */
+      contactTo: env.CONTACT_EMAIL_TO,
+      contactFrom: env.CONTACT_EMAIL_FROM,
     },
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */

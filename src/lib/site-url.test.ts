@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  isNonProductionVercelDeployment,
-  resolveSiteOrigin,
-  siteOrigin,
-  SITE_URL_ENV_NAMES,
-} from "@/lib/site-url";
+import { isNonProductionVercelDeployment, resolveSiteOrigin, siteOrigin } from "@/lib/site-url";
+import { SITE_URL_ENV_NAMES } from "@/lib/env";
 import { ConfigurationError } from "@/lib/api-errors";
 
 describe("canonical site URL", () => {
