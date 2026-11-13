@@ -29,7 +29,10 @@ vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
   fetchTribunalJudicialActivityDirectory: mocks.fetchDirectory,
 }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
-vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
+vi.mock("@/lib/client-billing", () => ({
+  fetchAccessPlan: mocks.fetchPlan,
+  fetchBillingOffer: vi.fn(() => new Promise(() => undefined)),
+}));
 vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
   PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
 }));

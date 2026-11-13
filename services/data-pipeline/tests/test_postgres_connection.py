@@ -9,6 +9,7 @@ import pytest
 
 from src import pipeline_usage, source_detail_worker
 from src.storage import supabase_client
+from src.storage.connection_guards import DatabaseCallTimeout
 
 
 class FakePsycopg:
@@ -114,7 +115,7 @@ def test_real_connect_applies_the_timeout_to_the_session() -> None:
 
 def test_shared_connection_is_opened_once_per_process(fake_psycopg) -> None:
     for _ in range(3):
-        with supabase_client._shared_postgres_connection("postgresql://example/db") as db:
+        with supabase_client.shared_postgres_connection("postgresql://example/db") as db:
             db.execute("select 1")
 
     assert len(fake_psycopg.connects) == 1
@@ -122,11 +123,11 @@ def test_shared_connection_is_opened_once_per_process(fake_psycopg) -> None:
 
 
 def test_shared_connection_reconnects_after_it_was_closed(fake_psycopg) -> None:
-    with supabase_client._shared_postgres_connection("postgresql://example/db"):
+    with supabase_client.shared_postgres_connection("postgresql://example/db"):
         pass
     fake_psycopg.connections[0].closed = True
 
-    with supabase_client._shared_postgres_connection("postgresql://example/db"):
+    with supabase_client.shared_postgres_connection("postgresql://example/db"):
         pass
 
     assert len(fake_psycopg.connects) == 2
@@ -135,12 +136,12 @@ def test_shared_connection_reconnects_after_it_was_closed(fake_psycopg) -> None:
 def test_idle_shared_connection_is_pinged_and_replaced_when_dead(fake_psycopg, monkeypatch) -> None:
     clock = [1000.0]
     monkeypatch.setattr(supabase_client.time, "monotonic", lambda: clock[0])
-    with supabase_client._shared_postgres_connection("postgresql://example/db"):
+    with supabase_client.shared_postgres_connection("postgresql://example/db"):
         pass
     clock[0] += supabase_client.POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS + 1
     fake_psycopg.connections[0].fail_next = psycopg.OperationalError("server closed the connection")
 
-    with supabase_client._shared_postgres_connection("postgresql://example/db") as db:
+    with supabase_client.shared_postgres_connection("postgresql://example/db") as db:
         assert db is fake_psycopg.connections[1]
 
     assert fake_psycopg.connections[0].closed
@@ -148,16 +149,16 @@ def test_idle_shared_connection_is_pinged_and_replaced_when_dead(fake_psycopg, m
 
 def test_transport_errors_discard_the_shared_connection_but_sql_errors_keep_it(fake_psycopg) -> None:
     with pytest.raises(psycopg.errors.RaiseException):
-        with supabase_client._shared_postgres_connection("postgresql://example/db"):
+        with supabase_client.shared_postgres_connection("postgresql://example/db"):
             raise psycopg.errors.RaiseException("budget exhausted")
-    with supabase_client._shared_postgres_connection("postgresql://example/db"):
+    with supabase_client.shared_postgres_connection("postgresql://example/db"):
         pass
     assert len(fake_psycopg.connects) == 1
 
     with pytest.raises(psycopg.OperationalError):
-        with supabase_client._shared_postgres_connection("postgresql://example/db"):
+        with supabase_client.shared_postgres_connection("postgresql://example/db"):
             raise psycopg.OperationalError("connection lost")
-    with supabase_client._shared_postgres_connection("postgresql://example/db"):
+    with supabase_client.shared_postgres_connection("postgresql://example/db"):
         pass
     assert len(fake_psycopg.connects) == 2
     assert fake_psycopg.connections[0].closed
@@ -317,7 +318,7 @@ def test_a_call_that_never_answers_is_cut_from_the_client_side() -> None:
 
     try:
         assert not thread.is_alive(), "the call stayed blocked"
-        assert isinstance(outcome[0], supabase_client.DatabaseCallTimeout)
+        assert isinstance(outcome[0], DatabaseCallTimeout)
         assert "test call did not answer within 0.2s" in str(outcome[0])
     finally:
         server_side.close()
@@ -359,10 +360,10 @@ def test_the_known_sales_snapshot_gives_up_after_the_last_attempt_and_ignores_ot
     monkeypatch.setattr(
         supabase_client,
         "_read_known_sales_snapshot",
-        lambda *args: (_ for _ in ()).throw(supabase_client.DatabaseCallTimeout("stalled")),
+        lambda *args: (_ for _ in ()).throw(DatabaseCallTimeout("stalled")),
     )
 
-    with pytest.raises(supabase_client.DatabaseCallTimeout):
+    with pytest.raises(DatabaseCallTimeout):
         supabase_client._read_known_sales_snapshot_with_retries(
             "postgresql://example/db", None, [], False, sleep=lambda seconds: None
         )

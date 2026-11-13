@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Resend } from "resend";
 import sharp from "sharp";
-import { fetchInboundAttachments, readBoundedAttachment } from "@/lib/information-agent-inbound";
+import {
+  fetchInboundAttachments,
+  readBoundedAttachment,
+} from "@/lib/information-agent-inbound/attachments";
 import {
   MAX_PUBLISHED_PHOTO_BYTES,
   optimizeInformationAgentPhoto,
@@ -72,8 +75,8 @@ describe("information agent photo attachments", () => {
   });
 
   it("does not publish an unreadable image", async () => {
-    await expect(optimizeInformationAgentPhoto(new Uint8Array([1, 2, 3]))).rejects.toThrow(
-      "illisible",
-    );
+    const refused = optimizeInformationAgentPhoto(new Uint8Array([1, 2, 3]));
+    await expect(refused).rejects.toThrow("illisible");
+    await expect(refused).rejects.toMatchObject({ status: 422 });
   });
 });

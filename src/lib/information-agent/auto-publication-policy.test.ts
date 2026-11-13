@@ -11,12 +11,11 @@ import {
   autoPublicationReasonLabels,
   decideAutoPublication,
   isPlausibleValue,
-  mentionsDoNotPublish,
-  namesPrivatePerson,
   planAutoPublicationDecisions,
   type AutoPublicationInput,
   type AutoPublicationPlanItem,
 } from "./auto-publication-policy";
+import { mentionsDoNotPublish, namesPrivatePerson } from "./auto-publication-text";
 
 const SENT_AT = "2026-11-01T09:00:00.000Z";
 

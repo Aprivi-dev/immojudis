@@ -27,14 +27,21 @@ from src.official_sources.judilibre import (  # noqa: E402
     JudilibreSearchPage,
     JudilibreSearchQuery,
 )
-from src.outcome_ingestion.judilibre_extraction import (  # noqa: E402
+from src.outcome_ingestion.judilibre_contract import (  # noqa: E402
     JUDILIBRE_CLAIM_SCHEMA_VERSION,
+    JUDILIBRE_CLAIM_TYPES,
+    JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
     JUDILIBRE_EVIDENCE_HASH_VERSION,
+    JUDILIBRE_MONEY_CLAIM_TYPES,
+    JUDILIBRE_PROCEDURAL_EVENTS,
+)
+from src.outcome_ingestion.judilibre_extraction import (  # noqa: E402
     extract_judilibre_candidate_facts,
 )
 from src.outcome_ingestion.judilibre_ingestion import (  # noqa: E402
     JUDILIBRE_SEARCH_PROFILES,
 )
+from src.sha256_digest import is_lowercase_sha256  # noqa: E402
 
 CANARY_PROFILE_ID = "adjudication_v2"
 CANARY_WINDOW_DAYS = 31
@@ -43,21 +50,10 @@ CANARY_PAGE_SIZE = 1
 CANARY_MAX_SEARCH_ATTEMPTS = 4
 
 _CANONICAL_EXTRACTOR = extract_judilibre_candidate_facts
-_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _MONEY_PATTERN = re.compile(r"(?:[1-9]\d{0,9}|0)\.\d{2}")
 _MAX_CLAIMS = 7
 _MAX_DISPOSITIF_FRAGMENTS = 128
-_CLAIM_TYPES = frozenset({"starting_price_eur", "hammer_price_eur", "procedural_event"})
-_AMBIGUOUS_CLAIM_TYPES = _CLAIM_TYPES
-_PROCEDURAL_VALUES = frozenset(
-    {
-        "adjudication_pronounced",
-        "held_no_bid",
-        "postponed",
-        "surenchere_filed",
-        "reiteration_requested",
-    }
-)
+_AMBIGUOUS_CLAIM_TYPES = JUDILIBRE_CLAIM_TYPES
 _PROCEDURAL_CONFIDENCE = {
     "adjudication_pronounced": 0.85,
     "held_no_bid": 0.85,
@@ -391,7 +387,7 @@ def _validate_extraction_contract(
         if claim_id in validated_claims:
             raise ValueError("duplicate Judilibre claim identifier")
         seen_claim_types.add(claim_type)
-        if claim_type in {"starting_price_eur", "hammer_price_eur"}:
+        if claim_type in JUDILIBRE_MONEY_CLAIM_TYPES:
             if claim_type in seen_money_types:
                 raise ValueError("duplicate Judilibre monetary claim type")
             seen_money_types.add(claim_type)
@@ -433,7 +429,7 @@ def _validate_extraction_contract(
             raise ValueError("Judilibre claim identifier is not canonical")
 
     expected_status = (
-        "candidate_facts_extracted"
+        JUDILIBRE_CLAIMS_EXTRACTED_STATUS
         if claims
         else "ambiguous_candidates_only"
         if ambiguous
@@ -492,14 +488,14 @@ def _validate_claim(value: object) -> dict[str, object]:
     if type(value) is not dict:
         raise ValueError("Judilibre claim must be a plain object")
     claim_type = value.get("claim_type")
-    if type(claim_type) is not str or claim_type not in _CLAIM_TYPES:
+    if type(claim_type) is not str or claim_type not in JUDILIBRE_CLAIM_TYPES:
         raise ValueError("unexpected Judilibre claim type")
     expected_keys = _CLAIM_BASE_KEYS | ({"currency"} if claim_type != "procedural_event" else set())
     claim = _exact_dict(value, keys=expected_keys)
 
     claim_id = claim["claim_id"]
     evidence_hash = claim["evidence_hash"]
-    if not _is_sha256(claim_id) or not _is_sha256(evidence_hash):
+    if not is_lowercase_sha256(claim_id) or not is_lowercase_sha256(evidence_hash):
         raise ValueError("invalid Judilibre claim digest")
     confidence = claim["confidence"]
     if type(confidence) is not float:
@@ -509,7 +505,7 @@ def _validate_claim(value: object) -> dict[str, object]:
     if type(normalized_value) is not str:
         raise ValueError("invalid Judilibre normalized value")
     if claim_type == "procedural_event":
-        if normalized_value not in _PROCEDURAL_VALUES:
+        if normalized_value not in JUDILIBRE_PROCEDURAL_EVENTS:
             raise ValueError("unexpected Judilibre procedural value")
         if confidence != _PROCEDURAL_CONFIDENCE[normalized_value]:
             raise ValueError("unexpected Judilibre procedural confidence")
@@ -540,9 +536,7 @@ def _validate_anchor(
         raise ValueError("unexpected Judilibre anchor hash version")
     if anchor["raw_artifact_sha256"] != raw_artifact_sha256:
         raise ValueError("Judilibre provenance does not match its raw artifact")
-    if not _is_sha256(anchor["raw_artifact_sha256"]) or not _is_sha256(
-        anchor["evidence_sha256"]
-    ):
+    if not is_lowercase_sha256(anchor["raw_artifact_sha256"]) or not is_lowercase_sha256(anchor["evidence_sha256"]):
         raise ValueError("invalid Judilibre provenance digest")
 
     start_utf8 = anchor["start_utf8"]
@@ -579,10 +573,6 @@ def _exact_dict(value: object, *, keys: frozenset[str] | set[str]) -> dict[str, 
     if set(value) != set(keys):
         raise ValueError("unexpected Judilibre extraction field")
     return value
-
-
-def _is_sha256(value: object) -> bool:
-    return type(value) is str and _SHA256_PATTERN.fullmatch(value) is not None
 
 
 def _bounded_settings(settings: dict[str, Any]) -> dict[str, Any]:

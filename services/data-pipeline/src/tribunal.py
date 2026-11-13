@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 
 from src.commune_department_lookup import unique_department_for_commune
 from src.court_competence import (
@@ -12,9 +11,10 @@ from src.court_competence import (
     verified_sale_insee_code,
 )
 from src.department_inference import department_from_geocode_evidence
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.normalize import clean_text, extract_department
 from src.pdf_tribunal import pdf_tribunal_label
+from src.text_folding import ascii_alnum_words, strip_accents
 from src.tribunal_labels import (
     NOTARIAL_VENUE_PHRASE,
     court_name_candidates,
@@ -172,7 +172,7 @@ def _mark_deduced_tribunal(sale: AuctionSale, source_label: str | None) -> None:
     if isinstance(previous, dict) and previous.get("tribunal") == source_label and previous.get("source_label"):
         source_label = clean_text(previous["source_label"])
     if sale.tribunal and source_label and tribunal_label_court_key(source_label) is None:
-        _add_quality_flag(sale, TRIBUNAL_DEDUCED_FLAG)
+        add_quality_flag(sale.quality_flags, TRIBUNAL_DEDUCED_FLAG)
         if sale.raw_payload.get("tribunal_assignment"):
             method = "commune_competence"
         elif sale.raw_payload.get(LABEL_ASSIGNMENT_KEY):
@@ -222,13 +222,13 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
         sale.tribunal_code = None
         sale.raw_payload.pop("tribunal_assignment", None)
         sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
-        _add_quality_flag(sale, "non_judicial_sale_context")
+        add_quality_flag(sale.quality_flags, "non_judicial_sale_context")
         return sale
     if _is_non_judicial_sale_context(sale) and not _extract_explicit_tribunal(sale.raw_text):
         sale.tribunal = None
         sale.tribunal_code = None
         sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
-        _add_quality_flag(sale, "non_judicial_sale_context")
+        add_quality_flag(sale.quality_flags, "non_judicial_sale_context")
         return sale
 
     verified_insee_code = verified_sale_insee_code(sale)
@@ -251,7 +251,7 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
         sale.tribunal_code = None
         sale.raw_payload.pop("tribunal_assignment", None)
         sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
-        _add_quality_flag(sale, "tribunal_competence_unresolved")
+        add_quality_flag(sale.quality_flags, "tribunal_competence_unresolved")
         return sale
 
     sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
@@ -273,7 +273,7 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
             sale.raw_payload[LABEL_ASSIGNMENT_KEY]["raw_source_label"] = raw_label
         _remove_quality_flag(sale, "tribunal_inconsistent")
         validate_tribunal(sale)
-        _add_quality_flag(sale, "tribunal_competence_unverified")
+        add_quality_flag(sale.quality_flags, "tribunal_competence_unverified")
         return sale
     if canonical and tribunal_label_is_polluted(canonical):
         # Du texte d'annonce qui ne se rattache à aucun tribunal n'est pas un tribunal : valeur absente.
@@ -283,10 +283,10 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
         sale.tribunal = canonical
         sale.tribunal_code = TRIBUNAL_CODES.get(canonical)
         validate_tribunal(sale)
-        _add_quality_flag(sale, "tribunal_competence_unverified")
+        add_quality_flag(sale.quality_flags, "tribunal_competence_unverified")
         return sale
     if clean_text(sale.tribunal):
-        _add_quality_flag(sale, "tribunal_inconsistent")
+        add_quality_flag(sale.quality_flags, "tribunal_inconsistent")
         had_invalid_source_tribunal = True
     else:
         had_invalid_source_tribunal = False
@@ -301,9 +301,9 @@ def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
             _apply_label_court(sale, explicit_court, sale.tribunal)
     validate_tribunal(sale)
     if sale.tribunal:
-        _add_quality_flag(sale, "tribunal_competence_unverified")
+        add_quality_flag(sale.quality_flags, "tribunal_competence_unverified")
     if had_invalid_source_tribunal:
-        _add_quality_flag(sale, "tribunal_inconsistent")
+        add_quality_flag(sale.quality_flags, "tribunal_inconsistent")
     return sale
 
 
@@ -343,7 +343,7 @@ def _record_source_label(sale: AuctionSale, source_label: str | None, competent:
             "competent_court_code": competent_code,
             "competent_court_name": sale.tribunal,
         }
-        _add_quality_flag(sale, "tribunal_inconsistent")
+        add_quality_flag(sale.quality_flags, "tribunal_inconsistent")
     else:
         payload.pop(LABEL_CONFLICT_KEY, None)
         _remove_quality_flag(sale, "tribunal_inconsistent")
@@ -392,7 +392,7 @@ def validate_tribunal(sale: AuctionSale) -> AuctionSale:
         sale.tribunal = None
         sale.tribunal_code = None
         sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
-        _add_quality_flag(sale, "non_judicial_sale_context")
+        add_quality_flag(sale.quality_flags, "non_judicial_sale_context")
         return sale
     if sale.department not in DEPARTMENT_TRIBUNALS or not sale.tribunal:
         return sale
@@ -401,10 +401,10 @@ def validate_tribunal(sale: AuctionSale) -> AuctionSale:
         sale.tribunal = canonicalize_tribunal(sale.tribunal) or sale.tribunal
     sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "") or label_code
     if sale.tribunal not in AQUITAINE_TRIBUNALS:
-        _add_quality_flag(sale, "tribunal_inconsistent")
+        add_quality_flag(sale.quality_flags, "tribunal_inconsistent")
         return sale
     if sale.tribunal not in DEPARTMENT_TRIBUNALS[sale.department]:
-        _add_quality_flag(sale, "tribunal_inconsistent")
+        add_quality_flag(sale.quality_flags, "tribunal_inconsistent")
     else:
         _remove_quality_flag(sale, "tribunal_inconsistent")
     return sale
@@ -494,15 +494,7 @@ def _generic_tribunal_name(text: str) -> str | None:
 
 def _fingerprint(value: object | None) -> str:
     text = clean_text(value) or ""
-    text = "".join(
-        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
-    )
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
-
-def _add_quality_flag(sale: AuctionSale, flag: str) -> None:
-    if flag not in sale.quality_flags:
-        sale.quality_flags.append(flag)
+    return ascii_alnum_words(strip_accents(text).lower())
 
 
 def _remove_quality_flag(sale: AuctionSale, flag: str) -> None:

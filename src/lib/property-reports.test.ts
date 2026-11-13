@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildOpportunityAnalysis,
-  buildPropertyReportShare,
-  buildPublicSharedPropertyReport,
-} from "@/lib/property-reports";
+import { buildPropertyReportShare, buildPublicSharedPropertyReport } from "@/lib/property-reports";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
-import { buildCeilingSnapshot } from "./property-report/analysis";
+import { buildOpportunityAnalysis } from "./property-report/analysis";
+import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
 
 const anilReference = {
   rentPerM2: 12,

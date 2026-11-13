@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { API_ERROR_CODES, apiError, apiJson, createApiRequestContext } from "./api-observability";
+import { API_ERROR_CODES, RateLimitError } from "./api-errors";
+import { apiError, apiJson, createApiRequestContext } from "./api-observability";
 
 describe("API observability", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -104,9 +105,8 @@ describe("API observability", () => {
   it("returns a stable code and retry hint for rate limits", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const context = createApiRequestContext(new Request("https://example.test/api"), "api.test");
-    const response = apiError(new Error("Trop de demandes pour cet export"), context, {
+    const response = apiError(new RateLimitError("Trop de demandes pour cet export"), context, {
       fallbackMessage: "Export impossible.",
-      headers: { "retry-after": "60" },
     });
 
     expect(response.status).toBe(429);

@@ -31,13 +31,15 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from src.normalize import normalize_occupancy_status, strip_accents
+from src.normalize import normalize_occupancy_status
 from src.real_extraction_review import (
     _agrasc_structured_evidence,
     _ai_excerpt_is_verbatim,
     _ai_labels_agree,
     _evidence_text,
 )
+from src.sha256_digest import is_lowercase_sha256
+from src.text_folding import strip_accents
 
 AI_REVIEW_FIELD_KEYS: dict[str, str] = {
     "property_type": "property.property_type",
@@ -55,7 +57,6 @@ AI_REVIEW_FIELD_KEYS: dict[str, str] = {
 }
 
 _PRESENT_OR_UNKNOWN = frozenset({"present", "unknown"})
-_VALID_MAPPING_STATES = frozenset({"exact", "unmapped", "ambiguous"})
 _SQL_OCCUPANCY_ALIASES = frozenset(
     {
         "libre",
@@ -92,8 +93,8 @@ def build_ai_review_projection_rows(
 
     if not isinstance(manifest, Mapping):
         raise ValueError("AI review manifest must be an object")
-    sample_sha256 = _required_digest(manifest.get("sample_sha256"), "sample_sha256")
-    schema_version = _required_text(manifest.get("schema_version"), "schema_version")
+    sample_sha256 = required_digest(manifest.get("sample_sha256"), "sample_sha256")
+    schema_version = required_text(manifest.get("schema_version"), "schema_version")
     expected_fields = manifest.get("ai_review_expected_fields")
     if not isinstance(expected_fields, list) or not expected_fields:
         raise ValueError("AI review manifest needs ai_review_expected_fields")
@@ -132,13 +133,13 @@ def _project_case(
     schema_version: str,
     sale_index: Mapping[tuple[str, str], tuple[Mapping[str, Any], ...]],
 ) -> list[dict[str, Any]]:
-    source_name = _required_text(case.get("source"), "case source")
-    source_url = _required_https(case.get("source_url"), "case source_url")
-    case_id = _required_text(case.get("id"), "case id")
+    source_name = required_text(case.get("source"), "case source")
+    source_url = required_https(case.get("source_url"), "case source_url")
+    case_id = required_text(case.get("id"), "case id")
     capture = case.get("capture")
     if not isinstance(capture, Mapping):
         raise ValueError(f"captured case {case_id} has no capture")
-    capture_sha256 = _required_digest(capture.get("sha256"), "capture sha256")
+    capture_sha256 = required_digest(capture.get("sha256"), "capture sha256")
 
     matches = sale_index.get((source_name, source_url), ())
     if len(matches) == 1:
@@ -315,8 +316,8 @@ def _index_sales(
     for sale in sales:
         if not isinstance(sale, Mapping):
             raise ValueError("auction_sales snapshot rows must be objects")
-        source_name = _required_text(sale.get("source_name"), "sale source_name")
-        source_url = _required_https(sale.get("source_url"), "sale source_url")
+        source_name = required_text(sale.get("source_name"), "sale source_name")
+        source_url = required_https(sale.get("source_url"), "sale source_url")
         index.setdefault((source_name, source_url), []).append(sale)
     return {key: tuple(value) for key, value in index.items()}
 
@@ -447,22 +448,22 @@ def _read_capture(value: Any, expected_sha256: str) -> tuple[str, str | None]:
     return text, None
 
 
-def _required_text(value: Any, description: str) -> str:
+def required_text(value: Any, description: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{description} must be non-empty text")
     return value.strip()
 
 
-def _required_https(value: Any, description: str) -> str:
-    text = _required_text(value, description)
+def required_https(value: Any, description: str) -> str:
+    text = required_text(value, description)
     if not text.startswith("https://"):
         raise ValueError(f"{description} must use HTTPS")
     return text
 
 
-def _required_digest(value: Any, description: str) -> str:
-    text = _required_text(value, description)
-    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
+def required_digest(value: Any, description: str) -> str:
+    text = required_text(value, description)
+    if not is_lowercase_sha256(text):
         raise ValueError(f"{description} must be a lowercase SHA-256 digest")
     return text
 

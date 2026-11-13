@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { NotFoundError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { createApprovedEvidenceSignedUrl } from "@/lib/information-agent-evidence-url";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -9,8 +10,9 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
  * signed URL valid for 10 minutes, generated per request. The path must belong to an accepted fact
  * of a currently visible sale.
  */
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.information-agent.evidence", fallbackMessage: "Pièce indisponible." },
+  async (request) => {
     await enforceIpRateLimit({
       request,
       bucketKey: "information-agent.evidence",
@@ -18,19 +20,10 @@ export async function GET(request: Request) {
     });
     const path = new URL(request.url).searchParams.get("path");
     const signedUrl = await createApprovedEvidenceSignedUrl(path);
-    if (!signedUrl) {
-      return NextResponse.json(
-        { ok: false, error: "Pièce introuvable." },
-        { status: 404, headers: { "cache-control": "no-store" } },
-      );
-    }
+    if (!signedUrl) throw new NotFoundError("Pièce introuvable.");
     return NextResponse.redirect(signedUrl, {
       status: 307,
-      headers: { "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
+      headers: { "referrer-policy": "no-referrer" },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "information-agent.evidence", {
-      fallbackMessage: "Pièce indisponible.",
-    });
-  }
-}
+  },
+);

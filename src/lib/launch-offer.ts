@@ -47,9 +47,7 @@ export const LAUNCH_OFFER_SIGNUP_LINE = `${LAUNCH_OFFER_SHORT_TEXT} ni prélève
  * (`src/routes/conditions-generales.tsx`, qui les écrit en toutes lettres : le texte juridique est
  * ancré par empreinte). La clause de retrait anticipé reprend la relecture juridique du 20/10/2026.
  *
- * La fin de l'essai : retour à Découverte, offre payante ensuite, retrait anticipé limité. Des
- * constantes, sans appel au chargement du module : `client-billing` (chargé sur toutes les pages)
- * importe `parseLaunchOfferResponse` d'ici, et le reste du module doit pouvoir être écarté du paquet.
+ * La fin de l'essai : retour à Découverte, offre payante ensuite, retrait anticipé limité.
  */
 const TRIAL_END_RULES =
   "À son terme, votre compte revient à l’offre Découverte, gratuite et sans limite de durée : rien ne devient payant automatiquement. L’offre Analyse est ensuite proposée sur abonnement payant ; son tarif figure sur la page Offres. L’essai peut être retiré plus tôt, sans préavis, en cas d’abus ou d’impératif technique ou juridique.";
@@ -71,7 +69,12 @@ export const LAUNCH_OFFER_VISITOR_TEXT = `Inscrivez-vous gratuitement : une fois
 
 let trialDateFormat: Intl.DateTimeFormat | null = null;
 
-/** « 1er novembre 2026 à 14:05 », heure de Paris. */
+/**
+ * « 1er novembre 2026 à 14:05 », heure de Paris : copie de `formatDateTime` (`format/dates.ts`), y
+ * compris sa règle du « 1er » (le test vérifie l'égalité). Copie gardée exprès : y importer
+ * `format/dates` change le découpage de Turbopack et alourdit le JavaScript client total d'environ
+ * 69 ko (mesuré le 13/11/2026).
+ */
 export function signupTrialDateLabel(iso: string): string {
   const time = Date.parse(iso);
   if (!Number.isFinite(time)) return iso;
@@ -83,7 +86,10 @@ export function signupTrialDateLabel(iso: string): string {
     minute: "2-digit",
     timeZone: "Europe/Paris",
   });
-  return trialDateFormat.format(time).replace(/^1 /, "1er ");
+  return trialDateFormat
+    .formatToParts(time)
+    .map(({ type, value }) => (type === "day" && value === "1" ? "1er" : value))
+    .join("");
 }
 
 /** Compte confirmé auquel la base refuse l'essai (pas le premier de son adresse, adresse jetable). */
@@ -125,11 +131,3 @@ export type LaunchOfferAudience = "account" | "visitor";
 export function launchOfferText(audience: LaunchOfferAudience): string {
   return audience === "account" ? LAUNCH_OFFER_ACCOUNT_TEXT : LAUNCH_OFFER_VISITOR_TEXT;
 }
-
-// Lecture de `GET /api/launch-offer`, dans un module à part : `client-billing`, chargé sur toutes
-// les pages, l'importe sans tirer les textes de l'essai ni `analysis-offer` dans le paquet commun.
-export {
-  LAUNCH_OFFER_CACHE_SECONDS,
-  parseLaunchOfferResponse,
-  type LaunchOfferResponse,
-} from "@/lib/launch-offer-response";

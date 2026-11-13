@@ -7,12 +7,16 @@ import {
   buildTribunalJudicialActivityDirectory,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
+import * as queryKeys from "@/lib/query-keys";
 
 const mocks = vi.hoisted(() => ({ useQuery: vi.fn(), useAuth: vi.fn() }));
 
 vi.mock("@tanstack/react-query", () => ({ useQuery: mocks.useQuery }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
-vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: vi.fn() }));
+vi.mock("@/lib/client-billing", () => ({
+  fetchAccessPlan: vi.fn(),
+  fetchBillingOffer: vi.fn(() => new Promise(() => undefined)),
+}));
 vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
   PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
 }));
@@ -21,12 +25,17 @@ import { TribunalJudicialActivityExplorer } from "./TribunalJudicialActivityExpl
 
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 
+/** La requête est-elle celle de `key` (la fabrique des clés, comme le composant) ? */
+function isQuery(options: { queryKey?: readonly unknown[] }, key: readonly unknown[]): boolean {
+  return JSON.stringify(options.queryKey) === JSON.stringify(key);
+}
+
 describe("TribunalJudicialActivityExplorer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.useAuth.mockReturnValue({ session: { user: { id: "premium-user" } }, loading: false });
     mocks.useQuery.mockImplementation((options: { queryKey?: unknown[] }) => {
-      if (options.queryKey?.[0] === "tribunal-judicial-activity-plan") {
+      if (isQuery(options, queryKeys.featureEntitlementsPlan("premium-user"))) {
         return {
           data: { plan: { hasAnalysisAccess: true } },
           isLoading: false,
@@ -93,7 +102,10 @@ describe("TribunalJudicialActivityExplorer", () => {
     ).toBeTruthy();
     expect(screen.getByText("0 / 2")).toBeTruthy();
     expect(screen.getByText(/Profils historiques publiables \/ tribunaux suivis/i)).toBeTruthy();
-    expect(screen.getByText(/ne mesure pas la couverture nationale/i)).toBeTruthy();
+    // Pourcentage du module commun : une espace ordinaire avant « % ».
+    expect(screen.getByText(/ne mesure pas la couverture nationale/i).textContent).toMatch(
+      /^0 % des tribunaux suivis/,
+    );
     expect(screen.getAllByText("Historique observé").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Pipeline à venir").length).toBeGreaterThan(0);
     expect(screen.getByText(/présentés séparément avec l’offre Analyse/i)).toBeTruthy();
@@ -110,10 +122,50 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(screen.getByRole("button", { name: "Revenir à toute la France" })).toBeTruthy();
   });
 
+  it("nomme les types de bien de l’historique comme le reste du site", () => {
+    const past = (id: string, propertyType: string, daysAgo: number) => ({
+      ...sale("marseille", id, -daysAgo, 60_000),
+      status: "past" as const,
+      propertyType,
+    });
+    const data = buildTribunalJudicialActivityDirectory({
+      courts: [{ code: "marseille", name: "TJ Marseille", judicialRegion: "Aix" }],
+      sales: [
+        ...Array.from({ length: 5 }, (_, index) =>
+          sale("marseille", `marseille-${index}`, 10 + index, 40_000 + index * 10_000),
+        ),
+        past("parking-1", "parking", 40),
+        past("parking-2", "parking", 50),
+        past("other-1", "other", 60),
+        past("house-1", "house", 70),
+      ],
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+    mocks.useQuery.mockImplementation((options: { queryKey?: unknown[] }) =>
+      isQuery(options, queryKeys.featureEntitlementsPlan("premium-user"))
+        ? { data: { plan: { hasAnalysisAccess: true } }, isLoading: false, isError: false }
+        : { data, isLoading: false, isError: false, refetch: vi.fn() },
+    );
+
+    render(<TribunalJudicialActivityExplorer />);
+
+    const typeSelect = screen.getByRole("combobox", { name: "Type de bien" });
+    const options = Array.from(typeSelect.querySelectorAll("option"), (option) =>
+      option.textContent?.replace(/\s+/g, " "),
+    );
+    expect(options).toEqual([
+      "Tous types de biens",
+      "Garage / Parking · 2",
+      "Maison · 1",
+      "Bien à qualifier · 1",
+    ]);
+  });
+
   it("ne charge pas l’annuaire pour un visiteur", () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
     mocks.useQuery.mockImplementation((options: { queryKey?: unknown[] }) => {
-      if (options.queryKey?.[0] === "tribunal-judicial-activity-plan") {
+      if (isQuery(options, queryKeys.featureEntitlementsPlan("anonymous"))) {
         return { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
       }
       return { data: fixture(), isLoading: false, isError: false, refetch: vi.fn() };
@@ -124,8 +176,8 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(
       screen.getByRole("region", { name: "Activité des annonces et prochaines audiences" }),
     ).toBeTruthy();
-    const directoryQuery = mocks.useQuery.mock.calls.find(
-      ([options]) => options.queryKey?.[0] === "tribunal-judicial-activity-directory",
+    const directoryQuery = mocks.useQuery.mock.calls.find(([options]) =>
+      isQuery(options, queryKeys.tribunalJudicialActivityDirectory(36)),
     );
     expect(directoryQuery?.[0].enabled).toBe(false);
   });

@@ -1,15 +1,17 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import type Stripe from "stripe";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
+import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
+import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
-  ANALYSIS_RECURRING_PRICE_CENTS,
   analysisSubscriptionPriceIds,
   getStripe,
   stripeAccessPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
+import { serverEnv } from "@/lib/env";
 import { isPlanPeriodActive } from "@/lib/plans";
 
 /**
@@ -44,7 +46,7 @@ export type StripeSubscriptionView = {
   priceAmountCents?: number | null;
 };
 
-export type BillingDiscrepancyKind =
+type BillingDiscrepancyKind =
   /** Stripe facture un abonnement qui ouvre l'accès, aucune ligne ne le porte en base. */
   | "stripe_access_without_row"
   /** Stripe facture un abonnement qui ouvre l'accès, la base n'ouvre pas l'accès. */
@@ -225,10 +227,7 @@ export type BillingReconciliationReport = {
 export async function reconcileBillingReadOnly(
   authToken: string,
 ): Promise<BillingReconciliationReport> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
+  await assertAdminAuth(authToken);
   return reconcileBillingNow();
 }
 
@@ -254,7 +253,7 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
       stripeSubscriptions: stripeResult.subscriptions,
       rows,
       acceptedPriceIds: analysisSubscriptionPriceIds(),
-      currentPriceId: process.env.STRIPE_ANALYSIS_PRICE_ID?.trim() || null,
+      currentPriceId: analysisPriceId() ?? null,
       listComplete: !stripeResult.truncated,
     }),
   };
@@ -267,7 +266,7 @@ const ALERT_SAMPLE_SIZE = 10;
 export function billingReconciliationConfigured(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
-  return Boolean(env.STRIPE_SECRET_KEY?.trim()) && analysisSubscriptionPriceIds(env).length > 0;
+  return Boolean(serverEnv(env).stripe.secretKey) && analysisSubscriptionPriceIds(env).length > 0;
 }
 
 /**

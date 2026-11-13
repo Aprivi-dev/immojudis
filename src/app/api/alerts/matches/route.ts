@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -17,26 +16,20 @@ const evaluateBodySchema = z.object({
   persist: z.boolean().optional(),
 });
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.alerts.matches.list", fallbackMessage: "Matches d'alertes indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") ?? 50);
     const includeDismissed = url.searchParams.get("includeDismissed") === "true";
-    const response = await listUserAlertMatches({ auth, limit, includeDismissed });
+    return listUserAlertMatches({ auth, limit, includeDismissed });
+  },
+);
 
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "alerts.matches", {
-      fallbackMessage: "Matches d'alertes indisponibles",
-    });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  { scope: "api.alerts.matches.evaluate", fallbackMessage: "Évaluation des alertes impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     // Corps facultatif : absent ou vide, les valeurs par défaut s'appliquent. Un JSON mal formé ou
     // `null` est une erreur de l'appelant (400), pas une panne.
@@ -64,13 +57,6 @@ export async function POST(request: Request) {
         code: "alert_evaluation_failed",
       })),
     };
-
-    return NextResponse.json(publicResponse, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "alerts.matches", {
-      fallbackMessage: "Évaluation des alertes impossible",
-    });
-  }
-}
+    return publicResponse;
+  },
+);

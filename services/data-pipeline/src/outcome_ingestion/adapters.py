@@ -7,25 +7,27 @@ from urllib.parse import urlsplit
 
 from src.official_sources.encheres_publiques_open_data import (
     ENCHERES_PUBLIQUES_DATASET_URL,
+    ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
 )
 from src.official_sources.justice_open_data import (
     JUSTICE_COMPETENCES_DATASET_URL,
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
+    JUSTICE_RECORD_KINDS,
+    JUSTICE_REVIEW_STATUS,
+    JUSTICE_SCHEMA_VERSIONS,
     JUSTICE_STRUCTURES_DATASET_URL,
 )
-from src.outcome_ingestion.dvf_adjudication import DvfAdjudicationCandidate
+from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_MUTATION_NATURE,
+    DVF_ADJUDICATION_RECORD_KIND,
+    DVF_ADJUDICATION_SCHEMA_VERSION,
+    DVF_OFFICIAL_SOURCE_NAME,
+    DvfAdjudicationCandidate,
+)
 from src.outcome_ingestion.service import JsonSourceRecord
 
 DVF_CONNECTOR_VERSION = "dvf-adjudication/1"
-DVF_SCHEMA_VERSION = "dvf_adjudication_candidate_v1"
 JUSTICE_CONNECTOR_VERSION = "justice-open-data/1"
-JUSTICE_SCHEMA_VERSIONS = {
-    "court_competence": "justice_court_competence_v1",
-    "justice_court_structure": "justice_court_structure_v1",
-}
-JUSTICE_RECORD_KINDS = {
-    "court_competence": "territorial_jurisdiction",
-    "justice_court_structure": "court_reference_candidate",
-}
 ENCHERES_CONNECTOR_VERSION = "encheres-publiques-open-data/1"
 ENCHERES_SCHEMA_VERSIONS = {
     "auction_hearing_candidate": "encheres_publiques_hearing_candidate_v1",
@@ -50,17 +52,17 @@ def dvf_adjudication_to_json_record(candidate: DvfAdjudicationCandidate) -> Json
         "source_dataset_url": candidate.source_url,
     }
     return JsonSourceRecord(
-        source_name="dvf_dgfip",
+        source_name=DVF_OFFICIAL_SOURCE_NAME,
         external_record_id=candidate.external_record_id,
         requested_url=candidate.source_url,
         canonical_url=candidate.source_url,
-        record_kind="auction_result_candidate",
+        record_kind=DVF_ADJUDICATION_RECORD_KIND,
         raw_payload=raw_payload,
         normalized_data=normalized,
         connector_version=DVF_CONNECTOR_VERSION,
         extractor_name="dvf_adjudication_projection",
         extractor_version="1",
-        schema_version=DVF_SCHEMA_VERSION,
+        schema_version=DVF_ADJUDICATION_SCHEMA_VERSION,
         capture_transport="local_file",
         http_status=None,
         request_method=None,
@@ -68,7 +70,7 @@ def dvf_adjudication_to_json_record(candidate: DvfAdjudicationCandidate) -> Json
         # unknown unless the exact data.gouv resource snapshot supplies it.
         published_at=None,
         request_parameters={
-            "mutation_nature": "Adjudication",
+            "mutation_nature": DVF_ADJUDICATION_MUTATION_NATURE,
             "external_record_id": candidate.external_record_id,
         },
     )
@@ -78,7 +80,7 @@ def justice_open_data_to_json_record(record: Mapping[str, Any]) -> JsonSourceRec
     record_type = _required_text(record, "record_type")
     if record_type not in JUSTICE_RECORD_KINDS:
         raise SourceRecordAdapterError(f"unsupported Justice record_type: {record_type}")
-    if _required_text(record, "source_name") != "justice_open_data":
+    if _required_text(record, "source_name") != JUSTICE_OPEN_DATA_SOURCE_NAME:
         raise SourceRecordAdapterError("Justice record has an unexpected source_name")
 
     stable_id = _required_text(record, "stable_id")
@@ -91,10 +93,10 @@ def justice_open_data_to_json_record(record: Mapping[str, Any]) -> JsonSourceRec
 
     normalized = _candidate_projection(record)
     normalized["training_eligible"] = False
-    normalized["review_status"] = "pending"
+    normalized["review_status"] = JUSTICE_REVIEW_STATUS
     normalized["schema_version"] = JUSTICE_SCHEMA_VERSIONS[record_type]
     return JsonSourceRecord(
-        source_name="justice_open_data",
+        source_name=JUSTICE_OPEN_DATA_SOURCE_NAME,
         external_record_id=stable_id,
         requested_url=source_url,
         canonical_url=source_url,
@@ -116,7 +118,7 @@ def encheres_publiques_to_json_record(record: Mapping[str, Any]) -> JsonSourceRe
     record_type = _required_text(record, "record_type")
     if record_type not in ENCHERES_SCHEMA_VERSIONS:
         raise SourceRecordAdapterError(f"unsupported Encheres Publiques record_type: {record_type}")
-    if _required_text(record, "source_name") != "encheres_publiques_open_data":
+    if _required_text(record, "source_name") != ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME:
         raise SourceRecordAdapterError("Encheres Publiques record has an unexpected source_name")
     if record.get("training_eligible") is not False:
         raise SourceRecordAdapterError("Encheres Publiques candidates must remain non-training")
@@ -138,7 +140,7 @@ def encheres_publiques_to_json_record(record: Mapping[str, Any]) -> JsonSourceRe
         raise SourceRecordAdapterError("hearing_at must be a timezone-aware datetime")
 
     return JsonSourceRecord(
-        source_name="encheres_publiques_open_data",
+        source_name=ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
         external_record_id=stable_id,
         requested_url=dataset_url,
         canonical_url=canonical_url,

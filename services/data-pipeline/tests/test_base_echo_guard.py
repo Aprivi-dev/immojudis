@@ -1045,13 +1045,13 @@ def test_a_locked_read_of_its_own_uncommitted_write_is_not_a_reference_if_the_tr
 def test_the_surface_group_covers_the_surface_fields_the_collection_takes_from_the_stored_row() -> None:
     """La garde reprend en bloc ce que la collecte recopie en bloc d'une ligne connue : une colonne de surface ajoutée
     d'un côté doit l'être de l'autre."""
-    from src import main as pipeline
+    from src import known_document_backfill as known
 
     surface = next(group for group in base_reads.GROUPS if group.name == "surface")
-    relayed_together = {*pipeline.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *pipeline.KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS}
+    relayed_together = {*known.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *known.KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS}
 
     assert {*surface.columns, *surface.satellites} == relayed_together
-    assert set(pipeline.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS) <= set(surface.family)
+    assert set(known.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS) <= set(surface.family)
 
 
 def test_an_aligned_copy_never_gains_a_key_it_did_not_carry() -> None:

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "@/lib/api-errors";
-import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer-response";
 
 const mocks = vi.hoisted(() => ({ active: vi.fn(), ipLimit: vi.fn() }));
 const state = (active: boolean, degraded = false) => ({ active, degraded });
@@ -39,7 +39,7 @@ describe("GET /api/launch-offer", () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ active: false });
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("répond `false` quand l'offre est coupée", async () => {

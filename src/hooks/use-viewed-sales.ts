@@ -29,7 +29,7 @@ export function markSaleViewed(id: string) {
   write(s);
 }
 
-export function clearViewedSales() {
+function clearViewedSales() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(KEY);
   window.dispatchEvent(new Event(EVT));

@@ -20,12 +20,29 @@ function notificationKey(row: Row) {
   return [row.user_id, row.match_id, row.notification_kind, row.delivery_channel].join("|");
 }
 
+/** Upsert des correspondances sur (alerte, vente), comme `upsert_user_alert_matches`. */
+function upsertMatches(rows: Row[]): Row[] {
+  return rows.map((row) => {
+    const existing = db.matches.find(
+      (match) => match.alert_id === row.alert_id && match.sale_id === row.sale_id,
+    );
+    if (existing) return Object.assign(existing, row);
+    const created = {
+      ...row,
+      id: `match-${String(row.sale_id)}`,
+      read_at: null,
+      dismissed_at: null,
+    };
+    db.matches.push(created);
+    return created;
+  });
+}
+
 function fakeClient() {
   return {
-    async rpc(name: string) {
-      // Fonction d'écriture sans attente de verrou absente : le code retombe sur l'upsert, que ce faux client simule.
+    async rpc(name: string, args?: { p_rows?: Row[] }) {
       if (name === "upsert_user_alert_matches") {
-        return { data: null, error: { code: "PGRST202", message: "Could not find the function" } };
+        return { data: upsertMatches(args?.p_rows ?? []), error: null };
       }
       return { data: [], error: null };
     },
@@ -56,23 +73,6 @@ function fakeClient() {
           return chain;
         },
         then(resolve: (value: { data: unknown; error: unknown }) => void) {
-          if (table === "user_alert_matches" && op === "upsert") {
-            const written = upserted.map((row) => {
-              const existing = db.matches.find(
-                (match) => match.alert_id === row.alert_id && match.sale_id === row.sale_id,
-              );
-              if (existing) return Object.assign(existing, row);
-              const created = {
-                ...row,
-                id: `match-${String(row.sale_id)}`,
-                read_at: null,
-                dismissed_at: null,
-              };
-              db.matches.push(created);
-              return created;
-            });
-            return resolve({ data: written, error: null });
-          }
           if (table === "user_alert_notifications" && op === "upsert") {
             const inserted: Row[] = [];
             for (const row of upserted) {
@@ -119,8 +119,6 @@ vi.mock("@/lib/system-auth", () => ({
 }));
 vi.mock("@/lib/entitlements.server", () => ({
   resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: true }),
-}));
-vi.mock("@/lib/property-reports", () => ({
   assertFeatureEntitlement: async () => undefined,
 }));
 vi.mock("@/lib/queries", () => ({

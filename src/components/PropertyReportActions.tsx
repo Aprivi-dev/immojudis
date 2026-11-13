@@ -6,6 +6,7 @@ import Link2Off from "lucide-react/dist/esm/icons/link-2-off.js";
 import Pencil from "lucide-react/dist/esm/icons/pencil.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
+import { formatNumericDate } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import { reportShareNotice } from "@/lib/property-report/share-notice";
 import { useRouter } from "next/navigation";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { downloadBlob } from "@/lib/download-blob";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 
@@ -288,7 +290,7 @@ function PropertyReportWorkspace({
           </div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {report
-              ? `Dernière sauvegarde ${new Date(report.updated_at).toLocaleDateString("fr-FR")}`
+              ? `Dernière sauvegarde ${formatNumericDate(report.updated_at)}`
               : "Aucun rapport sauvegardé pour cette vente."}
           </p>
         </div>
@@ -387,11 +389,7 @@ function PropertyReportWorkspace({
           <ReportMeta label="Exports" value={String(report.export_count)} />
           <ReportMeta
             label="Dernier export"
-            value={
-              report.last_exported_at
-                ? new Date(report.last_exported_at).toLocaleDateString("fr-FR")
-                : "Jamais"
-            }
+            value={report.last_exported_at ? formatNumericDate(report.last_exported_at) : "Jamais"}
           />
           <ReportMeta label="Édition" value={plan?.limits.reportEditing ?? "limited"} />
           <div>
@@ -435,17 +433,6 @@ function actionClassName(variant: "primary" | "secondary") {
       ? "bg-foreground text-background hover:bg-foreground/90"
       : "border border-border bg-white text-foreground hover:border-gold/50 hover:text-gold-text",
   );
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
 }
 
 async function copyText(value: string) {

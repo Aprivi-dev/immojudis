@@ -9,6 +9,8 @@ from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
 )
 
+DVF_RECORDS = ("dvf_dgfip", "auction_result_candidate", "dvf_adjudication_candidate_v1", "Adjudication")
+
 
 class QueryCursor:
     def __init__(
@@ -79,12 +81,16 @@ def test_load_active_dvf_records_is_latest_non_purged_and_bounded() -> None:
     assert records[0].source_record_id == "record-1"
     assert records[0].external_record_id == "dvf-adjudication:one"
     statement, parameters = cursor.calls[0]
-    assert "source.name = 'dvf_dgfip'" in statement
+    assert "source.name = %s" in statement
+    assert "record.record_kind = %s" in statement
+    assert "record.normalized_data->>'schema_version' = %s" in statement
+    assert "record.normalized_data->>'mutation_nature' = %s" in statement
     assert "newer.record_version > record.record_version" in statement
     assert "public.source_purge_events" in statement
     assert "not record.training_eligible" in statement
     assert statement.endswith("limit %s")
-    assert parameters == (5,)
+    # Source, nature, schéma et nature de mutation écrits par l'import DVF (src.outcome_ingestion.dvf_adjudication).
+    assert parameters == (*DVF_RECORDS, 5)
 
 
 def test_load_all_active_dvf_records_requires_explicit_none_but_uses_no_fake_limit() -> None:
@@ -95,7 +101,7 @@ def test_load_all_active_dvf_records_requires_explicit_none_but_uses_no_fake_lim
     assert records == []
     statement, parameters = cursor.calls[0]
     assert not statement.endswith("limit %s")
-    assert parameters == ()
+    assert parameters == DVF_RECORDS
 
 
 def test_load_active_dvf_records_resolves_composite_cursor_before_page() -> None:
@@ -113,14 +119,14 @@ def test_load_active_dvf_records_resolves_composite_cursor_before_page() -> None
     cursor_statement, cursor_parameters = cursor.calls[0]
     page_statement, page_parameters = cursor.calls[1]
     assert "record.id = %s::uuid" in cursor_statement
-    assert "source.name = 'dvf_dgfip'" in cursor_statement
-    assert cursor_parameters == (cursor_id,)
+    assert "source.name = %s" in cursor_statement
+    assert cursor_parameters == (cursor_id, "dvf_dgfip")
     assert (
         "(record.created_at, record.id) > (%s::timestamptz, %s::uuid)"
         in page_statement
     )
     assert "order by record.created_at, record.id" in page_statement
-    assert page_parameters == (cursor_created_at, cursor_id, 5)
+    assert page_parameters == (*DVF_RECORDS, cursor_created_at, cursor_id, 5)
 
 
 def test_load_active_dvf_records_rejects_unknown_cursor() -> None:

@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -24,10 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional for dry-run parsing t
     Jsonb = None
 
 from src.config import load_settings
-from src.storage.supabase_client import connect
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
+from src.storage.supabase_client import connect as postgres_connect
 
 LOGGER = logging.getLogger(__name__)
 
@@ -116,7 +113,9 @@ class DvfImportSummary:
     errors: list[str] = field(default_factory=list)
 
 
-def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
+def import_dvf_file(
+    options: DvfImportOptions, *, connect: Callable[[str], Any] = postgres_connect
+) -> DvfImportSummary:
     path = options.path
     if options.uses_staging and options.limit is not None:
         raise ValueError("A replacement DVF import cannot be combined with a row limit.")
@@ -144,7 +143,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
             _record_period(summary, transaction["sale_date"])
         return summary
 
-    connection = _postgres_connect(str(db_url))
+    connection = connect(str(db_url))
     try:
         batch_id = _create_import_batch(
             connection,
@@ -201,6 +200,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                     batch_id,
                     str(exc),
                     restore_indexes=False,
+                    connect=connect,
                 )
             except Exception as finalization_exc:
                 summary.errors.append(f"failure finalization failed: {finalization_exc}")
@@ -887,6 +887,7 @@ def _finalize_failed_import(
     error_message: str,
     *,
     restore_indexes: bool,
+    connect: Callable[[str], Any] = postgres_connect,
 ) -> None:
     """Persist a failed batch even when Supabase restarted the original session."""
     working_connection: Any | None = connection
@@ -897,13 +898,14 @@ def _finalize_failed_import(
             time.sleep(delay_seconds)
         try:
             if working_connection is None:
-                working_connection = _postgres_connect(db_url)
+                working_connection = connect(db_url)
             else:
                 try:
                     working_connection.rollback()
                 except Exception:
+                    # A session that cannot even roll back is gone (Supabase restart): open a new one.
                     _close_connection(working_connection)
-                    working_connection = _postgres_connect(db_url)
+                    working_connection = connect(db_url)
 
             if restore_indexes:
                 try:
@@ -965,7 +967,7 @@ def _is_transient_postgres_error(error: Exception) -> bool:
 def _close_connection(connection: Any) -> None:
     try:
         connection.close()
-    except Exception:
+    except Exception:  # closing a session the server already dropped may fail; it is gone either way
         pass
 
 
@@ -1315,7 +1317,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def _run_swap_staging(dry_run: bool) -> int:
+def _run_swap_staging(dry_run: bool, *, connect: Callable[[str], Any] = postgres_connect) -> int:
     if dry_run:
         print("DVF swap skipped (dry run).")
         return 0
@@ -1323,7 +1325,7 @@ def _run_swap_staging(dry_run: bool) -> int:
     db_url = settings.get("supabase_db_url")
     if not db_url:
         raise RuntimeError("SUPABASE_DB_URL is required to swap the DVF staging table.")
-    connection = _postgres_connect(str(db_url))
+    connection = connect(str(db_url))
     try:
         swap_staging_into_live(connection)
     finally:

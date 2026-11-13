@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 from src.config import load_settings
 from src.normalize import clean_text
-from src.pdf_page_analysis import _page_text_confidence
+from src.pdf_page_analysis import page_text_confidence
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 
 
@@ -64,7 +64,7 @@ def single_page_document_payload(
     *,
     extraction_method: str,
 ) -> dict[str, object]:
-    confidence = _page_text_confidence(text, method="pymupdf_text")
+    confidence = page_text_confidence(text, method="pymupdf_text")
     return {
         "cache_version": PDF_TEXT_CACHE_VERSION,
         "text": text,

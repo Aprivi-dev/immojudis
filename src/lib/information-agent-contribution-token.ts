@@ -1,11 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
+import { normalizeSignedLinkEmail } from "@/lib/information-agent-signed-link";
 
 const CONTRIBUTION_TOKEN_VERSION = "v2";
 const CONTRIBUTION_TOKEN_LIFETIME_MS = 45 * 24 * 60 * 60 * 1000;
-
-function normalizeRecipientEmail(recipientEmail: string): string {
-  return recipientEmail.trim().toLowerCase();
-}
 
 function signedPayload(
   missionId: string,
@@ -19,7 +17,7 @@ function signedPayload(
     missionId,
     createdAt,
     caseId,
-    normalizeRecipientEmail(recipientEmail),
+    normalizeSignedLinkEmail(recipientEmail),
     contributionTokenVersion,
   ]);
 }
@@ -40,7 +38,7 @@ export function createInformationAgentContributionToken(
     !Number.isSafeInteger(contributionTokenVersion) ||
     contributionTokenVersion < 1
   ) {
-    throw new Error("Configuration du lien de dépôt invalide.");
+    throw new ConfigurationError("Invalid contribution link configuration.");
   }
   return createHmac("sha256", secret)
     .update(signedPayload(missionId, createdAt, caseId, recipientEmail, contributionTokenVersion))

@@ -3,22 +3,14 @@ import { useRouter } from "next/navigation";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import {
-  addFavoriteSale as addFavoriteSaleRequest,
-  removeFavoriteSale as removeFavoriteSaleRequest,
-} from "@/lib/client-api";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/lib/toast";
-import { userMessage } from "@/lib/user-messages";
-import { trackProductEvent } from "@/lib/product-events";
 import * as queryKeys from "@/lib/query-keys";
-import { useFavoriteRemovalConfirmation } from "./favorite-removal";
+import { toggleFavoriteSale, useFavoriteRemovalConfirmation } from "./favorite-removal";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
   FAVORITE_REMOVE_LABEL,
-  announceFavoriteAdded,
 } from "./favorite-feedback";
 
 export function FavoriteButton({
@@ -68,34 +60,15 @@ export function FavoriteButton({
       return;
     }
     setBusy(true);
-    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
-      await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
-      if (isFav) {
-        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
-        if (!(await confirmRemoval(saleId))) return;
-        await removeFavoriteSaleRequest({ saleId });
-        qc.setQueryData(favoriteKey, false);
-      } else {
-        const added = await addFavoriteSaleRequest({ data: { saleId } });
-        trackProductEvent("favorite_added");
-        qc.setQueryData(favoriteKey, true);
-        void announceFavoriteAdded(qc, user.id, added?.plan?.limit ?? null);
-      }
-      qc.setQueriesData<string[] | undefined>(
-        { queryKey: searchFavoriteQueryKey },
-        (favoriteSaleIds) => {
-          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
-          if (isFav) nextFavoriteSaleIds.delete(saleId);
-          else nextFavoriteSaleIds.add(saleId);
-          return [...nextFavoriteSaleIds];
-        },
-      );
-      qc.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
-      await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-    } catch (e: unknown) {
-      void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(userMessage(e));
+      await toggleFavoriteSale({
+        queryClient: qc,
+        userId: user.id,
+        saleId,
+        favorite: isFav,
+        confirmRemoval,
+        onToggled: (next) => qc.setQueryData(favoriteKey, next),
+      });
     } finally {
       setBusy(false);
     }

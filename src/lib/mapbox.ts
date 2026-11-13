@@ -73,7 +73,7 @@ export function getMapboxAccessToken() {
   return (process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "").trim();
 }
 
-export function getMapboxStylePath() {
+function getMapboxStylePath() {
   return normalizeMapboxStyle(
     (
       process.env.NEXT_PUBLIC_MAPBOX_STYLE ??
@@ -151,7 +151,7 @@ export function mapboxMapUrl(lat: number, lng: number) {
   });
 }
 
-export function mapboxNeighborhood3dUrl(lat: number, lng: number) {
+function mapboxNeighborhood3dUrl(lat: number, lng: number) {
   return mapboxStaticImageUrl({
     lat,
     lng,

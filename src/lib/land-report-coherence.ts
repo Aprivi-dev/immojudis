@@ -152,10 +152,10 @@ export function rulesUnavailableReason(checks: Pick<LandSourceCheck, "message">[
   return "Aucun article de la zone n’a pu être extrait automatiquement.";
 }
 
-export type LandZoneFamily = "U" | "AU" | "A" | "N";
+type LandZoneFamily = "U" | "AU" | "A" | "N";
 
 /** What each family of PLU zone means, in words a buyer understands. */
-export const LAND_ZONE_FAMILY_TEXT: Record<LandZoneFamily, { name: string; hint: string }> = {
+const LAND_ZONE_FAMILY_TEXT: Record<LandZoneFamily, { name: string; hint: string }> = {
   U: { name: "zone urbaine (U)", hint: "secteur déjà bâti ou équipé" },
   AU: {
     name: "zone à urbaniser (AU)",
@@ -183,7 +183,7 @@ function zoneFamily(value: string | null | undefined): LandZoneFamily | null {
 }
 
 /** The families (U, AU, A, N) of the official zones found, in this order, without repeats. */
-export function landZoneFamilies(zones: Pick<LandZone, "label" | "type">[]): LandZoneFamily[] {
+function landZoneFamilies(zones: Pick<LandZone, "label" | "type">[]): LandZoneFamily[] {
   const found = new Set(zones.map((zone) => zoneFamily(zone.type) ?? zoneFamily(zone.label)));
   return (["U", "AU", "A", "N"] as const).filter((family) => found.has(family));
 }

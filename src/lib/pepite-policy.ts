@@ -1,7 +1,7 @@
 // Règles « pepite » (v1 à v2.1) : ce qu'est une pépite, et comment un résultat devient publiable. Module pur :
 // aucune donnée, aucun import serveur. Les seuils sont des constantes exportées, que la page
 // « Comment repérons-nous les pépites ? » (`src/app/methode-pepites/method.ts`) relit : un seuil
-// change ici ou nulle part, et toute modification crée une nouvelle version (`PEPITE_LATEST_RULE_VERSION`).
+// change ici ou nulle part, et toute modification crée une nouvelle version (`PepiteRuleVersion`).
 //
 // Une pépite est une vente qui remplit deux conditions chiffrées, calculées sur les données
 // disponibles :
@@ -15,7 +15,12 @@
 // Ce qui n'entre JAMAIS dans le calcul : `investment_score`, les données d'avocat, de sponsoring et
 // de profil. `scripts/check-security-invariants.mjs` vérifie que ce module et ceux qui le nourrissent
 // n'importent aucun module d'avocats ou de sponsoring et ne lisent pas `investment_score`.
-import type { AuctionScenario, ScenarioReliability } from "@/lib/auction-scenarios";
+import {
+  MIN_COURT_SAMPLE,
+  MIN_NATIONAL_SAMPLE,
+  type AuctionScenario,
+  type ScenarioReliability,
+} from "@/lib/auction-scenarios";
 import type { FeeSource, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
 import type { DpeClass } from "@/lib/dpe";
@@ -36,7 +41,7 @@ import type { FloodVerdict } from "@/lib/flood-risk";
  *    plafond de taille et de valeur, et la copropriété en difficulté (bloquant). Les seuils des tests B et C ne
  *    changent pas. C'est la règle APPLIQUÉE tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé
  *    (`pepite-rule-switch.server.ts`) ;
- *  - `pepite-v2.1` (version courante) : `pepite-v1.2` plus le critère d'inondation de `pepite-v2`. Appliquée
+ *  - `pepite-v2.1` (dernière version) : `pepite-v1.2` plus le critère d'inondation de `pepite-v2`. Appliquée
  *    quand l'interrupteur est ouvert.
  */
 export const PEPITE_V1_RULE_VERSION = "pepite-v1";
@@ -44,7 +49,6 @@ export const PEPITE_V1_1_RULE_VERSION = "pepite-v1.1";
 export const PEPITE_V2_RULE_VERSION = "pepite-v2";
 export const PEPITE_V1_2_RULE_VERSION = "pepite-v1.2";
 export const PEPITE_V2_1_RULE_VERSION = "pepite-v2.1";
-export const PEPITE_LATEST_RULE_VERSION = PEPITE_V2_1_RULE_VERSION;
 export type PepiteRuleVersion =
   | typeof PEPITE_V1_RULE_VERSION
   | typeof PEPITE_V1_1_RULE_VERSION
@@ -146,13 +150,11 @@ export const PEPITE_FREEZE_DAYS = 7;
 /** Échantillon effectif minimal de l'estimation de valeur. */
 export const PEPITE_MIN_VALUE_COMPARABLES = 8;
 /** Estimation de valeur : fiabilité admise (`qualityLabel`). */
-export const PEPITE_VALUE_RELIABILITIES: readonly string[] = ["forte", "correcte"];
+const PEPITE_VALUE_RELIABILITIES: readonly string[] = ["forte", "correcte"];
 /** Historique des ventes comparables, en années (`app_private.court_auction_scenarios`). */
 export const PEPITE_HISTORY_YEARS = 3;
-/** Sous ce nombre de ventes du tribunal, on complète par le taux national. */
-export const PEPITE_COURT_COMPLETE_BELOW_SALES = 30;
 /** Sous ce nombre de ventes du tribunal, on le remplace par le taux national. */
-export const PEPITE_COURT_REPLACE_BELOW_SALES = 10;
+export const PEPITE_COURT_REPLACE_BELOW_SALES = MIN_COURT_SAMPLE;
 /**
  * Lissage de la part du test B (SQL `app_private.court_auction_scenarios`, migration 20261101120100) : à partir
  * de `PEPITE_COURT_REPLACE_BELOW_SALES` ventes du tribunal, la part est (ventes du tribunal + 15 x taux national)
@@ -162,11 +164,11 @@ export const PEPITE_SMOOTHING_WEIGHT_SALES = 15;
 /** Fourchette de prix (quantiles) : lots du tribunal seuls à partir de ce nombre de ventes, national en dessous. */
 export const PEPITE_PRICE_COURT_ONLY_FROM_SALES = 20;
 /** Ventes nationales comparables minimales : en dessous, aucun chiffre. */
-export const PEPITE_MIN_NATIONAL_SALES = 30;
+export const PEPITE_MIN_NATIONAL_SALES = MIN_NATIONAL_SAMPLE;
 /** Test B (pepite-v1.1 et suivantes), entrée : borne basse de l'intervalle de Wilson à 95 % de la part. */
 export const PEPITE_CHANCE_MIN_WILSON_LOW = 0.5;
 /** Fiabilité minimale des scénarios d'adjudication : en dessous, le test B n'est pas évaluable. */
-export const PEPITE_MIN_SCENARIO_RELIABILITY: ScenarioReliability = "medium";
+const PEPITE_MIN_SCENARIO_RELIABILITY: ScenarioReliability = "medium";
 /** Mise à prix inférieure à cette part de la valeur centrale : on retient q75 au lieu de q50. */
 export const PEPITE_LOW_STARTING_PRICE_SHARE = 0.3;
 /** Âge maximal d'une évaluation lue publiquement, en heures (garde de lecture de la base). */
@@ -302,13 +304,13 @@ export const PEPITE_BLOCKING_CRITERIA: readonly PepiteCriterionId[] = [
  * Qualité de l'estimation qui, manquée pendant le gel à J-7, fait sortir une pépite publiée (pepite-v1.1 et
  * suivantes) : la pépite ne reste pas affichée sur une estimation qui ne la justifie plus.
  */
-export const PEPITE_FREEZE_QUALITY_CRITERIA: readonly PepiteCriterionId[] = [
+const PEPITE_FREEZE_QUALITY_CRITERIA: readonly PepiteCriterionId[] = [
   "public_gap_gate",
   "estimate_reliability",
   "estimate_actionable",
 ];
 
-export type PepiteEstimateInput = {
+type PepiteEstimateInput = {
   /** L'estimation est exploitable (`actionable`). */
   actionable: boolean;
   /** `qualityLabel` de l'estimation : « forte », « correcte » ou « fragile ». */
@@ -324,7 +326,7 @@ export type PepiteEstimateInput = {
   lowValueEur: number | null;
 };
 
-export type PepiteCeilingInput = {
+type PepiteCeilingInput = {
   /** Le plan du plafond est calculable (valeur et surface connues). */
   available: boolean;
   /** Enchère plafond de référence, calculée sur la valeur P10 ; 0 quand aucune enchère ne tient. */
@@ -347,7 +349,7 @@ export type PepiteScenariosInput = {
  * Source de chaque poste de frais du coût d'achat (`feesSource` du moteur de plafond) : `defaut` signale un
  * montant non lu, ni saisi (pepite-v1.1 : refusé en vente notariale, signalé en administration au tribunal).
  */
-export type PepiteFeesInput = {
+type PepiteFeesInput = {
   /** Frais préalables (tribunal) ; `null` : sans objet. */
   preliminary: FeeSource | null;
   /** Honoraires de négociation de l'acquéreur (vente interactive) ; `null` : sans objet. */
@@ -356,7 +358,7 @@ export type PepiteFeesInput = {
   advertising: FeeSource | null;
 };
 
-export type PepiteSignals = {
+type PepiteSignals = {
   /** Terrain seul ou actif mixte. */
   landOrMixed: boolean;
   occupancy: OccupationCase;
@@ -414,7 +416,7 @@ export type PepiteMarketInput = {
  * Le verdict d'inondation de la vente (`flood-risk.ts`), lu dans la table privée : jamais un appel réseau.
  * `ppriChecked` : le périmètre des PPRi a pu être lu au dernier contrôle (vrai aussi quand il ne s'applique pas).
  */
-export type PepiteFloodInput = { verdict: FloodVerdict; ppriChecked: boolean };
+type PepiteFloodInput = { verdict: FloodVerdict; ppriChecked: boolean };
 
 export type PepiteInput = {
   /** Régime de frais de la vente quand son calcul est ouvert ; `null` : pas de pépite. */
@@ -461,7 +463,7 @@ export type PepiteMarketMetrics = {
   declinePct: number | null;
 };
 
-export type PepiteMetrics = {
+type PepiteMetrics = {
   startingPriceEur: number | null;
   centralValueEur: number | null;
   lowValueEur: number | null;
@@ -580,7 +582,7 @@ export function wilsonLowerBound(share: number, sample: number): number {
  * Effectif sur lequel la part du test B est calculée par la base : tribunal + poids national dès 10 ventes du
  * tribunal, sinon les ventes nationales seules.
  */
-export function chanceSampleSize(courtSample: number, nationalSample: number): number {
+function chanceSampleSize(courtSample: number, nationalSample: number): number {
   return courtSample >= PEPITE_COURT_REPLACE_BELOW_SALES
     ? courtSample + PEPITE_SMOOTHING_WEIGHT_SALES
     : nationalSample;

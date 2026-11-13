@@ -16,7 +16,7 @@ l'empreinte de la vignette (date, prix, statut).
   délai : après 7 jours la fiche est relue, elle a pu s'enrichir (email publié, pièce).
 * **Conservation** : 30 jours (``app_private.purge_rejected_listings``, appelée au chargement du cache).
 
-Le cache est un confort, jamais une condition : table absente, base injoignable, interrupteur coupé
+Le cache est un confort, jamais une condition : base injoignable, erreur de lecture, interrupteur coupé
 (``IMMOJUDIS_REJECTED_LISTING_CACHE=off``) ou hors passage autonome, les fiches sont relues comme avant. Il n'est actif
 que pour un passage autonome (``PIPELINE_AUTONOMOUS_RUN_ID``) ou avec ``IMMOJUDIS_REJECTED_LISTING_CACHE=on``.
 """
@@ -24,14 +24,13 @@ que pour un passage autonome (``PIPELINE_AUTONOMOUS_RUN_ID``) ou avec ``IMMOJUDI
 from __future__ import annotations
 
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 from urllib.parse import urldefrag
 
 from src.base_reads import RELAYED_FIELDS_KEY
-from src.config import load_settings
+from src.config import autonomous_run_id, env_override, load_settings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,8 +38,6 @@ ENV = "IMMOJUDIS_REJECTED_LISTING_CACHE"
 #: Une annonce refusée depuis moins longtemps n'est pas relue.
 RECHECK_AFTER = timedelta(days=7)
 CONNECT_TIMEOUT = 5
-
-_TABLE_UNAVAILABLE = False
 
 
 def normalize_url(url: object) -> str:
@@ -54,10 +51,10 @@ def _db_url() -> str:
 
 def _active() -> bool:
     """Interrupteur et contexte : actif pour un passage autonome, ou avec ``IMMOJUDIS_REJECTED_LISTING_CACHE=on``."""
-    mode = (os.getenv(ENV) or "").strip().lower()
-    if mode in {"off", "0", "false", "no"} or _TABLE_UNAVAILABLE:
-        return False
-    return mode in {"on", "1", "true", "yes"} or bool(os.getenv("PIPELINE_AUTONOMOUS_RUN_ID"))
+    forced = env_override(ENV)
+    if forced is not None:
+        return forced
+    return autonomous_run_id() is not None
 
 
 def enabled() -> bool:
@@ -67,7 +64,6 @@ def enabled() -> bool:
 @lru_cache(maxsize=1)
 def _load() -> dict[str, tuple[datetime, str | None]]:
     """Refus de moins de 7 jours : ``{url: (date du refus, empreinte)}`` ; vide au moindre problème."""
-    global _TABLE_UNAVAILABLE
     from src.storage.supabase_client import connect
 
     try:
@@ -75,9 +71,6 @@ def _load() -> dict[str, tuple[datetime, str | None]]:
             with db.transaction():
                 db.execute("set local lock_timeout = '5s'")
                 db.execute("set local statement_timeout = '15s'")
-                if not db.execute("select to_regclass('app_private.rejected_listings')").fetchone()[0]:
-                    _TABLE_UNAVAILABLE = True
-                    return {}
                 db.execute("select app_private.purge_rejected_listings()")
                 rows = db.execute(
                     "select source_url, rejected_at, fingerprint from app_private.rejected_listings "
@@ -92,8 +85,6 @@ def _load() -> dict[str, tuple[datetime, str | None]]:
 
 def reset_cache() -> None:
     """Oublie le cache chargé (tests, début d'un passage)."""
-    global _TABLE_UNAVAILABLE
-    _TABLE_UNAVAILABLE = False
     _load.cache_clear()
 
 
@@ -153,9 +144,8 @@ def is_skipped(payload: object) -> bool:
 def remember(connection: Any, sales: list[Any]) -> int:
     """Mémorise des annonces refusées après lecture de leur fiche (dans la transaction de publication).
 
-    Une annonce sautée ne renouvelle pas son délai. Table absente : le cache est coupé pour le reste du passage.
+    Une annonce sautée ne renouvelle pas son délai.
     """
-    global _TABLE_UNAVAILABLE
     rows = [
         (
             normalize_url(sale.source_url),
@@ -178,7 +168,6 @@ def remember(connection: Any, sales: list[Any]) -> int:
                     rows,
                 )
     except Exception as exc:  # noqa: BLE001 - le cache ne doit jamais faire échouer la publication
-        _TABLE_UNAVAILABLE = getattr(exc, "sqlstate", None) == "42P01" or _TABLE_UNAVAILABLE
         LOGGER.warning("Rejected listings not remembered (%s)", type(exc).__name__)
         return 0
     return len(rows)

@@ -5,8 +5,6 @@ import {
 } from "@/lib/information-agent/auto-publication-text";
 import { getDisplaySurface, getRecordedSurface } from "@/lib/surface";
 
-export { mentionsDoNotPublish, namesPrivatePerson };
-
 /**
  * Moteur de décision « publier ou relire » des informations extraites d'une réponse (étape 3 du plan
  * d'enrichissement, propositions 6 et 7). MODULE PUR : ni réseau, ni base, ni horloge (la date de
@@ -55,7 +53,7 @@ export const AUTO_PUBLICATION_DAILY_CAP = 10;
 export const AUTO_PUBLICATION_CASE_CAP = 2;
 
 /** Délai maximal entre l'envoi de la demande et la réception de la réponse. */
-export const AUTO_PUBLICATION_REPLY_WINDOW_DAYS = 30;
+const AUTO_PUBLICATION_REPLY_WINDOW_DAYS = 30;
 const REPLY_WINDOW_MS = AUTO_PUBLICATION_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 /** Version minimale de la lecture par l'IA (`semantic_evidence_vN`). */
@@ -112,7 +110,7 @@ export type AutoPublicationDecision =
   | { outcome: "review"; reasons: AutoPublicationReason[] };
 
 /** Un message entrant du même dossier, reçu après celui du fait. */
-export type AutoPublicationLaterMessage = {
+type AutoPublicationLaterMessage = {
   subject: string | null;
   bodyText: string | null;
   metadata: unknown;

@@ -12,12 +12,12 @@ import {
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
   MARKET_GAP_BAND_MAX_RADIUS_OTHER_M,
   MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M,
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
 import { selectStatisticScope } from "@/lib/dvf-market-statistics";
 import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
   MARKET_WIDEN_UNTIL_COMPARABLES,
   VALUATION_MODEL_MIN_COVERAGE_PCT,
 } from "@/lib/market-comparable-minimums";
@@ -204,11 +204,9 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     const text = (
       section("Le repère en trois bandes de la fiche publique").textContent ?? ""
     ).replace(/\s/g, " ");
+    expect(text).toContain(`au moins ${MARKET_JACKKNIFE_MIN_COMPARABLES} ventes comparables`);
     expect(text).toContain(
-      `au moins ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes comparables`,
-    );
-    expect(text).toContain(
-      `(${MARKET_GAP_BAND_MIN_COMPARABLES} quand la fourchette vient d’un modèle`,
+      `(${MARKET_NON_JACKKNIFE_MIN_COMPARABLES} quand la fourchette vient d’un modèle`,
     );
     expect(text).toContain(
       `échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}`,

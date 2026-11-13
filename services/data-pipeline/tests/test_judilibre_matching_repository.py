@@ -11,6 +11,23 @@ from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
 )
 
+# Contrat d'une décision Judilibre enregistrée (src.outcome_ingestion.judilibre_contract), passé en paramètres.
+JUDILIBRE_CONTRACT = {
+    "source_name": "judilibre",
+    "record_kind": "judicial_decision_candidate",
+    "schema_version": "judilibre_decision_candidate_v3",
+    "extractor_name": "judilibre_candidate_extraction",
+    "extractor_version": "3",
+    "hash_version": "judilibre-evidence-sha256-v1",
+    "candidate_grade": "C",
+    "review_status": "pending",
+    "extraction_status": "candidate_facts_extracted",
+    "text_storage": "private_raw_artifact",
+}
+CLAIM_TYPES = ["starting_price_eur", "hammer_price_eur", "procedural_event"]
+# Rangs des méthodes (src.outcome_ingestion.judilibre_match_contract), passés aux classements SQL des contextes.
+MATCH_RANKS = {"portalis_rank": 2, "case_number_rank": 1, "composite_rank": 0}
+
 
 class QueryCursor:
     def __init__(
@@ -170,21 +187,29 @@ def test_load_judilibre_records_is_current_approved_non_purged_and_claim_bounded
     assert records[0].source_record_id == "record-1"
     assert records[0].decision_date == date(2025, 5, 14)
     statement, parameters = cursor.calls[0]
-    assert "source.name = 'judilibre'" in statement
+    assert "source.name = %(source_name)s" in statement
+    assert "record.record_kind = %(record_kind)s" in statement
+    assert "record.normalized_data->>'record_type' = %(record_kind)s" in statement
     assert "source.official" in statement
     assert "source.active" in statement
     assert "source.legal_review_status = 'approved'" in statement
     assert "source.ingestion_policy = 'allowed_automated'" in statement
     assert "join public.artifact_extractions extraction" in statement
-    assert "extraction.extractor_name = 'judilibre_candidate_extraction'" in statement
+    assert "extraction.extractor_name = %(extractor_name)s" in statement
+    assert "extraction.extractor_version = %(extractor_version)s" in statement
     assert "extraction.output_hash = record.content_hash" in statement
-    assert "judilibre-evidence-sha256-v1" in statement
+    assert "extraction.field_provenance->>'hash_version' = %(hash_version)s" in statement
     assert "evidence_sha256" in statement
     assert "raw_artifact_sha256" in statement
     assert "not record.training_eligible" in statement
-    assert "judilibre_decision_candidate_v3" in statement
+    assert "record.normalized_data->>'schema_version' = %(schema_version)s" in statement
+    assert "record.normalized_data->>'candidate_grade' = %(candidate_grade)s" in statement
+    assert "record.normalized_data->>'review_status' = %(review_status)s" in statement
+    assert "record.normalized_data->>'extraction_status' = %(extraction_status)s" in statement
+    assert "record.normalized_data->>'text_storage' = %(text_storage)s" in statement
     assert '"ambiguous_claim_types": []' in statement
     assert "record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb" in statement
+    assert "claim->>'claim_type' <> all(%(claim_types)s::text[])" in statement
     assert "jsonb_array_length(record.normalized_data->'claims') between 1 and 7" in statement
     assert "count(distinct claim->>'claim_type')" in statement
     assert "newer.record_version > record.record_version" in statement
@@ -193,8 +218,14 @@ def test_load_judilibre_records_is_current_approved_non_purged_and_claim_bounded
     assert "record.normalized_data ?& array[" in statement
     assert "jsonb_object_keys(record.normalized_data)" in statement
     assert "'raw_text'" not in statement
-    assert statement.endswith("limit %s")
-    assert parameters == (25,)
+    assert statement.endswith("limit %(limit)s")
+    assert parameters == {
+        **JUDILIBRE_CONTRACT,
+        "claim_types": CLAIM_TYPES,
+        "cursor_created_at": None,
+        "cursor_id": None,
+        "limit": 25,
+    }
 
 
 def test_load_judilibre_records_uses_stable_composite_cursor() -> None:
@@ -214,11 +245,17 @@ def test_load_judilibre_records_uses_stable_composite_cursor() -> None:
     cursor_statement, cursor_parameters = cursor.calls[0]
     page_statement, page_parameters = cursor.calls[1]
     assert "record.id = %s::uuid" in cursor_statement
-    assert "source.name = 'judilibre'" in cursor_statement
-    assert cursor_parameters == (cursor_id,)
-    assert "(record.created_at, record.id) > (%s::timestamptz, %s::uuid)" in page_statement
+    assert "source.name = %s" in cursor_statement
+    assert cursor_parameters == (cursor_id, "judilibre")
+    assert "(record.created_at, record.id) > (%(cursor_created_at)s::timestamptz, %(cursor_id)s::uuid)" in page_statement
     assert "order by record.created_at, record.id" in page_statement
-    assert page_parameters == (created_at, cursor_id, 10)
+    assert page_parameters == {
+        **JUDILIBRE_CONTRACT,
+        "claim_types": CLAIM_TYPES,
+        "cursor_created_at": created_at,
+        "cursor_id": cursor_id,
+        "limit": 10,
+    }
 
 
 def test_load_judilibre_records_rejects_unknown_cursor_and_unbounded_page() -> None:
@@ -267,19 +304,31 @@ def test_tj_insee_resolution_requires_current_official_justice_structure_and_exa
     assert len(resolutions) == 1
     assert resolutions[0].resolution_method == "justice_structure_insee_exact_name"
     justice_statement, parameters = cursor.calls[1]
-    assert "source.name = 'justice_open_data'" in justice_statement
+    assert "source.name = %s" in justice_statement
     assert "source.official" in justice_statement
     assert "source.legal_review_status = 'approved'" in justice_statement
     assert "source.ingestion_policy = 'allowed_automated'" in justice_statement
-    assert "justice_court_structure_v1" in justice_statement
+    assert "record.record_kind = %s" in justice_statement
+    assert "record.normalized_data->>'schema_version' = %s" in justice_statement
     assert "record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')" in justice_statement
+    assert "record.normalized_data->>'review_status' = %s" in justice_statement
+    assert "record.normalized_data->>'source_grade' = %s" in justice_statement
     assert "newer.record_version > record.record_version" in justice_statement
     assert "public.source_purge_events" in justice_statement
     assert "extensions.unaccent" in justice_statement
     assert "extensions.unaccent(lower(court_row.name))" in justice_statement
     assert "jsonb_array_elements_text" in justice_statement
     assert "join public.outcome_courts" in justice_statement
-    assert parameters == ("33063",)
+    # Source, nature, schéma, état de revue et grade écrits par l'import Justice (src.official_sources.justice_open_data
+    # et src.outcome_ingestion.adapters).
+    assert parameters == (
+        "justice_open_data",
+        "court_reference_candidate",
+        "justice_court_structure_v1",
+        "33063",
+        "pending",
+        "A",
+    )
 
 
 def test_unrecognized_court_code_is_diagnostic_only_without_fuzzy_query() -> None:
@@ -326,20 +375,42 @@ def test_context_lookup_is_court_date_and_exact_reference_scoped_and_bounded() -
     assert "public.auction_lots" in statement
     assert "public.auction_cases" in statement
     assert "public.outcome_courts" in statement
-    assert "round_row.court_id = %s" in statement
-    assert "case_row.court_id = %s" in statement
-    assert "between %s::date - %s and %s::date + %s" in statement
+    assert "round_row.court_id = %(court_id)s" in statement
+    assert "case_row.court_id = %(court_id)s" in statement
+    assert (
+        "between %(decision_date)s::date - %(max_date_delta_days)s and %(decision_date)s::date + %(max_date_delta_days)s"
+        in statement
+    )
     assert "case_row.court_case_number" in statement
     assert "case_row.portalis_number" in statement
-    assert statement.endswith("limit %s")
-    normalized = ["22/00001", "dbxx-v-b7g-abcde"]
-    assert parameters[1:5] == (
-        normalized,
-        normalized,
-        normalized,
-        normalized,
-    )
-    assert parameters[-1] == 251
+    # Ordre des contextes : rang de la méthode (Portalis, numéro d'affaire, cour et date), puis écart de date.
+    assert "then %(portalis_rank)s" in statement
+    assert "then %(case_number_rank)s" in statement
+    assert "else %(composite_rank)s end desc" in statement
+    assert statement.endswith("limit %(limit)s")
+    assert parameters == {
+        **MATCH_RANKS,
+        "decision_date": date(2025, 5, 14),
+        "references": ["22/00001", "dbxx-v-b7g-abcde"],
+        "court_id": "court-1",
+        "max_date_delta_days": 7,
+        "limit": 251,
+    }
+
+
+def test_context_lookup_accepts_one_row_beyond_the_matcher_limit() -> None:
+    # Le rapprochement demande une ligne de plus que sa limite (5 000) pour voir la troncature.
+    repository = _repository(QueryCursor(all_values=[[]]))
+    lookup = {
+        "court_id": "court-1",
+        "decision_date": date(2025, 5, 14),
+        "case_references": (),
+        "max_date_delta_days": 7,
+    }
+
+    assert repository.load_judilibre_auction_match_contexts(**lookup, limit=5_001) == []
+    with pytest.raises(ValueError, match="between 1 and 5001"):
+        repository.load_judilibre_auction_match_contexts(**lookup, limit=5_002)
 
 
 def test_persist_revalidates_current_source_target_and_signals_in_one_transaction() -> None:
@@ -386,15 +457,16 @@ def test_persist_revalidates_current_source_target_and_signals_in_one_transactio
     assert "public.source_record_matches" in cursor.calls[2][0]
     assert "share row exclusive mode" in cursor.calls[2][0]
     source_statement = cursor.calls[3][0]
-    assert "source.name = 'judilibre'" in source_statement
+    assert "source.name = %(source_name)s" in source_statement
     assert "join public.artifact_extractions extraction" in source_statement
     assert "evidence_sha256" in source_statement
     assert "source.legal_review_status = 'approved'" in source_statement
     assert "newer.record_version > record.record_version" in source_statement
     assert "public.source_purge_events" in source_statement
     assert "for share of record, source" in source_statement
-    assert cursor.calls[3][1] == ("record-1", "a" * 64)
-    assert "source.name = 'justice_open_data'" in cursor.calls[5][0]
+    assert cursor.calls[3][1] == {**JUDILIBRE_CONTRACT, "source_record_id": "record-1", "content_hash": "a" * 64}
+    assert "current_justice_structures" in cursor.calls[5][0]
+    assert cursor.calls[5][1][:3] == ("justice_open_data", "court_reference_candidate", "justice_court_structure_v1")
     target_statement = cursor.calls[6][0]
     assert "case_row.id = %s" in target_statement
     assert "round_row.court_id = %s" in target_statement
@@ -408,7 +480,14 @@ def test_persist_revalidates_current_source_target_and_signals_in_one_transactio
     )
     objective_top_statement = cursor.calls[7][0]
     assert "tied_at_rank" in objective_top_statement
-    assert "reference_rank > 0 or date_delta_days = 0" in objective_top_statement
+    assert "reference_rank > %(composite_rank)s or date_delta_days = 0" in objective_top_statement
+    assert cursor.calls[7][1] == {
+        **MATCH_RANKS,
+        "references": ["22/00001"],
+        "decision_date": date(2025, 5, 14),
+        "court_id": "court-1",
+        "max_date_delta_days": 7,
+    }
     existing_statement = cursor.calls[8][0]
     assert "match_row.outcome_id is null" in existing_statement
     insert_statement = cursor.calls[9][0]

@@ -12,6 +12,7 @@ import pymupdf
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.pdf_progress import stale_complete_document_urls
+from src.sale_local_files import document_filename, sale_storage_id
 
 pdf_enrichment = importlib.import_module("src.pdf_enrichment")
 pdf_document_selection = importlib.import_module("src.pdf_document_selection")
@@ -55,7 +56,7 @@ def _settings() -> dict[str, object]:
 
 def _make_metadata_stale(sale: AuctionSale, output_root: Path, timestamp: str) -> None:
     document = sale.documents[0]
-    file_path = output_root / pdf_enrichment.sale_storage_id(sale) / pdf_enrichment._document_filename(document)
+    file_path = output_root / sale_storage_id(sale) / document_filename(document)
     metadata_path = file_path.with_suffix(file_path.suffix + ".http.json")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata["checked_at"] = timestamp
@@ -99,7 +100,7 @@ def test_permanent_404_is_retried_only_after_terminal_ttl(monkeypatch, tmp_path:
     first_stats = pdf_enrichment.PdfEnrichmentStats()
     assert pdf_enrichment.download_documents(sale, output_root=tmp_path, stats=first_stats) == []
     assert first_stats.permanent_document_failures == [{"url": url, "reason": "not_found"}]
-    pdf_document_selection._store_document_analysis_status(
+    pdf_document_selection.store_document_analysis_status(
         sale,
         [],
         [],
@@ -157,7 +158,7 @@ def test_robots_block_is_rechecked_after_ttl_but_social_candidate_stays_skipped(
     first_stats = pdf_enrichment.PdfEnrichmentStats()
     assert pdf_enrichment.download_documents(sale, output_root=tmp_path, stats=first_stats) == []
     assert first_stats.blocked_document_urls == [blocked_url]
-    pdf_document_selection._store_document_analysis_status(
+    pdf_document_selection.store_document_analysis_status(
         sale,
         [],
         [],
@@ -260,7 +261,7 @@ def test_terminal_http_refresh_drops_old_pdf_evidence_until_200(
     assert "--- PDF TEXT ENRICHMENT ---" not in (sale.raw_text or "")
     assert sale.surface_m2 is None
     assert sale.rooms_count is None
-    cache_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    cache_path = pdf_texts_dir / f"{sale_storage_id(sale)}.json"
     assert json.loads(cache_path.read_text(encoding="utf-8")) == []
 
     # The 404 is itself subject to the per-URL TTL.  A fresh terminal

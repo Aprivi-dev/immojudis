@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from src.config import RAW_DIR, load_settings
+from src.config import RAW_DIR, env_flag, load_settings
 from src.justice_activity_pipeline import (
     JusticeActivityPipelineError,
     JusticeActivityRepository,
@@ -56,7 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = load_settings()
     db_url = str(settings.get("supabase_db_url") or "")
-    enabled = os.getenv("JUSTICE_ACTIVITY_ENABLED", "false").casefold() in {"1", "true", "yes", "on"}
+    enabled = env_flag("JUSTICE_ACTIVITY_ENABLED", False)
     if args.fetch and not enabled:
         raise JusticeActivityPipelineError("JUSTICE_ACTIVITY_ENABLED=true is required for StatJur network access")
     if args.persist and not enabled:

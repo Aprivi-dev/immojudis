@@ -9,8 +9,16 @@ import type {
   AdjudicationPriceStatisticsScope,
 } from "@/lib/adjudication-price-statistics";
 import { bidBandLabels } from "@/lib/adjudication-distributions";
+import { formatRatio } from "@/lib/auction-scenarios";
 import { getExampleTribunalStatistics } from "@/lib/example-tribunal-statistics";
-import { formatDateTime, formatPrice, formatStartingPrice } from "@/lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatNumber,
+  formatPrice,
+  formatShareAsPercent,
+  formatStartingPrice,
+} from "@/lib/format";
 import type { TribunalListingStatisticsResponse } from "@/lib/tribunal-listing-statistics";
 import { fetchTribunalListingStatistics } from "@/lib/tribunal-listing-statistics-client";
 import type { AuctionSale } from "@/lib/types";
@@ -70,39 +78,10 @@ function occupationStatusLabel(value: string | null | undefined): string {
   return OCCUPATION_LABELS[value as OccupationStatus] ?? value;
 }
 
-function formatNumber(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
-}
-
-function formatDate(value: string | null | undefined, includeYear = true): string {
-  if (!value) return "Date à confirmer";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "Date à confirmer";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    ...(includeYear ? { year: "numeric" as const } : {}),
-    timeZone: "Europe/Paris",
-  }).format(date);
-}
-
-function formatPercent(value: number | null | undefined): string {
-  const normalized = normalizeShare(value);
-  if (normalized == null) return "—";
-  return `${Math.round(normalized)} %`;
-}
-
-function normalizeShare(value: number | null | undefined): number | null {
+/** Part de 0 à 1 ramenée en pourcentage borné à [0, 100], pour la largeur d'une barre. */
+function shareWidth(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value)) return null;
-  const percentage = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, percentage));
-}
-
-function formatUnclampedPercent(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  const percentage = value * 100;
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(percentage)} %`;
+  return Math.max(0, Math.min(100, value * 100));
 }
 
 function metricValue(metric: ListingMetric | undefined, minimumSampleSize = 0): number | null {
@@ -182,9 +161,8 @@ const PUBLISHED_LEAD_DEFINITION =
 const DISCOVERY_LEAD_DEFINITION =
   "médiane des jours entre le jour où Immojudis a repéré l’annonce pour la première fois et l’audience ; plus court que le précédent quand l’annonce existait avant d’être repérée.";
 
-function formatRatio(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "Données insuffisantes";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)}×`;
+function formatStatisticRatio(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "Données insuffisantes" : formatRatio(value);
 }
 
 function dateSortValue(value: string): number {
@@ -261,9 +239,9 @@ function ShareTrack({
   low?: number | null;
   high?: number | null;
 }) {
-  const width = normalizeShare(share) ?? 0;
-  const from = normalizeShare(low);
-  const to = normalizeShare(high);
+  const width = shareWidth(share) ?? 0;
+  const from = shareWidth(low);
+  const to = shareWidth(high);
   return (
     <div className={styles.progressTrack} aria-hidden="true">
       <span className={styles.progressFill} style={{ width: `${width}%` }} />
@@ -299,7 +277,7 @@ function ProgressBar({
       <div className={styles.progressHeader}>
         <span>{label}</span>
         <span className={styles.progressValue}>
-          {showShare ? formatPercent(value) : "—"}
+          {showShare ? formatShareAsPercent(value) : "—"}
           {interval ? ` (${interval})` : ""}
           {count != null ? ` · ${formatNumber(count)}` : ""}
         </span>
@@ -377,7 +355,7 @@ function PriceScopeCard({
         <div>
           <span className={styles.metricLabel}>Ratio publié / mise à prix</span>
           <strong className={styles.metricValue}>
-            {formatRatio(scope.metrics.medianHammerToStartingRatio)}
+            {formatStatisticRatio(scope.metrics.medianHammerToStartingRatio)}
           </strong>
         </div>
       </div>
@@ -550,8 +528,7 @@ export function ListingStatistics({
   const localScope = localScopeFor(prices, activityResponse?.court.code);
   const nationalScope = prices?.national?.scopeType === "national" ? prices.national : null;
   const unresolvedCourt =
-    activityQuery.error instanceof Error &&
-    activityQuery.error.name === "TribunalCourtUnresolvedError";
+    (activityQuery.error as { code?: unknown } | null)?.code === "COURT_UNRESOLVED";
   const titleCourt =
     activityResponse?.court.name ??
     (activityQuery.error
@@ -748,7 +725,7 @@ export function ListingStatistics({
                 <strong className={styles.kpiValueSmall}>
                   {formatMetricOrRange(
                     activity.startingPriceToDvfRatio,
-                    formatUnclampedPercent,
+                    formatShareAsPercent,
                     minimumSampleSize,
                   )}
                 </strong>
@@ -950,7 +927,7 @@ export function ListingStatistics({
                   <div>
                     <span>Visites renseignées</span>
                     <strong>
-                      {formatPercent(metricValue(activity.visitCoverage, minimumSampleSize))}
+                      {formatShareAsPercent(metricValue(activity.visitCoverage, minimumSampleSize))}
                     </strong>
                     <small>
                       {[
@@ -967,7 +944,9 @@ export function ListingStatistics({
                   <div>
                     <span>Surenchères renseignées</span>
                     <strong>
-                      {formatPercent(metricValue(activity.overbidCoverage, minimumSampleSize))}
+                      {formatShareAsPercent(
+                        metricValue(activity.overbidCoverage, minimumSampleSize),
+                      )}
                     </strong>
                     <small>
                       {formatNumber(activity.overbidsKnown)} connues sur{" "}
@@ -980,7 +959,7 @@ export function ListingStatistics({
                     {activity.overbidCoverage.status !== "published" &&
                     overbidCoverageKnown < minimumOverbidCoverage ? (
                       <small>
-                        Taux masqué : moins de {Math.round(minimumOverbidCoverage * 100)} % des
+                        Taux masqué : moins de {formatShareAsPercent(minimumOverbidCoverage)} des
                         annonces ont une réponse connue sur la surenchère.
                       </small>
                     ) : null}
@@ -1096,7 +1075,7 @@ export function ListingStatistics({
                         <span>{commune.city}</span>
                         <span className={styles.progressValue}>
                           {formatNumber(commune.count)} ·{" "}
-                          {communeSharesAvailable ? formatPercent(commune.share) : "—"}
+                          {communeSharesAvailable ? formatShareAsPercent(commune.share) : "—"}
                           {communeSharesAvailable
                             ? ` (${formatShareInterval(commune.shareLow, commune.shareHigh)})`
                             : ""}
@@ -1155,7 +1134,7 @@ export function ListingStatistics({
                       <span role="cell">{formatNumber(lawyer.count)}</span>
                       <span role="cell">
                         {lawyerSharesAvailable
-                          ? `${formatPercent(lawyer.share)} (${formatShareInterval(lawyer.shareLow, lawyer.shareHigh)})`
+                          ? `${formatShareAsPercent(lawyer.share)} (${formatShareInterval(lawyer.shareLow, lawyer.shareHigh)})`
                           : "—"}
                       </span>
                     </div>

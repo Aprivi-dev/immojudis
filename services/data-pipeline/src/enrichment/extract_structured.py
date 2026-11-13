@@ -48,10 +48,12 @@ from src.llm_cache import load_cached_result, save_cached_result
 from src.llm_requests import llm_request_context
 from src.llm_task_deadline import LLMTaskDeadlineExceeded
 from src.models import AuctionSale
-from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
-from src.pdf_enrichment import sale_storage_id
+from src.normalize import clean_text
 from src.personal_data import redact_personal_data, redact_personal_text
 from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
+from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
+from src.sale_local_files import sale_storage_id
+from src.timestamps import assumed_utc_timestamp
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
@@ -1161,33 +1163,6 @@ def _atomic_json(path: Path, payload: Any) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def _read_fact_chunk(path: Path) -> LLMExtraction | None:
-    try:
-        return _validated_llm_extraction(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        return None
-
-
-def _load_cached_extraction(sale: AuctionSale, cache_key: str, output_dir: Path) -> LLMExtraction | None:
-    path = output_dir / f"{sale_storage_id(sale)}.json"
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    cache = payload.get("_cache")
-    if not isinstance(cache, dict) or cache.get("key") != cache_key:
-        return None
-    payload = {key: value for key, value in payload.items() if key != "_cache"}
-    try:
-        return _validated_llm_extraction(payload)
-    except Exception:
-        return None
-
-
 def _load_legacy_extraction(
     sale: AuctionSale,
     output_dir: Path,
@@ -1302,17 +1277,8 @@ def _load_fact_failure_retry_after(cache_key: str, stage: str = FACT_FAILURE_STA
     payload = _load_durable_cache(cache_key, stage=stage)
     if not isinstance(payload, dict) or payload.get("kind") != "deterministic_failure":
         return None
-    retry_after = payload.get("retry_after")
-    if not isinstance(retry_after, str) or not retry_after.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(retry_after.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    parsed = parsed.astimezone(UTC)
-    return parsed if parsed > datetime.now(UTC) else None
+    retry_after = assumed_utc_timestamp(payload.get("retry_after"))
+    return retry_after if retry_after is not None and retry_after > datetime.now(UTC) else None
 
 
 def _save_fact_failure_marker(
@@ -1371,6 +1337,8 @@ def _validated_extraction_payload(payload: Any) -> LLMExtraction | None:
     try:
         return _validated_llm_extraction(_payload_without_cache_metadata(payload))
     except Exception:
+        # A cached extraction that no longer validates (schema changed since it was written, damaged file) is a
+        # cache miss: the extraction runs again.
         return None
 
 
@@ -1958,16 +1926,6 @@ def _merge_llm_extractions(extractions: list[LLMExtraction]) -> LLMExtraction:
 def _evidence_at(extraction: LLMExtraction, field_name: str, index: int) -> Any:
     items = extraction.evidence.get(field_name)
     return items[index] if isinstance(items, list) and index < len(items) else None
-
-
-def _downgrade_extraction_completeness(extraction: LLMExtraction) -> LLMExtraction:
-    assets = []
-    for asset in extraction.assets:
-        completeness = asset.measurement_completeness
-        if completeness in {"complete", "likely_complete"}:
-            completeness = "partial"
-        assets.append(asset.model_copy(update={"measurement_completeness": completeness}))
-    return extraction.model_copy(update={"assets": assets})
 
 
 def _dedupe_json_values(values: list[Any]) -> list[Any]:

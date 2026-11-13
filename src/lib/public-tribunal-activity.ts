@@ -56,7 +56,7 @@ export type PublicTribunalPriceFigureRow = {
 };
 
 /** Nom donné à un tribunal que le référentiel ne nomme pas : jamais son code brut. */
-export const UNKNOWN_TRIBUNAL_NAME = "Tribunal à confirmer";
+const UNKNOWN_TRIBUNAL_NAME = "Tribunal à confirmer";
 
 /**
  * Vrai pour un « nom » qui est en réalité un code (« justice_tj_1_210 ») : un nom de tribunal ne

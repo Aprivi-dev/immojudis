@@ -141,7 +141,7 @@ def test_the_index_is_read_once_from_the_table_in_read_only_mode(monkeypatch) ->
     assert calls == ["postgres://test", "postgres://test"]
 
 
-def test_an_unreachable_table_never_blocks_a_collection(monkeypatch, caplog) -> None:
+def test_an_unreachable_table_never_blocks_a_collection_and_is_logged_as_an_error(monkeypatch, caplog) -> None:
     def failing() -> dict[str, str]:
         raise OSError("connection refused")
 
@@ -154,4 +154,6 @@ def test_an_unreachable_table_never_blocks_a_collection(monkeypatch, caplog) -> 
         fill_tribunal(sale)
 
     assert sale.department is None
-    assert caplog.text.count("reference_communes unavailable") == 1
+    (record,) = [record for record in caplog.records if "reference_communes unreadable" in record.getMessage()]
+    assert record.levelno == logging.ERROR
+    assert "connection refused" in caplog.text

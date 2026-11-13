@@ -2,10 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { serverEnv } from "@/lib/env";
 import { departmentCode } from "@/lib/department-code";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import {
   isRentApplicable,
-  median,
   RENT_SEGMENTS,
   rentReferenceFromAnilMedian,
   rentReferenceFromAnilRow,
@@ -16,6 +14,7 @@ import {
   type RentSegment,
 } from "@/lib/rent-reference";
 import { HOUSING_ZONINGS, type HousingTension, type HousingZoning } from "@/lib/housing-tension";
+import { median } from "@/lib/stats";
 import {
   arrondissementCode,
   normalizeCommuneCode,
@@ -23,6 +22,7 @@ import {
   saleCommuneCode,
 } from "@/lib/sale-commune-code";
 import type { AuctionSale } from "@/lib/types";
+import { chunks } from "@/lib/chunks";
 
 // Lecture serveur de la carte des loyers de l'ANIL (`anil_rents`, table privée, rôle de service).
 // Jamais importé par le navigateur : il reçoit la référence déjà résolue, en propriété. C'est, avec
@@ -95,15 +95,7 @@ async function inWaves<T>(items: readonly T[], run: (item: T) => Promise<void>):
   }
 }
 
-function chunked<T>(items: readonly T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let offset = 0; offset < items.length; offset += size) {
-    chunks.push(items.slice(offset, offset + size));
-  }
-  return chunks;
-}
-
-/** Codes déjà stockés dans `auction_sale_communes` ; vide si la table n'existe pas encore. */
+/** Codes déjà stockés dans `auction_sale_communes`. */
 async function readStoredSaleCommunes(
   ids: readonly string[],
 ): Promise<Map<string, { commune: string; arrondissement: string | null }>> {
@@ -112,11 +104,7 @@ async function readStoredSaleCommunes(
     .from("auction_sale_communes")
     .select("sale_id,commune_insee,arrondissement_insee")
     .in("sale_id", [...ids]);
-  if (error) {
-    // Avant la migration 20261106100000 : on garde la lecture des champs bruts.
-    if (isMissingDatabaseObject(error)) return stored;
-    throw error;
-  }
+  if (error) throw error;
   for (const row of data ?? []) {
     const commune = normalizeCommuneCode(row.commune_insee);
     if (!commune) continue;
@@ -154,7 +142,7 @@ async function resolveCommuneCodes(
       toRead.set(id, sale);
     }
   }
-  await inWaves(chunked([...toRead.keys()], SALE_ID_BATCH), async (ids) => {
+  await inWaves(chunks([...toRead.keys()], SALE_ID_BATCH), async (ids) => {
     const [{ data, error }, stored] = await Promise.all([
       supabaseAdmin
         .from("auction_sales")
@@ -221,7 +209,7 @@ async function readAnilReferences(
       }
     }
   }
-  await inWaves(chunked([...missing.keys()], RENT_CODE_BATCH), async (codes) => {
+  await inWaves(chunks([...missing.keys()], RENT_CODE_BATCH), async (codes) => {
     const segments = [...new Set(codes.flatMap((code) => [...(missing.get(code) ?? [])]))];
     const { data, error } = await supabaseAdmin
       .from("anil_rents")
@@ -250,8 +238,8 @@ async function readAnilReferences(
 
 /**
  * Codes à essayer à la place de ceux-ci quand la commune n'a pas de ligne ANIL (`app_private.commune_code_history`) :
- * d'abord le code d'arrivée d'une fusion ou d'un changement de code, puis le code de départ. Vide avant la
- * migration 20261108120200 ou sans passage connu : la lecture reste celle d'avant.
+ * d'abord le code d'arrivée d'une fusion ou d'un changement de code, puis le code de départ. Vide sans passage
+ * connu : la lecture reste celle d'avant.
  */
 async function readCodeAliases(codes: readonly string[]): Promise<Map<string, string[]>> {
   const aliases = new Map<string, string[]>();
@@ -262,12 +250,9 @@ async function readCodeAliases(codes: readonly string[]): Promise<Map<string, st
     if (cached) aliases.set(code, cached.value);
     else missing.push(code);
   }
-  await inWaves(chunked(missing, 400), async (batch) => {
+  await inWaves(chunks(missing, 400), async (batch) => {
     const { data, error } = await supabaseAdmin.rpc("commune_code_aliases", { p_codes: batch });
-    if (error) {
-      if (isMissingDatabaseObject(error)) return;
-      throw error;
-    }
+    if (error) throw error;
     const found = new Map<string, { newer: string[]; older: string[] }>();
     for (const row of [...(data ?? [])].sort((a, b) => a.depth - b.depth)) {
       const entry = found.get(row.code) ?? { newer: [], older: [] };
@@ -353,14 +338,11 @@ async function readDepartmentMedians(
       missing.push(department);
     }
   }
-  await inWaves(chunked(missing, 100), async (batch) => {
+  await inWaves(chunks(missing), async (batch) => {
     const { data, error } = await supabaseAdmin.rpc("anil_department_medians", {
       p_departments: batch,
     });
-    if (error) {
-      if (isMissingDatabaseObject(error)) return;
-      throw error;
-    }
+    if (error) throw error;
     const read = new Map<string, RentReference | null>();
     for (const row of data ?? []) {
       const segment = RENT_SEGMENTS.find((item) => item === row.segment) ?? null;
@@ -747,11 +729,7 @@ export async function loadSaleHousingTension(
       .select("commune_code,zoning_post_decree,decree_reference,source_updated_on,source_url")
       .eq("commune_code", parent)
       .maybeSingle();
-    if (error) {
-      // Avant la migration 20261107100100 : pas de zonage, sans bruit.
-      if (error.code === "42P01" || error.code === "PGRST205") return null;
-      throw error;
-    }
+    if (error) throw error;
     const zoning = HOUSING_ZONINGS.find(
       (item): item is HousingZoning => item === data?.zoning_post_decree,
     );

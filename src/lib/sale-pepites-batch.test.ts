@@ -831,33 +831,33 @@ describe("lignes écrites", () => {
 });
 
 describe("runSalePepitesBatch", () => {
-  it("avant la migration (fonction du mode absente) : se termine sans rien lire ni écrire", async () => {
-    db.modeError = { code: "PGRST202", message: "Could not find the function" };
+  it("fonction du mode absente : la passe échoue sans rien lire d'autre ni écrire", async () => {
+    const failure = { code: "PGRST202", message: "Could not find the function" };
+    db.modeError = failure;
     setSales(["a"]);
 
-    const result = await runSalePepitesBatch({ now: NOW });
-
-    expect(result).toMatchObject({ skipped: "not_migrated", evaluated: 0, failed: 0 });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toBe(failure);
     expect(db.touched).toEqual(["rpc:get_sale_pepite_mode"]);
     expect(db.upserts).toEqual([]);
   });
 
-  it("avant la migration (table absente) : se termine sans rien écrire", async () => {
-    db.storedError = { code: "PGRST205", message: "Could not find the table" };
+  it("table des évaluations absente : la passe échoue sans rien écrire", async () => {
+    const failure = { code: "PGRST205", message: "Could not find the table" };
+    db.storedError = failure;
     setSales(["a"]);
 
-    const result = await runSalePepitesBatch({ now: NOW });
-
-    expect(result).toMatchObject({ skipped: "not_migrated", evaluated: 0, mode: "shadow" });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toBe(failure);
     expect(db.upserts).toEqual([]);
     expect(db.fullReads).toEqual([]);
   });
 
-  it("une table absente à l'écriture est aussi « pas migré »", async () => {
+  it("une table absente à l'écriture est une écriture refusée : la passe échoue", async () => {
     setSales(["a"]);
     db.upsertError = { code: "42P01", message: 'relation "auction_sale_pepites" does not exist' };
 
-    expect(await runSalePepitesBatch({ now: NOW })).toMatchObject({ skipped: "not_migrated" });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      "Écriture refusée pour la vente a (code 42P01)",
+    );
   });
 
   it("une autre erreur de lecture du mode lève (la passe est en panne)", async () => {
@@ -1200,14 +1200,14 @@ describe("runSalePepitesBatch : un seul traitement à la fois (bail)", () => {
     expect(db.leaseCalls).toEqual(["claim_cron_lease", "release_cron_lease"]);
   });
 
-  it("fonction de bail absente (migration en retard) : la passe continue sans verrou", async () => {
+  it("fonction de bail absente : la passe ne tourne pas sans verrou, elle échoue sans rien lire", async () => {
     setSales(["a"]);
     db.lease = "missing";
 
-    const result = await runSalePepitesBatch({ now: NOW });
-
-    expect(result).toMatchObject({ evaluated: 1, skipped: null });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow();
     expect(db.leaseCalls).toEqual(["claim_cron_lease"]);
+    expect(db.touched).not.toContain("rpc:get_sale_pepite_mode");
+    expect(db.upserts).toEqual([]);
   });
 });
 
@@ -1370,23 +1370,21 @@ describe("runSalePepitesBatch : interrupteur de la règle pepite-v2", () => {
     expect(result.failed).toBe(0);
   });
 
-  it("ouvert : sans la table d'inondation (migration non appliquée), la passe se termine sans rien écrire", async () => {
+  it("ouvert : sans la table d'inondation, la passe échoue sans rien écrire", async () => {
     vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
     setPositioned(["a"]);
     db.floodRows = null;
 
-    expect(await runSalePepitesBatch({ now: NOW })).toMatchObject({
-      skipped: "not_migrated",
-      evaluated: 0,
-    });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toMatchObject({ code: "PGRST205" });
     expect(db.upserts).toEqual([]);
   });
 
-  it("ouvert : sans la table des communes, même réponse", async () => {
+  it("ouvert : sans la table des communes, même échec", async () => {
     vi.stubEnv("PEPITE_RULE_V2_ENABLED", "true");
     setPositioned(["a"]);
     db.communeRows = null;
-    expect(await runSalePepitesBatch({ now: NOW })).toMatchObject({ skipped: "not_migrated" });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toMatchObject({ code: "PGRST205" });
+    expect(db.upserts).toEqual([]);
   });
 
   it("ouvert : une pépite publiée dont le verdict a changé après son évaluation est refaite avant les autres", async () => {
@@ -1717,20 +1715,14 @@ describe("n° 25 : version du modèle de valeur et moteur de l'estimation dans l
     expect(row.estimate_engine_kind).toBeNull();
   });
 
-  it("code déployé avant la migration : retente sans les deux colonnes, sans rien perdre d'autre", async () => {
+  it("une colonne de version inconnue de la base est un refus : jamais d'écriture sans ces colonnes", async () => {
     setSales(["a", "b"]);
     db.legacyColumns = true;
 
-    const result = await runSalePepitesBatch({ now: NOW });
-
-    expect(result).toMatchObject({ evaluated: 2, failed: 0, skipped: null });
-    const rows = db.upserts.flat();
-    expect(rows.map((row) => row.sale_id).sort()).toEqual(["a", "b"]);
-    for (const row of rows) {
-      expect(row).not.toHaveProperty("estimate_model_version");
-      expect(row).not.toHaveProperty("estimate_engine_kind");
-      expect(row).toHaveProperty("rule_version");
-    }
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      "Écriture refusée pour la vente a (code PGRST204)",
+    );
+    expect(db.upserts).toEqual([]);
   });
 });
 
@@ -1914,18 +1906,18 @@ describe("pepite-v1.2 : lectures complémentaires du lot et détails stockés", 
     expect(db.touched).not.toContain("rpc:get_commune_market_trends");
   });
 
-  it("une fonction d'agrégat absente (migration pas encore appliquée) vaut « aucun agrégat », jamais une panne", async () => {
+  it("une fonction d'agrégat absente fait échouer le lot : jamais prise pour « aucun agrégat »", async () => {
     setV12Sale("a");
     db.communeRows = [{ sale_id: "a", commune_insee: "33063", arrondissement_insee: null }];
     db.marketError = { code: "PGRST202", message: "Could not find the function" };
 
-    const result = await runSalePepitesBatch({ now: NOW });
-
-    expect(result).toMatchObject({ evaluated: 1, failed: 0, skipped: null });
-    expect(db.v12Args.get("a")).toMatchObject({ marketAggregates: {} });
+    await expect(runSalePepitesBatch({ now: NOW })).rejects.toThrow(
+      "Évaluation des pépites impossible",
+    );
+    expect(db.upserts).toEqual([]);
   });
 
-  it("une erreur de lecture du marché autre qu'un objet absent fait échouer le lot, sans écrire d'évaluation", async () => {
+  it("une erreur de lecture du marché fait échouer le lot, sans écrire d'évaluation", async () => {
     setV12Sale("a");
     db.communeRows = [{ sale_id: "a", commune_insee: "33063", arrondissement_insee: null }];
     db.marketError = { code: "57014", message: "statement timeout" };

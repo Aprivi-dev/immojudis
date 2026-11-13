@@ -156,14 +156,13 @@ def test_scheduled_run_of_a_withdrawn_source_is_closed_without_executing_anythin
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: pytest.fail("run must not be registered"))
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda *_: pytest.fail("no source health, no backoff"))
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda *_, **__: pytest.fail("no source health, no backoff"))
     monkeypatch.setattr(
         autonomous_runner.subprocess, "run", lambda *_a, **_k: pytest.fail("no collector may be spawned")
     )
 
-    assert autonomous_runner.execute("00000000-0000-0000-0000-000000000001") == 0
+    assert autonomous_runner.execute("00000000-0000-0000-0000-000000000001", connect=lambda _url: nullcontext(FakeDb())) == 0
     closing = [params for statement, params in statements if "set status='succeeded'" in statement]
     assert len(closing) == 1
     assert closing[0][0].obj == {"completion_status": "skipped", "skipped_reason": "source_withdrawn"}
@@ -223,16 +222,15 @@ def test_autonomous_runner_skips_the_history_tick_and_says_so(monkeypatch) -> No
 
     commands: list[list[str]] = []
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda *_: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda *_, **__: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
         lambda command, **_kwargs: commands.append(command) or SimpleNamespace(returncode=0),
     )
 
-    assert autonomous_runner.execute("00000000-0000-0000-0000-000000000003") == 0
+    assert autonomous_runner.execute("00000000-0000-0000-0000-000000000003", connect=lambda _url: nullcontext(FakeDb())) == 0
     assert not any("licitor_history_refresh" in " ".join(command) for command in commands)
     assert any("src.queued_runner" in " ".join(command) for command in commands)
     assert summaries[0]["licitor_history_skipped"] == "source_withdrawn"
@@ -249,11 +247,11 @@ def test_documents_hosted_by_a_withdrawn_source_are_not_downloaded(monkeypatch, 
 
     withdraw_licitor(monkeypatch)
     requested: list[str] = []
-    monkeypatch.setattr(pdf_enrichment, "_ensure_pdf_deadline", lambda **_k: None)
+    monkeypatch.setattr(pdf_enrichment, "ensure_pdf_deadline", lambda **_k: None)
     monkeypatch.setattr(pdf_enrichment, "require_ep_documents", lambda *_a: None)
     monkeypatch.setattr(
         pdf_enrichment,
-        "_select_documents_for_extraction",
+        "select_documents_for_extraction",
         lambda documents, **_k: documents,
     )
     monkeypatch.setattr(pdf_enrichment.httpx, "Client", lambda *a, **k: pytest.fail("no HTTP client expected"))

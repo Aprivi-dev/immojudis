@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fake_publication import inside_publication
 
 from src import listing_minimum, rejected_listings
 from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS
@@ -12,6 +13,9 @@ from src.reviewed_aliases import registry_from_rows
 from src.sources.common import should_fetch_detail
 
 URL = "https://www.vench.fr/vente-165184-une-maison-ondres.html"
+# The autouse fixture replaces both: these tests reach the real loader and switch.
+REAL_LOAD = rejected_listings._load
+REAL_ACTIVE = rejected_listings._active
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
 
 
@@ -168,6 +172,63 @@ def test_the_cache_table_is_purged_after_30_days_by_the_loader() -> None:
     assert "purge_rejected_listings" in source
 
 
+class _SqlError(Exception):
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+class _FailingDb:
+    """Connection whose cache query fails: the loader never asks whether the table exists."""
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def transaction(self):
+        return _Transaction()
+
+    def execute(self, query, params=()):
+        self.statements.append(query)
+        if "rejected_listings" in query:
+            raise _SqlError("42P01")
+
+
+def test_a_failed_cache_read_is_logged_and_the_pages_are_read(monkeypatch, caplog) -> None:
+    db = _FailingDb()
+    monkeypatch.setattr(rejected_listings, "_db_url", lambda: "postgresql://test")
+    monkeypatch.setattr("src.storage.supabase_client.connect", lambda *_args, **_kwargs: db)
+    REAL_LOAD.cache_clear()
+
+    assert REAL_LOAD() == {}
+
+    assert "Rejected listings cache unavailable" in caplog.text
+    assert not any("to_regclass" in statement for statement in db.statements)
+    REAL_LOAD.cache_clear()
+
+
+def test_a_failed_write_never_fails_the_publication_nor_switches_the_cache_off(monkeypatch) -> None:
+    class FailingCursor(_Cursor):
+        def executemany(self, query, rows):
+            super().executemany(query, rows)
+            raise _SqlError("42P01")
+
+    connection = _Connection()
+    connection.cursor = lambda: FailingCursor(connection.calls)
+    monkeypatch.setattr(rejected_listings, "_active", REAL_ACTIVE)
+    monkeypatch.setenv(rejected_listings.ENV, "on")
+
+    assert rejected_listings.remember(connection, [refused()]) == 0
+    assert rejected_listings.remember(connection, [refused()]) == 0
+    assert len(connection.calls) == 2
+    assert REAL_ACTIVE() is True
+
+
 # ------------------------------------------------- clés techniques : jamais écrites en base
 TECHNICAL = {
     "_list_signature": "sig",
@@ -209,14 +270,15 @@ def test_the_publication_never_writes_the_technical_keys(monkeypatch) -> None:
     )
     written: list[dict] = []
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, rows: written.extend(rows))
-    for name in ("_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest", "_enqueue_due_enrichment"):
+    inside_publication(
+        monkeypatch, on_write=lambda table, rows, _conflict: written.extend(rows) if table == "auction_sales" else None
+    )
+    for name in ("_sync_normalized_sale_tables", "_upsert_asset_tables", "_enqueue_due_enrichment"):
         monkeypatch.setattr(storage, name, lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, "_write_fact_claims_rest", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, "_write_fact_claims_postgres", lambda *args, **kwargs: 0)
     monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *args, **kwargs: None)
 
-    storage._write_sale_revisions([sale], {"supabase_url": "https://db.test", "supabase_service_role_key": "k"},
-                                  refresh_last_seen=True)
+    storage._write_sale_revisions([sale], refresh_last_seen=True)
 
     assert len(written) == 1
     assert not set(TECHNICAL) & set(written[0]["raw_payload"])
@@ -235,7 +297,9 @@ def test_the_observation_rows_never_carry_the_technical_keys(monkeypatch) -> Non
     written: list[dict] = []
     monkeypatch.setattr(storage, "load_settings", lambda: {
         "supabase_url": "https://db.test", "supabase_service_role_key": "k", "supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(storage, "_postgres_upsert", lambda _db, _table, rows, **_kw: written.extend(rows) or len(rows))
+    monkeypatch.setattr(
+        storage, "_postgres_upsert_observations_with_parent_guard", lambda _db, rows, **_kw: written.extend(rows) or len(rows)
+    )
 
     assert storage.upsert_observations_to_supabase([sale]) == 1
     assert written and not set(TECHNICAL) & set(written[0]["raw_payload"])

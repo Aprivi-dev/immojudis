@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.config import load_settings
+from src.config import autonomous_run_id, load_settings
 from src.enrichment.extract_structured import LLMExtraction
 from src.enrichment.llm_client import ReplicateClient
 from src.enrichment.prompts import SYSTEM_PROMPT, build_user_prompt
@@ -116,7 +116,7 @@ def run(models: list[str], output: Path) -> dict[str, Any]:
     if not os.getenv("REPLICATE_API_TOKEN"):
         raise SystemExit("REPLICATE_API_TOKEN is required")
     # Never attach production database credentials to this benchmark job.
-    if settings.get("supabase_db_url") or settings.get("supabase_service_role_key") or os.getenv("PIPELINE_AUTONOMOUS_RUN_ID"):
+    if settings.get("supabase_db_url") or settings.get("supabase_service_role_key") or autonomous_run_id():
         raise SystemExit("Benchmark refuses production database credentials")
 
     results: list[dict[str, Any]] = []

@@ -1,4 +1,5 @@
 import "server-only";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
@@ -7,6 +8,8 @@ import {
   renderInformationRequestEmail,
 } from "../../../emails/information-request";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
+import { ResendRejectedError } from "@/lib/email-alerts";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 import {
@@ -20,6 +23,7 @@ import {
   resolveInformationAgentAddressOrigin,
 } from "@/lib/information-agent/address-origin";
 import {
+  AdminDailyApprovalCapError,
   adminDailyApprovalCap,
   assertAdminDailyApprovalCap,
 } from "@/lib/information-agent/approval-cap";
@@ -29,14 +33,14 @@ import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentNotarySendAllowed,
   assertInformationAgentOutboundEnabled,
-  informationAgentCaseReference,
   resolveInformationAgentEmailConfig,
 } from "@/lib/information-agent/config";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 import {
   assertInformationAgentContactAllowed,
   recordInformationAgentAdminAddressEntry,
-  normalizedEmail,
 } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { assertCourtRegistryFallbackLimits } from "@/lib/information-agent/court-registry";
 import {
   assertCourtRegistryFallbackOriginIntact,
@@ -90,7 +94,7 @@ export async function approveAndSendMission({
   assertIssuedAutopilotTrigger(trigger);
   const mission = await loadOwnedMission(adminId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
-    throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
+    throw new PublicApiError(MISSION_NOT_APPROVABLE_MESSAGE, 409);
   }
   assertUnverifiedSendWithinIdempotencyWindow(mission);
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
@@ -134,7 +138,9 @@ export async function approveAndSendMission({
     fallbackObservedAt: mission.created_at,
     structureAddress: courtFallback ? null : recipient.structureAddress,
   });
-  if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  if (!addressOrigin.known) {
+    throw new PublicApiError(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE, 400);
+  }
   assertAgentFoundOriginIntact(agentFound, addressOrigin);
   assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin);
   assertInformationAgentSourceAllowed(addressOrigin);
@@ -237,12 +243,13 @@ export async function approveAndSendMission({
     messageHash,
     trigger ? undefined : adminDailyApprovalCap(),
   );
-  if (!approval) throw new Error("Approbation de l'enquête impossible.");
+  if (!approval) throw new Error("Mission approval returned no row");
   if (!approval.should_send) {
     // The shared case already left the draft stage (another mission sent it): saying « updated »
     // would let the admin believe this email went out.
-    throw new Error(
+    throw new PublicApiError(
       "Aucun email n’est parti : cette demande est rattachée à un dossier déjà envoyé à cette adresse pour cette vente.",
+      409,
     );
   }
 
@@ -385,7 +392,7 @@ export async function approveAndSendMission({
       failure_reason: null,
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message.slice(0, 1000) : "Envoi impossible.";
+    const detail = failureDetail(error);
     if (delivered) {
       // The email is out. Marking the mission failed would free the 30-day cooldown and invite a
       // manual retry that sends a second email: keep it sent and say what is incomplete.
@@ -405,7 +412,7 @@ export async function approveAndSendMission({
           failure_reason: note,
         }),
       ]);
-      throw new Error(`${note}. Ne renvoyez pas ce message.`, { cause: error });
+      throw new InformationAgentSentButUnrecordedError(error);
     }
     // Resend n'a pas répondu à temps (ou la connexion est tombée) : l'email a peut-être été
     // accepté. Ce n'est pas un échec établi. La demande est marquée « à vérifier » : le délai de
@@ -428,7 +435,7 @@ export async function approveAndSendMission({
       status: "failed",
       failure_reason: reason,
     });
-    throw unverified ? new Error(reason, { cause: error }) : error;
+    throw unverified ? new InformationAgentUnverifiedSendError(error) : error;
   }
 }
 
@@ -457,8 +464,9 @@ export function assertUnverifiedSendWithinIdempotencyWindow(
   if (metadata.send_outcome !== UNVERIFIED_SEND_OUTCOME) return;
   const attemptedAt = Date.parse(String(metadata.last_send_attempt_at ?? ""));
   if (Number.isFinite(attemptedAt) && now - attemptedAt <= IDEMPOTENCY_WINDOW_MS) return;
-  throw new Error(
+  throw new PublicApiError(
     "Le résultat du dernier envoi n’a jamais été confirmé et la fenêtre de 24 h de la clé d’idempotence est dépassée : un renvoi pourrait créer un doublon. Vérifiez dans Resend (docs/runbooks/information-agent.md, « Envoi à vérifier »).",
+    409,
   );
 }
 
@@ -484,6 +492,53 @@ function isIndeterminateSendError(error: unknown): boolean {
   );
 }
 
+const MISSION_NOT_APPROVABLE_MESSAGE =
+  "Requête invalide : cette enquête ne peut plus être modifiée.";
+
+/** Refus de `approve_information_agent_mission_admin` (migration 20261110220100). */
+const APPROVAL_CAP_REACHED = "53400";
+const MISSION_NOT_APPROVABLE = "55000";
+
+/**
+ * L'email est parti (accepté par Resend) mais son enregistrement est incomplet : la mission reste
+ * « envoyée » (motif dans `failure_reason`) et le message ne doit jamais être renvoyé.
+ */
+export class InformationAgentSentButUnrecordedError extends Error {
+  constructor(cause: unknown) {
+    super("Information-agent email accepted by the provider, recording incomplete", { cause });
+    this.name = "InformationAgentSentButUnrecordedError";
+  }
+}
+
+/**
+ * Resend n'a pas répondu à temps : l'email est peut-être parti. La mission est « à vérifier » (motif dans
+ * `failure_reason`) ; aucun envoi automatique ne doit suivre avant vérification.
+ */
+export class InformationAgentUnverifiedSendError extends Error {
+  constructor(cause: unknown) {
+    super("Information-agent send outcome unknown (provider timeout)", { cause });
+    this.name = "InformationAgentUnverifiedSendError";
+  }
+}
+
+/**
+ * Motif d'échec enregistré pour l'administrateur : le message d'un refus écrit pour lui, ou du
+ * fournisseur ; jamais le texte d'une erreur de la base ou du code.
+ */
+function failureDetail(error: unknown): string {
+  if (
+    error instanceof PublicApiError ||
+    error instanceof ConfigurationError ||
+    error instanceof ResendRejectedError
+  ) {
+    return error.message.slice(0, 1000);
+  }
+  console.error(
+    JSON.stringify({ scope: "information_agent.send", error: errorDetailForLog(error) }),
+  );
+  return "Erreur interne pendant l’envoi.";
+}
+
 type InformationAgentApproval = {
   case_id: string;
   should_send: boolean;
@@ -507,9 +562,15 @@ async function approveInformationAgentMissionForAdmin(
     // Plafond de validations par administrateur et par jour, appliqué dans la fonction (atomique).
     p_daily_cap: dailyCap,
   });
-  if (error) throw new Error(error.message || "Approbation admin impossible.");
+  if (error?.code === APPROVAL_CAP_REACHED) {
+    throw new AdminDailyApprovalCapError(dailyCap ?? adminDailyApprovalCap());
+  }
+  if (error?.code === MISSION_NOT_APPROVABLE) {
+    throw new PublicApiError(MISSION_NOT_APPROVABLE_MESSAGE, 409, { cause: error });
+  }
+  if (error) throw new Error("Admin mission approval failed", { cause: error });
   const approval = data?.[0];
-  if (!approval) throw new Error("Approbation admin impossible.");
+  if (!approval) throw new Error("Admin mission approval returned no row");
   return approval;
 }
 

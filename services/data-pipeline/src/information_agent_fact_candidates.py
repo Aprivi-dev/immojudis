@@ -17,6 +17,7 @@ import httpx
 
 from src.information_agent_semantic import UNCERTAIN_EVIDENCE_RE
 from src.normalize import clean_text
+from src.storage.postgrest_helpers import rest_headers
 
 if TYPE_CHECKING:
     from src.information_agent_evidence import EvidenceFact
@@ -29,15 +30,6 @@ _UNCERTAIN_FACT_VALUE_RE = re.compile(
     r"sans\s+information|n/?a|nc)\b",
     re.IGNORECASE,
 )
-
-
-def rest_headers(key: str) -> dict[str, str]:
-    return {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
 
 
 def fetch_existing_message_fact_values(
@@ -135,7 +127,7 @@ def insert_fact_candidates(
         return
     response = client.post(
         f"{base_url}/rest/v1/information_agent_fact_candidates",
-        headers={**rest_headers(key), "Prefer": "resolution=ignore-duplicates,return=minimal"},
+        headers=rest_headers(key, prefer="resolution=ignore-duplicates,return=minimal"),
         params={"on_conflict": "message_id,fact_key,evidence_asset_id,source_page,display_value"},
         content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
     )
@@ -178,7 +170,7 @@ def _complete_rules_candidate(
         return
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_fact_candidates",
-        headers={**rest_headers(key), "Prefer": "return=minimal"},
+        headers=rest_headers(key, prefer="return=minimal"),
         params={"id": f"eq.{candidate_id}", "status": "in.(pending,conflict)"},
         content=json.dumps({"metadata": updated}, ensure_ascii=False).encode("utf-8"),
     )

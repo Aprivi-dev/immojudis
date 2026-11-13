@@ -4,6 +4,7 @@ import { isIP } from "node:net";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { RateLimitError } from "@/lib/api-errors";
+import { serverEnv } from "@/lib/env";
 import {
   DAILY_LIMIT_MESSAGE,
   DAILY_OPERATION_LIMITS,
@@ -77,13 +78,13 @@ export async function tryConsumeUserRateLimit(
 }
 
 /** Valeur de `clientIpFromRequest` quand la requête ne porte aucune adresse exploitable. */
-export const UNKNOWN_CLIENT_IP = "unknown";
+const UNKNOWN_CLIENT_IP = "unknown";
 
 /**
  * Best-effort client address. On Vercel, x-real-ip / x-forwarded-for are set by the
  * platform edge and cannot be forged by the caller.
  */
-export function clientIpFromRequest(request: Request): string {
+function clientIpFromRequest(request: Request): string {
   const real = request.headers.get("x-real-ip")?.trim();
   if (real) return real;
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -112,7 +113,7 @@ function ipv6Groups(address: string): number[] {
  * adresse IPv4 mappée (`::ffff:203.0.113.7`) redevient l'adresse IPv4 ; une valeur qui n'est pas une
  * adresse est gardée telle quelle.
  */
-export function clientNetworkKey(ip: string): string {
+function clientNetworkKey(ip: string): string {
   const address = ip.trim().replace(/%.*$/, "");
   if (isIP(address) !== 6) return ip;
   const groups = ipv6Groups(address);
@@ -125,9 +126,10 @@ export function clientNetworkKey(ip: string): string {
     .join(":")}::/64`;
 }
 
-export function hashClientIp(ip: string, salt = process.env.RATE_LIMIT_IP_SALT): string {
+function hashClientIp(ip: string): string {
+  const salt = serverEnv().rateLimitIpSalt ?? "immojudis-ip-rate-limit";
   return createHash("sha256")
-    .update(`${salt?.trim() || "immojudis-ip-rate-limit"}|${clientNetworkKey(ip)}`, "utf8")
+    .update(`${salt}|${clientNetworkKey(ip)}`, "utf8")
     .digest("hex");
 }
 
@@ -139,10 +141,10 @@ export function hashClientIp(ip: string, salt = process.env.RATE_LIMIT_IP_SALT):
  * de ce quota. L'empreinte ne sert que sans adresse : elle ne permet pas de contourner la limite d'une
  * vraie adresse, et une empreinte falsifiée ne donne jamais le quota d'une adresse identifiée.
  */
-export const UNKNOWN_CLIENT_LIMIT = 10;
+const UNKNOWN_CLIENT_LIMIT = 10;
 
 /** Seau et quota effectifs de la requête : ceux de la politique, ou le seau bas des requêtes sans adresse. */
-export function ipRateLimitTarget(
+function ipRateLimitTarget(
   request: Request,
   bucketKey: string,
   limit: number,
@@ -172,17 +174,6 @@ export function ipRateLimitTarget(
  * (voir `enforceIpRateLimit`), donc sans trace chiffrée une panne durable passerait inaperçue.
  */
 const limiterStats = { calls: 0, failures: 0, unidentified: 0, since: new Date().toISOString() };
-
-export function ipRateLimiterStats(): Readonly<typeof limiterStats> {
-  return { ...limiterStats };
-}
-
-export function resetIpRateLimiterStats(): void {
-  limiterStats.calls = 0;
-  limiterStats.failures = 0;
-  limiterStats.unidentified = 0;
-  limiterStats.since = new Date().toISOString();
-}
 
 /** Une ligne JSON par échec, avec les compteurs de l'instance : recherchable dans les journaux Vercel. */
 function logLimiterFailure(

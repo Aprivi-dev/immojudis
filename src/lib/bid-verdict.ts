@@ -5,7 +5,7 @@ import { formatNumber, formatPrice } from "@/lib/format";
  * « On enchérit » quand le plafond dépasse la mise à prix d'au moins 10 %, « Serré » entre 0 et
  * 10 %, « On passe son tour » quand la mise à prix dépasse déjà le plafond.
  */
-export const TIGHT_MARGIN_PCT = 10;
+const TIGHT_MARGIN_PCT = 10;
 
 export type BidVerdict = "go" | "tight" | "pass";
 

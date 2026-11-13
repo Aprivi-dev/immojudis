@@ -134,7 +134,7 @@ export function buildSaleResultMessage({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): ResendEmailMessage & { unsubscribeUrl: string } {
-  if (items.length === 0) throw new Error("Aucune alerte de résultat à envoyer.");
+  if (items.length === 0) throw new Error("Sale result email: no item to send.");
   const unsubscribeUrl = `${appUrl}/api/notification-preferences/unsubscribe?token=${encodeURIComponent(
     createUnsubscribeToken({ userId, scope: { kind: "sale-results" }, now, env }),
   )}`;

@@ -4,9 +4,9 @@ import { EXAMPLE_SALE } from "./example-sale";
 import {
   classifyListingCompletenessScore,
   getListingCompleteness,
-  LISTING_COMPLETENESS_FIELD_COUNT,
   type CompletenessState,
 } from "./listing-completeness";
+import { LISTING_COMPLETENESS_FIELD_COUNT } from "./listing-completeness/catalogue";
 import type { AuctionSale } from "./types";
 
 const evidence = (text: string, source = "source-test") => [

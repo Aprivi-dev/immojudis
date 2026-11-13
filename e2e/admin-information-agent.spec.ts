@@ -1038,9 +1038,10 @@ function catalogueReadinessFixture(longListTotal: number | null = null, offset =
     canEnableEnforcement: true,
     classCounts: { A: longListTotal ?? 1, B: 0, C: 0, D: 0 },
     impossibleItems: [],
-    queueTotal: longListTotal ?? 1,
-    queueOffset: offset,
-    queueLimit: 50,
+    total: longListTotal ?? 1,
+    offset,
+    limit: 50,
+    hasMore: offset + 50 < (longListTotal ?? 1),
     items: (longListTotal ? pageOf(longListTotal, offset) : [0]).map((index) => ({
       id: index === 0 ? SALE_ID : `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       title: index === 0 ? "Appartement E2E à Bordeaux" : `Dossier à reprendre ${index}`,

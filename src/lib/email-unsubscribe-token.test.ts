@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 import {
-  REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS,
   UNSUBSCRIBE_TOKEN_TTL_DAYS,
   createUnsubscribeToken,
   unsubscribeTokenScopeKind,
@@ -132,7 +132,6 @@ describe("unsubscribe tokens", () => {
       expect(verifyUnsubscribeToken(token, { now: day(364), env }), scope.kind).not.toBeNull();
       expect(verifyUnsubscribeToken(token, { now: day(366), env }), scope.kind).toBeNull();
     }
-    expect(REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
     expect(UNSUBSCRIBE_TOKEN_TTL_DAYS).toBe(365);
   });
 
@@ -195,6 +194,6 @@ describe("unsubscribe tokens", () => {
     expect(
       verifyUnsubscribeToken(token, { now, env: { SUPABASE_SECRET_KEY: "autre" } }),
     ).toBeNull();
-    expect(() => createUnsubscribeToken({ userId, now, env: {} })).toThrow(/Aucun secret/);
+    expect(() => createUnsubscribeToken({ userId, now, env: {} })).toThrow(ConfigurationError);
   });
 });

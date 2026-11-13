@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
+import { startOfParisDay } from "@/lib/paris-time";
 import type { FollowedSale } from "@/lib/sale-reminders";
 import {
   AUDIENCE_WINDOW_DAYS,
@@ -13,7 +14,6 @@ import {
   dueDigest,
   isoWeekKey,
   isoWeekday,
-  parisDayStart,
   runWeeklyDigest,
   upcomingAudienceFor,
   type NewSaleSummary,
@@ -240,9 +240,9 @@ describe("calendrier du récapitulatif", () => {
     // 23 h 30 UTC le lundi 2 novembre : il est déjà mardi 3 à Paris.
     const lateMonday = new Date("2026-11-02T23:30:00Z");
     expect(dueDigest(2, lateMonday)?.lag).toBe(0);
-    expect(parisDayStart(TUESDAY).toISOString()).toBe("2026-11-02T23:00:00.000Z");
+    expect(startOfParisDay(TUESDAY).toISOString()).toBe("2026-11-02T23:00:00.000Z");
     // Heure d'été : le 20 juillet, minuit à Paris est 22 h UTC la veille.
-    expect(parisDayStart(new Date("2026-07-20T09:00:00Z")).toISOString()).toBe(
+    expect(startOfParisDay(new Date("2026-07-20T09:00:00Z")).toISOString()).toBe(
       "2026-07-19T22:00:00.000Z",
     );
   });

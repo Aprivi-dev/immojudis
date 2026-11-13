@@ -1,7 +1,7 @@
 /** Longueur maximale d'un prénom ou d'un nom saisi à l'inscription. */
 export const SIGNUP_NAME_MAX_LENGTH = 80;
 
-export type SignupName = {
+type SignupName = {
   firstName: string;
   lastName: string;
   /** « Prénom Nom », comme `full_name` l'a toujours été (profil, administration). */

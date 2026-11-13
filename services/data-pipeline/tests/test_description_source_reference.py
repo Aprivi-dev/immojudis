@@ -39,11 +39,11 @@ def test_other_publisher_reference_namespace_is_preserved():
 
 
 def test_finalization_removes_rejected_stale_source_description(monkeypatch):
-    import src.main as main
+    from src import sale_finalization
 
     for name in ["fill_tribunal", "classify_sale_procedure", "normalize_asset_features"]:
-        monkeypatch.setattr(main, name, lambda *args, **kwargs: None)
-    monkeypatch.setattr(main, "_surface_reasoning_context_for_sale", lambda sale: "")
+        monkeypatch.setattr(sale_finalization, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, "surface_reasoning_context", lambda sale: "")
     sale = sale_with(description=WRONG, raw_text=WRONG, source_description=WRONG)
-    main._finalize_sale_for_app(sale, geocode=False)
+    sale_finalization.finalize_sale_for_app(sale, geocode=False)
     assert "source_description" not in sale.raw_payload

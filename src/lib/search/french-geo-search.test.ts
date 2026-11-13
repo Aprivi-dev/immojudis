@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import {
+  departmentFromSearchText,
   departmentSearchValues,
   matchesFrenchGeoSearch,
   normalizeFrenchSearchText,
@@ -19,6 +20,45 @@ describe("French geographic search", () => {
       kind: "region",
       departments: ["16", "17", "19", "23", "24", "33", "40", "47", "64", "79", "86", "87"],
     });
+  });
+
+  // Caractérisation de toutes les régions que la recherche connaît, sigles et outre-mer compris.
+  it.each<[string, string[]]>([
+    [
+      "Auvergne-Rhône-Alpes",
+      ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"],
+    ],
+    ["ARA", ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"]],
+    ["Bourgogne-Franche-Comté", ["21", "25", "39", "58", "70", "71", "89", "90"]],
+    ["BFC", ["21", "25", "39", "58", "70", "71", "89", "90"]],
+    ["Bretagne", ["22", "29", "35", "56"]],
+    ["Centre-Val de Loire", ["18", "28", "36", "37", "41", "45"]],
+    ["Corse", ["2A", "2B"]],
+    ["Grand Est", ["08", "10", "51", "52", "54", "55", "57", "67", "68", "88"]],
+    ["Hauts-de-France", ["02", "59", "60", "62", "80"]],
+    ["Île-de-France", ["75", "77", "78", "91", "92", "93", "94", "95"]],
+    ["idf", ["75", "77", "78", "91", "92", "93", "94", "95"]],
+    ["Normandie", ["14", "27", "50", "61", "76"]],
+    [
+      "Nouvelle-Aquitaine",
+      ["16", "17", "19", "23", "24", "33", "40", "47", "64", "79", "86", "87"],
+    ],
+    ["Occitanie", ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]],
+    ["Pays de la Loire", ["44", "49", "53", "72", "85"]],
+    ["Provence-Alpes-Côte d'Azur", ["04", "05", "06", "13", "83", "84"]],
+    ["PACA", ["04", "05", "06", "13", "83", "84"]],
+    ["Guadeloupe", ["971"]],
+    ["région Martinique", ["972"]],
+    ["Guyane", ["973"]],
+    ["La Réunion", ["974"]],
+    ["Réunion", ["974"]],
+    ["Mayotte", ["976"]],
+  ])("resolves the region %s to its departments", (query, departments) => {
+    expect(resolveFrenchGeoSearch(query)).toEqual({ kind: "region", departments });
+  });
+
+  it("keeps the overseas group of the department pages out of the regions", () => {
+    expect(resolveFrenchGeoSearch("Outre-mer")).toEqual({ kind: "text", text: "Outre-mer" });
   });
 
   it.each([
@@ -104,3 +144,36 @@ function sale(overrides: Partial<AuctionSale>): AuctionSale {
     ...overrides,
   } as AuctionSale;
 }
+
+/**
+ * Une seule règle pour l'accueil (`firstSearchToUrl`) et la création d'une alerte (`use-create-alert`) :
+ * avant le lot 10, la première ne lisait pas un nom (« Gironde ») et prenait « 20 » pour un
+ * département, la seconde ne lisait pas de code postal.
+ */
+describe("departmentFromSearchText", () => {
+  it.each([
+    ["26", "26"],
+    ["Drôme", "26"],
+    ["Gironde", "33"],
+    ["département de la Gironde", "33"],
+    ["2a", "2A"],
+    ["974", "974"],
+    ["33000", "33"],
+    ["20090", "2A"],
+    ["97400", "974"],
+  ])("lit %s comme le département %s", (text, department) => {
+    expect(departmentFromSearchText(text)).toBe(department);
+  });
+
+  it.each([
+    // La liste reste dans le texte enregistré, que l'évaluation lit comme ces trois départements.
+    "66, 65, 05",
+    "Nouvelle-Aquitaine",
+    "20",
+    "Bordeaux",
+    "",
+    null,
+  ])("ne désigne pas un seul département : %s", (text) => {
+    expect(departmentFromSearchText(text)).toBeNull();
+  });
+});

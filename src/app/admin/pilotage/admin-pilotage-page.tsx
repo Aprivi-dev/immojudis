@@ -3,10 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
-import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { formatDate, formatPrice, formatShareAsPercent, formatShortDateTime } from "@/lib/format";
 import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
+import { PLAN_LIMITS } from "@/lib/plans";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type {
@@ -216,14 +218,7 @@ export function formatReminderRate(accuracy: SaleReminderAccuracy | null): strin
   if (accuracy.measuredReminders != null && accuracy.measuredReminders < PILOTAGE_MASK_BELOW) {
     return MASKED;
   }
-  const percent = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(
-    accuracy.contradictionRate * 100,
-  );
-  return `${percent} %`;
-}
-
-function formatDay(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(value));
+  return formatShareAsPercent(accuracy.contradictionRate, 1);
 }
 
 export function AdminPilotagePage() {
@@ -318,7 +313,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
         <AdminSectionHeading title="Agrégats sur 7 et 30 jours glissants" />
         {/* Texte secondaire en /70 : la description du titre partagé est plus pâle. */}
         <p className="mt-1 text-sm text-brand-navy/70">
-          {data.generatedAt ? `Calculés le ${formatDateTime(data.generatedAt)}. ` : ""}
+          {data.generatedAt ? `Calculés le ${formatShortDateTime(data.generatedAt)}. ` : ""}
           Une donnée absente s’affiche « {NOT_MEASURED} », jamais zéro ; un nombre inférieur à{" "}
           {PILOTAGE_MASK_BELOW} s’affiche « {MASKED} ».
         </p>
@@ -386,7 +381,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
                           ) : null}
                           {partial ? (
                             <span className="block text-xs font-normal text-brand-navy/70">
-                              depuis le {formatDay(measuredSince)}
+                              depuis le {formatDate(measuredSince)}
                             </span>
                           ) : null}
                         </td>
@@ -467,7 +462,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
           </li>
           <li>
             Les événements ne sont enregistrés que depuis le début de la mesure
-            {measuredSince ? ` (${formatDay(measuredSince)})` : ""}. Tant qu’une fenêtre commence
+            {measuredSince ? ` (${formatDate(measuredSince)})` : ""}. Tant qu’une fenêtre commence
             avant, son chiffre est exact mais partiel, et la date est indiquée sous le nombre. Un
             même compte compte une fois par jour pour un même événement sur une même vente. Ils sont
             conservés 90 jours.
@@ -621,7 +616,7 @@ const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: stri
 export function formatUsefulShare(counts: SignalFeedbackCounts | null): string {
   if (!counts || counts.total == null || counts.useful == null) return NOT_MEASURED;
   if (counts.total < PILOTAGE_MASK_BELOW) return MASKED;
-  return `${Math.round((counts.useful / counts.total) * 100)} %`;
+  return formatShareAsPercent(counts.useful / counts.total);
 }
 
 /**
@@ -711,7 +706,7 @@ function RuleVersionsLine({ versions }: { versions: Record<string, number> }) {
 export function formatShare(numerator: number | null, denominator: number | null): string {
   if (numerator == null || denominator == null || denominator <= 0) return NOT_MEASURED;
   if (denominator < PILOTAGE_MASK_BELOW) return MASKED;
-  return `${Math.round((numerator / denominator) * 100)} %`;
+  return formatShareAsPercent(numerator / denominator);
 }
 
 /**
@@ -771,20 +766,23 @@ function ActivationCard({ activation }: { activation: AdminActivation | null }) 
 }
 
 /**
- * Part des comptes Découverte qui atteignent les 3 déblocages du mois : la mesure à lire avant toute
- * décision sur le prix ou sur un pass (n° 97). Pendant l'essai, aucun déblocage n'est consommé : les
- * chiffres ne commencent à compter qu'à la fin des premiers essais.
+ * Part des comptes Découverte qui atteignent le quota de déblocages du mois : la mesure à lire avant
+ * toute décision sur le prix ou sur un pass (n° 97). Pendant l'essai, aucun déblocage n'est consommé :
+ * les chiffres ne commencent à compter qu'à la fin des premiers essais. Le seuil compté par la base
+ * (`admin_pilotage_unlock_threshold`) est celui du quota : un test vérifie l'accord.
  */
+const QUOTA = PLAN_LIMITS.decouverte.monthlyUnlocks;
+
 function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null }) {
   const discovery = threshold?.discoveryAccounts ?? null;
   return (
     <AdminPanel className="mt-6 p-5">
-      <AdminSectionHeading title="Comptes Découverte à 3 déblocages" />
+      <AdminSectionHeading title={`Comptes Découverte à ${QUOTA} déblocages`} />
       <p className="mt-1 text-sm text-brand-navy/70">
         Parmi les comptes Découverte (adresse confirmée, sans accès Analyse ni essai en cours) :
-        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les
-        3 déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux mois.
-        Administrateurs exclus.
+        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les{" "}
+        {QUOTA} déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux
+        mois. Administrateurs exclus.
       </p>
       <p className="mt-2 text-sm">
         <span className="text-brand-navy/70">Comptes Découverte aujourd’hui : </span>
@@ -797,9 +795,12 @@ function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null 
               label: "ont débloqué au moins une vente",
               text: formatCount(month?.unlockedOne ?? null),
             },
-            { label: "ont atteint 3 déblocages", text: formatCount(month?.reachedThree ?? null) },
             {
-              label: "Part des comptes Découverte à 3 déblocages",
+              label: `ont atteint ${QUOTA} déblocages`,
+              text: formatCount(month?.reachedThree ?? null),
+            },
+            {
+              label: `Part des comptes Découverte à ${QUOTA} déblocages`,
               text: formatShare(month?.reachedThree ?? null, discovery),
             },
             {
@@ -811,7 +812,7 @@ function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null 
             <div key={index} data-threshold-month={index === 0 ? "current" : "previous"}>
               <h3 className="text-sm font-semibold text-brand-navy">
                 {index === 0 ? "Mois en cours (depuis le 1er)" : "Mois précédent"}
-                {month?.monthStart ? ` · ${formatDay(month.monthStart)}` : ""}
+                {month?.monthStart ? ` · ${formatDate(month.monthStart)}` : ""}
               </h3>
               <dl className="mt-2 grid gap-y-1.5 text-sm">
                 {lines.map((line) => (
@@ -897,7 +898,9 @@ function OfferOpeningInterviewees() {
                     key={`${person.email}-${person.consentedAt}`}
                     className="border-t border-brand-navy/10"
                   >
-                    <td className="py-1 pr-4 tabular-nums">{formatDateTime(person.consentedAt)}</td>
+                    <td className="py-1 pr-4 tabular-nums">
+                      {formatShortDateTime(person.consentedAt)}
+                    </td>
                     <td className="py-1 pr-4">{profileLabel(person.profile)}</td>
                     <td className="py-1">{person.email}</td>
                   </tr>
@@ -932,7 +935,7 @@ export function formatSurveyMedian(
 ): string {
   if (price.answers == null) return NOT_MEASURED;
   if (price.medianEur == null) return `moins de ${minAnswers} réponses`;
-  return `${formatInteger(Math.round(price.medianEur))} €`;
+  return formatPrice(price.medianEur);
 }
 
 /**

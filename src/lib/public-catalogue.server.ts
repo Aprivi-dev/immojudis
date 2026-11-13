@@ -11,12 +11,18 @@ import { isPhotoMirrorEnabled, withPhotoMirrors, type PhotoMirrorClient } from "
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import {
   loadWithdrawnSources,
   stripWithdrawnSourceContent,
   type WithdrawnSourcesClient,
 } from "@/lib/withdrawn-sources";
+import { ServiceUnavailableError } from "@/lib/api-errors";
+import { withTimeout } from "@/lib/with-timeout";
+
+const catalogueTimeout = () =>
+  new ServiceUnavailableError("Délai dépassé pour le catalogue public.");
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -32,15 +38,6 @@ export type InitialCatalogue = {
  * shows up after 5 to 10 minutes on `/sales`, depending on when the two caches expire.
  */
 export const FIRST_PAGE_REVALIDATE_SECONDS = 300;
-/**
- * Durée de garde (CDN) d'une recherche FILTRÉE de `/api/catalogue/preview`. Plus courte que celle de
- * la première page : une recherche étroite (ville, tribunal, prix, dates) est celle où l'on guette
- * une nouvelle annonce ou un changement de statut, alors que la première page, sans filtre, est lue
- * par tous les visiteurs et se rafraîchit en tâche de fond. Chaque adresse filtrée a de toute façon
- * peu de lecteurs : la garder moins longtemps coûte peu de lectures de la base, et le quota par IP
- * borne le reste.
- */
-export const FILTERED_SEARCH_REVALIDATE_SECONDS = 120;
 /**
  * Durée de garde d'une réponse dont les copies de photos ont échoué : le temps de laisser la base
  * respirer, sans que le CDN fige les photos des sources pour les 2 à 5 minutes habituelles.
@@ -90,11 +87,11 @@ export type CatalogueDependencies = {
  * base : le balayage du catalogue (jusqu'à 30 pages) ne se refait pas à chaque page ni à chaque visiteur. Sous le
  * tag `public-catalogue` : l'arrêt d'urgence des pépites et les retraits de ventes la purgent.
  */
-export const PEPITE_SCAN_REVALIDATE_SECONDS = 120;
+const PEPITE_SCAN_REVALIDATE_SECONDS = 120;
 
 async function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw publicSupabaseConfigurationError();
   const rpcClient = client as unknown as PreviewRpcClient;
   if (search.pepite) {
     const base = { ...search, pepite: undefined, page: undefined, limit: undefined };
@@ -135,12 +132,14 @@ const cachedFirstPage = unstable_cache(() => defaultSearch({}), [...FIRST_PAGE_C
 function withdrawnSourcesApplier(client: WithdrawnSourcesClient | null | undefined) {
   const loading: Promise<unknown> = client ? loadWithdrawnSources(client) : Promise.resolve([]);
   return async (items: AuctionSale[]): Promise<AuctionSale[]> => {
-    await withTimeout(loading, WITHDRAWN_SOURCES_TIMEOUT_MS).catch((error: unknown) => {
-      console.warn(
-        "[catalogue] Sources retirées: dernière liste connue appliquée:",
-        error instanceof Error ? error.message : error,
-      );
-    });
+    await withTimeout(loading, WITHDRAWN_SOURCES_TIMEOUT_MS, catalogueTimeout).catch(
+      (error: unknown) => {
+        console.warn(
+          "[catalogue] Sources retirées: dernière liste connue appliquée:",
+          error instanceof Error ? error.message : error,
+        );
+      },
+    );
     return items.map((sale) => stripWithdrawnSourceContent(sale));
   };
 }
@@ -157,17 +156,6 @@ function withdrawnSourcesClient(
 function photoMirrorClient(): PhotoMirrorClient | null {
   if (!isPhotoMirrorEnabled()) return null;
   return createPublicSupabaseClient() as unknown as PhotoMirrorClient | null;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error("Délai dépassé pour le catalogue public.")),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -188,6 +176,7 @@ export async function loadInitialCatalogue(
     const response = await withTimeout(
       isDefaultCatalogueSearch(search) ? firstPage() : run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+      catalogueTimeout,
     );
     // Copies hébergées des photos : un seul appel pour la page, après le cache de la première page.
     // Les copies trouvées ont leur propre cache de 5 minutes (photo-mirror.server.ts) ; une panne
@@ -234,6 +223,7 @@ export async function loadInitialCount(
     const response = await withTimeout(
       run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+      catalogueTimeout,
     );
     return Number.isFinite(response.count) ? response.count : null;
   } catch (error) {
@@ -278,6 +268,7 @@ export async function loadPreviewCataloguePage(
   const response = await withTimeout(
     isDefaultCatalogueSearch(search) ? firstPage() : run(search),
     dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+    catalogueTimeout,
   );
   // Avant la lecture des copies : la photo d'une source retirée n'est même pas cherchée.
   const items = await withoutWithdrawn(excludeHomepageExampleSales(response.items));

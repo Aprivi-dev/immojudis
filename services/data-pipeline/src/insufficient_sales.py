@@ -27,10 +27,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from src.information_sufficiency import ContactBlocklist, sufficient_information
+from src.config import load_settings
+from src.information_sufficiency import (
+    ContactBlocklist,
+    load_contact_blocklist,
+    load_court_registry,
+    set_active_court_registry,
+    sufficient_information,
+)
+from src.storage.postgrest_helpers import rest_headers
+from src.storage.supabase_client import connect
+from src.stored_sales import fetch_sales, sale_from_storage_row
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_MAX_DELETIONS = 100
 #: Plafond de ``p_limit`` de ``app_private.delete_empty_listings``.
 CLEANUP_FUNCTION_MAX = 5000
 
@@ -105,7 +114,7 @@ def fetch_links(settings: Mapping[str, Any], sale_ids: Sequence[str]) -> dict[st
     key = str(settings.get("supabase_service_role_key") or "")
     if not url or not key:
         raise RuntimeError("Supabase URL/service role key are missing")
-    headers = {"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"}
+    headers = rest_headers(key)
     found: dict[str, dict[str, set[str]]] = {"protecting": defaultdict(set), "informational": defaultdict(set)}
     for kind, links in (("protecting", PROTECTING_LINKS), ("informational", INFORMATIONAL_LINKS)):
         for table, column in links:
@@ -180,26 +189,20 @@ def drop_insufficient_sales(
     report_path: str | None,
 ) -> int:
     """Rapport (par défaut) ou suppression (``execute``) ; renvoie un code de sortie."""
-    from src.config import load_settings
-    from src.information_sufficiency import load_contact_blocklist, load_court_registry, set_active_court_registry
-    from src.recompute_scoring import _fetch_sales, _load_env_fallbacks, _sale_from_storage_row
-    from src.storage.supabase_client import connect
-
     if execute and (source or limit):
         LOGGER.error(
             "--execute-drop applies app_private.delete_empty_listings to the whole catalogue: "
             "--source and --limit are refused with it (use the report to read a scope)"
         )
         return 1
-    _load_env_fallbacks()
     settings = load_settings()
-    rows = _fetch_sales(source=source, limit=limit)
+    rows = fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested scope")
         return 1
     blocklist = load_contact_blocklist(settings)
     set_active_court_registry(load_court_registry(settings))  # la règle d'écriture, avec l'email du tribunal
-    candidates, stats = evaluate_rows(rows, _sale_from_storage_row, blocklist)
+    candidates, stats = evaluate_rows(rows, sale_from_storage_row, blocklist)
     links = fetch_links(settings, [c.sale_id for c in candidates]) if candidates else {}
     report = build_report(candidates, stats, links)
     report["mode"] = "execute" if execute else "dry-run"

@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -10,37 +9,29 @@ import {
   saleAnalysisSetInputSchema,
 } from "@/lib/sale-analysis-sets";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "sale-analysis-sets",
+    fallbackMessage: "Analyses multi-biens indisponibles",
+    emptyBody: { sets: [] },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const includeArchived = url.searchParams.get("includeArchived") === "true";
-    const response = await listSaleAnalysisSets({ auth, includeArchived });
+    return listSaleAnalysisSets({ auth, includeArchived });
+  },
+);
 
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-analysis-sets", {
-      fallbackMessage: "Analyses multi-biens indisponibles",
-      extra: { sets: [] },
-    });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "sale-analysis-sets",
+    fallbackMessage: "Création d'analyse impossible",
+    emptyBody: { set: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = saleAnalysisSetInputSchema.parse(await request.json());
-    const response = await createSaleAnalysisSet({ auth, input });
-
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-analysis-sets", {
-      fallbackMessage: "Création d'analyse impossible",
-      extra: { set: null },
-    });
-  }
-}
+    return createSaleAnalysisSet({ auth, input });
+  },
+);

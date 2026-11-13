@@ -2,19 +2,24 @@
 // Mêmes règles que l'écriture chaînée de zod (objets `strict` devenus `strictObject`, `.refine`
 // devenu `.check(z.refine(...))`), avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
-import { publishedDay } from "@/lib/listing-evidence";
-import { wilsonInterval95 } from "@/lib/stats";
+import { occupancyClass } from "@/lib/occupancy-status";
+import { propertyFamily } from "@/lib/property-type-family";
+import { median, wilsonInterval95 } from "@/lib/stats";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
+import { assertValidDate, hasVisitDate, hearingCalendar } from "@/lib/tribunal-statistics-dates";
 import {
   TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
   TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE,
 } from "@/lib/tribunal-publication-thresholds";
 import {
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
   passesPublicMarketGapGate,
 } from "@/lib/market-gap-band";
+import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
+} from "@/lib/market-comparable-minimums";
 import {
   tribunalJudicialActivityHistoryMonthsSchema,
   type TribunalJudicialActivityHistoryMonths,
@@ -22,9 +27,7 @@ import {
 import { roundWithEpsilon as round } from "@/lib/rounding";
 import { labelFingerprint } from "@/lib/label-fingerprint";
 
-export { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
-
-export const TRIBUNAL_LISTING_STATISTICS_SCHEMA_VERSION = "tribunal_listing_statistics_v2" as const;
+const TRIBUNAL_LISTING_STATISTICS_SCHEMA_VERSION = "tribunal_listing_statistics_v2" as const;
 /**
  * Observations minimales pour publier une médiane, un taux ou une part. Elles étaient 5 : à 5
  * observations, un taux de 60 % peut aussi bien être 23 % que 88 % (intervalle de Wilson à 95 %).
@@ -36,9 +39,9 @@ export const TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE = 20;
  * De 5 observations jusqu'au seuil de publication, une mesure continue (mise à prix, ratio, délai)
  * ne montre que la fourchette observée, minimum et maximum : jamais un point.
  */
-export const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
+const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
 /** Le taux de surenchère n'est publié que si au moins la moitié des annonces ont une réponse connue. */
-export const TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE = 0.5;
+const TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE = 0.5;
 
 const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
 // Entier positif ou nul ; entier strictement positif ; part entre 0 et 1 ; libellé non vide.
@@ -309,7 +312,7 @@ export const tribunalListingStatisticsResponseSchema = z
 
 export type TribunalListingStatisticsHistoryMonths = TribunalJudicialActivityHistoryMonths;
 export type TribunalListingStatisticsQuery = z.infer<typeof tribunalListingStatisticsQuerySchema>;
-export type TribunalListingStatisticsMetric = z.infer<typeof listingMetricSchema>;
+type TribunalListingStatisticsMetric = z.infer<typeof listingMetricSchema>;
 export type TribunalListingStatisticsResponse = z.infer<
   typeof tribunalListingStatisticsResponseSchema
 >;
@@ -468,7 +471,7 @@ export function buildTribunalListingStatistics(input: {
     return [price / estimated];
   });
   const knownPropertySales = observed.filter(
-    (sale) => normalizePropertyType(sale.propertyType) != null,
+    (sale) => listingPropertyClass(sale.propertyType) != null,
   );
   const occupation = buildOccupation(observed);
   const overbidResults = observed.map((sale) =>
@@ -520,7 +523,10 @@ export function buildTribunalListingStatistics(input: {
       overbidsUnknown: observed.length - knownOverbids.length,
       publishedToHearingDays: continuousMetric(publicationLeadDays),
       discoveryToHearingDays: continuousMetric(discoveryLeadDays),
-      hearingCalendar: hearingCalendar(upcoming, upcoming90End),
+      hearingCalendar: hearingCalendar(
+        upcoming.map((sale) => sale.saleAt),
+        upcoming90End,
+      ),
       communes: shareEntries(observed, (sale) => normalizeCityLabel(sale.city)),
       lawyers: lawyerShares(observed),
       upcomingListings: upcoming.slice(0, 100).map((sale) => ({
@@ -529,7 +535,7 @@ export function buildTribunalListingStatistics(input: {
         city: normalizeCityLabel(sale.city),
         saleAt: sale.saleAt.toISOString(),
         startingPriceEur: positiveNumber(sale.startingPriceEur),
-        occupationStatus: normalizeOccupationStatus(sale.occupancyStatus),
+        occupationStatus: occupancyClass(sale.occupancyStatus),
         hasVisit: hasVisitDate(sale.visitDates),
         sourceNames: sourceNames(sale),
       })),
@@ -555,7 +561,7 @@ export function buildTribunalListingStatistics(input: {
       limitations: [
         "La cohorte regroupe les annonces publiées ou découvertes par Immojudis pendant la période demandée; elle ne prétend pas à l’exhaustivité nationale.",
         "Les annonces sans date de publication fiable utilisent first_seen_at et sont comptées séparément.",
-        `Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF qui passent la porte de la bande publique de la fiche : au moins ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes comparables avec la méthode jackknife (${MARKET_GAP_BAND_MIN_COMPARABLES} sinon), échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, fourchette d’au plus ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur, rayon borné.`,
+        `Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF qui passent la porte de la bande publique de la fiche : au moins ${MARKET_JACKKNIFE_MIN_COMPARABLES} ventes comparables avec la méthode jackknife (${MARKET_NON_JACKKNIFE_MIN_COMPARABLES} sinon), échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, fourchette d’au plus ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur, rayon borné.`,
         "Les taux de surenchère reposent uniquement sur des occurrences factuelles explicites; l’absence de preuve reste inconnue. Le taux n’est publié que si au moins la moitié des annonces ont une réponse connue.",
         `Les médianes et les taux sont publiés à partir de ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE} observations ; de ${TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE} à ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE - 1}, seule la fourchette observée (minimum et maximum) est montrée. Les parts portent leur intervalle de Wilson à 95 % ; la répartition par type de bien exige ${TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE} observations.`,
         "Deux délais sont distincts : « publication → audience » part de la date de publication fournie par la source ; « première détection → audience » part du jour où Immojudis a repéré l’annonce pour la première fois, et peut donc être plus court.",
@@ -570,7 +576,7 @@ function buildOccupation(sales: ParsedSale[]) {
   const counts = new Map<"vacant" | "occupied" | "rented", number>();
   let knownSales = 0;
   for (const sale of sales) {
-    const status = normalizeOccupationStatus(sale.occupancyStatus);
+    const status = occupancyClass(sale.occupancyStatus);
     if (!status) continue;
     counts.set(status, (counts.get(status) ?? 0) + 1);
     knownSales += 1;
@@ -590,63 +596,23 @@ function buildOccupation(sales: ParsedSale[]) {
   };
 }
 
-export function normalizeOccupationStatus(
-  value: string | null | undefined,
-): "vacant" | "occupied" | "rented" | null {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (!normalized || normalized === "unknown") return null;
-  if (normalized === "vacant" || /inoccup|libre/.test(normalized)) return "vacant";
-  if (normalized === "rented" || normalized === "tenant_occupied" || /lou[eé]/.test(normalized)) {
-    return "rented";
-  }
-  if (
-    normalized === "occupied" ||
-    normalized === "owner_occupied" ||
-    normalized === "squatted" ||
-    /occup|proprietaire|propriétaire|squat/.test(normalized)
-  ) {
-    return "occupied";
-  }
-  return null;
-}
-
-export function hasVisitDate(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.some((item) => typeof item === "string" && publishedVisitDay(item) !== null)
-  );
-}
-
-function publishedVisitDay(value: string): string | null {
-  const parsed = publishedDay(value);
-  if (parsed) return parsed;
-  const match = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(value);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const candidate = new Date(Date.UTC(year, month - 1, day, 12));
-  return candidate.getUTCFullYear() === year &&
-    candidate.getUTCMonth() === month - 1 &&
-    candidate.getUTCDate() === day
-    ? candidate.toISOString().slice(0, 10)
-    : null;
-}
-
-function normalizePropertyType(
+/**
+ * Classe de type de bien des statistiques d'annonces : appartement, maison ou autre ; `null` pour un
+ * type inconnu. La déduplication l'emploie aussi : le vocabulaire des sources pour les parkings, les
+ * immeubles et les locaux n'est pas assez stable pour en faire un conflit d'identité.
+ */
+export function listingPropertyClass(
   value: string | null | undefined,
 ): "apartment" | "house" | "other" | null {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (!normalized || normalized === "unknown") return null;
-  if (/appartement|apartment|studio|loft/.test(normalized)) return "apartment";
-  if (/maison|house|villa|pavillon/.test(normalized)) return "house";
-  return "other";
+  const family = propertyFamily(value);
+  if (family === "unknown") return null;
+  return family === "apartment" || family === "house" ? family : "other";
 }
 
 function propertyTypeShares(sales: ParsedSale[]) {
   const counts = new Map<"apartment" | "house" | "other", number>();
   for (const sale of sales) {
-    const type = normalizePropertyType(sale.propertyType);
+    const type = listingPropertyClass(sale.propertyType);
     if (type) counts.set(type, (counts.get(type) ?? 0) + 1);
   }
   const denominator = [...counts.values()].reduce((total, count) => total + count, 0);
@@ -746,23 +712,6 @@ function normalizeLawyerName(value: string | null | undefined): string | null {
     return null;
   }
   return display;
-}
-
-function hearingCalendar(sales: ParsedSale[], end: Date) {
-  const counts = new Map<string, number>();
-  for (const sale of sales) {
-    if (sale.saleAt >= end) continue;
-    const date = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(sale.saleAt);
-    counts.set(date, (counts.get(date) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, salesCount]) => ({ date, sales: salesCount }));
 }
 
 function classifyOverbid(status: unknown, evidence: unknown): boolean | null {
@@ -909,15 +858,6 @@ function passesBandGate(estimate: TribunalListingStatisticsMarketEstimate | null
   });
 }
 
-function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const ordered = [...values].sort((left, right) => left - right);
-  const position = (ordered.length - 1) / 2;
-  const lower = ordered[Math.floor(position)]!;
-  const upper = ordered[Math.ceil(position)]!;
-  return lower + (upper - lower) * (position - Math.floor(position));
-}
-
 function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -926,27 +866,4 @@ function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const candidate = new Date(value);
   return Number.isFinite(candidate.getTime()) ? candidate : null;
-}
-
-function assertValidDate(value: Date, label: string): void {
-  if (!Number.isFinite(value.getTime())) throw new Error(`${label} must be a valid date.`);
-}
-
-function addUtcCalendarMonths(value: Date, months: number): Date {
-  const target = new Date(
-    Date.UTC(
-      value.getUTCFullYear(),
-      value.getUTCMonth() + months,
-      1,
-      value.getUTCHours(),
-      value.getUTCMinutes(),
-      value.getUTCSeconds(),
-      value.getUTCMilliseconds(),
-    ),
-  );
-  const lastDay = new Date(
-    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  target.setUTCDate(Math.min(value.getUTCDate(), lastDay));
-  return target;
 }

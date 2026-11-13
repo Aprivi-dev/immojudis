@@ -14,9 +14,9 @@ import { PageTitle } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useHasHydrated } from "@/hooks/use-has-hydrated";
-import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
   TribunalJudicialActivityHistoryMonths,
@@ -25,7 +25,9 @@ import type {
 } from "@/lib/tribunal-judicial-activity";
 import * as queryKeys from "@/lib/query-keys";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
-import { formatWholeEuros as formatCurrency } from "@/lib/format-euros";
+import { formatDate } from "@/lib/format/dates";
+import { formatNumber, formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -48,13 +50,7 @@ export function TribunalJudicialActivityExplorer({
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
-  const planQuery = useQuery({
-    queryKey: queryKeys.tribunalJudicialActivityPlan(session?.user.id),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(session) && !authLoading,
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
+  const planQuery = useAccessPlanQuery(session?.user.id);
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
     queryKey: queryKeys.tribunalJudicialActivityDirectory(historyMonths),
@@ -333,7 +329,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             formatNumber(national.coverage.trackedCourts)
           }
           detail={
-            formatPercent(national.coverage.rate) +
+            formatShareAsPercent(national.coverage.rate) +
             " des tribunaux suivis ont à la fois un prix et un délai historiques publiables. Ce ratio ne mesure pas la couverture nationale."
           }
         />
@@ -572,7 +568,7 @@ function TribunalProfile({
           <ProfileMetric
             icon={CalendarDays}
             label="Audience suivante suivie"
-            value={formatDate(tribunal.activity.nextSaleAt)}
+            value={formatDate(tribunal.activity.nextSaleAt, "Aucune date")}
             detail={`${formatNumber(tribunal.activity.upcomingSales90Days)} dans les 90 prochains jours`}
           />
           <ProfileMetric
@@ -685,12 +681,12 @@ function ExplorerError({ onRetry }: { onRetry: () => void }) {
 }
 
 function formatCurrencyMedian(metric: TribunalJudicialActivityRangeMetric): string {
-  return metric.status === "published" ? formatCurrency(metric.p50) : "Non publié";
+  return metric.status === "published" ? formatPrice(metric.p50) : "Non publié";
 }
 
 function formatCurrencyRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
-    ? `Fourchette centrale ${formatCurrency(metric.p25)} – ${formatCurrency(metric.p75)}`
+    ? `Fourchette centrale ${formatPrice(metric.p25)} – ${formatPrice(metric.p75)}`
     : `${metric.sampleSize} annonces · minimum requis : ${TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE}`;
 }
 
@@ -707,7 +703,7 @@ function formatDaysRange(metric: TribunalJudicialActivityRangeMetric): string {
 function formatPercentMetric(
   metric: TribunalJudicialActivityResponse["activity"]["visitCoverage"],
 ): string {
-  return metric.status === "published" ? formatPercent(metric.value) : "Non publié";
+  return metric.status === "published" ? formatShareAsPercent(metric.value) : "Non publié";
 }
 
 function sampleLabel(
@@ -721,42 +717,6 @@ function sampleLabel(
     (metric.sampleSize > 1 ? "s" : "") +
     " retenue" +
     (metric.sampleSize > 1 ? "s" : "")
-  );
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
-}
-
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "percent",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "Aucune date";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(new Date(value));
-}
-
-function propertyTypeLabel(value: string): string {
-  return (
-    {
-      apartment: "Appartement",
-      house: "Maison",
-      commercial: "Local commercial",
-      building: "Immeuble",
-      land: "Terrain",
-      parking: "Stationnement",
-      mixed: "Bien mixte",
-      other: "Autre",
-    }[value] ?? value
   );
 }
 

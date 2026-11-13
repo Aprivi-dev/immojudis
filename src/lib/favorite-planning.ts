@@ -1,5 +1,6 @@
 import type { FavoriteSale } from "@/lib/favorites";
-import { calendarDaysBetween, parisDateKey } from "@/lib/sale-countdown";
+import { calendarDaysBetween } from "@/lib/calendar-day";
+import { parisDateKey } from "@/lib/paris-time";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleHearingTime } from "@/lib/seo";
 

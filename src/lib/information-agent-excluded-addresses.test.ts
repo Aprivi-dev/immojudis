@@ -5,7 +5,7 @@ import {
   isInformationAgentExcludedSourceUrl,
   isInformationAgentExcludedAddress,
 } from "@/lib/information-agent/excluded-addresses";
-import { discoverInformationAgentContacts } from "@/lib/information-agent";
+import { discoverInformationAgentContacts } from "@/lib/information-agent/contact-resolution";
 import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/integrations/supabase/client.server", () => ({

@@ -1,11 +1,14 @@
-"""Commune name normalisation, mirrored by ``src/lib/commune-names.ts``."""
+"""Commune name normalisation, mirrored by ``src/lib/commune-names.ts``.
+
+Shared cases: ``tests/fixtures/commune_names_cases.json``.
+"""
 
 from __future__ import annotations
 
 import re
-import unicodedata
 
-_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+from src.text_folding import ascii_alnum_words, strip_accents
+
 _PREFIXES = (("st ", "saint "), ("ste ", "sainte "))
 
 
@@ -17,10 +20,7 @@ def normalize_commune_name(value: str | None) -> str:
     """
     if not value:
         return ""
-    decomposed = unicodedata.normalize("NFKD", value)
-    ascii_only = "".join(char for char in decomposed if not unicodedata.combining(char))
-    words = _NON_ALNUM.sub(" ", ascii_only.lower()).split()
-    normalized = " ".join(words)
+    normalized = ascii_alnum_words(strip_accents(value).lower())
     for short, long in _PREFIXES:
         if normalized.startswith(short):
             normalized = long + normalized[len(short) :]

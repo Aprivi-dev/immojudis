@@ -454,7 +454,7 @@ function renderWorkspace() {
   return client;
 }
 
-function readiness(queueTotal: number) {
+function readiness(total: number) {
   return {
     policy: {
       enforcementEnabled: true,
@@ -467,10 +467,11 @@ function readiness(queueTotal: number) {
     activeSales: 5,
     pendingEvaluations: 0,
     canEnableEnforcement: true,
-    queueTotal,
-    queueOffset: 0,
-    queueLimit: 50,
-    classCounts: { A: queueTotal, B: 0, C: 0, D: 0 },
+    total,
+    offset: 0,
+    limit: 50,
+    hasMore: false,
+    classCounts: { A: total, B: 0, C: 0, D: 0 },
     items: [
       {
         id: SALE_ID,

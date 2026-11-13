@@ -1,4 +1,4 @@
-export const CLOUD_COLLECTION_SOURCES = ["petites_affiches", "cessions_etat"] as const;
+const CLOUD_COLLECTION_SOURCES = ["petites_affiches", "cessions_etat"] as const;
 
 export function collectionTransportNote(source: string): string | null {
   if (source === "all") {

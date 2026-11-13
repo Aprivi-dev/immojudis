@@ -9,8 +9,8 @@ import {
 } from "@/lib/listing-completeness-ranking";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import type { AuctionSale } from "@/lib/types";
-import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
 import { parseTimestamp as time } from "@/lib/timestamp";
+import { byEvaluationDate, recordBatchFailure } from "@/lib/batch-pass";
 
 /**
  * Évalue la complétude des annonces en ligne et enregistre le palier de classement de /sales
@@ -32,16 +32,15 @@ const PAGE_SIZE = 1000;
 const MAX_ONLINE_SALES = 20_000;
 /** Lignes complètes lues par requête (une ligne pèse plusieurs dizaines de ko). */
 const READ_CHUNK_SIZE = 25;
-const MAX_REPORTED_ERRORS = 5;
 /** Part d'évaluations tentées en échec à partir de laquelle la passe est déclarée en échec. */
-export const COMPLETENESS_FAILURE_RATE_THRESHOLD = 0.2;
+const COMPLETENESS_FAILURE_RATE_THRESHOLD = 0.2;
 /**
  * Une évaluation plus ancienne est refaite: la fiche lit aussi des tables liées (documents,
  * présence des sources…) dont un changement ne modifie pas `auction_sales.updated_at`.
  * Capacité: 24 passages par jour x 300 ventes = 7 200 évaluations, pour environ 1 950 ventes en
  * ligne (une réévaluation quotidienne de chacune, plus les nouvelles et les modifiées).
  */
-export const LISTING_COMPLETENESS_REFRESH_MS = 24 * 3_600_000;
+const LISTING_COMPLETENESS_REFRESH_MS = 24 * 3_600_000;
 
 export type OnlineSale = { id: string; updatedAt: string | null };
 export type StoredEvaluation = {
@@ -98,11 +97,6 @@ export function pickPendingSales(
       aged.push({ id: sale.id, evaluatedAt });
     }
   }
-
-  const byEvaluationDate = (
-    left: { id: string; evaluatedAt: number },
-    right: { id: string; evaluatedAt: number },
-  ) => left.evaluatedAt - right.evaluatedAt || left.id.localeCompare(right.id);
 
   return [
     ...missing
@@ -213,10 +207,7 @@ export async function runListingCompletenessBatch({
     remaining: pending.length,
     errors: [],
   };
-  const fail = (count: number, error: unknown) => {
-    result.failed += count;
-    if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(errorMessage(error));
-  };
+  const fail = (count: number, error: unknown) => recordBatchFailure(result, count, error);
 
   for (let index = 0; index < selected.length; index += READ_CHUNK_SIZE) {
     if (Date.now() - startedAt > timeBudgetMs) break;

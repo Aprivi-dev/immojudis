@@ -20,7 +20,7 @@ import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/o
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import type { PlanEntitlements } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
@@ -96,13 +96,13 @@ export function InvestorOnboarding({
 
   const criteria = firstSearchToUrl(search);
   const alertSearch = validateSalesSearch(criteria);
-  // L'alerte gratuite accepte des critères publics : un secteur saisi en texte libre (ni numéro de
-  // département ni code postal) n'en est pas un, et sans aucun critère elle préviendrait de tout.
+  // L'alerte gratuite accepte des critères publics : un secteur saisi en texte libre (ni département
+  // ni code postal) n'en est pas un, et sans aucun critère elle préviendrait de tout.
   const alertUnavailable: string | null =
     countActiveSearchFilters(alertSearch) === 0
       ? "Indiquez un secteur, un type de bien ou une mise à prix maximale pour créer une alerte."
       : hasAnalysisAccess === false && alertSearch.query
-        ? "L’alerte gratuite suit un département : indiquez son numéro (ex. 33) ou un code postal pour la créer."
+        ? "L’alerte gratuite suit un département : indiquez son nom, son numéro (ex. 33) ou un code postal pour la créer."
         : null;
   const alertWanted = wantsAlert && alertUnavailable === null;
   // Pendant l'essai, la première alerte est quotidienne ; après l'essai, elle repasse en hebdomadaire

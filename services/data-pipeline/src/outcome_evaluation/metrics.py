@@ -166,10 +166,6 @@ def pinball_loss(actual: float, predicted: float, quantile: float) -> float:
     return max(quantile * residual, (quantile - 1.0) * residual)
 
 
-def expected_calibration_error(confidences: Sequence[float], correct: Sequence[int], bins: int = 10) -> float:
-    return calibration_error_summary(confidences, correct, bins)[0]
-
-
 def calibration_error_summary(
     confidences: Sequence[float], correct: Sequence[int], bins: int = 10
 ) -> tuple[float, float]:

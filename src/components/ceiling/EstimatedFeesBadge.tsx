@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/primitives";
 import type { EstimatedFee } from "@/lib/bid-ceiling-engine";
 
 /** Le texte de la pastille : une icône et ces mots, jamais la couleur seule. */
-export const ESTIMATED_FEES_TEXT = "Frais estimés, à confirmer";
+const ESTIMATED_FEES_TEXT = "Frais estimés, à confirmer";
 
 /**
  * La pastille « Frais estimés, à confirmer » : un poste important du calcul (frais préalables,

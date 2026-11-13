@@ -10,11 +10,9 @@ export function catalogPlaceholder<T>(
 /** Access scope of a signed-out visitor: the one the server renders and dehydrates. */
 export const ANONYMOUS_PREVIEW_SCOPE = "anonymous:preview";
 
-/** React Query keys of the catalogue list and count, shared by server and client. */
-export function salesSearchQueryKey(signature: string, scope: string | null) {
-  return ["sales-search", signature, scope] as const;
-}
-
-export function salesSearchCountQueryKey(signature: string, scope: string | null) {
-  return ["sales-search-count", signature, scope] as const;
-}
+// Clés de la liste et du total du catalogue (serveur et navigateur), sous leur ancien nom : elles
+// viennent de la fabrique unique `@/lib/query-keys`.
+export {
+  salesSearch as salesSearchQueryKey,
+  salesSearchCount as salesSearchCountQueryKey,
+} from "@/lib/query-keys";

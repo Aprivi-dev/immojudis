@@ -1,25 +1,47 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc },
 }));
 
-import {
-  clientIpFromRequest,
-  clientNetworkKey,
-  enforceIpRateLimit,
-  enforceUserRateLimit,
-  hashClientIp,
-  ipRateLimitTarget,
-  ipRateLimiterStats,
-  resetIpRateLimiterStats,
-  secondsUntilWindowEnds,
-  tryConsumeUserRateLimit,
-  UNKNOWN_CLIENT_LIMIT,
-} from "./rate-limit";
+// Chaque test part d'un module neuf : les compteurs de l'instance (journalisés par le limiteur par
+// adresse) repartent de zéro. Les classes d'erreur sont relues avec lui, pour `toBeInstanceOf`.
+let RateLimitError: typeof import("@/lib/api-errors").RateLimitError;
+let apiError: typeof import("@/lib/api-observability").apiError;
+let apiJson: typeof import("@/lib/api-observability").apiJson;
+let createApiRequestContext: typeof import("@/lib/api-observability").createApiRequestContext;
+let enforceIpRateLimit: typeof import("./rate-limit").enforceIpRateLimit;
+let enforceUserRateLimit: typeof import("./rate-limit").enforceUserRateLimit;
+let secondsUntilWindowEnds: typeof import("./rate-limit").secondsUntilWindowEnds;
+let tryConsumeUserRateLimit: typeof import("./rate-limit").tryConsumeUserRateLimit;
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ RateLimitError } = await import("@/lib/api-errors"));
+  ({ apiError, apiJson, createApiRequestContext } = await import("@/lib/api-observability"));
+  ({ enforceIpRateLimit, enforceUserRateLimit, secondsUntilWindowEnds, tryConsumeUserRateLimit } =
+    await import("./rate-limit"));
+});
+afterEach(() => vi.unstubAllEnvs());
+
+/** Quota d'une requête sans adresse exploitable (`UNKNOWN_CLIENT_LIMIT` du module). */
+const UNKNOWN_CLIENT_LIMIT = 10;
+
+/** Empreinte d'adresse envoyée à la base pour une requête portant ces en-têtes. */
+async function ipHashFor(headers: Record<string, string>, bucketKey = "k"): Promise<string> {
+  mocks.rpc.mockResolvedValue({ data: 1, error: null });
+  const before = mocks.rpc.mock.calls.length;
+  await enforceIpRateLimit({
+    request: new Request("https://example.test", { headers }),
+    bucketKey,
+    limit: 60,
+    windowSeconds: 60,
+  });
+  return (mocks.rpc.mock.calls[before][1] as { p_ip_hash: string }).p_ip_hash;
+}
+
+const ipHash = (ip: string) => ipHashFor({ "x-real-ip": ip });
 
 /** Fixed-window counter shared by both RPCs, like the SQL functions. */
 function installCounter() {
@@ -45,7 +67,6 @@ const policy = { userId: "user-1", bucketKey: "market-estimate", limit: 30, wind
 describe("rate limiting", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    resetIpRateLimiterStats();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
@@ -58,8 +79,12 @@ describe("rate limiting", () => {
     const failure = await enforceUserRateLimit(policy).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(RateLimitError);
-    expect((failure as RateLimitError).retryAfterSeconds).toBeGreaterThanOrEqual(1);
-    expect((failure as RateLimitError).retryAfterSeconds).toBeLessThanOrEqual(60);
+    expect(
+      (failure as InstanceType<typeof RateLimitError>).retryAfterSeconds,
+    ).toBeGreaterThanOrEqual(1);
+    expect((failure as InstanceType<typeof RateLimitError>).retryAfterSeconds).toBeLessThanOrEqual(
+      60,
+    );
   });
 
   it("keeps buckets independent per user and per bucket key", async () => {
@@ -133,7 +158,7 @@ describe("rate limiting", () => {
         }),
         expect.objectContaining({ failures: 2, calls: 2 }),
       ]);
-      expect(ipRateLimiterStats()).toMatchObject({ calls: 2, failures: 2, unidentified: 0 });
+      expect(logged()[1]).toMatchObject({ calls: 2, failures: 2, unidentified: 0 });
       // Ni l'adresse ni son empreinte ne sont journalisées.
       expect(JSON.stringify(logged())).not.toContain("198.51.100.4");
     });
@@ -158,7 +183,10 @@ describe("rate limiting", () => {
       await expect(enforceIpRateLimit(input)).rejects.toBeInstanceOf(RateLimitError);
 
       expect(console.error).not.toHaveBeenCalled();
-      expect(ipRateLimiterStats()).toMatchObject({ calls: 2, failures: 0 });
+      // L'échec suivant porte les compteurs : deux appels avant lui, aucun échec.
+      mocks.rpc.mockRejectedValue(new Error("network down"));
+      await enforceIpRateLimit(input);
+      expect(logged()[0]).toMatchObject({ calls: 3, failures: 1 });
     });
 
     it("bounds the length of the logged message", async () => {
@@ -186,7 +214,6 @@ describe("rate limiting", () => {
 
       expect(sent()[0]).toMatchObject({ p_limit: UNKNOWN_CLIENT_LIMIT });
       expect(sent()[0].p_bucket_key).toMatch(/^catalogue\.preview\.unknown\.[0-9a-f]{16}$/);
-      expect(UNKNOWN_CLIENT_LIMIT).toBeLessThanOrEqual(10);
     });
 
     it("never gets more than the policy allows", async () => {
@@ -276,56 +303,53 @@ describe("rate limiting", () => {
         event: "ip_unidentified",
         bucket: "k",
       });
-      expect(ipRateLimiterStats().unidentified).toBe(200);
+      expect(lines[2]).toMatchObject({ unidentified: 200, calls: 200 });
     });
   });
 
-  it("resolves the client IP from platform headers and hashes it with a salt", () => {
-    const direct = new Request("https://example.test", {
-      headers: { "x-real-ip": "198.51.100.4" },
-    });
-    const forwarded = new Request("https://example.test", {
-      headers: { "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
-    });
-    expect(clientIpFromRequest(direct)).toBe("198.51.100.4");
-    expect(clientIpFromRequest(forwarded)).toBe("198.51.100.7");
-    expect(clientIpFromRequest(new Request("https://example.test"))).toBe("unknown");
-    expect(hashClientIp("198.51.100.4", "a")).not.toBe(hashClientIp("198.51.100.4", "b"));
+  it("resolves the client IP from platform headers and hashes it with a salt", async () => {
+    const direct = await ipHashFor({ "x-real-ip": "198.51.100.4" });
+    expect(await ipHashFor({ "x-forwarded-for": "198.51.100.4, 10.0.0.1" })).toBe(direct);
+    expect(await ipHashFor({ "x-forwarded-for": "198.51.100.7, 10.0.0.1" })).not.toBe(direct);
+    // Sans adresse : le seau bas des requêtes non identifiées.
+    await ipHashFor({});
+    expect((mocks.rpc.mock.calls.at(-1)?.[1] as { p_bucket_key: string }).p_bucket_key).toMatch(
+      /^k\.unknown\./,
+    );
+
+    vi.stubEnv("RATE_LIMIT_IP_SALT", "a");
+    const saltA = await ipHash("198.51.100.4");
+    vi.stubEnv("RATE_LIMIT_IP_SALT", "b");
+    expect(await ipHash("198.51.100.4")).not.toBe(saltA);
+    // Un sel vide vaut le sel par défaut.
+    vi.stubEnv("RATE_LIMIT_IP_SALT", "  ");
+    expect(await ipHash("198.51.100.4")).toBe(direct);
   });
 
-  it("hashes an IPv6 address by its /64 prefix: the interface identifier does not make a new bucket", () => {
-    const salt = "s";
-    const hash = (ip: string) => hashClientIp(ip, salt);
+  it("hashes an IPv6 address by its /64 prefix: the interface identifier does not make a new bucket", async () => {
     // Même /64, 64 bits de poids faible différents (adresses « temporaires » de la vie courante).
-    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:db8:abcd:12:ffff:eeee:dddd:cccc"));
-    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:0db8:ABCD:0012:0:0:0:2"));
-    expect(hash("2001:db8:abcd:12::1")).toBe(hash("2001:db8:abcd:12::1%eth0"));
+    const base = await ipHash("2001:db8:abcd:12::1");
+    expect(await ipHash("2001:db8:abcd:12:ffff:eeee:dddd:cccc")).toBe(base);
+    expect(await ipHash("2001:0db8:ABCD:0012:0:0:0:2")).toBe(base);
+    expect(await ipHash("2001:db8:abcd:12::1%eth0")).toBe(base);
     // Un autre /64 (même /48) a son propre seau.
-    expect(hash("2001:db8:abcd:12::1")).not.toBe(hash("2001:db8:abcd:13::1"));
-    expect(hash("2001:db8:abcd:12::1")).not.toBe(hash("2001:db8:abce:12::1"));
+    expect(await ipHash("2001:db8:abcd:13::1")).not.toBe(base);
+    expect(await ipHash("2001:db8:abce:12::1")).not.toBe(base);
     // Adresses courtes et IPv4 incorporée.
-    expect(clientNetworkKey("::1")).toBe("0:0:0:0::/64");
-    expect(clientNetworkKey("64:ff9b::192.0.2.1")).toBe("64:ff9b:0:0::/64");
-    expect(clientNetworkKey("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+    expect(await ipHash("::1")).toBe(await ipHash("0:0:0:0:1:2:3:4"));
+    expect(await ipHash("64:ff9b::192.0.2.1")).toBe(await ipHash("64:ff9b::1"));
+    expect(await ipHash("2001:db8:1:2:3:4:5:6")).toBe(await ipHash("2001:db8:1:2::"));
   });
 
-  it("keeps an IPv4 address whole, maps IPv4-in-IPv6 to it, and leaves other values alone", () => {
-    expect(clientNetworkKey("198.51.100.4")).toBe("198.51.100.4");
-    expect(clientNetworkKey("::ffff:198.51.100.4")).toBe("198.51.100.4");
-    expect(clientNetworkKey("unknown")).toBe("unknown");
-    expect(hashClientIp("::ffff:198.51.100.4", "a")).toBe(hashClientIp("198.51.100.4", "a"));
-    expect(hashClientIp("198.51.100.4", "a")).not.toBe(hashClientIp("198.51.100.5", "a"));
+  it("keeps an IPv4 address whole, maps IPv4-in-IPv6 to it, and leaves other values alone", async () => {
+    expect(await ipHash("::ffff:198.51.100.4")).toBe(await ipHash("198.51.100.4"));
+    expect(await ipHash("198.51.100.4")).not.toBe(await ipHash("198.51.100.5"));
+    expect(await ipHash("pas-une-adresse")).not.toBe(await ipHash("pas-une-adresse-2"));
   });
 
-  it("gives every address of an IPv6 /64 the same rate-limit bucket", () => {
-    const target = (ip: string) =>
-      ipRateLimitTarget(
-        new Request("https://example.test", { headers: { "x-real-ip": ip } }),
-        "k",
-        60,
-      );
-    expect(target("2001:db8::1").ipHash).toBe(target("2001:db8::dead:beef").ipHash);
-    expect(target("2001:db8::1").bucketKey).toBe("k");
+  it("gives every address of an IPv6 /64 the same rate-limit bucket", async () => {
+    expect(await ipHash("2001:db8::1")).toBe(await ipHash("2001:db8::dead:beef"));
+    expect((mocks.rpc.mock.calls.at(-1)?.[1] as { p_bucket_key: string }).p_bucket_key).toBe("k");
   });
 
   it("computes Retry-After from the end of the fixed window", () => {

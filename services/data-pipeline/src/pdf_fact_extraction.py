@@ -1,39 +1,29 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import tempfile
-from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from urllib.parse import urlparse
 
 from src.config import PDF_TEXTS_DIR
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.surface_reasoning import (
     ExtractedAsset,
     apply_surface_reasoning_to_sale,
     extract_surface_facts_from_text,
 )
-from src.models import AuctionSale
+from src.french_dates import MONTH_PATTERN
+from src.models import AuctionSale, add_quality_flag
 from src.normalize import (
     clean_text,
-    extract_bedrooms_count_from_text,
-    extract_rooms_count_from_text,
     normalize_property_type,
-    normalize_status,
     parse_french_datetime,
     parse_price,
     source_sale_timezone,
-    strip_accents,
 )
 from src.pdf_address import apply_pdf_address
-from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
-    _canonical_document_type,
-    _normalize_document_classifier_text,
-    _sale_storage_id,
-)
+from src.pdf_document_types import canonical_document_type, normalize_document_classifier_text
 from src.pdf_fact_scope import (
     _PDF_SCALAR_CANDIDATE_KEYS,
     _aggregate_pdf_count_candidates,
@@ -47,28 +37,14 @@ from src.pdf_fact_scope import (
     _pdf_has_multiple_units,
     _pdf_lot_scope_labels,
     _pdf_record_candidate_projection,
-    _pdf_record_fact_projection,
     _pdf_scalar_candidates_from_documents,
     _pdf_scalar_scope_is_ambiguous,
     _pdf_text_chunks,
-)
-from src.pdf_fact_scope import (
-    _document_land_surface_candidates as _scope_document_land_surface_candidates,
-)
-from src.pdf_fact_scope import (
-    _document_surface_candidates as _scope_document_surface_candidates,
-)
-from src.pdf_fact_scope import (
-    _energy_diagnostic_candidates_from_documents as _scope_energy_diagnostic_candidates_from_documents,
-)
-from src.pdf_fact_scope import (
-    _energy_diagnostics_are_ambiguous as _scope_energy_diagnostics_are_ambiguous,
-)
-from src.pdf_fact_scope import (
-    _extract_occupancy_candidates as _scope_extract_occupancy_candidates,
-)
-from src.pdf_fact_scope import (
-    _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
+    energy_diagnostic_candidates_from_documents,
+    energy_diagnostics_are_ambiguous,
+    extract_occupancy_candidates,
+    pdf_record_fact_projection,
+    pdf_surface_candidates_with_provenance,
 )
 from src.pdf_occupancy import (
     apply_pdf_occupancy,
@@ -77,23 +53,20 @@ from src.pdf_occupancy import (
     pdf_occupancy_status,
 )
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
-from src.pdf_sale_date_guard import reject_past_pdf_sale_date
-from src.pdf_starting_price import _extract_starting_price_with_evidence  # noqa: F401  (re-exported)
-from src.pdf_surface_patterns import (  # noqa: F401  (re-exported)
-    _cadastral_units_to_square_meters,
+from src.pdf_sale_date_guard import assign_pdf_sale_date
+from src.pdf_starting_price import _extract_starting_price_with_evidence
+from src.pdf_surface_patterns import (
     _extract_land_surface_candidates_with_evidence,
     _extract_land_surface_with_evidence,
-    _extract_surface,
     _extract_surface_candidates_with_evidence,
     _extract_surface_with_evidence,
-    _has_land_surface_context,
     _is_land_surface_evidence,
-    _is_surface_false_positive,
-    _land_surface_match_is_built,
-    _land_unit_candidate_rank,
     _surface_measurement_scope,
 )
 from src.pdf_tribunal import apply_pdf_tribunal
+from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
+from src.sale_local_files import sale_storage_id
+from src.text_folding import strip_accents
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -159,7 +132,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     occupancy_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, occupancy_candidates, field="occupancy") and (
         "multi_lot_sale" in sale.quality_flags or not occupancy_statements_agree(occupancy_candidates)
     )
-    energy_ambiguous = _energy_diagnostics_are_ambiguous(pdf_texts, energy_candidates, scope_text=scope_text)
+    energy_ambiguous = energy_diagnostics_are_ambiguous(pdf_texts, energy_candidates, scope_text=scope_text)
     guarded_fields = [
         field
         for field, guarded in (
@@ -235,15 +208,15 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         # State page announces a new procedure (« Procédure à venir »): that deadline belongs to an earlier round.
         listing = sale.raw_payload.get("state_listing")
         pending = isinstance(listing, dict) and listing.get("reason") == "procedure_pending"
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
     if sale.sale_date is None:
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
         )
         if sale_date:
-            _assign_pdf_sale_date(sale, sale_date)
+            assign_pdf_sale_date(sale, sale_date)
     if sale.sale_date is None and offer_deadline:
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     starting_price = _extract_starting_price_from_documents(pdf_texts, tender=sale.source_name in OFFER_PROCEDURE_SOURCES)
     if starting_price:
         _reconcile_pdf_starting_price(sale, starting_price)
@@ -255,7 +228,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         if visit_dates:
             sale.visit_dates = list(visit_dates["visit_dates"])
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
-            _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
+            pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
     apply_pdf_address(sale, pdf_texts)
     apply_pdf_tribunal(sale, pdf_texts)
     # The per-document extractor also handles plain string inputs. Do not fall
@@ -267,7 +240,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         energy_diagnostics = energy_candidates[0]
     if energy_diagnostics:
         sale.raw_payload["pdf_energy_diagnostics"] = energy_diagnostics
-        _pdf_record_fact_projection(sale, ["raw_payload:pdf_energy_diagnostics"], candidate=energy_diagnostics)
+        pdf_record_fact_projection(sale, ["raw_payload:pdf_energy_diagnostics"], candidate=energy_diagnostics)
     elif complete_texts:
         # A fresh, complete read that no longer contains a diagnostic must not
         # keep projecting a class from an older PDF revision.
@@ -297,7 +270,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             context=combined,
             source="pdf",
         )
-        _pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), evidence=sale.surface_evidence or combined[:300], payload_keys=("surface_extraction", "surface_analysis"))
+        pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), evidence=sale.surface_evidence or combined[:300], payload_keys=("surface_extraction", "surface_analysis"))
 
     enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
     current_raw = sale.raw_text or ""
@@ -312,7 +285,7 @@ def _pdf_surface_candidates_with_provenance(
     *,
     land: bool = False,
 ) -> list[dict[str, object]]:
-    return _scope_pdf_surface_candidates_with_provenance(
+    return pdf_surface_candidates_with_provenance(
         pdf_texts,
         surface_extractor=_extract_surface_candidates_with_evidence,
         land_surface_extractor=_extract_land_surface_candidates_with_evidence,
@@ -323,24 +296,16 @@ def _pdf_surface_candidates_with_provenance(
 def _extract_occupancy_candidates(
     text: str, *, chunk: dict[str, object] | None = None
 ) -> list[dict[str, object]]:
-    return _scope_extract_occupancy_candidates(
+    return extract_occupancy_candidates(
         text, chunk=chunk, occupancy_extractor=_extract_occupancy_status
     )
 
 def _energy_diagnostic_candidates_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
 ) -> list[dict[str, object]]:
-    return _scope_energy_diagnostic_candidates_from_documents(
+    return energy_diagnostic_candidates_from_documents(
         pdf_texts, diagnostic_extractor=_extract_energy_diagnostics_with_evidence
     )
-
-def _energy_diagnostics_are_ambiguous(
-    pdf_texts: list[dict[str, object]] | list[str],
-    candidates: list[dict[str, object]],
-    *,
-    scope_text: str | None = None,
-) -> bool:
-    return _scope_energy_diagnostics_are_ambiguous(pdf_texts, candidates, scope_text=scope_text)
 
 def _extract_document_surface_assets(
     pdf_texts: list[dict[str, object]] | list[str],
@@ -463,7 +428,7 @@ def _extract_starting_price_from_documents(
         if not isinstance(item, dict):
             continue
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -525,22 +490,11 @@ def _starting_price_document_rank(item: dict[str, object]) -> tuple[int, float, 
     page_number = int(item.get("page_number") or 0)
     return document_score, page_confidence, page_number
 
-def _document_surface_candidates(item: dict[str, object], text: str) -> list[dict[str, object]]:
-    return _scope_document_surface_candidates(
-        item, text, surface_extractor=_extract_surface_candidates_with_evidence,
-        surface_scope_extractor=_surface_measurement_scope,
-    )
-
-def _document_land_surface_candidates(item: dict[str, object], text: str) -> list[dict[str, object]]:
-    return _scope_document_land_surface_candidates(
-        item, text, land_surface_extractor=_extract_land_surface_candidates_with_evidence
-    )
-
 def _extract_energy_diagnostics_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
 ) -> dict[str, object] | None:
     candidates = _energy_diagnostic_candidates_from_documents(pdf_texts)
-    if not candidates or _energy_diagnostics_are_ambiguous(pdf_texts, candidates):
+    if not candidates or energy_diagnostics_are_ambiguous(pdf_texts, candidates):
         return None
     candidates.sort(key=_energy_diagnostic_rank, reverse=True)
     return candidates[0]
@@ -565,7 +519,7 @@ def _extract_visit_dates_from_documents(pdf_texts: list[dict[str, object]] | lis
             continue
         item_candidates: list[dict[str, object]] = []
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -619,7 +573,7 @@ def _extract_sale_date_from_documents(
         if not isinstance(item, dict):
             continue
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -724,8 +678,7 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
     surface_scope = clean_text(surface.get("surface_scope"))
     if surface_scope == "partial":
         sale.surface_scope = "partial"
-        if "partial_surface_measurement" not in sale.quality_flags:
-            sale.quality_flags.append("partial_surface_measurement")
+        add_quality_flag(sale.quality_flags, "partial_surface_measurement")
     sale.surface_source = sale.surface_source or "pdf"
     sale.surface_confidence = sale.surface_confidence or (
         Decimal("0.45") if surface_scope == "partial" else Decimal("0.75")
@@ -746,7 +699,7 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
         "aggregate_sources": surface.get("aggregate_sources") or [],
         "evidence": evidence,
     }
-    _pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), candidate=surface, payload_keys=("surface_extraction",))
+    pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), candidate=surface, payload_keys=("surface_extraction",))
 
 def _assign_pdf_land_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
     value = surface["value"]
@@ -776,7 +729,7 @@ def _assign_pdf_land_surface(sale: AuctionSale, surface: dict[str, object]) -> N
     sale.raw_payload["land_surface_extraction"] = extraction
     if sale.property_type == "land":
         sale.raw_payload["surface_extraction"] = {**extraction, "kind": "surface_m2"}
-    _pdf_record_fact_projection(sale, ("land_surface_m2", "surface_m2", "surface_source", "surface_evidence"), candidate=surface, payload_keys=("land_surface_extraction", "surface_extraction"))
+    pdf_record_fact_projection(sale, ("land_surface_m2", "surface_m2", "surface_source", "surface_evidence"), candidate=surface, payload_keys=("land_surface_extraction", "surface_extraction"))
 
 def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, object]) -> None:
     value = extraction.get("value")
@@ -794,12 +747,10 @@ def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, objec
     elif _should_replace_starting_price_with_document(source_value, value):
         sale.starting_price_eur = value
         status = "resolved"
-        if "starting_price_conflict_resolved" not in sale.quality_flags:
-            sale.quality_flags.append("starting_price_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "starting_price_conflict_resolved")
     else:
         status = "conflict_unresolved"
-        if "starting_price_conflict" not in sale.quality_flags:
-            sale.quality_flags.append("starting_price_conflict")
+        add_quality_flag(sale.quality_flags, "starting_price_conflict")
 
     sale.raw_payload["starting_price_extraction"] = {
         "version": DOCUMENT_FACTS_VERSION,
@@ -820,37 +771,16 @@ def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, objec
         "evidence": clean_text(extraction.get("evidence")),
     }
     if status in {"extracted", "resolved"}:
-        _pdf_record_fact_projection(sale, ["starting_price_eur"], candidate=extraction, payload_keys=("starting_price_extraction",))
+        pdf_record_fact_projection(sale, ["starting_price_eur"], candidate=extraction, payload_keys=("starting_price_extraction",))
 
 def _should_replace_starting_price_with_document(current: Decimal, documented: Decimal) -> bool:
     if current <= 0:
         return True
     return current < Decimal("1000") and documented >= Decimal("3000") and documented / current >= Decimal("20")
 
-def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
-    parsed = sale_date.get("value")
-    if not isinstance(parsed, datetime) or reject_past_pdf_sale_date(sale, parsed, sale_date):
-        return
-    sale.sale_date = parsed
-    sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
-    _pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
-    if sale.status in {"", "unknown"} or (sale_date.get("offer_deadline_expired") and sale.status in {"active", "upcoming"}):
-        previous_status = sale.status or "unknown"
-        projected_status = normalize_status(None, parsed)
-        sale.status = projected_status
-        if projected_status != previous_status:
-            _pdf_record_fact_projection(
-                sale,
-                ["status"],
-                candidate=sale_date,
-                baseline=previous_status,
-                previous_value=previous_status,
-                payload_keys=("pdf_sale_date_extraction",),
-            )
-
-def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
+def write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = PDF_TEXTS_DIR / f"{_sale_storage_id(sale)}.json"
+    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     payload: list[dict[str, object]] = []
     for item in pdf_texts:
         serialized_item: dict[str, object] = {
@@ -1037,7 +967,7 @@ def _parse_decimal_number(value: str) -> Decimal | None:
         return None
     try:
         return Decimal(text.replace(",", "."))
-    except Exception:
+    except InvalidOperation:
         return None
 
 def _decimal_to_int_or_float(value: Decimal | None) -> int | float | None:
@@ -1068,7 +998,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
     value = clean_text(text) or ""
     if not value:
         return []
-    normalized = _normalize_document_classifier_text(value)
+    normalized = normalize_document_classifier_text(value)
     if re.search(r"\b(?:visites?|rendez[-\s]?vous)\b", normalized) and not re.search(
         r"\b(?:audience|date\s+d['’ ]audience|date\s+de\s+la\s+vente|vente\s+aux\s+encheres)\b",
         normalized,
@@ -1088,7 +1018,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
             phrase = clean_text(match.group(0)) or ""
             if not phrase or not _has_sale_date_signal(phrase):
                 continue
-            phrase_normalized = _normalize_document_classifier_text(phrase)
+            phrase_normalized = normalize_document_classifier_text(phrase)
             if re.search(r"\b(?:prix\s+d['’ ]adjudication|frais|mise\s+a\s+prix)\b", phrase_normalized):
                 continue
             if phrase not in phrases:
@@ -1096,10 +1026,9 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
     return phrases
 
 def _has_sale_date_signal(text: str) -> bool:
-    normalized = _normalize_document_classifier_text(text)
-    month_pattern = r"janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre"
+    normalized = normalize_document_classifier_text(text)
     return bool(
-        re.search(rf"\b\d{{1,2}}\s+(?:{month_pattern})\s+\d{{4}}\b", normalized)
+        re.search(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+\d{{4}}\b", normalized)
         or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", normalized)
     )
 
@@ -1115,7 +1044,7 @@ def _sale_date_extraction_rank(item: dict[str, object]) -> tuple[int, int, int]:
         "pdf": 40,
         "diagnostics_techniques": 10,
     }.get(document_type, 30)
-    evidence = _normalize_document_classifier_text(item.get("evidence"))
+    evidence = normalize_document_classifier_text(item.get("evidence"))
     label_score = 0
     if re.search(r"\b(?:audience\s+d['’ ]adjudication|date\s+de\s+la\s+vente|date\s+d['’ ]audience)\b", evidence):
         label_score += 25
@@ -1135,8 +1064,8 @@ def _extract_visit_dates_with_evidence(text: str) -> dict[str, object] | None:
     if not candidates:
         return None
     first = candidates[0]
-    normalized_text = _normalize_document_classifier_text(text)
-    index = normalized_text.find(_normalize_document_classifier_text(first))
+    normalized_text = normalize_document_classifier_text(text)
+    index = normalized_text.find(normalize_document_classifier_text(first))
     start = max(0, index - 120) if index >= 0 else 0
     end = min(len(text), (index if index >= 0 else 0) + len(first) + 160)
     evidence = clean_text(text[start:end]) or first
@@ -1163,7 +1092,7 @@ def _normalize_visit_candidate(text: str) -> str | None:
     value = clean_text(text)
     if not value or len(value) > 240:  # a visit slot is a short phrase, not a report paragraph
         return None
-    normalized = _normalize_document_classifier_text(value)
+    normalized = normalize_document_classifier_text(value)
     if "visite virtuelle" in normalized or "aucune visite virtuelle" in normalized:
         return None
     if not re.search(r"\b(?:visites?|rendez[-\s]?vous)\b", normalized):
@@ -1247,13 +1176,3 @@ def _merge_pdf_risk_notes(*values: str | None) -> str | None:
                 seen.add(item)
                 notes.append(item)
     return ", ".join(notes) if notes else None
-
-def _document_filename(document: dict[str, str]) -> str:
-    url = document.get("url", "")
-    label = document.get("label", "")
-    suffix = Path(urlparse(url).path).suffix.lower()
-    if suffix not in {".pdf", ".doc", ".docx"}:
-        suffix = ".pdf"
-    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-    stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", Path(label or "document").stem).strip("-") or "document"
-    return f"{digest}-{stem}{suffix}"

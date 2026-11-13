@@ -26,7 +26,6 @@ import os
 import re
 import threading
 import time
-import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -38,6 +37,7 @@ import httpx
 
 from src.cadastre import geometry_centroid
 from src.config import DEFAULT_USER_AGENT, ROOT_DIR
+from src.text_folding import ascii_alnum_words, to_ascii
 
 LOGGER = logging.getLogger(__name__)
 API_URL = "https://apicarto.ign.fr/api/cadastre/parcelle"
@@ -415,8 +415,7 @@ def resolve_sale_cadastre(sale: Any, *, settings: dict[str, Any] | None = None, 
 
 
 def _fold_city(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower()
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    return ascii_alnum_words(to_ascii(str(value or "")).lower())
 
 
 def _citycode_from_geocode(payload: dict[str, Any], city: object, department: object) -> str:

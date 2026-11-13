@@ -169,9 +169,9 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
 
 
 def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tmp_path) -> None:
-    from src import config, pdf_enrichment, pdf_progress
+    from src import config, pdf_document_selection, pdf_document_text_cache, pdf_enrichment, pdf_progress
     from src.models import AuctionSale
-    from src.pdf_ocr import PdfExtractionDeferred
+    from src.pdf_deadline import PdfExtractionDeferred
     from src.storage import supabase_client
 
     sale = AuctionSale(
@@ -195,8 +195,8 @@ def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tm
         pdf_enrichment, "download_documents", lambda s, stats=None: [{"url": "u", "file_path": str(pdf)}]
     )
     monkeypatch.setattr(pdf_progress, "restore_pdf_page_caches_from_manifest", lambda *a, **k: 0)
-    monkeypatch.setattr(pdf_enrichment, "_select_documents_for_extraction", lambda docs, **_: docs)
-    monkeypatch.setattr(pdf_enrichment, "_read_document_text_cache", lambda d, p: None)
+    monkeypatch.setattr(pdf_document_selection, "select_documents_for_extraction", lambda docs, **_: docs)
+    monkeypatch.setattr(pdf_document_text_cache, "read_document_text_cache", lambda d, p, **_: None)
     monkeypatch.setattr(pdf_enrichment, "extract_attached_document", extract)
     monkeypatch.setattr(config, "PDF_TEXTS_DIR", Path(tmp_path))
 
@@ -262,7 +262,7 @@ def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> No
     # 04/11/2026 : un manifeste local écrit en avance devenait périmé et faisait tourner la passe sous verrou en rond.
     from src import config
     from src.models import AuctionSale
-    from src.pdf_fact_extraction import _write_pdf_text_cache  # noqa: F401 - must not be reached
+    from src.pdf_fact_extraction import write_pdf_text_cache  # noqa: F401 - must not be reached
     from src.storage import supabase_client
 
     sale = AuctionSale(source_name="vench", source_url="https://example.test/m", documents=[])
@@ -275,16 +275,16 @@ def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> No
     )
     monkeypatch.setattr(
         supabase_client,
-        "_read_persisted_pdf_rows_rest",
+        "read_persisted_pdf_rows_rest",
         lambda url, key, urls: [{"updated_at": "2026-11-04T10:00:00Z"}, {"updated_at": "2026-11-04T11:00:00Z"}],
     )
-    monkeypatch.setattr(supabase_client, "_validated_persisted_pdf_texts", lambda s, row: None)
+    monkeypatch.setattr(supabase_client, "validated_persisted_pdf_texts", lambda s, row: None)
     monkeypatch.setattr(
-        supabase_client, "_validated_persisted_pdf_progress", lambda s, row: [{"row": row["updated_at"]}]
+        supabase_client, "validated_persisted_pdf_progress", lambda s, row: [{"row": row["updated_at"]}]
     )
     monkeypatch.setattr(
         supabase_client,
-        "_restore_pdf_page_caches_for_documents",
+        "restore_pdf_page_caches_for_documents",
         lambda restored, docs: restored_pages.append((restored, docs)),
     )
 
@@ -292,7 +292,7 @@ def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> No
         raise AssertionError("the sale manifest must not be written ahead of the locked pass")
 
     monkeypatch.setattr(supabase_client, "restore_persisted_pdf_progress_for_sale", forbidden)
-    monkeypatch.setattr("src.pdf_fact_extraction._write_pdf_text_cache", forbidden)
+    monkeypatch.setattr("src.pdf_fact_extraction.write_pdf_text_cache", forbidden)
 
     prefetch.restore_checkpointed_pages(sale, downloaded)
 

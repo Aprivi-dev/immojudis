@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/sale-result-emails";
 import { seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import { surenchereWindow } from "@/lib/surenchere-window";
+import { EMAIL_PASS_BUDGET_MS, runEmailPass } from "@/lib/email-campaign-pass";
 
 /**
  * Alerte de résultat ou de remise en vente d'une vente suivie (favoris et ventes débloquées),
@@ -49,16 +51,14 @@ import { surenchereWindow } from "@/lib/surenchere-window";
  */
 
 /** Les instantanés plus anciens ne sont plus relus (le cron passe chaque jour). */
-export const SNAPSHOT_LOOKBACK_DAYS = 7;
+const SNAPSHOT_LOOKBACK_DAYS = 7;
 /** Les événements de changement plus anciens ne sont plus relus. */
-export const STATUS_LOOKBACK_HOURS = 72;
+const STATUS_LOOKBACK_HOURS = 72;
 /**
  * Au plus ce nombre d'éléments par email et par passage ; le reste est compté (`deferred`) et repris
  * au passage suivant tant que l'instantané ou l'événement est dans sa fenêtre de relecture.
  */
 export const MAX_RESULT_ITEMS_PER_EMAIL = 10;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
 /** Statuts qui annoncent une remise en vente quand la vente repasse « à venir » depuis l'un d'eux. */
 const RELIST_FROM = new Set(["past", "adjudicated", "withdrawn", "cancelled", "canceled"]);
 
@@ -109,7 +109,7 @@ export interface SaleResultStore {
 }
 
 /** Raison courte d'un envoi en échec, conservée au journal à la place du texte d'erreur. */
-export const SALE_RESULT_FAILURE_CODES = [
+const SALE_RESULT_FAILURE_CODES = [
   "email_unavailable",
   "email_lookup_failed",
   "message_build_failed",
@@ -332,7 +332,7 @@ export function assertSaleResultsComplete(summary: SaleResultRunSummary): void {
     const missing = summary.missingConfig.length
       ? ` (variable(s) manquante(s) : ${summary.missingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Alertes de résultat : ${summary.dueUnsent} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }
@@ -384,7 +384,7 @@ export async function runSaleResults({
   summary.recipients = recipients.length;
   recipients = rotateRecipients(recipients, now);
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const detected = await detectSaleResultsForUser({ store, userId, now, stats: summary });
     summary.candidates += detected.length;
@@ -478,21 +478,7 @@ export async function runSaleResults({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
-    const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settled.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence d'alerte : le passage échoue
-      // pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Alertes de résultat : lecture impossible.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Sale results" });
+  summary.truncated = pass.truncated;
   return summary;
 }

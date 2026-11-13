@@ -1,25 +1,21 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Signed, expiring unsubscribe links. The token names the user and what to
  * switch off, so a link scanner that merely opens it can neither unsubscribe
  * anyone nor guess another user's link.
  */
-export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 /**
- * Même durée, nom d'origine conservé. Tous les emails reviennent pendant des mois (alertes, rappels
- * d'audience, récapitulatif, alerte de résultat) : un lien de désinscription ne doit pas devenir
- * inutilisable pendant que les emails continuent (c'est aussi le lien d'en-tête List-Unsubscribe).
- * Les alertes étaient les seules à 60 jours : un lien d'un ancien email affichait « lien expiré » au
- * lieu de désinscrire.
+ * Durée de validité d'un lien de désinscription, la même pour toutes les portées. Tous les emails
+ * reviennent pendant des mois (alertes, rappels d'audience, récapitulatif, alerte de résultat) : un lien
+ * de désinscription ne doit pas devenir inutilisable pendant que les emails continuent (c'est aussi le
+ * lien d'en-tête List-Unsubscribe). Les alertes étaient les seules à 60 jours : un lien d'un ancien email
+ * affichait « lien expiré » au lieu de désinscrire.
  */
-export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = UNSUBSCRIBE_TOKEN_TTL_DAYS;
-
-/** Durée de validité d'un lien de désinscription, la même pour toutes les portées. */
-export function unsubscribeTokenTtlDays(_scope: UnsubscribeScope): number {
-  return UNSUBSCRIBE_TOKEN_TTL_DAYS;
-}
+export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 
 export type UnsubscribeScope =
   | { kind: "alerts" }
@@ -42,16 +38,13 @@ export type UnsubscribeClaims = {
   expiresAt: number;
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const dedicated = env.EMAIL_UNSUBSCRIBE_SECRET?.trim();
   if (dedicated) return dedicated;
   // Same order as the rest of the code: the legacy service-role key first, then
   // the new-format secret key, so links already sent keep verifying.
   const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || env.SUPABASE_SECRET_KEY?.trim();
-  if (!serviceRole)
-    throw new Error("Aucun secret disponible pour signer les liens de désinscription.");
+  if (!serviceRole) throw new ConfigurationError("No secret available to sign unsubscribe links.");
   // Derived from the service key with a fixed label, so the raw key never signs
   // anything directly and no extra configuration is needed.
   return createHmac("sha256", serviceRole).update("immojudis:email-unsubscribe:v1").digest("hex");
@@ -78,7 +71,7 @@ function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "offer-opening") return { kind: "offer-opening" };
   if (value === "launch-offer-end") return { kind: "launch-offer-end" };
   const match = /^alert:(.+)$/.exec(value);
-  return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;
+  return match && isUuid(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }
 
 export function createUnsubscribeToken({
@@ -92,7 +85,7 @@ export function createUnsubscribeToken({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): string {
-  const expiresAt = Math.floor(now.getTime() / 1000) + unsubscribeTokenTtlDays(scope) * 86_400;
+  const expiresAt = Math.floor(now.getTime() / 1000) + UNSUBSCRIBE_TOKEN_TTL_DAYS * 86_400;
   const payload = Buffer.from(
     JSON.stringify({ u: userId, s: scopeToString(scope), e: expiresAt }),
   ).toString("base64url");
@@ -145,7 +138,7 @@ function readSignedClaims(
       s?: unknown;
       e?: unknown;
     };
-    if (typeof data.u !== "string" || !UUID_PATTERN.test(data.u)) return null;
+    if (!isUuid(data.u)) return null;
     if (typeof data.s !== "string" || typeof data.e !== "number") return null;
     const scope = scopeFromString(data.s);
     return scope ? { userId: data.u, scope, expiresAt: data.e } : null;

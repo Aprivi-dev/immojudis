@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { NextResponse } from "next/server";
+import { apiRoute } from "@/lib/api-route";
 import {
   listPepiteFloodExposedIds,
   listPepiteSaleIds,
@@ -9,6 +10,7 @@ import {
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Liste publique des pépites (`list_public_pepite_sale_ids`) pour le navigateur : les identifiants des ventes
@@ -32,7 +34,7 @@ const PUBLIC_CACHE = `public, s-maxage=${CDN_SECONDS}, stale-while-revalidate=30
 const cachedPepiteSaleIds = unstable_cache(
   async () => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     return listPepiteSaleIds(client as unknown as PepiteIdsClient);
   },
   ["public-catalogue", "pepite-sale-ids", "v2"],
@@ -46,7 +48,7 @@ const cachedPepiteSaleIds = unstable_cache(
 const cachedExposedIds = unstable_cache(
   async () => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     return listPepiteFloodExposedIds(client as unknown as PepiteFloodIdsClient);
   },
   ["public-catalogue", "pepite-flood-exposed-ids", "v1"],
@@ -59,22 +61,21 @@ function errorCode(error: unknown): string {
   return typeof code === "string" && /^[A-Za-z0-9_]{1,16}$/.test(code) ? code : "unknown";
 }
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.catalogue.pepites");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.catalogue.pepites",
+    fallbackMessage: "Liste des pépites indisponible.",
+    // Panne de la base : 503, jamais gardée. Le navigateur ne la prend pas pour « aucune pépite » (il ne met
+    // rien en cache et réessaie) ; une base sans la fonction, elle, donne 200 `{ ids: [] }`.
+    fallbackStatus: 503,
+  },
+  async (request) => {
+    // Quota atteint : 429, jamais gardé (le navigateur ne le prend pas pour « aucune pépite »).
     await enforceIpRateLimit({
       request,
       bucketKey: "catalogue.pepites",
       ...RATE_LIMIT_POLICIES.catalogPreviewIp,
     });
-  } catch (error) {
-    // Quota atteint : 429, jamais gardé (le navigateur ne le prend pas pour « aucune pépite »).
-    return apiError(error, context, {
-      fallbackMessage: "Liste des pépites indisponible.",
-      fallbackStatus: 503,
-    });
-  }
-  try {
     const ids = await cachedPepiteSaleIds();
     // La mention « exposée » est un complément : son erreur ne coûte jamais la liste des pépites (`ids`), ni un
     // 503. La réponse dégradée porte `exposedIds: []`, n'est gardée ni par le CDN ni par le cache de données, et
@@ -95,18 +96,7 @@ export async function GET(request: Request) {
         }),
       );
     }
-    return apiJson(
-      { ids, exposedIds },
-      context,
-      { headers: { "cache-control": degraded ? "no-store" : PUBLIC_CACHE } },
-      { echoRequestId: false },
-    );
-  } catch (error) {
-    // Panne de la base : 503, jamais gardée. Le navigateur ne la prend pas pour « aucune pépite » (il ne met
-    // rien en cache et réessaie) ; une base sans la fonction, elle, donne 200 `{ ids: [] }` plus haut.
-    return apiError(error, context, {
-      fallbackMessage: "Liste des pépites indisponible.",
-      fallbackStatus: 503,
-    });
-  }
-}
+    if (degraded) return { ids, exposedIds };
+    return NextResponse.json({ ids, exposedIds }, { headers: { "cache-control": PUBLIC_CACHE } });
+  },
+);

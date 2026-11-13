@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -103,7 +104,7 @@ describe("routes admin de confidentialité", () => {
   });
 
   it.each(calls)("%s : 401 quand le jeton est refusé", async (_name, run) => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     expect((await run()).status).toBe(401);
     expect(mocks.from).not.toHaveBeenCalled();

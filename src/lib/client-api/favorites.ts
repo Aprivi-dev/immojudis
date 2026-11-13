@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiDownload, apiRequest } from "@/lib/client-api-core";
 import type { FavoriteDossierInput, FavoriteDossierResponse } from "@/lib/favorite-dossier-shared";
 import type {
   FollowedSaleSnapshotDeleteResponse,
@@ -13,101 +13,64 @@ import type {
   FavoriteSalesResponse,
 } from "@/lib/favorites";
 
-export async function fetchFavoriteSales(): Promise<FavoriteSalesResponse> {
-  const response = await fetch("/api/favorites", {
-    headers: await authHeaders(),
-  });
-
-  return readJson<FavoriteSalesResponse>(response);
+export function fetchFavoriteSales(): Promise<FavoriteSalesResponse> {
+  return apiRequest<FavoriteSalesResponse>("/api/favorites");
 }
 
-export async function addFavoriteSale(args: {
+export function addFavoriteSale(args: {
   data: FavoriteSaleInput;
 }): Promise<FavoriteSaleMutationResponse> {
-  const response = await fetch("/api/favorites", {
+  return apiRequest<FavoriteSaleMutationResponse>("/api/favorites", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<FavoriteSaleMutationResponse>(response);
 }
 
-export async function removeFavoriteSale(args: {
-  saleId: string;
-}): Promise<FavoriteSaleDeleteResponse> {
+export function removeFavoriteSale(args: { saleId: string }): Promise<FavoriteSaleDeleteResponse> {
   const search = new URLSearchParams({ saleId: args.saleId });
-  const response = await fetch(`/api/favorites?${search.toString()}`, {
+  return apiRequest<FavoriteSaleDeleteResponse>(`/api/favorites?${search.toString()}`, {
     method: "DELETE",
-    headers: await authHeaders(),
   });
-
-  return readJson<FavoriteSaleDeleteResponse>(response);
 }
 
 /** « Mon dossier » gratuit (point 68) : statut et enchère plafond enregistrés sur une vente suivie. */
-export async function fetchFavoriteDossier(saleId: string): Promise<FavoriteDossierResponse> {
+export function fetchFavoriteDossier(saleId: string): Promise<FavoriteDossierResponse> {
   const search = new URLSearchParams({ saleId });
-  const response = await fetch(`/api/favorites/dossier?${search.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<FavoriteDossierResponse>(response);
+  return apiRequest<FavoriteDossierResponse>(`/api/favorites/dossier?${search.toString()}`);
 }
 
-export async function saveFavoriteDossier(args: {
+export function saveFavoriteDossier(args: {
   data: FavoriteDossierInput;
 }): Promise<FavoriteDossierResponse> {
-  const response = await fetch("/api/favorites/dossier", {
+  return apiRequest<FavoriteDossierResponse>("/api/favorites/dossier", {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<FavoriteDossierResponse>(response);
 }
 
 /** Après l'audience (point 70) : instantanés des ventes suivies, gardés 6 mois au plus. */
-export async function fetchFollowedSaleSnapshots(): Promise<FollowedSaleSnapshotsResponse> {
-  const response = await fetch("/api/favorites/snapshots", {
-    headers: await authHeaders(),
-  });
-
-  return readJson<FollowedSaleSnapshotsResponse>(response);
+export function fetchFollowedSaleSnapshots(): Promise<FollowedSaleSnapshotsResponse> {
+  return apiRequest<FollowedSaleSnapshotsResponse>("/api/favorites/snapshots");
 }
 
-export async function deleteFollowedSaleSnapshot(args: {
+export function deleteFollowedSaleSnapshot(args: {
   id: string;
 }): Promise<FollowedSaleSnapshotDeleteResponse> {
   const search = new URLSearchParams({ id: args.id });
-  const response = await fetch(`/api/favorites/snapshots?${search.toString()}`, {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
-
-  return readJson<FollowedSaleSnapshotDeleteResponse>(response);
+  return apiRequest<FollowedSaleSnapshotDeleteResponse>(
+    `/api/favorites/snapshots?${search.toString()}`,
+    { method: "DELETE" },
+  );
 }
 
 /** Bilan après adjudication : le statut et le prix final noté sur un instantané. */
-export async function updateFollowedSaleSnapshot(args: {
+export function updateFollowedSaleSnapshot(args: {
   data: FollowedSaleSnapshotUpdate;
 }): Promise<FollowedSaleSnapshotResponse> {
-  const response = await fetch("/api/favorites/snapshots", {
+  return apiRequest<FollowedSaleSnapshotResponse>("/api/favorites/snapshots", {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<FollowedSaleSnapshotResponse>(response);
 }
 
 type FollowedCalendarDownload = {
@@ -127,24 +90,16 @@ type FollowedCalendarDownload = {
 export async function downloadFollowedCalendar(args: {
   saleIds: readonly string[];
 }): Promise<FollowedCalendarDownload> {
-  const response = await fetch("/api/favorites/calendar", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ saleIds: args.saleIds }),
-  });
-  if (!response.ok) {
-    await readJson<unknown>(response);
-  }
-  const header = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="([^"\\/]+\.ics)"/i.exec(header)?.[1] ?? "immojudis-audiences.ics";
+  const { blob, filename, headers } = await apiDownload(
+    "/api/favorites/calendar",
+    { method: "POST", body: { saleIds: args.saleIds } },
+    "immojudis-audiences.ics",
+  );
   return {
-    blob: await response.blob(),
+    blob,
     filename,
-    exported: Number(response.headers.get("x-exported-count")) || 0,
-    skipped: Number(response.headers.get("x-skipped-count")) || 0,
+    exported: Number(headers.get("x-exported-count")) || 0,
+    skipped: Number(headers.get("x-skipped-count")) || 0,
   };
 }
 
@@ -152,18 +107,10 @@ export async function downloadFollowedCalendar(args: {
 export async function downloadSnapshotDeadlines(args: {
   snapshotId: string;
 }): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch("/api/favorites/calendar", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify({ deadlinesSnapshotId: args.snapshotId }),
-  });
-  if (!response.ok) {
-    await readJson<unknown>(response);
-  }
-  const header = response.headers.get("content-disposition") ?? "";
-  const filename = /filename="([^"\\/]+\.ics)"/i.exec(header)?.[1] ?? "immojudis-echeancier.ics";
-  return { blob: await response.blob(), filename };
+  const { blob, filename } = await apiDownload(
+    "/api/favorites/calendar",
+    { method: "POST", body: { deadlinesSnapshotId: args.snapshotId } },
+    "immojudis-echeancier.ics",
+  );
+  return { blob, filename };
 }

@@ -1,10 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { PublicApiError } from "@/lib/api-errors";
+
+const mocks = vi.hoisted(() => ({ requireAuth: vi.fn(), from: vi.fn() }));
+vi.mock("@/integrations/supabase/auth-middleware", () => ({
+  requireSupabaseAuthContext: mocks.requireAuth,
+}));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: mocks.from },
+}));
+
 import {
   adminLawyerReferralUpdateInputSchema,
   adminLawyerReferralUpdatePayload,
   buildLawyerReferralEmailMessage,
   isReferencedLawyerPlacementActive,
   shouldDispatchReferencedLawyerEmail,
+  updateAdminLawyerReferralRequest,
 } from "@/lib/admin-lawyer-referrals";
 
 describe("admin lawyer referral requests", () => {
@@ -245,4 +256,58 @@ describe("admin lawyer referral requests", () => {
       ),
     ).toBe(true);
   });
+});
+
+describe("refus métier d'une mise en relation", () => {
+  const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
+  const LAWYER_ID = "22222222-2222-4222-8222-222222222222";
+
+  /** Lecture simulée : chaque méthode renvoie la requête, `single` / `maybeSingle` rendent `row`. */
+  function read(row: unknown) {
+    const builder: Record<string, unknown> = {};
+    for (const method of ["select", "eq"]) builder[method] = () => builder;
+    builder.single = async () => ({ data: row, error: null });
+    builder.maybeSingle = async () => ({ data: row, error: null });
+    return builder;
+  }
+
+  const existing = {
+    id: REQUEST_ID,
+    status: "manual_review",
+    matching_status: "manual_review",
+    requested_lawyer_id: null,
+    assigned_at: null,
+    sent_at: null,
+    responded_at: null,
+    metadata: {},
+  };
+
+  it("refuse l'envoi sans avocat assigné (422) et celui à un avocat non éligible (409)", async () => {
+    mocks.requireAuth.mockResolvedValue({ isAdmin: true, userId: "admin" });
+
+    mocks.from.mockReturnValue(read(existing));
+    const unassigned = await updateAdminLawyerReferralRequest({
+      authToken: "token",
+      input: adminLawyerReferralUpdatePayloadInput({ status: "sent_to_lawyer" }),
+    }).catch((error: unknown) => error);
+    expect(unassigned).toBeInstanceOf(PublicApiError);
+    expect(unassigned).toMatchObject({ status: 422 });
+
+    mocks.from.mockImplementation((table: string) =>
+      read(table === "lawyer_referral_requests" ? existing : null),
+    );
+    const ineligible = await updateAdminLawyerReferralRequest({
+      authToken: "token",
+      input: adminLawyerReferralUpdatePayloadInput({
+        status: "sent_to_lawyer",
+        requestedLawyerId: LAWYER_ID,
+      }),
+    }).catch((error: unknown) => error);
+    expect(ineligible).toBeInstanceOf(PublicApiError);
+    expect(ineligible).toMatchObject({ status: 409 });
+  });
+
+  function adminLawyerReferralUpdatePayloadInput(fields: Record<string, unknown>) {
+    return adminLawyerReferralUpdateInputSchema.parse({ id: REQUEST_ID, ...fields });
+  }
 });

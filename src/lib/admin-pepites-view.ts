@@ -1,4 +1,6 @@
 import type { AdminPepiteRow, AdminPepitesResponse } from "@/lib/admin-pepites";
+import { formatShortDateTime } from "@/lib/format/dates";
+import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 
 /**
  * Ce que la page « /admin/pepites » affiche, déjà mis en forme côté serveur (montants, parts, dates,
@@ -19,14 +21,14 @@ export type PepitesViewCell = {
   bad?: string[];
 };
 
-export type PepitesViewTable = {
+type PepitesViewTable = {
   caption: string;
   head: string[];
   /** Chaque ligne : la première cellule est l'en-tête de la ligne. */
   rows: PepitesViewCell[][];
 };
 
-export type PepitesViewSection = {
+type PepitesViewSection = {
   id: string;
   title: string;
   paragraphs: string[];
@@ -56,23 +58,7 @@ const CATEGORY_TEXT: Record<AdminPepiteRow["category"], string> = {
 };
 
 const integer = new Intl.NumberFormat("fr-FR");
-const euros = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
-const dateTime = new Intl.DateTimeFormat("fr-FR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Europe/Paris",
-});
-
-const percent = (share: number | null, digits = 0) =>
-  share == null
-    ? "—"
-    : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: digits }).format(share * 100)} %`;
-const euro = (value: number | null) => (value == null ? "—" : euros.format(value));
-const when = (value: string | null) => (value ? dateTime.format(new Date(value)) : "—");
+const euro = (value: number | null) => (value == null ? "—" : formatPrice(value));
 
 function rowCells(row: AdminPepiteRow): PepitesViewCell[] {
   const range =
@@ -87,7 +73,7 @@ function rowCells(row: AdminPepiteRow): PepitesViewCell[] {
         CATEGORY_TEXT[row.category],
         row.venueLabel,
         row.city,
-        row.saleDate ? when(row.saleDate) : null,
+        row.saleDate ? formatShortDateTime(row.saleDate) : null,
         row.dpeClass
           ? `DPE ${row.dpeClass}${row.energyRenovationEur ? ` (+${euro(row.energyRenovationEur)} de rénovation)` : ""}`
           : null,
@@ -103,15 +89,15 @@ function rowCells(row: AdminPepiteRow): PepitesViewCell[] {
     row.chanceShare == null
       ? { t: "—" }
       : row.chanceAtLeast
-        ? { t: `≥ ${percent(row.chanceShare, 1)}`, s: "plancher" }
-        : { t: percent(row.chanceShare, 1) },
-    { t: percent(row.costRatio, 1) },
+        ? { t: `≥ ${formatShareAsPercent(row.chanceShare, 1)}`, s: "plancher" }
+        : { t: formatShareAsPercent(row.chanceShare, 1) },
+    { t: formatShareAsPercent(row.costRatio, 1) },
     {
       t: `${row.passed.length} réussi${row.passed.length > 1 ? "s" : ""}, ${row.missed.length} manqué${row.missed.length > 1 ? "s" : ""}`,
       bad: row.missed.map((label) => `Manqué : ${label}`),
       l: [...row.passed, ...row.stability, ...(row.marketNote ? [row.marketNote] : [])],
     },
-    { t: when(row.evaluatedAt || null) },
+    { t: formatShortDateTime(row.evaluatedAt) },
   ];
 }
 
@@ -141,7 +127,7 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
       id: "mode",
       title: `Mode : ${data.mode}`,
       paragraphs: [
-        `${MODE_TEXT[data.mode]} Règle ${data.ruleVersion}${data.generatedAt ? `, lue le ${when(data.generatedAt)}` : ""}. Le passage en « on » se décide après contrôle de cette liste ; il n’y a pas de bouton ici.`,
+        `${MODE_TEXT[data.mode]} Règle ${data.ruleVersion}${data.generatedAt ? `, lue le ${formatShortDateTime(data.generatedAt)}` : ""}. Le passage en « on » se décide après contrôle de cette liste ; il n’y a pas de bouton ici.`,
       ],
       alert: null,
       table: null,
@@ -183,10 +169,10 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
       id: "rate",
       title: "Taux de pépites",
       paragraphs: [
-        `${percent(rate.share, 1)} des ventes évaluables (${integer.format(rate.pepites)} sur ${integer.format(rate.evaluable)}), pépites publiées et à confirmer. Cible : ${percent(rate.targetMin)} à ${percent(rate.targetMax)}.`,
+        `${formatShareAsPercent(rate.share, 1)} des ventes évaluables (${integer.format(rate.pepites)} sur ${integer.format(rate.evaluable)}), pépites publiées et à confirmer. Cible : ${formatShareAsPercent(rate.targetMin)} à ${formatShareAsPercent(rate.targetMax)}.`,
       ],
       alert: rate.alert
-        ? `Taux ${rate.alert === "below" ? "sous" : "au-dessus de"} la plage d’alerte de ${percent(rate.alertMin)} à ${percent(rate.alertMax)} : ${
+        ? `Taux ${rate.alert === "below" ? "sous" : "au-dessus de"} la plage d’alerte de ${formatShareAsPercent(rate.alertMin)} à ${formatShareAsPercent(rate.alertMax)} : ${
             rate.alert === "below"
               ? "la règle est peut-être trop stricte, ou une donnée manque."
               : "la règle est peut-être trop large : le repère perdrait son sens."
@@ -215,7 +201,7 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
         "Pépites (publiées et à confirmer) dont le coût d’achat repose sur au moins un frais par défaut (frais préalables du cahier non lus, honoraires de négociation ou frais de publicité non lus). Au tribunal ces défauts restent admis ; en vente notariale, la règle refuse la pépite tant qu’ils ne sont pas lus.",
         feesDefault.pepites === 0
           ? "Aucune pépite dans la liste."
-          : `${percent(feesDefault.share, 1)} des pépites de la liste (${integer.format(feesDefault.withDefaultFees)} sur ${integer.format(feesDefault.pepites)}).`,
+          : `${formatShareAsPercent(feesDefault.share, 1)} des pépites de la liste (${integer.format(feesDefault.withDefaultFees)} sur ${integer.format(feesDefault.pepites)}).`,
       ],
       alert: null,
       table: null,
@@ -250,8 +236,8 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
         "Part des ventes dont l’avocat poursuivant est un avocat référencé sponsorisé. Mesure d’information : aucune donnée d’avocat ni de sponsoring n’entre dans le calcul d’une pépite.",
         ...(independence
           ? [
-              `Pépites (publiées et à confirmer) : ${percent(independence.pepiteShare, 1)} (${integer.format(independence.pepiteSponsored)} sur ${integer.format(independence.pepiteSales)}).`,
-              `Toutes les ventes évaluables : ${percent(independence.evaluatedShare, 1)} (${integer.format(independence.evaluatedSponsored)} sur ${integer.format(independence.evaluatedSales)}).`,
+              `Pépites (publiées et à confirmer) : ${formatShareAsPercent(independence.pepiteShare, 1)} (${integer.format(independence.pepiteSponsored)} sur ${integer.format(independence.pepiteSales)}).`,
+              `Toutes les ventes évaluables : ${formatShareAsPercent(independence.evaluatedShare, 1)} (${integer.format(independence.evaluatedSponsored)} sur ${integer.format(independence.evaluatedSales)}).`,
             ]
           : ["Non mesuré : lecture impossible ou délai dépassé."]),
       ],

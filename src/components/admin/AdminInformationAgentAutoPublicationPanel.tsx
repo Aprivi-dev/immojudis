@@ -1,6 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { REVIEW_QUERY_KEY } from "@/components/admin/information-agent-queries";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminAutoPublication,
@@ -8,8 +11,7 @@ import {
 } from "@/lib/client-api/admin-auto-publication";
 import type { AutoPublicationReviewDecision } from "@/lib/admin-information-agent-auto-publication";
 
-export const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
-const REVIEW_QUERY_KEY = ["admin-information-agent-review"] as const;
+const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
 
 /**
  * Publication automatique des informations reçues (onglet Réglages) : arrêt ou simulation ; le mode
@@ -31,7 +33,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
       void queryClient.invalidateQueries({ queryKey: REVIEW_QUERY_KEY });
       toast.success(`Publication automatique : ${view.modeLabel.toLowerCase()}.`);
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
   const view = query.data;
 
@@ -107,8 +109,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
               <ul className="mt-2 space-y-1">
                 {view.changes.map((change, index) => (
                   <li key={`${change.at}-${index}`}>
-                    {new Date(change.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })} ·{" "}
-                    {change.label}
+                    {formatShortDateTime(change.at)} · {change.label}
                   </li>
                 ))}
               </ul>
@@ -140,21 +141,10 @@ export function AutoPublicationDecisionNote({
       }`}
     >
       Simulation : {decision.label.toLowerCase()}
-      {decision.decidedAt ? `, le ${formatDecisionDate(decision.decidedAt)}` : ""}
+      {decision.decidedAt
+        ? `, le ${formatShortDateTime(decision.decidedAt, "date illisible")}`
+        : ""}
       {decision.reasons.length ? ` (${decision.reasons.join(" ; ")})` : ""}.
     </p>
   );
-}
-
-/** Date et heure de Paris d'une décision (« 20/11/2026 à 10:00 »). */
-function formatDecisionDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "date illisible";
-  const day = date.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });
-  const time = date.toLocaleTimeString("fr-FR", {
-    timeZone: "Europe/Paris",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${day} à ${time}`;
 }

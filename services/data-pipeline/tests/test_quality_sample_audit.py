@@ -16,7 +16,7 @@ def test_encheres_publiques_quality_audit_refuses_before_database_read(monkeypat
             "encheres_publiques_access_authorized": False,
         },
     )
-    monkeypatch.setattr(audit, "_postgres_connect", lambda *_: pytest.fail("database must not be opened"))
+    monkeypatch.setattr(audit, "connect", lambda *_: pytest.fail("database must not be opened"))
 
     with pytest.raises(EncheresPubliquesAccessNotAuthorized):
         audit.audit_source("encheres_publiques", tmp_path / "quality.json")

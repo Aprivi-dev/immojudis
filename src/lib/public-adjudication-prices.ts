@@ -7,7 +7,6 @@ import {
 } from "@/lib/adjudication-distributions";
 import {
   distributionRates,
-  propertyTypeLabels,
   wilsonShareInterval,
   type ShareInterval,
 } from "@/lib/adjudication-barometer";
@@ -15,6 +14,8 @@ import type {
   AdjudicationPriceStatisticsDirectoryResponse,
   AdjudicationPriceStatisticsScope,
 } from "@/lib/adjudication-price-statistics";
+import { serverEnv, type EnvSource } from "@/lib/env";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
 
 /** Adresse canonique de la page publique « prix réels des adjudications ». */
 export const PUBLIC_ADJUDICATION_PRICES_PATH = "/prix-encheres-immobilieres";
@@ -25,8 +26,6 @@ export const PUBLIC_ADJUDICATION_PRICES_PATH = "/prix-encheres-immobilieres";
  * il est répété ici pour que la page publique ne dépende pas d'un seul garde-fou.
  */
 export const PUBLIC_ADJUDICATION_MIN_SAMPLE = 10;
-
-type FlagEnv = Readonly<Record<string, string | undefined>>;
 
 /**
  * Interrupteur de la page publique « prix réels des adjudications », **fermé par défaut**.
@@ -41,10 +40,10 @@ type FlagEnv = Readonly<Record<string, string | undefined>>;
  * docs/vercel_setup.md, « Pages publiques de prix d'adjudication »). Fermée, la page répond 404
  * et n'est pas dans le sitemap.
  */
-export function isPublicAdjudicationPricesEnabled(env: FlagEnv = process.env): boolean {
+export function isPublicAdjudicationPricesEnabled(env: EnvSource = process.env): boolean {
   return (
     env.PUBLIC_ADJUDICATION_PRICES_ENABLED === "true" &&
-    env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"
+    serverEnv(env).adjudicationPriceStatisticsEnabled
   );
 }
 
@@ -153,7 +152,7 @@ export function buildPublicAdjudicationPrices(
       const { aboveStartingRate } = distributionRates(item.distribution);
       return {
         propertyType: item.propertyType,
-        label: propertyTypeLabels[item.propertyType] ?? item.propertyType,
+        label: propertyTypeLabel(item.propertyType),
         sampleSize: item.distribution.sampleSize,
         medianRatio: item.distribution.summary?.medianHammerToStartingRatio ?? null,
         ratioMiddle50: {

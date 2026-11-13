@@ -8,37 +8,25 @@ import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { redactPersonalData, redactPersonalText } from "@/lib/personal-data-filter";
 import {
+  featureIncluded,
   isPlanPeriodActive,
   normalizePlanCode,
-  PLAN_LIMITS,
-  featureIncluded,
-  isSaleUnlockFeature,
-  type FeatureAccess,
-  type FeatureKey,
-  type PlanBilling,
-  type PlanCode,
+  type PlanEntitlements,
 } from "@/lib/plans";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
 import { hasActiveSignupTrial } from "@/lib/launch-offer.server";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
-import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
-import {
-  buildCeilingSnapshot,
-  buildMarketSnapshot,
-  buildReportSnapshot,
-} from "./property-report/analysis";
+import { buildMarketSnapshot, buildReportSnapshot } from "./property-report/analysis";
+import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
 import {
   assertEntitlementIncluded,
-  assertPdfExportAvailable,
-  assertReportCreationAvailable,
   buildPlanEntitlements,
   emptyActiveComparableSales,
-  featureUnlocked,
   sanitizeReportSnapshotForPlan,
 } from "./property-report/entitlements";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
@@ -61,14 +49,10 @@ import {
   recordPdfExport,
 } from "./property-report/repository";
 import {
-  asJson,
   attachPlan,
-  createShareToken,
   defaultReportTitle,
   emptyToNull,
-  hashShareToken,
   normalizeShareExpiresAt,
-  normalizeShareToken,
   normalizeSourceTrace,
   normalizeStringList,
   pdfWatermarkForPlan,
@@ -76,7 +60,10 @@ import {
   saleLocation,
   shareIsExpired,
 } from "./property-report/serialization";
+import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/share-token";
 import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
+import { NotFoundError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -117,62 +104,6 @@ export type PropertyReportRequestPayload = z.output<typeof propertyReportRequest
 export type PropertyReportUpdateInput = z.input<typeof propertyReportUpdateSchema>;
 export type PropertyReportUpdatePayload = z.output<typeof propertyReportUpdateSchema>;
 
-export type PlanEntitlements = {
-  plan: PlanCode;
-  label: string;
-  hasAnalysisAccess: boolean;
-  currentPeriodEnd: string | null;
-  billing?: PlanBilling;
-  /**
-   * Le plan est Analyse grâce à l'essai gratuit de 7 jours à l'inscription (le mécanisme de l'offre
-   * de lancement : compte gratuit surclassé pendant son essai, tant que `app_private.launch_offer`
-   * est active). Absent pour un abonné, un compte premium ou un administrateur.
-   */
-  launchOffer?: true;
-  /** Fin de l'essai en cours (ISO), quand la base la connaît. */
-  trialEndsAt?: string;
-  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
-  trialExtension?: true;
-  /** Fin d'un essai terminé (ISO) : le compte est revenu à Découverte. */
-  trialEndedAt?: string;
-  /** La base refuse l'essai à ce compte (pas le premier de son adresse, adresse jetable). */
-  trialDenied?: true;
-  limits: (typeof PLAN_LIMITS)[PlanCode];
-  features: {
-    salesStatistics: FeatureAccess;
-    saleFavorites: FeatureAccess;
-    salesCsvExport: FeatureAccess;
-    salesApiAccess: FeatureAccess;
-    multiPropertyAnalysis: FeatureAccess;
-    smartAlerts: FeatureAccess;
-    realtimeAlertChanges: FeatureAccess;
-    watchedZones: FeatureAccess;
-    dpeExplorer: FeatureAccess;
-    marketDemographics: FeatureAccess;
-    marketPriceDistribution: FeatureAccess;
-    valueEstimate: FeatureAccess;
-    cadastralAnalysis: FeatureAccess;
-    nearbyServices: FeatureAccess;
-    savedReports: FeatureAccess;
-    pdfExport: FeatureAccess;
-    reportEditing: FeatureAccess;
-    urbanPlanning: FeatureAccess;
-    streetFacade: FeatureAccess;
-    saleHistory: FeatureAccess;
-    soldComparables: FeatureAccess;
-    activeComparables: FeatureAccess;
-    neighborhoodAnalysis: FeatureAccess;
-    outcomeGraph: FeatureAccess;
-    bidCeiling: FeatureAccess;
-    advancedBidScenarios: FeatureAccess;
-    dpeMap: FeatureAccess;
-    lawyerDirectory: FeatureAccess;
-    lawyerReferrals: FeatureAccess;
-    audienceTracking: FeatureAccess;
-    workspaceCollaboration: FeatureAccess;
-  };
-};
-
 export type SavedPropertyReport = SavedReportRow & {
   plan: PlanEntitlements;
 };
@@ -210,7 +141,7 @@ export type PropertyReportShareResponse = {
   share: PropertyReportShare;
 };
 
-export type PublicSharedCeiling = {
+type PublicSharedCeiling = {
   available: boolean;
   /** « Enchère plafond (simulation) » ou « Offre plafond (simulation) » ; `null` : rapport ancien. */
   label?: string | null;
@@ -249,8 +180,6 @@ export type PublicSharedPropertyReport = {
   limitations: string[];
   disclaimer: string;
 };
-
-export { buildOpportunityAnalysis } from "./property-report/analysis";
 
 export async function listPropertyReports({
   auth,
@@ -331,29 +260,28 @@ export async function savePropertyReport({
     input.saleId,
     input.reportKind,
   );
-  if (!existingReportId) await assertReportCreationAvailable(auth, plan);
 
   const sale = await getSale(auth.supabase, input.saleId);
   const valuationConflict = listingValuationConflict(sale);
   if (valuationConflict) throw new Error(valuationConflict);
   const marketEstimatePromise = buildMarketSnapshot(sale);
   const environmentalContextPromise =
-    input.includeEnvironment && featureUnlocked(plan.features.neighborhoodAnalysis)
+    input.includeEnvironment && featureIncluded(plan.plan, "property.neighborhoodAnalysis")
       ? getEnvironmentalContext({
           address: saleLocation(sale),
           lat: sale.latitude,
           lng: sale.longitude,
         })
       : Promise.resolve(null);
-  const activeComparablesPromise = featureUnlocked(plan.features.activeComparables)
+  const activeComparablesPromise = featureIncluded(plan.plan, "property.activeComparables")
     ? getActiveComparableSales(auth.supabase, sale)
     : Promise.resolve(emptyActiveComparableSales());
   const cadastreParcelsPromise = getCadastralParcels(sale.source_url);
   const dpeDiagnosticsPromise = getDpeDiagnostics(sale.source_url);
-  const urbanPlanningSignalsPromise = featureUnlocked(plan.features.urbanPlanning)
+  const urbanPlanningSignalsPromise = featureIncluded(plan.plan, "property.urbanPlanning")
     ? getUrbanPlanningSignals(sale.source_url)
     : Promise.resolve([]);
-  const valuationBacktestPromise = featureUnlocked(plan.features.soldComparables)
+  const valuationBacktestPromise = featureIncluded(plan.plan, "property.soldComparables")
     ? getValuationBacktestForReport(sale)
     : Promise.resolve(null);
   const [
@@ -429,7 +357,7 @@ export async function savePropertyReport({
   if (error) throw error;
 
   if (!existingReportId) {
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "property_report.created",
       subjectType: "saved_property_report",
@@ -520,7 +448,6 @@ export async function exportPropertyReportPdf({
     operation: "propertyReportPdf",
     launchOffer: plan.launchOffer === true,
   });
-  await assertPdfExportAvailable(auth, plan);
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
   const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv());
@@ -629,7 +556,7 @@ export async function getSharedPropertyReport({
   countView?: boolean;
 }): Promise<PublicSharedPropertyReport> {
   const normalized = normalizeShareToken(token);
-  if (!normalized) throw new Error("Lien de partage invalide.");
+  if (!normalized) throw new NotFoundError("Lien de partage invalide.");
 
   const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
@@ -641,7 +568,7 @@ export async function getSharedPropertyReport({
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
+  if (!data) throw new NotFoundError("Rapport partagé introuvable ou expiré.");
   // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
   if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError("expired");
   // A link stops working as soon as its owner no longer has an active Analyse plan.
@@ -700,7 +627,7 @@ export async function shareOwnerKeepsSavedReports(userId: string): Promise<boole
     subscription && isPlanPeriodActive(subscription.status, subscription.current_period_end)
       ? normalizePlanCode(subscription.plan_code)
       : "decouverte";
-  return featureUnlocked(buildPlanEntitlements(plan).features.savedReports);
+  return featureIncluded(plan, "property.savedReports");
 }
 
 export function buildPropertyReportShare(
@@ -811,72 +738,4 @@ export function buildPublicSharedPropertyReport(
     limitations: normalizeStringList(traceability.limitations),
     disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
   };
-}
-
-/** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
-export type SaleFeatureDoor = "plan" | "unlock";
-
-/**
- * Which door opens `feature` for this sale, or null when neither does. The unlock opens only the
- * rights of `SALE_UNLOCK_FEATURES`, for the sale the database confirms (unlocked and still online).
- * Routes use the door to choose what they return: the full read for the offer, the reduced one for
- * an unlock.
- */
-export async function saleFeatureDoor(
-  auth: SupabaseAuthContext,
-  feature: FeatureKey,
-  saleId: string,
-): Promise<SaleFeatureDoor | null> {
-  const plan = await resolvePlanEntitlements(auth);
-  if (featureIncluded(plan.plan, feature)) return "plan";
-  return isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId)) ? "unlock" : null;
-}
-
-/**
- * True when the caller reads `feature` in full for this sale: the offer includes it, or the
- * account unlocked this sale and the right is one an unlock opens. Used by the routes that serve a
- * teaser to the other accounts (document reading, sale history).
- */
-export async function featureIncludedForSale(
-  auth: SupabaseAuthContext,
-  feature: FeatureKey,
-  saleId: string,
-): Promise<boolean> {
-  return (await saleFeatureDoor(auth, feature, saleId)) !== null;
-}
-
-/**
- * Refuse a right the caller's offer does not include, and say which door opened it.
- *
- * With `saleId`, a Découverte account that unlocked that sale ("3 déblocages par mois") is let
- * through for the rights an unlock opens (`SALE_UNLOCK_FEATURES`), for that sale only: the
- * database confirms the unlock and that the sale is still online. Every other right, and every
- * other sale, stays refused.
- */
-export async function assertFeatureEntitlementVia(
-  auth: SupabaseAuthContext,
-  feature: FeatureKey,
-  message = "Fonctionnalité réservée à l’offre Analyse.",
-  options: { saleId?: string } = {},
-): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
-  const plan = await resolvePlanEntitlements(auth);
-  if (featureIncluded(plan.plan, feature)) return { plan, door: "plan" };
-  if (
-    options.saleId &&
-    isSaleUnlockFeature(feature) &&
-    (await hasUnlockedSale(auth, options.saleId))
-  ) {
-    return { plan, door: "unlock" };
-  }
-  assertEntitlementIncluded(plan, feature, message);
-  return { plan, door: "plan" };
-}
-
-export async function assertFeatureEntitlement(
-  auth: SupabaseAuthContext,
-  feature: FeatureKey,
-  message = "Fonctionnalité réservée à l’offre Analyse.",
-  options: { saleId?: string } = {},
-): Promise<PlanEntitlements> {
-  return (await assertFeatureEntitlementVia(auth, feature, message, options)).plan;
 }

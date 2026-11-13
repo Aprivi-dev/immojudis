@@ -98,7 +98,7 @@ describe("public sale lookup", () => {
                   ],
                   error: null,
                 }
-              : { data: null, error: { code: "PGRST202" } },
+              : { data: null, error: null },
         ),
       ),
       from: vi.fn(),
@@ -110,7 +110,7 @@ describe("public sale lookup", () => {
       { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
     ]);
 
-    // Without a value from the lawyer (or with the function missing), the sale is unchanged.
+    // Without a value from the lawyer, the sale is unchanged.
     mocks.store.clear();
     mocks.client.mockReturnValue(
       client({ rpc: { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null } }),
@@ -133,7 +133,7 @@ describe("public sale lookup", () => {
             ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
             : fn === "get_public_sale_lawyer_fact_sources"
               ? lawyer
-              : { data: null, error: { code: "PGRST202" } },
+              : { data: null, error: null },
         ),
       ),
       from: vi.fn(),
@@ -224,11 +224,11 @@ describe("public sale lookup", () => {
       expect(supabase.rpc.mock.calls.some(([fn]) => fn === "get_merged_sale_target")).toBe(false);
     });
 
-    it("stays missing while the function is not deployed", async () => {
+    it("throws when the merge function is missing, instead of answering 404", async () => {
       mocks.client.mockReturnValue(
         mergedClient({ data: null, error: { code: "PGRST202", message: "not found" } }),
       );
-      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+      await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "PGRST202" });
     });
 
     it("throws on another database error instead of answering 404", async () => {
@@ -238,7 +238,7 @@ describe("public sale lookup", () => {
       await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "57014" });
     });
 
-    it("looks for a merge in the legacy fallback as well", async () => {
+    it("does not look for a merge when the summary function is missing: the error goes up", async () => {
       const supabase = {
         rpc: vi.fn((fn: string) =>
           Promise.resolve(
@@ -247,14 +247,11 @@ describe("public sale lookup", () => {
               : { data: null, error: { code: "PGRST202", message: "missing" } },
           ),
         ),
-        from: vi.fn(() => ({
-          select: () => ({
-            eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
-          }),
-        })),
+        from: vi.fn(),
       };
       mocks.client.mockReturnValue(supabase);
-      expect(await lookupPublicSale(ID)).toEqual({ status: "merged", targetId: KEPT_ID });
+      await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "PGRST202" });
+      expect(supabase.rpc.mock.calls.some(([fn]) => fn === "get_merged_sale_target")).toBe(false);
     });
 
     it("is cached like any answer, under the tag of the old identifier", async () => {
@@ -267,25 +264,24 @@ describe("public sale lookup", () => {
     });
   });
 
-  it("falls back to the minimal preview view before the function is deployed", async () => {
-    mocks.client.mockReturnValue(
-      client({
-        rpc: { data: null, error: { code: "PGRST202", message: "missing" } },
-        view: { data: { id: ID, starting_price_eur: 30_000 }, error: null },
-      }),
-    );
-    const result = await lookupPublicSale(ID);
-    expect(result).toMatchObject({ status: "found", sale: { id: ID, starting_price_eur: 30_000 } });
+  it("never reads the preview view: a missing summary function throws", async () => {
+    const supabase = client({
+      rpc: { data: null, error: { code: "PGRST202", message: "missing" } },
+      view: { data: { id: ID, starting_price_eur: 30_000 }, error: null },
+    });
+    mocks.client.mockReturnValue(supabase);
+    await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "PGRST202" });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  it("is missing in the legacy fallback too when the view has no row", async () => {
+  it("never turns a missing summary function into a 404", async () => {
     mocks.client.mockReturnValue(
       client({
         rpc: { data: null, error: { code: "PGRST202", message: "missing" } },
         view: { data: null, error: null },
       }),
     );
-    expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+    await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   it("throws on a database error instead of answering 404", async () => {

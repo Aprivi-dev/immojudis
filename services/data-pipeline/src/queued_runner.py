@@ -9,9 +9,9 @@ from contextvars import ContextVar
 from urllib.parse import urlsplit
 
 from src.admission import is_expired
-from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, load_settings
+from src.config import PDF_TEXTS_DIR, SOURCE_NAMES, EncheresPubliquesAccessNotAuthorized, load_settings
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -21,6 +21,12 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.freshness import document_fingerprint, documents_are_current, settle_source_change_without_documents
 from src.geocode import geocode_sale, sale_needs_position
 from src.information_agent_evidence import run_information_agent_evidence_batch
@@ -31,19 +37,11 @@ from src.llm_requests import (
 )
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_scope
 from src.main import (
-    SOURCE_NAMES,
     PipelineOptions,
     run_pipeline,
 )
-from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
-    PDF_FINALIZATION_MARGIN_SECONDS,
-    PdfDeadlineExceeded,
-    PdfExtractionDeferred,
-    enrich_sale_from_pdfs,
-    pdf_deadline_scope,
-    sale_storage_id,
-)
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, pdf_deadline_scope
+from src.pdf_enrichment import PDF_FINALIZATION_MARGIN_SECONDS, enrich_sale_from_pdfs
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_pass_outcomes import (
     complete_manifest_with_excluded_url,
@@ -53,8 +51,8 @@ from src.pdf_pass_outcomes import (
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
-from src.queue_job_state import finish_job as _finish_claim
-from src.sale_procedure import classify_sale_procedure
+from src.sale_finalization import derive_sale_facts
+from src.sale_local_files import sale_storage_id
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
@@ -62,6 +60,7 @@ from src.storage.pdf_checkpoint_rules import last_checkpoint_refusal, reset_chec
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
+    close_open_run_in_supabase,
     connect,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
@@ -69,7 +68,6 @@ from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
     finish_auction_enrichment_job_in_supabase,
     finish_data_refresh_request_in_supabase,
-    finish_run_in_supabase,
     has_active_running_run_in_supabase,
     has_eligible_pdf_job_for_sale,
     mark_past_sales_in_supabase,
@@ -83,10 +81,6 @@ from src.storage.supabase_client import (
     upsert_dpe_diagnostics_to_supabase,
     upsert_sales_to_supabase,
 )
-from src.tribunal import fill_tribunal
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
@@ -97,8 +91,6 @@ ENRICHMENT_FAMILY = "enrichment"
 # claims for display/fact/PDF jobs instead of allowing a persistent detail
 # backlog to reduce the general lane to one claim in six.
 ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 3 + (ENRICHMENT_FAMILY,)
-ENRICHMENT_MAX_JOBS = 180
-ENRICHMENT_BUDGET_SECONDS = 1200
 PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
@@ -164,12 +156,15 @@ def _log_worker_job_transition(
 
 
 def _finish_job(job: dict[str, object], **kwargs: object) -> bool:
+    """Finish only the claimed attempt and report whether the compare-and-set matched it."""
+    # A worker whose lease expired must not finish a later worker's attempt.
+    arguments = dict(kwargs)
+    if job.get("attempt_count") is not None:
+        arguments["attempt_count"] = int(job["attempt_count"])
+    if job.get("locked_at") is not None:
+        arguments["locked_at"] = job["locked_at"]
     try:
-        persisted = _finish_claim(
-            job,
-            finish_impl=finish_auction_enrichment_job_in_supabase,
-            **kwargs,
-        )
+        persisted = finish_auction_enrichment_job_in_supabase(str(job.get("id") or ""), **arguments)
     except Exception:
         _log_worker_job_transition(job, outcome="finish_failed")
         raise
@@ -247,7 +242,7 @@ def main() -> int:
 
     if source not in VALID_SOURCES:
         message = f"Invalid queued source: {source}"
-        finish_run_in_supabase(run_id, "failed", {"runner": "github_actions_queue"}, {"runner": [message]})
+        close_open_run_in_supabase(run_id, "failed", {"runner": "github_actions_queue"}, {"runner": [message]})
         print(message)
         return 1
 
@@ -265,7 +260,9 @@ def main() -> int:
         )
     except Exception as exc:
         LOGGER.exception("Queued run failed: %s", exc)
-        finish_run_in_supabase(
+        # run_pipeline holds the report of its run and closes it itself; this level above only knows the exception,
+        # so it merges into what the worker wrote (progress, or its final report) and never reopens a closed run.
+        close_open_run_in_supabase(
             run_id,
             "failed",
             {"runner": "github_actions_queue"},
@@ -356,7 +353,7 @@ def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
     )
 
 
-def _pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
+def pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
     """Reserve the production 60-second margin, scaled for short test runs."""
     budget = max(0.0, float(budget_seconds))
     return min(PDF_FINALIZATION_MARGIN_SECONDS, budget * PDF_FINALIZATION_MARGIN_FRACTION)
@@ -830,9 +827,9 @@ def run_enrichment_queue_batch(
                 sale.raw_payload.pop("source_operational_changed", None)
             if sale_needs_position(sale):
                 geocode_sale(sale)
-            fill_tribunal(sale)
-            classify_sale_procedure(sale)
-            normalize_asset_features(sale)
+            # Étapes communes avec la fin de collecte qui suit les mêmes lectures (``main._checkpoint_enrichment``) :
+            # pièces et faits peuvent changer le type du bien, que relisent surfaces et caractéristiques de la source.
+            derive_sale_facts(sale)
             written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
             if pdf_jobs and final_write_was_discarded(written, sale):
@@ -1051,7 +1048,7 @@ def run_enrichment_queue_batch(
     return handled_detail_jobs + len(enrichment_jobs)
 
 
-def _run_enrichment_queue_batch_with_deadline(
+def run_enrichment_queue_batch_with_deadline(
     *,
     limit: int,
     family: str,
@@ -1142,14 +1139,14 @@ def _run_enrichment_queue_worker(
     if max_jobs is None:
         max_jobs = min(
             ENRICHMENT_MAX_JOBS,
-            max(1, int(os.getenv("PIPELINE_ENRICHMENT_MAX_JOBS", str(ENRICHMENT_MAX_JOBS)))),
+            max(1, int(os.getenv(ENRICHMENT_MAX_JOBS_ENV, str(ENRICHMENT_MAX_JOBS)))),
         )
     else:
         max_jobs = min(ENRICHMENT_MAX_JOBS, max(1, int(max_jobs)))
     if budget_seconds is None:
         budget_seconds = min(
             ENRICHMENT_BUDGET_SECONDS,
-            max(60, int(os.getenv("PIPELINE_ENRICHMENT_BUDGET_SECONDS", str(ENRICHMENT_BUDGET_SECONDS)))),
+            max(60, int(os.getenv(ENRICHMENT_BUDGET_SECONDS_ENV, str(ENRICHMENT_BUDGET_SECONDS)))),
         )
     else:
         budget_seconds = max(0, min(ENRICHMENT_BUDGET_SECONDS, int(budget_seconds)))
@@ -1166,7 +1163,7 @@ def _run_enrichment_queue_worker(
     # Do not start a fresh claim in the finalization margin.  A claim can
     # otherwise arrive after the last PDF cutoff and spend the margin merely
     # being deferred, even though it did no useful work.
-    finalization_margin_seconds = _pdf_finalization_margin_seconds(budget_seconds)
+    finalization_margin_seconds = pdf_finalization_margin_seconds(budget_seconds)
     claim_deadline = deadline - finalization_margin_seconds
     due_counts = _read_due_enrichment_family_counts()
     family_cycle = _enrichment_family_cycle(due_counts)
@@ -1200,7 +1197,7 @@ def _run_enrichment_queue_worker(
         )
         claim_batches += 1
         batch_started_at = time.monotonic()
-        count = _run_enrichment_queue_batch_with_deadline(
+        count = run_enrichment_queue_batch_with_deadline(
             limit=preferred_limit,
             family=preferred,
             provider_clients=provider_clients,
@@ -1227,7 +1224,7 @@ def _run_enrichment_queue_worker(
             )
             claim_batches += 1
             batch_started_at = time.monotonic()
-            count = _run_enrichment_queue_batch_with_deadline(
+            count = run_enrichment_queue_batch_with_deadline(
                 limit=alternate_limit,
                 family=alternate,
                 provider_clients=provider_clients,
@@ -1299,7 +1296,7 @@ def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None
         db_url = str(settings.get("supabase_db_url") or "")
         if not db_url:
             return None
-        with _postgres_connect(
+        with connect(
             db_url,
             connect_timeout=3,
             retry_delays=(),
@@ -1441,7 +1438,7 @@ def _read_due_enrichment_family_counts() -> dict[str, int]:
     try:
         # This count only changes the lane ratio. Never spend the worker budget
         # on the regular write-connection retry sequence for optional telemetry.
-        with _postgres_connect(db_url, connect_timeout=3, retry_delays=()) as connection:
+        with connect(db_url, connect_timeout=3, retry_delays=()) as connection:
             connection.execute("set transaction read only")
             connection.execute("set local lock_timeout = '1000ms'")
             connection.execute("set local statement_timeout = '3000ms'")

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 from collections.abc import Callable
@@ -15,72 +14,57 @@ from typing import Any
 
 from src import base_reads, listing_minimum, retention_tombstones, source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection
-from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import catalogue_lock_lost, ensure_catalogue_lock_held
-from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import identity as collection_identity
 from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
+    PROCESS_ISOLATED_SOURCES,
+    SOURCE_NAMES,
     EncheresPubliquesAccessNotAuthorized,
+    autonomous_run_id,
     encheres_publiques_access_enabled,
     load_settings,
     require_encheres_publiques_access,
 )
 from src.dedupe import merge_duplicate_sales
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
     LLMEnrichmentStats,
     enrich_sale_with_llm,
-    extract_source_description,
     has_current_fact_analysis,
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
-from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
-from src.extraction_profiles import attach_source_property_features
 from src.freshness import (
     detail_is_fresh,
-    document_list_changed,
     documents_are_current,
     record_source_checks,
     settle_source_change_without_documents,
 )
-from src.geocode import geocode_sale, locate_sale_by_cadastre
-from src.image_validation import filter_raw_image_url, warm_image_validations
+from src.image_validation import warm_image_validations
 from src.information_sufficiency import (
     load_contact_blocklist,
     load_court_registry,
     set_active_blocklist,
     set_active_court_registry,
 )
-from src.known_document_backfill import (
-    KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
-    KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
-    KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-    _backfill_document_facts_version_from_known,
-    _backfill_document_occupancy_from_known,
-    _backfill_document_price_from_known,
-    _backfill_document_sale_date_from_known,
-    _backfill_document_surface_fields_from_known,
+from src.known_document_backfill import is_missing_raw_value
+from src.known_enrichment import (
+    KNOWN_ENRICHMENT_PAYLOAD_FIELDS,
+    backfill_payload_fields_from_known,
+    preserve_known_enrichment_payloads,
 )
-from src.known_document_backfill import is_missing_raw_value as _is_missing_raw_value
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
-from src.lot_scope import other_commune
-from src.lot_scope import surface_reasoning_context as _surface_reasoning_context_for_sale
 from src.merge_guards import MergeGuardRefused
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
-from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
-    PdfEnrichmentStats,
-    classify_document_type,
-    enrich_sale_from_pdfs,
-)
-from src.pdf_offer_deadline import apply_page_offer_deadline
+from src.pdf_document_types import classify_document_type
+from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
     build_extraction_gap_report,
@@ -89,7 +73,7 @@ from src.quality import (
     format_quality_report,
 )
 from src.run_finalizer import register_run
-from src.sale_procedure import classify_sale_procedure
+from src.sale_finalization import finalize_sale_for_app
 from src.source_health import SOURCE_WARNING_EXIT_CODE, failed_sources, warning_annotations
 from src.source_process import kill_live_source_processes, run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
@@ -110,7 +94,6 @@ from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
     delete_secondary_sales_in_supabase,
-    delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
     finish_run_in_supabase,
@@ -123,26 +106,12 @@ from src.storage.supabase_client import (
     upsert_observations_to_supabase,
     upsert_sales_to_supabase,
 )
-from src.tribunal import fill_tribunal
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
-SOURCE_NAMES = (
-    "avoventes",
-    "licitor",
-    "vench",
-    "info_encheres",
-    "encheres_publiques",
-    "petites_affiches",
-    "cessions_etat",
-    "agrasc",
-    "encheres_immobilieres",
-    "notaires",
-)
-
 KNOWN_UNCHANGED_BACKFILL_FIELDS = (
     "source_urls",
     "tribunal",
@@ -193,104 +162,8 @@ KNOWN_UNCHANGED_BACKFILL_FIELDS = (
     "raw_text",
 )
 
-KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
-    "source_presence",
-    # Preserve the structured source contract used by Vench and the source
-    # proof/readiness checks when a cold pass restores a known sale.
-    "source_property_features",
-    "source_property_feature_evidence",
-    "source_property_features_meta",
-    "source_procedure_profile",
-    "source_field_observations",
-    "source_evidence",
-    "source_evidence_provenance",
-    "source_energy_diagnostics",
-    "source_sale_schedule",
-    "date_precision",
-    "sale_date_precision",
-    "operator_land_surface_conflict",
-    "operator_land_surface_scope",
-    "source_display_constraints",
-    "source_blocks",
-    "source_images",
-    "raw_image_url",
-    "source_description",
-    "llm_extraction",
-    "llm_fact_extraction",
-    "llm_fact_prompt_version",
-    "llm_display_prompt_version",
-    "llm_fact_coverage",
-    "llm_fact_input_key",
-    "llm_fact_context_manifest",
-    "llm_fact_context_coverage",
-    "llm_display_description",
-    "llm_display_description_word_count",
-    "llm_display_status",
-    "llm_display_model",
-    "llm_display_origin",
-    "source_operational_changed",
-    "llm_display_quality_version",
-    "llm_display_source_constraints",
-    "llm_display_evidence_check",
-    "llm_prompt_version",
-    "source_content_changed",
-    "source_content_change_reason",
-    "source_content_changed_at",
-    "superseded_analysis",
-    "document_analysis",
-    "surface_extraction",
-    "surface_analysis",
-    "land_surface_extraction",
-    "investment_analysis",
-    "llm_due_diligence",
-    "geocode",
-    "tribunal_assignment",
-    "pdf_tribunal_extraction",
-    # PDF projection traces and candidate evidence are enrichment metadata.
-    # Preserve them through a cold source pass so the PDF worker can invalidate
-    # only stale projections without treating the markers as fresh source text.
-    "pdf_fact_provenance",
-    "pdf_sale_date_extraction",
-    "pdf_visit_dates_extraction",
-    "pdf_energy_diagnostics",
-    "pdf_energy_diagnostics_candidates",
-    "pdf_surface_candidates",
-    "pdf_land_surface_candidates",
-    "pdf_rooms_candidates",
-    "pdf_bedrooms_candidates",
-    "pdf_occupancy_candidates",
-    "pdf_multi_lot_guard",
-)
-
 # Nombre de couples (vente, groupe) retenus par la garde d'écho que le résumé du passage nomme.
 BASE_ECHO_SAMPLE_SIZE = 50
-KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
-    "source_name",
-    "source_url",
-    "raw_text",
-    "starting_price_eur",
-    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
-    *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
-    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-    "rooms_count",
-    "bedrooms_count",
-    "occupancy_status",
-    "sale_date",
-    "status",
-    "visit_dates",
-    "property_type",
-    "description",
-    "risk_notes",
-)
-
-KNOWN_SOURCE_REFRESH_METADATA_FIELDS = (
-    "source_sale_schedule",
-    "date_precision",
-    "sale_date_precision",
-    "operator_land_surface_conflict",
-    "operator_land_surface_scope",
-    "source_display_constraints",
-)
 
 
 @dataclass
@@ -379,7 +252,6 @@ class _PipelineRun:
     supabase_deleted_secondary: int = 0
     supabase_reconciled_duplicates: int = 0
     supabase_deleted_expired: int = 0
-    supabase_deleted_vench_without_surface: int = 0
     outcome_bridge_scanned: int = 0
     outcome_bridge_created: int = 0
     outcome_bridge_reused: int = 0
@@ -479,11 +351,6 @@ def _load_known_sale_details(run: _PipelineRun) -> bool:
         for source_url, row in known_details.items()
         if row.get("_signature") and detail_is_fresh(row, source_url)
     }
-    run.known_payload_urls = (
-        set(known_details)
-        if not settings.get("supabase_db_url")
-        else set()
-    )
     return True
 
 
@@ -542,7 +409,7 @@ def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:
     )
     from src.source_checkpoint import configure_publisher, flush_publications
     progressive_publisher = None
-    if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert:
+    if autonomous_run_id() and options.upsert:
         def publish_progressive(rows: list[dict[str, object]]) -> None:
             _publish_progressive_batch(run, rows)
 
@@ -625,7 +492,7 @@ def _restore_known_unchanged_sales(run: _PipelineRun) -> None:
     # l'hydratant avec la dernière version riche connue afin de ne pas écraser
     # Supabase avec les seules données clairsemées de listing.
     run.skipped_detail = _hydrate_known_unchanged_sales(run.raw_sales, run.known_details)
-    preserved_enrichment = _preserve_known_enrichment_payloads(run.raw_sales, run.known_details)
+    preserved_enrichment = preserve_known_enrichment_payloads(run.raw_sales, run.known_details)
     run.timings["known_enrichment_payloads_preserved"] = preserved_enrichment
     record_source_checks(run.raw_sales, run.known_details)
 
@@ -719,7 +586,7 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         for sale in canonical_sales[offset:offset + 25]:
             LOGGER.info("Preparing listing source=%s index=%s/%s", sale.source_name, offset + len(batch) + 1, len(canonical_sales))
             try:
-                _finalize_sale_for_app(sale, geocode=False)
+                finalize_sale_for_app(sale, geocode=False)
                 batch.append(sale)
             except Exception as exc:
                 record_sale_decisions(run_id, [sale], decision="quarantined", reason="finalization_failed: " + str(exc)[:950])
@@ -912,7 +779,7 @@ def _finalize_enriched_sales(run: _PipelineRun) -> None:
     warm_image_validations(app_ready)
     for sale in app_ready:
         try:
-            _finalize_sale_for_app(sale, geocode=not bool(os.getenv("PIPELINE_AUTONOMOUS_RUN_ID")))
+            finalize_sale_for_app(sale, geocode=autonomous_run_id() is None)
         except Exception as exc:
             LOGGER.exception("Finalisation failed for %s: %s", sale.source_url, exc)
             errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
@@ -1047,7 +914,6 @@ def _publish_run(run: _PipelineRun) -> None:
                     summary["merge_guard_refused"] = str(exc)
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
-                run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             else:
                 summary["global_cleanup_skipped"] = "targeted_or_bounded_collection"
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
@@ -1070,7 +936,6 @@ def _publish_run(run: _PipelineRun) -> None:
                     "reconciled_duplicate_sales": run.supabase_reconciled_duplicates,
                     "marked_past_in_supabase": run.supabase_cleaned_past,
                     "deleted_expired_sales": run.supabase_deleted_expired,
-                    "deleted_vench_without_surface": run.supabase_deleted_vench_without_surface,
                 }
             )
             summary["completion_status"] = "partial_success" if run.coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
@@ -1166,7 +1031,7 @@ def _checkpoint_enrichment(sale: AuctionSale) -> bool:
     """Commit admissible progress without failing deferred enrichment targets."""
     if publication_rejection(sale):
         return False
-    _finalize_sale_for_app(sale, geocode=False)
+    finalize_sale_for_app(sale, geocode=False)
     if upsert_sales_to_supabase([sale], refresh_last_seen=False) != 1:
         LOGGER.info("Skipped superseded enrichment checkpoint for %s", sale.source_url)
         return False
@@ -1290,97 +1155,15 @@ def _restore_known_detail_gallery(sale: dict[str, object], known: dict[str, obje
         sale["source_images"] = list(stored)
 
 
-def _preserve_known_enrichment_payloads(
-    raw_sales: list[dict[str, object]],
-    known_details: dict[str, dict[str, object]],
-) -> int:
-    preserved = 0
-    for sale in raw_sales:
-        if sale.get("source_identity_mismatch"):
-            continue
-        source_url = str(sale.get("source_url") or "")
-        known = known_details.get(source_url)
-        known = known or {}
-        known_payload = known.get("raw_payload") or {}
-        if base_reads.was_reread(sale):
-            # Un champ que le collecteur a repris de la ligne stockée (Vench, page restreinte) n'est pas ce que la
-            # source a publié. Sa clé est absente de l'instantané, qui en garde la liste : « inconnu de la source »
-            # n'est pas « vide à la source », et une restauration ne doit pas le remettre à vide.
-            relayed = base_reads.relayed_fields(sale) & set(KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
-            sale[base_reads.SOURCE_SNAPSHOT_KEY] = {
-                key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if key not in relayed
-            }
-            if relayed:
-                sale[base_reads.SOURCE_SNAPSHOT_KEY][base_reads.SNAPSHOT_RELAYED_FIELDS_KEY] = sorted(relayed)
-        elif known_payload.get(base_reads.SOURCE_SNAPSHOT_KEY):
-            sale[base_reads.SOURCE_SNAPSHOT_KEY] = known_payload[base_reads.SOURCE_SNAPSHOT_KEY]
-        documents_changed = (
-            base_reads.was_reread(sale)
-            and "documents" in sale
-            and document_list_changed(sale.get("documents") or [], known, source_url)
-        )
-        if documents_changed:
-            sale["superseded_document_analysis"] = known_payload.get("document_analysis")
-            sale["llm_display_status"] = "pending"
-            sale["source_content_changed"] = True
-            sale["source_content_changed_at"] = datetime.now(UTC).isoformat()
-            continue
-        payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
-        if (
-            sale.get("source_detail_status") == "complete"
-            and base_reads.was_reread(sale)
-        ):
-            payload_fields = tuple(
-                key
-                for key in payload_fields
-                if key not in KNOWN_SOURCE_REFRESH_METADATA_FIELDS
-            )
-        # Le géocodage d'une autre commune n'est pas une preuve pour celle-ci (lot Licitor autrefois lu comme le premier).
-        foreign_geocode = other_commune(sale.get("city"), known.get("city"))
-        preserved += _backfill_payload_fields_from_known(
-            sale,
-            known,
-            keys=tuple(
-                key
-                for key in payload_fields
-                if (sale.get("source_detail_status") not in {"complete", "restricted"}
-                    or key not in {"source_images", "raw_image_url"}) and not (foreign_geocode and key == "geocode")
-            ),
-        )
-        preserved += _backfill_document_surface_fields_from_known(sale, known)
-        preserved += _backfill_document_price_from_known(sale, known)
-        preserved += _backfill_document_facts_version_from_known(sale, known)
-        preserved += _backfill_document_sale_date_from_known(sale, known)
-        preserved += _backfill_document_occupancy_from_known(sale, known)
-    return preserved
-
-
 def _backfill_raw_sale_from_known_detail(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> None:
     for key in KNOWN_UNCHANGED_BACKFILL_FIELDS:
-        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known.get(key)):
+        if is_missing_raw_value(sale.get(key)) and not is_missing_raw_value(known.get(key)):
             sale[key] = known[key]
 
-    _backfill_payload_fields_from_known(sale, known, keys=KNOWN_ENRICHMENT_PAYLOAD_FIELDS)
-
-
-def _backfill_payload_fields_from_known(
-    sale: dict[str, object],
-    known: dict[str, object],
-    *,
-    keys: tuple[str, ...],
-) -> int:
-    known_payload = known.get("raw_payload")
-    if not isinstance(known_payload, dict):
-        return 0
-    copied = 0
-    for key in keys:
-        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known_payload.get(key)):
-            sale[key] = known_payload[key]
-            copied += 1
-    return copied
+    backfill_payload_fields_from_known(sale, known, keys=KNOWN_ENRICHMENT_PAYLOAD_FIELDS)
 
 
 def _enabled_scrapers(
@@ -1515,9 +1298,7 @@ def _run_scraper(
     result.
     """
 
-    isolated_sources = settings.get(
-        "source_process_isolation_sources", ("vench", "avoventes", "petites_affiches")
-    )
+    isolated_sources = settings.get("source_process_isolation_sources", PROCESS_ISOLATED_SOURCES)
     if isinstance(isolated_sources, str):
         isolated_sources = tuple(
             source.strip().lower() for source in isolated_sources.split(",") if source.strip()
@@ -1556,14 +1337,14 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
     raws = list({collection_identity(raw): raw for raw in raws}.values())
     record_items(run_id, raws)
     _hydrate_known_unchanged_sales(raws, known)
-    _preserve_known_enrichment_payloads(raws, known)
+    preserve_known_enrichment_payloads(raws, known)
     record_source_checks(raws, known)
     normalized = []
     for raw in raws:
         try:
             sale = normalize_sale(raw)
             sale.last_run_id = run_id
-            _finalize_sale_for_app(sale, geocode=False)
+            finalize_sale_for_app(sale, geocode=False)
             normalized.append(sale)
         except Exception as exc:
             # No internal address in the message: same guarantee as in ``_normalize_and_deduplicate``.
@@ -1580,25 +1361,6 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
         record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
         errors.setdefault("supabase", []).append(str(exc)[:1000])
         LOGGER.exception("Progressive publication failed; checkpoint remains available")
-
-
-def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
-    source_description = extract_source_description(sale)
-    if source_description:
-        sale.raw_payload["source_description"] = source_description
-    else:
-        sale.raw_payload.pop("source_description", None)
-    (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
-    filter_raw_image_url(sale.raw_payload)
-    fill_tribunal(sale)
-    apply_page_offer_deadline(sale)  # appel d'offres : date limite publiée sur la page (AGRASC, notaires, Cessions)
-    classify_sale_procedure(sale)
-    surface_context = _surface_reasoning_context_for_sale(sale)
-    if surface_context:
-        extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
-    normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
-    apply_catalogue_readiness(sale)
 
 
 def _can_use_paid_llm(sale: AuctionSale) -> bool:

@@ -1,7 +1,7 @@
 import { mapboxAerial3dUrl, mapboxMapUrl, mapboxStreetLevelUrl } from "@/lib/mapbox";
 import type { AuctionSale } from "@/lib/types";
 
-export type StreetFacadeStatus = "coordinates_ready" | "address_only" | "missing";
+type StreetFacadeStatus = "coordinates_ready" | "address_only" | "missing";
 
 export type StreetFacadeAnalysis = {
   available: boolean;

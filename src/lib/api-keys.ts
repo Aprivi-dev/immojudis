@@ -1,10 +1,11 @@
 import "server-only";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { isUuid } from "@/lib/uuid";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, ForbiddenError, PublicApiError } from "@/lib/api-errors";
 import { apiAccessAllowed } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
@@ -64,7 +65,7 @@ export function createApiKeyReader(
   return {
     from(relation: string) {
       if (!API_KEY_READABLE_RELATIONS.has(relation)) {
-        throw new Error("Forbidden: ressource non accessible avec une clé API.");
+        throw new ForbiddenError("Ressource non accessible avec une clé API.");
       }
       const query = (client.from as (name: string) => { select: (...args: unknown[]) => unknown })(
         relation,
@@ -73,8 +74,6 @@ export function createApiKeyReader(
     },
   } as unknown as SupabaseAuthContext["supabase"];
 }
-
-export type ApiKeyCreateInput = z.input<typeof apiKeyCreateInputSchema>;
 export type ApiKeyCreatePayload = z.output<typeof apiKeyCreateInputSchema>;
 
 export type ApiKeySummary = {
@@ -113,7 +112,7 @@ export async function listUserApiKeys({
 }): Promise<ApiKeyListResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!apiAccessAllowed(auth, plan.plan)) {
-    throw new Error("Clés API réservées à l’administration.");
+    throw new ForbiddenError("Clés API réservées à l’administration.");
   }
   const { data, error } = await supabaseAdmin
     .from("user_api_keys")
@@ -141,7 +140,7 @@ export async function createUserApiKey({
 }): Promise<ApiKeyCreateResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!apiAccessAllowed(auth, plan.plan)) {
-    throw new Error("Clés API réservées à l’administration.");
+    throw new ForbiddenError("Clés API réservées à l’administration.");
   }
 
   await assertApiKeyLimit(auth, plan.limits.apiKeys);
@@ -184,7 +183,7 @@ export async function revokeUserApiKey({
   keyId: string;
 }): Promise<{ key: ApiKeySummary }> {
   // Un identifiant mal formé est une erreur de l'appelant (400), pas une panne de la base.
-  if (!z.string().uuid().safeParse(keyId).success) {
+  if (!isUuid(keyId)) {
     throw new PublicApiError("Identifiant de clé invalide.", 400);
   }
 
@@ -248,7 +247,7 @@ export async function apiKeyAuthContextFromRequest(
   };
 }
 
-export async function verifyApiKeySecret({
+async function verifyApiKeySecret({
   secret,
   requiredScope = "sales.feed:read",
   now = new Date(),
@@ -257,7 +256,7 @@ export async function verifyApiKeySecret({
   requiredScope?: string;
   now?: Date;
 }): Promise<ApiKeyRow> {
-  if (!isApiKeySecret(secret)) throw new Error("Unauthorized: Invalid API key");
+  if (!isApiKeySecret(secret)) throw new AuthRequiredError("Unauthorized: Invalid API key");
 
   const expectedHash = hashApiKey(secret);
   const { data, error } = await supabaseAdmin
@@ -272,12 +271,12 @@ export async function verifyApiKeySecret({
   const row = (data ?? []).find((candidate) =>
     safeCompareHexDigests(candidate.key_hash, expectedHash),
   );
-  if (!row) throw new Error("Unauthorized: Invalid API key");
+  if (!row) throw new AuthRequiredError("Unauthorized: Invalid API key");
   if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) {
-    throw new Error("Unauthorized: API key expired");
+    throw new AuthRequiredError("Unauthorized: API key expired");
   }
   if (!row.scopes.includes(requiredScope)) {
-    throw new Error("Unauthorized: API key scope missing");
+    throw new AuthRequiredError("Unauthorized: API key scope missing");
   }
 
   await supabaseAdmin
@@ -345,6 +344,6 @@ async function assertApiKeyLimit(auth: SupabaseAuthContext, limit: number | null
 
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Limite de ${limit} clés API actives atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} clés API actives atteinte.`);
   }
 }

@@ -43,12 +43,12 @@ import {
  */
 
 /** Date de la passe du moteur et de réception de la réponse évaluée (fictives, fixes : banc rejouable). */
-export const EVALUATION_NOW = new Date("2026-11-20T12:00:00.000Z");
+const EVALUATION_NOW = new Date("2026-11-20T12:00:00.000Z");
 const RECEIVED_AT = Date.parse("2026-11-20T09:00:00.000Z");
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-export type CaseMessage = {
+type CaseMessage = {
   /** `corps` (message évalué), `anterieur-N` ou `posterieur-N`. */
   role: string;
   messageId: string;
@@ -59,7 +59,7 @@ export type CaseMessage = {
   attachments: EvaluationCase["message"]["pieces_jointes"];
 };
 
-export function evaluationIds(evaluationCase: EvaluationCase) {
+function evaluationIds(evaluationCase: EvaluationCase) {
   const id = evaluationCase.id;
   return {
     saleId: `${id}-sale`,
@@ -71,7 +71,7 @@ export function evaluationIds(evaluationCase: EvaluationCase) {
 }
 
 /** Messages entrants du dossier, dans l'ordre de réception. */
-export function caseMessages(evaluationCase: EvaluationCase): CaseMessage[] {
+function caseMessages(evaluationCase: EvaluationCase): CaseMessage[] {
   const ids = evaluationIds(evaluationCase);
   const { contexte, message } = evaluationCase;
   const neighbour = (
@@ -138,13 +138,13 @@ function senderAuthentication(evaluationCase: EvaluationCase) {
 }
 
 /** Ce que la réception décide avant toute extraction (même ordre que `processInboundEmail`). */
-export type Reception =
+type Reception =
   | { statut: "extraction"; motif: null }
   | { statut: "reponse_automatique"; motif: "auto_reply" }
   | { statut: "opposition"; motif: "contact_opposed" }
   | { statut: "relecture"; motif: string };
 
-export function receive(evaluationCase: EvaluationCase, message: CaseMessage): Reception {
+function receive(evaluationCase: EvaluationCase, message: CaseMessage): Reception {
   const senderMatches = evaluationCase.contexte.expediteur_est_destinataire;
   const authentication = senderAuthentication(evaluationCase);
   if (isAutomaticReply({ headers: {}, subject: message.subject })) {
@@ -190,7 +190,7 @@ export type StageCandidate = {
   metadata: unknown;
 };
 
-export type RulesStageMessage = {
+type RulesStageMessage = {
   role: string;
   message_id: string;
   reception: Reception;

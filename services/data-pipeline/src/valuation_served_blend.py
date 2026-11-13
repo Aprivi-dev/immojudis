@@ -8,9 +8,8 @@ comparables being replaced by the past-only H3 cell statistics the training alre
 each sale, and reports median APE, p75 APE and interval coverage for the model alone, the
 comparables alone and the served blend.
 
-The weights below are those of ``resolveModelWeight`` in ``hybrid-market-valuation.ts``: a test
-(``test_the_blend_weights_are_those_of_the_typescript_serving_code``) reads the TypeScript file and
-fails if they diverge.
+The weights below are those of ``resolveModelWeight`` in ``hybrid-market-valuation.ts``. Both sides must
+reproduce the numbers of ``tests/fixtures/served_blend_parity.json``, produced by this module.
 
 Pure numpy: no database, no model artifact.
 """

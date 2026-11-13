@@ -11,9 +11,9 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import { HEARINGS_RPC_DAYS } from "./upcoming-hearings";
+import { isProductionRuntime } from "./runtime-phase";
 import {
   HEARINGS_DATA_REVALIDATE_SECONDS,
-  mustFailOnHearingsReadError,
   tryLoadUpcomingHearings,
 } from "./upcoming-hearings.server";
 
@@ -123,11 +123,12 @@ describe("tryLoadUpcomingHearings", () => {
   });
 });
 
-describe("mustFailOnHearingsReadError", () => {
+// La page des audiences fait échouer le rendu selon la règle commune des pages ISR (`isProductionRuntime`).
+describe("isProductionRuntime (règle d'échec de la page des audiences)", () => {
   it("fait échouer le rendu en production, pour garder la dernière bonne page", () => {
-    expect(mustFailOnHearingsReadError({ NODE_ENV: "production", NEXT_PHASE: "" })).toBe(true);
+    expect(isProductionRuntime({ NODE_ENV: "production", NEXT_PHASE: "" })).toBe(true);
     expect(
-      mustFailOnHearingsReadError({
+      isProductionRuntime({
         NODE_ENV: "production",
         NEXT_PHASE: "phase-production-server",
       }),
@@ -136,9 +137,9 @@ describe("mustFailOnHearingsReadError", () => {
 
   it("ne fait pas échouer le build, ni le développement, ni les tests", () => {
     expect(
-      mustFailOnHearingsReadError({ NODE_ENV: "production", NEXT_PHASE: "phase-production-build" }),
+      isProductionRuntime({ NODE_ENV: "production", NEXT_PHASE: "phase-production-build" }),
     ).toBe(false);
-    expect(mustFailOnHearingsReadError({ NODE_ENV: "development" })).toBe(false);
-    expect(mustFailOnHearingsReadError({ NODE_ENV: "test" })).toBe(false);
+    expect(isProductionRuntime({ NODE_ENV: "development" })).toBe(false);
+    expect(isProductionRuntime({ NODE_ENV: "test" })).toBe(false);
   });
 });

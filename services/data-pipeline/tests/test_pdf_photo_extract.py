@@ -280,3 +280,18 @@ def test_the_extractor_module_imports_nothing_from_the_project() -> None:
         "__future__", "collections", "dataclasses", "hashlib", "importlib", "json", "pathlib", "resource", "sys",
         "types", "pymupdf", "PIL",
     }
+
+
+def test_the_extractor_applies_the_decoder_resource_rule_with_its_own_ceilings(monkeypatch) -> None:
+    """Une seule règle de plafonds (photo_image.apply_resource_limits) ; chaque processus garde ses valeurs."""
+    from types import SimpleNamespace
+
+    applied: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        pdf_photo_extract.photo_image, "apply_resource_limits", lambda cpu, memory: applied.append((cpu, memory))
+    )
+    monkeypatch.setattr(pdf_photo_extract.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(b"<html>")))
+    monkeypatch.setattr(pdf_photo_extract.sys, "stdout", SimpleNamespace(buffer=io.BytesIO()))
+
+    assert pdf_photo_extract.main([]) == 0
+    assert applied == [(pdf_photo_extract.CPU_SECONDS_LIMIT, pdf_photo_extract.ADDRESS_SPACE_LIMIT_BYTES)]

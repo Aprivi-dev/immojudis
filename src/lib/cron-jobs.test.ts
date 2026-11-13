@@ -12,12 +12,10 @@ vi.mock("@/lib/operational-alerts", () => ({
   deliverOperationalAlertNotifications: mocks.deliverOperationalAlertNotifications,
 }));
 
-import {
-  evaluateOperationalHealth,
-  operationalErrorMessage,
-  runDataRetention,
-  runMonitoredCron,
-} from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { runDataRetention } from "@/lib/data-retention-job";
+import { operationalErrorMessage } from "@/lib/monitored-job.server";
+import { evaluateOperationalHealth } from "@/lib/operational-health-job";
 
 describe("operational cron errors", () => {
   afterEach(() => {
@@ -102,7 +100,7 @@ describe("operational cron errors", () => {
     });
   });
 
-  it("ignores a missing information-agent evaluation (migration not applied yet) but not other failures", async () => {
+  it("fails when any evaluation fails, the information-agent one included", async () => {
     mocks.deliverOperationalAlertNotifications.mockResolvedValue({
       channel: "github_actions",
       configured: true,
@@ -115,31 +113,17 @@ describe("operational cron errors", () => {
         ? { data: null, error: { code: "PGRST202", message: "Could not find the function" } }
         : { data: { ok: true }, error: null },
     );
-
-    await expect(
-      evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z")),
-    ).resolves.toMatchObject({
-      health: { ok: true },
-      informationAgent: {},
-    });
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "Could not find the function",
+    );
 
     mocks.rpc.mockImplementation(async (name: string) =>
-      name === "evaluate_information_agent_health"
+      name === "evaluate_operational_health"
         ? { data: null, error: { code: "XX000", message: "boom" } }
         : { data: { ok: true }, error: null },
     );
     await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
       "boom",
-    );
-
-    // Une autre évaluation absente reste une erreur.
-    mocks.rpc.mockImplementation(async (name: string) =>
-      name === "evaluate_operational_health"
-        ? { data: null, error: { code: "PGRST202", message: "missing health" } }
-        : { data: { ok: true }, error: null },
-    );
-    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
-      "missing health",
     );
   });
 
@@ -147,7 +131,7 @@ describe("operational cron errors", () => {
   function retentionRpc(
     retention: unknown,
     noticePurge: unknown = { data: 0, error: null },
-    autopilotPurge: unknown = { data: null, error: { code: "42883", message: "absente" } },
+    autopilotPurge: unknown = { data: {}, error: null },
   ) {
     mocks.rpc.mockImplementation(async (name: string) =>
       name === "purge_launch_offer_end_notices"
@@ -214,16 +198,10 @@ describe("operational cron errors", () => {
     });
   });
 
-  it("ignores a missing notice journal purge (migration not applied yet) but not other failures", async () => {
+  it("fails the data retention job when the notice journal purge fails", async () => {
     retentionRpc(
       { user_sale_unlocks: 2 },
       { data: null, error: { code: "PGRST202", message: "Could not find the function" } },
-    );
-    await expect(runDataRetention()).resolves.toEqual({ deleted: { user_sale_unlocks: 2 } });
-
-    retentionRpc(
-      { user_sale_unlocks: 2 },
-      { data: null, error: { code: "XX000", message: "boom" } },
     );
     await expect(runDataRetention()).rejects.toThrow("purge_launch_offer_end_notices");
   });

@@ -1,3 +1,4 @@
+import { NotFoundError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -131,16 +132,14 @@ describe("sale fact reliability route", () => {
     expect(mocks.assertPublicationVisible).toHaveBeenCalledWith(saleId);
   });
 
-  it("falls back to legacy field evidence when the additive view is unavailable", async () => {
+  it("fails instead of serving the facts without claims when the claim view cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     setup({ claims: null as unknown as unknown[], claimError: { code: "PGRST205" } });
 
     const response = await GET(request(), context);
-    const payload = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(payload.source).toBe("legacy");
-    expect(payload.facts.sale_date.status).toBe("to_confirm");
-    expect(payload.facts.starting_price_eur.status).toBe("to_confirm");
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(JSON.stringify(await response.json())).not.toContain("PGRST205");
   });
 
   it("does not query service-role claims when RLS hides the sale", async () => {
@@ -149,13 +148,18 @@ describe("sale fact reliability route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "Vente introuvable.",
+      code: "NOT_FOUND",
+    });
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });
 
   it("does not expose claims for a quarantined sale", async () => {
     const { claimQuery } = setup();
     mocks.assertPublicationVisible.mockRejectedValue(
-      new Error("Vente introuvable ou inaccessible."),
+      new NotFoundError("Vente introuvable ou inaccessible."),
     );
 
     const response = await GET(request(), context);
@@ -170,6 +174,10 @@ describe("sale fact reliability route", () => {
     });
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Identifiant de vente invalide.",
+      code: "INVALID_REQUEST",
+    });
     expect(mocks.auth).not.toHaveBeenCalled();
   });
 });

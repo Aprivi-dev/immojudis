@@ -1,13 +1,12 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import type { InformationAgentRecipientKind } from "@/lib/information-agent/contacts";
+import type { InformationAgentRecipientKind } from "@/lib/information-agent/contact-resolution";
 import { courtRegistryRecipientOrigin } from "@/lib/information-agent/court-registry-mission";
 import { informationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 import {
@@ -15,6 +14,7 @@ import {
   type InformationAgentFact,
   type InformationAgentMission,
 } from "@/lib/information-agent/schemas";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 // Accès aux missions et aux dossiers de l'agent, partagés par le brouillon, l'envoi et l'aperçu.
 // Extraits de `information-agent.ts` sans changement de comportement.
@@ -30,16 +30,15 @@ export async function cancelMission({
 }) {
   const mission = await loadOwnedMission(adminId, missionId);
   if (!(["draft", "failed"] as MissionRow["status"][]).includes(mission.status)) {
-    throw new Error("Requête invalide : un message déjà envoyé ne peut pas être annulé.");
+    throw new PublicApiError(
+      "Requête invalide : un message déjà envoyé ne peut pas être annulé.",
+      409,
+    );
   }
   await updateMissionOrThrow(mission.id, mission.user_id, {
     status: "cancelled",
     completed_at: new Date().toISOString(),
   });
-}
-
-export function requireInformationAgentAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 export async function loadOwnedMission(userId: string, missionId: string): Promise<MissionRow> {
@@ -49,7 +48,7 @@ export async function loadOwnedMission(userId: string, missionId: string): Promi
     .eq("id", missionId)
     .eq("user_id", userId)
     .single();
-  if (error || !data) throw new Error("Requête invalide : enquête introuvable.");
+  if (error || !data) throw new NotFoundError("Enquête introuvable.");
   return data;
 }
 
@@ -159,7 +158,7 @@ export async function listFactsForCases(caseIds: string[]): Promise<InformationA
   }));
 }
 
-export function isQuestionKey(value: string): value is InformationAgentQuestionKey {
+function isQuestionKey(value: string): value is InformationAgentQuestionKey {
   return value in INFORMATION_AGENT_QUESTIONS;
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
-import { authHeaders } from "@/lib/client-api-core";
+import { apiFetch } from "@/lib/client-api-core";
 import {
   SALE_SIGNAL_QUESTIONS,
   SALE_SIGNAL_REASONS,
@@ -17,15 +17,14 @@ import {
 
 const PRESSED = "border-brand-navy bg-brand-navy text-white hover:bg-brand-navy-soft";
 
-/** Envoie le retour ; vrai quand la base l'a enregistré. Sans session, `authHeaders` lève. */
+/** Envoie le retour ; vrai quand la base l'a enregistré. Sans session, `apiFetch` lève. */
 async function sendFeedback(
   saleId: string,
   body: { signal: SaleSignal; value: SaleSignalValue; reason?: SaleSignalReason },
 ): Promise<boolean> {
-  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/signal-feedback`, {
+  const response = await apiFetch(`/api/sales/${encodeURIComponent(saleId)}/signal-feedback`, {
     method: "POST",
-    headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body,
   });
   if (!response.ok) return false;
   const payload = (await response.json().catch(() => null)) as { recorded?: unknown } | null;

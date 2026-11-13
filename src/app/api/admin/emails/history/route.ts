@@ -1,15 +1,14 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { requireAdmin } from "@/lib/admin-auth.server";
-import { EmailHistoryInputError, listEmailHistory } from "@/lib/admin-emails/history";
-import { adminErrorResponse } from "@/lib/api-route-errors";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { listEmailHistory } from "@/lib/admin-emails/history";
+import { adminRoute } from "@/lib/admin-route-deadline";
+import { PublicApiError } from "@/lib/api-errors";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-const headers = { "cache-control": "private, no-store" };
+const boxSchema = z.enum(["sent", "received"]);
 
 /**
  * Recherche par adresse : le corps JSON, jamais l'URL (les URL finissent dans les journaux de requêtes et
@@ -17,7 +16,7 @@ const headers = { "cache-control": "private, no-store" };
  */
 const searchSchema = z
   .object({
-    box: z.enum(["sent", "received"]),
+    box: boxSchema,
     address: z.string().max(200).default(""),
     cursor: z.string().max(100).nullish(),
     refresh: z.boolean().default(false),
@@ -29,47 +28,39 @@ const searchSchema = z
  * l'état de 20 envois récents au plus). Une adresse dans l'URL est refusée : voir `POST`. Chaque appel est
  * tracé sans adresse.
  */
-async function handleGET(request: Request) {
-  try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+export const GET = adminRoute(
+  { scope: "admin.emails.history.read", fallbackMessage: "Historique des emails indisponible" },
+  async (request) => {
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     const params = new URL(request.url).searchParams;
     if (params.has("address")) {
-      throw new EmailHistoryInputError("L’adresse se cherche en POST, jamais dans l’URL.");
+      throw new PublicApiError("L’adresse se cherche en POST, jamais dans l’URL.", 400);
     }
-    const list = await listEmailHistory({
+    return listEmailHistory({
       adminUserId: auth.userId,
-      box: params.get("box") === "received" ? "received" : "sent",
+      box: boxSchema.parse(params.get("box")),
       cursor: params.get("cursor"),
       address: null,
       refresh: params.get("refresh") === "1",
     });
-    return NextResponse.json(list, { headers });
-  } catch (error) {
-    return adminErrorResponse(error);
-  }
-}
+  },
+);
 
 /** Liste avec ou sans adresse, paramètres dans le corps JSON. */
-async function handlePOST(request: Request) {
-  try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+export const POST = adminRoute(
+  { scope: "admin.emails.history.search", fallbackMessage: "Historique des emails indisponible" },
+  async (request) => {
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     if (new URL(request.url).search) {
-      throw new EmailHistoryInputError("Aucun paramètre dans l’URL : tout passe par le corps.");
+      throw new PublicApiError("Aucun paramètre dans l’URL : tout passe par le corps.", 400);
     }
-    const parsed = searchSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) throw new EmailHistoryInputError("Recherche invalide.");
-    const list = await listEmailHistory({
+    const input = searchSchema.parse(await request.json());
+    return listEmailHistory({
       adminUserId: auth.userId,
-      box: parsed.data.box,
-      cursor: parsed.data.cursor || null,
-      address: parsed.data.address || null,
-      refresh: parsed.data.refresh,
+      box: input.box,
+      cursor: input.cursor || null,
+      address: input.address || null,
+      refresh: input.refresh,
     });
-    return NextResponse.json(list, { headers });
-  } catch (error) {
-    return adminErrorResponse(error);
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
-export const POST = withAdminDeadline(handlePOST);
+  },
+);

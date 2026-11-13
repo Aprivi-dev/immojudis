@@ -1,6 +1,8 @@
 // zod/mini : le scénario locatif est validé dans le navigateur (fiche de la vente). Mêmes règles que
 // l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
+import { formatPrice } from "@/lib/format/numbers";
+import { PublicApiError } from "@/lib/api-errors";
 import { buildCeilingSnapshot, NO_CEILING_REGIME_REASON } from "./property-report/ceiling-snapshot";
 import type { FeeRegimeKey } from "./fee-regime-open";
 import { listingValuationConflict } from "./listing-evidence";
@@ -173,14 +175,14 @@ export function computeReportRentalScenario(
   inputs: ReportRentalScenario,
 ): ReportRentalScenarioSnapshot {
   const result = calculateReportRentalScenario(inputs);
-  if (!result) throw new Error("Les hypothèses locatives sont invalides.");
+  if (!result) throw new PublicApiError("Les hypothèses locatives sont invalides.", 400);
   return { inputs, result };
 }
 
 const pct = (max: number) => z.number().check(z.gte(0), z.lte(max));
 const optional = <T extends z.ZodMiniType>(schema: T) => z.optional(z.nullable(schema));
 
-export const ceilingChoicesSchema = z.object({
+const ceilingChoicesSchema = z.object({
   project: z.optional(z.enum(["habiter", "louer", "revendre"])),
   profile: z.optional(z.enum(["prudent", "equilibre", "offensif"])),
   customMarginPct: optional(pct(50)),
@@ -240,7 +242,7 @@ export function computeReportSimulation(
   rentReference: RentReference | null = null,
 ) {
   const conflict = listingValuationConflict(sale);
-  if (conflict) throw new Error(conflict);
+  if (conflict) throw new PublicApiError(conflict, 400);
   const snapshot = buildCeilingSnapshot(
     sale,
     market?.actionable ? market : null,
@@ -248,10 +250,11 @@ export function computeReportSimulation(
     regimes,
     rentReference,
   );
-  if (snapshot.regime == null) throw new Error(NO_CEILING_REGIME_REASON);
+  if (snapshot.regime == null) throw new PublicApiError(NO_CEILING_REGIME_REASON, 400);
   if (!snapshot.available || snapshot.maxBid !== input.expectedMaxBid) {
-    throw new Error(
+    throw new PublicApiError(
       "Les données du scénario ont changé. Actualisez la fiche avant de sauvegarder le rapport.",
+      409,
     );
   }
   return {
@@ -311,12 +314,6 @@ export function isCurrentReportSimulation(value: unknown): boolean {
 /** Lines describing a saved personal scenario, whatever version saved it. */
 export function describeReportSimulation(value: unknown): Array<[string, string]> | null {
   const current = reportSimulationSchema.safeParse(value);
-  const euros = (amount: number) =>
-    new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "EUR",
-      maximumFractionDigits: 0,
-    }).format(amount);
   if (current.success) {
     const choices = current.data.choices;
     const rows: Array<[string, string]> = [
@@ -327,8 +324,8 @@ export function describeReportSimulation(value: unknown): Array<[string, string]
           ? `Marge personnalisée ${choices.customMarginPct} %`
           : PROFILE_LABELS[choices.profile ?? "equilibre"],
       ],
-      ["Travaux retenus", choices.works?.amount ? euros(choices.works.amount) : "Aucun"],
-      ["Frais préalables", choices.fpt != null ? euros(choices.fpt) : "Hypothèse Immojudis"],
+      ["Travaux retenus", choices.works?.amount ? formatPrice(choices.works.amount) : "Aucun"],
+      ["Frais préalables", choices.fpt != null ? formatPrice(choices.fpt) : "Hypothèse Immojudis"],
     ];
     if (choices.occupation)
       rows.push(["Occupation retenue", OCCUPATION_LABELS[choices.occupation]]);
@@ -342,9 +339,9 @@ export function describeReportSimulation(value: unknown): Array<[string, string]
   const legacy = legacyReportSimulationSchema.safeParse(value);
   if (!legacy.success) return null;
   const rows: Array<[string, string]> = [
-    ["Prix simulé", euros(legacy.data.price)],
-    ["Travaux saisis", euros(legacy.data.works)],
-    ["Frais préalables saisis", euros(legacy.data.fpt)],
+    ["Prix simulé", formatPrice(legacy.data.price)],
+    ["Travaux saisis", formatPrice(legacy.data.works)],
+    ["Frais préalables saisis", formatPrice(legacy.data.fpt)],
     [
       "Scénario",
       { prudent: "Prudent", offensif: "Offensif", custom: "Personnalisé" }[legacy.data.scenario],

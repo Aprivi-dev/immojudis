@@ -31,6 +31,29 @@ def setup(db):
     db.execute(migration('20260912113935_pipeline_queue_lifecycle.sql'))
 
 
+SOURCE_PRESENCE_TABLE = '''create table app_private.auction_sale_source_presence(
+    sale_id uuid not null, source_name text not null,
+    availability text not null, state text, attempted_at timestamptz,
+    checked_at timestamptz, run_id text,
+    legacy_raw boolean not null default false,
+    absent_inventories integer not null default 0, absent_since timestamptz, absent_run_id text,
+    primary key (sale_id, source_name))'''
+
+
+def create_source_presence(db):
+    """The projection ``record_source_presence`` writes (migrations 20261008102630 and 20261028110100)."""
+    db.execute('alter table auction_sales add column id uuid not null default gen_random_uuid() unique')
+    db.execute(SOURCE_PRESENCE_TABLE)
+    db.execute('''create view public.auction_sale_source_presence as
+        select * from app_private.auction_sale_source_presence''')
+
+
+def source_presence(db, source_url, source_name='licitor'):
+    return db.execute('''select p.availability, p.state, p.absent_inventories
+        from app_private.auction_sale_source_presence p join auction_sales s on s.id = p.sale_id
+        where s.source_url = %s and p.source_name = %s''', (source_url, source_name)).fetchone()
+
+
 def test_scheduler_is_disabled_by_default_and_reclaims_expired_execution():
     url = os.getenv('PIPELINE_TEST_DB_URL')
     if not url:
@@ -293,7 +316,7 @@ def test_paid_predictions_are_reserved_before_use_and_budget_deferral_preserves_
             monkeypatch.setenv('PIPELINE_AUTONOMOUS_RUN_ID',run)
             monkeypatch.setattr(pipeline_usage,'load_settings',lambda: {'supabase_db_url':url})
             monkeypatch.setattr(supabase_client,'_postgres_connect',lambda _: nullcontext(db))
-            monkeypatch.setattr(supabase_client,'_shared_postgres_connection',lambda _: nullcontext(db))
+            monkeypatch.setattr(supabase_client,'shared_postgres_connection',lambda _: nullcontext(db))
             pipeline_usage.record_prediction({'id':'prediction-1','status':'starting'},reservation=str(first))
             assert db.execute('select prediction_id,status,estimated_usd from auction_pipeline_usage where id=%s',(first,)).fetchone() == ('prediction-1','starting',None)
             pending_summary = db.execute('select pipeline_usage_summary()').fetchone()[0]
@@ -315,31 +338,22 @@ def test_paid_predictions_are_reserved_before_use_and_budget_deferral_preserves_
             db.rollback()
 
 
-def test_source_presence_uses_compact_projection_when_available():
+def test_source_presence_writes_the_compact_projection_then_counts_absences():
     from src.autonomous_runner import record_source_presence
 
     calls = []
 
-    class Result:
-        def fetchone(self):
-            return (
-                "app_private.auction_sale_source_presence",
-                "app_private.auction_sale_source_presence_json(uuid)",
-            )
-
     class CompactDb:
         def execute(self, statement, params=None):
             calls.append((statement, params))
-            if "to_regclass" in statement:
-                return Result()
-            return Result()
 
     record_source_presence(CompactDb(), "run-1", "licitor", "available", True)
 
     assert len(calls) == 2
-    assert "insert into app_private.auction_sale_source_presence" in calls[1][0]
-    assert "update public.auction_sales" not in calls[1][0]
-    assert calls[1][1][0:3] == ("licitor", "available", True)
+    assert "insert into app_private.auction_sale_source_presence" in calls[0][0]
+    assert "update public.auction_sales" not in calls[0][0]
+    assert calls[0][1][0:3] == ("licitor", "available", True)
+    assert "absent_inventories" in calls[1][0]
 
 
 def test_source_presence_compact_insert_and_conflict_update_run_in_postgres():
@@ -356,16 +370,11 @@ def test_source_presence_compact_insert_and_conflict_update_run_in_postgres():
                 observations jsonb not null default '[]'::jsonb)''')
             db.execute('''create table public.auction_collection_items(
                 run_id text, source_url text, canonical_source_url text)''')
-            db.execute('''create table app_private.auction_sale_source_presence(
-                sale_id uuid not null, source_name text not null,
-                availability text not null, state text, attempted_at timestamptz,
-                checked_at timestamptz, run_id text,
-                legacy_raw boolean not null default false,
-                primary key (sale_id, source_name))''')
+            db.execute('''create table public.auction_runs(
+                id uuid primary key, started_at timestamptz, finished_at timestamptz)''')
+            db.execute(SOURCE_PRESENCE_TABLE)
             db.execute('''create view public.auction_sale_source_presence as
                 select * from app_private.auction_sale_source_presence''')
-            db.execute('''create function app_private.auction_sale_source_presence_json(uuid)
-                returns jsonb language sql immutable as $$ select '{}'::jsonb $$''')
             sale_id = '42200000-0000-4000-8000-000000000001'
             db.execute(
                 'insert into public.auction_sales(id, source_url, source_name) values (%s, %s, %s)',
@@ -396,24 +405,25 @@ def test_source_presence_compact_insert_and_conflict_update_run_in_postgres():
             db.rollback()
 
 
-def test_source_presence_keeps_legacy_writer_until_projection_helper_exists():
+def test_source_presence_without_its_projection_fails_instead_of_writing_the_raw_payload():
     from src.autonomous_runner import record_source_presence
 
     calls = []
 
-    class Result:
-        def fetchone(self):
-            return ("app_private.auction_sale_source_presence", None)
+    class UndefinedTable(Exception):
+        sqlstate = "42P01"
 
-    class LegacyDb:
+    class DbWithoutProjection:
         def execute(self, statement, params=None):
             calls.append((statement, params))
-            return Result()
+            raise UndefinedTable('relation "app_private.auction_sale_source_presence" does not exist')
 
-    record_source_presence(LegacyDb(), "run-1", "licitor", "unavailable", False)
+    with pytest.raises(UndefinedTable):
+        record_source_presence(DbWithoutProjection(), "run-1", "licitor", "unavailable", False)
 
-    assert "update public.auction_sales" in calls[1][0]
-    assert "auction_sale_source_presence" not in calls[1][0]
+    assert len(calls) == 1
+    assert "insert into app_private.auction_sale_source_presence" in calls[0][0]
+    assert "update public.auction_sales" not in calls[0][0]
 
 
 def test_source_outage_never_establishes_absence_or_deletes_listing():
@@ -424,19 +434,17 @@ def test_source_outage_never_establishes_absence_or_deletes_listing():
     with _postgres_connect(url) as db:
         try:
             setup(db)
+            create_source_presence(db)
             run_id = str(db.execute("insert into auction_runs(source,status) values ('licitor','succeeded') returning id").fetchone()[0])
             db.execute("insert into auction_sales(source_url,source_name) values ('kept','licitor')")
             record_source_presence(db,run_id,'licitor','unavailable',False)
-            payload = db.execute("select raw_payload from auction_sales where source_url='kept'").fetchone()[0]
-            assert 'state' not in payload['source_presence']['licitor']
+            assert source_presence(db, 'kept') == ('unavailable', None, 0)
             record_source_presence(db,run_id,'licitor','available',True)
-            payload = db.execute("select raw_payload from auction_sales where source_url='kept'").fetchone()[0]
-            assert payload['source_presence']['licitor']['state'] == 'absent'
+            assert source_presence(db, 'kept') == ('available', 'absent', 1)
             assert db.execute("select status from auction_sales where source_url='kept'").fetchone()[0] == 'upcoming'
             record_source_presence(db,run_id,'licitor','unavailable',False)
-            payload = db.execute("select raw_payload from auction_sales where source_url='kept'").fetchone()[0]
-            assert payload['source_presence']['licitor']['state'] == 'absent'
-            assert payload['source_presence']['licitor']['availability'] == 'unavailable'
+            assert source_presence(db, 'kept') == ('unavailable', 'absent', 1)
+            assert db.execute("select raw_payload from auction_sales where source_url='kept'").fetchone()[0] == {}
         finally:
             db.rollback()
 
@@ -465,10 +473,9 @@ def test_freshness_counts_merged_aliases_but_not_another_sources_checks():
             assert db.execute("select * from auction_source_freshness('licitor','2026-09-12T12:00:00Z')").fetchone() == (2,1)
             run_id = str(db.execute("insert into auction_runs(source,status) values ('licitor','failed') returning id").fetchone()[0])
             from src.autonomous_runner import record_source_presence
+            create_source_presence(db)
             record_source_presence(db,run_id,'licitor','unavailable',False)
-            payload = db.execute("select raw_payload from auction_sales where source_url='canonical'").fetchone()[0]
-            assert payload['source_presence']['licitor']['availability'] == 'unavailable'
-            assert 'state' not in payload['source_presence']['licitor']
+            assert source_presence(db, 'canonical') == ('unavailable', None, 0)
         finally:
             db.rollback()
 

@@ -1,5 +1,6 @@
 import "server-only";
 import type { Json } from "@/integrations/supabase/types";
+import { PublicApiError } from "@/lib/api-errors";
 import { adminDeadlineSignal } from "@/lib/admin-route-deadline";
 import {
   findReusableInformationAgentAddress,
@@ -13,10 +14,12 @@ import {
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
   loadInformationAgentContactRegistry,
   loadOpposedInformationAgentIdentityKeys,
-  normalizedEmail,
+} from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import {
   type InformationAgentContactCandidate,
   type InformationAgentContactSale,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import { firmSiteStartUrls } from "@/lib/information-agent/firm-site-extract";
 import {
   informationAgentSearchUserAgent,
@@ -43,16 +46,16 @@ import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent
  * pour l'adresse trouvée. Toute erreur de contrôle écarte l'adresse (jamais d'autorisation par défaut).
  */
 
-export const INFORMATION_AGENT_ADDRESS_SEARCH_BUDGET_MS = 15_000;
+const INFORMATION_AGENT_ADDRESS_SEARCH_BUDGET_MS = 15_000;
 /** Au plus deux sites sont essayés (une annonce cite rarement plus d'un site de cabinet). */
-export const INFORMATION_AGENT_ADDRESS_SEARCH_MAX_SITES = 2;
+const INFORMATION_AGENT_ADDRESS_SEARCH_MAX_SITES = 2;
 /** Début du message de `assertInformationAgentRecipientCooldown` (couplage vérifié par un test). */
 export const RECIPIENT_COOLDOWN_MESSAGE_PREFIX = "Ce destinataire a déjà été sollicité";
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
-export type InformationAgentAddressSearchMethod = "other_listing" | "firm_website";
+type InformationAgentAddressSearchMethod = "other_listing" | "firm_website";
 
-export type InformationAgentAddressSearchAttempt = {
+type InformationAgentAddressSearchAttempt = {
   method: InformationAgentAddressSearchMethod;
   outcome:
     | "found"
@@ -368,16 +371,16 @@ export function isInformationAgentAddressSearchEnabled(
 }
 
 /** Seule l'origine de production consulte des sites tiers (jamais un aperçu ou un poste local). */
-export const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS: readonly string[] = [
+const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS: readonly string[] = [
   "https://immojudis.com",
   "https://www.immojudis.com",
 ];
 
-export const ADDRESS_SEARCH_DISABLED_NOTE =
+const ADDRESS_SEARCH_DISABLED_NOTE =
   " La recherche automatique d’adresse est désactivée : indiquez l’adresse et la page publique où vous l’avez relevée.";
-export const ADDRESS_SEARCH_NOT_PRODUCTION_NOTE =
+const ADDRESS_SEARCH_NOT_PRODUCTION_NOTE =
   " La recherche automatique d’adresse n’est active que sur le site de production : indiquez l’adresse et la page publique où vous l’avez relevée.";
-export const ADDRESS_SEARCH_SEND_REFUSED_MESSAGE =
+const ADDRESS_SEARCH_SEND_REFUSED_MESSAGE =
   "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";
 
 /**
@@ -389,13 +392,13 @@ export function assertInformationAgentSearchedAddressAllowed(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   if (origin.automated && !isInformationAgentAddressSearchEnabled(env)) {
-    throw new Error(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE);
+    throw new PublicApiError(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE, 409);
   }
 }
 
 export const ADDRESS_NOT_RECORDED_MESSAGE =
   "L’adresse retrouvée n’a pas pu être enregistrée : le brouillon a été annulé, réessayez.";
-export const AGENT_FOUND_ORIGIN_MISSING_MESSAGE =
+const AGENT_FOUND_ORIGIN_MISSING_MESSAGE =
   "L’adresse retrouvée par la recherche automatique n’a plus de ligne de registre de l’agent : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
 
 /**
@@ -426,7 +429,7 @@ export function assertAgentFoundOriginIntact(
   origin: { kind: string | null; origin: { automated: boolean } },
 ): void {
   if (agentFound && !(origin.origin.automated && origin.kind !== "admin_entry")) {
-    throw new Error(AGENT_FOUND_ORIGIN_MISSING_MESSAGE);
+    throw new PublicApiError(AGENT_FOUND_ORIGIN_MISSING_MESSAGE, 409);
   }
 }
 
@@ -480,15 +483,17 @@ export async function searchInformationAgentAddressForDraft({
   }
   const outcome = await searchInformationAgentAddress(input);
   if (outcome.status === "opposed") {
-    throw new Error(
+    throw new PublicApiError(
       outcome.scope === "identity"
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
         : "L’adresse retrouvée par la recherche automatique est opposée : aucune sollicitation n’est autorisée.",
+      409,
     );
   }
   if (outcome.status === "cooldown") {
-    throw new Error(
+    throw new PublicApiError(
       `L’adresse retrouvée par la recherche automatique a déjà été sollicitée au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : aucun nouveau message n’est préparé.`,
+      409,
     );
   }
   return {

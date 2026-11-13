@@ -3,6 +3,21 @@
  * import server-only code: it is also used by unit tests and by client helpers.
  */
 
+/** Codes d'erreur de l'API ; la liste de `components.schemas.ApiError.code` d'openapi.yaml doit être identique. */
+export const API_ERROR_CODES = [
+  "AUTH_REQUIRED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "INVALID_REQUEST",
+  "COURT_UNRESOLVED",
+  "RATE_LIMITED",
+  "CONFIGURATION_ERROR",
+  "INTERNAL_ERROR",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
 /** Raised when a per-user or per-IP quota is exhausted. Mapped to HTTP 429 + Retry-After. */
 export class RateLimitError extends Error {
   readonly retryAfterSeconds: number;
@@ -25,77 +40,80 @@ export class RateLimitError extends Error {
 }
 
 /**
- * An error whose message was written for the end user and may be returned verbatim.
- * Anything that is not a PublicApiError (or does not look like a French business
- * message, see `isPublicErrorMessage`) is replaced by a generic message at the edge.
+ * An error whose message was written for the end user and may be returned verbatim, with the
+ * HTTP status it maps to. Anything that is not a PublicApiError (or does not look like a French
+ * business message, see `isPublicErrorMessage`) is replaced by a generic message at the edge.
  */
 export class PublicApiError extends Error {
   readonly status: number;
+  /** Code of the response; derived from the status when absent. */
+  readonly code?: ApiErrorCode;
 
-  constructor(message: string, status = 400) {
-    super(message);
+  constructor(
+    message: string,
+    status = 400,
+    options: { code?: ApiErrorCode; cause?: unknown } = {},
+  ) {
+    super(message, { cause: options.cause });
     this.name = "PublicApiError";
     this.status = status;
+    if (options.code) this.code = options.code;
   }
 }
 
-// Markers of infrastructure or driver errors that must never reach a browser.
-const TECHNICAL_MARKERS =
-  /supabase|postgres|postgrest|pgrst|sqlstate|\bjwt\b|\brelation\b|violates|duplicate key|syntax error|permission denied|row-level|econn|enotfound|etimedout|fetch failed|undefined|\bnull\b|stack|\bat\s+\S+\s*\(|https?:\/\/|[{}[\]<>]|\\n|\bselect\b.*\bfrom\b|\bauth\.|\bpublic\.|app_private|\bstorage\.|\.(?:ts|js|mjs)\b|service[_ ]role|secret|password|token|api[_ ]?key\s*[:=]|stripe|resend|replicate|mapbox|openai|anthropic/i;
-
-// Application messages are written in French; driver and runtime messages are English.
-const FRENCH_MARKERS =
-  /[àâäçéèêëîïôöùûüœ]|\b(?:le|la|les|un|une|des|du|de|d'|l'|est|n'|pas|vous|votre|vos|cette|ce|ces|pour|sans|aucun|aucune)\b|introuvable|invalide|requis|requise|inconnu|impossible|expir|indisponible|incomplet/i;
-
-const MAX_PUBLIC_MESSAGE_LENGTH = 240;
-
-/**
- * True when `message` is a short French business message ("Vente introuvable.")
- * rather than a driver, database or runtime error. Errors raised by our own code
- * are in French; everything else defaults to a generic response.
- */
-export function isPublicErrorMessage(message: string | null | undefined): message is string {
-  if (!message) return false;
-  const trimmed = message.trim();
-  if (!trimmed || trimmed.length > MAX_PUBLIC_MESSAGE_LENGTH) return false;
-  if (TECHNICAL_MARKERS.test(trimmed)) return false;
-  return FRENCH_MARKERS.test(trimmed);
-}
-
-/** Error text for server logs only. Never place the result in a response body. */
-export function errorDetailForLog(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error) {
-    return String((error as { message: unknown }).message);
+/** 403 : the account is authenticated but not allowed (role, offer, quota of resources). */
+export class ForbiddenError extends PublicApiError {
+  constructor(message = "Accès refusé.") {
+    super(message, 403);
+    this.name = "ForbiddenError";
   }
-  return String(error);
 }
 
-/** True for the authentication failures raised by the Supabase auth middleware. */
-export function isUnauthorizedError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith("Unauthorized");
+/** 403 for the routes and modules reserved to administrators. */
+export class AdminRequiredError extends ForbiddenError {
+  constructor() {
+    super("Accès administrateur requis.");
+    this.name = "AdminRequiredError";
+  }
+}
+
+/** 404 : the resource does not exist or is not visible to this account. */
+export class NotFoundError extends PublicApiError {
+  constructor(message = "Ressource introuvable.") {
+    super(message, 404);
+    this.name = "NotFoundError";
+  }
 }
 
 /**
- * Raised when what the server built does not match its own published response schema. It is a
- * server fault, not a client mistake: it is deliberately NOT a zod error (which the API edge turns
- * into a 400 « Requête invalide »), so the route answers 503 and logs it at error level.
+ * 401 : no usable credential (missing or invalid session token, invalid API key). The message is
+ * a detail for the logs; the response always says « Authentification requise. ».
  */
-export class ResponseSchemaViolationError extends Error {
-  constructor(cause?: unknown) {
-    super("response_schema_violation", { cause });
-    this.name = "ResponseSchemaViolationError";
+export class AuthRequiredError extends Error {
+  constructor(detail: string, options?: ErrorOptions) {
+    super(detail, options);
+    this.name = "AuthRequiredError";
   }
 }
 
-/** Validates a response body against its schema; a failure is a 503, never a 400 (see above). */
-export function parseApiResponse<T>(
-  schema: {
-    safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown };
-  },
-  value: unknown,
-): T {
-  const result = schema.safeParse(value);
-  if (!result.success) throw new ResponseSchemaViolationError(result.error);
-  return result.data;
+/**
+ * 503 : a dependency (database, provider) failed or timed out. The message is a detail for the logs;
+ * the response carries the route's fallback message.
+ */
+export class ServiceUnavailableError extends Error {
+  constructor(detail: string, options?: ErrorOptions) {
+    super(detail, options);
+    this.name = "ServiceUnavailableError";
+  }
+}
+
+/**
+ * 503 : a server-side setting (environment variable, client) is missing. The message is a detail
+ * for the logs; the response says « Service temporairement indisponible. ».
+ */
+export class ConfigurationError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "ConfigurationError";
+  }
 }

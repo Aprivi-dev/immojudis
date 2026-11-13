@@ -4,12 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from pathlib import Path
 
-from src.config import load_settings
+from src.config import env_override, load_settings, write_step_summary
 from src.storage.supabase_client import connect
 
 LOGGER = logging.getLogger(__name__)
@@ -119,9 +117,7 @@ def main(*, report_only: bool = False) -> int:
     report["global_health_status"] = "degraded" if failed else "healthy"
     output = json.dumps(report, ensure_ascii=False, indent=2, default=str)
     print(output)
-    if os.getenv("GITHUB_STEP_SUMMARY"):
-        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
-            handle.write("\n### Pipeline coverage and backlog\n```json\n" + output + "\n```\n")
+    write_step_summary("\n### Pipeline coverage and backlog\n```json\n" + output + "\n```\n")
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
@@ -130,11 +126,9 @@ def main(*, report_only: bool = False) -> int:
 def full_drift_due(now: datetime) -> bool:
     """La requête de dérive complète (toutes les lignes) tourne le lundi (UTC) ; ``PIPELINE_HEALTH_FULL_DRIFT``
     la force (``true``) ou l'empêche (``false``)."""
-    forced = (os.getenv("PIPELINE_HEALTH_FULL_DRIFT") or "").strip().lower()
-    if forced in {"1", "true", "yes", "on"}:
-        return True
-    if forced in {"0", "false", "no", "off"}:
-        return False
+    forced = env_override("PIPELINE_HEALTH_FULL_DRIFT")
+    if forced is not None:
+        return forced
     return now.astimezone(UTC).weekday() == FULL_DRIFT_WEEKDAY
 
 

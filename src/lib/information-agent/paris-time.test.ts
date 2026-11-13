@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { startOfParisDay } from "./paris-time";
+import { startOfParisDay } from "@/lib/paris-time";
 
 describe("startOfParisDay", () => {
   it.each([

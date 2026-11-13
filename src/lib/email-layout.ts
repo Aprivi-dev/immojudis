@@ -8,6 +8,7 @@ import {
   EMAIL_LOGO_LIGHT_URL,
   EMAIL_SITE_URL,
 } from "./email-brand";
+import { escapeHtml } from "./guards";
 
 /**
  * Modèle unique des emails HTML d'Immojudis : un seul cadre (page, carte à filet or, logo, pied,
@@ -32,20 +33,13 @@ const D = EMAIL_DARK_COLORS;
 const FONT = EMAIL_FONT_STACK;
 const MONO = "Consolas, Menlo, 'Courier New', monospace";
 
-const HTML_ESCAPES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
+/**
+ * Nom gardé pour `emails/` et `auth-email-templates.ts`, qui l'importent encore (hors de ce lot) : c'est
+ * `escapeHtml` de `guards.ts`, seule implémentation.
+ */
+export const escapeEmailHtml = escapeHtml;
 
-/** Échappe le texte et les valeurs d'attribut (comme `escapeHtml` de `guards.ts`, sans dépendance). */
-export function escapeEmailHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
-}
-
-const esc = escapeEmailHtml;
+const esc = escapeHtml;
 /** Valeur d'attribut `href` : même échappement, plus l'accent grave. */
 const attr = (value: string) => esc(value).replace(/`/g, "&#96;");
 
@@ -100,12 +94,8 @@ export function emailHeading(
 }
 
 /** Lien tertiaire : `goldText`, souligné, 600. `html` est déjà échappé. */
-export function emailLink(
-  href: string,
-  html: string,
-  options: { breakAll?: boolean } = {},
-): string {
-  return `<a href="${attr(href)}" class="ej-link" style="color:${C.goldText};text-decoration:underline;font-weight:600;${options.breakAll ? "word-break:break-all;overflow-wrap:anywhere;" : ""}">${html}</a>`;
+export function emailLink(href: string, html: string): string {
+  return `<a href="${attr(href)}" class="ej-link" style="color:${C.goldText};text-decoration:underline;font-weight:600;">${html}</a>`;
 }
 
 /**

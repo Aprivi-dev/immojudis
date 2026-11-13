@@ -29,8 +29,8 @@ import {
   LAWYER_ROOMS_LABEL,
   lawyerSourceForDisplayedValue,
 } from "@/lib/lawyer-fact-sources";
-import { isPastSaleDay } from "@/lib/sale-countdown";
-import { formatPrice, formatPricePerM2 } from "@/lib/format";
+import { isPastParisDay } from "@/lib/paris-time";
+import { formatDate, formatPrice, formatPricePerM2, formatShortDate } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
@@ -62,7 +62,6 @@ import {
   saleReference,
   saleShortHeading,
   saleVenueSentence,
-  seoLongDate,
   seoPropertyLabel,
   seoSurface,
   tribunalDisplayName,
@@ -314,19 +313,6 @@ function NumberedSection({
   );
 }
 
-const shortDateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-function shortSaleDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? shortDateFormat.format(date) : null;
-}
-
 export function SalePublicPreview({
   saleId,
   preview,
@@ -380,7 +366,7 @@ export function SalePublicPreview({
   const photoCount = Math.max(0, preview.photo_count ?? 0);
   const morePhotos = photoCount > (photo?.url ? 1 : 0);
   const surface = seoSurface(preview.app_surface_m2);
-  const hearingDate = seoLongDate(preview.sale_date);
+  const hearingDate = formatDate(preview.sale_date, null);
   // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
   // qu'elle comparait à la mise à prix est celui d'un jour qui n'existe plus pour cette vente). Calculé
   // après l'hydratation : le serveur et le premier rendu du navigateur n'ont pas la même heure (à
@@ -389,7 +375,7 @@ export function SalePublicPreview({
   // lit sa propre date.
   const pastDate = useSyncExternalStore(
     subscribeNever,
-    () => isPastSaleDay(preview.sale_date),
+    () => isPastParisDay(preview.sale_date),
     () => false,
   );
   const hearingTime = saleHearingTime(preview.sale_date);
@@ -980,7 +966,7 @@ export function SalePublicPreview({
                   : "À confirmer"}
             </p>
             <p className={styles.mobileBarNote}>
-              {[state ? "prix publié" : "mise à prix", shortSaleDate(preview.sale_date)]
+              {[state ? "prix publié" : "mise à prix", formatShortDate(preview.sale_date, "")]
                 .filter(Boolean)
                 .join(" · ")}
             </p>

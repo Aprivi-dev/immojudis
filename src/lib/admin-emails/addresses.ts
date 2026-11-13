@@ -1,5 +1,7 @@
 import "server-only";
+import { ACCOUNT_EMAIL_WEBHOOK_EVENTS } from "@/lib/account-email-delivery-events";
 import { EMAIL_TEMPLATES } from "@/lib/email-templates/registry";
+import { INFORMATION_AGENT_WEBHOOK_EVENTS } from "@/lib/information-agent-inbound";
 import { checkDomainDns, recommendedDmarc, type DnsResolver, type DomainDnsCheck } from "./dns";
 import {
   EMAIL_SECRET_VARIABLES,
@@ -28,37 +30,33 @@ import { buildAddressRows, type EmailAddressRow } from "./senders";
 const CACHE_TTL_MS = 60_000;
 const MIN_REFRESH_INTERVAL_MS = 5_000;
 
-export type EmailAlert = { id: string; severity: "error" | "warning"; message: string };
+type EmailAlert = { id: string; severity: "error" | "warning"; message: string };
 
-export type SecretStatus = { name: EmailSecretVariable; configured: boolean; purpose: string };
+type SecretStatus = { name: EmailSecretVariable; configured: boolean; purpose: string };
 
-export type WebhookExpectation = {
+type WebhookExpectation = {
   label: string;
   path: string;
   secret: EmailSecretVariable;
   events: readonly string[];
 };
 
-/** Routes qui reçoivent des évènements de Resend, et ce qu'elles attendent. */
-export const EXPECTED_WEBHOOKS: readonly WebhookExpectation[] = [
+/**
+ * Routes qui reçoivent des évènements de Resend. Chaque module de traitement publie les évènements qu'il
+ * gère : un évènement ajouté au traitement est attendu ici sans autre modification.
+ */
+const EXPECTED_WEBHOOKS: readonly WebhookExpectation[] = [
   {
     label: "Rebonds et plaintes des emails aux comptes",
     path: "/api/webhooks/resend/account-emails",
     secret: "RESEND_ACCOUNT_WEBHOOK_SECRET",
-    // Rebonds et plaintes (consentements) ; remis, différé et échec ne font qu'alimenter le journal des envois.
-    events: [
-      "email.bounced",
-      "email.complained",
-      "email.delivered",
-      "email.delivery_delayed",
-      "email.failed",
-    ],
+    events: ACCOUNT_EMAIL_WEBHOOK_EVENTS,
   },
   {
-    label: "Réponses reçues par l’agent d’information",
+    label: "Réponses, rebonds et plaintes de l’agent d’information",
     path: "/api/webhooks/resend/information-agent",
     secret: "RESEND_WEBHOOK_SECRET",
-    events: ["email.received"],
+    events: INFORMATION_AGENT_WEBHOOK_EVENTS,
   },
 ];
 
@@ -131,7 +129,7 @@ function contactAddress(addresses: readonly EmailAddressRow[]): string | null {
   return addresses.find((row) => row.variable === "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL")?.value ?? null;
 }
 
-export function buildAlerts(input: {
+function buildAlerts(input: {
   addresses: readonly EmailAddressRow[];
   resend: EmailAddressesReport["resend"];
   webhooks: EmailAddressesReport["webhooks"];

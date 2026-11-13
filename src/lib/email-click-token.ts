@@ -1,5 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Lien suivi d'un email (alertes, rappels d'audience, récapitulatif hebdomadaire, alerte de résultat) : redirection de suivi signée (point 65).
@@ -33,7 +35,6 @@ export type EmailClickClaims = {
   expiresAt: number;
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KINDS: ReadonlySet<string> = new Set<EmailClickKind>([
   "alert",
   "reminder",
@@ -46,7 +47,7 @@ function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string 
   const dedicated = env.EMAIL_UNSUBSCRIBE_SECRET?.trim();
   const base =
     dedicated || env.SUPABASE_SERVICE_ROLE_KEY?.trim() || env.SUPABASE_SECRET_KEY?.trim();
-  if (!base) throw new Error("Aucun secret disponible pour signer les liens suivis.");
+  if (!base) throw new ConfigurationError("No secret available to sign tracked links.");
   return createHmac("sha256", base).update("immojudis:email-click:v1").digest("hex");
 }
 
@@ -107,8 +108,8 @@ export function readEmailClickToken(
       s?: unknown;
       e?: unknown;
     };
-    if (typeof data.u !== "string" || !UUID_PATTERN.test(data.u)) return null;
-    if (typeof data.s !== "string" || !UUID_PATTERN.test(data.s)) return null;
+    if (!isUuid(data.u)) return null;
+    if (!isUuid(data.s)) return null;
     if (typeof data.k !== "string" || !KINDS.has(data.k)) return null;
     if (typeof data.t !== "string" || !TARGETS.has(data.t)) return null;
     if (typeof data.e !== "number") return null;
@@ -129,7 +130,7 @@ export function readEmailClickToken(
 
 /** Un identifiant de vente peut figurer dans un lien suivi s'il s'agit d'un UUID. */
 export function isEmailClickSaleId(value: string | null | undefined): value is string {
-  return typeof value === "string" && UUID_PATTERN.test(value);
+  return isUuid(value);
 }
 
 /** Chemin du site où mène un lien suivi : construit ici, jamais lu dans la requête. */

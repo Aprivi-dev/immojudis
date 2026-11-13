@@ -6,7 +6,8 @@ import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { ResourceLibrary } from "@/components/resources/ResourceLibrary";
 import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
 import { EXISTING_GUIDE, RESOURCE_SUMMARIES } from "@/lib/resource-articles";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { pageMetadata } from "@/lib/page-metadata";
+import { siteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
 import { jsonLdString } from "@/lib/json-ld";
 
@@ -14,26 +15,10 @@ const title = "Ressources : le blog des enchères immobilières";
 const description =
   "Les guides Immojudis pour comprendre les enchères immobilières, analyser un bien, vérifier son occupation et construire un budget avant d’enchérir.";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  alternates: { canonical: "/ressources" },
-  openGraph: {
-    title,
-    description,
-    url: "/ressources",
-    type: "website",
-    siteName: "Immojudis",
-    locale: "fr_FR",
-    // Declared here because a page-level openGraph replaces the layout's: without
-    // an image, shares of this page would have no preview.
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Immojudis" }],
-  },
-  twitter: { card: "summary_large_image", title, description, images: ["/opengraph-image"] },
-};
+export const metadata: Metadata = pageMetadata({ path: "/ressources", title, description });
 
 export default function Page() {
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",

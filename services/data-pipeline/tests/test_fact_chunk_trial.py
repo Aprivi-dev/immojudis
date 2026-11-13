@@ -13,8 +13,8 @@ from scripts import fact_chunk_trial as trial
 from src.enrichment import extract_structured as extraction
 from src.enrichment import llm_client
 from src.enrichment.llm_client import ReplicateClient
-from src.pdf_enrichment import sale_storage_id
 from src.pipeline_usage import PipelineBudgetExhausted
+from src.sale_local_files import sale_storage_id
 from tests.test_fact_fingerprint_chunk_size import _long_document_sale
 
 STORED_FACTS = {

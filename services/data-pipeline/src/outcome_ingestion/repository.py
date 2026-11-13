@@ -16,51 +16,62 @@ except ModuleNotFoundError:  # pragma: no cover - parser-only installations.
     Jsonb = None
 
 from src.official_sources.base import canonical_sha256
+from src.official_sources.justice_open_data import (
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
+    JUSTICE_RECORD_KINDS,
+    JUSTICE_REVIEW_STATUS,
+    JUSTICE_SCHEMA_VERSIONS,
+    JUSTICE_SOURCE_GRADE,
+)
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
+from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_MUTATION_NATURE,
+    DVF_ADJUDICATION_RECORD_KIND,
+    DVF_ADJUDICATION_SCHEMA_VERSION,
+    DVF_OFFICIAL_SOURCE_NAME,
+)
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CANDIDATE_GRADE,
+    JUDILIBRE_CLAIM_TYPES,
+    JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
+    JUDILIBRE_EVIDENCE_HASH_VERSION,
+    JUDILIBRE_EXTRACTOR_NAME,
+    JUDILIBRE_EXTRACTOR_VERSION,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_REVIEW_STATUS,
+    JUDILIBRE_SOURCE_NAME,
+    JUDILIBRE_TEXT_STORAGE,
+    JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
+)
+from src.outcome_ingestion.judilibre_match_contract import (
+    JUDILIBRE_COURT_CODE_EXACT,
+    JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME,
+    JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
+    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
+    JUDILIBRE_MATCH_METHODS,
+    judilibre_case_reference_manifest_sha256,
+    judilibre_case_references,
+    judilibre_claims_manifest_sha256,
+    judilibre_match_rank,
+    judilibre_match_score_and_method,
+    judilibre_source_record_sha256,
+    judilibre_target_context_sha256,
+    normalize_judilibre_case_reference,
+    validate_judilibre_match_signals,
+)
+from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
 IngestionChannel = Literal["automated", "manual", "partner"]
 CaptureTransport = Literal["http", "local_file"]
 
-_JUDILIBRE_V3_SAFE_PROJECTION_KEYS = (
-    "schema_version",
-    "record_type",
-    "judilibre_id",
-    "jurisdiction",
-    "location",
-    "chamber",
-    "formation",
-    "number",
-    "numbers",
-    "ecli",
-    "nac",
-    "decision_date",
-    "update_date",
-    "decision_type",
-    "solution",
-    "solution_alt",
-    "publication",
-    "themes",
-    "partial",
-    "to_be_deleted",
-    "raw_representation_sha256",
-    "candidate_grade",
-    "review_status",
-    "training_eligible",
-    "text_storage",
-    "personal_identity_features_allowed",
-    "extraction_status",
-    "extraction_rule_version",
-    "claims",
-    "ambiguous_claim_types",
-    "text_available",
-)
 _JUDILIBRE_V3_SAFE_PROJECTION_SQL = "jsonb_build_object(" + ", ".join(
     f"'{key}', record.normalized_data->'{key}'"
-    for key in _JUDILIBRE_V3_SAFE_PROJECTION_KEYS
+    for key in JUDILIBRE_V3_SAFE_PROJECTION_KEYS
 ) + ")"
 _JUDILIBRE_V3_SAFE_KEYS_SQL = "array[" + ", ".join(
-    f"'{key}'" for key in _JUDILIBRE_V3_SAFE_PROJECTION_KEYS
+    f"'{key}'" for key in JUDILIBRE_V3_SAFE_PROJECTION_KEYS
 ) + "]"
 _JUDILIBRE_V3_SAFE_ALLOWLIST_SQL = (
     "record.normalized_data ?& "
@@ -70,6 +81,26 @@ _JUDILIBRE_V3_SAFE_ALLOWLIST_SQL = (
     + _JUDILIBRE_V3_SAFE_KEYS_SQL
     + ")))"
 )
+# Valeurs du contrat lues par les deux requêtes des candidats v3 (paramètres nommés ``%(source_name)s``...).
+_JUDILIBRE_V3_CANDIDATE_PARAMETERS = {
+    "source_name": JUDILIBRE_SOURCE_NAME,
+    "record_kind": JUDILIBRE_RECORD_KIND,
+    "schema_version": JUDILIBRE_NORMALIZED_SCHEMA,
+    "extractor_name": JUDILIBRE_EXTRACTOR_NAME,
+    "extractor_version": JUDILIBRE_EXTRACTOR_VERSION,
+    "hash_version": JUDILIBRE_EVIDENCE_HASH_VERSION,
+    "candidate_grade": JUDILIBRE_CANDIDATE_GRADE,
+    "review_status": JUDILIBRE_REVIEW_STATUS,
+    "extraction_status": JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
+    "text_storage": JUDILIBRE_TEXT_STORAGE,
+}
+# Rangs des méthodes du contrat, lus par les deux classements SQL des contextes d'audience. Leurs ``case`` testent
+# Portalis puis le numéro d'affaire, dans l'ordre de ``judilibre_match_rank``.
+_JUDILIBRE_MATCH_RANK_PARAMETERS = {
+    "portalis_rank": judilibre_match_rank(portalis_number_match=True, case_number_match=False),
+    "case_number_rank": judilibre_match_rank(portalis_number_match=False, case_number_match=True),
+    "composite_rank": judilibre_match_rank(portalis_number_match=False, case_number_match=False),
+}
 
 
 class OutcomeIngestionError(RuntimeError):
@@ -631,29 +662,22 @@ class OutcomeIngestionRepository:
 
         if Jsonb is None:
             raise OutcomeIngestionError("psycopg is required for Outcome ingestion writes")
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_source_content_hash):
+        if not is_lowercase_sha256(expected_source_content_hash):
             raise ValueError("Judilibre source projection hash must be SHA-256")
-        if not 0 <= max_date_delta_days <= 30:
-            raise ValueError("Judilibre date delta must be between 0 and 30 days")
-        if match_method not in {
-            "exact_case_number",
-            "exact_portalis_number",
-            "composite",
-        }:
+        if not 0 <= max_date_delta_days <= JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX:
+            raise ValueError(
+                f"Judilibre date delta must be between 0 and {JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX} days"
+            )
+        if match_method not in JUDILIBRE_MATCH_METHODS:
             raise ValueError("Judilibre match method is not review-safe")
         if re.fullmatch(r"(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)", match_score) is None:
             raise ValueError("Judilibre match score must be between 0 and 1")
-        _validate_judilibre_match_signals(
+        validate_judilibre_match_signals(
             match_signals,
             expected_source_content_hash=expected_source_content_hash,
             match_method=match_method,
         )
-        if match_signals.get("source_record_sha256") != canonical_sha256(
-            {
-                "schema_version": "judilibre_source_record_reference_v1",
-                "source_record_id": source_record_id,
-            }
-        ):
+        if match_signals.get("source_record_sha256") != judilibre_source_record_sha256(source_record_id):
             raise ValueError("Judilibre source-record provenance is inconsistent")
         lock_key = _match_target_lock_key(
             source_record_id=source_record_id,
@@ -700,34 +724,32 @@ class OutcomeIngestionRepository:
                     join public.data_sources source on source.id = record.source_id
                     join public.artifact_extractions extraction
                       on extraction.id = record.artifact_extraction_id
-                    where record.id = %s
-                      and record.content_hash = %s
-                      and source.name = 'judilibre'
+                    where record.id = %(source_record_id)s
+                      and record.content_hash = %(content_hash)s
+                      and source.name = %(source_name)s
                       and source.official
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'judicial_decision_candidate'
+                      and record.record_kind = %(record_kind)s
                       and not record.training_eligible
-                      and record.normalized_data->>'schema_version'
-                        = 'judilibre_decision_candidate_v3'
-                      and record.normalized_data->>'record_type'
-                        = 'judicial_decision_candidate'
+                      and record.normalized_data->>'schema_version' = %(schema_version)s
+                      and record.normalized_data->>'record_type' = %(record_kind)s
                       and record.normalized_data->>'judilibre_id'
                         = record.external_record_id
                       and lower(record.normalized_data->>'jurisdiction') = 'tj'
                       and nullif(btrim(record.normalized_data->>'location'), '') is not null
                       and record.normalized_data->>'decision_date'
                         = record.decision_date::text
+                      and record.normalized_data->>'candidate_grade' = %(candidate_grade)s
+                      and record.normalized_data->>'review_status' = %(review_status)s
+                      and record.normalized_data->>'extraction_status' = %(extraction_status)s
+                      and record.normalized_data->>'text_storage' = %(text_storage)s
                       and record.normalized_data @> '{
-                        "candidate_grade": "C",
-                        "review_status": "pending",
                         "training_eligible": false,
                         "personal_identity_features_allowed": false,
-                        "extraction_status": "candidate_facts_extracted",
                         "ambiguous_claim_types": [],
                         "to_be_deleted": false,
-                        "text_storage": "private_raw_artifact",
                         "text_available": true
                       }'::jsonb
                       and record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb
@@ -737,12 +759,11 @@ class OutcomeIngestionRepository:
                       and record.normalized_data->>'raw_representation_sha256'
                         ~ '^[0-9a-f]{64}$'
                       and extraction.extraction_status = 'succeeded'
-                      and extraction.extractor_name = 'judilibre_candidate_extraction'
-                      and extraction.extractor_version = '3'
-                      and extraction.schema_version = 'judilibre_decision_candidate_v3'
+                      and extraction.extractor_name = %(extractor_name)s
+                      and extraction.extractor_version = %(extractor_version)s
+                      and extraction.schema_version = %(schema_version)s
                       and extraction.output_hash = record.content_hash
-                      and extraction.field_provenance->>'hash_version'
-                        = 'judilibre-evidence-sha256-v1'
+                      and extraction.field_provenance->>'hash_version' = %(hash_version)s
                       and jsonb_typeof(extraction.field_provenance->'claims') = 'object'
                       and jsonb_typeof(record.normalized_data->'claims') = 'array'
                       and jsonb_array_length(record.normalized_data->'claims') between 1 and 7
@@ -769,7 +790,7 @@ class OutcomeIngestionRepository:
                             extraction.field_provenance->'claims'
                               ->(claim->>'claim_id')->>'hash_version',
                             ''
-                          ) <> 'judilibre-evidence-sha256-v1'
+                          ) <> %(hash_version)s
                       )
                       and not exists (
                         select 1
@@ -794,7 +815,11 @@ class OutcomeIngestionRepository:
                       )
                     for share of record, source, extraction
                     """,
-                    (source_record_id, expected_source_content_hash),
+                    {
+                        **_JUDILIBRE_V3_CANDIDATE_PARAMETERS,
+                        "source_record_id": source_record_id,
+                        "content_hash": expected_source_content_hash,
+                    },
                 )
                 source_row = cursor.fetchone()
                 if source_row is None or not isinstance(source_row[1], date):
@@ -840,12 +865,7 @@ class OutcomeIngestionRepository:
                     len(source_claim_types) != len(source_claims)
                     or match_signals.get("claim_types") != source_claim_types
                     or match_signals.get("claims_manifest_sha256")
-                    != canonical_sha256(
-                        {
-                            "schema_version": "judilibre_claim_manifest_v1",
-                            "claims": source_claims,
-                        }
-                    )
+                    != judilibre_claims_manifest_sha256(source_claims)
                 ):
                     raise OutcomeIngestionError(
                         "Judilibre claim manifest changed before match persistence"
@@ -900,12 +920,12 @@ class OutcomeIngestionRepository:
                         "Judilibre auction target moved outside the bounded date window"
                     )
 
-                references = _judilibre_projection_references(normalized_data)
+                references = judilibre_case_references(normalized_data)
                 case_number_match = (
-                    _normalize_match_reference(target_row[5]) in references
+                    normalize_judilibre_case_reference(target_row[5]) in references
                 )
                 portalis_number_match = (
-                    _normalize_match_reference(target_row[6]) in references
+                    normalize_judilibre_case_reference(target_row[6]) in references
                 )
                 if (
                     match_signals.get("case_number") is not case_number_match
@@ -921,37 +941,27 @@ class OutcomeIngestionRepository:
                     raise OutcomeIngestionError(
                         "Judilibre auction target does not have enough objective signals"
                     )
-                expected_score, expected_method = (
-                    ("0.9800" if date_delta_days == 0 else "0.9400", "exact_portalis_number")
-                    if portalis_number_match
-                    else (
-                        ("0.9500" if date_delta_days == 0 else "0.9000", "exact_case_number")
-                        if case_number_match
-                        else ("0.7500", "composite")
-                    )
+                expected_score, expected_method = judilibre_match_score_and_method(
+                    portalis_number_match=portalis_number_match,
+                    case_number_match=case_number_match,
+                    date_delta_days=date_delta_days,
                 )
                 if match_score != expected_score or match_method != expected_method:
                     raise OutcomeIngestionError(
                         "Judilibre match score or method is not canonical"
                     )
-                if match_signals.get("case_reference_manifest_sha256") != canonical_sha256(
-                    {
-                        "schema_version": "judilibre_case_reference_manifest_v1",
-                        "references": references,
-                    }
-                ):
+                if match_signals.get(
+                    "case_reference_manifest_sha256"
+                ) != judilibre_case_reference_manifest_sha256(references):
                     raise OutcomeIngestionError(
                         "Judilibre case-reference manifest changed before persistence"
                     )
-                if match_signals.get("target_context_sha256") != canonical_sha256(
-                    {
-                        "schema_version": "judilibre_target_context_v1",
-                        "case_id": str(target_row[0]),
-                        "lot_id": str(target_row[1]),
-                        "round_id": str(target_row[2]),
-                        "court_id": str(target_row[3]),
-                        "scheduled_date": scheduled_date,
-                    }
+                if match_signals.get("target_context_sha256") != judilibre_target_context_sha256(
+                    case_id=str(target_row[0]),
+                    lot_id=str(target_row[1]),
+                    round_id=str(target_row[2]),
+                    court_id=str(target_row[3]),
+                    scheduled_date=scheduled_date,
                 ):
                     raise OutcomeIngestionError(
                         "Judilibre target-context manifest changed before persistence"
@@ -971,17 +981,17 @@ class OutcomeIngestionRepository:
                           when regexp_replace(
                             lower(btrim(coalesce(case_row.portalis_number, ''))),
                             '\\s+', ' ', 'g'
-                          ) = any(%s::text[]) then 2
+                          ) = any(%(references)s::text[]) then %(portalis_rank)s
                           when regexp_replace(
                             lower(btrim(coalesce(case_row.court_case_number, ''))),
                             '\\s+', ' ', 'g'
-                          ) = any(%s::text[]) then 1
-                          else 0
+                          ) = any(%(references)s::text[]) then %(case_number_rank)s
+                          else %(composite_rank)s
                         end as reference_rank,
                         abs((
                           round_row.scheduled_at
                           at time zone round_row.local_timezone
-                        )::date - %s::date) as date_delta_days
+                        )::date - %(decision_date)s::date) as date_delta_days
                       from public.auction_rounds round_row
                       join public.auction_lots lot on lot.id = round_row.lot_id
                       join public.auction_cases case_row
@@ -990,13 +1000,14 @@ class OutcomeIngestionRepository:
                         on court_row.id = round_row.court_id
                       where lot.active
                         and court_row.active
-                        and round_row.court_id = %s
-                        and case_row.court_id = %s
+                        and round_row.court_id = %(court_id)s
+                        and case_row.court_id = %(court_id)s
                         and round_row.scheduled_at is not null
                         and (
                           round_row.scheduled_at
                           at time zone round_row.local_timezone
-                        )::date between %s::date - %s and %s::date + %s
+                        )::date between %(decision_date)s::date - %(max_date_delta_days)s
+                          and %(decision_date)s::date + %(max_date_delta_days)s
                     ), ranked as (
                       select
                         eligible.*,
@@ -1004,7 +1015,7 @@ class OutcomeIngestionRepository:
                           partition by reference_rank, date_delta_days
                         ) as tied_at_rank
                       from eligible
-                      where reference_rank > 0 or date_delta_days = 0
+                      where reference_rank > %(composite_rank)s or date_delta_days = 0
                     )
                     select
                       case_id,
@@ -1016,7 +1027,7 @@ class OutcomeIngestionRepository:
                       (
                         select count(distinct reference_case.case_id)
                         from eligible reference_case
-                        where reference_case.reference_rank > 0
+                        where reference_case.reference_rank > %(composite_rank)s
                       ) as exact_reference_case_count
                     from ranked
                     order by
@@ -1027,21 +1038,18 @@ class OutcomeIngestionRepository:
                       round_id
                     limit 1
                     """,
-                    (
-                        list(references),
-                        list(references),
-                        source_decision_date,
-                        expected_court_id,
-                        expected_court_id,
-                        source_decision_date,
-                        max_date_delta_days,
-                        source_decision_date,
-                        max_date_delta_days,
-                    ),
+                    {
+                        **_JUDILIBRE_MATCH_RANK_PARAMETERS,
+                        "references": list(references),
+                        "decision_date": source_decision_date,
+                        "court_id": expected_court_id,
+                        "max_date_delta_days": max_date_delta_days,
+                    },
                 )
                 objective_top = cursor.fetchone()
-                expected_reference_rank = 2 if portalis_number_match else (
-                    1 if case_number_match else 0
+                expected_reference_rank = judilibre_match_rank(
+                    portalis_number_match=portalis_number_match,
+                    case_number_match=case_number_match,
                 )
                 if (
                     objective_top is None
@@ -1154,10 +1162,10 @@ class OutcomeIngestionRepository:
                         from public.judicial_source_records record
                         join public.data_sources source on source.id = record.source_id
                         where record.id = %s::uuid
-                          and source.name = 'dvf_dgfip'
+                          and source.name = %s
                         limit 1
                         """,
-                        (normalized_cursor,),
+                        (normalized_cursor, DVF_OFFICIAL_SOURCE_NAME),
                     )
                     cursor_row = cursor.fetchone()
                     if cursor_row is None:
@@ -1178,6 +1186,10 @@ class OutcomeIngestionRepository:
                     )
                 )
                 parameters: tuple[object, ...] = (
+                    DVF_OFFICIAL_SOURCE_NAME,
+                    DVF_ADJUDICATION_RECORD_KIND,
+                    DVF_ADJUDICATION_SCHEMA_VERSION,
+                    DVF_ADJUDICATION_MUTATION_NATURE,
                     *(cursor_position or ()),
                     *((limit,) if limit is not None else ()),
                 )
@@ -1186,15 +1198,14 @@ class OutcomeIngestionRepository:
                     select record.id, record.external_record_id, record.normalized_data
                     from public.judicial_source_records record
                     join public.data_sources source on source.id = record.source_id
-                    where source.name = 'dvf_dgfip'
+                    where source.name = %s
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'auction_result_candidate'
+                      and record.record_kind = %s
                       and not record.training_eligible
-                      and record.normalized_data->>'schema_version'
-                        = 'dvf_adjudication_candidate_v1'
-                      and record.normalized_data->>'mutation_nature' = 'Adjudication'
+                      and record.normalized_data->>'schema_version' = %s
+                      and record.normalized_data->>'mutation_nature' = %s
                       {cursor_clause}
                       and not exists (
                         select 1
@@ -1328,10 +1339,10 @@ class OutcomeIngestionRepository:
                         from public.judicial_source_records record
                         join public.data_sources source on source.id = record.source_id
                         where record.id = %s::uuid
-                          and source.name = 'judilibre'
+                          and source.name = %s
                         limit 1
                         """,
-                        (normalized_cursor,),
+                        (normalized_cursor, JUDILIBRE_SOURCE_NAME),
                     )
                     cursor_row = cursor.fetchone()
                     if cursor_row is None:
@@ -1348,7 +1359,7 @@ class OutcomeIngestionRepository:
                     if cursor_position is None
                     else (
                         "and (record.created_at, record.id) "
-                        "> (%s::timestamptz, %s::uuid)"
+                        "> (%(cursor_created_at)s::timestamptz, %(cursor_id)s::uuid)"
                     )
                 )
                 cursor.execute(
@@ -1363,18 +1374,16 @@ class OutcomeIngestionRepository:
                     join public.data_sources source on source.id = record.source_id
                     join public.artifact_extractions extraction
                       on extraction.id = record.artifact_extraction_id
-                    where source.name = 'judilibre'
+                    where source.name = %(source_name)s
                       and source.official
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'judicial_decision_candidate'
+                      and record.record_kind = %(record_kind)s
                       and not record.training_eligible
                       and record.decision_date is not null
-                      and record.normalized_data->>'schema_version'
-                        = 'judilibre_decision_candidate_v3'
-                      and record.normalized_data->>'record_type'
-                        = 'judicial_decision_candidate'
+                      and record.normalized_data->>'schema_version' = %(schema_version)s
+                      and record.normalized_data->>'record_type' = %(record_kind)s
                       and record.normalized_data->>'judilibre_id'
                         = record.external_record_id
                       and lower(record.normalized_data->>'jurisdiction') = 'tj'
@@ -1384,22 +1393,21 @@ class OutcomeIngestionRepository:
                       and record.normalized_data->>'raw_representation_sha256'
                         ~ '^[0-9a-f]{{64}}$'
                       and extraction.extraction_status = 'succeeded'
-                      and extraction.extractor_name = 'judilibre_candidate_extraction'
-                      and extraction.extractor_version = '3'
-                      and extraction.schema_version = 'judilibre_decision_candidate_v3'
+                      and extraction.extractor_name = %(extractor_name)s
+                      and extraction.extractor_version = %(extractor_version)s
+                      and extraction.schema_version = %(schema_version)s
                       and extraction.output_hash = record.content_hash
-                      and extraction.field_provenance->>'hash_version'
-                        = 'judilibre-evidence-sha256-v1'
+                      and extraction.field_provenance->>'hash_version' = %(hash_version)s
                       and jsonb_typeof(extraction.field_provenance->'claims') = 'object'
+                      and record.normalized_data->>'candidate_grade' = %(candidate_grade)s
+                      and record.normalized_data->>'review_status' = %(review_status)s
+                      and record.normalized_data->>'extraction_status' = %(extraction_status)s
+                      and record.normalized_data->>'text_storage' = %(text_storage)s
                       and record.normalized_data @> '{{
-                        "candidate_grade": "C",
-                        "review_status": "pending",
                         "training_eligible": false,
                         "personal_identity_features_allowed": false,
-                        "extraction_status": "candidate_facts_extracted",
                         "ambiguous_claim_types": [],
                         "to_be_deleted": false,
-                        "text_storage": "private_raw_artifact",
                         "text_available": true
                       }}'::jsonb
                       and record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb
@@ -1416,9 +1424,7 @@ class OutcomeIngestionRepository:
                           end
                         ) claim
                         where jsonb_typeof(claim) <> 'object'
-                          or claim->>'claim_type' not in (
-                            'starting_price_eur', 'hammer_price_eur', 'procedural_event'
-                          )
+                          or claim->>'claim_type' <> all(%(claim_types)s::text[])
                           or coalesce(claim->>'claim_id', '') !~ '^[0-9a-f]{{64}}$'
                           or coalesce(claim->>'evidence_hash', '') !~ '^[0-9a-f]{{64}}$'
                           or nullif(btrim(claim->>'normalized_value'), '') is null
@@ -1436,7 +1442,7 @@ class OutcomeIngestionRepository:
                             extraction.field_provenance->'claims'
                               ->(claim->>'claim_id')->>'hash_version',
                             ''
-                          ) <> 'judilibre-evidence-sha256-v1'
+                          ) <> %(hash_version)s
                       )
                       and (
                         select count(*) = count(distinct claim->>'claim_type')
@@ -1471,9 +1477,15 @@ class OutcomeIngestionRepository:
                           )
                       )
                     order by record.created_at, record.id
-                    limit %s
+                    limit %(limit)s
                     """,
-                    (*cursor_position, limit) if cursor_position is not None else (limit,),
+                    {
+                        **_JUDILIBRE_V3_CANDIDATE_PARAMETERS,
+                        "claim_types": list(JUDILIBRE_CLAIM_TYPES),
+                        "cursor_created_at": cursor_position[0] if cursor_position is not None else None,
+                        "cursor_id": cursor_position[1] if cursor_position is not None else None,
+                        "limit": limit,
+                    },
                 )
                 rows = cursor.fetchall()
         return [
@@ -1501,160 +1513,9 @@ class OutcomeIngestionRepository:
         catalogue. Ambiguity is returned to the service and never guessed.
         """
 
-        cleaned_location = location.strip()
-        if not cleaned_location or len(cleaned_location) > 128:
-            return []
         with self._connect(self._db_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select court_row.id, court_row.code
-                    from public.outcome_courts court_row
-                    where court_row.active
-                      and lower(btrim(court_row.code)) = lower(btrim(%s))
-                    order by court_row.id
-                    limit 2
-                    """,
-                    (cleaned_location,),
-                )
-                direct_rows = cursor.fetchall()
-                if direct_rows:
-                    return [
-                        StoredJudilibreCourtResolution(
-                            court_id=str(row[0]),
-                            court_code=str(row[1]),
-                            resolution_method="outcome_court_code_exact",
-                            reference_sha256=canonical_sha256(
-                                {
-                                    "schema_version": "judilibre_court_resolution_v1",
-                                    "method": "outcome_court_code_exact",
-                                    "court_code": str(row[1]),
-                                }
-                            ),
-                        )
-                        for row in direct_rows
-                    ]
-
-                match = re.fullmatch(
-                    r"tj(?P<insee>(?:\d{5}|2[ab]\d{3}))",
-                    cleaned_location,
-                    flags=re.IGNORECASE,
-                )
-                if match is None:
-                    return []
-                insee_code = match.group("insee").upper()
-                cursor.execute(
-                    """
-                    with current_justice_structures as (
-                      select record.normalized_data, record.content_hash
-                      from public.judicial_source_records record
-                      join public.data_sources source on source.id = record.source_id
-                      where source.name = 'justice_open_data'
-                        and source.official
-                        and source.active
-                        and source.legal_review_status = 'approved'
-                        and source.ingestion_policy = 'allowed_automated'
-                        and record.record_kind = 'court_reference_candidate'
-                        and not record.training_eligible
-                        and record.normalized_data->>'schema_version'
-                          = 'justice_court_structure_v1'
-                        and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
-                        and upper(record.normalized_data->>'insee_code') = %s
-                        and record.normalized_data @> '{
-                          "training_eligible": false,
-                          "review_status": "pending",
-                          "source_grade": "A"
-                        }'::jsonb
-                        and not exists (
-                          select 1
-                          from public.judicial_source_records newer
-                          where newer.source_id = record.source_id
-                            and newer.external_record_id = record.external_record_id
-                            and newer.record_version > record.record_version
-                        )
-                        and not exists (
-                          select 1
-                          from public.source_purge_events purge
-                          where purge.source_id = record.source_id
-                            and (
-                              purge.source_record_id = record.id
-                              or purge.external_record_id = record.external_record_id
-                            )
-                            and purge.event_type in (
-                              'deletion_requested', 'deletion_completed',
-                              'redaction_requested', 'redaction_completed',
-                              'retention_expired'
-                            )
-                        )
-                    ), resolved as (
-                      select distinct
-                        court_row.id,
-                        court_row.code,
-                        justice_record.content_hash
-                      from current_justice_structures justice_record
-                      join public.outcome_courts court_row on (
-                        court_row.active
-                        and btrim(regexp_replace(
-                          extensions.unaccent(lower(court_row.name)),
-                          '[^a-z0-9]+', ' ', 'g'
-                        )) = btrim(regexp_replace(
-                          extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                          '[^a-z0-9]+', ' ', 'g'
-                        ))
-                      )
-                      union
-                      select distinct
-                        court_row.id,
-                        court_row.code,
-                        justice_record.content_hash
-                      from current_justice_structures justice_record
-                      join public.tribunals tribunal_row on (
-                        btrim(regexp_replace(
-                          extensions.unaccent(lower(tribunal_row.canonical_name)),
-                          '[^a-z0-9]+', ' ', 'g'
-                        )) = btrim(regexp_replace(
-                          extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                          '[^a-z0-9]+', ' ', 'g'
-                        ))
-                        or exists (
-                          select 1
-                          from jsonb_array_elements_text(
-                            case
-                              when jsonb_typeof(tribunal_row.aliases) = 'array'
-                                then tribunal_row.aliases
-                              else '[]'::jsonb
-                            end
-                          ) alias(value)
-                          where btrim(regexp_replace(
-                            extensions.unaccent(lower(alias.value)),
-                            '[^a-z0-9]+', ' ', 'g'
-                          )) = btrim(regexp_replace(
-                            extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                            '[^a-z0-9]+', ' ', 'g'
-                          ))
-                        )
-                      )
-                      join public.outcome_courts court_row
-                        on court_row.code = tribunal_row.code
-                       and court_row.active
-                    )
-                    select id, code, content_hash
-                    from resolved
-                    order by id
-                    limit 2
-                    """,
-                    (insee_code,),
-                )
-                rows = cursor.fetchall()
-        return [
-            StoredJudilibreCourtResolution(
-                court_id=str(row[0]),
-                court_code=str(row[1]),
-                resolution_method="justice_structure_insee_exact_name",
-                reference_sha256=str(row[2]),
-            )
-            for row in rows
-        ]
+                return _load_current_judilibre_court_resolutions(cursor, location=location)
 
     def load_judilibre_auction_match_contexts(
         self,
@@ -1667,15 +1528,20 @@ class OutcomeIngestionRepository:
     ) -> list[StoredJudilibreAuctionMatchContext]:
         if not court_id.strip():
             raise ValueError("Judilibre court id is required")
-        if max_date_delta_days < 0 or max_date_delta_days > 30:
-            raise ValueError("Judilibre date delta must be between 0 and 30 days")
-        if limit < 1 or limit > 5_001:
-            raise ValueError("Judilibre context query limit must be between 1 and 5001")
+        if not 0 <= max_date_delta_days <= JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX:
+            raise ValueError(
+                f"Judilibre date delta must be between 0 and {JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX} days"
+            )
+        # Le rapprochement demande une ligne de plus que sa limite pour voir la troncature.
+        if limit < 1 or limit > JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX + 1:
+            raise ValueError(
+                f"Judilibre context query limit must be between 1 and {JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX + 1}"
+            )
         normalized_references = tuple(
             dict.fromkeys(
                 normalized
                 for value in case_references
-                if (normalized := _normalize_match_reference(value)) is not None
+                if (normalized := normalize_judilibre_case_reference(value)) is not None
             )
         )
         with self._connect(self._db_url) as connection:
@@ -1694,20 +1560,20 @@ class OutcomeIngestionRepository:
                       abs((
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date - %s::date) as date_delta_days,
+                      )::date - %(decision_date)s::date) as date_delta_days,
                       case
-                        when cardinality(%s::text[]) = 0 then false
+                        when cardinality(%(references)s::text[]) = 0 then false
                         else regexp_replace(
                           lower(btrim(coalesce(case_row.court_case_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[])
+                        ) = any(%(references)s::text[])
                       end as case_number_match,
                       case
-                        when cardinality(%s::text[]) = 0 then false
+                        when cardinality(%(references)s::text[]) = 0 then false
                         else regexp_replace(
                           lower(btrim(coalesce(case_row.portalis_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[])
+                        ) = any(%(references)s::text[])
                       end as portalis_number_match
                     from public.auction_rounds round_row
                     join public.auction_lots lot on lot.id = round_row.lot_id
@@ -1717,53 +1583,43 @@ class OutcomeIngestionRepository:
                       on court_row.id = round_row.court_id
                     where lot.active
                       and court_row.active
-                      and round_row.court_id = %s
-                      and case_row.court_id = %s
+                      and round_row.court_id = %(court_id)s
+                      and case_row.court_id = %(court_id)s
                       and round_row.scheduled_at is not null
                       and (
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date between %s::date - %s and %s::date + %s
+                      )::date between %(decision_date)s::date - %(max_date_delta_days)s
+                        and %(decision_date)s::date + %(max_date_delta_days)s
                     order by
                       case
-                        when cardinality(%s::text[]) > 0 and regexp_replace(
+                        when cardinality(%(references)s::text[]) > 0 and regexp_replace(
                           lower(btrim(coalesce(case_row.portalis_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[]) then 0
-                        when cardinality(%s::text[]) > 0 and regexp_replace(
+                        ) = any(%(references)s::text[]) then %(portalis_rank)s
+                        when cardinality(%(references)s::text[]) > 0 and regexp_replace(
                           lower(btrim(coalesce(case_row.court_case_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[]) then 1
-                        else 2
-                      end,
+                        ) = any(%(references)s::text[]) then %(case_number_rank)s
+                        else %(composite_rank)s
+                      end desc,
                       abs((
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date - %s::date),
+                      )::date - %(decision_date)s::date),
                       case_row.id,
                       lot.id,
                       round_row.id
-                    limit %s
+                    limit %(limit)s
                     """,
-                    (
-                        decision_date,
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        court_id,
-                        court_id,
-                        decision_date,
-                        max_date_delta_days,
-                        decision_date,
-                        max_date_delta_days,
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        decision_date,
-                        limit,
-                    ),
+                    {
+                        **_JUDILIBRE_MATCH_RANK_PARAMETERS,
+                        "decision_date": decision_date,
+                        "references": list(normalized_references),
+                        "court_id": court_id,
+                        "max_date_delta_days": max_date_delta_days,
+                        "limit": limit,
+                    },
                 )
                 rows = cursor.fetchall()
         return [
@@ -2189,38 +2045,6 @@ def _match_target_lock_key(
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big", signed=True)
 
 
-def _normalize_match_reference(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = re.sub(r"\s+", " ", value.strip()).lower()
-    if not normalized or len(normalized) > 128 or any(
-        character in normalized for character in ("\x00", "\r", "\n")
-    ):
-        return None
-    return normalized
-
-
-def _judilibre_projection_references(
-    normalized_data: Mapping[str, object],
-) -> tuple[str, ...]:
-    number = normalized_data.get("number")
-    numbers = normalized_data.get("numbers")
-    if number is not None and not isinstance(number, str):
-        raise OutcomeIngestionError("Judilibre source number has an invalid type")
-    if numbers is not None and not isinstance(numbers, list):
-        raise OutcomeIngestionError("Judilibre source numbers has an invalid type")
-    if isinstance(numbers, list) and any(not isinstance(value, str) for value in numbers):
-        raise OutcomeIngestionError("Judilibre source numbers contains a non-text value")
-    values: list[object] = [number] if number is not None else []
-    values.extend(numbers or [])
-    references: list[str] = []
-    for value in values:
-        normalized = _normalize_match_reference(value)
-        if normalized is not None and normalized not in references:
-            references.append(normalized)
-    return tuple(references)
-
-
 def _load_current_judilibre_court_resolutions(
     cursor: Any,
     *,
@@ -2250,11 +2074,11 @@ def _load_current_judilibre_court_resolutions(
             StoredJudilibreCourtResolution(
                 court_id=str(row[0]),
                 court_code=str(row[1]),
-                resolution_method="outcome_court_code_exact",
+                resolution_method=JUDILIBRE_COURT_CODE_EXACT,
                 reference_sha256=canonical_sha256(
                     {
                         "schema_version": "judilibre_court_resolution_v1",
-                        "method": "outcome_court_code_exact",
+                        "method": JUDILIBRE_COURT_CODE_EXACT,
                         "court_code": str(row[1]),
                     }
                 ),
@@ -2275,22 +2099,19 @@ def _load_current_judilibre_court_resolutions(
           select record.normalized_data, record.content_hash
           from public.judicial_source_records record
           join public.data_sources source on source.id = record.source_id
-          where source.name = 'justice_open_data'
+          where source.name = %s
             and source.official
             and source.active
             and source.legal_review_status = 'approved'
             and source.ingestion_policy = 'allowed_automated'
-            and record.record_kind = 'court_reference_candidate'
+            and record.record_kind = %s
             and not record.training_eligible
-            and record.normalized_data->>'schema_version'
-              = 'justice_court_structure_v1'
+            and record.normalized_data->>'schema_version' = %s
             and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
             and upper(record.normalized_data->>'insee_code') = %s
-            and record.normalized_data @> '{
-              "training_eligible": false,
-              "review_status": "pending",
-              "source_grade": "A"
-            }'::jsonb
+            and record.normalized_data->>'review_status' = %s
+            and record.normalized_data->>'source_grade' = %s
+            and record.normalized_data @> '{"training_eligible": false}'::jsonb
             and not exists (
               select 1
               from public.judicial_source_records newer
@@ -2369,129 +2190,25 @@ def _load_current_judilibre_court_resolutions(
         order by id
         limit 2
         """,
-        (match.group("insee").upper(),),
+        (
+            JUSTICE_OPEN_DATA_SOURCE_NAME,
+            JUSTICE_RECORD_KINDS["justice_court_structure"],
+            JUSTICE_SCHEMA_VERSIONS["justice_court_structure"],
+            match.group("insee").upper(),
+            JUSTICE_REVIEW_STATUS,
+            JUSTICE_SOURCE_GRADE,
+        ),
     )
     rows = cursor.fetchall()
     return [
         StoredJudilibreCourtResolution(
             court_id=str(row[0]),
             court_code=str(row[1]),
-            resolution_method="justice_structure_insee_exact_name",
+            resolution_method=JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME,
             reference_sha256=str(row[2]),
         )
         for row in rows
     ]
-
-
-def _validate_judilibre_match_signals(
-    signals: Mapping[str, object],
-    *,
-    expected_source_content_hash: str,
-    match_method: str,
-) -> None:
-    required_keys = {
-        "schema_version",
-        "match_rule_version",
-        "court",
-        "court_resolution_method",
-        "court_resolution_reference_sha256",
-        "hearing_date",
-        "hearing_date_exact",
-        "hearing_date_delta_days",
-        "case_number",
-        "portalis_number",
-        "claim_types",
-        "claims_manifest_sha256",
-        "case_reference_manifest_sha256",
-        "source_projection_sha256",
-        "target_context_sha256",
-        "source_record_version_current_at_scan",
-        "source_training_eligible",
-        "selection_requires_human_review",
-        "automatic_link_allowed",
-        "outcome_creation_allowed",
-        "training_eligible",
-        "claim_value_used_for_matching",
-        "price_used_for_matching",
-        "text_used_for_matching",
-        "address_used_for_matching",
-        "personal_identity_used_for_matching",
-        "source_record_sha256",
-    }
-    if set(signals) != required_keys:
-        raise ValueError("Judilibre match signals do not match the reviewed schema")
-    if signals.get("schema_version") != "judilibre_match_signals_v1":
-        raise ValueError("Judilibre match signal schema is unsupported")
-    if signals.get("match_rule_version") != "judilibre-review-match-v1":
-        raise ValueError("Judilibre match rule version is unsupported")
-    if signals.get("court_resolution_method") not in {
-        "outcome_court_code_exact",
-        "justice_structure_insee_exact_name",
-    }:
-        raise ValueError("Judilibre court resolution is not objective")
-    true_flags = {
-        "court",
-        "hearing_date",
-        "source_record_version_current_at_scan",
-        "selection_requires_human_review",
-    }
-    false_flags = {
-        "source_training_eligible",
-        "automatic_link_allowed",
-        "outcome_creation_allowed",
-        "training_eligible",
-        "claim_value_used_for_matching",
-        "price_used_for_matching",
-        "text_used_for_matching",
-        "address_used_for_matching",
-        "personal_identity_used_for_matching",
-    }
-    if any(signals.get(key) is not True for key in true_flags) or any(
-        signals.get(key) is not False for key in false_flags
-    ):
-        raise ValueError("Judilibre match safety flags are invalid")
-    for key in ("hearing_date_exact", "case_number", "portalis_number"):
-        if type(signals.get(key)) is not bool:
-            raise ValueError("Judilibre objective signal flags must be booleans")
-    date_delta = signals.get("hearing_date_delta_days")
-    if type(date_delta) is not int or not 0 <= date_delta <= 30:
-        raise ValueError("Judilibre hearing date delta is invalid")
-    claim_types = signals.get("claim_types")
-    if (
-        not isinstance(claim_types, list)
-        or not claim_types
-        or len(claim_types) != len(set(claim_types))
-        or any(
-            claim_type
-            not in {"starting_price_eur", "hammer_price_eur", "procedural_event"}
-            for claim_type in claim_types
-        )
-    ):
-        raise ValueError("Judilibre claim types are invalid")
-    for key in (
-        "court_resolution_reference_sha256",
-        "claims_manifest_sha256",
-        "case_reference_manifest_sha256",
-        "source_projection_sha256",
-        "target_context_sha256",
-        "source_record_sha256",
-    ):
-        if not isinstance(signals.get(key), str) or re.fullmatch(
-            r"[0-9a-f]{64}", str(signals.get(key))
-        ) is None:
-            raise ValueError("Judilibre match provenance must contain SHA-256 only")
-    if signals.get("source_projection_sha256") != expected_source_content_hash:
-        raise ValueError("Judilibre source projection provenance is inconsistent")
-    if match_method == "exact_portalis_number" and signals.get("portalis_number") is not True:
-        raise ValueError("Judilibre Portalis match method lacks its exact signal")
-    if match_method == "exact_case_number" and signals.get("case_number") is not True:
-        raise ValueError("Judilibre case-number match method lacks its exact signal")
-    if match_method == "composite" and not (
-        signals.get("hearing_date_exact") is True
-        and signals.get("case_number") is False
-        and signals.get("portalis_number") is False
-    ):
-        raise ValueError("Judilibre composite match must be a unique exact court/date candidate")
 
 
 def _load_source_policy(cursor: Any, source_name: str) -> SourcePolicy:
@@ -2736,7 +2453,7 @@ def _validate_capture(capture: SuccessfulCapture) -> None:
             raise ValueError("a local-file import must not claim HTTP metadata")
     else:
         raise ValueError("unsupported capture transport")
-    if not re.fullmatch(r"[0-9a-f]{64}", capture.stored_artifact.content_hash):
+    if not is_lowercase_sha256(capture.stored_artifact.content_hash):
         raise ValueError("stored artifact hash must be SHA-256")
 
 

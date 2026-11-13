@@ -36,6 +36,8 @@ describe("informationAgentPage", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(html).toContain('<meta name="robots" content="noindex">');
     expect(html).not.toContain("<b>Titre</b>");
-    expect(html).toContain("&#60;b&#62;Titre&#60;/b&#62;");
+    // Échappement commun (`escapeHtml` de `guards.ts`) : entités nommées, apostrophe comprise.
+    expect(html).toContain("&lt;b&gt;Titre&lt;/b&gt;");
+    expect(html).toContain("Message &quot;cité&quot;");
   });
 });

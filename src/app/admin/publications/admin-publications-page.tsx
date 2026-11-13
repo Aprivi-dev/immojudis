@@ -6,7 +6,10 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
-import { formatDateTime, formatPrice, queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 import { EmptyState, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,7 +81,7 @@ export function AdminPublicationsPage() {
       await queryClient.invalidateQueries({ queryKey: ["admin-publication-requests"] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de mettre à jour la demande");
+      toast.error(queryErrorMessage(err, "Impossible de mettre à jour la demande"));
     },
   });
 
@@ -96,7 +99,7 @@ export function AdminPublicationsPage() {
     >
       <AdminPublications
         requests={publicationRequests}
-        totalRequests={publicationPage?.totalCount ?? null}
+        totalRequests={publicationPage?.total ?? null}
         pendingCount={publicationPage?.pendingCount ?? null}
         loading={publicationRequestsQuery.isLoading}
         error={publicationRequestsQuery.error}
@@ -265,14 +268,18 @@ function PublicationRequestCard({
           <div className="flex flex-wrap items-center gap-2">
             <PublicationStatusPill status={request.status} />
             <span className="text-xs text-muted-foreground">
-              {formatDateTime(request.created_at)}
+              {formatShortDateTime(request.created_at)}
             </span>
           </div>
           <h3 className="mt-3 text-lg font-semibold text-foreground">{request.title}</h3>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{request.location ?? "Localisation à préciser"}</span>
             <span>{request.court ?? "Tribunal à préciser"}</span>
-            <span>{formatPrice(request.starting_price_eur)}</span>
+            <span>
+              {request.starting_price_eur == null
+                ? "Mise à prix à préciser"
+                : formatPrice(request.starting_price_eur)}
+            </span>
           </div>
           <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
             {request.description ?? "Description non renseignée."}
@@ -327,7 +334,7 @@ function PublicationRequestCard({
                 Ouvrir la vente liée
               </a>
               {request.published_at ? (
-                <span>Créée le {formatDateTime(request.published_at)}</span>
+                <span>Créée le {formatShortDateTime(request.published_at)}</span>
               ) : null}
               <span>Enrichissement et vérification à terminer</span>
             </div>
@@ -379,20 +386,13 @@ function PublicationRequestCard({
 }
 
 function PublicationStatusPill({ status }: { status: PublicationRequestStatus }) {
-  const label =
-    status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
-  const tone =
+  const [tone, label] =
     status === "approved"
-      ? "border-emerald-300/20 bg-success-tint text-success"
+      ? (["success", "Validée"] as const)
       : status === "rejected"
-        ? "border-red-300/20 bg-danger-tint text-danger"
-        : "border-amber-300/20 bg-warning-tint text-warning";
-
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
-      {label}
-    </span>
-  );
+        ? (["danger", "Refusée"] as const)
+        : (["warning", "En attente"] as const);
+  return <AdminPill tone={tone}>{label}</AdminPill>;
 }
 
 function publicationPromotionLabel(value: string): string {

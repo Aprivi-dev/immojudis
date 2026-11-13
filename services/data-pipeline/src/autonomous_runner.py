@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -15,15 +15,32 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from src import source_withdrawal
-from src.config import load_settings
+from src.catalogue_lock import LOCK_WAIT_ENV
+from src.config import (
+    AUTONOMOUS_RUN_ID_ENV,
+    CADASTRE_ENRICH_ENABLED_ENV,
+    DEFAULT_REPLICATE_CANCEL_AFTER,
+    DPE_ENRICH_ENABLED_ENV,
+    REPLICATE_CANCEL_AFTER_ENV,
+    SOURCE_NAMES,
+    load_settings,
+)
+from src.document_reading import READING_ENABLED_ENV
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.run_finalizer import register_run
 from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
+from src.sources.licitor import SOURCE_BUDGET_ENV as LICITOR_SOURCE_BUDGET_ENV
+from src.sources.petites_affiches import SOURCE_BUDGET_ENV as PETITES_AFFICHES_SOURCE_BUDGET_ENV
 from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
-from src.storage.supabase_client import connect
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
+from src.storage.supabase_client import close_open_run, merge_into_run_report
+from src.storage.supabase_client import connect as postgres_connect
+from src.timestamps import aware_timestamp
 
 # Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
 INVENTORY_CADENCE = timedelta(hours=12)
@@ -76,22 +93,11 @@ def _enrichment_exhausted_detail(row: tuple[object, ...]) -> dict[str, object]:
     }
 
 
-def _retry_not_before_deadline(value: str | None) -> datetime | None:
-    """Parse a source's Retry-After deadline; ``None`` when absent or unusable."""
-    if not value:
-        return None
-    try:
-        other = datetime.fromisoformat(value.replace('Z', '+00:00'))
-    except ValueError:
-        return None
-    return other if other.tzinfo else None
-
-
 def next_attempt(*, failures: int, access_denied: bool, retry_not_before: str | None,
                  now: datetime) -> datetime:
     delay = timedelta(hours=24) if access_denied and failures >= 2 else timedelta(minutes=min(360, 15 * 2 ** min(failures, 5)))
     deadline = now + delay
-    other = _retry_not_before_deadline(retry_not_before)
+    other = aware_timestamp(retry_not_before)
     if other is not None:
         deadline = max(deadline, other)
     return deadline
@@ -110,28 +116,13 @@ def access_denied(coverage: dict[str, object], problems: Iterable[object]) -> bo
     )
 
 
-def _aware_timestamp(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        candidate = value
-    elif isinstance(value, str):
-        try:
-            candidate = datetime.fromisoformat(value.replace('Z', '+00:00'))
-        except ValueError:
-            return None
-    else:
-        return None
-    if candidate.tzinfo is None or candidate.utcoffset() is None:
-        return None
-    return candidate.astimezone(UTC)
-
-
 def _near_sale(row: dict[str, object], now: datetime) -> bool:
     evidence = row.get('evidence')
     evidence = evidence if isinstance(evidence, dict) else {}
     status = str(row.get('status') or evidence.get('status') or '').lower()
     if status not in ACTIVE_LISTING_STATUSES:
         return False
-    sale_date = _aware_timestamp(row.get('sale_date')) or _aware_timestamp(evidence.get('sale_date'))
+    sale_date = aware_timestamp(row.get('sale_date')) or aware_timestamp(evidence.get('sale_date'))
     return sale_date is not None and now <= sale_date <= now + NEAR_SALE_HORIZON
 
 
@@ -141,14 +132,14 @@ def _source_check_times(payload: object, *, source: str, source_url: str, now: d
         return []
     result: list[datetime] = []
     if allow_checkpoint_checked_at:
-        checkpoint_checked_at = _aware_timestamp(payload.get('_checkpoint_checked_at'))
+        checkpoint_checked_at = aware_timestamp(payload.get('_checkpoint_checked_at'))
         if checkpoint_checked_at is not None and checkpoint_checked_at <= now:
             result.append(checkpoint_checked_at)
     checks = payload.get('source_checks')
     if isinstance(checks, dict):
         check = checks.get(source_url)
         if isinstance(check, dict) and (not check.get('source_name') or check.get('source_name') == source):
-            checked_at = _aware_timestamp(check.get('checked_at'))
+            checked_at = aware_timestamp(check.get('checked_at'))
             if checked_at is not None and checked_at <= now:
                 result.append(checked_at)
     nested = payload.get('raw_payload')
@@ -182,10 +173,10 @@ def next_inventory_deadline(*, now: datetime, started_at: object | None, source:
     actually checked, while ``started_at`` is only a conservative fallback for
     a row observed by this run without a usable check timestamp.
     """
-    current = _aware_timestamp(now)
+    current = aware_timestamp(now)
     if current is None:
         raise ValueError('now must be timezone-aware')
-    run_started = _aware_timestamp(started_at)
+    run_started = aware_timestamp(started_at)
     anchors: list[datetime] = []
     for row in evidence_rows:
         if not _near_sale(row, current):
@@ -266,8 +257,8 @@ def _inventory_blocker_details(coverage: dict[str, Any]) -> dict[str, Any]:
     return details
 
 
-def finish_source(db_url: str, run_id: str) -> None:
-    with _postgres_connect(db_url) as db:
+def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = postgres_connect) -> None:
+    with connect(db_url) as db:
         row = db.execute('select source,status,summary,errors,started_at from public.auction_runs where id=%s', (run_id,)).fetchone()
         source, status, summary, errors, started_at = row
         if source == 'enrichment-queue':
@@ -400,7 +391,7 @@ def finish_source(db_url: str, run_id: str) -> None:
                 evidence_rows=_schedule_evidence_rows(db, run_id, source),
             )
             # A Retry-After announced during a noisy-but-published run is still honoured.
-            retry_deadline = _retry_not_before_deadline(coverage.get('retry_not_before'))
+            retry_deadline = aware_timestamp(coverage.get('retry_not_before'))
             if retry_deadline is not None:
                 deadline = max(deadline, retry_deadline)
         # Un run en échec (budget épuisé, arrêt brutal) ne prouve rien sur l'absence : seul un run
@@ -427,16 +418,16 @@ def finish_source(db_url: str, run_id: str) -> None:
     # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
     # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
     if inventory_complete and not denied:
-        _withdraw_missing_sales(db_url, run_id, source)
+        _withdraw_missing_sales(db_url, run_id, source, connect=connect)
 
 
-def _withdraw_missing_sales(db_url: str, run_id: str, source: str) -> None:
+def _withdraw_missing_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
     """Retire les ventes absentes des deux derniers inventaires complets (src.source_absence)."""
-    result = withdraw_missing_sales(db_url, source, connect=_postgres_connect)
+    result = withdraw_missing_sales(db_url, source, connect=connect)
     if result is None:
         return
     try:
-        with _postgres_connect(db_url) as db:
+        with connect(db_url) as db:
             db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
                 where id=%s""", (Jsonb({'source_absence': result}), run_id))
     except Exception as exc:  # le compte rendu du run est secondaire
@@ -445,65 +436,35 @@ def _withdraw_missing_sales(db_url: str, run_id: str, source: str) -> None:
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:
     # Only a certified full inventory can establish absence. No deletion follows it.
-    # New deployments can provide the compact projection without making the
-    # Python rollout depend on migration order. Until that projection exists,
-    # retain the legacy raw_payload path byte-for-byte for compatibility with
-    # existing views and older databases.
-    compact_objects = db.execute(
-        "select to_regclass(%s), to_regprocedure(%s), exists(select 1 from pg_catalog.pg_attribute"
-        " where attrelid = to_regclass(%s) and attname = 'absent_inventories' and not attisdropped)",
-        (
-            "app_private.auction_sale_source_presence",
-            "app_private.auction_sale_source_presence_json(uuid)",
-            "app_private.auction_sale_source_presence",
-        ),
-    ).fetchone()
-    if compact_objects and compact_objects[0] and compact_objects[1]:
-        db.execute("""insert into app_private.auction_sale_source_presence as current_row(
-            sale_id, source_name, availability, state, attempted_at, checked_at, run_id, legacy_raw)
-          select s.id, %s::text, %s::text,
-            case when %s then case when exists(
-              select 1 from public.auction_collection_items i
-              where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url)
-            ) then 'present' else 'absent' end else null end,
-            now(), case when %s then now() else null end, %s::text,
-            false
-          from public.auction_sales s
-          where s.source_name=%s
-             or exists(select 1 from public.auction_sale_source_presence p
-                where p.sale_id=s.id and p.source_name=%s::text)
-             or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(s.observations)='array'
-                then s.observations else '[]'::jsonb end) o where o.value->>'source_name'=%s)
-             or exists(select 1 from public.auction_collection_items i
-                where i.run_id=%s and i.canonical_source_url=s.source_url)
-          on conflict (sale_id, source_name) do update set
-            availability=excluded.availability,
-            state=case when %s then excluded.state else current_row.state end,
-            attempted_at=excluded.attempted_at,
-            checked_at=case when %s then excluded.checked_at else current_row.checked_at end,
-            run_id=excluded.run_id,
-            legacy_raw=false""",
-            (source, availability, complete, run_id, complete, run_id,
-             source, source, source, run_id, complete, complete),
-        )
-        if complete and len(compact_objects) > 2 and compact_objects[2]:
-            count_absent_inventories(db, run_id, source)
-        return
-    db.execute("""update public.auction_sales s set raw_payload=jsonb_set(
-        coalesce(s.raw_payload,'{}'),'{source_presence}',
-        coalesce(s.raw_payload->'source_presence','{}') || jsonb_build_object(%s::text,
-          coalesce(s.raw_payload->'source_presence'->%s::text,'{}') || jsonb_build_object(
-            'availability',%s::text,'attempted_at',now(),'run_id',%s::text)
-          || case when %s then jsonb_build_object(
-            'state',case when exists(select 1 from public.auction_collection_items i
-              where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url))
-              then 'present' else 'absent' end,'checked_at',now()) else '{}'::jsonb end))
-        where s.source_name=%s or s.raw_payload->'source_presence' ? %s
-          or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(s.observations)='array'
+    db.execute("""insert into app_private.auction_sale_source_presence as current_row(
+        sale_id, source_name, availability, state, attempted_at, checked_at, run_id, legacy_raw)
+      select s.id, %s::text, %s::text,
+        case when %s then case when exists(
+          select 1 from public.auction_collection_items i
+          where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url)
+        ) then 'present' else 'absent' end else null end,
+        now(), case when %s then now() else null end, %s::text,
+        false
+      from public.auction_sales s
+      where s.source_name=%s
+         or exists(select 1 from public.auction_sale_source_presence p
+            where p.sale_id=s.id and p.source_name=%s::text)
+         or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(s.observations)='array'
             then s.observations else '[]'::jsonb end) o where o.value->>'source_name'=%s)
-          or exists(select 1 from public.auction_collection_items i
-          where i.run_id=%s and i.canonical_source_url=s.source_url)""",
-        (source,source,availability,run_id,complete,run_id,source,source,source,run_id))
+         or exists(select 1 from public.auction_collection_items i
+            where i.run_id=%s and i.canonical_source_url=s.source_url)
+      on conflict (sale_id, source_name) do update set
+        availability=excluded.availability,
+        state=case when %s then excluded.state else current_row.state end,
+        attempted_at=excluded.attempted_at,
+        checked_at=case when %s then excluded.checked_at else current_row.checked_at end,
+        run_id=excluded.run_id,
+        legacy_raw=false""",
+        (source, availability, complete, run_id, complete, run_id,
+         source, source, source, run_id, complete, complete),
+    )
+    if complete:
+        count_absent_inventories(db, run_id, source)
 
 
 def count_absent_inventories(db, run_id: str, source: str) -> None:
@@ -540,6 +501,17 @@ DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
 DOCUMENT_BACKLOG_BUDGET_SECONDS = 10 * 60
 
 
+def _run_optional_pass(label: str, command: list[str], *, env: dict[str, str], timeout: float) -> int:
+    """Exit code of a pass that follows the worker; a timeout or a failure to start it counts as 1."""
+    try:
+        return int(subprocess.run(command, env=env, timeout=timeout, check=False).returncode)
+    except Exception as exc:
+        # Every failure, whatever its type: an optional pass never changes the run status, its code only goes
+        # to the run summary. The type is printed so the job log says why the code is 1.
+        print(f'{label} did not finish: {type(exc).__name__}')
+        return 1
+
+
 def _run_document_backlog(env: dict[str, str]) -> int:
     """Bounded catch-up of unread attachments after the enrichment queue (src.document_backlog).
 
@@ -550,16 +522,10 @@ def _run_document_backlog(env: dict[str, str]) -> int:
     its exit code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_backlog', '--max-sales', '6', '--budget-minutes', '8']
-    try:
-        result = subprocess.run(
-            command,
-            env={**env, 'DOCUMENT_READING_ENABLED': 'false'},
-            timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
-            check=False,
-        )
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass(
+        'Document backlog', command, env={**env, READING_ENABLED_ENV: 'false'},
+        timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
+    )
 
 
 def _run_document_reading(env: dict[str, str]) -> int:
@@ -569,11 +535,7 @@ def _run_document_reading(env: dict[str, str]) -> int:
     changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_reading', '--max-sales', '15', '--budget-minutes', '4']
-    try:
-        result = subprocess.run(command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('Document reading', command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS)
 
 
 ADDRESS_POSITIONS_BUDGET_SECONDS = 6 * 60
@@ -587,11 +549,7 @@ def _run_address_positions(env: dict[str, str]) -> int:
     code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.address_positions', '--max-sales', '500', '--budget-seconds', '170']
-    try:
-        result = subprocess.run(command, env=env, timeout=ADDRESS_POSITIONS_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('Address positions', command, env=env, timeout=ADDRESS_POSITIONS_BUDGET_SECONDS)
 
 
 PDF_PHOTOS_BUDGET_SECONDS = 6 * 60
@@ -608,11 +566,7 @@ def _run_pdf_photos(env: dict[str, str]) -> int:
     like the document reading: its exit code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.pdf_photos', '--max-sales', '25', '--budget-seconds', '180']
-    try:
-        result = subprocess.run(command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('PDF photos', command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS)
 
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
@@ -637,35 +591,36 @@ def _run_licitor_history_refresh(env: dict[str, str]) -> int:
         result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
         return int(result.returncode)
     except subprocess.TimeoutExpired:
-        # The tick was stopped before the scenarios' copy of the lots: refresh it alone.
-        try:
-            subprocess.run(
-                [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS, check=False
-            )
-        except Exception:
-            pass
+        print('Licitor history did not finish: TimeoutExpired')
+        # The tick was stopped before the scenarios' copy of the lots: refresh it alone. Its own code is not
+        # reported: the tick already counts as failed.
+        _run_optional_pass(
+            'Licitor scenarios copy', [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS
+        )
         return 1
-    except Exception:
+    except Exception as exc:
+        # Optional like the other passes: never a run failure (see ``_run_optional_pass``).
+        print(f'Licitor history did not finish: {type(exc).__name__}')
         return 1
 
 
-def _skip_withdrawn_run(db_url: str, run_id: str, source: str) -> None:
+def _skip_withdrawn_run(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
     """Close a scheduled run of a withdrawn source as skipped, without running anything."""
     print(f'Source {source} retirée du catalogue; scheduled run closed without collecting')
-    with _postgres_connect(db_url) as db:
+    with connect(db_url) as db:
         db.execute("""update public.auction_runs set status='succeeded',finished_at=now(),updated_at=now(),
             summary=coalesce(summary,'{}') || %s where id=%s""",
             (Jsonb({'completion_status': 'skipped', 'skipped_reason': 'source_withdrawn'}), run_id))
 
 
-def execute(run_id: str) -> int:
+def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) -> int:
     run_id = str(UUID(run_id))
     settings = load_settings()
     db_url = str(settings.get('supabase_db_url') or '')
     if not db_url:
         raise RuntimeError('Automatic execution requires transactional PostgreSQL')
     # Claim once even when GitHub dispatch was retried after an uncertain response.
-    with _postgres_connect(db_url) as db:
+    with connect(db_url) as db:
         row = db.execute("""update public.auction_runs set status='running',started_at=now(),updated_at=now()
             where id=%s and scheduler_owned and status='queued' returning source""", (run_id,)).fetchone()
     if not row:
@@ -676,21 +631,32 @@ def execute(run_id: str) -> int:
     if source in withdrawn:
         # Source retirée du catalogue entre le lancement et l'exécution : aucune requête, aucun
         # échec, et finish_source n'est pas appelé (pas de recul, pas d'alerte « source manquée »).
-        _skip_withdrawn_run(db_url, run_id, source)
+        _skip_withdrawn_run(db_url, run_id, source, connect=connect)
         return 0
     register_run(run_id)
-    env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'180', 'REPLICATE_CANCEL_AFTER':'5m',
-           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false',
-           # A scheduled unit must not sit on the catalogue writer lock for
-           # long (its budget is minutes); a busy catalogue fails the unit fast.
-           'PIPELINE_LOCK_WAIT_SECONDS':'300'}
+    env = {
+        **os.environ,
+        AUTONOMOUS_RUN_ID_ENV: run_id,
+        # Les plafonds du travailleur et le délai d'annulation par défaut : une valeur héritée du job est écrasée.
+        ENRICHMENT_BUDGET_SECONDS_ENV: str(ENRICHMENT_BUDGET_SECONDS),
+        ENRICHMENT_MAX_JOBS_ENV: str(ENRICHMENT_MAX_JOBS),
+        REPLICATE_CANCEL_AFTER_ENV: DEFAULT_REPLICATE_CANCEL_AFTER,
+        # Une unité planifiée a un budget de quelques minutes et saute déjà les traitements lourds
+        # (--no-heavy-enrichment, --no-llm) : elle ne fait pas non plus les appels à IGN Cadastre et
+        # ADEME DPE, dont l'API publique limite les appels (README, « Enrichissement DPE ADEME »).
+        # Ces enrichissements restent faits par la collecte complète lancée à la main (src.main).
+        CADASTRE_ENRICH_ENABLED_ENV: 'false',
+        DPE_ENRICH_ENABLED_ENV: 'false',
+        # A scheduled unit must not sit on the catalogue writer lock for
+        # long (its budget is minutes); a busy catalogue fails the unit fast.
+        LOCK_WAIT_ENV: '300',
+    }
     # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
     env['PYTHONFAULTHANDLER'] = '1'
     if source == 'enrichment-queue':
         command = [sys.executable,'-m','src.queued_runner','--enrichment-only']
         budget = 25 * 60
     else:
-        from src.main import SOURCE_NAMES
         if source not in SOURCE_NAMES:
             raise ValueError('Unknown scheduled source')
         command = [sys.executable,'-m','src.main','--source',source,'--run-id',run_id,'--no-llm','--no-heavy-enrichment']
@@ -701,13 +667,13 @@ def execute(run_id: str) -> int:
         if source == 'petites_affiches':
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
-            env['PETITES_AFFICHES_SOURCE_BUDGET_SECONDS'] = str(budget - 5 * 60)
+            env[PETITES_AFFICHES_SOURCE_BUDGET_ENV] = str(budget - 5 * 60)
         if source == LICITOR_SOURCE:
             # Same contract: the detail pages (sequential, spaced) of a national
             # inventory can outlast the scheduler budget, which killed eight runs
             # in a row. The source stops reading details LICITOR_BUDGET_MARGIN_SECONDS
             # before the hard kill, publishes the whole list and resumes next run.
-            env['LICITOR_SOURCE_BUDGET_SECONDS'] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
+            env[LICITOR_SOURCE_BUDGET_ENV] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
     failure = None
     execution_started = datetime.now(UTC)
     try:
@@ -740,7 +706,7 @@ def execute(run_id: str) -> int:
     source_warning = source != 'enrichment-queue' and code == SOURCE_WARNING_EXIT_CODE
     if source_warning:
         code = worker_code = 0
-    with _postgres_connect(db_url) as db:
+    with connect(db_url) as db:
         existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
         summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
                    "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
@@ -816,14 +782,11 @@ def execute(run_id: str) -> int:
             run_errors['enrichment_jobs'] = [
                 f"{int(counts.get('failed') or 0)} enrichment job(s) failed and remain retryable"
             ]
-        db.execute("""update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
-            errors=coalesce(errors,'{}') || %s,
-            summary=coalesce(summary,'{}') || %s
-            where id=%s and status in ('queued','running')""",
-            ('failed' if code else 'succeeded', Jsonb(run_errors),
-             Jsonb(summary),run_id))
-        db.execute("update public.auction_runs set summary=coalesce(summary,'{}') || %s where id=%s", (Jsonb(summary),run_id))
-    finish_source(db_url, run_id)
+        close_open_run(db, run_id, 'failed' if code else 'succeeded', summary, run_errors)
+        # src.main closes its own run: close_open_run then leaves it as it is, and the scheduler facts and errors are
+        # still added.
+        merge_into_run_report(db, run_id, summary, run_errors)
+    finish_source(db_url, run_id, connect=connect)
     return SOURCE_WARNING_EXIT_CODE if source_warning and not code else code
 
 

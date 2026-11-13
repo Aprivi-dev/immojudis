@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { CheckoutConsent } from "@/lib/commercial-acceptance";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   adminRpc: vi.fn(),
@@ -34,7 +35,8 @@ vi.mock("stripe", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.adminRpc },
 }));
-vi.mock("@/lib/analysis-checkout-readiness", () => ({
+vi.mock("@/lib/analysis-checkout-readiness", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/analysis-checkout-readiness")>()),
   assertAnalysisCheckoutOpen: mocks.assertOpen,
 }));
 vi.mock("@/lib/launch-offer.server", () => ({ readLaunchOfferState: mocks.launchState }));
@@ -139,7 +141,12 @@ describe("createPlanCheckoutSession customer reservation", () => {
       plan: "analyse",
       consent,
     });
-    await expect(second).rejects.toThrow(/déjà associé/i);
+    // Refus métier typé (409) : son texte cite Stripe, il ne doit pas finir en 500 générique.
+    await expect(second).rejects.toBeInstanceOf(PublicApiError);
+    await expect(second).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(/déjà associé/i),
+    });
 
     expect(mocks.customersCreate).toHaveBeenCalledTimes(1);
     expect(mocks.customersCreate.mock.calls[0]?.[1]).toEqual({
@@ -167,7 +174,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
 
   it("refuse le checkout, sans réserver ni appeler Stripe, quand les paiements ne sont pas ouverts", async () => {
     mocks.assertOpen.mockImplementation(() => {
-      throw new Error("Configuration du paiement incomplète: STRIPE_WEBHOOK_SECRET.");
+      throw new ConfigurationError("Configuration du paiement incomplète: STRIPE_WEBHOOK_SECRET.");
     });
 
     await expect(
@@ -202,7 +209,9 @@ describe("createPlanCheckoutSession customer reservation", () => {
 
   it("ne dépend pas de l'essai gratuit à l'inscription : seule la règle d'ouverture décide", async () => {
     mocks.assertOpen.mockImplementationOnce(() => {
-      throw new Error("Configuration du paiement incomplète. Le checkout est suspendu.");
+      throw new ConfigurationError(
+        "Configuration du paiement incomplète. Le checkout est suspendu.",
+      );
     });
 
     await expect(
@@ -334,6 +343,14 @@ describe("createPlanCheckoutSession customer reservation", () => {
         consent,
       }),
     ).rejects.toThrow(/59 € \/ mois/);
+    await expect(
+      createPlanCheckoutSession({
+        auth: buildAuthContext(),
+        origin: "https://immojudis.test",
+        plan: "analyse",
+        consent,
+      }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
     expect(mocks.adminRpc).not.toHaveBeenCalled();
   });
 
@@ -358,6 +375,14 @@ describe("createPlanCheckoutSession customer reservation", () => {
           consent,
         }),
       ).rejects.toThrow(/inclusive/);
+      await expect(
+        createPlanCheckoutSession({
+          auth: buildAuthContext(),
+          origin: "https://immojudis.test",
+          plan: "analyse",
+          consent,
+        }),
+      ).rejects.toBeInstanceOf(ConfigurationError);
       expect(mocks.adminRpc).not.toHaveBeenCalled();
       expect(mocks.checkoutCreate).not.toHaveBeenCalled();
     },

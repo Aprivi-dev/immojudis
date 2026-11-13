@@ -10,9 +10,9 @@ import {
 } from "@/lib/information-agent-commercial-guard";
 import {
   INFORMATION_AGENT_QUESTIONS,
-  buildInformationRequestDraft,
   type InformationAgentQuestionKey,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent-questions";
+import { buildInformationRequestDraft } from "@/lib/information-agent/draft";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 
 vi.mock("@/integrations/supabase/client.server", () => ({

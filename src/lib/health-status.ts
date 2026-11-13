@@ -21,16 +21,16 @@
  * Seuil de `operational-health` : 2 x la cadence réelle (30 min) + la durée d'un passage (jusqu'à 5 min). Même valeur
  * que dans `cron.stale` (`evaluate_operational_health`, migration `20261110120100`) : changer l'un change l'autre.
  */
-export const HEALTH_OPERATIONAL_MAX_AGE_MINUTES = 65;
+const HEALTH_OPERATIONAL_MAX_AGE_MINUTES = 65;
 /**
  * Au-delà, une source activée est en retard. Plus large que l'alerte `pipeline.source.<source>.missed`
  * (18 h) : la sonde publique ne doit pas osciller sur un cycle de collecte un peu long.
  */
-export const HEALTH_COLLECTION_MAX_AGE_HOURS = 36;
+const HEALTH_COLLECTION_MAX_AGE_HOURS = 36;
 /** Durée de garde du CDN (`s-maxage`) : au plus une lecture de la base toutes les 30 s et par région. */
 export const HEALTH_CACHE_SECONDS = 30;
 
-export type HealthStatus = "ok" | "degraded";
+type HealthStatus = "ok" | "degraded";
 
 export type HealthReport = {
   /**

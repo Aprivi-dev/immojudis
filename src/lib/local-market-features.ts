@@ -26,7 +26,7 @@ import { latLngToCell } from "h3-js";
  * `services/data-pipeline/tests/fixtures/local_market_parity.json` pour que les deux
  * implémentations restent identiques.
  */
-export const SUPPORTED_LOCAL_MARKET_FORMAT_VERSION = 1;
+const SUPPORTED_LOCAL_MARKET_FORMAT_VERSION = 1;
 
 export type LocalMarketFeatures = {
   local_median_log: number;

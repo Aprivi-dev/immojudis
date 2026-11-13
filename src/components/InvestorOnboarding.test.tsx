@@ -416,7 +416,9 @@ describe("investor welcome flow", () => {
       expect(
         (screen.getByRole("checkbox", { name: ALERT_LABEL }) as HTMLInputElement).disabled,
       ).toBe(true);
-      expect(document.body.textContent).toContain("indiquez son numéro (ex. 33)");
+      expect(document.body.textContent).toContain(
+        "indiquez son nom, son numéro (ex. 33) ou un code postal",
+      );
       unmount();
 
       alerts.analysis = true;

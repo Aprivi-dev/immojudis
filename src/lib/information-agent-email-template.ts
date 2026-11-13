@@ -71,7 +71,7 @@ export const INFORMATION_AGENT_EMAIL_VARIABLES = [
 export type InformationAgentEmailVariable =
   (typeof INFORMATION_AGENT_EMAIL_VARIABLES)[number]["key"];
 
-export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
+const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "greeting", kind: "dynamic", label: "Formule d’appel" },
   { id: "identity", kind: "fixed", label: "Objet du message" },
   { id: "sale_details", kind: "dynamic", label: "Informations de la vente" },
@@ -81,9 +81,9 @@ export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "closing", kind: "fixed", label: "Conclusion et signature" },
 ] as const;
 
-export type InformationAgentEmailBlockId =
+type InformationAgentEmailBlockId =
   (typeof INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS)[number]["id"];
-export type InformationAgentEmailBlockKind = "fixed" | "dynamic";
+type InformationAgentEmailBlockKind = "fixed" | "dynamic";
 
 export type InformationAgentEmailBlock = {
   id: InformationAgentEmailBlockId;
@@ -135,8 +135,8 @@ export type InformationAgentEmailTemplatePreview = {
  */
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
+const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
+const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
 export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 9;
 
@@ -164,7 +164,7 @@ export function containsInformationAgentAccountInvitation(text: string): boolean
 }
 
 /** Drops every paragraph of `text` that belongs to the legacy account invitation. */
-export function stripInformationAgentAccountInvitation(text: string): string {
+function stripInformationAgentAccountInvitation(text: string): string {
   return text
     .split(/\n\s*\n/)
     .filter((paragraph) => !containsInformationAgentAccountInvitation(paragraph))
@@ -185,7 +185,7 @@ const blockIdSchema = z.enum(
   ],
 );
 
-export const informationAgentEmailBlockSchema = z.object({
+const informationAgentEmailBlockSchema = z.object({
   id: blockIdSchema,
   kind: z.enum(["fixed", "dynamic"]),
   label: z.string().trim().min(2).max(100),

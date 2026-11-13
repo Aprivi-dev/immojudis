@@ -1,10 +1,12 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { UserWatchedZone } from "@/lib/types";
 import { WATCHED_ZONE_KINDS } from "@/lib/watched-zones-shared";
+import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
 type WatchedZoneRow = Database["public"]["Tables"]["user_watched_zones"]["Row"];
 type WatchedZoneInsert = Database["public"]["Tables"]["user_watched_zones"]["Insert"];
@@ -81,7 +83,6 @@ export const watchedZoneUpdateSchema = watchedZoneShape.partial().extend({
 
 export type WatchedZoneInput = z.input<typeof watchedZoneInputSchema>;
 export type WatchedZonePayload = z.output<typeof watchedZoneInputSchema>;
-export type WatchedZoneUpdateInput = z.input<typeof watchedZoneUpdateSchema>;
 export type WatchedZoneUpdatePayload = z.output<typeof watchedZoneUpdateSchema>;
 
 export type WatchedZonesResponse = {
@@ -233,7 +234,7 @@ export function normalizeWatchedZone(row: WatchedZoneRow): UserWatchedZone {
 async function assertWatchedZonesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.watchedZones")) {
-    throw new Error("Zones surveillées réservées à l’offre Analyse.");
+    throw new ForbiddenError("Zones surveillées réservées à l’offre Analyse.");
   }
   return plan;
 }
@@ -248,7 +249,7 @@ async function assertWatchedZoneLimit(auth: SupabaseAuthContext, limit: number |
     .eq("is_active", true);
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Limite de ${limit} zones surveillées actives atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} zones surveillées actives atteinte.`);
   }
 }
 
@@ -322,8 +323,4 @@ function mergeWatchedZone(
 function cleanString(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }

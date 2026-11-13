@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PEPITE_METHOD_LINK_LABEL, PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 
 /** Page publique qui détaille le classement, le repère « Annonce bien renseignée » et la publicité. */
-export const RANKING_PAGE_PATH = "/classement-des-annonces";
+const RANKING_PAGE_PATH = "/classement-des-annonces";
 
 /**
  * Explication du classement par défaut de /sales (« Mieux renseignées d’abord »), affichée à côté
@@ -47,7 +47,7 @@ export const RANKING_EXPLANATION_INVESTMENT_NOTE =
  * Note partagée sur le repère « Pépite » (proposition n° 21) : il n'entre dans aucun tri. Affichée seulement
  * quand le repère est ouvert au public (`pepites`), pour ne rien changer de visible tant qu'il ne l'est pas.
  */
-export const RANKING_PEPITE_NOTE =
+const RANKING_PEPITE_NOTE =
   "Le repère « Pépite » ne change ni l’ordre par défaut ni les autres tris.";
 
 /**

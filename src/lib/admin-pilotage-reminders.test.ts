@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
@@ -265,7 +266,7 @@ describe("loadSaleReminderAccuracy", () => {
 
   it("refuse un compte qui n'est pas administrateur, avant toute lecture", async () => {
     mocks.requireAuth.mockResolvedValueOnce({ isAdmin: false });
-    await expect(getAdminSaleReminderAccuracy("jeton", NOW)).rejects.toThrow(/Forbidden/);
+    await expect(getAdminSaleReminderAccuracy("jeton", NOW)).rejects.toThrow(AdminRequiredError);
     expect(mocks.calls).toEqual([]);
   });
 

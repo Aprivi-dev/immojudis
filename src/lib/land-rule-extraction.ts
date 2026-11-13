@@ -22,7 +22,7 @@ const OFFICIAL_HOSTS = new Set([
   "data.geopf.fr",
 ]);
 
-export type LandPdfPageText = {
+type LandPdfPageText = {
   page: number;
   gpuPage?: number | null;
   text: string;

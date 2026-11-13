@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import { fetchCourtAuctionSummaries } from "@/lib/client-api";
-import { formatEuro, formatPercent, formatRatio } from "@/lib/auction-scenarios";
+import { formatEuro, formatRatio } from "@/lib/auction-scenarios";
+import { formatShareAsPercent } from "@/lib/format/numbers";
+import * as queryKeys from "@/lib/query-keys";
 
 const number = new Intl.NumberFormat("fr-FR");
 
@@ -16,7 +18,7 @@ const number = new Intl.NumberFormat("fr-FR");
 export function CourtAuctionSummaryTable() {
   const [filter, setFilter] = useState("");
   const query = useQuery({
-    queryKey: ["court-auction-summaries"],
+    queryKey: queryKeys.courtAuctionSummaries(),
     queryFn: fetchCourtAuctionSummaries,
     retry: false,
     staleTime: 30 * 60_000,
@@ -127,7 +129,9 @@ export function CourtAuctionSummaryTable() {
                   <td className="py-2 pr-4">{formatEuro(court.licitor?.medianStartingPrice)}</td>
                   <td className="py-2 pr-4">{formatEuro(court.licitor?.medianHammerPrice)}</td>
                   <td className="py-2 pr-4">{formatRatio(court.licitor?.medianRatio)}</td>
-                  <td className="py-2 pr-4">{formatPercent(court.licitor?.atLeastDoubleRate)}</td>
+                  <td className="py-2 pr-4">
+                    {formatShareAsPercent(court.licitor?.atLeastDoubleRate)}
+                  </td>
                   <td className="py-2">{court.dvf ? number.format(court.dvf.sample) : "—"}</td>
                 </tr>
               ))}

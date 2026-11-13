@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanel } from "@/components/admin/AdminShell";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 import type { EmailViewTone } from "@/lib/admin-emails/views";
 
-const TONES: Record<EmailViewTone, string> = {
-  ok: "border-success/25 bg-success-tint text-success",
-  bad: "border-danger/25 bg-danger-tint text-danger",
-  warn: "border-warning/25 bg-warning-tint text-warning",
-  neutral: "border-brand-navy/15 bg-surface-muted text-brand-navy/70",
+/** Les tons des vues des e-mails, dans les pastilles de l'administration. */
+const PILL_TONES: Record<EmailViewTone, AdminPillTone> = {
+  ok: "success",
+  bad: "danger",
+  warn: "warning",
+  neutral: "neutral",
 };
 
 /** Classe d'un bouton à bascule : plein quand il est actif. */
@@ -19,11 +22,7 @@ export function Pill({
   tone?: EmailViewTone;
   children: ReactNode;
 }) {
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-0.5 text-xs ${TONES[tone]}`}>
-      {children}
-    </span>
-  );
+  return <AdminPill tone={PILL_TONES[tone]}>{children}</AdminPill>;
 }
 
 /**
@@ -53,7 +52,7 @@ export function queryProblem(
       role="alert"
       className="rounded-lg border border-danger/30 bg-danger-tint p-4 text-sm text-danger"
     >
-      <p>{query.error instanceof Error ? query.error.message : "Chargement impossible."}</p>
+      <p>{queryErrorMessage(query.error, "Chargement impossible.")}</p>
       <button
         type="button"
         className="admin-button-secondary mt-3"

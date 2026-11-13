@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -8,47 +9,32 @@ import {
   listDataRefreshRequests,
   requestDataRefresh,
 } from "@/lib/data-refresh";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.data-refresh.list");
-  try {
+export const GET = apiRoute(
+  { scope: "api.data-refresh.list", fallbackMessage: "Demandes de refresh indisponibles." },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const input = dataRefreshListQuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
     const response = await listDataRefreshRequests({ auth, input });
 
-    return apiJson(response, context, {
-      headers: {
-        "cache-control": "private, no-store",
-        "x-immojudis-refresh-count": String(response.requests.length),
-      },
+    return NextResponse.json(response, {
+      headers: { "x-immojudis-refresh-count": String(response.requests.length) },
     });
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Demandes de refresh indisponibles.",
-    });
-  }
-}
+  },
+);
 
-export async function POST(request: Request) {
-  const context = createApiRequestContext(request, "api.data-refresh.create");
-  try {
+export const POST = apiRoute(
+  { scope: "api.data-refresh.create", fallbackMessage: "Refresh DPE/cadastre impossible." },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = dataRefreshRequestSchema.parse(await request.json());
     const response = await requestDataRefresh({ auth, input, request });
 
-    return apiJson(response, context, {
+    return NextResponse.json(response, {
       status: 202,
-      headers: {
-        "cache-control": "private, no-store",
-        "x-immojudis-refresh-count": String(response.requests.length),
-      },
+      headers: { "x-immojudis-refresh-count": String(response.requests.length) },
     });
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Refresh DPE/cadastre impossible.",
-      headers: { "retry-after": "60" },
-    });
-  }
-}
+  },
+);

@@ -1,4 +1,5 @@
 import "server-only";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -143,7 +144,7 @@ const SNAPSHOT_COLUMNS = [
   "computed_at",
 ].join(",");
 
-export class TribunalStatisticsUnavailableError extends Error {
+class TribunalStatisticsUnavailableError extends ServiceUnavailableError {
   constructor(message = "Tribunal statistics are temporarily unavailable.") {
     super(message);
     this.name = "TribunalStatisticsUnavailableError";

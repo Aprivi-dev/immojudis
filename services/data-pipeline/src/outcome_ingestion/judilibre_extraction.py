@@ -3,15 +3,18 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Literal
 
 from src.official_sources.base import canonical_sha256
 from src.official_sources.judilibre import JudilibreDecision
-
-JUDILIBRE_CLAIM_SCHEMA_VERSION = "judilibre_candidate_claims_v1"
-JUDILIBRE_EVIDENCE_HASH_VERSION = "judilibre-evidence-sha256-v1"
-
-ClaimType = Literal["starting_price_eur", "hammer_price_eur", "procedural_event"]
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CLAIM_SCHEMA_VERSION,
+    JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
+    JUDILIBRE_EVIDENCE_HASH_VERSION,
+    JUDILIBRE_MONEY_CLAIM_TYPES,
+    JudilibreClaimType,
+    JudilibreMoneyClaimType,
+    JudilibreProceduralEvent,
+)
 
 _MONEY_NUMBER = (
     r"(?:(?:\d{1,3}(?:[\s\u00a0\u202f.]\d{3})+(?:,\d{1,2})?)"
@@ -163,7 +166,7 @@ _PROCEDURAL_SURROUNDING_REJECT = re.compile(
     r"[^.;\n]{0,80}?\b(?:adjuge(?:ons)?|constate|d[ée]clare|ordonne|prononce)\b",
     re.IGNORECASE,
 )
-_PROCEDURAL_PATTERNS: tuple[tuple[str, float, re.Pattern[str]], ...] = (
+_PROCEDURAL_PATTERNS: tuple[tuple[JudilibreProceduralEvent, float, re.Pattern[str]], ...] = (
     (
         "adjudication_pronounced",
         0.85,
@@ -234,7 +237,7 @@ class JudilibreEvidenceAnchor:
 @dataclass(frozen=True)
 class JudilibreCandidateClaim:
     claim_id: str
-    claim_type: ClaimType
+    claim_type: JudilibreClaimType
     normalized_value: str
     confidence: float
     evidence_hash: str
@@ -265,7 +268,7 @@ class JudilibreExtractionResult:
         if not self.text_available:
             return "not_extracted_missing_text"
         if self.claims:
-            return "candidate_facts_extracted"
+            return JUDILIBRE_CLAIMS_EXTRACTED_STATUS
         if self.ambiguous_claim_types:
             return "ambiguous_candidates_only"
         return "no_candidate_facts"
@@ -291,7 +294,7 @@ class JudilibreExtractionResult:
 
 @dataclass(frozen=True)
 class _Candidate:
-    claim_type: ClaimType
+    claim_type: JudilibreClaimType
     normalized_value: str
     confidence: float
     start_char: int
@@ -379,7 +382,7 @@ def parse_french_money(value: str) -> Decimal | None:
 def _amount_candidates(
     text: str,
     *,
-    claim_type: Literal["starting_price_eur", "hammer_price_eur"],
+    claim_type: JudilibreMoneyClaimType,
     offset: int = 0,
 ) -> list[_Candidate]:
     patterns = _STARTING_PRICE_PATTERNS if claim_type == "starting_price_eur" else _HAMMER_PRICE_PATTERNS
@@ -477,7 +480,7 @@ def _sentence_containing(text: str, *, start: int, end: int) -> str:
 def _select_candidates(candidates: list[_Candidate]) -> tuple[list[_Candidate], set[str]]:
     selected: list[_Candidate] = []
     ambiguous: set[str] = set()
-    for claim_type in ("starting_price_eur", "hammer_price_eur"):
+    for claim_type in JUDILIBRE_MONEY_CLAIM_TYPES:
         typed = [candidate for candidate in candidates if candidate.claim_type == claim_type]
         values = {candidate.normalized_value for candidate in typed}
         if len(values) > 1:

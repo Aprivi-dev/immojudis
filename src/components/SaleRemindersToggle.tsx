@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@/lib/toast";
-import { fetchNotificationPreferences, updateNotificationPreferences } from "@/lib/client-api";
-import * as queryKeys from "@/lib/query-keys";
-import { userMessage } from "@/lib/user-messages";
+import { useNotificationPreferenceToggle } from "@/hooks/use-notification-preference-toggle";
+import {
+  consentOffered,
+  useNotificationPreferencesQuery,
+} from "@/hooks/use-notification-preferences";
 
 /**
  * Case des rappels d'audience sur les ventes suivies (favoris, ventes débloquées), avec l'avertissement
@@ -19,29 +19,16 @@ import { userMessage } from "@/lib/user-messages";
  * d'audience », pour les explications et les messages.
  */
 export function SaleRemindersToggle({ userId, className }: { userId: string; className: string }) {
-  const queryClient = useQueryClient();
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId),
-    queryFn: fetchNotificationPreferences,
-    staleTime: 60_000,
-  });
-  const mutation = useMutation({
-    mutationFn: updateNotificationPreferences,
-    onSuccess: (_result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
-      toast.success(
-        variables.saleRemindersEnabled
-          ? "Rappels d’audience activés"
-          : "Rappels d’audience retirés",
-      );
-    },
-    onError: (error) =>
-      toast.error(userMessage(error, "Rappels d’audience : enregistrement impossible")),
+  const preferencesQuery = useNotificationPreferencesQuery(userId);
+  const mutation = useNotificationPreferenceToggle(userId, {
+    saved: (update) =>
+      update.saleRemindersEnabled ? "Rappels d’audience activés" : "Rappels d’audience retirés",
+    failed: "Rappels d’audience : enregistrement impossible",
   });
 
   const data = preferencesQuery.data;
   const enabled = data?.preferences.saleRemindersEnabled ?? false;
-  if (!data || (!data.saleRemindersAvailable && !enabled)) return null;
+  if (!data || !consentOffered(data.saleRemindersAvailable, enabled)) return null;
 
   return (
     <label className={className}>

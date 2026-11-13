@@ -18,12 +18,13 @@ import type { ComponentType } from "react";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import {
   errorCount,
-  formatDateTime,
   formatRelativeTime,
+  queryErrorMessage,
   runDuration,
   shortId,
   summaryNumber,
 } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import {
   AdminQueryErrorNotice,
   EmptyState,
@@ -31,6 +32,7 @@ import {
   StatusPill,
 } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { DASHBOARD_RUNS_QUERY_KEY } from "@/lib/admin-query-keys";
 import type { AuctionRun } from "@/lib/admin.server";
 import { fetchAdminDashboardRuns } from "@/lib/client-api";
 import Link from "next/link";
@@ -99,7 +101,7 @@ const ADMIN_VIEW_LINKS: Array<{
 export function AdminHomePage() {
   const { user } = useAuth();
   const { data, isLoading, error, isFetching, refetch } = useQuery({
-    queryKey: ["admin-dashboard", "runs"],
+    queryKey: DASHBOARD_RUNS_QUERY_KEY,
     queryFn: fetchAdminDashboardRuns,
     staleTime: 30_000,
     retry: 1,
@@ -178,7 +180,7 @@ export function AdminHomePage() {
               </p>
               {healthState === "error" ? (
                 <div role="alert" className="mt-3 text-sm text-red-700">
-                  <p>{error instanceof Error ? error.message : "Erreur de chargement admin"}</p>
+                  <p>{queryErrorMessage(error, "Erreur de chargement admin")}</p>
                   <button type="button" className="admin-button-secondary mt-3" onClick={retry}>
                     Réessayer
                   </button>
@@ -384,7 +386,7 @@ function LatestRun({ run }: { run: AuctionRun }) {
           </div>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <div>{run.startedAt ? formatDateTime(run.startedAt) : "—"}</div>
+          <div>{run.startedAt ? formatShortDateTime(run.startedAt) : "—"}</div>
           <div className="mt-1">{runDuration(run)}</div>
         </div>
       </div>

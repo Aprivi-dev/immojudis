@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DnsResolver } from "./dns";
+import { ACCOUNT_EMAIL_WEBHOOK_EVENTS } from "@/lib/account-email-delivery-events";
+import { INFORMATION_AGENT_WEBHOOK_EVENTS } from "@/lib/information-agent-inbound";
 import { getEmailAddressesReport, resetEmailAddressesCache } from "./addresses";
 
 // Valeurs reconnaissables : si l'une d'elles apparaît dans le rapport, le test échoue.
@@ -7,7 +9,7 @@ const SECRETS = {
   RESEND_API_KEY: "re_SENTINELLE_AAAAAAA",
   RESEND_WEBHOOK_SECRET: "whsec_SENTINELLE_AAAAAAA",
   RESEND_ACCOUNT_WEBHOOK_SECRET: "whsec_SENTINELLE_BBBBBBB",
-  INFORMATION_AGENT_PORTAL_SECRET: "SENTINELLE_PORTAIL",
+  INFORMATION_AGENT_PORTAL_SECRET: "SENTINELLE_PORTAIL_SECRET_DE_32_OCTETS",
 } as const;
 
 const ADDRESSES = {
@@ -84,7 +86,7 @@ const HEALTHY: ResendFixture = {
     },
     {
       endpoint: "https://immojudis.com/api/webhooks/resend/information-agent",
-      events: ["email.received"],
+      events: ["email.received", "email.bounced", "email.complained"],
     },
   ],
 };
@@ -204,9 +206,59 @@ describe("rapport de l'onglet Adresses", () => {
     });
     const messages = report.alerts.map((alert) => alert.message);
     expect(messages).toEqual([
-      expect.stringContaining("évènement(s) manquant(s) : email.complained"),
+      expect.stringContaining(
+        "évènement(s) manquant(s) : email.delivered, email.delivery_delayed, email.failed, email.complained",
+      ),
       expect.stringContaining("aucun webhook ne pointe vers cette route"),
     ]);
+  });
+
+  it("attend du webhook de l'agent les rebonds et plaintes qu'il traite, pas seulement les réponses", async () => {
+    configure();
+    const report = await getEmailAddressesReport({
+      fetchImpl: resendFetch({
+        ...HEALTHY,
+        webhooks: [
+          HEALTHY.webhooks![0],
+          {
+            endpoint: "https://immojudis.com/api/webhooks/resend/information-agent",
+            events: ["email.received"],
+          },
+        ],
+      }),
+      resolver: healthyDns,
+    });
+    expect(report.webhooks).toMatchObject({
+      ok: true,
+      items: [
+        { state: "ok" },
+        { state: "events_missing", missingEvents: ["email.bounced", "email.complained"] },
+      ],
+    });
+  });
+
+  it("attend exactement les évènements que chaque module de traitement déclare", async () => {
+    configure();
+    const report = await getEmailAddressesReport({
+      fetchImpl: resendFetch({ ...HEALTHY, webhooks: [] }),
+      resolver: healthyDns,
+    });
+    expect(report.webhooks).toMatchObject({
+      ok: true,
+      items: [
+        {
+          path: "/api/webhooks/resend/account-emails",
+          missingEvents: [...ACCOUNT_EMAIL_WEBHOOK_EVENTS],
+        },
+        {
+          path: "/api/webhooks/resend/information-agent",
+          missingEvents: [...INFORMATION_AGENT_WEBHOOK_EVENTS],
+        },
+      ],
+    });
+    expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toEqual(
+      expect.arrayContaining(["email.received", "email.bounced", "email.complained"]),
+    );
   });
 
   it("alerte quand le domaine de réception n'a pas de MX", async () => {
@@ -266,6 +318,18 @@ describe("rapport de l'onglet Adresses", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(report.resend).toEqual({ ok: false, failure: "not_configured" });
     expect(report.secrets[0]).toMatchObject({ name: "RESEND_API_KEY", configured: false });
+  });
+
+  it("ne dit pas configuré un secret des liens de l'agent trop court pour signer", async () => {
+    configure({ INFORMATION_AGENT_PORTAL_SECRET: "court-mais-non-vide" });
+    const report = await getEmailAddressesReport({
+      fetchImpl: resendFetch(HEALTHY),
+      resolver: healthyDns,
+    });
+    expect(report.secrets[3]).toMatchObject({
+      name: "INFORMATION_AGENT_PORTAL_SECRET",
+      configured: false,
+    });
   });
 
   it("ne fait que des lectures chez Resend (GET), jamais un envoi", async () => {

@@ -1,6 +1,6 @@
 /** Browser-safe deadline arithmetic for data-subject requests (GDPR art. 12(3): one month). */
 
-export const PRIVACY_DEADLINE_WARNING_DAYS = 7;
+const PRIVACY_DEADLINE_WARNING_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export type PrivacyDeadlineStatus = {

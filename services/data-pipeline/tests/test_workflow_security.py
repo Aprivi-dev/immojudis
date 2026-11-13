@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from src.config import SOURCE_NAMES
+
 WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 SECRET = re.compile(r"\$\{\{\s*secrets\.")
 
@@ -465,6 +467,17 @@ def test_document_backlog_is_a_manual_mode_of_the_data_pipeline() -> None:
     assert 'if [ "$REQUESTED_DOCUMENTS_BACKLOG" = "true" ]' in pipeline.run
     assert "REQUESTED_DOCUMENTS_BACKLOG: ${{ github.event.inputs.documents_backlog }}" in pipeline.env
     assert "PDF_HOST_MIN_DELAY_SECONDS: 2" in job.env
+
+
+def test_the_manual_source_choices_are_the_sources_of_the_pipeline() -> None:
+    text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    lines = text.split("\npermissions:", 1)[0].splitlines()
+    source = lines.index("      source:")
+    options = lines.index("        options:", source)
+    block, _ = _block(lines, options, 8)
+    choices = [re.fullmatch(r"\s+- (\S+)", line).group(1) for line in block.splitlines() if line.strip()]
+
+    assert choices == ["all", *SOURCE_NAMES]
 
 
 def test_migration_secrets_reach_only_the_steps_that_use_the_database() -> None:

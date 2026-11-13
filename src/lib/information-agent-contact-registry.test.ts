@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertInformationAgentContactAllowed,
+  InformationAgentInvalidContactEmailError,
   isInformationAgentContactBlocked,
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent/contacts";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 
@@ -97,12 +98,13 @@ describe("information agent contact registry guard", () => {
       error: null,
     });
 
-    await expect(
-      assertInformationAgentContactAllowed({
-        saleId: SALE_ID,
-        email: "Cabinet@Example.test",
-      }),
-    ).rejects.toThrow("opposé");
+    const refused = assertInformationAgentContactAllowed({
+      saleId: SALE_ID,
+      email: "Cabinet@Example.test",
+    });
+    await expect(refused).rejects.toThrow("opposé");
+    // Refus écrit pour l'administrateur : rendu tel quel, en conflit avec l'état du registre.
+    await expect(refused).rejects.toMatchObject({ status: 409 });
     expect(mocks.from).toHaveBeenCalledWith("information_agent_contacts");
     expect(setup.queries).toHaveLength(2);
     expect(setup.queries[0].select).toHaveBeenCalledWith(
@@ -111,6 +113,17 @@ describe("information agent contact registry guard", () => {
     expect(setup.queries[0].eq).toHaveBeenCalledWith("normalized_email", "cabinet@example.test");
     expect(setup.queries[0].is).toHaveBeenCalledWith("scope_sale_id", null);
     expect(setup.queries[1].eq).toHaveBeenCalledWith("scope_sale_id", SALE_ID);
+  });
+
+  it("refuses a value that is not an email address with one typed error, before any read", async () => {
+    setupQuery({ data: [], error: null });
+    const refused = loadInformationAgentContactRegistry("pas une adresse", SALE_ID);
+    await expect(refused).rejects.toBeInstanceOf(InformationAgentInvalidContactEmailError);
+    await expect(refused).rejects.toMatchObject({
+      status: 400,
+      message: "Adresse email du contact invalide.",
+    });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("rejects a permanently bounced contact", async () => {

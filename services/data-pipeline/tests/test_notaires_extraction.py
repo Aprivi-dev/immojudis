@@ -283,6 +283,18 @@ def test_vni_detail_never_exposes_reserve_price_and_keeps_restricted_inventory()
     assert sale.raw_payload["source_blocks"]["pieces_dossier"] == "Diagnostic amiante ; Règlement de copropriété"
 
 
+def test_vni_window_display_follows_the_procedure_window_rule():
+    """Clôture avant l'ouverture : pas d'« Ouverture des enchères » affichée, l'échéance publiée reste."""
+    detail = notaires.parse_notaires_detail_json(
+        vni_payload(dateDebutEncheres="2026-11-17T12:00:00Z", dateFinEncheres="2026-11-16T12:00:00Z"),
+        fallback={"source_url": VNI_URL, "source_blocks": {}},
+    )
+    procedure = detail["source_blocks"]["caracteristiques_bien"]["procedure"]
+
+    assert "window" not in procedure
+    assert procedure["deadline"] == {"at": "2026-11-16T12:00:00Z", "kind": "sale_window_close"}
+
+
 @pytest.mark.parametrize(
     ("published", "expected"),
     [

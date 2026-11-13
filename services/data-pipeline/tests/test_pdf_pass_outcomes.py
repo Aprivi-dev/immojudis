@@ -12,9 +12,9 @@ import pytest
 
 from src import queued_runner
 from src.document_backlog import is_refused_checkpoint
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import (
     ADMISSION_REFUSAL_DELAY,
     NOTHING_DUE_DEFERRAL,
@@ -409,8 +409,7 @@ def _run_current_sale(monkeypatch, sale: AuctionSale, jobs: list[dict[str, objec
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _sale: None)
     monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda _sale: True)
     monkeypatch.setattr(queued_runner, "sale_needs_position", lambda _sale: False)
-    for name in ("fill_tribunal", "classify_sale_procedure", "normalize_asset_features"):
-        monkeypatch.setattr(queued_runner, name, lambda _sale: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda _sale: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", upsert)
     monkeypatch.setattr(queued_runner, "defer_budget_jobs", lambda claimed, error: deferred.append((claimed, error)))
     monkeypatch.setattr(

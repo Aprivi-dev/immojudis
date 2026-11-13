@@ -1,3 +1,4 @@
+import { AdminRequiredError, PublicApiError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
@@ -30,7 +31,7 @@ describe("admin source refresh", () => {
         auth: fakeAuth(false),
         input: { saleId: SALE_ID, force: true },
       }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(serverRpc).not.toHaveBeenCalled();
   });
 
@@ -94,9 +95,26 @@ describe("admin source refresh", () => {
       error: { message: "ADMIN_SOURCE_DETAIL_PAUSED" },
     });
 
-    await expect(
-      requestAdminSourceRefresh({ auth: fakeAuth(true), input: { saleId: SALE_ID, force: true } }),
-    ).rejects.toThrow("désactivé");
+    const failure = await requestAdminSourceRefresh({
+      auth: fakeAuth(true),
+      input: { saleId: SALE_ID, force: true },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PublicApiError);
+    expect(failure).toMatchObject({ status: 409, message: expect.stringContaining("désactivé") });
+  });
+
+  it("keeps any other admission failure internal: neutral message, no database detail", async () => {
+    serverRpc.mockResolvedValue({
+      data: null,
+      error: { code: "PGRST202", message: "Could not find the function public.enqueue_admin" },
+    });
+
+    const failure = await requestAdminSourceRefresh({
+      auth: fakeAuth(true),
+      input: { saleId: SALE_ID, force: true },
+    }).catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(PublicApiError);
+    expect((failure as Error).message).toBe("Source refresh admission failed.");
   });
 });
 

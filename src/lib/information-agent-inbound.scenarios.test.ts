@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  InformationAgentWebhookPayloadTooLargeError,
+  INFORMATION_AGENT_WEBHOOK_EVENTS,
   processInformationAgentInboundWebhook,
 } from "@/lib/information-agent-inbound";
 
@@ -421,9 +421,9 @@ beforeEach(() => vi.resetAllMocks());
 
 describe("information-agent offline inbound scenarios", () => {
   it("rejects an oversized declared body before signature verification", async () => {
-    await expect(
-      webhook(vi.fn(), "fixture", { "content-length": "300000" }),
-    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    await expect(webhook(vi.fn(), "fixture", { "content-length": "300000" })).rejects.toMatchObject(
+      { name: "WebhookPayloadTooLargeError" },
+    );
     expect(mocks.verify).not.toHaveBeenCalled();
   });
 
@@ -459,7 +459,7 @@ describe("information-agent offline inbound scenarios", () => {
           INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
         },
       }),
-    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    ).rejects.toMatchObject({ name: "WebhookPayloadTooLargeError" });
     expect(cancelled).toBe(true);
     expect(mocks.verify).not.toHaveBeenCalled();
   });
@@ -472,7 +472,7 @@ describe("information-agent offline inbound scenarios", () => {
     });
 
     await expect(webhook()).rejects.toMatchObject({
-      name: "InvalidInformationAgentWebhookSignatureError",
+      name: "InvalidWebhookSignatureError",
     });
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.get).not.toHaveBeenCalled();
@@ -501,7 +501,8 @@ describe("information-agent offline inbound scenarios", () => {
       expect.objectContaining({ email: "contact@example.test", bounce_status: "permanent" }),
       { onConflict: "scope_sale_id,normalized_email" },
     );
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled(); // Traité ici : l'onglet « Adresses » doit donc exiger l'abonnement du webhook à cet évènement.
+    expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toContain("email.bounced");
   });
 
   it("writes the contact registry BEFORE the send log, and a log failure comes back as an error to replay", async () => {
@@ -553,6 +554,7 @@ describe("information-agent offline inbound scenarios", () => {
       const result = await webhook(vi.fn(), "signed", {}, false, {}, recordDelivery);
       expect(result).toEqual({ accepted: true, ignored: true });
       expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
+      expect(INFORMATION_AGENT_WEBHOOK_EVENTS).not.toContain(type);
     }
     expect(mocks.from).not.toHaveBeenCalled();
   });
@@ -565,7 +567,7 @@ describe("information-agent offline inbound scenarios", () => {
       webhook(vi.fn(), "forged", {}, false, {
         INFORMATION_AGENT_EMAIL_FROM: "agent@immojudis.test",
       }),
-    ).rejects.toMatchObject({ name: "InvalidInformationAgentWebhookSignatureError" });
+    ).rejects.toMatchObject({ name: "InvalidWebhookSignatureError" });
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
@@ -660,7 +662,7 @@ describe("information-agent offline inbound scenarios", () => {
     const state = fixture({ bodyAssetCollisionSha256: "0".repeat(64) });
     receivedEmail({ text: "Surface habitable : 84 m²." });
 
-    await expect(webhook()).rejects.toThrow("contenu différent");
+    await expect(webhook()).rejects.toThrow("different content");
     expect(state.bodyAssets).toHaveLength(1);
     expect(state.bodyAssets[0]?.sha256).toBe("0".repeat(64));
     expect(state.messages[0]?.metadata).toMatchObject({
@@ -991,7 +993,7 @@ describe("information-agent offline inbound scenarios", () => {
     });
     const fetchImpl = vi.fn(async () => new Response("", { status: 503 }));
 
-    await expect(webhook(fetchImpl)).rejects.toThrow("nouvelle tentative");
+    await expect(webhook(fetchImpl)).rejects.toThrow("retry required");
     expect(state.messages[0]?.metadata).toMatchObject({
       inbound_processing: { status: "failed", attempts: 1 },
     });
@@ -1371,7 +1373,7 @@ describe("information-agent offline inbound scenarios", () => {
       error: null,
     });
 
-    await expect(webhook()).rejects.toThrow("autre dossier");
+    await expect(webhook()).rejects.toThrow("already attached to another case");
     expect(state.messages).toHaveLength(1);
     expect(state.facts.every((fact) => fact.sale_id === SALE_A)).toBe(true);
     expect(state.cases[1]?.status).toBe("sent");

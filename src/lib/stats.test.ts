@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { wilsonLowerBound } from "@/lib/pepite-policy";
 import { wilsonInterval } from "@/lib/tribunal-listing-statistics";
-import { WILSON_Z_95, wilsonInterval95 } from "@/lib/stats";
+import { median, quantile, quantileSorted, WILSON_Z_95, wilsonInterval95 } from "@/lib/stats";
 
 // Copies des deux formules d'origine, figées AVANT la fusion (lot 4a, n° 77) : elles servent de
 // référence pour montrer que `stats.ts` ne change aucun résultat des deux appelants.
@@ -118,5 +118,85 @@ describe("caractérisation : les deux appelants gardent leurs résultats", () =>
     expect(wilsonInterval(-1, 4)).toBeNull();
     expect(wilsonInterval(5, 4)).toBeNull();
     expect(wilsonInterval(5, 10)).toEqual({ low: 0.236593, high: 0.763407 });
+  });
+});
+
+// Copies des quantiles et médianes d'origine, figées AVANT la fusion (lot 9 A, n° 15) : deux formes
+// de médiane (valeur centrale ou moyenne des deux centrales ; interpolation des tribunaux) et trois
+// écritures de l'interpolation linéaire (type 7). Elles montrent que `stats.ts` rend les mêmes
+// valeurs, à l'arrondi de la dernière décimale binaire près pour l'interpolation.
+function legacyMiddleMedian(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function legacyTribunalQuantile(values: number[], probability: number): number | null {
+  if (!values.length) return null;
+  const ordered = [...values].sort((left, right) => left - right);
+  const position = (ordered.length - 1) * probability;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const lower = ordered[lowerIndex]!;
+  const upper = ordered[upperIndex]!;
+  return lower + (upper - lower) * (position - lowerIndex);
+}
+
+function legacyMarketAnalyticsPercentile(values: number[], percentile: number): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * percentile;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  const ratio = index - lower;
+  return sorted[lower] * (1 - ratio) + sorted[upper] * ratio;
+}
+
+const SAMPLES: number[][] = [
+  [],
+  [5],
+  [9, 1, 5],
+  [1, 2, 3, 10],
+  [30, 34, 36, 40],
+  [0.1, 0.3],
+  [1_250.5, 980, 3_400.25, 2_100, 1_875.75, 2_640, 1_999.99],
+  [120_000, 85_000, 99_000, 150_000, 72_500, 230_000, 64_000, 101_000],
+  Array.from({ length: 37 }, (_, index) => ((index * 7919) % 101) / 3),
+];
+const PROBABILITIES = [0, 0.1, 0.25, 0.5, 0.75, 0.8, 0.9, 1];
+
+describe("quantile et médiane", () => {
+  it("rendent la même médiane que les copies « valeur centrale » (loyers, départements, historique)", () => {
+    for (const sample of SAMPLES) expect(median(sample)).toBe(legacyMiddleMedian(sample));
+  });
+
+  it("rendent les mêmes quantiles que les copies des tribunaux, de l'estimation et du marché", () => {
+    for (const sample of SAMPLES) {
+      const sorted = [...sample].sort((a, b) => a - b);
+      for (const p of PROBABILITIES) {
+        const expected = legacyTribunalQuantile(sample, p);
+        expect(quantile(sample, p)).toBe(expected);
+        expect(quantileSorted(sorted, p)).toBe(expected);
+        const marketValue = legacyMarketAnalyticsPercentile(sample, p);
+        if (expected == null) expect(marketValue).toBeNull();
+        else expect(quantile(sample, p)).toBeCloseTo(marketValue!, 9);
+      }
+    }
+  });
+
+  it("donne la médiane des tribunaux à l'arrondi binaire près", () => {
+    for (const sample of SAMPLES) {
+      const expected = legacyTribunalQuantile(sample, 0.5);
+      if (expected == null) expect(median(sample)).toBeNull();
+      else expect(median(sample)).toBeCloseTo(expected, 9);
+    }
+  });
+
+  it("ignorent les valeurs non finies, comme la médiane des loyers", () => {
+    expect(median([Number.NaN, 10])).toBe(10);
+    expect(quantile([Number.POSITIVE_INFINITY, 4, 2], 0.5)).toBe(3);
+    expect(median([Number.NaN])).toBeNull();
   });
 });

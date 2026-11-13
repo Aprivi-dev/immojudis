@@ -1,12 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@/lib/toast";
-import {
-  fetchAccessPlan,
-  fetchNotificationPreferences,
-  updateNotificationPreferences,
-} from "@/lib/client-api";
-import * as queryKeys from "@/lib/query-keys";
-import { userMessage } from "@/lib/user-messages";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
+import { useNotificationPreferenceToggle } from "@/hooks/use-notification-preference-toggle";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 
 /**
  * Interrupteur de l'email récapitulatif des alertes, partagé par la cloche des notifications et
@@ -21,25 +15,12 @@ export function AlertEmailRecapToggle({
   /** Mise en forme du conteneur (la cloche et la page de compte n'ont pas la même). */
   className: string;
 }) {
-  const queryClient = useQueryClient();
-  const entitlements = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userId),
-    queryFn: fetchAccessPlan,
-  });
-  const hasAnalysisAccess = entitlements.data?.plan.hasAnalysisAccess === true;
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId),
-    queryFn: fetchNotificationPreferences,
-    staleTime: 60_000,
-  });
+  const hasAnalysisAccess = useHasAnalysisAccess(userId) === true;
+  const preferencesQuery = useNotificationPreferencesQuery(userId);
   const emailEnabled = preferencesQuery.data?.preferences.alertEmailEnabled ?? false;
-  const preferencesMutation = useMutation({
-    mutationFn: updateNotificationPreferences,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
-      toast.success("Préférences mises à jour");
-    },
-    onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),
+  const preferencesMutation = useNotificationPreferenceToggle(userId, {
+    saved: () => "Préférences mises à jour",
+    failed: "Préférences impossibles",
   });
 
   return (

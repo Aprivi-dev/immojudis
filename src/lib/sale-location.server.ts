@@ -1,7 +1,10 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SaleLocation } from "@/lib/commune-risks.server";
-import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
+import {
+  isPublicationQuarantinedGuardRow,
+  PUBLICATION_QUARANTINE_SELECT,
+} from "@/lib/sale-publication-guard";
 
 /**
  * Location of a listing for the commune-level blocks (risks, climate).
@@ -14,18 +17,12 @@ export async function loadVisibleSaleLocation(saleId: string): Promise<SaleLocat
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
     .select(
-      "latitude,longitude,city,postal_code,department,status,catalogue_quarantined,publication_quarantine:raw_payload->>publication_quarantine",
+      `latitude,longitude,city,postal_code,department,${PUBLICATION_QUARANTINE_SELECT}` as const,
     )
     .eq("id", saleId)
     .maybeSingle();
   if (error) throw error;
-  if (
-    !data ||
-    data.catalogue_quarantined ||
-    isPublicationQuarantinedMarker(data.publication_quarantine, data.status)
-  ) {
-    return null;
-  }
+  if (!data || isPublicationQuarantinedGuardRow(data)) return null;
   return {
     latitude: data.latitude,
     longitude: data.longitude,

@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   lawyerStatementMonthSchema,
@@ -18,19 +18,12 @@ export async function getAdminLawyerStatement(
   authToken: string,
   month: string,
 ): Promise<LawyerStatement> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const validMonth = lawyerStatementMonthSchema.parse(month);
   const { data, error } = await supabaseAdmin.rpc("admin_lawyer_monthly_statement", {
     p_month: lawyerStatementMonthStart(validMonth),
   });
-  if (error) {
-    // Fonction absente : la migration du relevé n'est pas encore appliquée.
-    if (error.code === "PGRST202" || error.code === "42883") {
-      throw new Error("Le relevé mensuel n'est pas encore disponible : migration à appliquer.");
-    }
-    throw error;
-  }
+  if (error) throw error;
   return parseLawyerStatement(validMonth, data);
 }

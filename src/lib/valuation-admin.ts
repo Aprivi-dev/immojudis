@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { numberValue } from "@/lib/guards";
@@ -25,7 +25,7 @@ type AttemptRow = Pick<
   "outcome" | "error_code" | "latency_ms" | "created_at"
 >;
 
-export type ValuationModelSummary = Pick<
+type ValuationModelSummary = Pick<
   ModelRow,
   | "id"
   | "version"
@@ -78,10 +78,7 @@ export type ValuationAdminResponse = {
 export async function getValuationAdminOverview(
   authToken: string,
 ): Promise<ValuationAdminResponse> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
+  await assertAdminAuth(authToken);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString();
   const [modelsResult, estimatesResult, queueResult, attemptsResult] = await Promise.all([

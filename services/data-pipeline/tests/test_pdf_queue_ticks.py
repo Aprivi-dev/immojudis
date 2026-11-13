@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.document_backlog import _read_with_current_rules, is_refused_checkpoint
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
 from src.pdf_progress import manifest_is_complete
 from tests.pdf_queue_bench import SALE_URL, QueueBench, pdf_enrichment
@@ -333,7 +333,7 @@ def test_a_lost_text_is_read_again_when_its_checks_expire(bench: QueueBench) -> 
 
 def test_a_sale_whose_reading_was_invalidated_is_read_again_at_once(bench: QueueBench) -> None:
     # Une collecte constate que la liste des pièces a changé : elle retire le manifeste et la version des faits
-    # (main._preserve_known_enrichment_payloads). La vente est relue à la visite suivante, sans attendre.
+    # (known_enrichment.preserve_known_enrichment_payloads). La vente est relue à la visite suivante, sans attendre.
     _first_read(bench, READABLE)
     payload = bench.row["raw_payload"]
     payload["superseded_document_analysis"] = payload.pop("document_analysis")

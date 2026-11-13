@@ -26,7 +26,7 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from src.config import load_settings  # noqa: E402
+from src.config import autonomous_run_id, load_settings  # noqa: E402
 from src.enrichment.llm_client import ReplicateClient  # noqa: E402
 from src.information_agent_semantic import (  # noqa: E402
     MAX_VISION_IMAGE_BYTES,
@@ -55,7 +55,7 @@ def _safe_settings(settings: dict[str, Any]) -> None:
         settings.get("supabase_url")
         or settings.get("supabase_service_role_key")
         or settings.get("supabase_db_url")
-        or os.getenv("PIPELINE_AUTONOMOUS_RUN_ID")
+        or autonomous_run_id()
     ):
         raise RuntimeError("Vision canary refuses production database or autonomous-run credentials")
 

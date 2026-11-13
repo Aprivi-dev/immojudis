@@ -1,6 +1,6 @@
 """Per-document PDF evidence recovered from ``auction_extractions``.
 
-The strict cold-cache recovery (``_validated_persisted_pdf_texts``) restores a
+The strict cold-cache recovery (``validated_persisted_pdf_texts``) restores a
 sale's text only when its whole manifest is complete: one skipped, blocked or
 partially read attachment disables it for every other document of the sale.
 A publication worker that does not hold the local PDF cache (GitHub runners
@@ -25,7 +25,7 @@ from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
-from src.storage.pdf_checkpoint_rules import _is_sha256
+from src.sha256_digest import is_sha256
 from src.storage.pdf_persistence_rows import (
     PDF_EXTRACTION_MODEL,
     PDF_EXTRACTION_PROVIDER,
@@ -166,7 +166,7 @@ def validated_document_evidence(sale: AuctionSale, row: dict[str, object]) -> di
     if row.get("cache_version") != PDF_TEXT_CACHE_VERSION:
         return None
     sha256 = clean_text(row.get("sha256"))
-    if not _is_sha256(sha256):
+    if not is_sha256(sha256):
         return None
     status = (clean_text(row.get("extraction_status")) or "").casefold()
     if status not in PERSISTED_DOCUMENT_EVIDENCE_STATUSES:
@@ -223,7 +223,7 @@ def _current_known_sha(sale: AuctionSale, url: str) -> str | None:
     for document in sale.documents or []:
         if isinstance(document, dict) and clean_text(document.get("url")) == url:
             sha = clean_text(document.get("sha256"))
-            if _is_sha256(sha):
+            if is_sha256(sha):
                 return sha
     analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
     if not isinstance(analysis, dict) or analysis.get("input_fingerprint") != document_fingerprint(sale.documents):
@@ -232,14 +232,14 @@ def _current_known_sha(sale: AuctionSale, url: str) -> str | None:
         for profile in analysis.get(key) or []:
             if isinstance(profile, dict) and clean_text(profile.get("url")) == url:
                 sha = clean_text(profile.get("sha256"))
-                if _is_sha256(sha):
+                if is_sha256(sha):
                     return sha
     proof = analysis.get("cache_proof")
     proof_documents = proof.get("documents") if isinstance(proof, dict) else None
     for item in proof_documents if isinstance(proof_documents, list) else []:
         if isinstance(item, dict) and clean_text(item.get("url")) == url:
             sha = clean_text(item.get("sha256"))
-            if _is_sha256(sha):
+            if is_sha256(sha):
                 return sha
     return None
 

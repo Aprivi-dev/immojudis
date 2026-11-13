@@ -37,7 +37,7 @@ export const MARKET_GAP_NOT_SIGNIFICANT_LABEL = "écart non significatif";
  */
 export const MARKET_GAP_WITHHELD_OCCUPIED =
   "Bien occupé : l’écart avec la valeur estimée n’est pas indiqué, car cette valeur s’appuie sur des ventes de biens libres.";
-export const MARKET_GAP_WITHHELD_OCCUPANCY_UNKNOWN =
+const MARKET_GAP_WITHHELD_OCCUPANCY_UNKNOWN =
   "Occupation du bien non précisée : l’écart avec la valeur estimée n’est pas indiqué, car cette valeur s’appuie sur des ventes de biens libres.";
 
 /**

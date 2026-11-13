@@ -1,7 +1,9 @@
 import "server-only";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { adjudicationEnrichmentSchema } from "@/lib/adjudication-distributions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverEnv } from "@/lib/env";
 import {
   ADJUDICATION_PRICE_STATISTICS_WARNING,
   adjudicationPriceStatisticsDirectoryResponseSchema,
@@ -14,6 +16,7 @@ import {
 import {
   resolveCourtCodeFromSale,
   TribunalJudicialActivityUnavailableError,
+  TribunalJudicialSaleNotFoundError,
 } from "@/lib/tribunal-judicial-activity-repository";
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 import {
@@ -82,31 +85,22 @@ const storedSaleSchema = z
   })
   .strict();
 
-export class AdjudicationPriceStatisticsUnavailableError extends Error {
+class AdjudicationPriceStatisticsUnavailableError extends ServiceUnavailableError {
   constructor(message = "Adjudication price statistics are temporarily unavailable.") {
     super(message);
     this.name = "AdjudicationPriceStatisticsUnavailableError";
   }
 }
 
-export function adjudicationPriceStatisticsEnabled(
-  value = process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED,
-): boolean {
-  return value === "true";
-}
-
 export async function getAdjudicationPriceStatisticsForSale(
   saleId: string,
 ): Promise<AdjudicationPriceStatisticsResponse> {
-  if (!adjudicationPriceStatisticsEnabled()) {
+  if (!serverEnv().adjudicationPriceStatisticsEnabled) {
     throw new AdjudicationPriceStatisticsUnavailableError(
       "Configuration: adjudication price statistics are disabled.",
     );
   }
-  const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
-    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
-  }
+  const pinnedBuildId = configuredBuildId();
 
   const [saleResult, nationalResult] = await Promise.all([
     supabaseAdmin
@@ -158,13 +152,10 @@ export async function getAdjudicationPriceStatisticsForSale(
 }
 
 export async function getAdjudicationPriceStatisticsDirectory(): Promise<AdjudicationPriceStatisticsDirectoryResponse> {
-  if (!adjudicationPriceStatisticsEnabled()) {
+  if (!serverEnv().adjudicationPriceStatisticsEnabled) {
     throw unavailable("Configuration: adjudication price statistics are disabled.");
   }
-  const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;
-  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
-    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
-  }
+  const pinnedBuildId = configuredBuildId();
 
   const nationalResult = await fetchNationalRow(pinnedBuildId);
   if (nationalResult.error) {
@@ -214,6 +205,15 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
   }
 }
 
+/** Construction épinglée (`ADJUDICATION_PRICE_STATISTICS_BUILD_ID`), ou `null` pour la dernière publiée. */
+function configuredBuildId(): string | null {
+  const pinnedBuildId = serverEnv().adjudicationPriceStatisticsBuildId ?? null;
+  if (pinnedBuildId && !z.string().guid().safeParse(pinnedBuildId).success) {
+    throw unavailable("Configuration: the pinned adjudication-price build ID is invalid.");
+  }
+  return pinnedBuildId;
+}
+
 function fetchNationalRow(pinnedBuildId: string | null) {
   let query = supabaseAdmin
     .from("published_adjudication_price_statistics")
@@ -253,6 +253,8 @@ async function resolveOptionalCourtCodeFromSale(saleId: string): Promise<string 
   } catch (error) {
     if (
       error instanceof TribunalJudicialActivityUnavailableError ||
+      error instanceof TribunalJudicialSaleNotFoundError ||
+      error instanceof TribunalJudicialSaleNotFoundError ||
       error instanceof TribunalCourtUnresolvedError
     )
       return null;

@@ -1,6 +1,8 @@
 import "server-only";
 import { loadInitialCatalogue, type InitialCatalogue } from "@/lib/public-catalogue.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Les deux éléments de la ligne « N ventes à venir · données vérifiées le … » de l'accueil, calculés
@@ -36,23 +38,14 @@ type VerifiedAtClient = {
 };
 
 /** Lecture minimale : une fonction publique qui rend une seule date. */
+const summaryTimeout = () => new Error("Délai dépassé pour le résumé du catalogue.");
+
 async function defaultVerifiedAt(): Promise<string | null> {
   const client = createPublicSupabaseClient() as unknown as VerifiedAtClient | null;
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await client.rpc("get_public_catalogue_verified_at");
   if (error) throw error;
   return typeof data === "string" ? data : null;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error("Délai dépassé pour le résumé du catalogue.")),
-      timeoutMs,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** Date ISO exploitable (lisible, pas dans le futur), ou `null`. */
@@ -77,6 +70,7 @@ export async function loadHomeCatalogueSummary(
     const catalogue = await withTimeout(
       (dependencies.catalogue ?? (() => loadInitialCatalogue({})))(),
       timeoutMs,
+      summaryTimeout,
     );
     const count = catalogue?.count;
     if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) return null;
@@ -84,7 +78,11 @@ export async function loadHomeCatalogueSummary(
     let verifiedAt: string | null = null;
     try {
       verifiedAt = usableVerifiedAt(
-        await withTimeout((dependencies.verifiedAt ?? defaultVerifiedAt)(), timeoutMs),
+        await withTimeout(
+          (dependencies.verifiedAt ?? defaultVerifiedAt)(),
+          timeoutMs,
+          summaryTimeout,
+        ),
         now,
       );
     } catch (error) {

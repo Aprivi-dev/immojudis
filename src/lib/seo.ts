@@ -1,4 +1,4 @@
-import { propertyTypeLabel } from "@/lib/format";
+import { isQualifiedPropertyType, propertyTypeLabel } from "@/lib/format";
 import { COMPANY_DESCRIPTION, COMPANY_NAME } from "@/lib/company-description";
 import { departmentFromCode } from "@/lib/department-pages";
 import { propertyImages } from "@/lib/sale-media";
@@ -61,8 +61,9 @@ function lowerFirst(value: string): string {
 }
 
 export function seoPropertyLabel(propertyType: string | null | undefined): string {
-  const label = propertyTypeLabel(propertyType);
-  return label === "Bien" || label === "Bien à qualifier" ? "Bien immobilier" : label;
+  return isQualifiedPropertyType(propertyType)
+    ? propertyTypeLabel(propertyType)
+    : "Bien immobilier";
 }
 
 export function seoSurface(value: number | null | undefined): string | null {
@@ -73,14 +74,19 @@ export function seoSurface(value: number | null | undefined): string | null {
     .replaceAll(" ", " ")} m²`;
 }
 
-export function seoPrice(value: number): string {
+function seoPrice(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
     .format(value)
     .replaceAll(" ", " ")
     .replaceAll(" ", " ")} €`;
 }
 
-export function seoLongDate(value: string | null | undefined): string | null {
+/**
+ * Même sortie que `formatDate(value, null)` (`format/dates.ts`, vérifié par `seo.test.ts`). Copie
+ * gardée exprès : importer `format/dates` ici change le découpage de Turbopack et alourdit le
+ * JavaScript client total d'environ 50 ko (mesuré le 13/11/2026). Les pages appellent `formatDate`.
+ */
+function seoLongDate(value: string | null | undefined): string | null {
   const date = parseDate(value);
   if (!date) return null;
   return new Intl.DateTimeFormat("fr-FR", {
@@ -88,7 +94,10 @@ export function seoLongDate(value: string | null | undefined): string | null {
     month: "long",
     year: "numeric",
     timeZone: PARIS_TIME_ZONE,
-  }).format(date);
+  })
+    .formatToParts(date)
+    .map(({ type, value: part }) => (type === "day" && part === "1" ? "1er" : part))
+    .join("");
 }
 
 function parisParts(date: Date) {

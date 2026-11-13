@@ -7,14 +7,12 @@
  * Construit par esbuild (`npm run flood-risk:build`), puis exécuté par Node avec `SUPABASE_URL` et
  * `SUPABASE_SERVICE_ROLE_KEY`. La sortie ne porte que le résumé de la passe : aucune coordonnée, URL ni réponse.
  */
+import { serverEnv } from "@/lib/env";
 import { runMonitoredJob } from "@/lib/monitored-job.server";
 import { runSaleFloodRiskBatch } from "@/lib/sale-flood-risk-batch";
 
-/** Même taille de lot par défaut que la route ; `SALE_FLOOD_RISK_BATCH_LIMIT` la remplace. */
-const DEFAULT_BATCH_LIMIT = 150;
-
-const parsed = Number(process.env.SALE_FLOOD_RISK_BATCH_LIMIT);
-const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BATCH_LIMIT;
+// Taille de lot : `SALE_FLOOD_RISK_BATCH_LIMIT` (variable de dépôt GitHub), sinon le défaut du traitement.
+const limit = serverEnv().batchLimits.saleFloodRisk;
 
 // Aucune reprise différée, comme la route : la passe suivante reprend ce qui reste.
 const outcome = await runMonitoredJob("sale-flood-risk", () => runSaleFloodRiskBatch({ limit }), {

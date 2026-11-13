@@ -24,7 +24,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,6 +34,7 @@ from src.normalize import (
     normalize_occupancy_status,
     normalize_sale_property_type,
 )
+from src.text_folding import strip_accents
 
 # Outcomes of ``classify_source_change``.
 OPERATIONAL_CHANGE = "operational"
@@ -67,8 +67,7 @@ _TEXT_SURFACE_RE = re.compile(rf"{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)", re.IGN
 def normalize_display_text(value: object) -> str:
     """Casefold, strip accents and volatile counters, collapse whitespace."""
     text = clean_text(value) or ""
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(char for char in text if not unicodedata.combining(char)).casefold()
+    text = strip_accents(text).casefold()
     text = _COUNTDOWN_RE.sub(" ", text)
     return re.sub(r"\s+", " ", text).strip()
 

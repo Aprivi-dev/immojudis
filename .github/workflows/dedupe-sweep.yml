@@ -4,7 +4,7 @@ name: Dedupe sweep
 # The SQL-planned collection runs one source at a time, so the cleanup of src.main (reserved to
 # `--source all` without limit) never ran: this manual workflow is the way to run it.
 #
-# Guards, all kept in src/dedupe_apply.py:
+# Guards, in src/dedupe_apply.py and src/merge_guards.py:
 #   * nothing is written until the repository variable DEDUPE_RECONCILE_ENABLED is "true"
 #     (read the "Dedupe candidates report" first); DEDUPE_RECONCILE_MODE=candidates keeps it read-only;
 #   * or, for ONE launch only, until it is started with the inputs `apply` = true AND

@@ -6,6 +6,8 @@ const db = vi.hoisted(() => ({
   identityOppositions: [] as Array<Record<string, unknown>>,
   writes: [] as Array<[string, string, unknown]>,
   sale: null as Record<string, unknown> | null,
+  /** Table dont la lecture échoue (panne de la base). */
+  failing: null as string | null,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -74,7 +76,11 @@ vi.mock("@/integrations/supabase/client.server", () => {
         error: null,
       };
     }
-    then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
+    then(onFulfilled: (value: { data: unknown; error: unknown }) => unknown) {
+      if (this.table === db.failing) {
+        const error = { code: "57014", message: "canceling statement for cabinet@example.test" };
+        return Promise.resolve({ data: null, error }).then(onFulfilled);
+      }
       const data =
         this.table === "information_agent_contacts"
           ? db.contacts.filter((row) =>
@@ -99,12 +105,10 @@ const send = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: send }));
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  INFORMATION_AGENT_NO_QUESTION_MESSAGE,
-  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
-  previewAdminInformationAgentMission,
-  runAdminInformationAgentAction,
-} from "@/lib/information-agent";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
+import { INFORMATION_AGENT_NO_QUESTION_MESSAGE } from "@/lib/information-agent/draft-checks";
+import { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
+import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
 
 const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ADMIN = { isAdmin: true, userId: ADMIN_ID } as never;
@@ -122,6 +126,7 @@ const content = {
 beforeEach(() => {
   db.writes.length = 0;
   db.sale = null;
+  db.failing = null;
   db.identityOppositions = [];
   db.contacts = [
     {
@@ -171,6 +176,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("aperçu obligatoire avant tout envoi manuel", () => {
+  it("une panne d'un contrôle bloque l'envoi sans recopier le texte de la base", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    db.failing = "information_agent_identity_oppositions";
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+    expect(result.blockers).toContain("Contrôle impossible pour le moment : réessayez l’aperçu.");
+    expect(result.blockers.join(" ")).not.toMatch(/canceling statement|cabinet@/);
+  });
+
   it("montre l'e-mail exact sans rien écrire ni envoyer", async () => {
     const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
 

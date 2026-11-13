@@ -30,7 +30,7 @@ export async function markInboundMessageIgnored({
     .eq("id", messageId)
     .maybeSingle();
   if (error) throw error;
-  if (!message) throw new Error("Message entrant à ignorer introuvable.");
+  if (!message) throw new Error("Inbound message to skip not found");
   const previous = inboundProcessingState(message.metadata ?? {});
   await updateInboundProcessingState(
     messageId,
@@ -193,7 +193,7 @@ export async function enqueueInformationAgentInboundJob({
 }) {
   const expiresAt = new Date(Date.parse(receivedAt) + INBOUND_ATTACHMENT_LINK_TTL_MS);
   if (!Number.isFinite(expiresAt.getTime())) {
-    throw new Error("Date de réception email invalide.");
+    throw new Error("Inbound email received date invalid");
   }
   const { error } = await supabaseAdmin.from("information_agent_inbound_jobs").upsert(
     {

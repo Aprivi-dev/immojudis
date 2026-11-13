@@ -1,28 +1,20 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { fetchAccessPlan } from "@/lib/client-billing";
-import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Étiquette sobre « Inclus pendant votre essai gratuit » à côté de ce que l'offre Analyse ouvre
  * (enchère plafond, lecture des pièces). Montrée seulement à un compte en essai à l'inscription
- * (`plan.launchOffer`), jamais à un abonné réel ; elle disparaît avec la fin de l'essai. Même requête
- * de plan que les autres écrans (clé partagée), donc aucune lecture de plus.
+ * (`plan.launchOffer`), jamais à un abonné réel ; elle disparaît avec la fin de l'essai. Les droits ne
+ * sont lus que pendant l'offre de lancement.
  */
 export function LaunchOfferIncludedTag({ className = "" }: { className?: string }) {
   const { user } = useAuth();
   const { active } = useLaunchOffer();
-  const { data } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user && active),
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  if (!user || !active || data?.plan.launchOffer !== true) return null;
+  const plan = useAccessPlan(active ? user?.id : null);
+  if (!user || !active || plan?.launchOffer !== true) return null;
   return (
     <p className={className}>
       <span

@@ -1,11 +1,11 @@
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
-import { cleanTextDeep as cleanText } from "@/lib/clean-text";
-import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
-export type UrbanPlanningSignalKind =
+type UrbanPlanningSignalKind =
   | "zoning"
   | "permit"
   | "servitude"
@@ -13,7 +13,7 @@ export type UrbanPlanningSignalKind =
   | "usage"
   | "public_record";
 
-export type UrbanPlanningPriority = "high" | "medium" | "low";
+type UrbanPlanningPriority = "high" | "medium" | "low";
 
 export type UrbanPlanningItem = {
   key: string;
@@ -55,11 +55,6 @@ export type UrbanPlanningAnalysis = {
   decisionImpact: string;
   nextActions: string[];
   limitations: string[];
-};
-
-type TextCandidate = {
-  text: string;
-  source: string;
 };
 
 type SignalDefinition = {
@@ -359,60 +354,26 @@ function collectTextCandidates({
   documents: SaleDocumentRich[];
   risks: SaleRisk[];
 }): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-
-  for (const item of dedicatedSourceFields(sale.source_blocks ?? {})) {
-    addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-  }
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of dedicatedSourceFields(blocks)) {
-      addCandidate(
-        candidates,
-        `${item.path}: ${cleanText(item.value)}`,
-        `Données source ${sourceName}`,
-      );
-    }
-  }
-  for (const document of documents) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-  for (const risk of risks) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) =>
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    sourceFields: isDedicatedSourceField,
+    documents,
+    risks,
+    riskOptions: { withType: true, excerptsOnly: true },
+  }).filter((candidate) =>
     SIGNAL_DEFINITIONS.some((definition) => matches(definition, candidate.text)),
   );
 }
 
-function dedicatedSourceFields(blocks: Record<string, unknown>) {
-  return flattenKeyValues(blocks).filter(
-    ({ path }) =>
-      !/(?:^|\.)(?:page_text|description|sale_procedure|related|similar|autres_annonces)(?:$|\.|\[)/i.test(
-        path,
-      ) &&
-      /plu|urbanisme|zoning|zonage|permit|permis|servitude|coownership|copropriete|copropriété|usage|cadastre/i.test(
-        path,
-      ),
+function isDedicatedSourceField({ path }: { path: string }): boolean {
+  return (
+    !/(?:^|\.)(?:page_text|description|sale_procedure|related|similar|autres_annonces)(?:$|\.|\[)/i.test(
+      path,
+    ) &&
+    /plu|urbanisme|zoning|zonage|permit|permis|servitude|coownership|copropriete|copropriété|usage|cadastre/i.test(
+      path,
+    )
   );
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_type, risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {

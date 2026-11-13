@@ -1,4 +1,6 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
+import { PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
@@ -11,36 +13,25 @@ import type {
   InformationAgentContactSource,
 } from "@/lib/information-agent/contact-resolution";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
-import { requireInformationAgentAdmin } from "@/lib/information-agent/mission-store";
 import {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
   informationAgentExcludedAddressReason,
 } from "@/lib/information-agent/excluded-addresses";
 
-export { normalizedEmail };
-export {
-  INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
-  informationAgentExcludedAddressReason,
-  isCourtRegistryEmail,
-  isInformationAgentExcludedAddress,
-} from "@/lib/information-agent/excluded-addresses";
-// La résolution (pure) est dans `contact-resolution.ts` ; ces noms existaient ici avant ce découpage et
-// restent importables d'ici par les modules et les tests qui les utilisaient déjà.
-export {
-  contactCandidateSnapshot,
-  discoverInformationAgentContacts,
-  INFORMATION_AGENT_PIPELINE_CHANNEL,
-  selectInformationAgentContact,
-} from "@/lib/information-agent/contact-resolution";
-export type {
-  InformationAgentContactCandidate,
-  InformationAgentContactProvenance,
-  InformationAgentContactRole,
-  InformationAgentContactSale,
-  InformationAgentContactSource,
-  InformationAgentRecipientKind,
-  InformationAgentRegistryContact,
-} from "@/lib/information-agent/contact-resolution";
+/** Refus d'une valeur qui n'est pas une adresse email, quel que soit le contrôle de l'agent qui la reçoit. */
+export class InformationAgentInvalidContactEmailError extends PublicApiError {
+  constructor() {
+    super("Adresse email du contact invalide.", 400);
+    this.name = "InformationAgentInvalidContactEmailError";
+  }
+}
+
+/** Adresse normalisée d'un contact ; refus (400) si la valeur n'est pas une adresse email. */
+export function requireInformationAgentContactEmail(email: string): string {
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new InformationAgentInvalidContactEmailError();
+  return normalized;
+}
 
 type InformationAgentContactRegistryRow =
   Database["public"]["Tables"]["information_agent_contacts"]["Row"];
@@ -78,8 +69,7 @@ export async function loadInformationAgentContactRegistry(
   email: string,
   saleId?: string | null,
 ): Promise<InformationAgentContactRegistryBlock[]> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const normalized = requireInformationAgentContactEmail(email);
 
   const selectRegistryRows = () =>
     supabaseAdmin
@@ -96,7 +86,7 @@ export async function loadInformationAgentContactRegistry(
   const rows: InformationAgentContactRegistryBlock[] = [];
   for (const { data, error } of results) {
     if (error) throw error;
-    if (!data) throw new Error("Registre des contacts indisponible.");
+    if (!data) throw new Error("Contact registry read returned no data");
     rows.push(...data);
   }
   return rows;
@@ -204,8 +194,7 @@ export async function recordInformationAgentContactOpposition({
  * d'opposition. LECTURE SEULE, pour le dire à la personne sur la page d'opposition ; une erreur est propagée.
  */
 export async function informationAgentOppositionCoversStructure(email: string): Promise<boolean> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const normalized = requireInformationAgentContactEmail(email);
   const [contacts, missions] = await Promise.all([
     supabaseAdmin
       .from("information_agent_contacts")
@@ -259,19 +248,20 @@ export async function assertInformationAgentContactAllowed({
 }): Promise<void> {
   const excludedReason = informationAgentExcludedAddressReason(email);
   if (excludedReason !== null && !(courtRegistryAddress && excludedReason === "court")) {
-    throw new Error(INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE, 400);
   }
   const rows = await loadInformationAgentContactRegistry(email, saleId);
   if (rows.some((row) => isInformationAgentContactBlocked(row, saleId))) {
-    throw new Error(
+    throw new PublicApiError(
       "Le contact est explicitement opposé ou en rebond permanent ; aucune sollicitation n'est autorisée.",
+      409,
     );
   }
   const opposed = await loadOpposedInformationAgentIdentityKeys([...identityKeys, ...checkKeys]);
   if (opposed.some(isInformationAgentStructureKey)) {
-    throw new Error(INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE, 409);
   }
-  if (opposed.length) throw new Error(INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE);
+  if (opposed.length) throw new PublicApiError(INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE, 409);
 }
 
 export const INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE =
@@ -301,11 +291,10 @@ export async function recordInformationAgentStructureOpposition({
   officeCode?: string | null;
   opposedAt?: string;
 }): Promise<string[]> {
-  requireInformationAgentAdmin(auth);
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  assertAdmin(auth);
+  const normalized = requireInformationAgentContactEmail(email);
   const keys = informationAgentStructureKeys({ email: normalized, officeCode });
-  if (!keys.length) throw new Error(INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE);
+  if (!keys.length) throw new PublicApiError(INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE, 400);
   const { error } = await supabaseAdmin.from("information_agent_identity_oppositions").upsert(
     keys.map((identity_key) => ({ identity_key, opposed_at: opposedAt })),
     { onConflict: "identity_key", ignoreDuplicates: true },
@@ -328,7 +317,7 @@ export async function loadOpposedInformationAgentIdentityKeys(
     .select("identity_key")
     .in("identity_key", keys);
   if (error) throw error;
-  if (!data) throw new Error("Liste d'opposition par identité indisponible.");
+  if (!data) throw new Error("Identity opposition read returned no data");
   return data.map((row) => row.identity_key);
 }
 
@@ -354,8 +343,7 @@ export async function recordInformationAgentAdminAddressEntry({
   adminId: string;
   identityKeys?: readonly string[];
 }): Promise<void> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const normalized = requireInformationAgentContactEmail(email);
   const { data: existing, error: readError } = await supabaseAdmin
     .from("information_agent_contacts")
     .select("source_kind, source_url")

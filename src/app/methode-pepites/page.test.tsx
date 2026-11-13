@@ -7,15 +7,10 @@ import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { FLOOD_ADDRESS_MIN_SCORE, FLOOD_PARCEL_MAX_PROBES } from "@/lib/flood-risk";
 import { FLOOD_FORBIDDEN_WORDS, floodWarning } from "@/lib/pepite-flood-copy";
 import * as policy from "@/lib/pepite-policy";
+import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
-  PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
-  PEPITE_LATEST_RULE_VERSION,
   PEPITE_V12_RULE_PARAMS,
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
   pepiteV12EffectiveClause,
   pepiteV2EffectiveClause,
 } from "./method";
@@ -103,7 +98,6 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   });
 
   it("reprend les seuils du module de calcul : la page n'annonce que ce que le calcul applique", () => {
-    expect(PEPITE_LATEST_RULE_VERSION).toBe(policy.PEPITE_LATEST_RULE_VERSION);
     expect(PEPITE_RULE_PARAMS).toEqual({
       chanceMinPct: policy.PEPITE_CHANCE_MIN_SHARE * 100,
       chanceMinWilsonLowPct: policy.PEPITE_CHANCE_MIN_WILSON_LOW * 100,
@@ -161,11 +155,11 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
     render(<Page />);
     const text = sectionText("Les critères et les seuils");
     // Interrupteur fermé (défaut) : la page décrit la règle appliquée, pepite-v1.2.
-    expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
-    expect(PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
-    expect(PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
-    expect(PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
-    expect(text).toContain(`Version ${PEPITE_V1_2_RULE_VERSION}.`);
+    expect(policy.PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
+    expect(policy.PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
+    expect(policy.PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
+    expect(policy.PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
+    expect(text).toContain(`Version ${policy.PEPITE_V1_2_RULE_VERSION}.`);
     expect(text).not.toContain("indiquée sur cette page");
     expect(PEPITE_RULE_PARAMS.chanceMinPct).toBe(70);
     expect(PEPITE_RULE_PARAMS.maxCostShareCourtPct).toBe(75);

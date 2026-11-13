@@ -2,11 +2,13 @@ import type { AuctionCostAnalysis } from "@/lib/auction-cost-analysis";
 import type { CadastralAnalysis } from "@/lib/cadastre-analysis";
 import type { OccupancyAnalysis } from "@/lib/occupation-analysis";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
+import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
+import { occupancyDetail } from "@/lib/occupancy-status";
 
-export type LegalAttentionPriority = "high" | "medium" | "low";
-export type LegalAttentionStatus = "missing" | "to_verify" | "watch" | "documented";
+type LegalAttentionPriority = "high" | "medium" | "low";
+type LegalAttentionStatus = "missing" | "to_verify" | "watch" | "documented";
 
-export type LegalAttentionItem = {
+type LegalAttentionItem = {
   key: string;
   label: string;
   priority: LegalAttentionPriority;
@@ -46,7 +48,7 @@ export function buildLegalAttentionAnalysis({
 }): LegalAttentionAnalysis {
   const items = dedupeItems([
     ...documentControlItems(documents),
-    ...occupancyItems(occupancyAnalysis),
+    ...occupancyItems(occupancyAnalysis, sale),
     ...auctionCostItems(auctionCostAnalysis),
     ...cadastreItems(cadastralAnalysis),
     ...diagnosticsItems({ documents, hasDiagnostics }),
@@ -116,7 +118,7 @@ function documentControlItems(documents: SaleDocumentRich[]): LegalAttentionItem
   return items;
 }
 
-function occupancyItems(occupancy: OccupancyAnalysis): LegalAttentionItem[] {
+function occupancyItems(occupancy: OccupancyAnalysis, sale: AuctionSale): LegalAttentionItem[] {
   if (occupancy.status === "free") {
     return [
       {
@@ -132,8 +134,15 @@ function occupancyItems(occupancy: OccupancyAnalysis): LegalAttentionItem[] {
     ];
   }
 
+  // Un occupant sans droit ni titre qui ne tient pas sa présence du saisi n'est peut-être pas
+  // couvert par le titre d'expulsion de l'adjudicataire (CPCE R. 322-64) : la libération peut
+  // demander une procédure distincte. Relecture juridique du 13/11/2026.
+  const squatted =
+    occupancy.status === "occupied" && occupancyDetail(sale.occupancy_status) === "squatted";
   const priority: LegalAttentionPriority =
-    occupancy.status === "conflicting" || occupancy.status === "to_confirm" ? "high" : "medium";
+    squatted || occupancy.status === "conflicting" || occupancy.status === "to_confirm"
+      ? "high"
+      : "medium";
 
   return [
     {
@@ -142,7 +151,9 @@ function occupancyItems(occupancy: OccupancyAnalysis): LegalAttentionItem[] {
       priority,
       status: occupancy.status === "conflicting" ? "watch" : "to_verify",
       source: "Analyse occupation",
-      reason: occupancy.decisionImpact,
+      reason: squatted
+        ? "Occupation sans droit ni titre signalée : la libération peut exiger une procédure distincte, au délai et au coût difficiles à prévoir."
+        : occupancy.decisionImpact,
       action: occupancy.nextActions[0] ?? "Confirmer l'occupation exacte dans les pièces.",
     },
   ];
@@ -367,16 +378,6 @@ function priorityRank(priority: LegalAttentionPriority): number {
   if (priority === "high") return 3;
   if (priority === "medium") return 2;
   return 1;
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = normalizeText(value);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function normalizeText(value: string): string {

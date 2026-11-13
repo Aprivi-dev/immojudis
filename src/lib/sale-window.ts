@@ -1,3 +1,4 @@
+import { parisDateKey } from "@/lib/paris-time";
 import type { AuctionSale } from "./types";
 
 /** Explicit source timestamps only; a court audience slot is not a bidding window. */
@@ -34,8 +35,7 @@ export function isActiveComparableSale(sale: AuctionSale, now = new Date()): boo
   if (schedule) return Date.parse(schedule.closes_at) > now.getTime();
   if (!sale.sale_date) return false;
   if (/^\d{4}-\d{2}-\d{2}$/.test(sale.sale_date)) {
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(now);
-    return Number.isFinite(Date.parse(sale.sale_date)) && sale.sale_date >= today;
+    return Number.isFinite(Date.parse(sale.sale_date)) && sale.sale_date >= parisDateKey(now);
   }
   return Number.isFinite(Date.parse(sale.sale_date)) && Date.parse(sale.sale_date) > now.getTime();
 }

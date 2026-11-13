@@ -7,7 +7,9 @@ import {
   type CommuneRiskProfile,
   type CommuneRiskResult,
 } from "@/lib/environment-reference";
+import { formatNumericDate } from "@/lib/format/dates";
 import * as queryKeys from "@/lib/query-keys";
+import { apiRequest } from "@/lib/client-api-core";
 import styles from "./ListingEnvironment.module.css";
 
 const SEISMIC_LABELS: Record<number, string> = {
@@ -42,9 +44,9 @@ export function ListingEnvironmentalRisks({
   const query = useQuery({
     queryKey: queryKeys.saleRisks(saleId),
     queryFn: async ({ signal }) => {
-      const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/risks`, { signal });
-      if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
-      return ((await response.json()) as { risks: CommuneRiskResult }).risks;
+      const path = `/api/sales/${encodeURIComponent(saleId)}/risks`;
+      return (await apiRequest<{ risks: CommuneRiskResult }>(path, { anonymous: true, signal }))
+        .risks;
     },
     enabled: enabled && !demoProfile,
     staleTime: 24 * 60 * 60_000,
@@ -205,9 +207,7 @@ function groupRisks(risks: CommuneRiskItem[]): RiskGroup[] {
   return groups;
 }
 
+/** Les dates de GASPAR sont des jours civils : l'heure éventuelle n'est pas lue. */
 function formatDate(value: string): string {
-  const date = new Date(`${value.slice(0, 10)}T12:00:00Z`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC" }).format(date);
+  return formatNumericDate(value.slice(0, 10), value);
 }

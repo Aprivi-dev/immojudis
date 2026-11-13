@@ -51,13 +51,12 @@ class _FinishDB:
 
 def _finish(monkeypatch, presence: list | None = None, **kwargs) -> dict[str, object]:
     db = _FinishDB(**kwargs)
-    monkeypatch.setattr("src.autonomous_runner._postgres_connect", lambda url: nullcontext(db))
     monkeypatch.setattr(
         "src.autonomous_runner.record_source_presence",
         lambda *a, **k: presence.append(a) if presence is not None else None,
     )
     before = datetime.now(UTC)
-    finish_source("db", "run")
+    finish_source("db", "run", connect=lambda url: nullcontext(db))
     assert db.state_update is not None
     (availability, _coverage, last_error, failures, deadline, suspended_until, *_rest) = db.state_update
     return {

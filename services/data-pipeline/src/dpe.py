@@ -12,9 +12,10 @@ import httpx
 
 from src.config import DEFAULT_USER_AGENT, load_settings
 from src.geocode import coordinates_are_verified
-from src.models import AuctionSale
-from src.normalize import clean_text, strip_accents
+from src.models import AuctionSale, add_quality_flag
+from src.normalize import clean_text
 from src.null_text import is_null_text
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "ADEME DPE Open Data"
@@ -122,8 +123,7 @@ def enrich_dpe_sales(
             )
         except Exception as exc:
             LOGGER.warning("DPE enrichment failed for %s: %s", sale.source_url, exc)
-            if "dpe_enrichment_failed" not in sale.quality_flags:
-                sale.quality_flags.append("dpe_enrichment_failed")
+            add_quality_flag(sale.quality_flags, "dpe_enrichment_failed")
     return rows
 
 

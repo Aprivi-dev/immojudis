@@ -24,6 +24,7 @@ from src.outcome_statistics.models import (
     StatisticsSnapshot,
     UnfrozenRoundManifestEntry,
 )
+from src.quantiles import linear_quantile
 
 BUILDER_VERSION = "tribunal_statistics_builder_v1"
 ELIGIBILITY_RULE_VERSION = "claim_ab_reviewed_frozen_round_as_of_v1"
@@ -996,23 +997,11 @@ def _local_weight(sample_size: int) -> float:
 
 
 def _quantiles(values: Sequence[float]) -> dict[str, float]:
-    if not values:
-        raise ValueError("quantiles require values")
     return {
-        "p10": _linear_quantile(values, 0.10),
-        "p50": _linear_quantile(values, 0.50),
-        "p90": _linear_quantile(values, 0.90),
+        "p10": linear_quantile(values, 0.10),
+        "p50": linear_quantile(values, 0.50),
+        "p90": linear_quantile(values, 0.90),
     }
-
-
-def _linear_quantile(values: Sequence[float], probability: float) -> float:
-    position = (len(values) - 1) * probability
-    lower = math.floor(position)
-    upper = math.ceil(position)
-    if lower == upper:
-        return values[lower]
-    fraction = position - lower
-    return values[lower] * (1 - fraction) + values[upper] * fraction
 
 
 def _inverse_quantiles(

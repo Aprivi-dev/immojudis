@@ -88,7 +88,7 @@ export const INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES: Record<
  * pilote automatique (la validation manuelle reste possible). Comparaison sur le premier libellé du
  * domaine (`gmail.com`, `orange.fr`, `yahoo.co.uk`…).
  */
-export const INFORMATION_AGENT_CONSUMER_MAIL_BRANDS: readonly string[] = [
+const INFORMATION_AGENT_CONSUMER_MAIL_BRANDS: readonly string[] = [
   "gmail",
   "googlemail",
   "outlook",

@@ -5,6 +5,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { serverEnv } from "@/lib/env";
+import { supabaseConfigurationError } from "@/lib/supabase-configuration-error";
 import type { Database } from "./types";
 
 function createSupabaseAdminClient() {
@@ -12,13 +13,10 @@ function createSupabaseAdminClient() {
     serverEnv().supabase;
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
+    throw supabaseConfigurationError([
       ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
       ...(!SUPABASE_SERVICE_ROLE_KEY ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Configure these variables in Vercel or your local environment.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
+    ]);
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

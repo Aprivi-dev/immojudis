@@ -1,15 +1,15 @@
 """Reprise, depuis le détail déjà connu d'une vente, des champs établis par les pièces (surfaces, mise à prix).
 
 Une collecte qui relit la fiche source (liste ou détail) ne doit pas écraser une valeur que les documents PDF ont
-établie : ``src.main`` copie ces champs depuis la ligne publiée quand la fiche collectée ne les porte pas.
+établie : ``src.known_enrichment`` copie ces champs depuis la ligne publiée quand la fiche collectée ne les porte pas.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.normalize import parse_price
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
     "surface_m2",
@@ -31,7 +31,7 @@ def is_missing_raw_value(value: Any) -> bool:
     return value is None or value == "" or value == [] or value == {}
 
 
-def _backfill_document_surface_fields_from_known(
+def backfill_document_surface_fields_from_known(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> int:
@@ -61,7 +61,7 @@ def _backfill_document_surface_fields_from_known(
     return copied
 
 
-def _backfill_document_price_from_known(
+def backfill_document_price_from_known(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> int:
@@ -104,7 +104,7 @@ def _backfill_document_price_from_known(
     return copied
 
 
-def _backfill_document_facts_version_from_known(
+def backfill_document_facts_version_from_known(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> int:
@@ -130,7 +130,7 @@ def _backfill_document_facts_version_from_known(
     return 1
 
 
-def _backfill_document_sale_date_from_known(
+def backfill_document_sale_date_from_known(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> int:
@@ -156,7 +156,7 @@ def _backfill_document_sale_date_from_known(
     return 1
 
 
-def _backfill_document_occupancy_from_known(
+def backfill_document_occupancy_from_known(
     sale: dict[str, object],
     known: dict[str, object],
 ) -> int:

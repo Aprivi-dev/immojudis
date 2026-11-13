@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 vi.mock("server-only", () => ({}));
 
@@ -76,8 +77,8 @@ const MISSING_FUNCTION = {
 
 /**
  * Comportement par défaut de la base simulée : `rows` à notifier, `claims` par utilisateur. La file
- * (`get_offer_opening_queue`) rend `rows` ; `rpcMissing` simule une base sans la migration
- * 20261031100300 (ancienne sélection par table). `queue` impose des entrées avec essais.
+ * (`get_offer_opening_queue`) rend `rows` ; `rpcMissing` la fait répondre « fonction introuvable ».
+ * `queue` impose des entrées avec essais.
  */
 function database({
   rows = [] as string[],
@@ -137,7 +138,7 @@ function database({
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // Sans autre consigne, la base n'a pas la migration 20261031100300 (ancienne sélection).
+  // Sans autre consigne, la file répond « fonction introuvable ».
   mocks.rpc.mockResolvedValue({ data: null, error: MISSING_FUNCTION });
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -219,15 +220,19 @@ describe("actions acceptées", () => {
 describe("accès administrateur", () => {
   it("refuse un compte qui n'est pas administrateur, sans rien lire ni envoyer", async () => {
     mocks.auth.mockResolvedValue({ ...adminAuth(), isAdmin: false });
-    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toThrow("Forbidden");
-    await expect(sendOfferOpeningTest({ authToken: "t", env })).rejects.toThrow("Forbidden");
-    await expect(sendOfferOpeningBatch({ authToken: "t", env })).rejects.toThrow("Forbidden");
+    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toThrow(
+      AdminRequiredError,
+    );
+    await expect(sendOfferOpeningTest({ authToken: "t", env })).rejects.toThrow(AdminRequiredError);
+    await expect(sendOfferOpeningBatch({ authToken: "t", env })).rejects.toThrow(
+      AdminRequiredError,
+    );
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it("refuse une session invalide", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
     await expect(sendOfferOpeningBatch({ authToken: "bad", env })).rejects.toThrow("Unauthorized");
     expect(mocks.send).not.toHaveBeenCalled();
   });
@@ -251,10 +256,11 @@ describe("destinataires et aperçu", () => {
     expect(audience.preview.text).not.toMatch(/token=/);
   });
 
-  it("sans la fonction de file (migration pas appliquée), compte comme avant les demandes actives", async () => {
+  it("sans la fonction de file, l'erreur remonte au lieu d'un ancien décompte", async () => {
     database({ recipients: 9, notified: 1, rpcMissing: true });
-    const audience = await getOfferOpeningAudience({ authToken: "t", env });
-    expect(audience).toMatchObject({ recipients: 9, needsReview: 0, alreadyNotified: 1 });
+    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toMatchObject({
+      code: "PGRST202",
+    });
   });
 
   it("n'avale pas une autre erreur de la file", async () => {
@@ -329,21 +335,16 @@ describe("envoi d'un lot", () => {
     });
   });
 
-  it("sans la fonction de file (migration pas appliquée), ne cible que les demandes actives non prévenues, les plus anciennes d'abord, 200 au plus", async () => {
+  it("sans la fonction de file, l'erreur remonte : aucune sélection dans la table, aucun envoi", async () => {
     const selects: Call[][] = [];
     mocks.resolve.mockImplementation((calls: Call[]) => {
       selects.push(calls);
       return { data: [], count: 0, error: null };
     });
-    await sendOfferOpeningBatch({ authToken: "t", limit: 5_000, env });
-    const list = selects.find((calls) => has(calls, "limit"))!;
-    expect(args(list, "limit")).toEqual([200]);
-    expect(list.filter(([method]) => method === "eq").map(([, a]) => a)).toEqual([
-      ["offer_code", "analyse"],
-      ["notify_enabled", true],
-    ]);
-    expect(list.find(([method]) => method === "is")?.[1]).toEqual(["notified_at", null]);
-    expect(args(list, "order")).toEqual(["consented_at", { ascending: true }]);
+    await expect(
+      sendOfferOpeningBatch({ authToken: "t", limit: 5_000, env }),
+    ).rejects.toMatchObject({ code: "PGRST202" });
+    expect(selects).toEqual([]);
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
@@ -420,11 +421,13 @@ describe("envoi d'un lot", () => {
     expect(release?.patch).toEqual({ notified_at: null });
   });
 
-  it("sans la fonction de file (migration pas appliquée), pose seulement la marque", async () => {
+  it("sans la fonction de file, ne pose aucune marque", async () => {
     const { updates } = database({ rows: [idOf(1)], recipients: 1, rpcMissing: true });
-    const result = await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
-    expect(result.sent).toBe(1);
-    expect(updates[0].patch).toEqual({ notified_at: NOW.toISOString() });
+    await expect(sendOfferOpeningBatch({ authToken: "t", now: NOW, env })).rejects.toMatchObject({
+      code: "PGRST202",
+    });
+    expect(updates).toEqual([]);
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it("n'avale pas une autre erreur de la file : aucun envoi", async () => {

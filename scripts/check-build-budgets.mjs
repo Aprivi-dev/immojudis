@@ -148,7 +148,15 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // mesuré 6 711 353 pour 6 534 227 sur main (+177 126). Les plafonds par page restent tous tenus ; l'ajout
 // vient surtout de modules partagés que Turbopack recopie dans plusieurs chunks (la liste des départements
 // figure déjà dans 14 chunks sur main). Décision du propriétaire (07/11/2026) : relèvement à 6 730 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_730_000;
+// Refonte du rangement du 12/11/2026 (lot 3 : dates de Paris et libellés des fiches réunis en modules
+// partagés) : total mesuré 6 836 966 pour 6 727 012 sur la branche (+109 954), les plafonds par page tenus ;
+// Turbopack recopie ces modules dans 1 à 3 chunks de plus. Décision du propriétaire (12/11/2026) :
+// relèvement à 6 850 000.
+// Refonte du 13/11/2026 (lot 6 : formatage unique des dates, euros et pourcentages) : total mesuré
+// 6 882 377 pour 6 808 188 après le lot 4, les plafonds par page tenus (+3 ko au plus par page) ;
+// Turbopack recopie le module de formatage dans environ 25 chunks. Décision du propriétaire
+// (13/11/2026) : relèvement à 6 890 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_890_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -249,7 +257,9 @@ const routeBudgets = [
     entryKey: "[project]/src/app/sales/page",
     // zod 4 puis zod/mini : 522 993 octets (24/10/2026), plafond d'origine rétabli.
     // Décision du fondateur du 01/11/2026 (session /equipe du 31/10, 14 lots) : 560 401 mesurés, relevé à 565 000.
-    maxBytes: 565_000,
+    // Accord du propriétaire du 13/11/2026 (refonte, lot 4) : 565 132 mesurés, le résumé du catalogue
+    // suit désormais la règle des statistiques du serveur au lieu d'une copie ; relevé à 566 000.
+    maxBytes: 566_000,
   },
   {
     name: "sale-detail",
@@ -294,8 +304,10 @@ const routeBudgets = [
     routeKey: "/annonce-exemple/page",
     entryKey: "[project]/src/app/annonce-exemple/page",
     // 28/10/2026 : relevé un temps à 190 000 (décision du fondateur), puis rétabli à 185 000 une fois l'import
-    // inutile de `HomePrimaryAction` retiré (180 311 mesurés).
-    maxBytes: 185_000,
+    // inutile de `HomePrimaryAction` retiré (180 311 mesurés). 12/11/2026 : 186 000 avec l'accord du
+    // propriétaire (184 973 avant, 185 476 après) : le calcul des dates de Paris, recopié à 8 endroits, est
+    // réuni dans `paris-time.ts` et `calendar-day.ts`, un peu plus lourds que les copies qu'ils remplacent.
+    maxBytes: 186_000,
   },
   {
     name: "pricing",

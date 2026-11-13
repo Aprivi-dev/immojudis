@@ -49,7 +49,7 @@ def test_cross_source_ep_document_is_rejected_before_any_request(monkeypatch, tm
     monkeypatch.setattr(pdf_enrichment, "load_settings", lambda: _settings(authorized=False))
     monkeypatch.setattr(
         pdf_enrichment,
-        "_select_documents_for_extraction",
+        "select_documents_for_extraction",
         lambda documents, **_: documents,
     )
     monkeypatch.setattr(
@@ -75,7 +75,7 @@ def test_cross_source_ep_document_downloads_when_both_access_switches_are_true(
     monkeypatch.setattr(pdf_enrichment, "load_settings", lambda: settings)
     monkeypatch.setattr(
         pdf_enrichment,
-        "_select_documents_for_extraction",
+        "select_documents_for_extraction",
         lambda documents, **_: documents,
     )
 

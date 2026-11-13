@@ -5,9 +5,9 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError } from "@/lib/api-observability";
-import { assertFeatureEntitlementVia } from "@/lib/property-reports";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
+import { assertFeatureEntitlementVia } from "@/lib/entitlements.server";
 import { enforceIpRateLimit, enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
@@ -24,6 +24,8 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 const saleIdSchema = z.string().guid();
 
+// Écrit ici plutôt que laissé à l'enveloppe : le contrôle d'invariants de sécurité vérifie que le détail
+// part avec cet en-tête privé (scripts/check-security-invariants.mjs).
 const PRIVATE_HEADERS = { "cache-control": "private, no-store", vary: "authorization" };
 /**
  * Les noms des critères sont les mêmes pour tout le monde : le CDN les garde une minute seulement, pour qu'un arrêt
@@ -45,9 +47,10 @@ const PUBLIC_HEADERS = { "cache-control": "public, s-maxage=60, stale-while-reva
  * mêmes gardes que la liste publique) : sinon 404, y compris en mode « shadow » ou avant la migration. Le droit
  * est vérifié avant la lecture du détail, qui reste dans une table privée lue avec le rôle de service.
  */
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id).toLowerCase();
+export const GET = apiRoute<{ id: string }>(
+  { scope: "sale-pepite", fallbackMessage: "Repère Pépite indisponible." },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id).toLowerCase();
     const detailRequested = new URL(request.url).searchParams.get("view") === "detail";
     let accountId: string | null = null;
 
@@ -74,7 +77,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     if (!(await isPublishedPepite(client, saleId))) {
       throw new PublicApiError("Cette vente n’est pas une pépite.", 404);
     }
@@ -105,9 +108,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
     // Le niveau « criteria » ne reçoit JAMAIS le détail : `pepiteCriteriaPayload` ne prend que les critères.
     return NextResponse.json(pepiteCriteriaPayload(criteria, flood), { headers: PUBLIC_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-pepite", {
-      fallbackMessage: "Repère Pépite indisponible.",
-    });
-  }
-}
+  },
+);

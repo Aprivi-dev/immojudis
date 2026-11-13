@@ -310,7 +310,7 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
 function subscriptionsPayload(state: ManagementState) {
   return {
     subscriptions: state.subscriptionGranted ? [subscriptionSummary()] : [],
-    totalCount: state.subscriptionGranted ? 1 : 0,
+    total: state.subscriptionGranted ? 1 : 0,
     activeCount: state.subscriptionGranted ? 1 : 0,
     truncated: false,
     offset: 0,
@@ -338,7 +338,7 @@ function referralPayload(state: ManagementState) {
   return {
     requests: [referralSummary(state)],
     lawyers: [lawyerOption()],
-    totalCount: 1,
+    total: 1,
     openCount: state.referralStatus === "manual_review" ? 1 : 0,
     truncated: false,
     offset: 0,
@@ -442,7 +442,7 @@ function lawyerSummary(payload?: Record<string, unknown>) {
 function privacyPayload(state: ManagementState) {
   return {
     requests: [privacySummary(state)],
-    totalCount: 1,
+    total: 1,
     openCount: state.privacyStatus === "received" ? 1 : 0,
     overdueCount: 0,
     truncated: false,
@@ -473,7 +473,7 @@ function privacySummary(state: ManagementState) {
 function publicationPayload(state: ManagementState) {
   return {
     requests: [publicationRequest(state)],
-    totalCount: 1,
+    total: 1,
     pendingCount: state.publicationStatus === "pending" ? 1 : 0,
     offset: 0,
     limit: 30,

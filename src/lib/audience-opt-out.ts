@@ -13,6 +13,7 @@
  */
 
 import { clearAnalyticsConsent } from "@/lib/analytics-consent";
+import { subscribeStoredChoice } from "@/lib/stored-choice-subscription";
 
 export const AUDIENCE_OPT_OUT_STORAGE_KEY = "immojudis:audience-opt-out";
 const AUDIENCE_OPT_OUT_EVENT = "immojudis:audience-opt-out-change";
@@ -47,14 +48,5 @@ export function setAudienceOptOut(optedOut: boolean): void {
 
 /** Pour `useSyncExternalStore` : change dans cet onglet ou dans un autre. */
 export function subscribeAudienceOptOut(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => undefined;
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === AUDIENCE_OPT_OUT_STORAGE_KEY) onChange();
-  };
-  window.addEventListener(AUDIENCE_OPT_OUT_EVENT, onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    window.removeEventListener(AUDIENCE_OPT_OUT_EVENT, onChange);
-    window.removeEventListener("storage", onStorage);
-  };
+  return subscribeStoredChoice(AUDIENCE_OPT_OUT_STORAGE_KEY, AUDIENCE_OPT_OUT_EVENT, onChange);
 }

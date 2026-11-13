@@ -7,6 +7,7 @@ import {
   parsePreviewSearchRequest,
   previewSearchApiUrl,
   previewSearchLimitViolation,
+  previewSearchPageOutOfRange,
   previewSearchQueryString,
 } from "./preview-search-request";
 import type { SalesSearchParams } from "./search-url-state";
@@ -190,6 +191,8 @@ describe("paramètres refusés", () => {
     "sort=inconnu",
     "saleType=casino",
     "transactionType=rent",
+    // Reste d'un gabarit : aucune page ne propose les locations, la route ne les connaît plus.
+    "transactionType=for_rent",
     "minSaleDate=2026-13-01",
     "maxSaleDate=demain",
     "minSaleDate=2026-12-01&maxSaleDate=2026-11-01",
@@ -214,5 +217,14 @@ describe("paramètres refusés", () => {
   it("accepte la dernière page que la fonction SQL sert (décalage de 10 000)", () => {
     expect(previewSearchLimitViolation({ page: 101, limit: 100 })).toBeNull();
     expect(previewSearchLimitViolation({ page: 102, limit: 100 })).not.toBeNull();
+  });
+
+  it("dit la page hors bornes par le même calcul que la route, pas par son texte", () => {
+    expect(previewSearchPageOutOfRange({ page: 101, limit: 100 })).toBe(false);
+    expect(previewSearchPageOutOfRange({ page: 102, limit: 100 })).toBe(true);
+    expect(previewSearchPageOutOfRange({ page: 999 })).toBe(true);
+    // Un autre refus n'est pas une page hors bornes.
+    expect(previewSearchLimitViolation({ city: "v".repeat(121) })).not.toBeNull();
+    expect(previewSearchPageOutOfRange({ city: "v".repeat(121) })).toBe(false);
   });
 });

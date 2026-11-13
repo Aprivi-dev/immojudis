@@ -1,27 +1,29 @@
 import "server-only";
 import { z } from "zod";
-import { PublicApiError } from "@/lib/api-errors";
+import { UUID_PATTERN } from "@/lib/uuid";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import {
   dispatchQueuedEmailAlertNotifications,
   resolveEmailAlertDeliveryConfig,
 } from "@/lib/email-alerts";
 import { alertNotificationsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
+import { asJson } from "@/lib/supabase-json";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 type NotificationInsert = Database["public"]["Tables"]["user_alert_notifications"]["Insert"];
 type NotificationUpdate = Database["public"]["Tables"]["user_alert_notifications"]["Update"];
 
 export type AlertNotificationKind = NotificationRow["notification_kind"];
-export type AlertNotificationDeliveryStatus = NotificationRow["delivery_status"];
+type AlertNotificationDeliveryStatus = NotificationRow["delivery_status"];
 
 export type AlertNotificationMatchInput = {
   id: string | null;
@@ -88,7 +90,7 @@ export type AlertNotificationDispatchResult = {
 };
 
 /** Part d'e-mails dus en échec à partir de laquelle le passage est déclaré en échec. */
-export const EMAIL_FAILURE_RATE_THRESHOLD = 0.2;
+const EMAIL_FAILURE_RATE_THRESHOLD = 0.2;
 
 /**
  * Un passage dont les e-mails ne sont pas partis ne compte pas comme un succès : sinon la
@@ -108,7 +110,7 @@ export function assertAlertNotificationDispatchComplete(
     const missing = result.emailMissingConfig.length
       ? ` (variable(s) manquante(s) : ${result.emailMissingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Alertes e-mail : ${result.emailCandidateCount} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }
@@ -245,12 +247,12 @@ export async function suppressAlertNotificationsForMatches({
   return { suppressedCount: data?.length ?? 0 };
 }
 
-export const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
+const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
 export type AlertNotificationAction = (typeof ALERT_NOTIFICATION_ACTIONS)[number];
 
 /** Corps de `PATCH /api/alerts/notifications` : une action hors de la liste est refusée, jamais devinée. */
 export const alertNotificationUpdateSchema = z.object({
-  notificationId: z.string().uuid(),
+  notificationId: z.string().regex(UUID_PATTERN),
   action: z.enum(ALERT_NOTIFICATION_ACTIONS),
 });
 
@@ -780,10 +782,6 @@ function notificationRowToSummary(row: NotificationRow): AlertNotificationSummar
     dismissedAt: row.dismissed_at,
     createdAt: row.created_at,
   };
-}
-
-function asJson(value: Record<string, unknown>): Json {
-  return value as Json;
 }
 
 function clampLimit(value: number, max: number): number {

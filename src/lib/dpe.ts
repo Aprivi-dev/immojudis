@@ -81,7 +81,7 @@ export function extractDpe(
   };
 }
 
-export function normalizeStructuredDpeDiagnostics(
+function normalizeStructuredDpeDiagnostics(
   diagnostics: StructuredDpeDiagnostic[],
 ): StructuredDpeDiagnostic[] {
   return diagnostics

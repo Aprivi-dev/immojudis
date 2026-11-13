@@ -58,7 +58,7 @@ type LawyerFactSourcesClient = {
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
-/** Lecture en échec (autre que la fonction absente) : le code seul, jamais le message ni la vente. */
+/** Lecture en échec : le code seul, jamais le message ni la vente. */
 export class LawyerFactSourcesReadError extends Error {
   constructor(readonly code: string) {
     super(`get_public_sale_lawyer_fact_sources failed (${code})`);
@@ -66,13 +66,10 @@ export class LawyerFactSourcesReadError extends Error {
   }
 }
 
-const MISSING_FUNCTION_CODES = new Set(["PGRST202", "42883"]);
-
 /**
  * Lecture de la projection publique, par la fiche seule (serveur : `lookupPublicSale` ; navigateur :
- * la requête de la page de la vente). Une base sans la fonction (pas encore migrée) répond « aucune
- * mention ». Toute autre erreur est levée (`LawyerFactSourcesReadError`) : l'appelant ne la met jamais
- * en cache comme « aucune mention ».
+ * la requête de la page de la vente). Toute erreur est levée (`LawyerFactSourcesReadError`) :
+ * l'appelant ne la met jamais en cache comme « aucune mention ».
  */
 export async function fetchLawyerFactSources(
   client: LawyerFactSourcesClient,
@@ -85,9 +82,9 @@ export async function fetchLawyerFactSources(
     throw new LawyerFactSourcesReadError("network");
   }
   if (answer.error) {
-    const code = String((answer.error as { code?: unknown }).code ?? "unknown");
-    if (MISSING_FUNCTION_CODES.has(code)) return [];
-    throw new LawyerFactSourcesReadError(code);
+    throw new LawyerFactSourcesReadError(
+      String((answer.error as { code?: unknown }).code ?? "unknown"),
+    );
   }
   return parseLawyerFactSources(answer.data);
 }

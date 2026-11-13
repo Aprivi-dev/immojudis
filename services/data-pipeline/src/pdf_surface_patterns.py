@@ -12,7 +12,7 @@ from decimal import Decimal
 from src.enrichment.surface_text_rules import room_measurement_before, value_is_ground_area
 from src.land_parcels import EXCLUSIVE_USE_BASIS, read_parcel_land_surface
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
-from src.pdf_enrichment import _normalize_document_classifier_text
+from src.pdf_document_types import normalize_document_classifier_text
 
 
 def _extract_surface(text: str) -> Decimal | None:
@@ -56,7 +56,7 @@ def _extract_surface_candidates_with_evidence(text: str) -> list[dict[str, Decim
             if value is None:
                 continue
             evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            key = (value, _normalize_document_classifier_text(evidence))
+            key = (value, normalize_document_classifier_text(evidence))
             if key in seen:
                 continue
             seen.add(key)
@@ -93,7 +93,7 @@ def _extract_land_surface_candidates_with_evidence(text: str) -> list[dict[str, 
             if value is None:
                 continue
             evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            key = (value, _normalize_document_classifier_text(evidence))
+            key = (value, normalize_document_classifier_text(evidence))
             if key in seen:
                 continue
             seen.add(key)
@@ -109,11 +109,11 @@ def _extract_land_surface_candidates_with_evidence(text: str) -> list[dict[str, 
         return candidates + [
             item
             for item in _ranked_unit_candidates(text)
-            if (item["value"], _normalize_document_classifier_text(str(item["evidence"]))) not in seen
+            if (item["value"], normalize_document_classifier_text(str(item["evidence"]))) not in seen
         ]
     if parcels is not None and parcels.value is not None:
         evidence = clean_text(parcels.evidence) or ""
-        key = (parcels.value, _normalize_document_classifier_text(evidence))
+        key = (parcels.value, normalize_document_classifier_text(evidence))
         if key not in seen:
             seen.add(key)
             candidates.append({"value": parcels.value, "evidence": evidence})
@@ -135,7 +135,7 @@ def _ranked_unit_candidates(text: str) -> list[dict[str, Decimal | str]]:
                 continue
             evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
             item: dict[str, Decimal | str] = {
-                "value": value, "evidence": evidence, "key": _normalize_document_classifier_text(evidence),
+                "value": value, "evidence": evidence, "key": normalize_document_classifier_text(evidence),
             }
             ranked.append((_land_unit_candidate_rank(text, match.start(), match.end()), item))
     ranked.sort(key=lambda entry: entry[0], reverse=True)
@@ -182,8 +182,8 @@ def _land_match_crosses_another_measure(match: re.Match[str]) -> bool:
     return bool(_OTHER_MEASURE_RE.search(outside))
 
 def _land_unit_candidate_rank(text: str, start: int, end: int) -> int:
-    before = _normalize_document_classifier_text(text[max(0, start - 120) : start])
-    after = _normalize_document_classifier_text(text[end : min(len(text), end + 100)])
+    before = normalize_document_classifier_text(text[max(0, start - 120) : start])
+    after = normalize_document_classifier_text(text[end : min(len(text), end + 100)])
     context = f"{before} {after}"
     rank = 0
     if re.search(r"\b(?:parcelle|terrain|jardin)\b", before[-90:]):
@@ -207,7 +207,7 @@ def _cadastral_units_to_square_meters(match: re.Match[str]) -> Decimal | None:
     return Decimal(total) if total > 0 else None
 
 def _has_land_surface_context(text: str, start: int, end: int) -> bool:
-    context = _normalize_document_classifier_text(text[max(0, start - 180) : min(len(text), end + 180)])
+    context = normalize_document_classifier_text(text[max(0, start - 180) : min(len(text), end + 180)])
     return bool(
         re.search(
             r"\b(?:terrain|parcelles?|cadastr(?:e|ee|al|ale)|contenance|surface\s+cadastrale|superficie\s+cadastrale|jardin)\b",
@@ -216,7 +216,7 @@ def _has_land_surface_context(text: str, start: int, end: int) -> bool:
     )
 
 def _is_land_surface_evidence(evidence: str) -> bool:
-    text = _normalize_document_classifier_text(evidence)
+    text = normalize_document_classifier_text(evidence)
     if re.search(
         r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|surface\s+de\s+reference|batie|bati)\b",
         text,
@@ -256,7 +256,7 @@ def _is_surface_false_positive(text: str, start: int, end: int) -> bool:
     )
 
 def _surface_measurement_scope(text: str, evidence: str) -> str:
-    context = _normalize_document_classifier_text(f"{evidence} {text}")
+    context = normalize_document_classifier_text(f"{evidence} {text}")
     if re.search(
         r"\b(?:mesurage|calcul\s+de\s+superficie).{0,80}\b(?:incomplet|partiel|pas\s+pu|n(?:'|’)ont\s+pu)\b|"
         r"\bn(?:'|’)ont\s+pu\s+[eê]tre\s+r[ée]alis[ée]s?\s+dans\s+leur\s+int[ée]gralit[ée]\b|"
@@ -264,7 +264,7 @@ def _surface_measurement_scope(text: str, evidence: str) -> str:
         context,
     ):
         return "partial"
-    evidence_text = _normalize_document_classifier_text(evidence)
+    evidence_text = normalize_document_classifier_text(evidence)
     if "carrez" in evidence_text and len(re.findall(r"\bencombrement\s+trop\s+important\b", context)) >= 2:
         return "partial"
     return "total"

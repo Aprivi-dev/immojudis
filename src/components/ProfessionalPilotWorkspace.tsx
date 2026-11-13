@@ -10,7 +10,7 @@ import {
   saveProfessionalPilotDossier,
 } from "@/lib/client-api";
 import { safeDocumentUrl } from "@/lib/documents";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
 import { toast } from "@/lib/toast";
 import {
@@ -23,7 +23,8 @@ import {
 } from "@/lib/professional-pilots";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import { isUuid } from "@/lib/sale-workspace-shared";
+import { downloadBlob } from "@/lib/download-blob";
+import { isPersistedSale } from "@/lib/example-sale-identity";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
@@ -67,7 +68,7 @@ export function ProfessionalPilotWorkspace({
   const storageKey = `immojudis:professional-pilot:v1:${user?.id ?? "guest"}:${sale.id}`;
   const activeStorageKey = useRef(storageKey);
   const hydrated = hydratedKey === storageKey;
-  const canSync = !publicDemo && !authLoading && Boolean(user) && isUuid(sale.id);
+  const canSync = !publicDemo && !authLoading && Boolean(user) && isPersistedSale(sale);
   const workspaceQuery = useQuery({
     queryKey: queryKeys.professionalPilotWorkspace(user?.id ?? null, sale.id),
     queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),
@@ -305,12 +306,7 @@ export function ProfessionalPilotWorkspace({
       })),
     });
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${definition.kind}-dossier-${sale.id}.md`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadBlob(blob, `${definition.kind}-dossier-${sale.id}.md`);
   };
 
   return (
@@ -605,7 +601,9 @@ export function ProfessionalPilotWorkspace({
                 <dt>Marge brute indicative</dt>
                 <dd className="font-bold text-brand-navy">
                   {economics.marginEur === null ? "À chiffrer" : formatPrice(economics.marginEur)}
-                  {economics.marginPct !== null ? ` (${economics.marginPct.toFixed(1)} %)` : ""}
+                  {economics.marginPct !== null
+                    ? ` (${formatPercent(economics.marginPct, 1, 1)})`
+                    : ""}
                 </dd>
               </div>
               <div>

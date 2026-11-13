@@ -8,7 +8,8 @@ euros per square metre per month, charges included, unfurnished, and the 95 % pr
 interval.
 
 Mandatory credit: « Estimations ANIL, à partir des données du Groupe SeLoger et de
-leboncoin ».
+leboncoin ». The web app shows it with the rents (``src/lib/rent-source-notice.ts``); the
+pipeline publishes no text of its own.
 
 This module only parses: it never opens a connection. The resources are found by their
 title in the data.gouv.fr API (identifiers change with every republication), and the
@@ -26,6 +27,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from src.reference_data.download import decode_csv
 from src.reference_data.gaspar import repair_mojibake
 from src.reference_data.names import department_from_insee
 
@@ -36,7 +38,6 @@ ANIL_SEARCH_URL = (
     "https://www.data.gouv.fr/api/1/datasets/"
     "?q=Carte%20des%20loyers%20indicateurs%20de%20loyers%20d%27annonce&page_size=20"
 )
-ANIL_ATTRIBUTION = "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin"
 
 SEGMENTS = ("apt_all", "apt_1_2", "apt_3p", "house")
 # Plausible advertised rents in euros per square metre per month. The published values go from
@@ -165,16 +166,6 @@ def newer_vintages(search: Mapping[str, Any], current_vintage: int) -> list[Newe
         if years and max(years) > current_vintage:
             found.append(NewerVintage(max(years), title, str(item.get("id") or "")))
     return found
-
-
-def decode_csv(raw: bytes) -> str:
-    """UTF-8 when the file is valid UTF-8, else Windows-1252, else Latin-1."""
-    for encoding in ("utf-8-sig", "cp1252"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("latin-1")
 
 
 def parse_rent_file(

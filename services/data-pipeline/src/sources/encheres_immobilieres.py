@@ -6,7 +6,6 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
-from zoneinfo import ZoneInfo
 
 import httpx
 from bs4 import BeautifulSoup
@@ -14,7 +13,9 @@ from bs4 import BeautifulSoup
 from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
+from src.french_dates import MONTH_NUMBERS, PARIS
 from src.listing_location import extract_adresse_du_bien
+from src.models import add_quality_flag
 from src.normalize import clean_text
 from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
@@ -33,6 +34,7 @@ from src.sources.common import (
 from src.sources.encheres_immobilieres_payload import extract_vente_payload, vente_fields
 from src.sources.image_candidates import html_image_candidates
 from src.sources.listing_characteristics import known_detail_lacks_characteristics
+from src.sources.source_features import merge_documents
 
 BASE_URL = "https://encheresimmobilieres.fr"
 LIST_URL = f"{BASE_URL}/biens-en-vente"
@@ -85,24 +87,6 @@ SHORT_MONTHS = {
     "DÉC": "décembre",
     "DEC": "décembre",
 }
-MONTH_NUMBERS = {
-    "janvier": 1,
-    "février": 2,
-    "mars": 3,
-    "avril": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "août": 8,
-    "septembre": 9,
-    "octobre": 10,
-    "novembre": 11,
-    "décembre": 12,
-}
-
-
-def scrape_encheres_immobilieres_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_encheres_immobilieres_aquitaine_result(max_pages=max_pages).sales
 
 
 def scrape_encheres_immobilieres_aquitaine_result(
@@ -237,7 +221,7 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     vente = extract_vente_payload(html, external_id or _external_id_from_url(source_url))
     structured = vente_fields(vente) if vente else None
     read = structured["fields"] if structured else {}
-    documents = _merge_documents(_detail_documents(soup, source_url), read.get("documents"))
+    documents = merge_documents(_detail_documents(soup, source_url), read.get("documents"))
     # La galerie de l'objet ``vente`` fait foi : le HTML mêle les vignettes des ventes
     # voisines, le visuel du département et le logo du journal de parution.
     source_images = read.get("source_images") or _detail_images(soup, source_url, external_id)
@@ -351,9 +335,9 @@ def _enrich_sale_from_detail(
         sale["source_detail_status"] = "failed"
         sale["source_detail_failure_reason"] = "identity_mismatch"
         sale["source_identity_mismatch"] = mismatch
-        quality_flags = sale.get("quality_flags") if isinstance(sale.get("quality_flags"), list) else []
-        if "source_identity_mismatch" not in quality_flags:
-            sale["quality_flags"] = [*quality_flags, "source_identity_mismatch"]
+        quality_flags = list(sale["quality_flags"]) if isinstance(sale.get("quality_flags"), list) else []
+        add_quality_flag(quality_flags, "source_identity_mismatch")
+        sale["quality_flags"] = quality_flags
         LOGGER.warning(
             "EncheresImmobilieres detail identity mismatch for %s: listing=%s detail=%s",
             source_url,
@@ -374,7 +358,7 @@ def _enrich_sale_from_detail(
             sale["source_blocks"] = {**existing_blocks, **value}
             continue
         if key == "documents":
-            sale[key] = _merge_documents(sale.get(key), value)
+            sale[key] = merge_documents(sale.get(key), value)
             continue
         if key == "source_images":
             sale[key] = _merge_text_values(sale.get(key), value)
@@ -490,6 +474,8 @@ def _without_other_sales_block(lines: list[str]) -> list[str]:
 
 
 def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
+    # Propre au site : quels liens de la fiche sont des pièces, et leur libellé. La fusion des pièces est
+    # commune aux sources (source_features.merge_documents).
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href") or "")
@@ -506,7 +492,7 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
                 "type": "pdf" if ".pdf" in href.lower() else "document",
             }
         )
-    return _merge_documents([], documents)
+    return merge_documents([], documents)
 
 
 def _detail_images(soup: BeautifulSoup, source_url: str, external_id: str | None = None) -> list[str]:
@@ -566,22 +552,6 @@ def _looks_like_document_link(href: str, label: str | None) -> bool:
             text,
         )
     )
-
-
-def _merge_documents(existing: object, incoming: object) -> list[dict[str, str]]:
-    documents = existing if isinstance(existing, list) else []
-    incoming_documents = incoming if isinstance(incoming, list) else []
-    merged: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming_documents]:
-        if not isinstance(document, dict) or not document.get("url"):
-            continue
-        url = str(document["url"])
-        merged[url] = {
-            "label": str(document.get("label") or "document"),
-            "url": url,
-            "type": str(document.get("type") or ("pdf" if url.lower().endswith(".pdf") else "document")),
-        }
-    return list(merged.values())
 
 
 def _merge_text_values(existing: object, incoming: object) -> list[str]:
@@ -778,7 +748,7 @@ PAST_SALE_TOLERANCE = timedelta(days=30)
 
 
 def _paris_today() -> date:
-    return datetime.now(ZoneInfo("Europe/Paris")).date()
+    return datetime.now(PARIS).date()
 
 
 def _list_sale_date(text: str | None) -> str | None:

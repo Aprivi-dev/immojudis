@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { firstFilled, publicEnv, serverEnv } from "@/lib/env";
+import { firstFilled, positiveInteger, publicEnv, serverEnv } from "@/lib/env";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -190,10 +190,10 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({ PEPITE_RULE_V2_ENABLED: " true " }).pepiteRule.v2Enabled).toBe("true");
     expect(serverEnv({ PEPITE_RULE_V2_ENABLED: "  " }).pepiteRule.v2Enabled).toBeUndefined();
     expect(serverEnv({}).pepiteRule.v2Enabled).toBeUndefined();
-    expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: " 120 " }).saleFloodRisk.batchLimit).toBe(
-      "120",
-    );
-    expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: "" }).saleFloodRisk.batchLimit).toBeUndefined();
+    expect(serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: " 120 " }).batchLimits.saleFloodRisk).toBe(120);
+    expect(
+      serverEnv({ SALE_FLOOD_RISK_BATCH_LIMIT: "" }).batchLimits.saleFloodRisk,
+    ).toBeUndefined();
     expect(serverEnv({ SALE_FLOOD_RISK_RUNNER: " vercel " }).saleFloodRisk.runner).toBe("vercel");
     expect(serverEnv({}).saleFloodRisk.runner).toBeUndefined();
   });
@@ -256,5 +256,109 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({ PIPELINE_CALLBACK_SECRET: " abc " }).pipelineCallbackSecret).toBe("abc");
     expect(serverEnv({ PIPELINE_CALLBACK_SECRET: "  " }).pipelineCallbackSecret).toBeUndefined();
     expect(serverEnv({}).pipelineCallbackSecret).toBeUndefined();
+  });
+
+  it("reads every batch size as a positive integer, unset otherwise (the job keeps its own default)", () => {
+    const limits = serverEnv({
+      SALE_PEPITES_BATCH_LIMIT: "120",
+      LISTING_COMPLETENESS_BATCH_LIMIT: " 80 ",
+      VALUATION_PRECOMPUTE_BATCH_LIMIT: "40.9",
+      ALERT_NOTIFICATION_CRON_LIMIT: "0",
+      COMMERCIAL_CONFIRMATION_CRON_LIMIT: "-3",
+      SALE_CHANGE_CRON_USER_LIMIT: "abc",
+      SMART_ALERT_CRON_SALE_LIMIT: "  ",
+    }).batchLimits;
+    expect(limits).toEqual({
+      saleFloodRisk: undefined,
+      salePepites: 120,
+      listingCompleteness: 80,
+      valuationPrecompute: 40,
+      alertNotifications: undefined,
+      commercialConfirmations: undefined,
+      saleChangeUsers: undefined,
+      smartAlertSales: undefined,
+    });
+  });
+
+  it("caps the operational alert delivery at 20 per pass, 10 by default", () => {
+    expect(serverEnv({}).alerts.deliveryLimit).toBe(10);
+    expect(serverEnv({ OPERATIONS_ALERT_DELIVERY_LIMIT: "5" }).alerts.deliveryLimit).toBe(5);
+    expect(serverEnv({ OPERATIONS_ALERT_DELIVERY_LIMIT: "500" }).alerts.deliveryLimit).toBe(20);
+    expect(serverEnv({ OPERATIONS_ALERT_DELIVERY_LIMIT: "x" }).alerts.deliveryLimit).toBe(10);
+  });
+
+  it("opens the adjudication price statistics only on the exact string true", () => {
+    expect(
+      serverEnv({ ADJUDICATION_PRICE_STATISTICS_ENABLED: "true" })
+        .adjudicationPriceStatisticsEnabled,
+    ).toBe(true);
+    for (const value of ["TRUE", "1", "", " true", undefined]) {
+      expect(
+        serverEnv({ ADJUDICATION_PRICE_STATISTICS_ENABLED: value })
+          .adjudicationPriceStatisticsEnabled,
+      ).toBe(false);
+    }
+  });
+
+  it("reads RATE_LIMIT_IP_SALT trimmed, blank as unset", () => {
+    expect(serverEnv({ RATE_LIMIT_IP_SALT: " sel " }).rateLimitIpSalt).toBe("sel");
+    expect(serverEnv({ RATE_LIMIT_IP_SALT: "  " }).rateLimitIpSalt).toBeUndefined();
+  });
+
+  it("picks the public origin in SITE_URL order, without VERCEL_URL in production", () => {
+    expect(serverEnv({ APP_URL: "a.test", SITE_URL: " s.test " }).siteUrl).toBe("s.test");
+    expect(serverEnv({ SITE_URL: " ", NEXT_PUBLIC_APP_URL: "n.test" }).siteUrl).toBe("n.test");
+    expect(serverEnv({ VERCEL_URL: "x.vercel.app" }).siteUrl).toBe("x.vercel.app");
+    expect(
+      serverEnv({ VERCEL_ENV: "production", VERCEL_URL: "x.vercel.app" }).siteUrl,
+    ).toBeUndefined();
+  });
+
+  it("reads the user-session publishable key with SUPABASE_PUBLISHABLE_KEY first", () => {
+    expect(
+      serverEnv({
+        SUPABASE_PUBLISHABLE_KEY: " server ",
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "public",
+      }).supabase.sessionPublishableKey,
+    ).toBe("server");
+    expect(
+      serverEnv({ SUPABASE_PUBLISHABLE_KEY: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon" }).supabase
+        .sessionPublishableKey,
+    ).toBe("anon");
+  });
+});
+
+describe("positiveInteger", () => {
+  it("reads a positive integer, rounded down and capped, and falls back otherwise", () => {
+    expect(positiveInteger("12")).toBe(12);
+    expect(positiveInteger("12.7")).toBe(12);
+    expect(positiveInteger("0.5")).toBeUndefined();
+    expect(positiveInteger("Infinity")).toBeUndefined();
+    expect(positiveInteger(undefined, { fallback: 3 })).toBe(3);
+    expect(positiveInteger("50", { fallback: 3, max: 20 })).toBe(20);
+  });
+});
+
+describe("serverEnv: Stripe, contact form and adjudication-price build", () => {
+  it("reads the Analyse Prices, the contact addresses and the pinned build, trimmed", () => {
+    const env = serverEnv({
+      STRIPE_ANALYSIS_PRICE_ID: " price_new ",
+      STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old1, price_old2",
+      CONTACT_EMAIL_TO: " equipe@immojudis.example ",
+      CONTACT_EMAIL_FROM: "Immojudis <contact@immojudis.example>",
+      ADJUDICATION_PRICE_STATISTICS_BUILD_ID: " 0f8fad5b-d9cb-469f-a165-70867728950e ",
+    });
+    expect(env.stripe.analysisPriceId).toBe("price_new");
+    expect(env.stripe.legacyAnalysisPriceIds).toBe("price_old1, price_old2");
+    expect(env.email.contactTo).toBe("equipe@immojudis.example");
+    expect(env.email.contactFrom).toBe("Immojudis <contact@immojudis.example>");
+    expect(env.adjudicationPriceStatisticsBuildId).toBe("0f8fad5b-d9cb-469f-a165-70867728950e");
+  });
+
+  it("treats a blank value as unset", () => {
+    const env = serverEnv({ STRIPE_ANALYSIS_PRICE_ID: "  ", CONTACT_EMAIL_TO: "" });
+    expect(env.stripe.analysisPriceId).toBeUndefined();
+    expect(env.email.contactTo).toBeUndefined();
+    expect(env.adjudicationPriceStatisticsBuildId).toBeUndefined();
   });
 });

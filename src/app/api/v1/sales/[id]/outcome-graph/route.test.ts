@@ -1,5 +1,7 @@
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -14,7 +16,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 
@@ -87,7 +89,9 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
   });
 
   it("refuse une requête non authentifiée avant toute lecture du registre", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await request();
 
@@ -98,7 +102,7 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
 
   it("refuse Découverte avant toute lecture du registre", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Prévision Outcome Graph réservée à l’offre Analyse."),
+      new ForbiddenError("Prévision Outcome Graph réservée à l’offre Analyse."),
     );
 
     const response = await request();
@@ -114,8 +118,7 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
   });
 
   it("répond 404 pour une vente inconnue ou retirée de la publication", async () => {
-    const unknown = new Error("Vente introuvable ou inaccessible.");
-    unknown.name = "SalePublicationUnavailableError";
+    const unknown = new SalePublicationUnavailableError();
     mocks.getForecast.mockRejectedValue(unknown);
 
     const response = await request();

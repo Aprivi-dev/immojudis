@@ -1,5 +1,5 @@
 import { buildIcsCalendar, buildIcsCalendarMany, formatIcsUtc, type IcsEvent } from "@/lib/ical";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { DEADLINES_CONFIRM_NOTICE, type SaleDeadline } from "@/lib/sale-deadlines";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import type { VisitSlot } from "@/lib/visit-slots";
@@ -137,7 +137,7 @@ function saleCalendarEvent(
  * Durée par défaut d'une visite : 1 h. L'annonce donne le début du créneau, rarement la fin ; la
  * durée est indicative et le fichier le dit.
  */
-export const SALE_VISIT_DEFAULT_DURATION_HOURS = 1;
+const SALE_VISIT_DEFAULT_DURATION_HOURS = 1;
 
 export const SALE_VISIT_DISCLAIMER =
   "Créneau de visite issu de l’annonce, à confirmer auprès de l’avocat poursuivant.";

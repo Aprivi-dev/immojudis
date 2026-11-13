@@ -7,12 +7,11 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { AdminPagination } from "@/components/admin/AdminPagination";
-import {
-  factFieldLabel,
-  formatFactDate,
-  formatFactValue,
-} from "@/components/admin/fact-claim-format";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
+import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import type {
   AdminFactClaimDecisionInput,
   AdminFactClaimDecisionItem,
@@ -34,9 +33,10 @@ import {
   type FactClaimWithdrawReason,
 } from "@/lib/fact-claim-decisions";
 import { toast } from "@/lib/toast";
+import { UUID_SOURCE } from "@/lib/uuid";
 
 const QUERY_KEY = ["admin-fact-claim-decisions"] as const;
-const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UUID_IN_TEXT = new RegExp(UUID_SOURCE, "i");
 
 const ACTION_LABELS: Record<FactClaimDecisionAction, string> = {
   accept: "Accepter l’observation",
@@ -106,10 +106,7 @@ export function AdminFactClaimDecisionPanel() {
       toast.success(message);
     },
     onError: (error) => {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "La décision n’a pas pu être enregistrée.";
+      const message = queryErrorMessage(error, "La décision n’a pas pu être enregistrée.");
       // Après un refus, la confirmation d’une décision définitive est à redonner.
       setDraft((current) => (current ? { ...current, finalConfirmed: false } : current));
       setOutcome({ kind: "error", message });
@@ -123,7 +120,7 @@ export function AdminFactClaimDecisionPanel() {
   const submitSaleFilter = (event: FormEvent) => {
     event.preventDefault();
     const text = saleInput.trim();
-    const match = UUID_PATTERN.exec(text);
+    const match = UUID_IN_TEXT.exec(text);
     if (text && !match) {
       setSaleInputError("Identifiant de vente non reconnu. Collez l’adresse de la fiche.");
       return;
@@ -218,9 +215,7 @@ export function AdminFactClaimDecisionPanel() {
       ) : query.error ? (
         <div className="p-5">
           <p role="alert" className="text-sm text-danger">
-            {query.error instanceof Error && query.error.message
-              ? query.error.message
-              : "La liste des observations est indisponible."}
+            {queryErrorMessage(query.error, "La liste des observations est indisponible.")}
           </p>
           <button
             type="button"
@@ -313,14 +308,10 @@ function DecisionLine({
   return (
     <article ref={articleRef} className="p-5" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${state.tone}`}
-        >
-          {state.label}
-        </span>
+        <AdminPill tone={state.tone}>{state.label}</AdminPill>
         {item.latestDecision ? (
           <span className="text-xs text-brand-navy/55">
-            Décision du {formatFactDate(item.latestDecision.decidedAt)}
+            Décision du {formatShortDateTime(item.latestDecision.decidedAt)}
           </span>
         ) : null}
       </div>
@@ -333,7 +324,9 @@ function DecisionLine({
       </h3>
       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/55">
         {item.sale.city ? <span>{item.sale.city}</span> : null}
-        {item.sale.saleDate ? <span>Vente du {formatFactDate(item.sale.saleDate)}</span> : null}
+        {item.sale.saleDate ? (
+          <span>Vente du {formatShortDateTime(item.sale.saleDate)}</span>
+        ) : null}
         <Link
           href={`/sales/${item.saleId}`}
           className="inline-flex min-h-6 items-center font-medium text-gold-text underline"
@@ -372,7 +365,7 @@ function DecisionLine({
         ) : (
           <span>Pièce sans lien public</span>
         )}
-        <span>Reçue le {formatFactDate(item.capturedAt)}</span>
+        <span>Reçue le {formatShortDateTime(item.capturedAt)}</span>
       </div>
 
       {item.allowedActions.length ? (
@@ -627,19 +620,16 @@ function successMessage(
 
 function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
   label: string;
-  tone: string;
+  tone: AdminPillTone;
 } {
-  const neutral = "border-line bg-surface-muted text-brand-navy/80";
-  const final = "border-danger/30 bg-danger-tint text-danger";
-  if (!latest)
-    return { label: "À décider", tone: "border-warning/30 bg-warning-tint text-warning" };
+  if (!latest) return { label: "À décider", tone: "warning" };
   if (isFinalFactClaimDecision(latest)) {
     return {
       label:
         latest.decision === "opposed"
           ? "Dernière décision : opposition (définitif)"
           : "Dernière décision : autorisation retirée (définitif)",
-      tone: final,
+      tone: "danger",
     };
   }
   switch (latest.decision) {
@@ -648,16 +638,16 @@ function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
         label: factClaimLotAttachmentHolds(latest.lotAttachment as FactClaimLotAttachment)
           ? "Dernière décision : acceptée"
           : "Dernière décision : acceptée, sans affichage",
-        tone: "border-success/30 bg-success-tint text-success",
+        tone: "success",
       };
     case "rejected":
-      return { label: "Dernière décision : rejetée", tone: neutral };
+      return { label: "Dernière décision : rejetée", tone: "neutral" };
     case "withdrawn":
-      return { label: "Dernière décision : retirée", tone: neutral };
+      return { label: "Dernière décision : retirée", tone: "neutral" };
     case "contradicted":
-      return { label: "Dernière décision : contredite par une autre source", tone: final };
+      return { label: "Dernière décision : contredite par une autre source", tone: "danger" };
     default:
-      return { label: "État inconnu", tone: neutral };
+      return { label: "État inconnu", tone: "neutral" };
   }
 }
 

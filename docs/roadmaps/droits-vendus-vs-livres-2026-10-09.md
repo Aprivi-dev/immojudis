@@ -2,6 +2,7 @@
 
 Date : 2026-10-09. Plan de référence : `docs/audits/2026-10-09-plan-correctif.md`, section « P7-02 · Aligner ce qui est vendu sur ce qui est livré ».
 Périmètre : lecture seule du dépôt. Aucun fichier de code modifié, aucun commit. Les estimations de charge sont grossières (jours d'un développeur) et à confirmer.
+Mise à jour : `/api/market-analytics`, `/api/sales/history`, `/api/dvf-comparables` et `/api/valuation-backtest` retirées le 13/11/2026 (refonte), avec `src/lib/market-analytics.ts`, `src/lib/sale-history.ts` et `src/lib/dvf-comparables.ts`. Le rétro-test reste calculé pour le rapport (`src/lib/valuation-backtest.ts`). Le même jour, les sept clés `market.*` lues et montrées nulle part sont retirées de `plans.ts` ; `market.priceDistribution` et `market.demographics` restent (lues par le rapport).
 
 ## 0. Méthode et limites
 
@@ -290,18 +291,22 @@ Chaque point : état factuel, risque, recommandation, charge. Les décisions fin
 ### 3.5 Historique des ventes
 - État : voir `property.saleHistory`. Route `/api/sales/history` sans appelant ; `SaleTribunalHistory` non monté.
 - Recommandation : retirer la route et la clé ; conserver l'historique d'adresse du rapport. Charge : 0,3 j.
+- Route retirée le 13/11/2026 (refonte) ; la clé reste.
 
 ### 3.6 Analytique de marché
 - État : `/api/market-analytics` sans appelant ; sept clés `market.*` sans aucun usage, deux (`priceDistribution`, `demographics`) partiellement.
 - Recommandation : retirer la route et les neuf clés `market.*` (0,5 j). Brancher un onglet « Marché » avec courbes de prix, volume et délais : 3 à 5 j, à planifier après lancement si des utilisateurs le demandent.
+- Route retirée le 13/11/2026 (refonte), avec les sept clés `market.*` sans usage ; `priceDistribution` et `demographics` restent.
 
 ### 3.7 Comparables DVF
 - État : `/api/dvf-comparables` sans appelant. Les comparables visibles viennent de l'estimation précalculée (`/api/market-estimate`).
 - Recommandation : retirer la route (0,2 j), ou, si l'on veut montrer la liste détaillée des transactions, ajouter un tiroir dans `MarketEvidence` (1 à 1,5 j).
+- Route retirée le 13/11/2026 (refonte).
 
 ### 3.8 Backtest
 - État : `/api/valuation-backtest` sans appelant ; le backtest est calculé dans la génération de rapport (`src/lib/property-report/analysis.ts`, `repository.ts`) et rendu dans le PDF (`pdf.ts:94-96,228`). L'interface de fiche ne l'affiche pas.
 - Recommandation : retirer la route, conserver le calcul pour le rapport. Charge : 0,2 j.
+- Route retirée le 13/11/2026 (refonte) ; le calcul pour le rapport reste.
 
 ### 3.9 Rafraîchissement à la demande
 - État : `/api/data-refresh` sans appelant ; worker Python prêt à traiter `data_refresh_requests`. Aucun bouton.

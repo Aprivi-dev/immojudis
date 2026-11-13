@@ -1,15 +1,16 @@
 import type { AuctionCostAnalysis } from "@/lib/auction-cost-analysis";
+import { calendarDaysBetween } from "@/lib/calendar-day";
 import type { LegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
 import type { OccupancyAnalysis } from "@/lib/occupation-analysis";
 import type { RenovationAnalysis } from "@/lib/renovation-analysis";
 import type { AuctionSale, SaleDocumentRich } from "@/lib/types";
 
-export type AudienceReadinessStatus = "ready" | "needs_work" | "urgent" | "missing_date" | "past";
+type AudienceReadinessStatus = "ready" | "needs_work" | "urgent" | "missing_date" | "past";
 
-export type AudienceReadinessItemStatus = "done" | "to_do" | "watch";
-export type AudienceReadinessPriority = "high" | "medium" | "low";
+type AudienceReadinessItemStatus = "done" | "to_do" | "watch";
+type AudienceReadinessPriority = "high" | "medium" | "low";
 
-export type AudienceReadinessItem = {
+type AudienceReadinessItem = {
   key: string;
   label: string;
   status: AudienceReadinessItemStatus;
@@ -42,6 +43,7 @@ export type AudienceReadinessAnalysis = {
 import { publishedDay, sourceVisitExcerpt, visitHasPassed } from "./listing-evidence";
 import { safeDocumentUrl } from "./documents";
 import { dedupeStrings } from "@/lib/dedupe-strings";
+import { parisDateKey } from "@/lib/paris-time";
 
 export function buildAudienceReadinessAnalysis({
   sale,
@@ -140,6 +142,10 @@ function buildChecklist({
 }): AudienceReadinessItem[] {
   const hasConditions = hasDocument(documents, /cahier|conditions/i);
   const hasDescriptiveReport = hasDocument(documents, /pv|descriptif|commissaire|huissier/i);
+  const occupancyStatusKnown =
+    occupancyAnalysis.status === "free" ||
+    occupancyAnalysis.status === "occupied" ||
+    occupancyAnalysis.status === "rented";
   const hasDiagnostics = hasDocument(documents, /diagnostic|dpe|amiante|plomb|termite/i);
   const currentVisits = visitDates.filter(
     (value) => publishedDay(value) && !visitHasPassed(value, now),
@@ -232,17 +238,21 @@ function buildChecklist({
     {
       key: "occupation",
       label: "Occupation",
-      status:
-        occupancyAnalysis.status === "free" ||
-        occupancyAnalysis.status === "occupied" ||
-        occupancyAnalysis.status === "rented"
+      // Un statut repéré n'est « fait » que confirmé par le PV descriptif : sans pièce, la ligne
+      // reste à vérifier (relecture juridique du 13/11/2026).
+      status: !occupancyStatusKnown
+        ? occupancyAnalysis.status === "conflicting"
+          ? "watch"
+          : "to_do"
+        : hasDescriptiveReport
           ? "done"
-          : occupancyAnalysis.status === "conflicting"
-            ? "watch"
-            : "to_do",
+          : "watch",
       priority: "high",
       source: "Analyse occupation",
-      detail: occupancyAnalysis.summary,
+      detail:
+        occupancyStatusKnown && !hasDescriptiveReport
+          ? `${occupancyAnalysis.summary} Aucun PV descriptif repéré pour confirmer ce statut.`
+          : occupancyAnalysis.summary,
       action: occupancyAnalysis.nextActions[0] ?? "Qualifier l'occupation exacte avant audience.",
     },
     {
@@ -445,17 +455,7 @@ function parseDate(value: string | null): Date | null {
 
 function daysUntil(date: Date | null, now: Date): number | null {
   if (!date || !Number.isFinite(now.getTime())) return null;
-  const calendarDay = (value: Date) => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(value);
-    const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
-    return Date.UTC(part("year"), part("month") - 1, part("day"));
-  };
-  return (calendarDay(date) - calendarDay(now)) / (24 * 60 * 60 * 1000);
+  return calendarDaysBetween(parisDateKey(now), parisDateKey(date));
 }
 
 function formatMoney(value: number): string {

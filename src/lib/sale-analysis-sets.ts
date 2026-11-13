@@ -1,9 +1,9 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/share-token";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -15,6 +15,9 @@ import {
 } from "@/lib/search/sale-comparison";
 import { asRecord } from "@/lib/guards";
 import { asRecord as normalizeJsonObject } from "@/lib/guards";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -28,8 +31,8 @@ type AnalysisSetMetadata = Pick<
   is_archived: boolean;
 };
 
-export const SALE_ANALYSIS_KINDS = ["comparison", "watchlist", "portfolio"] as const;
-export const SALE_ANALYSIS_DECISION_STATUSES = [
+const SALE_ANALYSIS_KINDS = ["comparison", "watchlist", "portfolio"] as const;
+const SALE_ANALYSIS_DECISION_STATUSES = [
   "watching",
   "shortlisted",
   "bid_ready",
@@ -66,14 +69,11 @@ export const saleAnalysisSetUpdateSchema = saleAnalysisSetInputSchema.partial().
   isArchived: saleAnalysisSetInputSchema.shape.isArchived.unwrap().optional(),
   items: z.array(saleAnalysisItemInputSchema).min(1).max(12).optional(),
 });
-
-export type SaleAnalysisItemInput = z.input<typeof saleAnalysisItemInputSchema>;
 export type SaleAnalysisSetInput = z.input<typeof saleAnalysisSetInputSchema>;
 export type SaleAnalysisSetPayload = z.output<typeof saleAnalysisSetInputSchema>;
-export type SaleAnalysisSetUpdateInput = z.input<typeof saleAnalysisSetUpdateSchema>;
 export type SaleAnalysisSetUpdatePayload = z.output<typeof saleAnalysisSetUpdateSchema>;
 
-export type SaleAnalysisSaleSummary = {
+type SaleAnalysisSaleSummary = {
   id: string;
   title: string | null;
   city: string | null;
@@ -314,7 +314,7 @@ export async function enableSaleComparisonShare({
     ownedItems.map((item) => ({ saleId: item.sale_id, decisionStatus: "watching" })),
   );
 
-  const token = randomBytes(24).toString("base64url");
+  const token = createShareToken();
   const sharedAt = new Date();
   const expiresAt = new Date(sharedAt.getTime() + 30 * 24 * 60 * 60 * 1_000).toISOString();
   const { error } = await supabaseAdmin
@@ -384,7 +384,7 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
     new Date(expiresAt).getTime() <= Date.now() ||
     !items.length
   ) {
-    throw new Error("Comparaison partagée introuvable ou expirée.");
+    throw new NotFoundError("Comparaison partagée introuvable ou expirée.");
   }
 
   // Une vente retirée du catalogue ne fait plus échouer tout le lien : elle quitte la comparaison, qui
@@ -392,7 +392,7 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
   const visibleSaleIds = await getPublicationVisibleSaleIds(items.map((item) => item.id));
   const visibleItems = items.filter((item) => visibleSaleIds.has(item.id));
   if (!visibleItems.length) {
-    throw new Error("Comparaison partagée introuvable ou expirée.");
+    throw new NotFoundError("Comparaison partagée introuvable ou expirée.");
   }
 
   return {
@@ -572,7 +572,7 @@ async function assertSaleAnalysisAvailable(
 ) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.multiPropertyAnalysis")) {
-    throw new Error("Analyse multi-biens réservée à l’offre Analyse.");
+    throw new ForbiddenError("Analyse multi-biens réservée à l’offre Analyse.");
   }
   if (analysisKind) assertAnalysisKindAvailable(plan.plan, analysisKind);
   return plan;
@@ -583,7 +583,9 @@ function assertAnalysisKindAvailable(
   analysisKind: (typeof SALE_ANALYSIS_KINDS)[number],
 ) {
   if (plan === "decouverte" && analysisKind !== "comparison") {
-    throw new Error("Les listes de suivi et portefeuilles sont réservés à l’offre Analyse.");
+    throw new ForbiddenError(
+      "Les listes de suivi et portefeuilles sont réservés à l’offre Analyse.",
+    );
   }
 }
 
@@ -604,13 +606,13 @@ async function assertSetLimit(
   const { count, error } = await query;
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Limite de ${limit} analyses multi-biens actives atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} analyses multi-biens actives atteinte.`);
   }
 }
 
 function assertItemLimit(itemCount: number, limit: number | null) {
   if (limit != null && itemCount > limit) {
-    throw new Error(`Limite de ${limit} biens par analyse atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} biens par analyse atteinte.`);
   }
 }
 
@@ -724,10 +726,6 @@ function averageOrNull(values: number[]): number | null {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
-function asJson(value: unknown): Json {
-  return value as Json;
-}
-
 async function prepareAnalysisSetInput(
   input: SaleAnalysisSetPayload,
 ): Promise<SaleAnalysisSetPayload> {
@@ -769,12 +767,13 @@ export async function buildCanonicalComparisonSnapshot(
       "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,occupancy_status,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
-    .in("status", ["upcoming", "postponed", "unknown"]);
+    .in("status", OPEN_SALE_STATUSES);
   if (error) throw error;
 
   const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));
   const missing = saleIds.filter((saleId) => !byId.has(saleId));
-  if (missing.length) throw new Error("Certains biens à comparer sont introuvables ou expirés.");
+  if (missing.length)
+    throw new NotFoundError("Certains biens à comparer sont introuvables ou expirés.");
 
   const comparedSales: ComparedSale[] = saleIds.map((saleId) => {
     const sale = byId.get(saleId)!;
@@ -803,13 +802,4 @@ function canonicalSaleVenueType(value: string | null): ComparedSale["venueType"]
     return value;
   }
   return "unknown";
-}
-
-function normalizeShareToken(value: string): string | null {
-  const token = value.trim();
-  return /^[A-Za-z0-9_-]{32}$/.test(token) ? token : null;
-}
-
-function hashShareToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
 }

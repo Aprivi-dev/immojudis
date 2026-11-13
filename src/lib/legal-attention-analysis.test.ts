@@ -42,6 +42,47 @@ describe("legal attention analysis", () => {
     );
   });
 
+  // Relecture juridique du 13/11/2026 : un occupant sans droit ni titre peut demander une
+  // procédure distincte, le point reste prioritaire ; un bien occupé autrement est de priorité moyenne.
+  it.each([
+    ["squatted", "high", "Occupation sans droit ni titre signalée"],
+    ["owner_occupied", "medium", "Anticiper délai de libération"],
+    ["occupied", "medium", "Anticiper délai de libération"],
+  ])(
+    "sets the occupation item of a %s sale to %s priority",
+    (occupancy_status, priority, reason) => {
+      const sale = {
+        ...EXAMPLE_SALE,
+        occupancy_status,
+        description: "Appartement.",
+        source_description: null,
+        llm_display_description: null,
+        about_description: null,
+        investment_summary: null,
+        risk_notes: null,
+        source_blocks: {},
+        source_blocks_by_source: {},
+        documents_rich: [],
+        risks: [],
+      };
+      const analysis = buildLegalAttentionAnalysis({
+        sale,
+        documents: [],
+        risks: [],
+        cadastralAnalysis: buildCadastralAnalysis(sale),
+        occupancyAnalysis: buildOccupancyAnalysis(sale),
+        auctionCostAnalysis: buildAuctionCostAnalysis({
+          sale,
+          acquisition: computeAcquisitionCosts({ price: sale.starting_price_eur ?? 0 }),
+        }),
+        hasDiagnostics: false,
+      });
+      const item = analysis.items.find((entry) => entry.key === "occupation_risk");
+      expect(item?.priority).toBe(priority);
+      expect(item?.reason).toContain(reason);
+    },
+  );
+
   it("turns sourced risks into prioritized legal attention items", () => {
     const sale = {
       ...EXAMPLE_SALE,

@@ -1,4 +1,6 @@
 import { parseFiniteNumber as finiteNumber } from "@/lib/finite-number";
+import { formatDate } from "@/lib/format/dates";
+import { formatPercent, formatPrice } from "@/lib/format/numbers";
 /**
  * « Historique de la vente » : what happened to this listing (hearing moved,
  * starting price changed, postponed…) and the earlier passages of the same
@@ -6,7 +8,7 @@ import { parseFiniteNumber as finiteNumber } from "@/lib/finite-number";
  * Shared by the API route (server) and the sale page (browser).
  */
 
-export type SaleTimelineKind =
+type SaleTimelineKind =
   | "first_seen"
   | "sale_date_changed"
   | "starting_price_changed"
@@ -100,7 +102,7 @@ export function mapSalePassages(
   };
 }
 
-export function summarizeSalePassages(
+function summarizeSalePassages(
   timeline: SaleTimelineEvent[],
   previousPassages: SalePreviousPassage[],
   currentStartingPrice: number | null,
@@ -123,27 +125,19 @@ export function summarizeSalePassages(
   };
 }
 
-const dateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-const euro = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
-
+/** Date d'une valeur JSON de l'historique ; `null` si ce n'est pas une date lisible. */
 export function formatPassageDate(value: unknown): string | null {
-  if (typeof value !== "string" || !value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : dateFormat.format(date);
+  return typeof value === "string" ? formatDate(value, "") || null : null;
 }
 
+/** Montant d'une valeur JSON de l'historique ; `null` si ce n'est pas un nombre. */
 function formatEuro(value: unknown): string | null {
   const parsed = finiteNumber(value);
-  return parsed == null ? null : euro.format(parsed);
+  return parsed == null ? null : formatPrice(parsed);
+}
+
+function formatSignedPercent(pct: number): string {
+  return `${pct > 0 ? "+" : ""}${formatPercent(pct)}`;
 }
 
 /** One line of the timeline, in plain French. */
@@ -175,7 +169,7 @@ export function describeTimelineEvent(event: SaleTimelineEvent): {
               : "Mise à prix relevée",
         detail:
           from && to
-            ? `${formatEuro(from)} → ${formatEuro(to)} (${pct! > 0 ? "+" : ""}${pct} %)`
+            ? `${formatEuro(from)} → ${formatEuro(to)} (${formatSignedPercent(pct!)})`
             : to
               ? `Nouvelle mise à prix : ${formatEuro(to)}`
               : null,
@@ -211,9 +205,7 @@ export function describePreviousPassage(
     title: `Audience du ${date}`,
     detail: price
       ? `Mise à prix ${price}${
-          pct
-            ? ` · aujourd’hui ${pct > 0 ? "+" : ""}${pct} %`
-            : " · même mise à prix qu’aujourd’hui"
+          pct ? ` · aujourd’hui ${formatSignedPercent(pct)}` : " · même mise à prix qu’aujourd’hui"
         }`
       : null,
   };

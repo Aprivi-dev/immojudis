@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -20,8 +19,6 @@ import {
 } from "@/lib/sale-workspace-collaboration";
 
 const saleIdSchema = z.string().guid();
-// Dossier, collaborateurs et annotations sont propres au compte : aucun cache partagé.
-const PRIVATE_RESPONSE = { headers: { "cache-control": "private, no-store" } };
 
 const postSchema = z.discriminatedUnion("action", [
   z.object({
@@ -49,68 +46,43 @@ const patchSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-export async function GET(request: Request) {
-  try {
+const scope = "sale-workspace.collaboration";
+
+export const GET = apiRoute(
+  { scope, fallbackMessage: "Dossier collaboratif indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const saleId = saleIdSchema.parse(url.searchParams.get("saleId"));
-    const response = await listSaleWorkspaceCollaboration({ auth, saleId });
-    return NextResponse.json(response, PRIVATE_RESPONSE);
-  } catch (error) {
-    return errorResponse(request, error, "Dossier collaboratif indisponible");
-  }
-}
+    return listSaleWorkspaceCollaboration({ auth, saleId });
+  },
+);
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  { scope, fallbackMessage: "Action collaborative impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = postSchema.parse(await request.json());
 
     if (input.action === "invite") {
-      return NextResponse.json(
-        await inviteSaleWorkspaceCollaborator({ auth, input: input.data }),
-        PRIVATE_RESPONSE,
-      );
+      return inviteSaleWorkspaceCollaborator({ auth, input: input.data });
     }
     if (input.action === "accept") {
-      return NextResponse.json(
-        await acceptSaleWorkspaceInvitation({ auth, input: input.data }),
-        PRIVATE_RESPONSE,
-      );
+      return acceptSaleWorkspaceInvitation({ auth, input: input.data });
     }
+    return createSaleWorkspaceAnnotation({ auth, input: input.data });
+  },
+);
 
-    return NextResponse.json(
-      await createSaleWorkspaceAnnotation({ auth, input: input.data }),
-      PRIVATE_RESPONSE,
-    );
-  } catch (error) {
-    return errorResponse(request, error, "Action collaborative impossible");
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
+export const PATCH = apiRoute(
+  { scope, fallbackMessage: "Mise à jour collaborative impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = patchSchema.parse(await request.json());
 
     if (input.action === "revoke") {
-      return NextResponse.json(
-        await revokeSaleWorkspaceCollaborator({ auth, input: input.data }),
-        PRIVATE_RESPONSE,
-      );
+      return revokeSaleWorkspaceCollaborator({ auth, input: input.data });
     }
-
-    return NextResponse.json(
-      await updateSaleWorkspaceAnnotation({ auth, input: input.data }),
-      PRIVATE_RESPONSE,
-    );
-  } catch (error) {
-    return errorResponse(request, error, "Mise à jour collaborative impossible");
-  }
-}
-
-function errorResponse(request: Request, error: unknown, fallback: string) {
-  return apiRouteError(error, request, "sale-workspace.collaboration", {
-    fallbackMessage: fallback,
-  });
-}
+    return updateSaleWorkspaceAnnotation({ auth, input: input.data });
+  },
+);

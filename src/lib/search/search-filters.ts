@@ -5,7 +5,15 @@ import { isHouseWithLand } from "@/lib/alerts";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { listingVisits, saleHasVisitSoon } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
-import { isOccupiedOccupancyStatus } from "@/lib/market-gap-band";
+import { occupancyLabel, propertyTypeLabel } from "@/lib/format/property-labels";
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
+import { currentFilterValue } from "@/lib/legacy-filter-values";
+import {
+  isOccupiedOccupancyStatus,
+  occupancyClass,
+  type OccupancyClass,
+} from "@/lib/occupancy-status";
+import { matchesPropertyTypeFilter } from "@/lib/property-type-family";
 import { estimateSaleGrossYieldPct, haversineKm, pricePerM2, type GeoPoint } from "@/lib/geo";
 import type { RentLookup } from "@/lib/rent-reference";
 import {
@@ -13,24 +21,43 @@ import {
   matchesFrenchSearchText,
   resolveFrenchGeoSearch,
 } from "./french-geo-search";
+import { isPastParisDay } from "@/lib/paris-time";
 import { pointsToVerify } from "./points-to-verify";
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
 export const DEFAULT_SEARCH_LIMIT = 24;
 export const MAX_MAP_RESULTS = 10_000;
 
-export const TRANSACTION_OPTIONS = [{ label: "Ventes aux enchères", value: "for_sale" }] as const;
+/**
+ * Options du filtre « Type de bien » : des codes de `auction_sales.property_type`
+ * (`matchesPropertyTypeFilter`).
+ */
+export const HOME_TYPE_OPTIONS = (
+  ["house", "apartment", "building", "land", "commercial", "parking"] as const
+).map((value) => ({ label: propertyTypeLabel(value), value }));
 
-export const HOME_TYPE_OPTIONS = [
-  { label: "Maison", value: "house" },
-  { label: "Appartement", value: "apartment" },
-  { label: "Immeuble", value: "building" },
-  { label: "Terrain", value: "land" },
-  { label: "Local commercial", value: "commercial" },
-  { label: "Garage", value: "garage" },
-] as const;
+/** Options du filtre « Occupation » : les classes d'occupation (`matchesOccupancyFilter`). */
+export const OCCUPANCY_OPTIONS = (["vacant", "occupied", "rented"] satisfies OccupancyClass[]).map(
+  (value) => ({ label: occupancyLabel(value), value }),
+);
 
 export const STATUS_OPTIONS = [{ label: "À venir", value: "upcoming" }] as const;
+
+/**
+ * Recherche du catalogue lue dans son adresse (après `validateSalesSearch`) : les anciennes valeurs
+ * des filtres « Type de bien » et « Occupation » d'une adresse partagée sont lues par
+ * `currentFilterValue`, et une occupation sans classe est ignorée. Pas dans `validateSalesSearch`,
+ * dont le module est chargé par toutes les pages (alerte en attente) : la table ne pèse que sur le
+ * catalogue.
+ */
+export function catalogueSearch(search: SalesSearchParams): SalesSearchParams {
+  const occupancy = search.occupancy && occupancyClass(currentFilterValue(search.occupancy));
+  return {
+    ...search,
+    homeTypes: search.homeTypes && [...new Set(search.homeTypes.map(currentFilterValue))],
+    occupancy: occupancy || undefined,
+  };
+}
 
 /**
  * Filtres « Mise à prix sous la fourchette » et « Sans point à vérifier » (point 71). Le texte du premier
@@ -152,12 +179,12 @@ export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {
 function statusValuesForSearch(search: SalesSearchParams): string[] | undefined {
   if (search.status?.length) {
     const upcoming = search.status.includes("upcoming");
-    return upcoming ? ["upcoming", "unknown", "postponed"] : ["__unsupported_catalogue_status__"];
+    return upcoming ? [...OPEN_SALE_STATUSES] : ["__unsupported_catalogue_status__"];
   }
   if (search.transactionType && search.transactionType !== "for_sale") {
     return ["__unsupported_catalogue_transaction__"];
   }
-  return ["upcoming", "unknown", "postponed"];
+  return [...OPEN_SALE_STATUSES];
 }
 
 export function countActiveSearchFilters(search: SalesSearchParams): number {
@@ -231,10 +258,9 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.visitSoon ||
     search.yearBuilt ||
     // Croisé avec la liste publique des pépites (`pepite-filter.ts`), comme « sous la fourchette ».
-    search.pepite ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
-    search.transactionType === "for_rent",
+    search.pepite,
   );
 }
 
@@ -273,8 +299,7 @@ export function applyClientSearchFilters(
     ) {
       return false;
     }
-    if (search.transactionType === "for_rent") return false;
-    if (search.transactionType === "sold" && !isSoldLike(sale)) return false;
+    if (search.transactionType === "sold" && !isSoldLike(sale, context.now)) return false;
 
     const saleSurface = getSaleSurface(sale);
     const surface = saleSurface.value;
@@ -290,7 +315,10 @@ export function applyClientSearchFilters(
     }
     if (search.minBaths != null && (sale.bathrooms_count ?? 0) < search.minBaths) return false;
 
-    if (search.homeTypes?.length && !matchesAnyHomeType(sale.property_type, search.homeTypes)) {
+    if (
+      search.homeTypes?.length &&
+      !search.homeTypes.some((type) => matchesPropertyTypeFilter(sale.property_type, type))
+    ) {
       return false;
     }
     if (search.status?.length && !matchesStatus(sale.status, search.status)) return false;
@@ -389,12 +417,6 @@ function distanceForSort(sale: AuctionSale, center: GeoPoint) {
   return haversineKm(center, { lat: sale.latitude, lng: sale.longitude });
 }
 
-function matchesAnyHomeType(value: string | null | undefined, accepted: string[]) {
-  if (!value) return false;
-  const normalized = value.toLowerCase();
-  return accepted.some((candidate) => normalized.includes(candidate.toLowerCase()));
-}
-
 function matchesStatus(value: string | null | undefined, accepted: string[]) {
   if (!value) return false;
   const normalized = value.toLowerCase();
@@ -402,16 +424,16 @@ function matchesStatus(value: string | null | undefined, accepted: string[]) {
     const normalizedCandidate = candidate.toLowerCase();
     return (
       normalized === normalizedCandidate ||
-      (normalizedCandidate === "upcoming" && ["unknown", "postponed"].includes(normalized))
+      (normalizedCandidate === "upcoming" && OPEN_SALE_STATUSES.includes(normalized))
     );
   });
 }
 
-function isSoldLike(sale: AuctionSale) {
+/** Même règle que « Date de vente passée » de la fiche : le jour de la vente, à Paris, est passé. */
+function isSoldLike(sale: AuctionSale, now: Date | undefined) {
   const status = sale.status?.toLowerCase();
   if (status && ["sold", "adjudicated", "past"].includes(status)) return true;
-  if (!sale.sale_date) return false;
-  return new Date(sale.sale_date).getTime() < Date.now();
+  return isPastParisDay(sale.sale_date, now);
 }
 
 function intersectDepartmentScopes(

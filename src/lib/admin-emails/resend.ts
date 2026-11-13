@@ -19,7 +19,7 @@ export type ResendFailure =
   | "rate_limited"
   | "unavailable";
 
-export type ResendDnsRecord = {
+type ResendDnsRecord = {
   /** `SPF`, `DKIM`, `Receiving`, `Tracking`… */
   kind: string;
   type: string;

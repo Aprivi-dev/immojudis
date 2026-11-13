@@ -17,6 +17,7 @@ from typing import Any
 
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.normalize import clean_text
+from src.sha256_digest import is_sha256
 
 PDF_TEXT_CACHE_VERSION = "pdf_text_v4_mixed_image_ocr"
 PDF_PROGRESS_SCHEMA_VERSION = 1
@@ -332,11 +333,6 @@ def checkpoint_partial_pdf_progress(
     return True
 
 
-def is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
-
-
 def is_modern_payload(
     payload: object,
     *,
@@ -611,7 +607,7 @@ def persisted_revalidation_due_at(analysis: object, documents: list[dict[str, An
     _, checks = _persisted_http_checks(analysis, documents)
     if not checks or any(not timestamp_is_fresh(checked_at) for checked_at in checks.values()):
         return None
-    oldest = min(datetime.fromisoformat(str(checked_at).replace("Z", "+00:00")) for checked_at in checks.values())
+    oldest = min(datetime.fromisoformat(str(checked_at)) for checked_at in checks.values())
     return oldest + HTTP_REVALIDATION_WINDOW
 
 

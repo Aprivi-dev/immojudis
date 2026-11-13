@@ -65,7 +65,7 @@ type MonthlyBucket = {
   radiationMjM2: number;
 };
 
-export type EnvironmentMonthlyPoint = {
+type EnvironmentMonthlyPoint = {
   month: number;
   label: string;
   avgLowC: number | null;
@@ -78,7 +78,7 @@ export type EnvironmentMonthlyPoint = {
   avgRadiationKwhM2: number | null;
 };
 
-export type EnvironmentResolvedAddress = {
+type EnvironmentResolvedAddress = {
   label: string;
   score: number | null;
   latitude: number;

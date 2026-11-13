@@ -9,9 +9,10 @@ import {
   type RentReference,
   type RentReferenceSource,
 } from "@/lib/rent-reference";
+import { formatPercent, formatPrice, formatPricePerM2 } from "@/lib/format/numbers";
 
 /** Raison d'un rendement indisponible faute de prix d'acquisition. */
-export const RENTABILITY_PRICE_MISSING = "Prix manquant";
+const RENTABILITY_PRICE_MISSING = "Prix manquant";
 
 // ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
 // Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
@@ -111,7 +112,7 @@ export const DEFAULTS = {
   lawyerFees: 1_500,
 };
 
-export const REFRESH_WORKS_PRICE_PER_M2 = 500;
+const REFRESH_WORKS_PRICE_PER_M2 = 500;
 
 export const WORKS_SCENARIOS = [
   {
@@ -148,7 +149,7 @@ export function estimateWorksBudget(
   return scenario ? Math.round(cleanSurface * scenario.pricePerM2) : 0;
 }
 
-export type TaxRegime = "registration" | "vat";
+type TaxRegime = "registration" | "vat";
 
 /** Hypothèses de frais communes à tous les calculs de coût d'acquisition. */
 export type AcquisitionCostOptions = {
@@ -281,7 +282,7 @@ function clampRate(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
-export type RentabilityScoreFactor = {
+type RentabilityScoreFactor = {
   key: string;
   label: string;
   delta: number;
@@ -564,7 +565,7 @@ function addYieldFactor({
     key,
     label,
     delta,
-    detail: `${formatPct(valuePct)} vs objectif ${formatPct(targetPct)}.`,
+    detail: `${formatPercent(valuePct, 1)} vs objectif ${formatPercent(targetPct, 1)}.`,
     tone: delta > 0 ? "positive" : delta === 4 ? "neutral" : "negative",
   });
   return delta;
@@ -580,7 +581,7 @@ function addCashflowFactor(factors: RentabilityScoreFactor[], cashflowMonthly: n
     key: "cashflow",
     label: "Cashflow mensuel",
     delta,
-    detail: `${Math.round(cashflowMonthly).toLocaleString("fr-FR")} €/mois après dette estimée.`,
+    detail: `${formatPrice(cashflowMonthly)}/mois après dette estimée.`,
     tone: delta > 0 ? "positive" : delta > -10 ? "neutral" : "negative",
   });
   return delta;
@@ -601,7 +602,7 @@ function addBreakEvenFactor(
     key: "break_even",
     label: "Occupation d'équilibre",
     delta,
-    detail: `${formatPct(breakEvenOccupancyPct)} d'occupation nécessaire pour couvrir charges et dette.`,
+    detail: `${formatPercent(breakEvenOccupancyPct, 1)} d'occupation nécessaire pour couvrir charges et dette.`,
     tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
   });
   return delta;
@@ -622,7 +623,7 @@ function addMarketMarginFactor(
     key: "market_margin",
     label: "Marge vs marché cible",
     delta,
-    detail: `${formatSigned(marketMarginPerM2)} €/m² par rapport au seuil tout compris.`,
+    detail: `${formatSignedPricePerM2(marketMarginPerM2)} par rapport au seuil tout compris.`,
     tone: delta > 0 ? "positive" : delta >= 0 ? "neutral" : "negative",
   });
   return delta;
@@ -701,11 +702,7 @@ function clampScore(value: number): number {
   return clamp(value, 0, 100);
 }
 
-function formatSigned(value: number): string {
-  if (Math.abs(value) < 1) return "0";
-  return `${value > 0 ? "+" : ""}${Math.round(value)}`;
-}
-
-function formatPct(value: number): string {
-  return `${roundPct(value).toLocaleString("fr-FR")} %`;
+function formatSignedPricePerM2(value: number): string {
+  if (Math.abs(value) < 1) return formatPricePerM2(0);
+  return `${value > 0 ? "+" : ""}${formatPricePerM2(value)}`;
 }

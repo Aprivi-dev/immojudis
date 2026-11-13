@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { INFORMATION_AGENT_PIPELINE_CHANNEL } from "@/lib/information-agent/contacts";
+import { INFORMATION_AGENT_PIPELINE_CHANNEL } from "@/lib/information-agent/contact-resolution";
 import type { AutopilotCandidateFacts } from "@/lib/information-agent/autopilot-rules";
 
 /**

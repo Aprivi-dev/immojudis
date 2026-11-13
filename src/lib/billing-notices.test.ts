@@ -94,6 +94,12 @@ describe("buildTrialEndingMessage", () => {
     expect(message.text).toContain("https://immojudis.com/mes-droits");
     expect(message.html).toContain('href="https://immojudis.com/compte"');
   });
+
+  it("échappe aussi l'apostrophe d'une valeur insérée dans le HTML (échappement commun)", () => {
+    const message = buildTrialEndingMessage({ ...base, trialEnd, priceLabel: "59 € <b>'TTC'</b>" });
+    expect(message.html).toContain("59 € &lt;b&gt;&#39;TTC&#39;&lt;/b&gt;");
+    expect(message.html).not.toContain("<b>'TTC'</b>");
+  });
 });
 
 describe("buildPaymentActionRequiredMessage", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { normalizedEmail as normalizedEmailFromContacts } from "@/lib/information-agent/contacts";
+import { normalizedEmail as normalizedEmailFromContacts } from "@/lib/information-agent/email-address";
 import {
   INFORMATION_AGENT_EMAIL_PATTERN,
   INFORMATION_AGENT_NO_EMAIL_MESSAGE,

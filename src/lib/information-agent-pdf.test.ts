@@ -41,8 +41,9 @@ describe("PDF flattening before publication (P4-11)", () => {
   }, 60_000);
 
   it("refuses unreadable input instead of publishing it", async () => {
-    await expect(flattenPdfForPublication(new TextEncoder().encode("not a pdf"))).rejects.toThrow(
-      "PDF illisible",
-    );
+    const refused = flattenPdfForPublication(new TextEncoder().encode("not a pdf"));
+    await expect(refused).rejects.toThrow("PDF illisible");
+    // Refus écrit pour l'administrateur, rendu tel quel par la route (422).
+    await expect(refused).rejects.toMatchObject({ status: 422 });
   });
 });

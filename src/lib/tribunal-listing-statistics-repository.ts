@@ -1,4 +1,5 @@
 import "server-only";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -9,7 +10,11 @@ import {
 import { STREET_TYPE_END, streetTypePattern } from "@/lib/street-types";
 import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
 import { extractTribunalListingEvidence } from "@/lib/tribunal-listing-evidence";
-import { resolveCourtCodeFromSale } from "@/lib/tribunal-judicial-activity-repository";
+import {
+  courtCodeOfJudicialSale,
+  normalizeCourtCode,
+  readJudicialSaleCourt,
+} from "@/lib/tribunal-judicial-activity-repository";
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 import {
   buildTribunalListingStatistics,
@@ -34,8 +39,6 @@ import {
   deduplicateListingSales,
   sourceFamily,
 } from "@/lib/tribunal-listing-statistics/deduplication";
-
-export { deduplicateTribunalListingSales } from "@/lib/tribunal-listing-statistics/deduplication";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -174,17 +177,6 @@ const storedSaleScanSchema = z
   })
   .passthrough();
 
-const storedSaleCourtLookupSchema = z
-  .object({
-    tribunal_code: z.string().min(1).nullable().optional(),
-    tribunal: z.string().min(1).nullable().optional(),
-    sale_venue_type: z.string().min(1).nullable().optional(),
-    sale_verification_status: z.string().min(1).nullable().optional(),
-    status: z.string().nullable().optional(),
-    publication_quarantine: z.string().nullable().optional(),
-  })
-  .passthrough();
-
 const storedEstimateSchema = z
   .object({
     auction_sale_id: z.string().min(1),
@@ -199,7 +191,7 @@ const storedEstimateSchema = z
   })
   .passthrough();
 
-export class TribunalListingStatisticsUnavailableError extends Error {
+class TribunalListingStatisticsUnavailableError extends ServiceUnavailableError {
   constructor(
     message = "Les statistiques d’annonces du tribunal sont temporairement indisponibles.",
   ) {
@@ -265,8 +257,9 @@ async function loadArchivedHearings(input: { historyStart: Date; asOf: Date; cou
 }
 
 async function resolveListingSaleCourtCode(saleId: string): Promise<string> {
+  const sale = await readJudicialSaleCourt(saleId);
   try {
-    return await resolveCourtCodeFromSale(saleId);
+    return await courtCodeOfJudicialSale(saleId, sale);
   } catch (error) {
     // The historical resolver intentionally keeps a narrow canonical-name
     // lookup for its existing API. The listing endpoint also accepts source
@@ -275,28 +268,9 @@ async function resolveListingSaleCourtCode(saleId: string): Promise<string> {
     if (!(error instanceof TribunalCourtUnresolvedError)) throw error;
   }
 
-  const saleResult = await supabaseAdmin
-    .from("auction_sales")
-    .select(
-      "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
-    )
-    .eq("id", saleId)
-    .limit(1)
-    .maybeSingle();
-  if (saleResult.error) {
-    throw new TribunalListingStatisticsUnavailableError(
-      `Annonce judiciaire indisponible : ${saleResult.error.message}`,
-    );
-  }
-  if (!saleResult.data) {
-    throw new TribunalCourtUnresolvedError("Aucune annonce judiciaire disponible.");
-  }
-  const sale = storedSaleCourtLookupSchema.parse(saleResult.data);
   if (
-    sale.sale_venue_type !== "tribunal" ||
-    !["verified", "cross_checked"].includes(sale.sale_verification_status ?? "") ||
+    !["verified", "cross_checked"].includes(sale.sale_verification_status) ||
     !["upcoming", "past", "adjudicated"].includes(sale.status ?? "") ||
-    isPublicationQuarantinedMarker(sale.publication_quarantine, sale.status) ||
     !sale.tribunal?.trim()
   ) {
     throw new TribunalCourtUnresolvedError(
@@ -654,10 +628,6 @@ function matchesOfficialCourt(label: string | null | undefined, aliases: Set<str
 
 export function courtAliasMatchesOfficialName(label: string, aliases: string[]): boolean {
   return matchesOfficialCourt(label, new Set(aliases));
-}
-
-function normalizeCourtCode(value: string): string {
-  return value.trim().toLocaleLowerCase("fr-FR");
 }
 
 function hasCourtPrefix(value: string): boolean {

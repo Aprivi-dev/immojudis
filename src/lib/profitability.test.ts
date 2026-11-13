@@ -202,6 +202,31 @@ describe("computeRentabilityScore", () => {
     );
   });
 
+  it("écrit les détails des facteurs au format français commun (%, €/mois, €/m² signé)", () => {
+    const inputs = {
+      surface: 50,
+      price: 100_000,
+      department: "33",
+      monthlyRent: 900,
+      downPaymentPct: 30,
+      annualInterestRatePct: 3.8,
+      loanDurationYears: 20,
+    };
+    const result = computeRentabilityScore({ ...inputs, marketMarginPerM2: 1_250.4 });
+    const detail = (key: string) => result.factors.find((factor) => factor.key === key)?.detail;
+
+    expect(detail("gross_yield")).toMatch(/^\d+(,\d)?\s% vs objectif \d+(,\d)?\s%\.$/);
+    expect(detail("cashflow")).toMatch(/^-?\d{1,3}(\s\d{3})*\s€\/mois après dette estimée\.$/);
+    expect(detail("market_margin")).toMatch(
+      /^\+1\s250\s€\/m² par rapport au seuil tout compris\.$/,
+    );
+    expect(
+      computeRentabilityScore({ ...inputs, marketMarginPerM2: -0.4 }).factors.find(
+        (factor) => factor.key === "market_margin",
+      )?.detail,
+    ).toMatch(/^0\s€\/m² /);
+  });
+
   it("uses a department rent estimate when monthly rent is missing", () => {
     const result = computeRentabilityScore({
       surface: 40,

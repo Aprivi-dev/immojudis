@@ -5,6 +5,8 @@ import {
   resolveTransactionalEmailConfig,
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
+import { formatDate } from "@/lib/format/dates";
+import { escapeHtml } from "@/lib/guards";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import {
@@ -16,19 +18,9 @@ import {
 } from "@/lib/email-layout";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
-const dateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+/** Jour de Paris d'un horodatage Stripe (secondes Unix). */
+function stripeDay(seconds: number): string {
+  return formatDate(new Date(seconds * 1000).toISOString());
 }
 
 /** Formule de politesse des trois messages (même texte qu'avant, seulement mise en forme). */
@@ -76,7 +68,7 @@ export function buildPaymentFailedMessage({
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
   const retry = nextAttemptAt
-    ? `Prochain prélèvement automatique : le ${dateFormat.format(new Date(nextAttemptAt * 1000))}.`
+    ? `Prochain prélèvement automatique : le ${stripeDay(nextAttemptAt)}.`
     : "Stripe retentera automatiquement le prélèvement dans les prochains jours.";
   const amount = `Montant de l’abonnement : ${priceLabel}.`;
   // Same wording as § 4 of the conditions générales (`PAST_DUE_GRACE_DAYS`).
@@ -299,7 +291,7 @@ export function buildTrialEndingMessage({
   priceLabel?: string;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
-  const endDate = dateFormat.format(new Date(trialEnd * 1000));
+  const endDate = stripeDay(trialEnd);
   const firstPayment = `Sans action de votre part, l’abonnement se poursuit et le premier paiement est prélevé le ${endDate} : ${priceLabel}. Il est ensuite renouvelé chaque mois à la même date.`;
   const cancel =
     "Pour résilier avant cette date, rendez-vous sur la page « Mon compte », bouton « Résilier mon abonnement » :";
@@ -411,7 +403,7 @@ export function buildCancellationConfirmationMessage({
   trialing?: boolean;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
-  const endDate = dateFormat.format(new Date(accessEndsAt * 1000));
+  const endDate = stripeDay(accessEndsAt);
   const receipt =
     "Nous confirmons avoir bien reçu votre demande de résiliation de l’abonnement Immojudis Analyse.";
   const effect =

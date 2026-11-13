@@ -237,11 +237,11 @@ def test_avoventes_description_is_the_lot_not_nearby_comparables():
 
 
 def test_known_media_cannot_restore_icons_after_a_fresh_detail():
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
     sale = {"source_url": "u", "source_detail_status": "complete", "source_images": []}
     known = {"u": {"raw_payload": {"source_images": ["https://www.info-encheres.com/pix/home.png"],
                                    "raw_image_url": "https://www.info-encheres.com/pix/home.png"}}}
-    _preserve_known_enrichment_payloads([sale], known)
+    preserve_known_enrichment_payloads([sale], known)
     assert sale["source_images"] == []
     assert not sale.get("raw_image_url")
 

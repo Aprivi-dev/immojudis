@@ -1,8 +1,9 @@
 import { propertyTypeLabel } from "@/lib/format";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
+import { isUuid } from "@/lib/uuid";
 
 export const MAX_COMPARED_SALES = 3;
-export const MAX_SAVED_COMPARED_SALES = 12;
+const MAX_SAVED_COMPARED_SALES = 12;
 const MAX_SNAPSHOT_CANDIDATES = 30;
 
 /**
@@ -43,7 +44,7 @@ export type SaleComparisonSnapshot = {
   items: ComparedSale[];
 };
 
-export function toComparedSale(sale: AuctionSale): ComparedSale {
+function toComparedSale(sale: AuctionSale): ComparedSale {
   const surface = nonNegativeNumber(sale.app_surface_m2);
   return {
     id: sale.id,
@@ -153,13 +154,6 @@ function normalizeComparedSale(value: Record<string, unknown> | ComparedSale): C
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isUuid(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  );
 }
 
 function isSaleVenueType(value: unknown): value is SaleVenueType {

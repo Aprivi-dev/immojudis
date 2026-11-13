@@ -12,11 +12,14 @@ if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
 from src.config import load_settings  # noqa: E402
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME  # noqa: E402
+from src.outcome_ingestion.judilibre_match_contract import (  # noqa: E402
+    JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
+    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
+)
 from src.outcome_ingestion.judilibre_matching import (  # noqa: E402
     JUDILIBRE_MATCH_CONTEXT_LIMIT_DEFAULT,
-    JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
     JUDILIBRE_MATCH_DATE_DELTA_DAYS_DEFAULT,
-    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
     JUDILIBRE_MATCH_PAGE_SIZE_DEFAULT,
     JUDILIBRE_MATCH_PAGE_SIZE_MAX,
     JUDILIBRE_MATCH_SOURCE_LIMIT_MAX,
@@ -125,7 +128,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.persist:
         # Persistence is gated twice: explicit CLI intent and an active,
         # approved automated-source policy in the database.
-        repository.require_source_policy("judilibre", "automated")
+        repository.require_source_policy(JUDILIBRE_SOURCE_NAME, "automated")
     summary = JudilibreDecisionMatchingService(repository).run(
         source_limit=args.limit,
         context_limit=args.context_limit,

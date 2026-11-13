@@ -113,10 +113,13 @@ describe("lecture de la projection publique", () => {
     expect(rpc).toHaveBeenCalledWith("get_public_sale_lawyer_fact_sources", { p_sale_id: ID });
   });
 
-  it("répond « aucune mention » seulement quand la fonction n'existe pas encore", async () => {
+  it("lève aussi l'erreur d'une fonction absente : jamais « aucune mention » à sa place", async () => {
     for (const code of ["PGRST202", "42883"]) {
       const rpc = vi.fn().mockResolvedValue({ data: null, error: { code, message: "absente" } });
-      expect(await fetchLawyerFactSources({ rpc }, ID)).toEqual([]);
+      await expect(fetchLawyerFactSources({ rpc }, ID)).rejects.toMatchObject({
+        name: "LawyerFactSourcesReadError",
+        code,
+      });
     }
   });
 

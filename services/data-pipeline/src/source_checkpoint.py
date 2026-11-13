@@ -5,7 +5,6 @@ import atexit
 import copy
 import hashlib
 import json
-import os
 import time
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -14,15 +13,15 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from src.config import load_settings
+from src.config import autonomous_run_id, load_settings
 from src.models import INTERNAL_CONTACTS_KEY
+from src.timestamps import aware_timestamp
 
 # Checkpoint retention is deliberately independent from source freshness.  A
 # detail captured by an interrupted run may be reusable after the source's
 # normal freshness window, while ``_checkpoint_checked_at`` must continue to
 # describe when that detail was actually fetched.  The existing cleanup jobs
 # retain these rows for 24 hours, so keep the reader aligned with that policy.
-CHECKPOINT_RETENTION = "24 hours"
 MAX_CHECKPOINT_REUSE_AGE = timedelta(hours=24)
 CURSOR_PREFIX = "__source_cursor__:"
 CHECKPOINT_CONNECT_TIMEOUT = 5
@@ -53,7 +52,7 @@ def _configure_checkpoint_transaction(db) -> None:
 
 @lru_cache(maxsize=1)
 def _context():
-    run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
+    run_id = autonomous_run_id()
     db_url = load_settings().get('supabase_db_url') if run_id else None
     if not run_id or not db_url:
         return None
@@ -113,17 +112,9 @@ def save_source_cursor(partition: str, payload: dict[str, Any]) -> bool:
 
 
 def _stored_checked_at(payload: object, fallback: datetime) -> datetime:
-    if isinstance(payload, dict):
-        value = payload.get("_checkpoint_checked_at")
-        if isinstance(value, datetime) and value.tzinfo:
-            return value.astimezone(UTC)
-        if isinstance(value, str):
-            try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                parsed = None
-            if parsed is not None and parsed.tzinfo:
-                return parsed.astimezone(UTC)
+    stored = aware_timestamp(payload.get("_checkpoint_checked_at")) if isinstance(payload, dict) else None
+    if stored is not None:
+        return stored
     return fallback.astimezone(UTC) if fallback.tzinfo else fallback.replace(tzinfo=UTC)
 
 

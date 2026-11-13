@@ -8,11 +8,11 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   courtAliasMatchesOfficialName,
-  deduplicateTribunalListingSales,
   extractTribunalIdentityAddress,
   extractTribunalLegalReference,
   getTribunalListingStatistics,
 } from "@/lib/tribunal-listing-statistics-repository";
+import { deduplicateTribunalListingSales } from "@/lib/tribunal-listing-statistics/deduplication";
 
 type DeduplicationSale = Parameters<typeof deduplicateTribunalListingSales>[0][number];
 
@@ -22,6 +22,56 @@ describe("tribunal listing statistics repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     serverRpc.mockImplementation(() => fakeQuery({ data: [], error: null }).query);
+  });
+
+  it("rattache une vente par les alias officiels en ne lisant la vente qu'une fois", async () => {
+    const saleQuery = fakeQuery({
+      data: {
+        tribunal_code: null,
+        tribunal: "Tribunal judiciaire de Saint-Etienne",
+        sale_venue_type: "tribunal",
+        sale_verification_status: "verified",
+        status: "upcoming",
+        publication_quarantine: null,
+      },
+      error: null,
+    });
+    const assignmentQuery = fakeQuery({ data: null, error: null });
+    const exactNameQuery = fakeQuery({ data: null, error: null });
+    const fingerprintQuery = fakeQuery({
+      data: [{ code: "justice_tj_1_112", canonical_name: "TJ Saint-Etienne" }],
+      error: null,
+    });
+    const aliasRegistryQuery = fakeQuery({
+      data: [
+        {
+          code: "JUSTICE_TJ_1_112",
+          canonical_name: "TJ Saint-Etienne",
+          aliases: ["Tribunal judiciaire de Saint-Etienne"],
+        },
+      ],
+      error: null,
+    });
+    const officialQuery = fakeQuery({ data: [], error: null });
+    const courtQuery = fakeQuery({ data: null, error: { message: "stop after resolution" } });
+    serverFrom
+      .mockReturnValueOnce(saleQuery.query)
+      .mockReturnValueOnce(assignmentQuery.query)
+      .mockReturnValueOnce(exactNameQuery.query)
+      .mockReturnValueOnce(fingerprintQuery.query)
+      .mockReturnValueOnce(aliasRegistryQuery.query)
+      .mockReturnValueOnce(officialQuery.query)
+      .mockReturnValueOnce(courtQuery.query);
+
+    await expect(
+      getTribunalListingStatistics(
+        { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
+        { asOf: AS_OF },
+      ),
+    ).rejects.toThrow("stop after resolution");
+
+    expect(serverFrom.mock.calls.filter(([table]) => table === "auction_sales")).toHaveLength(1);
+    expect(courtQuery.state.filters).toContainEqual(["eq", "code", "justice_tj_1_112"]);
   });
 
   it("ajoute les audiences archivées du graphe sans doubler une annonce encore au catalogue", async () => {

@@ -5,8 +5,10 @@ import {
   type PublicTribunalDirectoryRow,
 } from "@/lib/public-tribunal-directory";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { tryPublicLoad, type PublicLoadResult } from "@/lib/public-load-result";
+import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
 
-export const PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS = 86_400;
+const PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS = 86_400;
 
 type DirectoryRpcClient = {
   rpc: (fn: "get_public_tribunal_directory") => PromiseLike<{ data: unknown; error: unknown }>;
@@ -14,7 +16,7 @@ type DirectoryRpcClient = {
 
 async function readPublicTribunalDirectory(): Promise<PublicTribunalDirectoryEntry[]> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw publicSupabaseConfigurationError();
   const { data, error } = await (client as unknown as DirectoryRpcClient).rpc(
     "get_public_tribunal_directory",
   );
@@ -29,19 +31,16 @@ const cachedPublicTribunalDirectory = unstable_cache(
   { revalidate: PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS, tags: ["public-tribunal-directory"] },
 );
 
-export type PublicTribunalDirectoryResult =
-  | { status: "ok"; items: PublicTribunalDirectoryEntry[] }
-  | { status: "error" };
+export type PublicTribunalDirectoryResult = PublicLoadResult<{
+  items: PublicTribunalDirectoryEntry[];
+}>;
 
 /**
- * Les tribunaux connus. Ne lève pas : la fonction peut manquer (migration pas encore appliquée) ou
- * la base être indisponible ; l'appelant ne peut alors pas affirmer qu'un tribunal est inconnu.
+ * Les tribunaux connus. Ne lève pas : base indisponible, `error` ; l'appelant ne peut alors pas
+ * affirmer qu'un tribunal est inconnu.
  */
-export async function tryLoadPublicTribunalDirectory(): Promise<PublicTribunalDirectoryResult> {
-  try {
-    return { status: "ok", items: await cachedPublicTribunalDirectory() };
-  } catch (error) {
-    console.warn("[tribunaux] Référentiel des tribunaux indisponible:", error);
-    return { status: "error" };
-  }
+export function tryLoadPublicTribunalDirectory(): Promise<PublicTribunalDirectoryResult> {
+  return tryPublicLoad("[tribunaux] Référentiel des tribunaux indisponible:", async () => ({
+    items: await cachedPublicTribunalDirectory(),
+  }));
 }

@@ -21,6 +21,7 @@ from src.catalogue_lock import (
     catalogue_writer_lock,
     session_lock_url,
 )
+from src.config import DirectDatabaseMissing
 
 WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
@@ -136,6 +137,19 @@ def test_missing_database_url_is_an_error_in_github_actions_only(monkeypatch) ->
     with pytest.raises(RuntimeError, match="SUPABASE_DB_URL"):
         with catalogue_writer_lock():
             pytest.fail("must not run unlocked in CI")
+
+
+def test_supabase_without_direct_connection_is_a_startup_error_everywhere(monkeypatch) -> None:
+    """The catalogue has no REST write path: a writer must not start with only the REST credentials."""
+    monkeypatch.setattr(
+        catalogue_lock,
+        "load_settings",
+        lambda: {"supabase_url": "https://example.test", "supabase_service_role_key": "key", "supabase_db_url": None},
+    )
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    with pytest.raises(DirectDatabaseMissing, match="SUPABASE_DB_URL"):
+        with catalogue_writer_lock():
+            pytest.fail("must not start without the direct connection")
 
 
 def test_heartbeat_keeps_the_idle_session_alive() -> None:

@@ -1,5 +1,6 @@
 import { FloodExposedNote, PepiteInfoBadge } from "@/components/PepiteBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
+import { WellInformedBadge } from "@/components/WellInformedBadge";
 import type * as React from "react";
 import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/primitives";
@@ -30,16 +31,10 @@ import {
   FAVORITE_ANONYMOUS_TITLE,
   FAVORITE_VERIFYING_TITLE,
   FAVORITE_REMOVE_LABEL,
-  announceFavoriteAdded,
 } from "@/components/favorite-feedback";
-import {
-  addFavoriteSale as addFavoriteSaleRequest,
-  fetchSaleUnlocksOverview,
-  removeFavoriteSale as removeFavoriteSaleRequest,
-} from "@/lib/client-api";
+import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatPrice, formatPricePerM2, occupancyLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
-import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { departmentFromCode } from "@/lib/department-pages";
 import { saleShortHeading, seoSurface } from "@/lib/seo";
@@ -80,9 +75,8 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
-import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
+import { toggleFavoriteSale, useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
 
@@ -138,7 +132,7 @@ export function listingMediaFrameClass(
  * la première qui a une photo, pas forcément la carte 0, qui peut n'avoir qu'une case neutre et
  * perdrait le seul rang prioritaire. Aucune photo dans la liste : la carte 0, comme avant.
  */
-export function eagerImageIndex(sales: readonly Pick<AuctionSale, "media">[]): number {
+function eagerImageIndex(sales: readonly Pick<AuctionSale, "media">[]): number {
   const withPhoto = sales.findIndex((sale) => propertyImages(sale.media).length > 0);
   return withPhoto === -1 ? 0 : withPhoto;
 }
@@ -733,6 +727,11 @@ export const ListingCard = memo(function ListingCard({
             </Fragment>,
           ])}
         </p>
+        {/* Repère « Annonce bien renseignée » (palier haut du classement par complétude) : sa réserve
+            et le lien vers /classement-des-annonces s'ouvrent avec le bouton « i ». */}
+        <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
+          <WellInformedBadge sale={sale} />
+        </div>
         {showAccessLine ? <p className="text-caption text-ink-soft">{accessLine}</p> : null}
         {lastChange ? (
           <p
@@ -802,7 +801,7 @@ export const ListingCard = memo(function ListingCard({
   );
 });
 
-export function ListingImage({
+function ListingImage({
   sale,
   locked,
   eager = false,
@@ -1069,65 +1068,7 @@ export function ListingMediaCarousel({
   );
 }
 
-export function ListingBadge({
-  children,
-  tone,
-  icon: Icon,
-}: {
-  children: React.ReactNode;
-  tone: "navy" | "teal" | "cream";
-  icon?: React.ComponentType<{ className?: string }>;
-}) {
-  const toneClass =
-    tone === "teal"
-      ? "bg-brand-navy text-white"
-      : tone === "cream"
-        ? "bg-surface text-gold-text"
-        : "bg-brand-navy text-white";
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-extrabold shadow-sm ${toneClass}`}
-    >
-      {Icon ? <Icon className="h-3 w-3" /> : null}
-      {children}
-    </span>
-  );
-}
-
-export function Metric({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-surface-muted px-2 py-1">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-brand-navy" />
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
-export function ListingSignal({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: string;
-}) {
-  return (
-    <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
-      <span className="block text-xs font-bold text-ink-soft">{label}</span>
-      <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
-    </span>
-  );
-}
-
-export function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
+function ShareButton({ sale, title }: { sale: AuctionSale; title: string }) {
   async function share(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -1161,7 +1102,7 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
   );
 }
 
-export function CompactFavoriteButton({
+function CompactFavoriteButton({
   saleId,
   locked,
   favoriteScope,
@@ -1206,36 +1147,18 @@ export function CompactFavoriteButton({
     if (locked) return;
 
     setBusy(true);
-    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
-    let removed: RemovedFavoriteDossier | null = null;
     try {
-      await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
-      if (isFavorite) {
-        // « Mon dossier » (statut, plafond) part avec la ligne : confirmation s'il n'est pas vide.
-        if (!(await confirmRemoval(saleId))) return;
-        removed = (await removeFavoriteSaleRequest({ saleId }))?.dossier ?? null;
-        setIsFavorite(false);
-      } else {
-        const added = await addFavoriteSaleRequest({ data: { saleId } });
-        trackProductEvent("favorite_added");
-        setIsFavorite(true);
-        void announceFavoriteAdded(queryClient, user.id, added?.plan?.limit ?? null);
-      }
-      queryClient.setQueriesData<string[] | undefined>(
-        { queryKey: queryKeys.searchFavoriteStatusForUser(user.id) },
-        (favoriteSaleIds) => {
-          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
-          if (isFavorite) nextFavoriteSaleIds.delete(saleId);
-          else nextFavoriteSaleIds.add(saleId);
-          return [...nextFavoriteSaleIds];
+      await toggleFavoriteSale({
+        queryClient,
+        userId: user.id,
+        saleId,
+        favorite: isFavorite,
+        confirmRemoval,
+        onToggled: (favorite, removed) => {
+          setIsFavorite(favorite);
+          onChange?.(saleId, favorite, removed);
         },
-      );
-      queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
-      onChange?.(saleId, !isFavorite, removed);
-      await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-    } catch (error) {
-      void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(userMessage(error));
+      });
     } finally {
       setBusy(false);
     }

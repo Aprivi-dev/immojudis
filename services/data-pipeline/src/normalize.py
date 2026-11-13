@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -12,11 +11,12 @@ from dateutil import parser
 
 from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
+from src.french_dates import MONTH_NUMBERS
 from src.land_parcels import read_parcel_land_surface
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.lot_scope import fact_view as _fact_view
 from src.lot_scope import is_lot_scoped
-from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
+from src.models import INTERNAL_CONTACTS_KEY, AuctionSale, add_quality_flag
 from src.multi_unit_type import is_multi_unit_building_text
 from src.null_text import clean_text
 from src.occupancy_statements import (
@@ -39,25 +39,15 @@ from src.room_counts import (
 from src.sale_date_plausibility import reject_implausible_sale_date
 from src.surface_text_recovery import built_value_names_other_object, extra_built_surface_from_text
 from src.text_fact_scope import private_amenity_mentioned
+from src.text_folding import strip_accents
 from src.tribunal_labels import clean_city_label
 
-FRENCH_MONTHS = {
-    "janvier": "January",
-    "février": "February",
-    "fevrier": "February",
-    "mars": "March",
-    "avril": "April",
-    "mai": "May",
-    "juin": "June",
-    "juillet": "July",
-    "août": "August",
-    "aout": "August",
-    "septembre": "September",
-    "octobre": "October",
-    "novembre": "November",
-    "décembre": "December",
-    "decembre": "December",
-}
+_ENGLISH_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)  # fmt: skip
+# Mois français vers anglais, que dateutil comprend.
+FRENCH_MONTHS = {name: _ENGLISH_MONTHS[number - 1] for name, number in MONTH_NUMBERS.items()}
 
 FRENCH_WEEKDAYS = (
     "lundi",
@@ -154,12 +144,6 @@ def make_sale_signature(sale_date: object, price: object, status: object = None)
     signature = f"{date_part}|{price_part}"
     interrupted = normalize_status(status) if status else None
     return f"{signature}|{interrupted}" if interrupted in INTERRUPTED_SALE_STATUSES else signature
-
-
-def strip_accents(value: str) -> str:
-    return "".join(
-        char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char)
-    )
 
 
 MIN_PLAUSIBLE_PRICE_EUR = Decimal("100")
@@ -278,20 +262,6 @@ def normalize_department(value: object | None) -> str | None:
         if len(token) == 2:
             return token
     return None
-
-
-def is_date_only_value(value: object | None) -> bool:
-    """Tell callers that a published date carries no reliable clock time."""
-    text = clean_text(value)
-    if not text:
-        return False
-    return not bool(
-        re.search(
-            r"(?:T\s*\d{1,2}:\d{2}|\b\d{1,2}\s*(?:h|heures?)\b|\b\d{1,2}:\d{2}\b)",
-            text,
-            re.I,
-        )
-    )
 
 
 def parse_price(value: object | None) -> Decimal | None:
@@ -880,8 +850,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
                 "address_value": address_postal_code,
             }
             flags = list(raw_sale.get("quality_flags") or [])
-            if "postal_address_conflict" not in flags:
-                flags.append("postal_address_conflict")
+            add_quality_flag(flags, "postal_address_conflict")
             raw_sale["quality_flags"] = flags
     if postal_code is None and not _skip_contextless_postal_code_fallback(raw_sale, address):
         postal_code = extract_postal_code(_fact_view(raw_sale).get("raw_text"), source_text)
@@ -892,8 +861,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             "reason": "starting_price_token_without_location_context",
         }
         flags = list(raw_sale.get("quality_flags") or [])
-        if "postal_code_unverified" not in flags:
-            flags.append("postal_code_unverified")
+        add_quality_flag(flags, "postal_code_unverified")
         raw_sale["quality_flags"] = flags
         postal_code = None
     city = clean_city_label(
@@ -931,8 +899,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     postal_department = extract_department(postal_code)
     if explicit_department and postal_department and explicit_department != postal_department:
         flags = list(raw_sale.get("quality_flags") or [])
-        if "postal_department_conflict" not in flags:
-            flags.append("postal_department_conflict")
+        add_quality_flag(flags, "postal_department_conflict")
         raw_sale["quality_flags"] = flags
     department = postal_department or explicit_department or department_from_geocode_evidence(raw_sale)
     adjudication_price = extract_adjudication_price(_fact_view(raw_sale))
@@ -1060,8 +1027,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         raw_sale.pop("land_surface_m2", None)
         land_surface_m2 = None
         quality_flags = list(raw_sale.get("quality_flags") or []) if isinstance(raw_sale.get("quality_flags"), list) else []
-        if "parcel_surface_scope_unverified" not in quality_flags:
-            quality_flags.append("parcel_surface_scope_unverified")
+        add_quality_flag(quality_flags, "parcel_surface_scope_unverified")
         raw_sale["quality_flags"] = quality_flags
     surface_scope = clean_text(raw_sale.get("surface_scope"))
 
@@ -1074,8 +1040,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     if ambiguous_mixed_lot_surface:
         surface_m2 = None
         quality_flags = list(raw_sale.get("quality_flags") or []) if isinstance(raw_sale.get("quality_flags"), list) else []
-        if "ambiguous_surface" not in quality_flags:
-            quality_flags.append("ambiguous_surface")
+        add_quality_flag(quality_flags, "ambiguous_surface")
         raw_sale["quality_flags"] = quality_flags
         surface_scope = "unknown"
     bathrooms_count = parse_rooms_count(
@@ -1552,8 +1517,7 @@ def _record_land_unit_conflict(raw_sale: dict[str, object], value: Decimal | Non
         source_blocks.setdefault("land_surface_conflict", raw_sale["land_surface_conflict"])
     quality_flags = raw_sale.get("quality_flags")
     flags = list(quality_flags) if isinstance(quality_flags, list) else []
-    if "land_surface_unit_conflict" not in flags:
-        flags.append("land_surface_unit_conflict")
+    add_quality_flag(flags, "land_surface_unit_conflict")
     raw_sale["quality_flags"] = flags
 
 
@@ -1798,12 +1762,6 @@ def carrez_rejection_basis(carrez_surface_m2: Decimal | None, habitable_surface_
     if carrez_surface_m2 > habitable_surface_m2 * CARREZ_TO_HABITABLE_MAX_RATIO:
         return CARREZ_ABOVE_BASIS
     return None
-
-
-def carrez_is_implausible_against_habitable(
-    carrez_surface_m2: Decimal | None, habitable_surface_m2: Decimal | None
-) -> bool:
-    return carrez_rejection_basis(carrez_surface_m2, habitable_surface_m2) is not None
 
 
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:

@@ -4,8 +4,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SaleCalendarButton } from "./SaleCalendarButton";
 
-const mocks = vi.hoisted(() => ({ authHeaders: vi.fn() }));
-vi.mock("@/lib/client-api-core", () => ({ authHeaders: mocks.authHeaders }));
+const mocks = vi.hoisted(() => ({ hasSession: vi.fn() }));
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: mocks.hasSession,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "token" } } }) },
+  }),
+}));
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 
@@ -16,9 +21,9 @@ describe("SaleCalendarButton", () => {
 
   beforeEach(() => {
     clicked = [];
-    // Sans session : même erreur que `authHeaders` pour un visiteur anonyme.
-    mocks.authHeaders.mockReset();
-    mocks.authHeaders.mockRejectedValue(new Error("Connexion requise."));
+    // Sans session stockée : un visiteur anonyme.
+    mocks.hasSession.mockReset();
+    mocks.hasSession.mockReturnValue(false);
     Object.assign(URL, { createObjectURL, revokeObjectURL });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement,
@@ -53,7 +58,11 @@ describe("SaleCalendarButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ajouter à mon agenda" }));
 
     await waitFor(() => expect(clicked).toHaveLength(1));
-    expect(fetchMock).toHaveBeenCalledWith(`/api/sales/${saleId}/calendar`);
+    // Fichier public : sans jeton, et sans délai.
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/sales/${saleId}/calendar`,
+      expect.objectContaining({ headers: {}, signal: undefined }),
+    );
     expect(clicked[0].download).toBe("immojudis-audience-11111111.ics");
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:ics");
@@ -63,7 +72,7 @@ describe("SaleCalendarButton", () => {
   });
 
   it("reports the download of a signed-in account, once the file is saved", async () => {
-    mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer token" });
+    mocks.hasSession.mockReturnValue(true);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -80,14 +89,14 @@ describe("SaleCalendarButton", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(clicked).toHaveLength(1);
-    expect(fetchMock).toHaveBeenLastCalledWith(`/api/sales/${saleId}/calendar/exported`, {
-      method: "POST",
-      headers: { Authorization: "Bearer token" },
-    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/sales/${saleId}/calendar/exported`,
+      expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer token" } }),
+    );
   });
 
   it("keeps the download working when the measure fails", async () => {
-    mocks.authHeaders.mockResolvedValue({ Authorization: "Bearer token" });
+    mocks.hasSession.mockReturnValue(true);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", { status: 200 }))
@@ -125,7 +134,7 @@ describe("SaleCalendarButton", () => {
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
     // Un export refusé n'est pas un export : rien n'est mesuré.
-    expect(mocks.authHeaders).not.toHaveBeenCalled();
+    expect(mocks.hasSession).not.toHaveBeenCalled();
   });
 
   it("shows a neutral message when the network fails", async () => {

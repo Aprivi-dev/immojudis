@@ -57,7 +57,7 @@ from psycopg.types.json import Jsonb
 
 from src.catalogue_lock import CatalogueLockTimeout, catalogue_writer_lock
 from src.commune_insee import record_sale_commune
-from src.config import load_settings
+from src.config import env_flag_on_unless_false, load_settings
 from src.geocode import (
     RATE_LIMIT_BACKOFF_SECONDS,
     GeocodeResult,
@@ -142,7 +142,7 @@ class Candidate:
 
 
 def positions_enabled() -> bool:
-    return str(os.getenv("ADDRESS_POSITIONS_ENABLED", "true")).strip().lower() not in {"0", "false", "no", "off"}
+    return env_flag_on_unless_false("ADDRESS_POSITIONS_ENABLED")
 
 
 def sale_from_row(row: tuple[Any, ...]) -> tuple[str, Any, AuctionSale]:

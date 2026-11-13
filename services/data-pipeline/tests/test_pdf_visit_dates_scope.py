@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.pdf_enrichment import _extract_visit_dates_from_documents
+from src.pdf_fact_extraction import _extract_visit_dates_from_documents
 
 # Shape observed on a real diagnostics PDF (info-encheres, 2026-10-11).
 DIAGNOSTIC_PAGE = (

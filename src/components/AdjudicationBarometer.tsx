@@ -17,20 +17,17 @@ import {
 import {
   distributionRates,
   filterAdjudicationTribunals,
-  propertyTypeLabels,
   tribunalComparisonCsv,
   wilsonShareInterval,
   type TribunalSort,
 } from "@/lib/adjudication-barometer";
+import { downloadBlob } from "@/lib/download-blob";
+import { formatShortDate } from "@/lib/format/dates";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
+import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 import styles from "./AdjudicationBarometer.module.css";
 
-const euro = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
 const integer = new Intl.NumberFormat("fr-FR");
-const percent = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
 const ratio = new Intl.NumberFormat("fr-FR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -39,15 +36,10 @@ const multiple = (value: number) => `${ratio.format(value)}×`;
 /** « de 63 % à 76 % » : l'intervalle de Wilson à 95 % d'une part observée sur `total` résultats. */
 function intervalText(share: number, total: number): string | null {
   const interval = wilsonShareInterval(share, total);
-  return interval ? `de ${percent.format(interval.low)} à ${percent.format(interval.high)}` : null;
+  return interval
+    ? `de ${formatShareAsPercent(interval.low, 1)} à ${formatShareAsPercent(interval.high, 1)}`
+    : null;
 }
-const date = (value: string) =>
-  new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
 
 export function AdjudicationBarometer({
   data,
@@ -89,25 +81,19 @@ export function AdjudicationBarometer({
     }
   }
   function downloadComparison() {
-    const url = URL.createObjectURL(
+    downloadBlob(
       new Blob([tribunalComparisonCsv(filtered)], { type: "text/csv;charset=utf-8;" }),
+      `statistiques-tribunaux-${data.national.periodEnd}.csv`,
     );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `statistiques-tribunaux-${data.national.periodEnd}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
     <div className={styles.barometer}>
       <div className={styles.period}>
         <span>
-          <strong>Période des ventes</strong> · {date(data.national.periodStart)} au{" "}
-          {date(data.national.periodEnd)}
+          <strong>Période des ventes</strong> · {formatShortDate(data.national.periodStart)} au{" "}
+          {formatShortDate(data.national.periodEnd)}
         </span>
-        <span>Validation · {date(data.meta.reviewedAt)}</span>
+        <span>Validation · {formatShortDate(data.meta.reviewedAt)}</span>
       </div>
       <nav aria-label="Sections des statistiques" className={styles.nav}>
         {[
@@ -132,7 +118,7 @@ export function AdjudicationBarometer({
             </h3>
             <p>
               Prix adjugé publié (hors frais, avant surenchère) ·{" "}
-              {selectedType ? propertyTypeLabels[propertyType] : "Tous types de biens"}
+              {selectedType ? propertyTypeLabel(propertyType) : "Tous types de biens"}
             </p>
             <p>
               Périmètre : lots adjugés dont le prix est publié. Les lots non adjugés, retirés ou
@@ -166,7 +152,7 @@ export function AdjudicationBarometer({
                   <option value="">Tous types confondus</option>
                   {types.map((item) => (
                     <option key={item.propertyType} value={item.propertyType}>
-                      {propertyTypeLabels[item.propertyType]} ·{" "}
+                      {propertyTypeLabel(item.propertyType)} ·{" "}
                       {integer.format(item.distribution.sampleSize)} prix
                     </option>
                   ))}
@@ -186,8 +172,8 @@ export function AdjudicationBarometer({
                 <strong>La moitié centrale des résultats</strong>
                 <p>
                   50 % des prix adjugés publiés se situent entre{" "}
-                  <b>{euro.format(distribution.hammerPriceMiddle50Eur.p25)}</b> et{" "}
-                  <b>{euro.format(distribution.hammerPriceMiddle50Eur.p75)}</b>, et 50 % des
+                  <b>{formatPrice(distribution.hammerPriceMiddle50Eur.p25)}</b> et{" "}
+                  <b>{formatPrice(distribution.hammerPriceMiddle50Eur.p75)}</b>, et 50 % des
                   multiples entre <b>{multiple(distribution.ratioMiddle50.p25)}</b> et{" "}
                   <b>{multiple(distribution.ratioMiddle50.p75)}</b> la mise à prix.
                 </p>
@@ -217,7 +203,7 @@ export function AdjudicationBarometer({
         <p className={styles.description}>
           Chaque vente est comptée une seule fois, selon le rapport prix adjugé / mise à prix.{" "}
           {scope?.label}
-          {selectedType ? ` · ${propertyTypeLabels[propertyType]}` : ""}.
+          {selectedType ? ` · ${propertyTypeLabel(propertyType)}` : ""}.
         </p>
         {distribution ? (
           <DistributionChart distribution={distribution} />
@@ -273,9 +259,9 @@ export function AdjudicationBarometer({
                               setPropertyType(item.propertyType);
                               profileHeading.current?.focus();
                             }}
-                            aria-label={`Analyser le type ${propertyTypeLabels[item.propertyType]}`}
+                            aria-label={`Analyser le type ${propertyTypeLabel(item.propertyType)}`}
                           >
-                            {propertyTypeLabels[item.propertyType]}{" "}
+                            {propertyTypeLabel(item.propertyType)}{" "}
                             <ArrowUpRight size={14} aria-hidden />
                           </button>
                         </th>
@@ -289,14 +275,14 @@ export function AdjudicationBarometer({
                         </td>
                         <td>
                           {item.distribution.summary ? (
-                            euro.format(item.distribution.summary.medianHammerPriceEur)
+                            formatPrice(item.distribution.summary.medianHammerPriceEur)
                           ) : (
                             <MissingMetric />
                           )}
                         </td>
                         <td>
-                          {euro.format(item.distribution.hammerPriceMiddle50Eur.p25)} –{" "}
-                          {euro.format(item.distribution.hammerPriceMiddle50Eur.p75)}
+                          {formatPrice(item.distribution.hammerPriceMiddle50Eur.p25)} –{" "}
+                          {formatPrice(item.distribution.hammerPriceMiddle50Eur.p75)}
                         </td>
                         <td>
                           <RateWithInterval
@@ -347,8 +333,8 @@ export function AdjudicationBarometer({
         <p className={styles.description}>
           {data.tribunals.length} tribunaux avec au moins 10 résultats contrôlés. Leurs{" "}
           {integer.format(coveredSales)} prix représentent{" "}
-          {percent.format(coveredSales / data.national.sampleSize)} de l’échantillon national. Tous
-          types confondus, sur la même période.
+          {formatShareAsPercent(coveredSales / data.national.sampleSize, 1)} de l’échantillon
+          national. Tous types confondus, sur la même période.
         </p>
         <div className={styles.filters}>
           <label className={styles.control}>
@@ -444,8 +430,8 @@ export function AdjudicationBarometer({
                       ) : null}
                     </td>
                     <td>{multiple(item.metrics.medianHammerToStartingRatio)}</td>
-                    <td>{euro.format(item.metrics.medianStartingPriceEur)}</td>
-                    <td>{euro.format(item.metrics.medianHammerPriceEur)}</td>
+                    <td>{formatPrice(item.metrics.medianStartingPriceEur)}</td>
+                    <td>{formatPrice(item.metrics.medianHammerPriceEur)}</td>
                     <td>
                       <RateWithInterval
                         share={item.metrics.aboveStartingRate}
@@ -518,9 +504,11 @@ export function AdjudicationBarometer({
           <div>
             <h4>Une période explicite</h4>
             <p>
-              Ventes du {date(data.national.periodStart)} au {date(data.national.periodEnd)}. Calcul
-              du {date(data.meta.builtAt)}, validé le {date(data.meta.reviewedAt)}. Les filtres de
-              tribunal et de type conservent cette période.
+              Ventes du {formatShortDate(data.national.periodStart)} au{" "}
+              {formatShortDate(data.national.periodEnd)}. Calcul du{" "}
+              {formatShortDate(data.meta.builtAt)}, validé le{" "}
+              {formatShortDate(data.meta.reviewedAt)}. Les filtres de tribunal et de type conservent
+              cette période.
             </p>
           </div>
         </div>
@@ -587,7 +575,7 @@ function ScopeMetrics({
       />
       <Metric
         label="Au-dessus de la mise à prix"
-        value={percent.format(rates.aboveStartingRate)}
+        value={formatShareAsPercent(rates.aboveStartingRate, 1)}
         detail={withInterval(
           `Sur ${integer.format(count)} prix connus`,
           rates.aboveStartingRate,
@@ -603,7 +591,7 @@ function ScopeMetrics({
       />
       <Metric
         label="Prix adjugé publié médian"
-        value={summary ? euro.format(summary.medianHammerPriceEur) : "—"}
+        value={summary ? formatPrice(summary.medianHammerPriceEur) : "—"}
         detail={
           summary
             ? "Prix adjugé publié, hors frais, avant surenchère"
@@ -612,12 +600,12 @@ function ScopeMetrics({
       />
       <Metric
         label="Mise à prix médiane"
-        value={summary ? euro.format(summary.medianStartingPriceEur) : "—"}
+        value={summary ? formatPrice(summary.medianStartingPriceEur) : "—"}
         detail={summary ? "Même échantillon de ventes" : "Médiane non disponible pour ce type"}
       />
       <Metric
         label="Au moins le double de la mise"
-        value={percent.format(rates.atLeastDoubleRate)}
+        value={formatShareAsPercent(rates.atLeastDoubleRate, 1)}
         detail={withInterval("Prix adjugé supérieur ou égal à 2×", rates.atLeastDoubleRate, count)}
       />
     </dl>
@@ -635,7 +623,7 @@ function RateWithInterval({ share, total }: { share: number; total: number }) {
   const interval = intervalText(share, total);
   return (
     <>
-      {percent.format(share)}
+      {formatShareAsPercent(share, 1)}
       {interval ? <span className={styles.rowDetail}>{interval}</span> : null}
     </>
   );
@@ -674,7 +662,7 @@ function DistributionChart({ distribution }: { distribution: AdjudicationDistrib
               <div className={styles.track} aria-hidden>
                 <div style={{ width: `${bin.share * 100}%` }} />
               </div>
-              <strong>{percent.format(bin.share)}</strong>
+              <strong>{formatShareAsPercent(bin.share, 1)}</strong>
               <span className={styles.binCount}>
                 {integer.format(bin.count)} ventes
                 <span className="block">{intervalText(bin.share, distribution.sampleSize)}</span>

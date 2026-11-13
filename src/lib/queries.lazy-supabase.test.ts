@@ -27,12 +27,23 @@ describe("requêtes du catalogue : client Supabase chargé à la demande", () =>
   afterEach(() => vi.unstubAllEnvs());
 
   it("importer les requêtes et le service de recherche n'évalue pas le client Supabase", async () => {
-    await import("./queries");
-    await import("./alert-queries");
-    await import("./query-configuration");
-    await import("./search/search-service");
-    await import("@/components/search/SearchResults");
+    // Imports nommés : un import entier ferait passer chaque export du module pour utilisé
+    // aux yeux de knip, qui ne verrait plus le code mort.
+    const { getSales } = await import("./queries");
+    const { getAlerts } = await import("./alert-queries");
+    const { assertCloudConfigured } = await import("./query-configuration");
+    const { fetchSearchResults } = await import("./search/search-service");
+    const { SearchResultsList } = await import("@/components/search/SearchResults");
 
+    for (const loaded of [
+      getSales,
+      getAlerts,
+      assertCloudConfigured,
+      fetchSearchResults,
+      SearchResultsList,
+    ]) {
+      expect(loaded).toBeTypeOf("function");
+    }
     expect(mocks.clientEvaluated).not.toHaveBeenCalled();
   });
 

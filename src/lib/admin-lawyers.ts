@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
@@ -59,7 +60,7 @@ const optionalPlacementDateSchema = optionalTextSchema.refine(
   { message: "La fenêtre de placement doit contenir une date valide." },
 );
 
-export const adminReferencedLawyerCoverageInputSchema = z
+const adminReferencedLawyerCoverageInputSchema = z
   .object({
     id: z.string().guid().optional(),
     tribunalCode: optionalTextSchema,
@@ -120,7 +121,7 @@ export const adminReferencedLawyerInputSchema = z
 export type AdminReferencedLawyerInput = z.input<typeof adminReferencedLawyerInputSchema>;
 export type AdminReferencedLawyerPayload = z.output<typeof adminReferencedLawyerInputSchema>;
 
-export type AdminReferencedLawyerCoverage = {
+type AdminReferencedLawyerCoverage = {
   id: string;
   tribunalCode: string | null;
   tribunalName: string | null;
@@ -350,9 +351,8 @@ function referencedLawyerToSummary(
 
 async function getPlacementMetricsByLawyerId(
   lawyerIds: string[],
-  now = new Date(),
 ): Promise<Map<string, AdminReferencedLawyerSummary["placementMetrics"]>> {
-  const periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const periodStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const metrics = new Map<string, AdminReferencedLawyerSummary["placementMetrics"]>();
   for (const lawyerId of lawyerIds) {
     metrics.set(lawyerId, emptyPlacementMetrics(periodStart));
@@ -404,8 +404,4 @@ function emptyPlacementMetrics(
     ctaClicks: 0,
     referralRequests: 0,
   };
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

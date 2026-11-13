@@ -1,4 +1,5 @@
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { currentFilterValue } from "@/lib/legacy-filter-values";
 import { pathWithSearch } from "@/lib/navigation";
 import { PEPITE_ALERT_LABEL } from "@/lib/pepite-copy";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
@@ -67,7 +68,7 @@ export function alertCriteriaSummary(
     criteria.push(`Prix maximal : ${formatPrice(alert.max_price_per_m2)} par m²`);
   }
   if (alert.occupancy_status)
-    criteria.push(`Occupation : ${occupancyLabel(alert.occupancy_status)}`);
+    criteria.push(`Occupation : ${occupancyLabel(currentFilterValue(alert.occupancy_status))}`);
   if (alert.min_yield_pct != null)
     criteria.push(`Rendement brut minimal à la mise à prix : ${alert.min_yield_pct} %`);
   if (alert.min_market_discount_pct != null) {
@@ -118,7 +119,7 @@ type AlertSearchCriteria = Pick<
 >;
 
 /** Les critères d'une alerte, dans la forme d'une recherche du catalogue. */
-export function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParams {
+function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParams {
   const advanced = alert.advanced_criteria ?? {};
   return {
     department: alert.department || undefined,

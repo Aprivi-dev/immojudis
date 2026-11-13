@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 import type { LawyerProsecutedSalesResponse } from "@/lib/lawyer-prosecuted-sales";
 import type {
@@ -8,35 +8,27 @@ import type {
   LawyerReferralResponse,
 } from "@/lib/lawyer-referrals";
 
-export async function requestLawyerReferral(args: {
+export function requestLawyerReferral(args: {
   data: LawyerReferralRequestInput;
 }): Promise<LawyerReferralResponse> {
-  const response = await fetch("/api/lawyer-referrals", {
+  return apiRequest<LawyerReferralResponse>("/api/lawyer-referrals", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
+    body: args.data,
   });
-
-  return readJson<LawyerReferralResponse>(response);
 }
 
-export async function fetchLawyerReferralPreview(args: {
+export function fetchLawyerReferralPreview(args: {
   saleId: string;
   lawyerId?: string;
 }): Promise<LawyerReferralPreviewResponse> {
   const search = new URLSearchParams({ saleId: args.saleId });
   if (args.lawyerId) search.set("lawyerId", args.lawyerId);
-  const response = await fetch(`/api/lawyer-referrals/preview?${search.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<LawyerReferralPreviewResponse>(response);
+  return apiRequest<LawyerReferralPreviewResponse>(
+    `/api/lawyer-referrals/preview?${search.toString()}`,
+  );
 }
 
-export async function fetchLawyerReferrals(
+export function fetchLawyerReferrals(
   args: {
     saleId?: string;
     limit?: number;
@@ -45,17 +37,12 @@ export async function fetchLawyerReferrals(
   const search = new URLSearchParams();
   if (args.saleId) search.set("saleId", args.saleId);
   if (args.limit) search.set("limit", String(args.limit));
-  const response = await fetch(
+  return apiRequest<LawyerReferralListResponse>(
     `/api/lawyer-referrals${search.size ? `?${search.toString()}` : ""}`,
-    {
-      headers: await authHeaders(),
-    },
   );
-
-  return readJson<LawyerReferralListResponse>(response);
 }
 
-export async function fetchLawyerDirectory(
+export function fetchLawyerDirectory(
   args: { saleId?: string; bar?: string; city?: string; department?: string; page?: number } = {},
 ): Promise<LawyerDirectoryResponse> {
   const search = new URLSearchParams();
@@ -65,21 +52,20 @@ export async function fetchLawyerDirectory(
   if (args.department) search.set("department", args.department);
   if (args.page && args.page > 1) search.set("page", String(args.page));
   const suffix = search.size ? `?${search.toString()}` : "";
-  const response = await fetch(`/api/lawyers/directory${suffix}`);
-  return readJson<LawyerDirectoryResponse>(response);
+  return apiRequest<LawyerDirectoryResponse>(`/api/lawyers/directory${suffix}`, {
+    anonymous: true,
+  });
 }
 
 /**
  * Ventes à venir où les avocats demandés sont avocat poursuivant. Route authentifiée, réservée aux
  * comptes payants : ne l'appeler que pour eux (les autres reçoivent un 403).
  */
-export async function fetchLawyerProsecutedSales(
+export function fetchLawyerProsecutedSales(
   lawyerIds: readonly string[],
 ): Promise<LawyerProsecutedSalesResponse> {
   const search = new URLSearchParams({ lawyerIds: lawyerIds.join(",") });
-  const response = await fetch(`/api/lawyers/prosecuted-sales?${search.toString()}`, {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-  return readJson<LawyerProsecutedSalesResponse>(response);
+  return apiRequest<LawyerProsecutedSalesResponse>(
+    `/api/lawyers/prosecuted-sales?${search.toString()}`,
+  );
 }

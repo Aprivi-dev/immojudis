@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -11,49 +10,37 @@ import {
   removeFavoriteSale,
 } from "@/lib/favorites";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.favorites.list",
+    fallbackMessage: "Favoris indisponibles",
+    emptyBody: { favorites: [] },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await listFavoriteSales({ auth });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorites", {
-      fallbackMessage: "Favoris indisponibles",
-      extra: { favorites: [] },
-    });
-  }
-}
+    return listFavoriteSales({ auth });
+  },
+);
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "api.favorites.add",
+    fallbackMessage: "Ajout aux favoris impossible",
+    emptyBody: { favorite: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = favoriteSaleInputSchema.parse(await request.json());
-    const response = await addFavoriteSale({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorites", {
-      fallbackMessage: "Ajout aux favoris impossible",
-      extra: { favorite: null },
-    });
-  }
-}
+    return addFavoriteSale({ auth, input });
+  },
+);
 
-export async function DELETE(request: Request) {
-  try {
+export const DELETE = apiRoute(
+  { scope: "api.favorites.remove", fallbackMessage: "Retrait des favoris impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const input = favoriteSaleInputSchema.parse({ saleId: url.searchParams.get("saleId") });
-    const response = await removeFavoriteSale({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorites", {
-      fallbackMessage: "Retrait des favoris impossible",
-    });
-  }
-}
+    return removeFavoriteSale({ auth, input });
+  },
+);

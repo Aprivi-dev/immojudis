@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
+import { serverEnv } from "@/lib/env";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { publicRentalYield } from "@/lib/public-rental-yield";
 import { lookupPublicSale } from "@/lib/public-sale.server";
@@ -11,7 +12,8 @@ import {
   saleSeoTitle,
   saleStructuredData,
 } from "@/lib/seo";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { pageMetadata } from "@/lib/page-metadata";
+import { siteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "./sale-detail-page";
 import { jsonLdString } from "@/lib/json-ld";
 
@@ -101,23 +103,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const indexable = lookup.indexable ?? isIndexablePublicSale(lookup.sale);
   return {
     ...(indexable ? {} : { robots: THIN_PAGE }),
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      type: "website",
-      url: path,
-      siteName: "Immojudis",
-      locale: "fr_FR",
-      // A page-level openGraph replaces the layout's: without an image, shares of a sale would
-      // have no preview.
-      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Immojudis" }],
-    },
-    twitter: { card: "summary_large_image", title, description, images: ["/opengraph-image"] },
-    alternates: {
-      canonical: path,
-    },
+    ...pageMetadata({ path, title, description }),
   };
 }
 
@@ -140,9 +126,8 @@ export default async function Page({ params }: PageProps) {
     : [null, null];
   // Rendement brut de la fiche publique, calculé ici : le navigateur n'embarque pas le calcul des frais.
   const rentalYield = sale ? publicRentalYield(sale, rentReference) : null;
-  const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = sale
-    ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin })
+    ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin() })
     : null;
 
   return (
@@ -160,7 +145,7 @@ export default async function Page({ params }: PageProps) {
         // favoris ou les ventes débloquées sont sensibles à la casse (adresse saisie en majuscules).
         id={id.toLowerCase()}
         initialData={{ sale: null, preview: sale }}
-        adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+        adjudicationStatisticsEnabled={serverEnv().adjudicationPriceStatisticsEnabled}
         openFeeRegimes={openFeeRegimesFromEnv()}
         rentReference={rentReference}
         housingTension={housingTension}

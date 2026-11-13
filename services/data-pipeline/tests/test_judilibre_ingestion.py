@@ -13,6 +13,7 @@ from src.official_sources.judilibre import (
     JudilibreSearchPage,
     JudilibreSearchQuery,
 )
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_RECORD_KIND, JUDILIBRE_V3_SAFE_PROJECTION_KEYS
 from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_SEARCH_PROFILES,
     JudilibreOutcomeIngestor,
@@ -250,6 +251,14 @@ def test_normalized_projection_exposes_only_hash_anchored_candidate_claims() -> 
     assert len(projection["claims"][0]["evidence_hash"]) == 64
     assert "Mme Exemple" not in serialized
     assert "adjuge le bien" not in serialized
+
+
+def test_written_projection_has_exactly_the_keys_the_repository_reads_back() -> None:
+    """L'ingestion écrit la projection, le dépôt et le rapprochement n'en relisent que ces clés (judilibre_contract)."""
+    projection = normalized_judilibre_decision(_decision(text="PAR CES MOTIFS adjuge le bien au prix de 185 000 euros."))
+
+    assert set(projection) == set(JUDILIBRE_V3_SAFE_PROJECTION_KEYS)
+    assert projection["record_type"] == JUDILIBRE_RECORD_KIND
 
 
 def test_fetch_checks_policy_before_network_and_persists_private_raw_decision() -> None:

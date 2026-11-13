@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
@@ -8,7 +9,7 @@ import {
   INFORMATION_AGENT_PIPELINE_CHANNEL,
   selectInformationAgentContact,
   type InformationAgentRegistryContact,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import { informationAgentAddressHygieneIssue } from "@/lib/information-agent/address-hygiene";
 import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
 import { findCourtRegistryFallback } from "@/lib/information-agent/court-registry";
@@ -19,6 +20,7 @@ import {
   type InformationAgentListingContactBlock,
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -89,7 +91,7 @@ const ADMIN_INFORMATION_AGENT_SALE_SELECT = [
 ].join(",");
 
 /** Statuses for which it still makes sense to contact a sale interlocutor. */
-export const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
+const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
   "active",
   "upcoming",
   "unknown",
@@ -99,7 +101,7 @@ export const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
 type AdminInformationAgentAvailableStatus =
   (typeof ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES)[number];
 
-export type AdminInformationAgentSaleRow = Record<string, unknown> & {
+type AdminInformationAgentSaleRow = Record<string, unknown> & {
   id?: unknown;
   source_url?: unknown;
   source_name?: unknown;
@@ -141,7 +143,7 @@ export async function loadAdminInformationAgentSale({
   auth: AdminInformationAgentSaleAuth;
   saleId: string;
 }): Promise<AdminInformationAgentSale> {
-  requireAdminInformationAgentSaleAccess(auth);
+  assertAdmin(auth);
 
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
@@ -151,16 +153,19 @@ export async function loadAdminInformationAgentSale({
 
   if (error) throw error;
   const row = asSaleRow(data);
-  if (!row?.id) throw new Error("Vente introuvable.");
+  if (!row?.id) throw new NotFoundError("Vente introuvable.");
 
   const status = nullableString(row.status);
   if (!isAvailableInformationAgentStatus(status)) {
-    throw new Error("Cette vente n'est plus disponible pour une demande d'informations.");
+    throw new PublicApiError(
+      "Cette vente n'est plus disponible pour une demande d'informations.",
+      409,
+    );
   }
 
   const [documents, sourcePresence, registryContacts] = await Promise.all([
     loadAdminInformationAgentDocuments(saleSourceUrls(row)),
-    loadAdminInformationAgentSourcePresence(saleId, row.raw_payload),
+    loadAdminInformationAgentSourcePresence(saleId),
     loadAdminInformationAgentRegistryContacts(saleId),
   ]);
   return {
@@ -287,7 +292,7 @@ export async function loadInformationAgentContactSales({
   auth: AdminInformationAgentSaleAuth;
   saleIds: readonly string[];
 }): Promise<InformationAgentContactSales> {
-  requireAdminInformationAgentSaleAccess(auth);
+  assertAdmin(auth);
   return readInformationAgentContactSales(saleIds);
 }
 
@@ -383,10 +388,6 @@ async function loadRegistryContactsBySale(
   return { contacts: bySale, readable: true };
 }
 
-export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAgentSaleAuth): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-}
-
 export function isAvailableInformationAgentStatus(
   status: string | null,
 ): status is AdminInformationAgentAvailableStatus {
@@ -397,7 +398,7 @@ export function isAvailableInformationAgentStatus(
  * Toutes les URL sources de la fiche : l'annonce principale, `source_urls` et chaque observation
  * d'une autre source. Les pièces d'un doublon fusionné comptent aussi pour l'inventaire.
  */
-export function saleSourceUrls(row: AdminInformationAgentSaleRow): string[] {
+function saleSourceUrls(row: AdminInformationAgentSaleRow): string[] {
   const urls = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) urls.add(value.trim());
@@ -435,26 +436,13 @@ async function loadAdminInformationAgentDocuments(
 
 async function loadAdminInformationAgentSourcePresence(
   saleId: string,
-  rawPayload: unknown,
 ): Promise<AuctionSale["source_presence"]> {
   const { data, error } = await supabaseAdmin
     .from("auction_sale_source_presence")
     .select("source_name,availability,state,attempted_at,checked_at,run_id,extras")
     .eq("sale_id", saleId);
-  if (error) {
-    // The web rollout may precede the single atomic migration. Keep the
-    // quarantined admin path available only while the projection relation is
-    // genuinely absent; any other projection error must fail closed.
-    if (isMissingSourcePresenceProjection(error)) {
-      return sourcePresenceObject(asRecord(rawPayload).source_presence);
-    }
-    throw error;
-  }
+  if (error) throw error;
   return sourcePresenceRows(data);
-}
-
-function isMissingSourcePresenceProjection(error: { code?: string; message: string }): boolean {
-  return error.code === "PGRST205" || error.code === "42P01";
 }
 
 function toInformationAgentSale(
@@ -637,9 +625,7 @@ const PDF_FACT_KEYS = {
  * pièce, avec le libellé de la pièce et la page. Les extraits (qui peuvent contenir des données
  * personnelles) ne sont jamais recopiés.
  */
-export function inventorySignals(
-  rawPayload: Record<string, unknown>,
-): InformationAgentInventorySignals {
+function inventorySignals(rawPayload: Record<string, unknown>): InformationAgentInventorySignals {
   const pdfFacts: NonNullable<InformationAgentInventorySignals["pdfFacts"]> = {};
   for (const [key, payloadKey] of Object.entries(PDF_FACT_KEYS) as Array<
     [keyof typeof PDF_FACT_KEYS, string]
@@ -774,15 +760,6 @@ function sourcePresenceRows(value: unknown): AuctionSale["source_presence"] {
     output[key] = normalized;
   }
   return Object.keys(output).length ? output : null;
-}
-
-function sourcePresenceObject(value: unknown): AuctionSale["source_presence"] {
-  const input = asRecord(value);
-  const rows = Object.entries(input).map(([source_name, raw]) => ({
-    source_name,
-    ...asRecord(raw),
-  }));
-  return sourcePresenceRows(rows);
 }
 
 function asSaleRow(value: unknown): AdminInformationAgentSaleRow | null {

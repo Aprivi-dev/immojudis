@@ -4,7 +4,6 @@ import argparse
 import json
 import logging
 import math
-import os
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
@@ -21,20 +20,12 @@ if sys.version_info >= (3, 14):
 import numpy as np
 import pandas as pd
 
-from src.valuation_activation_gate import (  # noqa: F401  (re-exported: callers and tests use vt.<name>)
+from src.config import write_step_summary
+from src.valuation_activation_gate import (
     CONFIDENCE_LEVEL,
-    GAP_BOOTSTRAP_CONFIDENCE,
-    GAP_BOOTSTRAP_RESAMPLES,
-    GAP_BOOTSTRAP_SEED,
-    MIN_ACTIVATION_TEST_ROWS,
     MIN_PROMOTION_COVERAGE_PCT,
-    PromotionDecision,
-    ape_errors,
     build_error_gap,
     decide_activation,
-    gap_interval_reason,
-    paired_bootstrap_error_gap,
-    served_blend_reasons,
 )
 from src.valuation_served_blend import evaluate_served_blend
 
@@ -1218,17 +1209,6 @@ def score_active_model(
     }, predicted
 
 
-def evaluate_active_model(
-    active_model: ActiveModel | None,
-    features: pd.DataFrame,
-    actual: np.ndarray,
-    *,
-    h3_module: Any = None,
-) -> dict[str, Any]:
-    """Report of ``score_active_model`` without the predictions."""
-    return score_active_model(active_model, features, actual, h3_module=h3_module)[0]
-
-
 def market_cells(frame: pd.DataFrame, *, resolution: int, h3_module: Any) -> list[str | None]:
     cells: list[str | None] = []
     for latitude, longitude in zip(frame["latitude"], frame["longitude"], strict=True):
@@ -1485,10 +1465,8 @@ def main() -> int:
             bundle.metrics.interval_coverage_pct,
             bundle.training_rows,
         )
-    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
-    if bundles and summary_path:
-        with Path(summary_path).open("a", encoding="utf-8") as handle:
-            handle.write(format_step_summary(bundles))
+    if bundles:
+        write_step_summary(format_step_summary(bundles))
     return 0 if bundles else 2
 
 

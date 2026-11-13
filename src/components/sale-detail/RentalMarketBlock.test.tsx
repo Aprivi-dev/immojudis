@@ -7,12 +7,8 @@ import type { RentReference } from "@/lib/rent-reference";
 
 vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
 
-import {
-  RENTAL_MARKET_TITLE,
-  RentalMarketBlock,
-  YIELD_AT_STARTING_PRICE_LABEL,
-  yieldText,
-} from "./RentalMarketBlock";
+import { PUBLIC_YIELD_LABEL } from "@/lib/public-rental-yield";
+import { RENTAL_MARKET_TITLE, RentalMarketBlock } from "./RentalMarketBlock";
 
 afterEach(cleanup);
 
@@ -85,10 +81,8 @@ describe("bloc « Marché locatif (estimation) »", () => {
   it("rendement à la mise à prix : libellé exact, valeur centrale et fourchette pour une référence fiable", () => {
     renderBlock();
     const block = screen.getByTestId("rental-market-block");
-    expect(block.textContent).toContain(`${YIELD_AT_STARTING_PRICE_LABEL} :`);
-    expect(YIELD_AT_STARTING_PRICE_LABEL).toBe(
-      "Rendement brut à la mise à prix (charges comprises)",
-    );
+    expect(block.textContent).toContain(`${PUBLIC_YIELD_LABEL} :`);
+    expect(PUBLIC_YIELD_LABEL).toBe("Rendement brut à la mise à prix (charges comprises)");
     expect(block.textContent).toMatch(
       /\d+,\d %\s*\(de \d+,\d % à \d+,\d % selon la fourchette de loyer\)/,
     );
@@ -148,7 +142,7 @@ describe("bloc « Marché locatif (estimation) »", () => {
     });
     const block = screen.getByTestId("rental-market-block");
     expect(block.textContent).toContain("zone tendue");
-    expect(block.textContent).not.toContain(YIELD_AT_STARTING_PRICE_LABEL);
+    expect(block.textContent).not.toContain(PUBLIC_YIELD_LABEL);
     expect(block.textContent).not.toContain("Estimations ANIL");
   });
 
@@ -159,14 +153,10 @@ describe("bloc « Marché locatif (estimation) »", () => {
 
   it("sans mise à prix lisible, ou pour une vente notariale aux conditions inconnues : aucun rendement", () => {
     renderBlock({ startingPriceEur: null });
-    expect(screen.getByTestId("rental-market-block").textContent).not.toContain(
-      YIELD_AT_STARTING_PRICE_LABEL,
-    );
+    expect(screen.getByTestId("rental-market-block").textContent).not.toContain(PUBLIC_YIELD_LABEL);
     cleanup();
     renderBlock({ sale: { ...(SALE as object), sale_venue_type: "notary" } as never });
-    expect(screen.getByTestId("rental-market-block").textContent).not.toContain(
-      YIELD_AT_STARTING_PRICE_LABEL,
-    );
+    expect(screen.getByTestId("rental-market-block").textContent).not.toContain(PUBLIC_YIELD_LABEL);
   });
 
   it("n'a pas de défaut d'accessibilité", async () => {
@@ -182,17 +172,5 @@ describe("bloc « Marché locatif (estimation) »", () => {
       </main>,
     );
     expect((await axe(container)).violations).toEqual([]);
-  });
-});
-
-describe("yieldText", () => {
-  const range = { centralPct: 6, lowPct: 4.5, highPct: 8 };
-  it("fiable : valeur et fourchette ; indicatif : fourchette seule ; indicatif sans borne : rien", () => {
-    expect(yieldText(range, "reliable")).toBe(
-      "6,0 % (de 4,5 % à 8,0 % selon la fourchette de loyer)",
-    );
-    expect(yieldText({ ...range, lowPct: null, highPct: null }, "reliable")).toBe("6,0 %");
-    expect(yieldText(range, "indicative")).toBe("entre 4,5 % et 8,0 %");
-    expect(yieldText({ ...range, lowPct: null, highPct: null }, "indicative")).toBeNull();
   });
 });

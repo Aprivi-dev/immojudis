@@ -8,72 +8,46 @@ from typing import Any
 from uuid import UUID
 
 from src.official_sources.base import canonical_sha256
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CANDIDATE_GRADE,
+    JUDILIBRE_CLAIM_SCHEMA_VERSION,
+    JUDILIBRE_CLAIM_TYPES,
+    JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
+    JUDILIBRE_MONEY_CLAIM_TYPES,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_PROCEDURAL_EVENTS,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_REVIEW_STATUS,
+    JUDILIBRE_TEXT_STORAGE,
+    JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
+)
+from src.outcome_ingestion.judilibre_match_contract import (
+    JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
+    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
+    judilibre_case_reference_manifest_sha256,
+    judilibre_case_references,
+    judilibre_claims_manifest_sha256,
+    judilibre_match_rank,
+    judilibre_match_score_and_method,
+    judilibre_match_signals,
+    judilibre_source_record_sha256,
+    judilibre_target_context_sha256,
+)
 from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
     StoredJudilibreAuctionMatchContext,
     StoredJudilibreCourtResolution,
     StoredJudilibreDecisionRecord,
 )
+from src.sha256_digest import is_lowercase_sha256
 
-JUDILIBRE_MATCH_RULE_VERSION = "judilibre-review-match-v1"
-JUDILIBRE_MATCH_SIGNAL_SCHEMA = "judilibre_match_signals_v1"
 JUDILIBRE_MATCH_SOURCE_LIMIT_MAX = 10_000
 JUDILIBRE_MATCH_PAGE_SIZE_DEFAULT = 100
 JUDILIBRE_MATCH_PAGE_SIZE_MAX = 1_000
 JUDILIBRE_MATCH_CONTEXT_LIMIT_DEFAULT = 250
-JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX = 5_000
 JUDILIBRE_MATCH_DATE_DELTA_DAYS_DEFAULT = 7
-JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX = 30
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MONEY = re.compile(r"^(?:0|[1-9]\d{0,9})\.\d{2}$")
-_CLAIM_TYPES = frozenset(
-    {"starting_price_eur", "hammer_price_eur", "procedural_event"}
-)
-_PROCEDURAL_VALUES = frozenset(
-    {
-        "adjudication_pronounced",
-        "held_no_bid",
-        "postponed",
-        "surenchere_filed",
-        "reiteration_requested",
-    }
-)
-_JUDILIBRE_V3_SAFE_PROJECTION_KEYS = frozenset(
-    {
-        "schema_version",
-        "record_type",
-        "judilibre_id",
-        "jurisdiction",
-        "location",
-        "chamber",
-        "formation",
-        "number",
-        "numbers",
-        "ecli",
-        "nac",
-        "decision_date",
-        "update_date",
-        "decision_type",
-        "solution",
-        "solution_alt",
-        "publication",
-        "themes",
-        "partial",
-        "to_be_deleted",
-        "raw_representation_sha256",
-        "candidate_grade",
-        "review_status",
-        "training_eligible",
-        "text_storage",
-        "personal_identity_features_allowed",
-        "extraction_status",
-        "extraction_rule_version",
-        "claims",
-        "ambiguous_claim_types",
-        "text_available",
-    }
-)
 
 
 class JudilibreMatchingDataError(ValueError):
@@ -332,7 +306,11 @@ class JudilibreDecisionMatchingService:
             summary.dry_run_candidates += 1
             return
 
-        score, method = _match_score_and_method(context)
+        score, method = judilibre_match_score_and_method(
+            portalis_number_match=context.portalis_number_match,
+            case_number_match=context.case_number_match,
+            date_delta_days=context.date_delta_days,
+        )
         persisted = self.repository.append_judilibre_match_candidate(
             source_record_id=record.source_record_id,
             expected_source_content_hash=record.content_hash,
@@ -342,7 +320,7 @@ class JudilibreDecisionMatchingService:
             case_id=context.case_id,
             lot_id=context.lot_id,
             round_id=context.round_id,
-            match_score=f"{score:.4f}",
+            match_score=score,
             match_method=method,
             match_signals=_persisted_match_signals(
                 record=record,
@@ -361,43 +339,43 @@ def persisted_judilibre_matchable_decision(
     record: StoredJudilibreDecisionRecord,
 ) -> JudilibreMatchableDecision:
     data = record.normalized_data
-    if set(data) != _JUDILIBRE_V3_SAFE_PROJECTION_KEYS:
+    if set(data) != set(JUDILIBRE_V3_SAFE_PROJECTION_KEYS):
         raise JudilibreMatchingDataError(
             "Judilibre projection does not match the closed safe schema"
         )
     if canonical_sha256(data) != record.content_hash:
         raise JudilibreMatchingDataError("Judilibre projection hash mismatch")
-    if data.get("schema_version") != "judilibre_decision_candidate_v3":
+    if data.get("schema_version") != JUDILIBRE_NORMALIZED_SCHEMA:
         raise JudilibreMatchingDataError("unsupported Judilibre projection schema")
-    if data.get("record_type") != "judicial_decision_candidate":
+    if data.get("record_type") != JUDILIBRE_RECORD_KIND:
         raise JudilibreMatchingDataError("unsupported Judilibre record type")
     if data.get("judilibre_id") != record.external_record_id:
         raise JudilibreMatchingDataError("Judilibre projection identity mismatch")
     if str(data.get("jurisdiction") or "").lower() != "tj":
         raise JudilibreMatchingDataError("Judilibre candidate is outside TJ scope")
-    if data.get("candidate_grade") != "C" or data.get("review_status") != "pending":
+    if (
+        data.get("candidate_grade") != JUDILIBRE_CANDIDATE_GRADE
+        or data.get("review_status") != JUDILIBRE_REVIEW_STATUS
+    ):
         raise JudilibreMatchingDataError("Judilibre candidate has an unsafe review state")
     if data.get("training_eligible") is not False:
         raise JudilibreMatchingDataError("Judilibre candidate must remain non-training")
     if data.get("personal_identity_features_allowed") is not False:
         raise JudilibreMatchingDataError("personal identity features must stay disabled")
-    if data.get("extraction_status") != "candidate_facts_extracted":
+    if data.get("extraction_status") != JUDILIBRE_CLAIMS_EXTRACTED_STATUS:
         raise JudilibreMatchingDataError("Judilibre candidate has no extracted claims")
-    if data.get("extraction_rule_version") != "judilibre_candidate_claims_v1":
+    if data.get("extraction_rule_version") != JUDILIBRE_CLAIM_SCHEMA_VERSION:
         raise JudilibreMatchingDataError("Judilibre claim extraction rules are unsupported")
     if data.get("ambiguous_claim_types") != []:
         raise JudilibreMatchingDataError("Judilibre candidate claims are ambiguous")
     if data.get("to_be_deleted") is not False:
         raise JudilibreMatchingDataError("Judilibre candidate deletion state is unsafe")
-    if data.get("text_storage") != "private_raw_artifact":
+    if data.get("text_storage") != JUDILIBRE_TEXT_STORAGE:
         raise JudilibreMatchingDataError("Judilibre raw text storage is unsafe")
     if data.get("text_available") is not True:
         raise JudilibreMatchingDataError("Judilibre raw text availability is unsafe")
     raw_representation_sha256 = data.get("raw_representation_sha256")
-    if (
-        not isinstance(raw_representation_sha256, str)
-        or _SHA256.fullmatch(raw_representation_sha256) is None
-    ):
+    if not is_lowercase_sha256(raw_representation_sha256):
         raise JudilibreMatchingDataError(
             "Judilibre raw representation is not hash anchored"
         )
@@ -430,24 +408,14 @@ def persisted_judilibre_matchable_decision(
         claim_types.append(claim_type)
         safe_claims.append(safe_claim)
 
-    references = _case_references(data)
+    references = judilibre_case_references(data)
     return JudilibreMatchableDecision(
         location=location,
         decision_date=decision_date,
         case_references=references,
         claim_types=tuple(sorted(claim_types)),
-        claims_manifest_sha256=canonical_sha256(
-            {
-                "schema_version": "judilibre_claim_manifest_v1",
-                "claims": safe_claims,
-            }
-        ),
-        case_reference_manifest_sha256=canonical_sha256(
-            {
-                "schema_version": "judilibre_case_reference_manifest_v1",
-                "references": references,
-            }
-        ),
+        claims_manifest_sha256=judilibre_claims_manifest_sha256(safe_claims),
+        case_reference_manifest_sha256=judilibre_case_reference_manifest_sha256(references),
         source_projection_sha256=record.content_hash,
     )
 
@@ -458,11 +426,11 @@ def _validated_claim(claim: Mapping[str, Any]) -> dict[str, object]:
     claim_type = claim.get("claim_type")
     normalized_value = claim.get("normalized_value")
     confidence = claim.get("confidence")
-    if not isinstance(claim_id, str) or _SHA256.fullmatch(claim_id) is None:
+    if not is_lowercase_sha256(claim_id):
         raise JudilibreMatchingDataError("Judilibre claim id is not SHA-256")
-    if not isinstance(evidence_hash, str) or _SHA256.fullmatch(evidence_hash) is None:
+    if not is_lowercase_sha256(evidence_hash):
         raise JudilibreMatchingDataError("Judilibre evidence hash is not SHA-256")
-    if claim_type not in _CLAIM_TYPES:
+    if claim_type not in JUDILIBRE_CLAIM_TYPES:
         raise JudilibreMatchingDataError("Judilibre claim type is unsupported")
     if not isinstance(normalized_value, str) or not normalized_value:
         raise JudilibreMatchingDataError("Judilibre claim value is missing")
@@ -470,10 +438,10 @@ def _validated_claim(claim: Mapping[str, Any]) -> dict[str, object]:
         raise JudilibreMatchingDataError("Judilibre claim confidence is invalid")
     if not 0 <= float(confidence) <= 1:
         raise JudilibreMatchingDataError("Judilibre claim confidence is out of range")
-    if claim_type in {"starting_price_eur", "hammer_price_eur"}:
+    if claim_type in JUDILIBRE_MONEY_CLAIM_TYPES:
         if _MONEY.fullmatch(normalized_value) is None or claim.get("currency") != "EUR":
             raise JudilibreMatchingDataError("Judilibre money claim is invalid")
-    elif normalized_value not in _PROCEDURAL_VALUES:
+    elif normalized_value not in JUDILIBRE_PROCEDURAL_EVENTS:
         raise JudilibreMatchingDataError("Judilibre procedural claim is invalid")
     return {
         "claim_id": claim_id,
@@ -481,40 +449,8 @@ def _validated_claim(claim: Mapping[str, Any]) -> dict[str, object]:
         "normalized_value": normalized_value,
         "confidence": float(confidence),
         "evidence_hash": evidence_hash,
-        **(
-            {"currency": "EUR"}
-            if claim_type in {"starting_price_eur", "hammer_price_eur"}
-            else {}
-        ),
+        **({"currency": "EUR"} if claim_type in JUDILIBRE_MONEY_CLAIM_TYPES else {}),
     }
-
-
-def _case_references(data: Mapping[str, object]) -> tuple[str, ...]:
-    number = data.get("number")
-    numbers = data.get("numbers")
-    if number is not None and not isinstance(number, str):
-        raise JudilibreMatchingDataError("Judilibre number has an invalid type")
-    if numbers is not None and not isinstance(numbers, list):
-        raise JudilibreMatchingDataError("Judilibre numbers has an invalid type")
-    if isinstance(numbers, list) and any(not isinstance(value, str) for value in numbers):
-        raise JudilibreMatchingDataError("Judilibre numbers contains a non-text value")
-    values = [number] if isinstance(number, str) else []
-    values.extend(numbers if isinstance(numbers, list) else [])
-    references: list[str] = []
-    for value in values:
-        normalized = _normalize_reference(value)
-        if normalized is not None and normalized not in references:
-            references.append(normalized)
-    return tuple(references)
-
-
-def _normalize_reference(value: str) -> str | None:
-    normalized = re.sub(r"\s+", " ", value.strip()).lower()
-    if not normalized or len(normalized) > 128 or any(
-        character in normalized for character in ("\x00", "\r", "\n")
-    ):
-        return None
-    return normalized
 
 
 def _required_short_text(value: object, *, name: str) -> str:
@@ -529,12 +465,9 @@ def _required_short_text(value: object, *, name: str) -> str:
 
 
 def _context_rank(context: StoredJudilibreAuctionMatchContext) -> tuple[int, int]:
-    reference_rank = (
-        2
-        if context.portalis_number_match
-        else 1
-        if context.case_number_match
-        else 0
+    reference_rank = judilibre_match_rank(
+        portalis_number_match=context.portalis_number_match,
+        case_number_match=context.case_number_match,
     )
     return reference_rank, -context.date_delta_days
 
@@ -555,17 +488,6 @@ def _is_valid_target_context(
     )
 
 
-def _match_score_and_method(
-    context: StoredJudilibreAuctionMatchContext,
-) -> tuple[float, str]:
-    exact_date = context.date_delta_days == 0
-    if context.portalis_number_match:
-        return (0.98 if exact_date else 0.94), "exact_portalis_number"
-    if context.case_number_match:
-        return (0.95 if exact_date else 0.90), "exact_case_number"
-    return 0.75, "composite"
-
-
 def _persisted_match_signals(
     *,
     record: StoredJudilibreDecisionRecord,
@@ -573,46 +495,22 @@ def _persisted_match_signals(
     court: StoredJudilibreCourtResolution,
     context: StoredJudilibreAuctionMatchContext,
 ) -> dict[str, object]:
-    return {
-        "schema_version": JUDILIBRE_MATCH_SIGNAL_SCHEMA,
-        "match_rule_version": JUDILIBRE_MATCH_RULE_VERSION,
-        "court": True,
-        "court_resolution_method": court.resolution_method,
-        "court_resolution_reference_sha256": court.reference_sha256,
-        "hearing_date": True,
-        "hearing_date_exact": context.date_delta_days == 0,
-        "hearing_date_delta_days": context.date_delta_days,
-        "case_number": context.case_number_match,
-        "portalis_number": context.portalis_number_match,
-        "claim_types": list(decision.claim_types),
-        "claims_manifest_sha256": decision.claims_manifest_sha256,
-        "case_reference_manifest_sha256": decision.case_reference_manifest_sha256,
-        "source_projection_sha256": decision.source_projection_sha256,
-        "target_context_sha256": canonical_sha256(
-            {
-                "schema_version": "judilibre_target_context_v1",
-                "case_id": context.case_id,
-                "lot_id": context.lot_id,
-                "round_id": context.round_id,
-                "court_id": context.court_id,
-                "scheduled_date": context.scheduled_date,
-            }
+    return judilibre_match_signals(
+        court_resolution_method=court.resolution_method,
+        court_resolution_reference_sha256=court.reference_sha256,
+        date_delta_days=context.date_delta_days,
+        case_number_match=context.case_number_match,
+        portalis_number_match=context.portalis_number_match,
+        claim_types=list(decision.claim_types),
+        claims_manifest_sha256=decision.claims_manifest_sha256,
+        case_reference_manifest_sha256=decision.case_reference_manifest_sha256,
+        source_projection_sha256=decision.source_projection_sha256,
+        target_context_sha256=judilibre_target_context_sha256(
+            case_id=context.case_id,
+            lot_id=context.lot_id,
+            round_id=context.round_id,
+            court_id=context.court_id,
+            scheduled_date=context.scheduled_date,
         ),
-        "source_record_version_current_at_scan": True,
-        "source_training_eligible": False,
-        "selection_requires_human_review": True,
-        "automatic_link_allowed": False,
-        "outcome_creation_allowed": False,
-        "training_eligible": False,
-        "claim_value_used_for_matching": False,
-        "price_used_for_matching": False,
-        "text_used_for_matching": False,
-        "address_used_for_matching": False,
-        "personal_identity_used_for_matching": False,
-        "source_record_sha256": canonical_sha256(
-            {
-                "schema_version": "judilibre_source_record_reference_v1",
-                "source_record_id": record.source_record_id,
-            }
-        ),
-    }
+        source_record_sha256=judilibre_source_record_sha256(record.source_record_id),
+    )

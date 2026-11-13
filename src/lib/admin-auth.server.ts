@@ -1,26 +1,18 @@
 import "server-only";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { AdminRequiredError } from "@/lib/api-errors";
 
 /**
- * Garde commune des routes `/api/admin/emails/*` : jeton de session vérifié, rôle administrateur et
- * double authentification (`auth.isAdmin`), partagée par tous les modules admin.
+ * Garde des modules et routes d'administration : jeton de session vérifié, rôle administrateur et
+ * double authentification (`auth.isAdmin`). Lève `AdminRequiredError` (403) sinon.
  */
-export async function requireAdmin(
-  authToken: string,
-  forbiddenMessage = "Forbidden: accès administrateur requis.",
-) {
+export async function assertAdminAuth(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error(forbiddenMessage);
+  assertAdmin(auth);
   return auth;
 }
 
-export function assertAdminAuth(authToken: string) {
-  return requireAdmin(
-    authToken,
-    "Forbidden: ce compte n'a pas les droits administrateur Immojudis.",
-  );
-}
-
-export async function assertAdminPipelineToken(authToken: string): Promise<void> {
-  await requireAdmin(authToken, "Forbidden: accès administrateur requis");
+/** Même garde pour un contexte d'authentification déjà résolu par l'appelant. */
+export function assertAdmin(auth: { isAdmin: boolean }): void {
+  if (!auth.isAdmin) throw new AdminRequiredError();
 }

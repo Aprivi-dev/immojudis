@@ -11,8 +11,6 @@ import sys
 import tempfile
 import time
 import unicodedata
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +20,7 @@ import pymupdf as fitz
 import httpx
 
 from src.base_reads import SOURCE_SNAPSHOT_KEY
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
@@ -29,76 +28,52 @@ from src.document_politeness import (
     fetch_robots_document,
     pause_within_deadline,
 )
-from src.freshness import invalidate_analysis, timestamp_is_fresh
-from src.models import AuctionSale
-from src.normalize import clean_text
-from src.pdf_document_transport import (  # noqa: F401
-    PublicDocumentTarget,  # noqa: F401
-    _PinnedHTTPTransport,
-    _PinnedNetworkBackend,  # noqa: F401
+from src.encheres_publiques_guard import (
     EncheresPubliquesAccessNotAuthorized,
     require_encheres_publiques_documents_access as require_ep_documents,
     require_encheres_publiques_url_access as require_ep_url,
 )
+from src.freshness import invalidate_analysis, timestamp_is_fresh
+from src.models import AuctionSale
+from src.normalize import clean_text
 from src.pdf_document_transport import (
-    is_safe_public_document_url as _is_safe_public_document_url,  # noqa: F401
-)
-from src.pdf_document_transport import (
+    _PinnedHTTPTransport,
     resolve_public_document_target as _resolve_public_document_target,
 )
-from src.pdf_document_types import (
-    DEFAULT_DOCUMENT_GROUPS,  # noqa: F401
-    DOCUMENT_TYPE_ALIASES,  # noqa: F401
-    GENERIC_DOCUMENT_TYPES,  # noqa: F401
-    PDF_ANNOUNCE_GROUP,  # noqa: F401
-    PDF_BAIL_GROUP,  # noqa: F401
-    PDF_CADASTRE_GROUP,  # noqa: F401
-    PDF_CONDITIONS_GROUP,  # noqa: F401
-    PDF_DESCRIPTION_GROUP,  # noqa: F401
-    PDF_DIAGNOSTICS_GROUP,  # noqa: F401
-    _canonical_document_type,  # noqa: F401
-    _normalize_document_classifier_text,  # noqa: F401
-    classify_document_type,  # noqa: F401
-    refined_document_type,
-    with_content_document_types,
+from src.pdf_document_selection import (
+    adaptive_docling_timeout,
+    select_documents_for_extraction,
+    store_document_analysis_status,
 )
+from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
+from src.pdf_document_types import canonical_document_type, refined_document_type, with_content_document_types
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text, write_pdf_text_cache
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, ensure_pdf_deadline
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
     OCR_PICTURE_NO_TEXT_METHOD,
-    PdfDeadlineExceeded,
-    PdfDocumentOcrBudgetExceeded,
-    PdfExtractionDeferred,
-    _PDF_DOCUMENT_OCR_DEADLINE,  # noqa: F401
-    _PDF_DOCUMENT_LOG_TYPES,  # noqa: F401
-    deadline_bounded_timeout as _deadline_bounded_timeout_impl,
+    deadline_bounded_timeout,
     ensure_pdf_document_ocr_budget as _ensure_pdf_document_ocr_budget,
-    ensure_pdf_ocr_deadline as _ensure_pdf_ocr_deadline_impl,
     extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl,
     log_pdf_document_transition as _log_pdf_document_transition,
-    pdf_document_ocr_budget_remaining,  # noqa: F401
     pdf_document_ocr_budget_scope,
     pdf_ocr_document_budget_seconds as _pdf_ocr_document_budget_seconds,
-    select_pdf_deadline_exception as _select_pdf_deadline_exception,
 )
 from src.pdf_page_analysis import (
     PICTURE_PAGE_STATUS,
-    VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
-    VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
-    VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
-    _is_objectively_blank_page,
-    _page_has_substantial_image,
-    _page_requires_retry,
-    _page_text_confidence,
-    _visual_page_profile,
+    is_objectively_blank_page,
+    page_has_substantial_image,
     page_outcome_summary,
-)
-from src.pdf_page_analysis import (
-    is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
+    page_requires_retry,
+    page_text_confidence,
+    profile_pdf_for_docling,
+    visual_page_profile,
 )
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
+from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
@@ -111,16 +86,8 @@ DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
 
-# Deterministic PDF facts include page/document candidates and multi-lot
-# decisions; bump this marker when projection semantics change.
-# v5 (03/11/2026) : règles de l'audit qualité (surfaces, pièces, occupation, dates et prix des appels d'offres,
-# tribunal) ; toutes les ventes à pièces sont relues avec elles.
-DOCUMENT_FACTS_VERSION = "document_facts_v5_quality_audit"
-
 # Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
-
-_PDF_DEADLINE: ContextVar[float | None] = ContextVar("pdf_enrichment_deadline", default=None)
 
 
 @dataclass
@@ -135,95 +102,28 @@ class PdfEnrichmentStats:
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
 
 
-@contextmanager
-def pdf_deadline_scope(deadline: float | None):
-    """Set a task-local monotonic cutoff for one queue batch."""
-
-    token = _PDF_DEADLINE.set(float(deadline) if deadline is not None else None)
-    try:
-        yield
-    finally:
-        _PDF_DEADLINE.reset(token)
-
-
-def pdf_deadline_remaining() -> float | None:
-    deadline = _PDF_DEADLINE.get()
-    if deadline is None:
-        return None
-    return deadline - time.monotonic()
-
-
-def _pdf_deadline_exception(message: str, **kwargs: int) -> BaseException:
-    return _select_pdf_deadline_exception(message, worker_remaining=pdf_deadline_remaining(), **kwargs)
-
-
-def _ensure_pdf_deadline(
-    *,
-    operation: str,
-    checkpointed_pages: int = 0,
-    total_pages: int = 0,
-    new_progress_pages: int = 0,
-) -> float | None:
-    remaining = pdf_deadline_remaining()
-    if remaining is not None and remaining <= 0:
-        raise PdfDeadlineExceeded(
-            f"PDF worker deadline reached during {operation}; retry resumes from checkpoint",
-            checkpointed_pages=checkpointed_pages,
-            total_pages=total_pages,
-            new_progress_pages=new_progress_pages,
-        )
-    return remaining
-
-
-def _ensure_pdf_ocr_deadline(
-    *,
-    operation: str,
-    checkpointed_pages: int = 0,
-    total_pages: int = 0,
-    new_progress_pages: int = 0,
-) -> float | None:
-    return _ensure_pdf_ocr_deadline_impl(
-        worker_deadline=_ensure_pdf_deadline,
-        operation=operation,
-        checkpointed_pages=checkpointed_pages,
-        total_pages=total_pages,
-        new_progress_pages=new_progress_pages,
-    )
-
-
-def _deadline_bounded_timeout(
-    timeout_seconds: float,
-    *,
-    operation: str,
-    checkpointed_pages: int = 0,
-    total_pages: int = 0,
-    new_progress_pages: int = 0,
-) -> tuple[float, bool]:
-    return _deadline_bounded_timeout_impl(
-        timeout_seconds,
-        ensure_deadline=_ensure_pdf_ocr_deadline,
-        operation=operation,
-        checkpointed_pages=checkpointed_pages,
-        total_pages=total_pages,
-        new_progress_pages=new_progress_pages,
-    )
-
-
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     stats = PdfEnrichmentStats()
-    _ensure_pdf_deadline(operation="starting document download")
+    ensure_pdf_deadline(operation="starting document download")
     downloaded_documents = download_documents(sale, stats=stats)
     restore_pdf_page_caches_from_manifest(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", downloaded_documents, cache_root=PDF_DOCUMENT_TEXTS_DIR, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]))
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
     failed_document_diagnostics: list[dict[str, object]] = []
-    for document in _select_documents_for_extraction(downloaded_documents, sale=sale, revalidate_urls={str(item.get("url") or "") for item in downloaded_documents}):
-        _ensure_pdf_deadline(operation="starting document extraction")
+    for document in select_documents_for_extraction(downloaded_documents, sale=sale, revalidate_urls={str(item.get("url") or "") for item in downloaded_documents}):
+        ensure_pdf_deadline(operation="starting document extraction")
         document_started_at = time.monotonic()
         file_path = Path(document["file_path"])
         try:
             cached_payload = (
-                _read_document_text_cache(document, file_path) if load_settings()["incremental_enrichment"] else None
+                read_document_text_cache(
+                    document,
+                    file_path,
+                    cache_root=PDF_DOCUMENT_TEXTS_DIR,
+                    ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]),
+                )
+                if load_settings()["incremental_enrichment"]
+                else None
             )
             if cached_payload:
                 stats.document_cache_hits += 1
@@ -245,7 +145,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 pages=exc.checkpointed_pages,
                 error_type=type(exc).__name__,
             )
-            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=_write_pdf_text_cache, store_status=_store_document_analysis_status)
+            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=write_pdf_text_cache, store_status=store_document_analysis_status)
             raise
         except PermanentDocumentFailure as exc:
             # Unreadable for good (pages, weight, password, corruption): settled like a 404, the job succeeds.
@@ -270,7 +170,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 "label": document.get("label", ""),
                 "url": document.get("url", ""),
                 "type": document.get("type", "pdf"),
-                "document_type": _canonical_document_type(
+                "document_type": canonical_document_type(
                     document.get("document_type") or document.get("type"),
                     label=document.get("label"),
                     url=document.get("url"),
@@ -291,7 +191,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             # and quality callers. A document read except for a few pages that
             # this retry did not recover is settled instead (pdf_partial_tolerance).
             stats.errors += 1
-        _write_document_text_cache(document, file_path, payload)
+        write_document_text_cache(document, file_path, payload, cache_root=PDF_DOCUMENT_TEXTS_DIR)
         stats.documents_processed += 1
         pdf_texts.append(payload)
         _log_pdf_document_transition(
@@ -302,7 +202,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         )
     merged_pdf_texts = with_content_document_types(merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures))
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
-        _write_pdf_text_cache(sale, merged_pdf_texts)
+        write_pdf_text_cache(sale, merged_pdf_texts)
         terminal_urls = set(stats.blocked_document_urls) | {
             item.get("url") for item in stats.permanent_document_failures if item.get("url")
         }
@@ -332,7 +232,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
             stats.raw_text_enriched += 1
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         downloaded_documents,
         pdf_texts,
@@ -424,7 +324,7 @@ def download_documents(
 ) -> list[dict[str, str]]:
     settings = load_settings()
     require_ep_documents(sale.documents, settings)
-    sale_id = _sale_storage_id(sale)
+    sale_id = sale_storage_id(sale)
     sale_dir = output_root / sale_id
     sale_dir.mkdir(parents=True, exist_ok=True)
 
@@ -436,10 +336,10 @@ def download_documents(
     }
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
-    for document in _select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
-        _ensure_pdf_deadline(operation="selecting document")
+    for document in select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
+        ensure_pdf_deadline(operation="selecting document")
         url = document.get("url")
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             document.get("document_type") or document.get("type"),
             label=document.get("label"),
             url=url,
@@ -458,7 +358,7 @@ def download_documents(
                 stats.blocked_document_urls.append(url)
             continue
 
-        filename = _document_filename(document)
+        filename = document_filename(document)
         file_path = sale_dir / filename
         if (
             file_path.exists()
@@ -496,7 +396,7 @@ def download_documents(
             permanent_failures: list[PermanentDocumentFailure] = []
             try:
                 for candidate_url in _document_url_variants(url):
-                    _ensure_pdf_deadline(operation="starting document request")
+                    ensure_pdf_deadline(operation="starting document request")
                     try:
                         response = _download_document_response(
                             candidate_url,
@@ -594,7 +494,7 @@ def download_documents(
                     if stats:
                         stats.errors += 1
                 continue
-        _ensure_pdf_deadline(operation="finalizing downloaded document")
+        ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)
         file_format = (
             _document_file_format(
@@ -710,18 +610,18 @@ def _download_document_response(
     headers: dict[str, str],
     timeout_seconds: float,
 ) -> httpx.Response:
-    _ensure_pdf_deadline(operation="starting document redirect chain")
+    ensure_pdf_deadline(operation="starting document redirect chain")
     current_url = url
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
         require_ep_url(current_url, load_settings())
-        _ensure_pdf_deadline(operation="following document redirect")
+        ensure_pdf_deadline(operation="following document redirect")
         try:
             # robots.txt and the per-host delay apply to every hop, including
             # redirects to another origin.
             _DOCUMENT_POLITENESS.wait_turn(current_url)
         except DocumentRobotsDisallowed as exc:
             raise PermanentDocumentFailure("robots_disallowed", str(exc)) from exc
-        _ensure_pdf_deadline(operation="starting document HTTP request")
+        ensure_pdf_deadline(operation="starting document HTTP request")
         response = _send_pinned_document_request(
             current_url,
             headers=headers,
@@ -746,10 +646,10 @@ def _send_pinned_document_request(
     timeout_seconds: float,
 ) -> httpx.Response:
     requested_timeout = float(timeout_seconds)
-    _ensure_pdf_deadline(operation="starting document HTTP request")
+    ensure_pdf_deadline(operation="starting document HTTP request")
     require_ep_url(url, load_settings())
     target = _resolve_public_document_target(url)
-    timeout_seconds, deadline_bounded = _deadline_bounded_timeout(
+    timeout_seconds, deadline_bounded = deadline_bounded_timeout(
         requested_timeout,
         operation="connecting to document host",
     )
@@ -766,7 +666,7 @@ def _send_pinned_document_request(
         ) as client:
             with client.stream("GET", url if relay is not None else target.url, headers=headers) as response:
                 content = _read_document_stream(response, int(load_settings()["pdf_max_download_mb"]) * 1024 * 1024)
-                _ensure_pdf_deadline(operation="reading document response")
+                ensure_pdf_deadline(operation="reading document response")
                 response_headers = dict(response.headers)
                 response_headers.pop("content-encoding", None)
                 response_headers["content-length"] = str(len(content))
@@ -786,14 +686,10 @@ def _fetch_document_robots(robots_url: str) -> httpx.Response:
     return fetch_robots_document(robots_url, send=_send_pinned_document_request, settings=load_settings())
 
 
-def _document_pause(seconds: float) -> None:
-    pause_within_deadline(seconds, lambda: _ensure_pdf_deadline(operation="waiting between document requests"))
-
-
 _DOCUMENT_POLITENESS = DocumentPoliteness(
     user_agent=lambda: str(load_settings()["user_agent"]),
     fetch_robots=_fetch_document_robots,
-    sleep=_document_pause,
+    sleep=pause_within_deadline,
 )
 
 
@@ -806,12 +702,12 @@ def _read_document_stream(response: httpx.Response, max_bytes: int) -> bytes:
         # small chunks.  The transport's read timeout is therefore not enough
         # to enforce the worker cutoff; check the task-local deadline between
         # every chunk as well.
-        _ensure_pdf_deadline(operation="reading document chunk")
+        ensure_pdf_deadline(operation="reading document chunk")
         try:
             chunk = next(chunks)
         except StopIteration:
             break
-        _ensure_pdf_deadline(operation="received document chunk")
+        ensure_pdf_deadline(operation="received document chunk")
         size += len(chunk)
         if size > max_bytes:
             raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
@@ -834,13 +730,9 @@ def extract_attached_document(
     raise ValueError(f"unsupported attached document format: {file_format or 'unknown'}")
 
 
-def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -> str:
-    return str(extract_pdf_document(file, document=document).get("text") or "")
-
-
 def extract_pdf_document(file: str | Path, document: dict[str, str] | None = None) -> dict[str, object]:
     path = Path(file)
-    _ensure_pdf_deadline(operation="opening PDF document")
+    ensure_pdf_deadline(operation="opening PDF document")
     settings = load_settings()
     max_bytes = int(settings["pdf_max_download_mb"]) * 1024 * 1024
     if path.stat().st_size > max_bytes:
@@ -851,9 +743,9 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
     extraction_method = "pymupdf_pages"
     docling_text = ""
     if str(settings["pdf_extractor"]) == "docling":
-        _ensure_pdf_deadline(operation="starting Docling extraction")
-        timeout = _adaptive_docling_timeout(path, document=document, settings=settings)
-        _ensure_pdf_deadline(operation="starting bounded Docling extraction")
+        ensure_pdf_deadline(operation="starting Docling extraction")
+        timeout = adaptive_docling_timeout(path, document=document, settings=settings)
+        ensure_pdf_deadline(operation="starting bounded Docling extraction")
         docling_text = extract_pdf_text_with_docling(path, timeout_seconds=timeout)
         if docling_text:
             extraction_method = "docling"
@@ -866,13 +758,13 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
         and str(settings["pdf_extractor"]) == "auto"
         and len(text) < int(settings["pdf_docling_threshold_chars"])
     ):
-        _ensure_pdf_deadline(operation="starting automatic Docling extraction")
+        ensure_pdf_deadline(operation="starting automatic Docling extraction")
         docling_text = extract_pdf_text_with_docling(path)
         if len(docling_text) > len(text):
             text = docling_text
             extraction_method = "docling_auto"
 
-    _ensure_pdf_deadline(operation="finalizing PDF document")
+    ensure_pdf_deadline(operation="finalizing PDF document")
     sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     outcome = page_outcome_summary(pages, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
     return {
@@ -892,7 +784,7 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
 
 def extract_pdf_text_with_docling(file: str | Path, timeout_seconds: float | None = None) -> str:
     path = Path(file)
-    remaining = _ensure_pdf_deadline(operation="reading Docling cache")
+    remaining = ensure_pdf_deadline(operation="reading Docling cache")
     cached = _read_docling_cache(path)
     if cached is not None:
         return cached
@@ -924,7 +816,7 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
         return ""
     try:
         settings = load_settings()
-        profile = _profile_pdf_for_docling(path)
+        profile = profile_pdf_for_docling(path)
         do_ocr = _should_docling_ocr(path, settings, profile=profile)
         chunk_pages = _docling_chunk_pages(settings, do_ocr)
         if profile["page_count"] > chunk_pages:
@@ -1007,11 +899,11 @@ def _docling_chunk_pages(settings: dict[str, object], do_ocr: bool) -> int:
 
 
 def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str:
-    _ensure_pdf_deadline(operation="preparing Docling subprocess")
+    ensure_pdf_deadline(operation="preparing Docling subprocess")
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
     output_path = _docling_cache_path(path).with_suffix(".tmp.txt")
     command = [sys.executable, "-m", "src.pdf_enrichment", "--docling-extract", str(path), str(output_path)]
-    timeout, deadline_bounded = _deadline_bounded_timeout(
+    timeout, deadline_bounded = deadline_bounded_timeout(
         timeout,
         operation="starting Docling subprocess",
     )
@@ -1032,10 +924,10 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
                 total_pages=0,
                 new_progress_pages=0,
             ) from exc
-        _ensure_pdf_deadline(operation="checking deadline after Docling timeout")
+        ensure_pdf_deadline(operation="checking deadline after Docling timeout")
         LOGGER.warning("Docling extraction timed out after %.0fs for %s", timeout, path)
         return ""
-    _ensure_pdf_deadline(operation="finishing Docling extraction")
+    ensure_pdf_deadline(operation="finishing Docling extraction")
     if result.returncode != 0:
         stderr = clean_text(result.stderr)[-1000:] if result.stderr else ""
         LOGGER.warning("Docling extraction subprocess failed for %s: %s", path, stderr)
@@ -1049,7 +941,7 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
 
 def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     pages: list[dict[str, object]] = []
-    _ensure_pdf_deadline(operation="opening PDF pages")
+    ensure_pdf_deadline(operation="opening PDF pages")
     settings = load_settings()
     max_pages = int(settings["pdf_max_extract_pages"])
     hard_limit = int(settings.get("pdf_max_total_pages", 300))
@@ -1062,7 +954,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
         ocr_attempts = 0
         new_progress_pages = 0
         for index, page in enumerate(document, start=1):
-            _ensure_pdf_deadline(
+            ensure_pdf_deadline(
                 operation=f"starting PDF page {index}",
                 checkpointed_pages=index - 1,
                 total_pages=document.page_count,
@@ -1075,14 +967,14 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     if (
                         cached.get("page") == index
                         and isinstance(cached.get("text"), str)
-                        and not _page_requires_retry(cached, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
+                        and not page_requires_retry(cached, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
                     ):
                         pages.append(cached)
                         continue
                 except (OSError, ValueError, AttributeError):
                     pass
             raw_text = page.get_text("text") or ""
-            if _is_objectively_blank_page(page, raw_text):
+            if is_objectively_blank_page(page, raw_text):
                 pages.append(
                     {
                         "page": index,
@@ -1102,14 +994,14 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 new_progress_pages += 1
                 continue
             method = "pymupdf_text"
-            confidence = _page_text_confidence(raw_text, method=method)
+            confidence = page_text_confidence(raw_text, method=method)
             text = raw_text
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
             needs_ocr = _should_try_ocr(raw_text, page=page)
             ocr_result: dict[str, object] | None = None
             if needs_ocr:
-                _ensure_pdf_deadline(
+                ensure_pdf_deadline(
                     operation=f"checking OCR budget for page {index}",
                     checkpointed_pages=index - 1,
                     total_pages=document.page_count,
@@ -1164,7 +1056,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 status = "failed"
                 failure_reason = failure_reason or "empty_page_not_proven_blank"
             if status == "failed" and not cleaned and method == "fallback_text":
-                visual_profile = _visual_page_profile(page)
+                visual_profile = visual_page_profile(page)
                 if visual_profile.get("quasi_empty") is True:
                     original_status = status
                     original_failure_reason = failure_reason
@@ -1212,7 +1104,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             temporary.replace(cache_path)
             if status in {"extracted", "visual_blank_excluded", PICTURE_PAGE_STATUS}:
                 new_progress_pages += 1
-            _ensure_pdf_deadline(
+            ensure_pdf_deadline(
                 operation=f"checkpointing PDF page {index}",
                 checkpointed_pages=index,
                 total_pages=document.page_count,
@@ -1227,7 +1119,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     total_pages=document.page_count,
                     new_progress_pages=new_progress_pages,
                 )
-    _ensure_pdf_deadline(
+    ensure_pdf_deadline(
         operation="finishing PDF pages",
         checkpointed_pages=len(pages),
         total_pages=len(pages),
@@ -1245,11 +1137,7 @@ def _should_try_ocr(text: str, *, page: fitz.Page | None = None) -> bool:
     # Mixed PDFs often have a native header/footer over a scanned page. The
     # text-length gate alone would mark those pages complete and hide the
     # image-only body from fact extraction.
-    return page is not None and _page_has_substantial_image(page)
-
-
-def _extract_page_text_with_ocr(page: fitz.Page, fallback: str) -> str:
-    return str(_extract_page_text_with_ocr_result(page, fallback=fallback)["text"])
+    return page is not None and page_has_substantial_image(page)
 
 
 def _extract_page_text_with_ocr_result(
@@ -1264,85 +1152,10 @@ def _extract_page_text_with_ocr_result(
         page,
         fallback,
         settings=load_settings(),
-        ensure_deadline=_ensure_pdf_ocr_deadline,
-        deadline_bounded_timeout=_deadline_bounded_timeout,
-        page_text_confidence=_page_text_confidence,
-        deadline_exception=PdfDeadlineExceeded,
-        deadline_exceptions=(PdfDocumentOcrBudgetExceeded,),
-        deadline_exception_factory=_pdf_deadline_exception,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-
-
-def _document_text_cache_path(document: dict[str, str], file_path: Path) -> Path:
-    stat = file_path.stat()
-    base = "|".join(
-        [
-            document.get("url", ""),
-            str(stat.st_size),
-            hashlib.sha256(file_path.read_bytes()).hexdigest(),
-        ]
-    )
-    digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
-    return PDF_DOCUMENT_TEXTS_DIR / f"{digest}.json"
-
-
-def _read_document_text_cache(document: dict[str, str], file_path: Path) -> dict[str, object] | None:
-    try:
-        path = _document_text_cache_path(document, file_path)
-        if not path.exists():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict) or not clean_text(payload.get("text")):
-        return None
-    if payload.get("cache_version") != PDF_TEXT_CACHE_VERSION:
-        return None
-    pages = payload.get("pages")
-    if not isinstance(pages, list) or not pages:
-        return None
-    if str(payload.get("extraction_status") or "").strip().lower() in {"incomplete", "failed"}:
-        return None
-    if any(
-        _page_requires_retry(page, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]))
-        for page in pages
-    ):
-        return None
-    return payload
-
-
-def _write_document_text_cache(document: dict[str, str], file_path: Path, payload: dict[str, object]) -> Path:
-    PDF_DOCUMENT_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = _document_text_cache_path(document, file_path)
-    payload["cache_version"] = PDF_TEXT_CACHE_VERSION
-    if not isinstance(payload.get("pages"), list) and clean_text(payload.get("text")):
-        text = clean_text(payload.get("text")) or ""
-        payload["pages"] = [
-            {
-                "page": 1,
-                "text": text,
-                "chars": len(text),
-                "raw_text_chars": len(text),
-                "method": "legacy_text",
-                "confidence": _page_text_confidence(text, method="fallback_text"),
-                "status": "extracted",
-                "retryable": False,
-            }
-        ]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
-
-
-def sale_storage_id(sale: AuctionSale) -> str:
-    base = sale.external_id or sale.source_url
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
-
-
-def _sale_storage_id(sale: AuctionSale) -> str:
-    return sale_storage_id(sale)
 
 
 def _docling_cache_path(file: Path) -> Path:
@@ -1377,7 +1190,7 @@ def _should_docling_ocr(
         return False
     if mode in {"1", "true", "yes", "on", "always"}:
         return True
-    profile = profile or _profile_pdf_for_docling(path)
+    profile = profile or profile_pdf_for_docling(path)
     if profile["page_count"] > int(settings["pdf_docling_ocr_max_pages"]):
         LOGGER.info(
             "Skipping Docling OCR for %s: %s pages exceeds limit",
@@ -1395,23 +1208,6 @@ def _should_docling_ocr(
     return profile["first_pages_text_chars"] < int(settings["pdf_docling_threshold_chars"])
 
 
-def _profile_pdf_for_docling(path: Path) -> dict[str, float | int]:
-    size_mb = path.stat().st_size / 1024 / 1024
-    try:
-        with fitz.open(path) as document:
-            page_count = document.page_count
-            first_pages_text_chars = sum(
-                len(document[index].get_text("text") or "") for index in range(min(page_count, 5))
-            )
-    except Exception:
-        return {"size_mb": size_mb, "page_count": 0, "first_pages_text_chars": 0}
-    return {
-        "size_mb": size_mb,
-        "page_count": page_count,
-        "first_pages_text_chars": first_pages_text_chars,
-    }
-
-
 def _run_docling_extract_cli(argv: list[str]) -> int:
     if len(argv) != 4 or argv[1] != "--docling-extract":
         return 2
@@ -1425,62 +1221,3 @@ def _run_docling_extract_cli(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_run_docling_extract_cli(sys.argv))
-
-from src.pdf_document_selection import (  # noqa: E402,F401
-    _adaptive_docling_timeout,
-    _available_document_group_count,
-    _document_candidate_rejection_reason,
-    _document_family,
-    _document_group_order,
-    _document_identity,
-    _document_profile,
-    _extracted_document_profile,
-    _needs_energy_diagnostics,
-    _required_document_groups_for_sale,
-    _select_documents_for_extraction,
-    _store_document_analysis_status,
-    _unique_document_groups,
-)
-from src.pdf_fact_extraction import (  # noqa: E402,F401
-    _assign_pdf_land_surface, _assign_pdf_sale_date,
-    _assign_pdf_surface, _cadastral_units_to_square_meters,
-    _decimal_to_int_or_float, _document_filename,
-    _document_land_surface_candidates, _document_surface_candidates,
-    _energy_diagnostic_rank, _energy_diagnostic_risk_note,
-    _extract_description, _extract_energy_diagnostics_from_documents,
-    _extract_energy_diagnostics_with_evidence,
-    _extract_land_surface_from_documents,
-    _extract_land_surface_with_evidence,
-    _extract_occupancy_status, _extract_property_type,
-    _extract_risk_notes, _extract_rooms_count,
-    _extract_sale_date_from_documents,
-    _extract_sale_date_with_evidence,
-    _extract_starting_price_from_documents,
-    _extract_starting_price_with_evidence,
-    _extract_surface,
-    _extract_surface_from_documents,
-    _extract_surface_with_evidence,
-    _extract_visit_dates_from_documents,
-    _extract_visit_dates_with_evidence,
-    _first_energy_class_match, _has_land_surface_context,
-    _has_sale_date_signal,
-    _is_land_surface_evidence,
-    _is_rooms_false_positive,
-    _is_surface_false_positive,
-    _land_surface_document_rank,
-    _land_surface_match_is_built,
-    _land_unit_candidate_rank,
-    _merge_pdf_risk_notes,
-    _normalize_visit_candidate,
-    _parse_decimal_number,
-    _reconcile_pdf_starting_price,
-    _sale_date_candidate_phrases,
-    _sale_date_extraction_rank,
-    _should_replace_starting_price_with_document,
-    _starting_price_document_rank,
-    _surface_document_rank,
-    _surface_measurement_scope,
-    _visit_candidate_chunks,
-    _write_pdf_text_cache,
-    enrich_sale_from_pdf_text,
-)

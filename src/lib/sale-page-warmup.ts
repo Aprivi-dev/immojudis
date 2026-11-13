@@ -1,9 +1,9 @@
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 /** Short on purpose: a warm-up is a courtesy, it never has to wait for a slow page. */
-export const WARMUP_TIMEOUT_MS = 5_000;
+const WARMUP_TIMEOUT_MS = 5_000;
 /** Pages requested at the same time, so that a batch of 100 sales does not hit the site at once. */
-export const WARMUP_CONCURRENCY = 4;
+const WARMUP_CONCURRENCY = 4;
 /**
  * Pages warmed per call at most: the warm-up runs in `after()`, inside the function's time
  * budget (`maxDuration = 60` on `revalidate-sale`). 32 pages at 4 at a time make 8 rounds of 5 s at

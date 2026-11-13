@@ -13,7 +13,8 @@ import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directo
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import { TRIBUNAL_PAGES_PATH, tribunalCodeSlug } from "@/lib/tribunal-code-path";
 import { parseTimestamp as timestamp } from "@/lib/timestamp";
-import { formatLongParisDate as longDate } from "@/lib/long-date";
+import { formatDate } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 
 /**
  * Pages « Ventes judiciaires au tribunal de X » (`/tribunaux/[slug]`), sur le modèle des pages
@@ -343,10 +344,6 @@ export function tribunalPageTitle(
 
 const DESCRIPTION_MAX_LENGTH = 158;
 
-function priceLabel(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
 /**
  * Description d'une page de tribunal, calculée sur les chiffres de la page. Elle tient en 158
  * caractères : si tout n'y rentre pas, la mise à prix médiane, puis la date, sont retirées plutôt
@@ -373,13 +370,13 @@ export function tribunalPageDescription(
   const nextTime = timestamp(activity.nextSaleDate);
   const next =
     nextTime != null && nextTime >= now.getTime() - 86_400_000
-      ? longDate(activity.nextSaleDate)
+      ? formatDate(activity.nextSaleDate)
       : null;
   const nextText = next ? `prochaine audience le ${next}` : null;
   // La médiane n'est écrite qu'avec assez de ventes chiffrées (mêmes seuils que la page).
   const figure = tribunalPriceFigure(activity);
   const median =
-    figure.kind === "median" ? `mise à prix médiane ${priceLabel(figure.median)}` : null;
+    figure.kind === "median" ? `mise à prix médiane ${formatPrice(figure.median)}` : null;
   for (const details of [[nextText, median], [nextText], []]) {
     const text = [head, details.filter(Boolean).join(", ")].filter(Boolean).join(" : ");
     const sentence = `${text}.`;

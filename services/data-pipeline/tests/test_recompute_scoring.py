@@ -4,14 +4,16 @@ from types import SimpleNamespace
 import pytest
 
 from src import recompute_scoring as recompute_module
+from src import sale_finalization, stored_sales
 from src.asset_normalization import normalize_asset_features
 from src.models import AuctionSale
-from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
+from src.recompute_scoring import _validate_persisted_sale_procedure
+from src.stored_sales import sale_from_storage_row
 
 
 def _fake_postgrest(monkeypatch, sales):
     monkeypatch.setattr(
-        recompute_module,
+        stored_sales,
         "load_settings",
         lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
@@ -37,7 +39,7 @@ def _fake_postgrest(monkeypatch, sales):
         # PostgREST does not keep the order of an in() filter.
         return Response([sale for sale in reversed(sales) if sale["id"] in wanted])
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(stored_sales, "postgrest_request_with_retries", fake_request)
     return calls
 
 
@@ -45,7 +47,7 @@ def test_fetch_sales_lists_ids_then_reads_full_rows_in_small_batches(monkeypatch
     sales = [{"id": f"id-{index:03d}", "source_url": f"https://example.test/{index}"} for index in range(60)]
     calls = _fake_postgrest(monkeypatch, sales)
 
-    rows = recompute_module._fetch_sales(source=None, limit=None)
+    rows = stored_sales.fetch_sales(source=None, limit=None)
 
     assert [row["id"] for row in rows] == [sale["id"] for sale in sales]
     assert all(call["method"] == "GET" and call["table"] == "auction_sales" for call in calls)
@@ -57,16 +59,16 @@ def test_fetch_sales_lists_ids_then_reads_full_rows_in_small_batches(monkeypatch
 def test_fetch_sales_limit_keeps_the_most_recent_and_skips_rows_deleted_meanwhile(monkeypatch) -> None:
     sales = [{"id": f"id-{index}"} for index in range(5)]
     calls = _fake_postgrest(monkeypatch, sales)
-    original = recompute_module._postgrest_request_with_retries
+    original = stored_sales.postgrest_request_with_retries
 
     def deleting_request(method, endpoint, *, table, params, **kwargs):
         if params["select"] != "id":
             sales.pop(1)  # deleted between the two passes
         return original(method, endpoint, table=table, params=params, **kwargs)
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", deleting_request)
+    monkeypatch.setattr(stored_sales, "postgrest_request_with_retries", deleting_request)
 
-    rows = recompute_module._fetch_sales(source=None, limit=3)
+    rows = stored_sales.fetch_sales(source=None, limit=3)
 
     assert [row["id"] for row in rows] == ["id-0", "id-2"]
     assert len(calls) == 2
@@ -74,7 +76,7 @@ def test_fetch_sales_limit_keeps_the_most_recent_and_skips_rows_deleted_meanwhil
 
 def test_fetch_sales_can_target_only_active_unassessed_readiness(monkeypatch) -> None:
     monkeypatch.setattr(
-        recompute_module,
+        stored_sales,
         "load_settings",
         lambda: {
             "supabase_url": "https://supabase.test",
@@ -96,9 +98,9 @@ def test_fetch_sales_can_target_only_active_unassessed_readiness(monkeypatch) ->
         captured.update(kwargs)
         return Response()
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(stored_sales, "postgrest_request_with_retries", fake_request)
 
-    recompute_module._fetch_sales(
+    stored_sales.fetch_sales(
         source=None,
         limit=None,
         readiness_unassessed_only=True,
@@ -118,9 +120,8 @@ def test_readiness_backfill_persists_incomplete_rows_without_publication_admissi
     sale = AuctionSale(source_name=row["source_name"], source_url=row["source_url"])
     writes: list[dict[str, object]] = []
 
-    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
-    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: [row])
-    monkeypatch.setattr(recompute_module, "_sale_from_storage_row", lambda _row: sale)
+    monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: [row])
+    monkeypatch.setattr(recompute_module, "sale_from_storage_row", lambda _row: sale)
     monkeypatch.setattr(
         recompute_module,
         "load_settings",
@@ -139,7 +140,7 @@ def test_readiness_backfill_persists_incomplete_rows_without_publication_admissi
         writes.append({"method": method, **kwargs})
         return Response()
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(recompute_module, "postgrest_request_with_retries", fake_request)
 
     assert recompute_module.backfill_catalogue_readiness() == 0
     assert writes[0]["method"] == "PATCH"
@@ -206,8 +207,7 @@ def test_refresh_unknown_sale_procedures_refetches_only_supported_unknowns(monke
     )
     writes: list[str] = []
 
-    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
-    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(recompute_module, "_procedure_refresh_clients", lambda: {})
     monkeypatch.setattr(
         recompute_module,
@@ -251,9 +251,10 @@ def test_recomputed_sale_validates_geocode_before_court_assignment(
         return sale
 
     monkeypatch.setattr(recompute_module, "geocode_sale", fake_geocode)
-    monkeypatch.setattr(recompute_module, "fill_tribunal", fake_tribunal)
-    monkeypatch.setattr(recompute_module, "classify_sale_procedure", lambda sale: calls.append("procedure") or sale)
-    monkeypatch.setattr(recompute_module, "normalize_asset_features", lambda sale: calls.append("assets") or sale)
+    # Étapes communes à la collecte et au recalcul (src.sale_finalization.derive_sale_facts).
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", fake_tribunal)
+    monkeypatch.setattr(sale_finalization, "classify_sale_procedure", lambda sale: calls.append("procedure") or sale)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: calls.append("assets") or sale)
 
     sale = recompute_module._recomputed_sale_from_storage_row(
         {
@@ -294,7 +295,7 @@ def test_storage_recompute_preserves_editorial_text_for_surface_reconciliation()
         },
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
     normalize_asset_features(sale)
 
     assert sale.surface_m2 == Decimal("187")
@@ -317,7 +318,7 @@ def test_storage_recompute_reclassifies_future_unknown_status() -> None:
         "raw_payload": {"status": "unknown"},
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.status == "upcoming"
 
@@ -345,7 +346,7 @@ def test_storage_recompute_restores_partial_pdf_surface_scope() -> None:
         },
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
     normalize_asset_features(sale)
 
     assert sale.surface_m2 == Decimal("3.78")
@@ -363,12 +364,12 @@ def test_fetch_sales_reads_named_columns_and_never_the_whole_row(monkeypatch) ->
     sales = [{"id": f"id-{index}", "source_url": f"https://example.test/{index}"} for index in range(3)]
     calls = _fake_postgrest(monkeypatch, sales)
 
-    recompute_module._fetch_sales(source=None, limit=None)
+    stored_sales.fetch_sales(source=None, limit=None)
 
     selects = [call["params"]["select"] for call in calls]
-    assert selects == ["id", recompute_module.RECOMPUTE_SALE_SELECT]
-    columns = recompute_module.RECOMPUTE_SALE_SELECT.split(",")
-    assert "*" not in recompute_module.RECOMPUTE_SALE_SELECT
+    assert selects == ["id", stored_sales.RECOMPUTE_SALE_SELECT]
+    columns = stored_sales.RECOMPUTE_SALE_SELECT.split(",")
+    assert "*" not in stored_sales.RECOMPUTE_SALE_SELECT
     assert len(columns) == len(set(columns))
     # Les colonnes du modèle, et aucune autre : une colonne interne de la table ne sort pas de la base.
     assert set(columns) == {name for name, field in AuctionSale.model_fields.items() if not field.exclude}
@@ -380,9 +381,9 @@ def test_every_row_column_the_recompute_reads_is_in_the_named_list() -> None:
     import ast
     from pathlib import Path
 
-    tree = ast.parse(Path(recompute_module.__file__).read_text(encoding="utf-8"))
     read: set[str] = set()
-    for node in ast.walk(tree):
+    trees = [ast.parse(Path(module.__file__).read_text(encoding="utf-8")) for module in (recompute_module, stored_sales)]
+    for node in (node for tree in trees for node in ast.walk(tree)):
         target = None
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
             target, argument = node.func.value, node.args[0] if node.args else None
@@ -393,7 +394,7 @@ def test_every_row_column_the_recompute_reads_is_in_the_named_list() -> None:
                 read.add(argument.value)
 
     assert {"id", "updated_at", "raw_payload", "source_urls", "content_hash", "quality_flags"} <= read
-    assert read <= set(recompute_module.RECOMPUTE_SALE_SELECT.split(","))
+    assert read <= set(stored_sales.RECOMPUTE_SALE_SELECT.split(","))
 
 
 def test_recompute_pours_only_written_columns_into_the_raw_payload() -> None:
@@ -425,7 +426,7 @@ def test_recompute_pours_only_written_columns_into_the_raw_payload() -> None:
         },
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     for key in ("id", "updated_at", "created_at", "first_seen_at", "last_seen_at", "held_fields",
                 "premium_readiness_override", "location", "catalogue_quarantined"):
@@ -439,14 +440,14 @@ def test_recompute_pours_only_written_columns_into_the_raw_payload() -> None:
     assert sale.id == row["id"]
     assert sale.updated_at.isoformat() == "2026-11-11T08:00:00+00:00"
     assert sale.created_at is not None and sale.first_seen_at is not None and sale.last_seen_at is not None
-    assert set(sale.raw_payload) & recompute_module.RECOMPUTE_ROW_ONLY_COLUMNS == set()
+    assert set(sale.raw_payload) & stored_sales.RECOMPUTE_ROW_ONLY_COLUMNS == set()
 
 
 def test_recompute_row_only_columns_are_the_identifier_and_the_row_dates() -> None:
-    assert recompute_module.RECOMPUTE_ROW_ONLY_COLUMNS == {
+    assert stored_sales.RECOMPUTE_ROW_ONLY_COLUMNS == {
         "id", "created_at", "updated_at", "first_seen_at", "last_seen_at",
     }
-    assert "raw_payload" not in recompute_module.RECOMPUTE_PAYLOAD_COLUMNS
+    assert "raw_payload" not in stored_sales.RECOMPUTE_PAYLOAD_COLUMNS
 
 
 def test_emptied_visit_dates_do_not_come_back_from_their_copy_in_the_raw_payload() -> None:
@@ -466,17 +467,17 @@ def test_emptied_visit_dates_do_not_come_back_from_their_copy_in_the_raw_payload
             "source_factual_snapshot": {"source_name": "avoventes", "source_url": url, "visit_dates": None},
         },
     }
-    first = _sale_from_storage_row(row)
+    first = sale_from_storage_row(row)
     assert first.visit_dates == visits and first.raw_payload["visit_dates"] == visits
 
     # La colonne est vidée en base ; la ligne relue porte la mémoire brute écrite par le recalcul précédent.
     emptied = {**row, "visit_dates": [], "raw_payload": dict(first.raw_payload)}
-    second = _sale_from_storage_row(emptied)
+    second = sale_from_storage_row(emptied)
 
     assert second.visit_dates == []
     # La copie n'est pas rejouée, mais elle n'est pas non plus écrasée par la colonne vide.
     assert second.raw_payload["visit_dates"] == visits
-    third = _sale_from_storage_row({**emptied, "raw_payload": dict(second.raw_payload)})
+    third = sale_from_storage_row({**emptied, "raw_payload": dict(second.raw_payload)})
     assert third.visit_dates == []
 
 
@@ -497,7 +498,7 @@ def test_visit_dates_without_any_source_snapshot_keep_the_original_fallback() ->
         },
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.visit_dates == visits
     assert sale.raw_payload["visit_dates"] == visits
@@ -518,16 +519,16 @@ def test_a_raw_copy_is_never_rewritten_empty_when_the_column_stays_empty(monkeyp
         "raw_payload": payload,
     }
     # La normalisation écarte ces visites (garde-fou) : la colonne reste vide dans tous les cas.
-    real_normalize = recompute_module.normalize_sale
+    real_normalize = stored_sales.normalize_sale
 
     def normalize_without_visits(raw_sale):
         sale = real_normalize(raw_sale)
         sale.visit_dates = []
         return sale
 
-    monkeypatch.setattr(recompute_module, "normalize_sale", normalize_without_visits)
+    monkeypatch.setattr(stored_sales, "normalize_sale", normalize_without_visits)
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.visit_dates == []
     assert sale.raw_payload["visit_dates"] == visits
@@ -559,7 +560,7 @@ def test_a_filled_column_is_never_replaced_by_the_snapshot_or_by_the_raw_copy() 
         },
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.sale_date.isoformat() == "2027-03-10T13:30:00+00:00"
     assert sale.starting_price_eur == Decimal("95000")
@@ -581,7 +582,7 @@ def test_visit_dates_read_by_the_source_still_come_back_from_the_source_snapshot
         },
     }
 
-    assert _sale_from_storage_row(row).visit_dates == visits
+    assert sale_from_storage_row(row).visit_dates == visits
 
 
 def test_persisted_sale_procedure_validation_accepts_consistent_payload() -> None:
@@ -756,8 +757,7 @@ def test_recompute_is_complete_when_the_admission_rule_refuses_expired_sales(mon
     rows = [{"source_url": "https://example.test/live"}, {"source_url": "https://example.test/expired"}]
     sales = {row["source_url"]: SimpleNamespace(source_url=row["source_url"]) for row in rows}
     written: list[str] = []
-    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
-    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(
         recompute_module, "_recomputed_sale_from_storage_row", lambda row, geocode=False: sales[row["source_url"]]
     )
@@ -780,8 +780,7 @@ def test_recompute_is_complete_when_the_admission_rule_refuses_expired_sales(mon
 
 def test_recompute_still_fails_when_a_writable_sale_is_not_written(monkeypatch) -> None:
     rows = [{"source_url": "https://example.test/a"}, {"source_url": "https://example.test/b"}]
-    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
-    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(
         recompute_module,
         "_recomputed_sale_from_storage_row",

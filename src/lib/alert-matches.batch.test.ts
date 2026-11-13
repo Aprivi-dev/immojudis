@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
   failingAlerts: new Set<string>(),
   /** Ventes dont la ligne est verrouillée en écriture : `upsert_user_alert_matches` les saute sans attendre. */
   lockedSaleIds: new Set<string>(),
-  /** Fonction `upsert_user_alert_matches` absente (migration en retard) : repli sur l'upsert de la table. */
+  /** Fonction `upsert_user_alert_matches` absente : l'erreur remonte, aucun repli sur la table. */
   upsertFunctionMissing: false,
   /** Appels de `upsert_user_alert_matches` (le reste de `rpcCalls` ne compte que les autres fonctions). */
   matchRpcCalls: 0,
@@ -1002,24 +1002,24 @@ describe("alertes en échec isolées", () => {
     ]);
     expect(result.failedAlertCount).toBe(2);
     expect(result.alertFailures[0].error).toBe(
-      "1 correspondance(s) différée(s) : vente verrouillée ou disparue (55P03)",
+      "1 alert match(es) deferred: sale locked or gone (55P03)",
     );
     expect(state.updates).toHaveLength(0);
     // Un seul appel par alerte et par lot : aucun rejeu qui attendrait le verrou.
     expect(state.matchRpcCalls).toBe(2);
   });
 
-  it("fonction d'écriture absente (migration en retard) : repli sur l'upsert de la table", async () => {
+  it("fonction d'écriture absente : l'alerte échoue et n'est pas marquée évaluée, sans repli", async () => {
     state.salesPool = [{ id: "sale-1" }];
     state.userAlerts = sameUser(["a"]);
     state.upsertFunctionMissing = true;
 
     const result = await runSmartAlertEvaluationBatch();
 
-    expect(result.failedAlertCount).toBe(0);
+    expect(result.failedAlertCount).toBe(1);
     expect(state.matchRpcCalls).toBe(1);
-    expect(state.upserts.flat().map((row) => row.sale_id)).toEqual(["sale-1"]);
-    expect(state.updates.map((update) => update.id)).toEqual(["a"]);
+    expect(state.upserts.flat()).toEqual([]);
+    expect(state.updates).toHaveLength(0);
   });
 
   it("journalise le message et le code d'une erreur qui n'est pas une Error", async () => {
@@ -1235,16 +1235,15 @@ describe("alertes « Seulement les pépites »", () => {
     expect(state.upserts.flat()).toEqual([]);
   });
 
-  it("une fonction absente (migration pas appliquée) vaut aucune pépite, sans échec", async () => {
+  it("une fonction absente fait échouer l'alerte, sans correspondance enregistrée", async () => {
     state.userAlerts = [pepiteAlert(1)];
     state.pepiteError = { code: "PGRST202", message: "absente" };
     state.salesPool = [{ id: "sale-b" }];
 
     const result = await runSmartAlertEvaluationBatch();
 
-    expect(result.failedAlertCount).toBe(0);
+    expect(result.failedAlertCount).toBe(1);
     expect(state.upserts.flat()).toEqual([]);
-    expect(state.updates).toHaveLength(1);
   });
 });
 

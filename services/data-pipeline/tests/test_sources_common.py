@@ -721,3 +721,28 @@ def test_parse_html_honors_source_task_deadline_before_and_after_parser(monkeypa
     with source_task_deadline_scope(101):
         with pytest.raises(SourceTaskDeadlineExceeded, match="finishing source HTML"):
             common.parse_html("<html></html>", timeout_seconds=0)
+
+
+@pytest.mark.parametrize("raw", [None, "", "abc", "0", "-5", "nan"])
+def test_source_budget_is_absent_without_a_positive_number_of_seconds(monkeypatch, raw) -> None:
+    if raw is None:
+        monkeypatch.delenv("SOME_SOURCE_BUDGET_SECONDS", raising=False)
+    else:
+        monkeypatch.setenv("SOME_SOURCE_BUDGET_SECONDS", raw)
+
+    assert common.source_budget_deadline("SOME_SOURCE_BUDGET_SECONDS") is None
+    assert common.source_budget_expired(None) is False
+
+
+def test_source_budget_expires_once_its_seconds_have_elapsed(monkeypatch) -> None:
+    now = [100.0]
+    monkeypatch.setattr(common.time, "monotonic", lambda: now[0])
+    monkeypatch.setenv("SOME_SOURCE_BUDGET_SECONDS", "25")
+
+    deadline = common.source_budget_deadline("SOME_SOURCE_BUDGET_SECONDS")
+
+    assert deadline == 125.0
+    now[0] = 124.9
+    assert common.source_budget_expired(deadline) is False
+    now[0] = 125.0
+    assert common.source_budget_expired(deadline) is True

@@ -7,9 +7,12 @@ import { LEGAL_DOCUMENTS, publicLegalPublisher } from "@/lib/legal-documents";
 import { withdrawalInformationLines } from "@/lib/withdrawal-form";
 import { resolveTransactionalEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
+import { ConfigurationError } from "@/lib/api-errors";
+import { formatDateTime } from "@/lib/format/dates";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_CURRENCY,
   ANALYSIS_RECURRING_LABEL,
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
   ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
@@ -26,6 +29,7 @@ import {
   emailParagraph,
 } from "@/lib/email-layout";
 import { asRecord as jsonRecord } from "@/lib/guards";
+import { normalizeEmail } from "@/lib/account";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -62,7 +66,7 @@ export function assertCommercialConfirmationReadiness(
 ): void {
   const config = resolveTransactionalEmailConfig(env);
   if (!config.configured) {
-    throw new Error(
+    throw new ConfigurationError(
       `Confirmation contractuelle indisponible: ${config.missing.join(", ")}. Le checkout est suspendu.`,
     );
   }
@@ -88,8 +92,8 @@ export async function recordCommercialAcceptance({
   offer: CommercialAcceptanceOffer;
 }): Promise<void> {
   const email =
-    typeof auth.claims.email === "string" ? auth.claims.email.trim().toLowerCase() : null;
-  const currency = offer.currency ?? "eur";
+    normalizeEmail(typeof auth.claims.email === "string" ? auth.claims.email : null) || null;
+  const currency = offer.currency ?? ANALYSIS_RECURRING_CURRENCY;
   const offerCode = offer.offerCode ?? ANALYSIS_OFFER_CODE;
   const billingModel = offer.billingModel ?? ANALYSIS_BILLING_MODEL;
   const trialDays = offer.trialDays ?? ANALYSIS_TRIAL_DAYS;
@@ -189,7 +193,9 @@ export async function sendCommercialConfirmation({
   const amountCents =
     acceptance?.amount_cents ?? numberValue(subscriptionEvidence.stripe_price_amount_cents);
   const currency =
-    acceptance?.currency ?? stringValue(subscriptionEvidence.stripe_price_currency) ?? "eur";
+    acceptance?.currency ??
+    stringValue(subscriptionEvidence.stripe_price_currency) ??
+    ANALYSIS_RECURRING_CURRENCY;
   // Périodicité : celle enregistrée avec l'acceptation (le Price relu au paiement), à défaut celle
   // de l'abonnement synchronisé.
   const interval =
@@ -211,8 +217,10 @@ export async function sendCommercialConfirmation({
           : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL}.`,
         recurringPrice,
         "L’abonnement est conclu sans durée limitée et prélevé automatiquement chaque mois, à la même date, jusqu’à sa résiliation. Vous pouvez le résilier à tout moment depuis la page « Mon compte » : la résiliation prend effet à la fin de la période payée.",
-        trialEnd ? `Fin de l’essai prévue le : ${formatOfferDate(trialEnd)}` : null,
-        firstInvoiceAt ? `Premier prélèvement prévu le : ${formatOfferDate(firstInvoiceAt)}` : null,
+        trialEnd ? `Fin de l’essai prévue le : ${formatDateTime(trialEnd, trialEnd)}` : null,
+        firstInvoiceAt
+          ? `Premier prélèvement prévu le : ${formatDateTime(firstInvoiceAt, firstInvoiceAt)}`
+          : null,
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n")
@@ -458,14 +466,4 @@ function formatInterval(interval: string | null, count: number | null): string {
   const normalizedCount = count && count > 1 ? ` tous les ${count}` : " chaque";
   const label = interval === "month" ? "mois" : interval === "year" ? "an" : interval;
   return `${normalizedCount} ${label}`;
-}
-
-function formatOfferDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(date);
 }

@@ -1,4 +1,5 @@
 import type { AuctionSale } from "./types";
+import { departmentFromPostalCode } from "./commune-names";
 import { STREET_TYPE_END, streetTypePattern } from "./street-types";
 import { stripWithdrawnSourceContent } from "./withdrawn-sources";
 
@@ -90,12 +91,6 @@ export function cleanDateForListing(value: string | null | undefined): string | 
     return text.slice(0, 10);
   }
   return text;
-}
-
-function departmentFromPostalCode(value: string | null | undefined): string | null {
-  const postal = /^\d{5}$/.exec(value?.trim() ?? "")?.[0];
-  if (!postal) return null;
-  return /^(?:97[1-8]|98[6-8])\d{2}$/.test(postal) ? postal.slice(0, 3) : postal.slice(0, 2);
 }
 
 function postalCodeFromAddress(value: string | null | undefined): string | null {

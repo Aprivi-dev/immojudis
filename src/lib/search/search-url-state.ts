@@ -1,4 +1,4 @@
-import { validSaleDate } from "./sale-date-range";
+import { validCalendarDay } from "@/lib/calendar-day";
 import { asFiniteNumber } from "@/lib/types";
 import { parseSaleType, type SaleTypeFilter } from "@/lib/sale-types";
 import { textValue } from "@/lib/guards";
@@ -10,7 +10,7 @@ export type ViewportBounds = {
   west: number;
 };
 
-export const SEARCH_SORT_KEYS = [
+const SEARCH_SORT_KEYS = [
   "relevance",
   "price_desc",
   "price_asc",
@@ -25,8 +25,8 @@ export const SEARCH_SORT_KEYS = [
 
 export type SearchSortKey = (typeof SEARCH_SORT_KEYS)[number];
 
-export const TRANSACTION_TYPES = ["for_sale", "for_rent", "sold"] as const;
-export type TransactionType = (typeof TRANSACTION_TYPES)[number];
+const TRANSACTION_TYPES = ["for_sale", "sold"] as const;
+type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
 export type SalesSearchParams = {
   minSaleDate?: string;
@@ -127,7 +127,7 @@ function listValue(value: unknown): string[] | undefined {
   return next.length ? Array.from(new Set(next)) : undefined;
 }
 
-export function parseViewport(value: unknown): ViewportBounds | undefined {
+function parseViewport(value: unknown): ViewportBounds | undefined {
   const raw = optionalText(value);
   if (!raw) return undefined;
 
@@ -138,7 +138,7 @@ export function parseViewport(value: unknown): ViewportBounds | undefined {
   return { north, south, east, west };
 }
 
-export function parseBbox(value: unknown): ViewportBounds | undefined {
+function parseBbox(value: unknown): ViewportBounds | undefined {
   const raw = optionalText(value);
   if (!raw) return undefined;
 
@@ -150,7 +150,7 @@ export function parseBbox(value: unknown): ViewportBounds | undefined {
   return { north, south, east, west };
 }
 
-export function serializeBbox(bounds: ViewportBounds | undefined): string | undefined {
+function serializeBbox(bounds: ViewportBounds | undefined): string | undefined {
   if (!bounds) return undefined;
   return [bounds.west, bounds.south, bounds.east, bounds.north]
     .map((value) => Number(value.toFixed(5)))
@@ -187,8 +187,8 @@ function parseTransactionType(value: unknown): TransactionType | undefined {
 
 export function validateSalesSearch(search: Record<string, unknown>): SalesSearchParams {
   return {
-    minSaleDate: validSaleDate(search.minSaleDate),
-    maxSaleDate: validSaleDate(search.maxSaleDate),
+    minSaleDate: validCalendarDay(search.minSaleDate),
+    maxSaleDate: validCalendarDay(search.maxSaleDate),
     saleType: parseSaleType(search.saleType),
     city: optionalText(search.city),
     department: optionalText(search.department),

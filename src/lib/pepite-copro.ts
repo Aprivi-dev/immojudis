@@ -18,7 +18,7 @@ export type CoproDistressKind =
   | "carence";
 
 /** Le thème des points lus : seul « copropriété » compte. */
-export const COPRO_DISTRESS_THEME = "copropriete" as const;
+const COPRO_DISTRESS_THEME = "copropriete" as const;
 
 /** Ce que la détection lit d'un point de la lecture des pièces. */
 export type CoproReadingPoint = Pick<

@@ -1,4 +1,5 @@
 import { z } from "zod/mini";
+import { parisDateKey } from "@/lib/paris-time";
 
 /**
  * Relevé mensuel des avocats référencés (point 72) : pour un mois civil (heure de Paris), le nombre
@@ -78,13 +79,7 @@ export function lawyerStatementMonthStart(month: string): string {
 
 /** Mois précédent la date donnée, en heure de Paris : celui qu'on envoie d'ordinaire au début du suivant. */
 export function previousLawyerStatementMonth(now = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(now);
-  const year = Number(parts.find((part) => part.type === "year")?.value);
-  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const [year, month] = parisDateKey(now).split("-").map(Number);
   const previous = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
   return `${previous.year}-${String(previous.month).padStart(2, "0")}`;
 }

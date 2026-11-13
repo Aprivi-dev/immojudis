@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
 
 /**
  * Publicly visible and indexable sales for the sitemap, read with the anonymous client through
@@ -12,7 +13,7 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
  * (`/ressources/sitemap.xml`) are listed apart.
  */
 export const SITEMAP_URL_LIMIT = 5_000;
-export const SITEMAP_REVALIDATE_SECONDS = 3_600;
+const SITEMAP_REVALIDATE_SECONDS = 3_600;
 export const SITEMAP_CACHE_TAG = "public-sitemap";
 /** PostgREST returns at most 1 000 rows per request. */
 const DATABASE_PAGE_SIZE = 1_000;
@@ -25,46 +26,17 @@ const DATABASE_PAGE_SIZE = 1_000;
 export type SitemapSale = { id: string; lastModified: string | null };
 export type SitemapSalePage = { sales: SitemapSale[]; total: number };
 
-type ErrorLike = { code?: string; message?: string } | null;
-
 type SitemapClient = {
   rpc: (
     fn: "list_public_sale_sitemap_entries",
     args: { p_limit: number; p_offset: number },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
-  from: (view: "v_auction_sales_app_preview") => {
-    select: (
-      columns: "id",
-      options: { count: "exact" },
-    ) => {
-      order: (column: "id") => {
-        range: (
-          from: number,
-          to: number,
-        ) => PromiseLike<{
-          data: unknown;
-          count: number | null;
-          error: unknown;
-        }>;
-      };
-    };
-  };
 };
 
-function isMissingFunction(error: ErrorLike): boolean {
-  return (
-    !!error &&
-    (error.code === "PGRST202" ||
-      error.code === "42883" ||
-      /list_public_sale_sitemap_entries/.test(error.message ?? ""))
-  );
-}
-
 /**
- * One page of publicly visible sales, ordered by id. Uses the dedicated RPC
- * (identifier + date of the last visible change) and falls back to the anonymous preview view
- * (identifier only) while the RPC is not deployed. A database that has not been migrated yet answers
- * without `content_changed_at`: no date is emitted, never the technical `updated_at`.
+ * One page of publicly visible sales, ordered by id, through the dedicated RPC (identifier + date
+ * of the last visible change). A row without `content_changed_at` emits no date, never the
+ * technical `updated_at`.
  */
 export async function fetchSitemapSalePage(
   client: SitemapClient,
@@ -75,36 +47,22 @@ export async function fetchSitemapSalePage(
     p_limit: DATABASE_PAGE_SIZE,
     p_offset: offset,
   });
-  if (!error) {
-    const rows = (data ?? []) as Array<{
-      id: string;
-      content_changed_at?: string | null;
-      total_count: number | string;
-    }>;
-    return {
-      sales: rows.map((row) => ({ id: row.id, lastModified: row.content_changed_at ?? null })),
-      total: rows.length > 0 ? Number(rows[0].total_count) : offset,
-    };
-  }
-  if (!isMissingFunction(error as ErrorLike)) throw error;
-
-  const fallback = await client
-    .from("v_auction_sales_app_preview")
-    .select("id", { count: "exact" })
-    .order("id")
-    .range(offset, offset + DATABASE_PAGE_SIZE - 1);
-  if (fallback.error) throw fallback.error;
-  const rows = (fallback.data ?? []) as Array<{ id: string }>;
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{
+    id: string;
+    content_changed_at?: string | null;
+    total_count: number | string;
+  }>;
   return {
-    sales: rows.map((row) => ({ id: row.id, lastModified: null })),
-    total: fallback.count ?? offset + rows.length,
+    sales: rows.map((row) => ({ id: row.id, lastModified: row.content_changed_at ?? null })),
+    total: rows.length > 0 ? Number(rows[0].total_count) : offset,
   };
 }
 
 const cachedSalePage = unstable_cache(
   async (pageIndex: number): Promise<SitemapSalePage> => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw publicSupabaseConfigurationError();
     return fetchSitemapSalePage(client as unknown as SitemapClient, pageIndex);
   },
   ["public-sitemap", "sales-page", "v2"],

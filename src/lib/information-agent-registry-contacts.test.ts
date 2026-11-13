@@ -3,7 +3,7 @@ import {
   discoverInformationAgentContacts,
   selectInformationAgentContact,
   type InformationAgentRegistryContact,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import { resolveInformationAgentAddressOrigin } from "@/lib/information-agent/address-origin";
 import type { AuctionSale } from "@/lib/types";
 

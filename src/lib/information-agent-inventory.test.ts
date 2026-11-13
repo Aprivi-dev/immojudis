@@ -4,11 +4,11 @@ import {
   buildInformationAgentInventory,
   type InformationAgentInventorySale,
 } from "@/lib/information-agent-inventory";
+import { buildInformationRequestDraft } from "@/lib/information-agent/draft";
 import {
-  buildInformationRequestDraft,
   detectInformationGaps,
   informationAgentQuestionText,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent-questions";
 import type { AuctionSale } from "@/lib/types";
 
 vi.mock("@/integrations/supabase/client.server", () => ({

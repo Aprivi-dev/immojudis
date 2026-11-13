@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -15,10 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional for parsing-only test
     sql = None
 
 from src.config import load_settings
-from src.storage.supabase_client import connect
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
+from src.storage.supabase_client import connect as postgres_connect
 
 DEFAULT_SOURCE_URL = "https://www.data.gouv.fr/datasets/statistiques-dvf"
 DEFAULT_BATCH_SIZE = 1_000
@@ -66,7 +63,9 @@ class DvfStatisticsImportSummary:
     upserted_rows: int = 0
 
 
-def import_dvf_statistics(options: DvfStatisticsImportOptions) -> DvfStatisticsImportSummary:
+def import_dvf_statistics(
+    options: DvfStatisticsImportOptions, *, connect: Callable[[str], Any] = postgres_connect
+) -> DvfStatisticsImportSummary:
     summary = DvfStatisticsImportSummary()
     rows = iter_statistics_rows(options.path)
     settings = load_settings()
@@ -80,7 +79,7 @@ def import_dvf_statistics(options: DvfStatisticsImportOptions) -> DvfStatisticsI
             pass
         return summary
 
-    with _postgres_connect(str(db_url)) as connection:
+    with connect(str(db_url)) as connection:
         payload: list[dict[str, object]] = []
         for row in normalized:
             payload.append(row)

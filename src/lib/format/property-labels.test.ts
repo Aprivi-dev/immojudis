@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { occupancyLabel, propertyTypeLabel } from "./property-labels";
+import { currentFilterValue } from "@/lib/legacy-filter-values";
+import { isQualifiedPropertyType, occupancyLabel, propertyTypeLabel } from "./property-labels";
 
 describe("occupancyLabel", () => {
   // Tous les statuts de la contrainte SQL de `occupancy_status` (vacant, occupied, rented,
@@ -18,7 +19,6 @@ describe("occupancyLabel", () => {
     ["inoccupé", "Libre"],
     ["Inoccupé", "Libre"],
     ["libre", "Libre"],
-    ["free", "Libre"],
     ["loué", "Loué"],
     ["Occupé par le propriétaire", "Occupé par le propriétaire"],
     ["inconnu", "À confirmer"],
@@ -37,6 +37,11 @@ describe("occupancyLabel", () => {
     ]) {
       expect(occupancyLabel(status), status).not.toMatch(/[a-z]_[a-z]|squatted|vacant|rented/);
     }
+  });
+
+  it("labels the old filter value « free » once read by the compatibility table", () => {
+    // Une alerte enregistrée garde parfois `free` : son résumé passe par `currentFilterValue`.
+    expect(occupancyLabel(currentFilterValue("free"))).toBe("Libre");
   });
 
   it("keeps a free-text status that no rule recognizes", () => {
@@ -63,7 +68,43 @@ describe("propertyTypeLabel", () => {
     expect(propertyTypeLabel(null)).toBe("Bien");
   });
 
-  it("keeps a human-written label untouched", () => {
-    expect(propertyTypeLabel("Château")).toBe("Château");
+  it("keeps a human-written label that no family recognises untouched", () => {
+    expect(propertyTypeLabel("Péniche")).toBe("Péniche");
+    // Le château est une maison depuis la famille commune (lot 9 A), comme pour les loyers.
+    expect(propertyTypeLabel("Château")).toBe("Maison");
+  });
+});
+
+describe("isQualifiedPropertyType", () => {
+  it.each(["apartment", "house", "building", "land", "parking", "commercial", "mixed", "Château"])(
+    "qualifie %s, qui a un vrai libellé",
+    (type) => {
+      expect(isQualifiedPropertyType(type)).toBe(true);
+    },
+  );
+
+  it.each([null, undefined, "", "other", "unknown", "OTHER", "agricultural_estate"])(
+    "ne qualifie pas %s (« Bien » ou « Bien à qualifier »)",
+    (type) => {
+      expect(isQualifiedPropertyType(type)).toBe(false);
+    },
+  );
+
+  it("donne la même réponse pour un code et pour le libellé qu'un rapport a enregistré", () => {
+    for (const code of [
+      "apartment",
+      "house",
+      "building",
+      "land",
+      "parking",
+      "commercial",
+      "mixed",
+    ]) {
+      const label = propertyTypeLabel(code);
+      expect(propertyTypeLabel(label), code).toBe(label);
+      expect(isQualifiedPropertyType(label), code).toBe(true);
+    }
+    expect(isQualifiedPropertyType("Bien")).toBe(false);
+    expect(isQualifiedPropertyType("Bien à qualifier")).toBe(false);
   });
 });

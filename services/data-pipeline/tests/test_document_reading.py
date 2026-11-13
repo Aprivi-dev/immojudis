@@ -4,7 +4,6 @@ import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
-import src.pdf_enrichment  # noqa: F401  (import order used across the pipeline tests)
 from src import document_reading as reading
 
 V3 = reading.DOCUMENT_READING_VERSION

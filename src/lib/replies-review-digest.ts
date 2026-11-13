@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import type { ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
@@ -17,7 +18,7 @@ import {
   stripInvisibleCharacters,
 } from "@/lib/information-agent-inbound/text";
 import { resolveOperationalAlertEmailConfig } from "@/lib/operational-alerts";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey } from "@/lib/paris-time";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 /**
@@ -41,7 +42,7 @@ import { resolveSiteOrigin } from "@/lib/site-url";
  *   s'il y a au moins une réponse ou un message à relire.
  */
 
-export const REPLIES_REVIEW_DIGEST_MODES = ["off", "preview", "on"] as const;
+const REPLIES_REVIEW_DIGEST_MODES = ["off", "preview", "on"] as const;
 export type RepliesReviewDigestMode = (typeof REPLIES_REVIEW_DIGEST_MODES)[number];
 
 /** Lignes listées au plus par catégorie : le reste n'est que compté. */
@@ -59,8 +60,8 @@ export function repliesReviewDigestMode(env: Env = process.env): RepliesReviewDi
   return mode === "preview" || mode === "on" ? mode : "off";
 }
 
-export type RepliesReviewDigestEntry = { sender: string; subject: string };
-export type RepliesReviewDigestSection = {
+type RepliesReviewDigestEntry = { sender: string; subject: string };
+type RepliesReviewDigestSection = {
   total: number;
   entries: RepliesReviewDigestEntry[];
 };
@@ -280,7 +281,7 @@ export async function runRepliesReviewDigest({
 /** Fait échouer le passage (donc la supervision) quand le résumé dû n'est pas parti. */
 export function assertRepliesReviewDigestComplete(summary: RepliesReviewDigestSummary): void {
   if (!summary.configured) {
-    throw new Error(
+    throw new ConfigurationError(
       `Résumé des réponses à relire : ${summary.replies + summary.unrouted} à relire mais le canal email d’exploitation n’est pas configuré (OPERATIONS_ALERT_EMAIL_TO, RESEND_API_KEY, ALERT_EMAIL_FROM).`,
     );
   }

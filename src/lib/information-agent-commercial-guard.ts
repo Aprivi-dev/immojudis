@@ -19,6 +19,7 @@
  * de la vente », « promotion immobilière », « plateforme de vente »… La garde cherche des formes
  * commerciales précises, pas des mots isolés : un faux positif bloquerait un message légitime.
  */
+import { PublicApiError } from "@/lib/api-errors";
 
 export type InformationAgentCommercialMention = {
   /** Règle déclenchée. */
@@ -284,8 +285,9 @@ export function assertNoInformationAgentCommercialMention(
   const mentions = findInformationAgentCommercialMentions(text, options);
   if (mentions.length) {
     const list = [...new Set(mentions.map((mention) => `« ${mention.excerpt} »`))].slice(0, 5);
-    throw new Error(
+    throw new PublicApiError(
       `Le message ne doit contenir aucune mention commerciale (offre, compte, inscription, mise en avant, prix, partenariat, lien étranger au dossier) : ${list.join(", ")}.`,
+      422,
     );
   }
 }

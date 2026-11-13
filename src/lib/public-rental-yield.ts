@@ -1,5 +1,5 @@
 import { feeRegimeKeyForSale } from "@/lib/fee-regime-key";
-import { formatWholeEuros } from "@/lib/format-euros";
+import { formatPercent, formatPrice } from "@/lib/format/numbers";
 import { estimateSaleGrossYieldRange, type GrossYieldRange } from "@/lib/geo";
 import type { RentReference } from "@/lib/rent-reference";
 import { isAnilRentReference } from "@/lib/rent-source-notice";
@@ -8,16 +8,12 @@ import type { AuctionSale } from "@/lib/types";
 /**
  * Rendement brut de la fiche publique, calculé par le serveur au rendu de la page : la section
  * « Marché local » ne reçoit que le texte, sans embarquer dans le navigateur le calcul des frais
- * d'acquisition (budget de JavaScript client). Mêmes règles, mêmes mots que le bloc « Marché
- * locatif » de la fiche des comptes (`RentalMarketBlock`, `yieldText`) ; un test les compare.
+ * d'acquisition (budget de JavaScript client). Le bloc « Marché locatif » de la fiche des comptes
+ * (`RentalMarketBlock`) écrit son rendement avec le même libellé et le même `publicYieldText`.
  */
 export const PUBLIC_YIELD_LABEL = "Rendement brut à la mise à prix (charges comprises)";
 
-const percentFormat = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-const percent = (value: number) => `${percentFormat.format(value)} %`;
+const percent = (value: number) => formatPercent(value, 1, 1);
 
 /**
  * Une référence fiable donne la valeur centrale et sa fourchette ; une référence indicative ne donne
@@ -73,14 +69,14 @@ function highestDisplayedPct(
 
 /** Loyer mensuel arrondi à la dizaine d'euros : l'estimation n'est pas plus précise. */
 const monthlyRent = (surface: number, perM2: number) =>
-  formatWholeEuros(Math.round((surface * perM2) / 10) * 10);
+  formatPrice(Math.round((surface * perM2) / 10) * 10);
 
 /**
  * Le loyer mensuel estimé du bien (surface × loyer d'annonce au m²), avec la même règle que le
  * rendement : une référence fiable donne la valeur centrale et sa fourchette, une référence
  * indicative QUE la fourchette, et rien sans borne de loyer.
  */
-export function publicMonthlyRentText(surface: number, reference: RentReference): string | null {
+function publicMonthlyRentText(surface: number, reference: RentReference): string | null {
   const { lowPerM2, highPerM2, rentPerM2 } = reference;
   const bounds =
     lowPerM2 != null && highPerM2 != null && lowPerM2 > 0 && highPerM2 > 0

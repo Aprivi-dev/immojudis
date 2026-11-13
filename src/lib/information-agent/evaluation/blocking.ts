@@ -73,7 +73,7 @@ const EXPECTED_BY_CASE: Record<string, string[]> = {
   "F9-15": [...STATEMENT],
 };
 
-export type BlockingRow = {
+type BlockingRow = {
   case_id: string;
   famille: number;
   field: EvaluationField;
@@ -104,7 +104,7 @@ function withoutQuotedRequest(body: string): string {
 }
 
 /** La demande de non-publication du cas ne vient QUE de notre demande citée. */
-export function doNotPublishOnlyFromQuotedRequest(evaluationCase: EvaluationCase): boolean {
+function doNotPublishOnlyFromQuotedRequest(evaluationCase: EvaluationCase): boolean {
   const { objet, corps } = evaluationCase.message;
   return (
     mentionsDoNotPublish(`${objet}\n${corps}`) &&

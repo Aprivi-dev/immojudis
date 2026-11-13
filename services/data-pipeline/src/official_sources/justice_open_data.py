@@ -12,8 +12,27 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .base import canonical_sha256
+from src.text_folding import ascii_alnum_words, strip_accents, to_ascii
 
+from .base import canonical_sha256, has_excessive_controls, looks_like_html
+
+# Nom de la source dans ``data_sources`` : celui des enregistrements produits ici et de leur politique d'ingestion.
+JUSTICE_OPEN_DATA_SOURCE_NAME = "justice_open_data"
+# Version du schéma et nature (``record_kind``) d'un enregistrement stocké, par ``record_type`` produit ici. Écrites
+# par ``src.outcome_ingestion.adapters``, relues par les requêtes de ``src.outcome_ingestion.repository``.
+JUSTICE_SCHEMA_VERSIONS = {
+    "court_competence": "justice_court_competence_v1",
+    "justice_court_structure": "justice_court_structure_v1",
+}
+JUSTICE_RECORD_KINDS = {
+    "court_competence": "territorial_jurisdiction",
+    "justice_court_structure": "court_reference_candidate",
+}
+# Grade de la source et état de revue d'un enregistrement stocké : le grade est écrit par les deux lecteurs de ligne
+# ci-dessous, l'état de revue par ``src.outcome_ingestion.adapters`` ; la résolution des tribunaux de
+# ``src.outcome_ingestion.repository`` exige les deux.
+JUSTICE_SOURCE_GRADE = "A"
+JUSTICE_REVIEW_STATUS = "pending"
 JUSTICE_COMPETENCES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france"
 )
@@ -87,13 +106,6 @@ _DIGITS_RE = re.compile(r"^\d+$")
 
 class JusticeOpenDataSchemaError(ValueError):
     """Raised when a download is not one of the supported Justice CSV schemas."""
-
-
-@dataclass(frozen=True)
-class DetectedCsvFormat:
-    encoding: str
-    delimiter: str
-    headers: tuple[str, ...]
 
 
 @dataclass
@@ -306,9 +318,9 @@ def _parse_competence_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "court_competence",
         "stable_id": stable_id,
-        "source_name": "justice_open_data",
+        "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_COMPETENCES_DATASET_URL,
-        "source_grade": "A",
+        "source_grade": JUSTICE_SOURCE_GRADE,
         "insee_code": insee_code,
         "commune_name": commune_name,
         "ca_origin_code": ca_origin,
@@ -359,9 +371,9 @@ def _parse_structure_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "justice_court_structure",
         "stable_id": stable_id,
-        "source_name": "justice_open_data",
+        "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_STRUCTURES_DATASET_URL,
-        "source_grade": "A",
+        "source_grade": JUSTICE_SOURCE_GRADE,
         "dataset_year": 2026,
         "structure_type_code": structure_type,
         "insee_code": insee_code,
@@ -407,9 +419,9 @@ def _decode_text_file(path: Path) -> tuple[str, str]:
             text = payload.decode(encoding, errors="strict")
         except UnicodeDecodeError:
             continue
-        if _looks_like_html(text):
+        if looks_like_html(text):
             raise JusticeOpenDataSchemaError("download is HTML, not a Justice CSV resource")
-        if _has_excessive_controls(text):
+        if has_excessive_controls(text):
             raise JusticeOpenDataSchemaError("CSV file contains unexpected control characters")
         return text, encoding
     raise JusticeOpenDataSchemaError("CSV encoding is neither UTF-8 nor Windows-1252")
@@ -464,8 +476,7 @@ def _record_anomaly(
 
 
 def _field_token(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"[^a-z0-9]+", "_", normalized.lower()).strip("_")
+    return ascii_alnum_words(to_ascii(value).lower(), "_")
 
 
 def _clean_header(value: str) -> str:
@@ -478,21 +489,7 @@ def _clean_text(value: object) -> str:
 
 
 def _court_fingerprint(value: object) -> str:
-    normalized = unicodedata.normalize("NFKD", _clean_text(value))
-    ascii_text = "".join(char for char in normalized if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
-
-
-def _looks_like_html(text: str) -> bool:
-    prefix = text.lstrip()[:512].lower()
-    return prefix.startswith(("<!doctype html", "<html", "<?xml")) or "<html" in prefix
-
-
-def _has_excessive_controls(text: str) -> bool:
-    if not text:
-        return False
-    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text[:100_000])
-    return controls > max(2, len(text[:100_000]) // 1_000)
+    return ascii_alnum_words(strip_accents(_clean_text(value)).lower())
 
 
 def _main() -> int:

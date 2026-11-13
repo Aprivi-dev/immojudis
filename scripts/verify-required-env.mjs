@@ -43,9 +43,12 @@ if (configuredSiteUrl && !isValidHttpOrigin(configuredSiteUrl)) {
   process.exit(1);
 }
 
+// Même seuil que `src/lib/information-agent-signed-link.ts` (son test le vérifie).
+const INFORMATION_AGENT_PORTAL_SECRET_MIN_BYTES = 32;
 if (
   process.env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true" &&
-  Buffer.byteLength(process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() || "", "utf8") < 32
+  Buffer.byteLength(process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() || "", "utf8") <
+    INFORMATION_AGENT_PORTAL_SECRET_MIN_BYTES
 ) {
   console.error(
     "[env] INFORMATION_AGENT_PORTAL_SECRET must contain at least 32 bytes when outbound information requests are enabled.",

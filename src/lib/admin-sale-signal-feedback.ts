@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SaleSignal } from "@/lib/sale-signal-feedback";
 
@@ -13,11 +13,11 @@ import type { SaleSignal } from "@/lib/sale-signal-feedback";
  * vérifier) y ont leur ligne.
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
- * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
- * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
+ * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
+ * `unavailableSaleSignalFeedback()`, tout « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
 /** Un nombre exact, ou `null` : « non mesuré » (comme `PilotageCount`). */
-export type FeedbackCount = number | null;
+type FeedbackCount = number | null;
 
 export type SignalFeedbackCounts = {
   /** Retours, dont « Utile » et « Pas pertinent », et comptes distincts. */
@@ -29,7 +29,7 @@ export type SignalFeedbackCounts = {
   reasons: Record<string, FeedbackCount>;
   /**
    * Retours par version de la règle de la vente à la lecture (signal `pepite` seulement ; `unknown` : vente sans
-   * ligne de pépite). Vide pour les autres signaux ou quand la migration 20261108180100 n'est pas appliquée.
+   * ligne de pépite). Vide pour les autres signaux.
    */
   ruleVersions: Record<string, number>;
 };
@@ -117,31 +117,22 @@ export function parseSaleSignalFeedbackSummary(raw: unknown): SaleSignalFeedback
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 /** Comme `getAdminPilotage` : jeton et rôle administrateur vérifiés, puis lecture avec le client de service. */
 export async function getAdminSaleSignalFeedback(
   authToken: string,
   now = new Date(),
 ): Promise<SaleSignalFeedbackSummary> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_summary", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableSaleSignalFeedback();
-    throw error;
-  }
+  if (error) throw error;
   return parseSaleSignalFeedbackSummary(data);
 }
 
 /** Un motif de retour négatif sur une vente : le nombre de « Pas pertinent », jamais un compte. */
-export type SaleFeedbackBySaleRow = {
+type SaleFeedbackBySaleRow = {
   saleId: string;
   title: string | null;
   city: string | null;
@@ -215,16 +206,12 @@ export async function getAdminSaleFeedbackBySale(
   authToken: string,
   now = new Date(),
 ): Promise<SaleFeedbackBySale> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_by_sale", {
     p_now: now.toISOString(),
     p_limit: 100,
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableSaleFeedbackBySale();
-    throw error;
-  }
+  if (error) throw error;
   return parseSaleFeedbackBySale(data);
 }

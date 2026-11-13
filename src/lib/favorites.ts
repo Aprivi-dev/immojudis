@@ -12,6 +12,7 @@ import {
 } from "@/lib/favorite-dossier-shared";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type FavoriteRow = Database["public"]["Tables"]["user_favorites"]["Row"];
 
@@ -33,7 +34,7 @@ export type FavoriteSale = {
   bidCeilingSavedAt: string | null;
 };
 
-export type FavoriteDepartmentSummary = {
+type FavoriteDepartmentSummary = {
   department: string;
   count: number;
   totalStartingPriceEur: number;
@@ -49,7 +50,7 @@ export type FavoriteSalesSummary = {
   departments: FavoriteDepartmentSummary[];
 };
 
-export type FavoritePlanAccess = {
+type FavoritePlanAccess = {
   code: PlanCode;
   label: string;
   feature: FeatureAccess;
@@ -130,7 +131,7 @@ export async function addFavoriteSale({
   const [favorite] = joinFavoriteRowsToSales([row], sales);
 
   if (created) {
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "sales.favorite_added",
       subjectType: "sale",
@@ -167,7 +168,7 @@ export async function removeFavoriteSale({
   if (error) throw error;
 
   if (data) {
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "sales.favorite_removed",
       subjectType: "sale",
@@ -248,7 +249,7 @@ export function buildFavoriteSalesSummary(
 export async function assertSaleFavoritesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.favorites")) {
-    throw new Error("Favoris réservés à l’offre Analyse.");
+    throw new ForbiddenError("Favoris réservés à l’offre Analyse.");
   }
   return plan;
 }
@@ -301,7 +302,7 @@ async function insertFavoriteRow(
 
   const existing = await loadFavoriteRow(auth, saleId);
   if (!existing) {
-    throw error ?? new Error("Favori introuvable après insertion.");
+    throw error ?? new Error("Favorite row missing after insert.");
   }
 
   return { row: existing, created: false };

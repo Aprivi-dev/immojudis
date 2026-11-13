@@ -124,7 +124,7 @@ class QueueBench:
         monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", self._finish)
         monkeypatch.setattr(queued_runner, "defer_budget_jobs", self._defer)
         monkeypatch.setattr(
-            supabase_client, "_read_persisted_pdf_rows_rest", lambda *_args: [dict(row) for row in self.extraction_rows]
+            supabase_client, "read_persisted_pdf_rows_rest", lambda *_args: [dict(row) for row in self.extraction_rows]
         )
         monkeypatch.setattr(supabase_client, "_persist_pdf_document_checkpoint_payload_to_supabase", self._checkpoint)
         monkeypatch.setattr(document_backlog, "_fetch_sale", lambda _url: self.stored_sale())
@@ -136,8 +136,7 @@ class QueueBench:
 
         # Étapes de la passe sans rapport avec les pièces.
         monkeypatch.setattr(queued_runner, "sale_needs_position", lambda _sale: False)
-        for name in ("fill_tribunal", "classify_sale_procedure", "normalize_asset_features"):
-            monkeypatch.setattr(queued_runner, name, lambda _sale: None)
+        monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda _sale: None)
 
     # --- réseau
     def _respond(self, url: str, *, headers: dict[str, str], timeout_seconds: float) -> httpx.Response:

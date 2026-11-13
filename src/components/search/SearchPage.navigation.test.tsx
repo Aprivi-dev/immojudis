@@ -49,9 +49,12 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/client-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/client-api")>()),
-  fetchAccessPlan: state.fetchAccessPlan,
   fetchNotificationPreferences: vi.fn(async () => ({ preferences: {} })),
   fetchSalesAiReviewProjections: vi.fn(async () => ({ projections: [] })),
+}));
+vi.mock("@/lib/client-billing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/client-billing")>()),
+  fetchAccessPlan: state.fetchAccessPlan,
 }));
 vi.mock("@/lib/search/search-service", () => ({
   fetchSearchResults: state.fetchSearchResults,
@@ -367,8 +370,8 @@ describe("/sales : adresse nettoyée", () => {
 
 describe("/sales : page hors bornes", () => {
   it("dit que la page n'existe pas et renvoie à la page 1, sans parler de panne ni rejouer", async () => {
-    state.fetchSearchResults.mockRejectedValue(new SearchRejectedError("Page hors limites."));
-    state.fetchSearchCount.mockRejectedValue(new SearchRejectedError("Page hors limites."));
+    state.fetchSearchResults.mockRejectedValue(new SearchRejectedError("Page hors limites.", true));
+    state.fetchSearchCount.mockRejectedValue(new SearchRejectedError("Page hors limites.", true));
     renderSales("/sales?page=999&city=Pau", {
       client: new QueryClient({ defaultOptions: { queries: { retry: retryUnlessRefused } } }),
     });

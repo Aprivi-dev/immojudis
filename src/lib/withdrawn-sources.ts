@@ -138,7 +138,7 @@ export async function loadWithdrawnSourcesOncePerSession(
 }
 
 /** Source retirée dont `url` est un hôte propre, sinon `null`. */
-export function withdrawnSourceOfUrl(url: unknown): string | null {
+function withdrawnSourceOfUrl(url: unknown): string | null {
   if (typeof url !== "string" || !url.trim()) return null;
   let host: string;
   try {

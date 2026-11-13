@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { AuthRequiredError, ConfigurationError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -62,7 +63,9 @@ describe("critical API route contracts", () => {
   });
 
   it("returns a stable authentication error on CSV exports", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await exportCsv(
       new Request("https://example.test/api/sales/export", {
@@ -112,7 +115,9 @@ describe("critical API route contracts", () => {
   });
 
   it("does not expose Stripe configuration details", async () => {
-    mocks.webhook.mockRejectedValue(new Error("STRIPE_WEBHOOK_SECRET configuration missing"));
+    mocks.webhook.mockRejectedValue(
+      new ConfigurationError("STRIPE_WEBHOOK_SECRET configuration missing"),
+    );
 
     const response = await stripeWebhook(
       new Request("https://example.test/api/stripe/webhook", {
@@ -130,7 +135,9 @@ describe("critical API route contracts", () => {
 
   it("redacts checkout configuration failures and preserves correlation", async () => {
     mocks.requireAuth.mockResolvedValue({ userId: "user-1" });
-    mocks.checkout.mockRejectedValue(new Error("STRIPE_SECRET_KEY configuration missing"));
+    mocks.checkout.mockRejectedValue(
+      new ConfigurationError("STRIPE_SECRET_KEY configuration missing"),
+    );
 
     const response = await createCheckout(
       new Request("https://example.test/api/billing/checkout", {
@@ -158,7 +165,9 @@ describe("critical API route contracts", () => {
   });
 
   it("returns a stable authentication error for property reports", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await listReports(
       new Request("https://example.test/api/property-reports", {
@@ -175,7 +184,9 @@ describe("critical API route contracts", () => {
 
   it("maps plan rights failures to a stable forbidden response", async () => {
     mocks.requireAuth.mockResolvedValue({ userId: "user-1" });
-    mocks.requestRefresh.mockRejectedValue(new Error("Le refresh est réservé aux plans Analyse."));
+    mocks.requestRefresh.mockRejectedValue(
+      new ForbiddenError("Le refresh est réservé aux plans Analyse."),
+    );
 
     const response = await requestRefresh(
       new Request("https://example.test/api/data-refresh", {
@@ -186,6 +197,7 @@ describe("critical API route contracts", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("retry-after")).toBeNull();
     await expect(response.json()).resolves.toMatchObject({ code: "FORBIDDEN" });
   });
 });

@@ -69,10 +69,6 @@ DETAIL_OVERRIDE_FIELDS = {
 }
 
 
-def scrape_vench_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_vench_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_vench_aquitaine_result(
     max_pages: int | None = None,
     known: dict[str, str] | None = None,

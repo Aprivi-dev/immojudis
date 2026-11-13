@@ -15,15 +15,8 @@ export type FeatureKey =
   | "dpe.latest"
   | "dpe.filters"
   | "dpe.map"
-  | "market.neighborhood"
   | "market.demographics"
-  | "market.priceEvolution"
   | "market.priceDistribution"
-  | "market.volumeEvolution"
-  | "market.rotationRate"
-  | "market.saleDelayEvolution"
-  | "market.neighborhoodComparison"
-  | "market.nearbyCommuneComparison"
   | "property.valueEstimate"
   | "property.bidCeiling"
   | "property.advancedBidScenarios"
@@ -90,15 +83,8 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "dpe.latest": "locked",
     "dpe.filters": "locked",
     "dpe.map": "locked",
-    "market.neighborhood": "locked",
     "market.demographics": "locked",
-    "market.priceEvolution": "locked",
     "market.priceDistribution": "locked",
-    "market.volumeEvolution": "locked",
-    "market.rotationRate": "locked",
-    "market.saleDelayEvolution": "locked",
-    "market.neighborhoodComparison": "locked",
-    "market.nearbyCommuneComparison": "locked",
     "property.valueEstimate": "locked",
     "property.bidCeiling": "locked",
     "property.advancedBidScenarios": "locked",
@@ -137,15 +123,8 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "dpe.latest": "included",
     "dpe.filters": "included",
     "dpe.map": "included",
-    "market.neighborhood": "included",
     "market.demographics": "included",
-    "market.priceEvolution": "included",
     "market.priceDistribution": "included",
-    "market.volumeEvolution": "included",
-    "market.rotationRate": "included",
-    "market.saleDelayEvolution": "included",
-    "market.neighborhoodComparison": "included",
-    "market.nearbyCommuneComparison": "included",
     "property.valueEstimate": "included",
     "property.bidCeiling": "included",
     "property.advancedBidScenarios": "included",
@@ -256,7 +235,7 @@ export function normalizePlanCode(value: unknown): PlanCode {
   return "decouverte";
 }
 
-export function isActivePlanStatus(status: unknown): boolean {
+function isActivePlanStatus(status: unknown): boolean {
   return status === "trialing" || status === "active";
 }
 
@@ -269,6 +248,66 @@ export type PlanBilling = {
   hasStripeCustomer: boolean;
   /** End of the grace period when the last renewal failed. */
   graceEndsAt: string | null;
+};
+
+/**
+ * Droits d'un compte tels que le serveur les résout (`resolvePlanEntitlements`) et que l'interface
+ * les lit.
+ */
+export type PlanEntitlements = {
+  plan: PlanCode;
+  label: string;
+  hasAnalysisAccess: boolean;
+  currentPeriodEnd: string | null;
+  billing?: PlanBilling;
+  /**
+   * Le plan est Analyse grâce à l'essai gratuit de 7 jours à l'inscription (le mécanisme de l'offre
+   * de lancement : compte gratuit surclassé pendant son essai, tant que `app_private.launch_offer`
+   * est active). Absent pour un abonné, un compte premium ou un administrateur.
+   */
+  launchOffer?: true;
+  /** Fin de l'essai en cours (ISO), quand la base la connaît. */
+  trialEndsAt?: string;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: true;
+  /** Fin d'un essai terminé (ISO) : le compte est revenu à Découverte. */
+  trialEndedAt?: string;
+  /** La base refuse l'essai à ce compte (pas le premier de son adresse, adresse jetable). */
+  trialDenied?: true;
+  limits: PlanLimits;
+  features: {
+    salesStatistics: FeatureAccess;
+    saleFavorites: FeatureAccess;
+    salesCsvExport: FeatureAccess;
+    salesApiAccess: FeatureAccess;
+    multiPropertyAnalysis: FeatureAccess;
+    smartAlerts: FeatureAccess;
+    realtimeAlertChanges: FeatureAccess;
+    watchedZones: FeatureAccess;
+    dpeExplorer: FeatureAccess;
+    marketDemographics: FeatureAccess;
+    marketPriceDistribution: FeatureAccess;
+    valueEstimate: FeatureAccess;
+    cadastralAnalysis: FeatureAccess;
+    nearbyServices: FeatureAccess;
+    savedReports: FeatureAccess;
+    pdfExport: FeatureAccess;
+    reportEditing: FeatureAccess;
+    urbanPlanning: FeatureAccess;
+    streetFacade: FeatureAccess;
+    saleHistory: FeatureAccess;
+    soldComparables: FeatureAccess;
+    activeComparables: FeatureAccess;
+    neighborhoodAnalysis: FeatureAccess;
+    outcomeGraph: FeatureAccess;
+    bidCeiling: FeatureAccess;
+    advancedBidScenarios: FeatureAccess;
+    dpeMap: FeatureAccess;
+    lawyerDirectory: FeatureAccess;
+    lawyerReferrals: FeatureAccess;
+    audienceTracking: FeatureAccess;
+    workspaceCollaboration: FeatureAccess;
+  };
 };
 
 /** Statuses that mean Stripe holds a live subscription the customer can still manage. */

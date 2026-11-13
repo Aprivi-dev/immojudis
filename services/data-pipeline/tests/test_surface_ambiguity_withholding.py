@@ -5,8 +5,7 @@ from decimal import Decimal
 import pytest
 
 from src.app_surface_withholding import AMBIGUOUS_SURFACE_MARKERS, withhold_ambiguous_app_surface
-from src.asset_normalization import normalize_asset_features
-from src.asset_normalization_helpers import PRICE_PER_M2_IMPLAUSIBLE_FLAG
+from src.asset_normalization import PRICE_PER_M2_IMPLAUSIBLE_FLAG, normalize_asset_features
 from src.enrichment.surface_reasoning import (
     MULTIPLE_BUILDINGS_CONTRADICTION,
     ExtractedAsset,

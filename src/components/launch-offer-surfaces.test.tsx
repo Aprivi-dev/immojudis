@@ -3,12 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  HOME_TRIAL_NOTE,
   LAUNCH_OFFER_ACCOUNT_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
   SIGNUP_TRIAL_DENIED_TEXT,
 } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
+import * as queryKeys from "@/lib/query-keys";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 
 /**
@@ -21,7 +23,6 @@ const mocks = vi.hoisted(() => ({
   plan: vi.fn(),
   overview: vi.fn(),
   checkoutOpen: true as boolean | null,
-  accessPlan: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user, loading: false }) }));
@@ -46,13 +47,11 @@ vi.mock("@/lib/client-billing", () => ({
 }));
 vi.mock("@/lib/client-api", () => ({
   fetchSaleUnlocksOverview: mocks.overview,
-  fetchAccessPlan: mocks.plan,
   fetchNotificationPreferences: vi.fn().mockResolvedValue({ preferences: {} }),
   updateNotificationPreferences: vi.fn(),
 }));
 // /bienvenue crée l'alerte par ce crochet (chantier W5) : simulé, il est testé à part.
 vi.mock("@/hooks/use-has-analysis-access", () => ({ useHasAnalysisAccess: () => false }));
-vi.mock("@/hooks/use-access-plan", () => ({ useAccessPlan: () => mocks.accessPlan }));
 vi.mock("@/hooks/use-create-alert", () => ({
   useCreateAlert: () => ({ createAlertFromSearch: vi.fn(), saving: false }),
 }));
@@ -60,7 +59,6 @@ vi.mock("@/components/BillingActions", () => ({ BillingActions: () => <div>Actio
 
 import { AccountPage } from "./AccountPage";
 import { HomeHero } from "./home/HomeHero";
-import { HOME_TRIAL_NOTE } from "./home/HomePrimaryAction";
 import { HomeOffers } from "./home/HomeOffers";
 import { InvestorOnboarding } from "./InvestorOnboarding";
 import { HideForLaunchOfferAccount, LaunchOfferNote } from "./LaunchOfferNote";
@@ -69,7 +67,6 @@ beforeEach(() => {
   mocks.launch = { active: false, pending: false };
   mocks.user = null;
   mocks.checkoutOpen = true;
-  mocks.accessPlan = undefined;
   mocks.plan.mockReset();
   mocks.overview.mockReset();
 });
@@ -184,13 +181,27 @@ describe("carte Analyse de l'accueil", () => {
 });
 
 describe("onboarding /bienvenue", () => {
+  /** Rendu avec les droits du compte déjà lus (`plan`), comme après leur réponse. */
+  function renderOnboarding(plan?: Record<string, unknown>) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    if (plan) {
+      mocks.user = { id: "u1" };
+      client.setQueryData(queryKeys.featureEntitlementsPlan("u1"), { plan });
+    }
+    return render(
+      <QueryClientProvider client={client}>
+        <InvestorOnboarding />
+      </QueryClientProvider>,
+    );
+  }
+
   it("n'affiche la mention de l'offre que tant qu'elle est active", () => {
-    const { unmount } = render(<InvestorOnboarding />);
+    const { unmount } = renderOnboarding();
     expect(screen.queryByTestId("onboarding-launch-offer")).toBeNull();
     unmount();
 
     mocks.launch = { active: true, pending: false };
-    render(<InvestorOnboarding />);
+    renderOnboarding();
     expect(screen.getByTestId("onboarding-launch-offer").textContent).toBe(
       LAUNCH_OFFER_ACCOUNT_TEXT,
     );
@@ -198,13 +209,12 @@ describe("onboarding /bienvenue", () => {
 
   it("ne promet plus « 3 déblocages par mois » comme acquis au dernier pas pendant l'essai du compte", () => {
     mocks.launch = { active: true, pending: false };
-    mocks.accessPlan = {
+    renderOnboarding({
       plan: "analyse",
       hasAnalysisAccess: true,
       launchOffer: true,
       trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
-    };
-    render(<InvestorOnboarding />);
+    });
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
@@ -339,7 +349,7 @@ describe("page Mon compte", () => {
       },
     });
     renderPage();
-    await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/);
+    await screen.findByText(/abonnement mensuel, prochaine échéance le 1er décembre 2026/);
     expect(screen.queryByTestId("account-offer-end")).toBeNull();
   });
 
@@ -355,7 +365,7 @@ describe("page Mon compte", () => {
     });
     renderPage();
     expect(
-      await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/),
+      await screen.findByText(/abonnement mensuel, prochaine échéance le 1er décembre 2026/),
     ).toBeTruthy();
     expect(screen.getByText(/portail sécurisé Stripe/)).toBeTruthy();
     expect(screen.queryByTestId("account-launch-offer")).toBeNull();

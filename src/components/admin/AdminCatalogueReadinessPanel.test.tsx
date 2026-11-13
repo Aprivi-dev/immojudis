@@ -141,9 +141,10 @@ function overview(item: Record<string, unknown> = {}) {
     activeSales: 5,
     pendingEvaluations: 0,
     canEnableEnforcement: true,
-    queueTotal: 1,
-    queueOffset: 0,
-    queueLimit: 100,
+    total: 1,
+    offset: 0,
+    limit: 100,
+    hasMore: false,
     items: [
       {
         id: "11111111-1111-4111-8111-111111111111",

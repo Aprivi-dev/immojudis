@@ -13,7 +13,7 @@ vi.mock("@/lib/information-agent-professional-rights", async (importOriginal) =>
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 
 import { RateLimitError } from "@/lib/api-errors";
-import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
+import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-signed-link";
 import { GET, POST } from "./route";
 
 const SECRET = "portal-secret-that-is-at-least-32-characters-long";

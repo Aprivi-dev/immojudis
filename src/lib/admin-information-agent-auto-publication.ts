@@ -1,7 +1,9 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
 import {
   AUTO_PUBLICATION_CASE_CAP,
   AUTO_PUBLICATION_DAILY_CAP,
@@ -14,7 +16,6 @@ import {
   type AutoPublicationReason,
 } from "@/lib/information-agent/auto-publication-policy";
 import {
-  AutoPublicationNotInstalledError,
   loadAutoPublicationMode,
   loadLatestAutoPublicationDecisions,
 } from "@/lib/information-agent/auto-publication-store";
@@ -26,14 +27,14 @@ import {
  * refusé ici, refusé par la RPC, et impossible à enregistrer (contrainte de la table).
  */
 
-export const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
+const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
   off: "Arrêt",
   simulation: "Simulation",
   auto: "Automatique",
 };
 
 /** Conditions du déverrouillage du mode automatique (étape 6 du plan d'enrichissement). */
-export const AUTO_PUBLICATION_LOCK_REASONS = [
+const AUTO_PUBLICATION_LOCK_REASONS = [
   "textes juridiques mis à jour et publiés",
   "AIPD mise à jour et signée",
   "validation des huit points par un avocat",
@@ -65,14 +66,6 @@ export type AutoPublicationView = {
   changes: Array<{ at: string; label: string }>;
 };
 
-function rpcFailure(error: { code?: string; message?: string }): Error {
-  if (error.code === "42501" || error.code === "22023" || error.code === "55000") {
-    return new Error(error.message ?? "Action refusée.");
-  }
-  console.error(JSON.stringify({ scope: "admin.auto_publication", code: error.code ?? "unknown" }));
-  return new Error("Action impossible.");
-}
-
 function modeLabel(mode: string): string {
   return (AUTO_PUBLICATION_MODES as readonly string[]).includes(mode)
     ? AUTO_PUBLICATION_MODE_LABELS[mode as AutoPublicationMode]
@@ -80,7 +73,7 @@ function modeLabel(mode: string): string {
 }
 
 export async function getAdminAutoPublicationView(authToken: string): Promise<AutoPublicationView> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const [mode, changes] = await Promise.all([
     loadAutoPublicationMode(),
     supabaseAdmin
@@ -113,18 +106,18 @@ export async function runAdminAutoPublicationAction({
   authToken: string;
   input: AdminAutoPublicationAction;
 }): Promise<AutoPublicationView> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
     // Verrou de l'étape 3 : refus avant tout appel à la base (la RPC et la contrainte refusent aussi).
-    if (input.mode === "auto") throw new Error(AUTO_PUBLICATION_LOCKED_MESSAGE);
+    if (input.mode === "auto") throw new PublicApiError(AUTO_PUBLICATION_LOCKED_MESSAGE, 409);
     const { error } = await auth.supabase.rpc("set_information_agent_auto_publication_mode", {
       p_mode: input.mode,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.auto_publication", error);
   } else {
     // Arrêt d'urgence : toujours permis, sans condition.
     const { error } = await auth.supabase.rpc("stop_information_agent_auto_publication");
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.auto_publication", error);
   }
   return getAdminAutoPublicationView(authToken);
 }
@@ -180,7 +173,6 @@ export async function loadAutoPublicationReviewAnnotations(
     }
     return { mode: "simulation", decisions };
   } catch (error) {
-    if (error instanceof AutoPublicationNotInstalledError) return { mode: "off" };
     console.error(
       JSON.stringify({
         scope: "admin.auto_publication.review",

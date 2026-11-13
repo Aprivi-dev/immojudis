@@ -17,7 +17,6 @@ export * from "@/lib/fee-regime-definitions";
 export * from "@/lib/fee-regime-labels";
 export * from "@/lib/fee-regime-notary";
 export * from "@/lib/fee-regime-open";
-export { feeRegimeKeyForSale };
 
 /** Les régimes définis : les autres clés de `FeeRegimeKey` (ventes domaniales) n'ont pas de règles. */
 export const FEE_REGIMES: Readonly<Partial<Record<FeeRegimeKey, FeeRegime>>> = {

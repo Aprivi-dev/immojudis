@@ -1,21 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
 import { serverEnv } from "@/lib/env";
-
-const SCROLL_SOURCES = [
-  "all",
-  "avoventes",
-  "licitor",
-  "info_encheres",
-  "encheres_publiques",
-  "cessions_etat",
-  "agrasc",
-  "encheres_immobilieres",
-  "notaires",
-] as const;
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { ConfigurationError } from "@/lib/api-errors";
+import { SCROLL_SOURCES } from "@/lib/admin-run-actions";
 
 const startScrollSchema = z
   .object({
@@ -29,7 +20,7 @@ const AUTOMATIC_LLM_ENRICHMENT = true;
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 type RunnerMode = "github_actions" | "webhook" | "queue_worker";
-export type RunnerStatus = "active" | "suspended" | "unknown";
+type RunnerStatus = "active" | "suspended" | "unknown";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
 export type AdminScrollMode = "collect";
@@ -75,7 +66,7 @@ export type AdminDashboardData = {
  * affiche : `runs` (rapide : 25 derniers runs, état du runner) et `counts` (comptages exacts de
  * six tables).
  */
-export const ADMIN_DASHBOARD_SECTIONS = ["runs", "counts"] as const;
+const ADMIN_DASHBOARD_SECTIONS = ["runs", "counts"] as const;
 export type AdminDashboardSection = (typeof ADMIN_DASHBOARD_SECTIONS)[number];
 export const adminDashboardQuerySchema = z
   .object({ section: z.enum(ADMIN_DASHBOARD_SECTIONS).optional() })
@@ -152,12 +143,6 @@ type AdminClient = {
   };
 };
 
-type AdminContext = {
-  userId: string;
-  claims?: JsonObject;
-  isAdmin: boolean;
-};
-
 type AuctionRunRow = {
   id?: string | null;
   status?: string | null;
@@ -219,19 +204,10 @@ function normalizeRun(row: AuctionRunRow): AuctionRun {
   };
 }
 
-function claimEmail(context: AdminContext): string | null {
-  const value = context.claims?.email;
-  return typeof value === "string" ? value : null;
-}
-
-async function assertAdminContext(context: AdminContext): Promise<{ email: string }> {
-  const email = claimEmail(context);
-
-  if (context.isAdmin) {
-    return { email: normalizeEmail(email) || "admin" };
-  }
-
-  throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
+/** Adresse de l'administrateur (jeton de session), consignée avec les demandes de collecte. */
+function adminEmail(auth: SupabaseAuthContext): string {
+  const value = auth.claims.email;
+  return normalizeEmail(typeof value === "string" ? value : null) || "admin";
 }
 
 async function countRows(table: string): Promise<number> {
@@ -435,20 +411,18 @@ export async function getAdminDashboardSection(
   authToken: string,
   section: AdminDashboardSection,
 ): Promise<AdminDashboardRunsData | AdminDashboardCountsData> {
-  const context = await requireSupabaseAuthContext(authToken);
-  const adminUser = await assertAdminContext(context as AdminContext);
+  const auth = await assertAdminAuth(authToken);
   const admin = getAdminClient();
-  if (section === "runs") return readRunsSection(admin, adminUser.email);
+  if (section === "runs") return readRunsSection(admin, adminEmail(auth));
   return readCountsSection();
 }
 
 /** Forme historique : toutes les sections en un seul appel (sans `?section=`). */
 export async function getAdminDashboard(authToken: string): Promise<AdminDashboardData> {
-  const context = await requireSupabaseAuthContext(authToken);
-  const adminUser = await assertAdminContext(context as AdminContext);
+  const auth = await assertAdminAuth(authToken);
   const admin = getAdminClient();
   const [runsData, countsData] = await Promise.all([
-    readRunsSection(admin, adminUser.email),
+    readRunsSection(admin, adminEmail(auth)),
     readCountsSection(),
   ]);
   return {
@@ -464,20 +438,20 @@ export async function startAdminScroll(
   authToken: string,
   input: unknown,
 ): Promise<StartScrollResult> {
-  const context = await requireSupabaseAuthContext(authToken);
+  const auth = await assertAdminAuth(authToken);
   const data = startScrollSchema.parse(input ?? {});
-  const adminUser = await assertAdminContext(context as AdminContext);
+  const requestedBy = adminEmail(auth);
   const mode = runnerMode();
   const webhookUrl = scrollWebhookUrl();
   if (mode === "queue_worker" || (mode === "webhook" && !webhookUrl)) {
-    throw new Error(
+    throw new ConfigurationError(
       "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
     );
   }
   const admin = getAdminClient();
   const requestedAt = new Date().toISOString();
   const initialSummary = {
-    requested_by: adminUser.email,
+    requested_by: requestedBy,
     requested_at: requestedAt,
     trigger: "admin_dashboard",
     mode: data.mode,
@@ -593,7 +567,7 @@ export async function startAdminScroll(
   }
 
   if (!webhookUrl) {
-    throw new Error(
+    throw new ConfigurationError(
       "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
     );
   }
@@ -615,7 +589,7 @@ export async function startAdminScroll(
         mode: data.mode,
         limit: data.limit,
         useLlm: AUTOMATIC_LLM_ENRICHMENT,
-        requestedBy: adminUser.email,
+        requestedBy,
         requestedAt,
       }),
       signal: AbortSignal.timeout(12_000),

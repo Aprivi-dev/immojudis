@@ -114,6 +114,3 @@ export const FLOOD_FORBIDDEN_WORDS: readonly RegExp[] = [
   /dix ans/i,
   /10 ans/i,
 ];
-
-/** Texte accessible ajouté à la pastille ou à la carte d'une pépite dans le périmètre d'un PPRi. */
-export const FLOOD_EXPOSED_ACCESSIBLE_LABEL = `Pépite. ${FLOOD_EXPOSED_SHORT}`;

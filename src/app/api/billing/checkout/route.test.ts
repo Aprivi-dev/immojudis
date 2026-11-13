@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import {
+  AuthRequiredError,
+  ConfigurationError,
+  ForbiddenError,
+  PublicApiError,
+  RateLimitError,
+} from "@/lib/api-errors";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
@@ -11,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -66,14 +72,14 @@ describe("POST /api/billing/checkout", () => {
   });
 
   it("answers 401 when the token is rejected", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     expect((await post({ plan: "analysis", consent })).status).toBe(401);
     expect(mocks.checkout).not.toHaveBeenCalled();
   });
 
   it("answers 403 when the account cannot open a checkout", async () => {
-    mocks.checkout.mockRejectedValue(new Error("Paiement réservé aux comptes confirmés."));
+    mocks.checkout.mockRejectedValue(new ForbiddenError("Paiement réservé aux comptes confirmés."));
 
     expect((await post({ plan: "analysis", consent })).status).toBe(403);
   });
@@ -115,5 +121,62 @@ describe("POST /api/billing/checkout", () => {
     expect(mocks.checkout).toHaveBeenCalledWith(
       expect.objectContaining({ plan: "analysis", origin: "https://immojudis.test" }),
     );
+  });
+
+  it("rejects a malformed body even when the plan is in the query string", async () => {
+    const response = await POST(
+      new Request("https://immojudis.test/api/billing/checkout?plan=analysis", {
+        method: "POST",
+        headers: { authorization: "Bearer token" },
+        body: "{bad json",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Requête invalide.",
+      code: "INVALID_REQUEST",
+    });
+    expect(mocks.checkout).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the refusal itself when a subscription or a checkout is already attached", async () => {
+    // Le texte cite Stripe : sans le type, l'heuristique le prendrait pour une panne (500).
+    const refusal =
+      "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.";
+    mocks.checkout.mockRejectedValue(new PublicApiError(refusal, 409));
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: refusal, code: "CONFLICT" });
+  });
+
+  it("answers 503 without detail when the Stripe price is misconfigured", async () => {
+    mocks.checkout.mockRejectedValue(
+      new ConfigurationError("Le Price Stripe Analyse doit être actif et récurrent."),
+    );
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: "Service temporairement indisponible.",
+      code: "CONFIGURATION_ERROR",
+    });
+  });
+
+  it("answers 500 with the generic message when the checkout fails for an unknown reason", async () => {
+    mocks.checkout.mockRejectedValue(new Error("stripe timeout"));
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: "Paiement indisponible.",
+      code: "INTERNAL_ERROR",
+    });
   });
 });

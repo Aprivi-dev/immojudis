@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -14,35 +13,23 @@ import {
 // Ouvert à tout compte qui a les favoris ; la RLS de user_favorites tient la frontière (propriétaire
 // seul, deux colonnes modifiables).
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.favorites.dossier.read", fallbackMessage: "Dossier indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const { saleId } = favoriteDossierQuerySchema.parse({
       saleId: url.searchParams.get("saleId"),
     });
-    const response = await getFavoriteDossier({ auth, saleId });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorite-dossier", {
-      fallbackMessage: "Dossier indisponible",
-    });
-  }
-}
+    return getFavoriteDossier({ auth, saleId });
+  },
+);
 
-export async function PUT(request: Request) {
-  try {
+export const PUT = apiRoute(
+  { scope: "api.favorites.dossier.save", fallbackMessage: "Enregistrement du dossier impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = favoriteDossierInputSchema.parse(await request.json());
-    const response = await saveFavoriteDossier({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorite-dossier", {
-      fallbackMessage: "Enregistrement du dossier impossible",
-    });
-  }
-}
+    return saveFavoriteDossier({ auth, input });
+  },
+);

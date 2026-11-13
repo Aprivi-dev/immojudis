@@ -3,8 +3,8 @@ import {
   inferBarAssociation,
   isSponsoredLawyerPlacement,
   lawyerPlacementKind,
-  resolveCnbDatasetBarKey,
 } from "@/lib/lawyer-directory";
+import { resolveCnbDatasetBarKey } from "@/lib/lawyer-bar";
 
 describe("lawyer directory", () => {
   it("déduit le barreau depuis le tribunal de l'annonce", () => {

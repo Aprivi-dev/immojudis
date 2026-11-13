@@ -159,13 +159,13 @@ describe("GET /api/sales/[id]/calendar", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("exports nothing when the database function is not deployed yet", async () => {
+  it("exports nothing when the database function fails", async () => {
     mocks.rpc.mockResolvedValue({
       data: null,
       error: { code: "PGRST202", message: "Could not find the function" },
     });
     const response = await call();
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(500);
     expect(response.headers.get("content-type")).not.toContain("text/calendar");
   });
 

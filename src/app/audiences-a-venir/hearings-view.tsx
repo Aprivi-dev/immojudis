@@ -4,7 +4,7 @@ import { Terme } from "@/components/ceiling/Terme";
 import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
-import { seoLongDate } from "@/lib/seo";
+import { formatDate } from "@/lib/format";
 import {
   HEARINGS_WEEK_DAYS,
   HEARINGS_WINDOW_DAYS,
@@ -47,7 +47,7 @@ export function HearingsView({
   generatedAt: Date;
 }) {
   const total = windows.weekCount + windows.laterCount;
-  const updated = seoLongDate(generatedAt.toISOString());
+  const updated = formatDate(generatedAt.toISOString(), null);
   const departments = departmentOptions(windows);
   const listing = listHearings(windows, Object.fromEntries(tribunalPaths));
 

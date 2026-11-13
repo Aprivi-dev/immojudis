@@ -16,6 +16,26 @@ import {
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
 
+describe("ventes passées (`transactionType: sold`)", () => {
+  const NOW = new Date("2026-10-19T10:00:00Z"); // 12 h à Paris.
+  const hearing = (saleDate: string) =>
+    ({ id: saleDate, status: "upcoming", sale_date: saleDate }) as unknown as AuctionSale;
+  const sold = (sale: AuctionSale) =>
+    applyClientSearchFilters([sale], { transactionType: "sold" }, null, { now: NOW }).length > 0;
+
+  it("suit la règle de la fiche : une vente est passée quand son jour, à Paris, est passé", () => {
+    expect(sold(hearing("2026-10-18T12:00:00Z"))).toBe(true);
+    // 23 h 30 UTC le 18 = 1 h 30 le 19 à Paris : la vente est aujourd'hui.
+    expect(sold(hearing("2026-10-18T23:30:00Z"))).toBe(false);
+    expect(sold(hearing("2026-10-20T12:00:00Z"))).toBe(false);
+  });
+
+  it("ne dit pas passée une audience d'aujourd'hui, avant comme après son heure", () => {
+    expect(sold(hearing("2026-10-19T12:00:00Z"))).toBe(false);
+    expect(sold(hearing("2026-10-19T07:00:00Z"))).toBe(false);
+  });
+});
+
 describe("filtre « prix au m² maximal »", () => {
   const studio = {
     id: "studio",

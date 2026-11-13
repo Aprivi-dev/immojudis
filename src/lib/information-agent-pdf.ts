@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 
 /**
  * Flattens a PDF before publication (plan P4-11): every page is rasterised and re-assembled as an
@@ -6,8 +7,8 @@ import "server-only";
  * redaction box (text layer, annotations, form fields, attachments, author/producer metadata)
  * cannot survive: only the visible pixels are published.
  */
-export const MAX_FLATTENED_PAGES = 60;
-export const MAX_FLATTENED_BYTES = 20 * 1024 * 1024;
+const MAX_FLATTENED_PAGES = 60;
+const MAX_FLATTENED_BYTES = 20 * 1024 * 1024;
 const MAX_PAGE_PIXELS = 4_000_000;
 
 type RenderedPage = { jpeg: Uint8Array; width: number; height: number };
@@ -22,7 +23,7 @@ export async function flattenPdfForPublication(input: Uint8Array): Promise<Uint8
     const output = assembleImageOnlyPdf(pages);
     if (output.byteLength <= MAX_FLATTENED_BYTES) return output;
   }
-  throw new Error("PDF trop volumineux après aplatissement : publication suspendue.");
+  throw new PublicApiError("PDF trop volumineux après aplatissement : publication suspendue.", 422);
 }
 
 async function renderPdfPages(
@@ -45,11 +46,14 @@ async function renderPdfPages(
   try {
     document = await loadingTask.promise;
   } catch {
-    throw new Error("PDF illisible ou protégé : publication impossible.");
+    throw new PublicApiError("PDF illisible ou protégé : publication impossible.", 422);
   }
   try {
     if (document.numPages < 1 || document.numPages > MAX_FLATTENED_PAGES) {
-      throw new Error(`PDF de plus de ${MAX_FLATTENED_PAGES} pages : publication suspendue.`);
+      throw new PublicApiError(
+        `PDF de plus de ${MAX_FLATTENED_PAGES} pages : publication suspendue.`,
+        422,
+      );
     }
     const pages: RenderedPage[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {

@@ -55,11 +55,7 @@ export type InformationAgentInventoryKey =
   | "composition"
   | "sale_terms";
 
-export type InformationAgentInventoryStatus =
-  | "present"
-  | "to_confirm"
-  | "missing"
-  | "not_applicable";
+type InformationAgentInventoryStatus = "present" | "to_confirm" | "missing" | "not_applicable";
 
 /** Pièces que la question « documents » peut énumérer. */
 export type InformationAgentMissingDocument = "sale_conditions" | "pv_descriptif" | "diagnostics";
@@ -148,7 +144,7 @@ export function buildInformationAgentInventory(
   return { judicial, items, missingDocuments };
 }
 
-export function isJudicialSale(sale: AuctionSale): boolean {
+function isJudicialSale(sale: AuctionSale): boolean {
   const venue = (sale.sale_venue_type ?? "").toLowerCase();
   if (venue === "tribunal") return true;
   if (venue === "state" || venue === "notary" || venue === "online") return false;
@@ -525,7 +521,7 @@ function saleTermsItem(
   );
 }
 
-export function hasVerifiedSaleTerms(sale: AuctionSale): boolean {
+function hasVerifiedSaleTerms(sale: AuctionSale): boolean {
   const procedure = getSaleProcedure(sale).procedure;
   if (!procedure) return false;
   if (!["verified", "cross_checked"].includes(procedure.verification.status)) return false;

@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { z as zm } from "zod/mini";
-import { PublicApiError, RateLimitError, isPublicErrorMessage } from "./api-errors";
+import { NotFoundError, PublicApiError, RateLimitError } from "./api-errors";
+import { isPublicErrorMessage } from "./api-error-detail";
 import { apiRouteError } from "./api-observability";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 function request() {
   return new Request("https://example.test/api/thing", {
@@ -77,14 +79,19 @@ describe("apiRouteError", () => {
   it("keeps French business messages and maps them to meaningful statuses", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const forbidden = apiRouteError(
-      new Error("Export PDF réservé à l’offre Analyse."),
+      new ForbiddenError("Export PDF réservé à l’offre Analyse."),
       request(),
       "test.scope",
       { fallbackMessage: "Export impossible." },
     );
-    const missing = apiRouteError(new Error("Rapport introuvable."), request(), "test.scope", {
-      fallbackMessage: "Rapport indisponible.",
-    });
+    const missing = apiRouteError(
+      new NotFoundError("Rapport introuvable."),
+      request(),
+      "test.scope",
+      {
+        fallbackMessage: "Rapport indisponible.",
+      },
+    );
     const business = apiRouteError(
       new Error("Cette invitation n'est plus disponible."),
       request(),
@@ -102,7 +109,7 @@ describe("apiRouteError", () => {
   it("answers authentication failures with a generic 401", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const response = apiRouteError(
-      new Error("Unauthorized: User access profile unavailable (relation x)"),
+      new AuthRequiredError("Unauthorized: User access profile unavailable (relation x)"),
       request(),
       "test.scope",
       { fallbackMessage: "Action impossible." },

@@ -1,13 +1,13 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
 import type { AdminActivation } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKeyOrNull } from "@/lib/paris-time";
 
 /**
  * Page admin « Pilotage » (point 65) : agrégats sur 7 et 30 jours glissants, lus dans la base par
@@ -17,8 +17,7 @@ import { parisDateKey } from "@/lib/sale-countdown";
  * double authentification (`auth.isAdmin`), puis lecture avec le client de service. Un compte sans
  * le rôle n'obtient rien.
  *
- * Un nombre absent vaut `null` et s'affiche « non mesuré » : migration pas encore appliquée, début de
- * la mesure inconnu. Il n'est jamais remplacé par zéro. La règle « moins de 5 » est une règle
+ * Un nombre absent vaut `null` et s'affiche « non mesuré » : début de la mesure inconnu. Il n'est jamais remplacé par zéro. La règle « moins de 5 » est une règle
  * d'affichage : la page masque les petits nombres (voir `admin-pilotage-page.tsx`).
  *
  * Depuis la migration 20261029120200 : administrateurs exclus, semaine précédente (fenêtre
@@ -47,7 +46,7 @@ export type PilotageEventCounts = {
 };
 
 /** Occurrences, et à côté les comptes distincts (`count(distinct user_id)`). */
-export type PilotageEvents = PilotageEventCounts & { accounts: PilotageEventCounts };
+type PilotageEvents = PilotageEventCounts & { accounts: PilotageEventCounts };
 
 /** Les chiffres d'une période (hors administrateurs). */
 export type PilotagePeriod = {
@@ -81,7 +80,7 @@ export type PilotageWindow = PilotagePeriod & {
 };
 
 /** État à cet instant, sans fenêtre. */
-export type PilotageSnapshot = {
+type PilotageSnapshot = {
   /** Comptes hors administrateurs, et parmi eux les confirmés. */
   accountsTotal: PilotageCount;
   accountsConfirmed: PilotageCount;
@@ -325,25 +324,16 @@ export function parseAdminPilotage(raw: unknown): AdminPilotage {
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 export async function getAdminPilotage(
   authToken: string,
   now = new Date(),
 ): Promise<AdminPilotage> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_pilotage_summary", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailablePilotage();
-    throw error;
-  }
+  if (error) throw error;
   return parseAdminPilotage(data);
 }
 
@@ -362,9 +352,9 @@ export async function getAdminPilotage(
  * administrateur. Comme le reste du pilotage : des nombres, jamais de liste de personnes, et une mesure
  * impossible vaut « non mesuré » (`null`), jamais zéro.
  */
-export const REMINDER_ACCURACY_WINDOW_DAYS = 30;
+const REMINDER_ACCURACY_WINDOW_DAYS = 30;
 /** Délai pendant lequel un changement de date contredit un rappel déjà envoyé. */
-export const REMINDER_CONTRADICTION_HOURS = 72;
+const REMINDER_CONTRADICTION_HOURS = 72;
 /** Nombre minimal de rappels mesurés pour conclure. */
 export const REMINDER_ACCURACY_MIN_SAMPLE = 100;
 /** Part maximale (exclue) de rappels contredits pour passer à `on` : moins de 2 %. */
@@ -436,12 +426,6 @@ export function unavailableSaleReminderAccuracy(
   };
 }
 
-function parisDayOrNull(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? parisDateKey(date) : null;
-}
-
 /**
  * Calcule le taux de rappels contredits. Un rappel compte s'il a été envoyé dans la fenêtre et depuis
  * plus de 72 h (on ne juge pas un rappel dont le délai de contradiction court encore). Il est contredit
@@ -465,8 +449,8 @@ export function computeSaleReminderAccuracy({
 
   const movedByKey = new Map<string, number[]>();
   for (const change of changes) {
-    const previousDay = parisDayOrNull(change.previousDate);
-    const currentDay = parisDayOrNull(change.currentDate);
+    const previousDay = parisDateKeyOrNull(change.previousDate);
+    const currentDay = parisDateKeyOrNull(change.currentDate);
     if (!previousDay || !currentDay || previousDay === currentDay) continue;
     const detected = Date.parse(change.detectedAt);
     if (!Number.isFinite(detected)) continue;
@@ -589,7 +573,6 @@ export async function getAdminSaleReminderAccuracy(
   authToken: string,
   now = new Date(),
 ): Promise<SaleReminderAccuracy> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
   return loadSaleReminderAccuracy(now);
 }

@@ -17,7 +17,6 @@ import {
   identicalSaleRanks,
   isParisToday,
   parisDateBlock,
-  parisWeekday,
   type DepartmentRef,
   type DepartmentSale,
   type DepartmentStats,
@@ -25,12 +24,12 @@ import {
 import { departmentRegionName } from "@/lib/department-geography";
 import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
 import { departmentIn } from "@/lib/department-grammar";
-import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, formatWeekday, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { EXISTING_GUIDE } from "@/lib/resource-articles";
 import { understandingResources } from "@/lib/resource-related";
-import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
+import { saleHearingTime, seoSurface } from "@/lib/seo";
 import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages";
 import { cn } from "@/lib/utils";
 
@@ -181,14 +180,14 @@ export function DepartmentView({
   const identicalSales = identicalSaleRanks(sales);
   const weeks = groupDepartmentSalesByWeek(sales, now);
   const cities = stats?.cities ?? [];
-  const nextDate = seoLongDate(stats?.nextSaleDate);
+  const nextDate = formatDate(stats?.nextSaleDate);
   const nextTime = saleHearingTime(stats?.nextSaleDate);
   const nextDay = stats?.nextSaleDate
     ? isParisToday(stats.nextSaleDate, now)
       ? "aujourd’hui"
-      : parisWeekday(stats.nextSaleDate)
+      : formatWeekday(stats.nextSaleDate)
     : null;
-  const updated = seoLongDate(generatedAt);
+  const updated = formatDate(generatedAt, null);
   const searchHref = departmentSearchPath(department);
   const where = departmentIn(department);
   const region = departmentRegionName(department.code);
@@ -250,7 +249,7 @@ export function DepartmentView({
                 <dt className="text-caption text-ink-soft">
                   {departmentNextDateLabel(stats?.nextSaleVenueType ?? null)}
                 </dt>
-                <dd className={FIGURE_VALUE}>{nextDate ?? "Date à confirmer"}</dd>
+                <dd className={FIGURE_VALUE}>{nextDate}</dd>
                 {nextDay ? (
                   <dd className={FIGURE_NOTE}>
                     {nextDay}

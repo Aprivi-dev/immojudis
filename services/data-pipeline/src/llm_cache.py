@@ -8,19 +8,19 @@ persists the prompt that produced it.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 import httpx
 
 from src.config import load_settings
 from src.pipeline_usage import PipelineBudgetExhausted
+from src.sha256_digest import is_lowercase_sha256
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
 _CACHE_TABLE = "llm_analysis_cache"
 _CACHE_TIMEOUT_SECONDS = 30.0
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class LLMCacheUnavailable(PipelineBudgetExhausted):
@@ -56,7 +56,7 @@ def load_cached_result(cache_key: str, *, stage: str) -> dict[str, Any] | None:
                 "stage": f"eq.{normalized_stage}",
                 "limit": "1",
             },
-            headers=_rest_headers(service_role_key),
+            headers=rest_headers(service_role_key),
             timeout=_CACHE_TIMEOUT_SECONDS,
         )
     except Exception as exc:
@@ -116,10 +116,7 @@ def save_cached_result(
         response = httpx.post(
             endpoint,
             params={"on_conflict": "cache_key,stage"},
-            headers=_rest_headers(
-                service_role_key,
-                prefer="resolution=merge-duplicates,return=minimal",
-            ),
+            headers=rest_headers(service_role_key, prefer="resolution=merge-duplicates,return=minimal"),
             json=request_payload,
             timeout=_CACHE_TIMEOUT_SECONDS,
         )
@@ -143,20 +140,8 @@ def _cache_endpoint(supabase_url: str) -> str:
     return f"{supabase_url.rstrip('/')}/rest/v1/{_CACHE_TABLE}"
 
 
-def _rest_headers(service_role_key: str, *, prefer: str | None = None) -> dict[str, str]:
-    headers = {
-        "apikey": service_role_key,
-        "Authorization": f"Bearer {service_role_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-    if prefer:
-        headers["Prefer"] = prefer
-    return headers
-
-
 def _validate_lookup_arguments(cache_key: str, stage: str) -> tuple[str, str]:
-    if not isinstance(cache_key, str) or not _SHA256_RE.fullmatch(cache_key):
+    if not is_lowercase_sha256(cache_key):
         raise ValueError("cache_key must be a lowercase SHA-256 hex digest")
     if not isinstance(stage, str) or not stage.strip() or len(stage) > 128:
         raise ValueError("stage must be a non-empty string of at most 128 characters")

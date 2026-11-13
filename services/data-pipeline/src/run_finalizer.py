@@ -6,10 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 from src.config import load_settings
-from src.storage.supabase_client import connect
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
+from src.storage.supabase_client import close_open_run, connect
 
 
 def register_run(run_id: str | None) -> None:
@@ -34,14 +31,14 @@ def main() -> int:
     settings = load_settings()
     if not settings.get('supabase_db_url'):
         raise RuntimeError('Run finalization requires SUPABASE_DB_URL')
-    with _postgres_connect(str(settings['supabase_db_url'])) as db:
-        db.execute("""
-            update public.auction_runs set status = 'failed', finished_at = now(), updated_at = now(),
-                summary = coalesce(summary, '{}'::jsonb) || '{"completion_status":"interrupted"}'::jsonb,
-                errors = coalesce(errors, '{}'::jsonb) ||
-                    '{"runner":["Workflow ended without a completed pipeline run; committed checkpoints are preserved"]}'::jsonb
-            where id = %s and status in ('running', 'queued')
-        """, (run_id,))
+    with connect(str(settings['supabase_db_url'])) as db:
+        close_open_run(
+            db,
+            run_id,
+            'failed',
+            {'completion_status': 'interrupted'},
+            {'runner': ['Workflow ended without a completed pipeline run; committed checkpoints are preserved']},
+        )
     return 0
 
 

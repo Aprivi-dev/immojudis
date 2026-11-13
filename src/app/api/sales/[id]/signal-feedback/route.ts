@@ -1,18 +1,15 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { saleSignalFeedbackSchema } from "@/lib/sale-signal-feedback-schema";
 import { recordSaleSignalFeedback } from "@/lib/sale-signal-feedback.server";
 
 const saleIdSchema = z.string().guid();
-
-const PRIVATE_HEADERS = { "cache-control": "private, no-store", vary: "authorization" };
 
 /**
  * Retour « Utile » / « Pas pertinent » d'un compte sur un signal de cette vente (point 67) : la bande
@@ -23,9 +20,10 @@ const PRIVATE_HEADERS = { "cache-control": "private, no-store", vary: "authoriza
  * une vente hors du catalogue public et plafonne les écritures d'un compte (voir la migration
  * 20261030110100). Conservé 90 jours.
  */
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id);
+export const POST = apiRoute<{ id: string }>(
+  { scope: "sale-signal-feedback", fallbackMessage: "Retour indisponible." },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -34,10 +32,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
     const input = saleSignalFeedbackSchema.parse(await request.json());
     const recorded = await recordSaleSignalFeedback(auth.userId, saleId, input);
-    return NextResponse.json({ recorded }, { headers: PRIVATE_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-signal-feedback", {
-      fallbackMessage: "Retour indisponible.",
-    });
-  }
-}
+    return { recorded };
+  },
+);

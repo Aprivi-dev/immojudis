@@ -846,6 +846,12 @@ def test_ai_review_requires_capture_bound_metadata_and_valid_output_digest(tmp_p
         evaluate_real_review(manifest, sample)
 
     review = _ai_review(labels, digest)
+    review["output_sha256"] += "\n"
+    first["ai_reviews"] = [review]
+    with pytest.raises(ValueError, match="output_sha256 must be a lowercase SHA-256 digest"):
+        evaluate_real_review(manifest, sample)
+
+    review = _ai_review(labels, digest)
     review["blind_to_prediction"] = False
     first["ai_reviews"] = [review]
     with pytest.raises(ValueError, match="blind_to_prediction"):

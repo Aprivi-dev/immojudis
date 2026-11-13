@@ -17,13 +17,7 @@ import { decodeURIComponentSafe as decodeOnce } from "@/lib/safe-decode-uri";
  */
 
 /** Types de lien admis (`EmailOtpType` de Supabase, moins `email` : aucun gabarit n'en émet). */
-export const AUTH_LINK_TYPES = [
-  "signup",
-  "recovery",
-  "email_change",
-  "magiclink",
-  "invite",
-] as const;
+const AUTH_LINK_TYPES = ["signup", "recovery", "email_change", "magiclink", "invite"] as const;
 export type AuthLinkType = (typeof AUTH_LINK_TYPES)[number];
 
 export type AuthLink = {
@@ -34,9 +28,9 @@ export type AuthLink = {
 };
 
 /** Page où la personne arrive quand `redirect_to` est absent ou n'est pas du site. */
-export const DEFAULT_AFTER_CONFIRMATION_PATH = "/bienvenue";
+const DEFAULT_AFTER_CONFIRMATION_PATH = "/bienvenue";
 /** Page de saisie du nouveau mot de passe : `PasswordRecovery` y retrouve la session ouverte. */
-export const PASSWORD_RESET_PATH = "/reinitialiser-mot-de-passe";
+const PASSWORD_RESET_PATH = "/reinitialiser-mot-de-passe";
 /** Le chemin de la page elle-même : jamais une destination (boucle). */
 export const AUTH_CONFIRMATION_PATH = "/auth/confirmer";
 
@@ -86,7 +80,7 @@ export function postConfirmationPath(link: AuthLink, origin: string): string {
  * doit commencer par UN seul `/`, et résolu contre l'origine il doit y rester. La page de
  * confirmation elle-même est refusée (boucle), sans tenir compte de la casse ni des `/` multiples.
  */
-export function sameSitePath(candidate: string, origin: string): string | null {
+function sameSitePath(candidate: string, origin: string): string | null {
   try {
     const base = new URL(origin).origin;
     const target = new URL(candidate, base);

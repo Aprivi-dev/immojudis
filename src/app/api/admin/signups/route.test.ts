@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
-    if (!header) throw new Error("Unauthorized: No authorization header provided");
+    if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
   requireSupabaseAuthContext: mocks.requireAuth,
@@ -44,7 +45,7 @@ const post = (target: string, body: unknown, headers: Record<string, string> = A
 /** Base factice : aucun profil, aucun abonnement, un seul compte confirmé. */
 function database({ writeError = null as { message: string } | null } = {}) {
   const writes = {
-    insert: vi.fn(async () => ({ error: writeError })),
+    insert: vi.fn(async () => ({ error: null })),
     update: vi.fn(),
   };
   mocks.from.mockImplementation(() => ({
@@ -67,13 +68,11 @@ function database({ writeError = null as { message: string } | null } = {}) {
     error: null,
   }));
   mocks.rpc.mockImplementation(async (name: string) => {
-    // Migration 20261108190000 pas encore appliquée : la prolongation prend l'ancien chemin.
+    // Le motif et la ligne s'écrivent par une seule fonction.
     if (name === "extend_trial_with_note") {
-      return { data: null, error: { code: "PGRST202", message: "absent" } };
+      return writeError ? { data: null, error: writeError } : { data: "written", error: null };
     }
-    return name === "record_trial_extension"
-      ? { data: "note-1", error: null }
-      : { data: [{ ends_at: "2026-10-08T00:00:00.000Z", gate_open: true }], error: null };
+    return { data: [{ ends_at: "2026-10-08T00:00:00.000Z", gate_open: true }], error: null };
   });
   return writes;
 }
@@ -136,12 +135,12 @@ describe("POST /api/admin/signups : prolongation d'essai", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("répond 400 avec un message français pour une fin passée ou au-delà de 90 jours", async () => {
+  it("répond 422 avec un message français pour une fin passée ou au-delà de 90 jours", async () => {
     const past = await POST(post(url, { ...valid(), endsAt: future(-1) }));
-    expect(past.status).toBe(400);
+    expect(past.status).toBe(422);
     expect((await past.json()).error).toMatch(/futur/);
     const far = await POST(post(url, { ...valid(), endsAt: future(120) }));
-    expect(far.status).toBe(400);
+    expect(far.status).toBe(422);
     expect((await far.json()).error).toMatch(/90 jours/);
   });
 
@@ -156,10 +155,12 @@ describe("POST /api/admin/signups : prolongation d'essai", () => {
       { userId: id(1), email: "compte@exemple.fr", outcome: "extended", reason: null },
     ]);
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "record_trial_extension",
+      "extend_trial_with_note",
       expect.objectContaining({ p_user_id: id(1), p_note: "Demande reçue par email" }),
     );
-    expect(JSON.stringify(writes.insert.mock.calls)).not.toContain("Demande reçue par email");
+    const metadata = mocks.rpc.mock.calls.map((call) => call[1]?.p_metadata);
+    expect(JSON.stringify(metadata)).not.toContain("Demande reçue par email");
+    expect(writes.insert).not.toHaveBeenCalled();
   });
 
   it("rejouer une prolongation déjà écrite donne « déjà ouvert au-delà » (double clic)", async () => {

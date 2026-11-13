@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 from src.cadastre_references import ParcelRef, designation, ref_label, references_signature
 from src.normalize import clean_text, parse_french_datetime, parse_surface
+from src.timestamps import sale_window
 
 FEATURES_SCHEMA_VERSION = "notaires_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -755,8 +756,10 @@ def build_display(
         procedure["deadline"] = {"at": conditions["session_at"], "kind": "adjudication"}
     elif conditions.get("closes_at"):
         procedure["deadline"] = {"at": conditions["closes_at"], "kind": "sale_window_close"}
-        if conditions.get("opens_at"):
-            procedure["window"] = {"opens_at": conditions.get("opens_at"), "closes_at": conditions["closes_at"]}
+        # Le créneau de la procédure (``src.sources.notaires._sale_schedule``) : bornes du JSON à l'heure de Paris.
+        bounds = {key: parse_french_datetime(conditions.get(key)) for key in ("opens_at", "closes_at")}
+        if sale_window(bounds) is not None:
+            procedure["window"] = {"opens_at": conditions["opens_at"], "closes_at": conditions["closes_at"]}
     terms = [
         _item("starting_price_nature", "Nature de la mise à prix",
               label_for(NATURE_MISE_A_PRIX_LABELS, conditions.get("starting_price_nature")), "procedure"),
@@ -1023,7 +1026,7 @@ def flat_blocks(features: dict[str, Any], property_block: dict[str, Any]) -> dic
 # --- Faits historiques de l'API (déplacés de notaires.py, contrat inchangé) ---------------------
 
 
-def _integer(value: object | None) -> int | None:
+def integer(value: object | None) -> int | None:
     parsed = number(value)
     if parsed is None:
         return None
@@ -1033,7 +1036,8 @@ def _integer(value: object | None) -> int | None:
         return None
 
 
-def _known_value(value: object | None) -> str | None:
+def known_value(value: object | None) -> str | None:
+    """Comme ``known``, sauf que « Z » reste une valeur."""
     text = clean_text(value)
     if not text or text.upper() in {"INCONNU", "NC", "N/A", "NON COMMUNIQUE"}:
         return None
@@ -1068,22 +1072,22 @@ def legacy_property_features(
         "estimated_cost": {
             "min_eur": number(property_block.get("depensesEnergieMin")),
             "max_eur": number(property_block.get("depensesEnergieMax")),
-            "year": _integer(property_block.get("depensesEnergieAnnee")),
+            "year": integer(property_block.get("depensesEnergieAnnee")),
         },
     }
     coownership = {
         "is_coownership": yes_no(coproperty.get("copropriete")),
         "annual_charges_eur": number(coproperty.get("montantChargesAnnuelles")),
-        "lot_count": _integer(coproperty.get("nbLots")),
-        "syndic": _known_value(coproperty.get("coordonneesSyndic")),
-        "administrator_status": _known_value(coproperty.get("adminProvisoire")),
-        "safeguard_plan": _known_value(coproperty.get("planSauvegarde")),
+        "lot_count": integer(coproperty.get("nbLots")),
+        "syndic": known_value(coproperty.get("coordonneesSyndic")),
+        "administrator_status": known_value(coproperty.get("adminProvisoire")),
+        "safeguard_plan": known_value(coproperty.get("planSauvegarde")),
     }
     technical = dict(description_features.get("technical") or {})
     technical.update(
         {
-            "heating_api": _known_value(property_block.get("chauffage")),
-            "energy_api": _known_value(property_block.get("energie")),
+            "heating_api": known_value(property_block.get("chauffage")),
+            "energy_api": known_value(property_block.get("energie")),
             "elevator": yes_no(property_block.get("ascenseur")),
             "accessibility": yes_no(property_block.get("accesHandicapes")),
             "double_glazing": yes_no(property_block.get("doubleVitrage")),
@@ -1091,7 +1095,7 @@ def legacy_property_features(
     )
     return {
         "floor": number(property_block.get("etage")),
-        "building_floors_count": _integer(property_block.get("nbEtages")),
+        "building_floors_count": integer(property_block.get("nbEtages")),
         "energy": energy,
         "property_tax": {
             "amount_eur": number(property_block.get("taxeFonciere")),
@@ -1103,9 +1107,9 @@ def legacy_property_features(
         "works_to_plan": description_features.get("works_to_plan"),
         "surfaces": surface_features,
         "contact": {
-            "name": _known_value(contact.get("nom")),
-            "phone": _known_value(contact.get("telephone")),
-            "email": _known_value(contact.get("mail")),
+            "name": known_value(contact.get("nom")),
+            "phone": known_value(contact.get("telephone")),
+            "email": known_value(contact.get("mail")),
         },
         "sale": {
             "first_offer_eur": number(

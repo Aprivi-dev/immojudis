@@ -14,6 +14,7 @@ import {
 } from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
+import * as queryKeys from "@/lib/query-keys";
 
 const testState = vi.hoisted(() => {
   const favoriteQuery = {
@@ -382,9 +383,9 @@ describe("useful public discovery", () => {
     expect(screen.queryByText(/déblocages par mois/)).toBeNull();
   });
 
-  it("laisse « Annonce bien renseignée » à la fiche : la carte ne la montre plus", () => {
-    // Décision du 24/10/2026 (docs/design/fondations.md) : deux pastilles au plus par carte,
-    // l'échéance et les points à vérifier ; la qualité de l'annonce n'est dite que sur la fiche.
+  it("montre « Annonce bien renseignée » sur la carte, liste publique comprise", async () => {
+    // Décision du propriétaire du 13/11/2026 : le repère que décrivent le classement et
+    // /classement-des-annonces s'affiche sur les cartes (il ne l'était plus depuis le 24/10/2026).
     for (const locked of [true, false]) {
       render(
         <QueryClientProvider client={new QueryClient()}>
@@ -399,7 +400,7 @@ describe("useful public discovery", () => {
           />
         </QueryClientProvider>,
       );
-      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+      expect(await screen.findByText("Annonce bien renseignée")).toBeTruthy();
       cleanup();
     }
   });
@@ -1220,7 +1221,9 @@ describe("catalogue favorite status", () => {
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
     await waitFor(() =>
       expect(
-        client.getQueryData(["search-favorite-status", "user-a", ["sale-a", "sale-b", "sale-c"]]),
+        client.getQueryData(
+          queryKeys.searchFavoriteStatus("user-a", ["sale-a", "sale-b", "sale-c"]),
+        ),
       ).toEqual(["sale-a"]),
     );
     expect(testState.favoriteQuery.in).toHaveBeenCalledWith("sale_id", [
@@ -1251,7 +1254,7 @@ describe("catalogue favorite status", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy(),
     );
-    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toEqual([
+    expect(client.getQueryData(queryKeys.searchFavoriteStatus("user-a", ["sale-a"]))).toEqual([
       "sale-a",
     ]);
 
@@ -1334,7 +1337,9 @@ describe("catalogue favorite status", () => {
 
     resolveInitial({ data: [], error: null });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toBeUndefined();
+    expect(
+      client.getQueryData(queryKeys.searchFavoriteStatus("user-a", ["sale-a"])),
+    ).toBeUndefined();
 
     resolveAdd();
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2));

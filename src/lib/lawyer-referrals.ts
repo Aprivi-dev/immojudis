@@ -11,6 +11,8 @@ import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
 type SaleSnapshotSource = Pick<
@@ -53,8 +55,8 @@ const referralStatusSchema = z.enum([
 
 const referralMatchingStatusSchema = z.enum(["unmatched", "matched", "manual_review"]);
 
-export type LawyerReferralStatus = z.infer<typeof referralStatusSchema>;
-export type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatusSchema>;
+type LawyerReferralStatus = z.infer<typeof referralStatusSchema>;
+type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatusSchema>;
 
 export const lawyerReferralRequestInputSchema = z.object({
   saleId: z.string().guid(),
@@ -107,7 +109,7 @@ export type LawyerReferralResponse = {
  * Placement of the lawyer who would receive a request, at the time of the preview: "active" (paid
  * placement), "trial" (free trial of the paid placement, not yet paid) or "none".
  */
-export type LawyerReferralPlacement = "active" | "trial" | "none";
+type LawyerReferralPlacement = "active" | "trial" | "none";
 
 export type LawyerReferralPreviewResponse = {
   /** Null when no lawyer can be determined automatically: the request goes to manual review. */
@@ -178,7 +180,7 @@ export async function createLawyerReferralRequest({
 }): Promise<LawyerReferralResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
+    throw new ForbiddenError("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, input.saleId);
@@ -237,7 +239,7 @@ export async function createLawyerReferralRequest({
 
   if (error) throw error;
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "lawyer.referral_requested",
     subjectType: "lawyer_referral_request",
@@ -271,7 +273,7 @@ export async function previewLawyerReferralRecipient({
 }): Promise<LawyerReferralPreviewResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
+    throw new ForbiddenError("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, query.saleId);
@@ -343,7 +345,7 @@ async function getSaleSnapshot(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou inaccessible.");
+  if (!data?.id) throw new SalePublicationUnavailableError();
   return data as SaleSnapshotSource;
 }
 
@@ -381,7 +383,7 @@ async function resolveReferralRecipient(
   if (!lawyerId) return findMatchingReferencedLawyer(supabase, sale, saleBar);
 
   const chosen = await getReferencedLawyerRecipient(supabase, lawyerId);
-  if (!chosen) throw new Error("Avocat référencé introuvable ou indisponible.");
+  if (!chosen) throw new NotFoundError("Avocat référencé introuvable ou indisponible.");
   // A lawyer chosen by hand obeys the same rules as an automatic match.
   if (
     !isLawyerEligibleForSale({
@@ -390,8 +392,9 @@ async function resolveReferralRecipient(
       prosecutingLawyerName: sale.lawyer_name,
     })
   ) {
-    throw new Error(
+    throw new PublicApiError(
       "Cet avocat n'est pas proposé pour cette vente : seuls les avocats du barreau du tribunal, hors avocat poursuivant, peuvent être sollicités.",
+      400,
     );
   }
   return chosen;
@@ -447,9 +450,9 @@ function lawyerRowToRecipient(row: ReferralMatchedLawyerRow): ReferralRecipient 
 }
 
 /** "active" or "trial" only while the placement window is open; anything else is "none". */
-function placementOf(row: ReferralMatchedLawyerRow, now = new Date()): LawyerReferralPlacement {
+function placementOf(row: ReferralMatchedLawyerRow): LawyerReferralPlacement {
   const status = row.paid_placement_status;
-  if ((status === "active" || status === "trial") && paidPlacementIsActive(row, now)) return status;
+  if ((status === "active" || status === "trial") && paidPlacementIsActive(row)) return status;
   return "none";
 }
 

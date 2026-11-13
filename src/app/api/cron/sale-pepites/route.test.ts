@@ -5,10 +5,7 @@ const mocks = vi.hoisted(() => ({
   runMonitoredCron: vi.fn(),
 }));
 
-vi.mock("@/lib/cron-jobs", async () => ({
-  positiveNumberFromEnv: (
-    await vi.importActual<typeof import("@/lib/cron-jobs")>("@/lib/cron-jobs")
-  ).positiveNumberFromEnv,
+vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
 }));
 vi.mock("@/lib/sale-pepites-batch", () => ({
@@ -43,7 +40,8 @@ describe("sale pepites cron route", () => {
     expect(await response.json()).toEqual({ evaluated: 3 });
     expect(mocks.runMonitoredCron).toHaveBeenCalledTimes(1);
     expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-pepites");
-    expect(mocks.runSalePepitesBatch).toHaveBeenCalledWith({ limit: 300 });
+    // Sans variable, la bibliothèque applique sa propre taille de lot par défaut.
+    expect(mocks.runSalePepitesBatch).toHaveBeenCalledWith({ limit: undefined });
   });
 
   it("ne diffère aucune reprise : elle ajouterait du temps à une route bornée par maxDuration", async () => {
@@ -59,11 +57,8 @@ describe("sale pepites cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
-      retryDelaysMs: [],
-      catchUpSchedule: "42 5 * * *",
-      catchUpSuccessWindowHours: 2,
-    });
+    expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-pepites");
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({ retryDelaysMs: [] });
   });
 
   it("lit la taille du lot dans l'environnement", async () => {

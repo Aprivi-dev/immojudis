@@ -6,9 +6,12 @@ import {
   type OfferOpeningSurveyProfile,
 } from "@/lib/offer-opening-consent";
 import type { OfferOpeningNotificationResponse } from "@/lib/offer-opening-notification";
-import type { PlanCode } from "@/lib/plans";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import type { PlanCode, PlanEntitlements } from "@/lib/plans";
 import { authHeaders, readJson } from "@/lib/client-api-core";
+
+// Ces appels gardent `fetch` au lieu d'`apiRequest` : ce module est chargé sur toutes les pages, et
+// la marge de /annonce-exemple sur son budget de build était de 20 octets (13/11/2026). Les passer
+// par `apiRequest` (délais compris) se fera avec une mesure de chaque page.
 
 export type BillingOfferResponse = {
   configured: boolean;

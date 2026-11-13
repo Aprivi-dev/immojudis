@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { unavailablePepites } from "@/lib/admin-pepites";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), suspend: vi.fn() }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
-    if (!header) throw new Error("Unauthorized: No authorization header provided");
+    if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
 }));
@@ -58,7 +59,7 @@ describe("GET /api/admin/pepites", () => {
   });
 
   it("refuse un compte non administrateur", async () => {
-    mocks.get.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
+    mocks.get.mockRejectedValue(new AdminRequiredError());
 
     const response = await GET(
       new Request(url, { headers: { authorization: "Bearer user-token" } }),
@@ -95,6 +96,17 @@ describe("GET /api/admin/pepites", () => {
       expect(mocks.suspend).toHaveBeenCalledWith("admin-token", { mode: "shadow" });
     });
 
+    it("accepte un corps vide (mode par défaut) et refuse un JSON mal formé", async () => {
+      mocks.suspend.mockResolvedValue({ mode: "shadow" });
+      const headers = { authorization: "Bearer admin-token" };
+      expect((await POST(new Request(url, { method: "POST", headers }))).status).toBe(200);
+      expect(mocks.suspend).toHaveBeenCalledWith("admin-token", { mode: "shadow" });
+      mocks.suspend.mockClear();
+      const malformed = await POST(new Request(url, { method: "POST", headers, body: "{" }));
+      expect(malformed.status).toBe(400);
+      expect(mocks.suspend).not.toHaveBeenCalled();
+    });
+
     it("accepte « off » et refuse tout autre mode, « on » compris", async () => {
       mocks.suspend.mockResolvedValue({ mode: "off" });
       expect((await post({ mode: "off" })).status).toBe(200);
@@ -117,7 +129,7 @@ describe("GET /api/admin/pepites", () => {
 
     it("refuse sans jeton et un compte non administrateur", async () => {
       expect((await post({}, {})).status).toBe(401);
-      mocks.suspend.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
+      mocks.suspend.mockRejectedValue(new AdminRequiredError());
       expect((await post({})).status).toBe(403);
     });
   });

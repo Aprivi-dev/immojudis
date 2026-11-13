@@ -6,9 +6,9 @@ import {
 } from "./search-errors";
 
 describe("SearchRejectedError", () => {
-  it("reconnaît une page ou une taille de page hors bornes et la dit en français", () => {
-    for (const message of ["Page hors limites.", "Taille de page invalide."]) {
-      const error = new SearchRejectedError(message);
+  it("dit en français une page hors bornes, quel que soit le texte de la route", () => {
+    for (const message of ["Page hors limites.", "Paramètre « page » invalide.", ""]) {
+      const error = new SearchRejectedError(message, true);
       expect(error.outOfRange).toBe(true);
       expect(error.message).toBe(OUT_OF_RANGE_MESSAGE);
       expect(error.status).toBe(400);
@@ -17,7 +17,9 @@ describe("SearchRejectedError", () => {
   });
 
   it("garde le message de la route pour un autre refus, sans le dire hors bornes", () => {
-    const error = new SearchRejectedError("Zone trop large.");
+    // Le texte de la route ne décide plus : seul le calcul de la page le fait.
+    expect(new SearchRejectedError("Page hors limites.").outOfRange).toBe(false);
+    const error = new SearchRejectedError("Zone trop large.", false);
     expect(error.outOfRange).toBe(false);
     expect(error.message).toBe("Zone trop large.");
     expect(isOutOfRangeSearchError(error)).toBe(false);

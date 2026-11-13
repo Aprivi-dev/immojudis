@@ -7,8 +7,8 @@ export type CspReportSummary = {
   line: number | null;
 };
 
-function text(value: unknown, max = 300): string | null {
-  return typeof value === "string" && value ? value.slice(0, max) : null;
+function text(value: unknown): string | null {
+  return typeof value === "string" && value ? value.slice(0, 300) : null;
 }
 
 function strip(value: string | null): string | null {

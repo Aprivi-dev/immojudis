@@ -5,7 +5,7 @@ import json
 import pytest
 
 from src.normalize import normalize_sale
-from src.pdf_document_types import _canonical_document_type
+from src.pdf_document_types import canonical_document_type
 from src.sources.agrasc_extraction import (
     classify_operator_document,
     points_cles_facts,
@@ -92,8 +92,8 @@ def test_operator_documents_get_an_explicit_type(label, expected):
 def test_explicit_type_wins_over_the_generic_classifier():
     # Sans type explicite, « CONSULTATION RULES » sur lesnotairesdutrocadero.fr devenait un « PV de notaire ».
     url = "https://lesnotairesdutrocadero.fr/wp-content/uploads/2026/09/CONSULTATION-RULES.pdf"
-    assert _canonical_document_type(None, label="CONSULTATION RULES", url=url) == "pv_notaire"
-    assert _canonical_document_type("cahier_conditions_vente", label="CONSULTATION RULES", url=url) == (
+    assert canonical_document_type(None, label="CONSULTATION RULES", url=url) == "pv_notaire"
+    assert canonical_document_type("cahier_conditions_vente", label="CONSULTATION RULES", url=url) == (
         "cahier_conditions_vente")
 
 

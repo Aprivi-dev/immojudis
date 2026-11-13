@@ -19,12 +19,13 @@ from typing import Any
 
 import httpx
 
+from src.config import write_step_summary
 from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.models import AuctionSale
 from src.position_quality import PROBABLE_DUPLICATE
 from src.reviewed_aliases import ReviewedAliasRegistry
 from src.storage.column_sets import DEDUPLICATION_SALE_SELECT
-from src.storage.postgrest_helpers import _postgrest_in_filter, _rest_headers
+from src.storage.postgrest_helpers import _postgrest_in_filter, rest_headers
 from src.storage.sale_row_builders import _secondary_source_urls
 
 LOGGER = logging.getLogger(__name__)
@@ -175,7 +176,7 @@ def fetch_candidate_rows(
             response = httpx.get(
                 endpoint,
                 params=params,
-                headers=_rest_headers(api_key, prefer="count=none"),
+                headers=rest_headers(api_key),
                 timeout=_TIMEOUT,
             )
             failure = f"({response.status_code}) {response.text[:300]}" if response.is_error else None
@@ -385,10 +386,7 @@ def emit_candidates_report(plan: DuplicateSweepPlan, *, output: Path | None = No
     )
     for line in candidate_lines(plan):
         LOGGER.info("DUPLICATE_CANDIDATE %s", line)
-    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with Path(summary_path).open("a", encoding="utf-8") as handle:
-            handle.write(markdown_summary(plan))
+    write_step_summary(markdown_summary(plan))
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         report = {

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   AUTOPILOT_QUERY_KEY as QUERY_KEY,
@@ -35,7 +36,7 @@ export function AdminInformationAgentAutopilotPanel() {
       setReason("");
       toast.success("Pilote automatique mis à jour.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
   const view = query.data;
   const ready = reason.trim().length >= 8 && !run.isPending;

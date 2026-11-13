@@ -1,14 +1,5 @@
 import "server-only";
 
-export function quantile(sortedValues: number[], percentile: number): number {
-  if (!sortedValues.length) return 0;
-  const position = (sortedValues.length - 1) * percentile;
-  const lower = Math.floor(position);
-  const upper = Math.ceil(position);
-  if (lower === upper) return sortedValues[lower];
-  return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * (position - lower);
-}
-
 export function roundTo(value: number, precision: number): number {
   return Math.max(precision, Math.round(value / precision) * precision);
 }

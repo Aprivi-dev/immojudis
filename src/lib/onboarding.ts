@@ -1,6 +1,8 @@
 import { saleDetailPath, type LoginPageMode } from "@/lib/navigation";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
+import { UUID_SOURCE } from "@/lib/uuid";
+import { departmentFromSearchText } from "@/lib/search/french-geo-search";
 
 /** Paramètre de `/bienvenue` qui porte la fiche à retrouver après la première recherche. */
 export const ONBOARDING_RETURN_PARAM = "retour";
@@ -11,7 +13,7 @@ export const ONBOARDING_RETURN_PARAM = "retour";
  */
 export const SALE_CEILING_ANCHOR = "calculation";
 
-const SALE_DETAIL_PATH = /^\/sales\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/i;
+const SALE_DETAIL_PATH = new RegExp(`^/sales/(${UUID_SOURCE})$`, "i");
 const RETURN_BASE = "http://immojudis.local";
 
 /**
@@ -63,22 +65,11 @@ export type FirstSearch = {
   homeType: string;
 };
 
-/** « 33 », « 2A », « 974 » or a postal code: a département the free alert can follow. */
-function departmentFromArea(area: string): string | undefined {
-  const value = area.trim().toUpperCase();
-  if (/^(0[1-9]|[1-8]\d|9[0-5]|2A|2B)$/.test(value) || /^97[1-6]$/.test(value)) return value;
-  const postal = value.match(/^(\d{5})$/)?.[1];
-  if (!postal) return undefined;
-  if (postal.startsWith("97")) return postal.slice(0, 3);
-  if (postal.startsWith("20")) return Number(postal) < 20200 ? "2A" : "2B";
-  return postal.slice(0, 2);
-}
-
 export function firstSearchToUrl(search: FirstSearch): SalesSearchUrlRecord {
   const maxPrice = Number(search.maxPrice);
   // A département is a public criterion the free alert accepts; a free-text
   // query is not, so the first search could not be saved as an alert.
-  const department = departmentFromArea(search.area);
+  const department = departmentFromSearchText(search.area) ?? undefined;
   return {
     query: department ? undefined : search.area.trim().slice(0, 120) || undefined,
     department,

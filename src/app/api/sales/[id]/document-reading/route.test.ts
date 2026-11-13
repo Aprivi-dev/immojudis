@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NotFoundError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   enforce: vi.fn(),
   saleFeatureDoor: vi.fn(),
   getReading: vi.fn(),
+  publicationVisible: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -12,7 +14,13 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
-vi.mock("@/lib/property-reports", () => ({ saleFeatureDoor: mocks.saleFeatureDoor }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  saleFeatureDoor: mocks.saleFeatureDoor,
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({
+  assertSalePublicationVisible: mocks.publicationVisible,
+}));
 vi.mock("@/lib/document-reading.server", () => ({ getDocumentReading: mocks.getReading }));
 
 import { GET } from "./route";
@@ -59,6 +67,7 @@ describe("GET /api/sales/[id]/document-reading", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.enforce.mockResolvedValue(1);
     mocks.getReading.mockResolvedValue(reading);
+    mocks.publicationVisible.mockResolvedValue(undefined);
   });
 
   it("serves the verified points to Analyse, read through the full catalogue view", async () => {
@@ -79,11 +88,11 @@ describe("GET /api/sales/[id]/document-reading", () => {
 
   it("serves the verified points on a sale the account unlocked, without the full view", async () => {
     mocks.saleFeatureDoor.mockResolvedValue("unlock");
-    const from = accountSeeing({ v_auction_sales_discovery: true });
+    const from = accountSeeing({ v_auction_sales_unlocked: true });
 
     const response = await call();
 
-    expect(from).toHaveBeenCalledWith("v_auction_sales_discovery");
+    expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
     expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
     expect(await response.json()).toMatchObject({ access: "full", points: [{ page: 2 }] });
   });
@@ -107,11 +116,32 @@ describe("GET /api/sales/[id]/document-reading", () => {
 
   it("answers 404 when the unlocked sale is no longer visible, without reading the reading", async () => {
     mocks.saleFeatureDoor.mockResolvedValue("unlock");
-    accountSeeing({ v_auction_sales_discovery: false });
+    accountSeeing({ v_auction_sales_unlocked: false });
 
     const response = await call();
 
     expect(response.status).toBe(404);
     expect(mocks.getReading).not.toHaveBeenCalled();
   });
+
+  it.each(["plan", "unlock", null] as const)(
+    "answers 404 for a quarantined sale (door %s), without reading the reading",
+    async (door) => {
+      mocks.saleFeatureDoor.mockResolvedValue(door);
+      accountSeeing({
+        v_auction_sales_app: true,
+        v_auction_sales_unlocked: true,
+        v_auction_sales_discovery: true,
+      });
+      mocks.publicationVisible.mockRejectedValue(
+        new NotFoundError("Vente introuvable ou inaccessible."),
+      );
+
+      const response = await call();
+
+      expect(response.status).toBe(404);
+      expect(mocks.publicationVisible).toHaveBeenCalledWith(saleId);
+      expect(mocks.getReading).not.toHaveBeenCalled();
+    },
+  );
 });

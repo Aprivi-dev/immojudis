@@ -36,7 +36,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.ip }));
 
 import { RateLimitError } from "@/lib/api-errors";
-import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
+import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-signed-link";
 import { GET, POST } from "./route";
 
 const SECRET = "portal-secret-that-is-at-least-32-characters-long";
@@ -138,7 +138,7 @@ describe("POST /api/information-agent/opt-out", () => {
     expect(html).not.toContain("les autres adresses de votre étude");
     // Le même lien signé mène à la demande d'accès ou d'effacement.
     const search = new URL(signedUrl()).search;
-    expect(html).toContain(`/api/information-agent/rights${search.replace(/&/g, "&#38;")}`);
+    expect(html).toContain(`/api/information-agent/rights${search.replace(/&/g, "&amp;")}`);
   });
 
   it("lecture d'information en panne : l'opposition est enregistrée quand même", async () => {

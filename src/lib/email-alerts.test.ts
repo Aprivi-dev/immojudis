@@ -7,6 +7,7 @@ import {
   buildAlertDigestMessage,
   resolveEmailAlertDeliveryConfig,
   resolveReplyTo,
+  ResendRejectedError,
   resolveTransactionalEmailConfig,
   sendResendEmail,
 } from "@/lib/email-alerts";
@@ -433,6 +434,30 @@ describe("email alerts", () => {
     });
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.tags).toEqual([{ name: "category", value: "billing" }]);
+  });
+
+  it("un refus de Resend est une erreur typée qui porte le statut (429 : envoi trop rapide)", async () => {
+    const send = (response: Response) =>
+      sendResendEmail({
+        apiKey: "re_test",
+        idempotencyKey: "refus-1",
+        fetchImpl: vi.fn(async () => response) as unknown as typeof fetch,
+        category: "alert",
+        message: {
+          from: "Immojudis <alertes@immojudis.fr>",
+          to: "client@example.test",
+          subject: "Alerte",
+          html: "<p>x</p>",
+          text: "x",
+        },
+      });
+    const limited = send(Response.json({ message: "Too many requests" }, { status: 429 }));
+    await expect(limited).rejects.toBeInstanceOf(ResendRejectedError);
+    await expect(limited).rejects.toMatchObject({ status: 429, message: "Too many requests" });
+    await expect(send(new Response("", { status: 500 }))).rejects.toMatchObject({
+      status: 500,
+      message: "Resend a refusé l'envoi (500).",
+    });
   });
 
   it("sends the one-click unsubscribe headers to Resend", async () => {

@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -18,48 +17,36 @@ import {
 // du compte. Lecture, suppression et bilan (statut, prix final) par le propriétaire seul (RLS) ;
 // l'API ne crée jamais d'instantané.
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.favorites.snapshots.list",
+    fallbackMessage: "Ventes passées indisponibles",
+    emptyBody: { snapshots: [] },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await listFollowedSaleSnapshots({ auth });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorite-snapshots", {
-      fallbackMessage: "Ventes passées indisponibles",
-      extra: { snapshots: [] },
-    });
-  }
-}
+    return listFollowedSaleSnapshots({ auth });
+  },
+);
 
-export async function DELETE(request: Request) {
-  try {
+export const DELETE = apiRoute(
+  { scope: "api.favorites.snapshots.remove", fallbackMessage: "Retrait impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const { id } = followedSaleSnapshotDeleteSchema.parse({ id: url.searchParams.get("id") });
-    const response = await deleteFollowedSaleSnapshot({ auth, id });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorite-snapshots", {
-      fallbackMessage: "Retrait impossible",
-    });
-  }
-}
+    return deleteFollowedSaleSnapshot({ auth, id });
+  },
+);
 
-export async function PUT(request: Request) {
-  try {
+export const PUT = apiRoute(
+  {
+    scope: "api.favorites.snapshots.update",
+    fallbackMessage: "Enregistrement du bilan impossible",
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = followedSaleSnapshotUpdateSchema.parse(await request.json());
-    const response = await updateFollowedSaleSnapshot({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "favorite-snapshots", {
-      fallbackMessage: "Enregistrement du bilan impossible",
-    });
-  }
-}
+    return updateFollowedSaleSnapshot({ auth, input });
+  },
+);

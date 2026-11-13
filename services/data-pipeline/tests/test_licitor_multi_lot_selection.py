@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src import main
+from src import known_enrichment
 from src.admission import LICITOR_MULTI_LOT_QUARANTINE, quarantine_reason
 from src.normalize import normalize_sale
 from src.publication_identity import conflicting_identity
@@ -219,11 +219,11 @@ def test_reading_the_url_lot_is_not_an_identity_conflict_with_the_old_first_lot_
 def test_a_known_geocode_of_another_commune_is_not_carried_over() -> None:
     known_payload = {"geocode": {"query": "37, rue du Docteur Calmette, Cannes", "citycode": "06029"}}
     sale = {"source_url": LE_CANNET, "city": "Le Cannet", "source_detail_status": "complete"}
-    main._preserve_known_enrichment_payloads([sale], {LE_CANNET: {"city": "Cannes", "raw_payload": known_payload}})
+    known_enrichment.preserve_known_enrichment_payloads([sale], {LE_CANNET: {"city": "Cannes", "raw_payload": known_payload}})
     assert "geocode" not in sale
 
     same_commune = {"source_url": CANNES, "city": "Cannes", "source_detail_status": "complete"}
-    main._preserve_known_enrichment_payloads([same_commune], {CANNES: {"city": "Cannes", "raw_payload": known_payload}})
+    known_enrichment.preserve_known_enrichment_payloads([same_commune], {CANNES: {"city": "Cannes", "raw_payload": known_payload}})
     assert same_commune["geocode"] == known_payload["geocode"]
 
 

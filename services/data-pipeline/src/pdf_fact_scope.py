@@ -20,9 +20,9 @@ from src.normalize import (
     normalize_status,
     parse_french_datetime,
     source_sale_timezone,
-    strip_accents,
 )
-from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+from src.pdf_document_types import canonical_document_type, normalize_document_classifier_text
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def _pdf_text_chunks(pdf_texts: list[dict[str, object]] | list[str]) -> list[dic
             continue
         label = clean_text(item.get("label")) or ""
         url = clean_text(item.get("url")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=url,
@@ -154,7 +154,7 @@ def _pdf_datetime_for_compare(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
     except ValueError:
         return None
 
@@ -380,7 +380,7 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
     setattr(sale, field, value)
 
 
-def _pdf_record_fact_projection(
+def pdf_record_fact_projection(
     sale: Any,
     fields: list[str] | tuple[str, ...] | set[str],
     *,
@@ -463,7 +463,7 @@ def _pdf_record_candidate_projection(
     payload_keys: tuple[str, ...] = (),
 ) -> None:
     candidate = candidate or {}
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         [field],
         evidence=str(candidate.get("evidence") or fallback_evidence),
@@ -504,7 +504,7 @@ def _trace_derived_pdf_surface(sale: Any, provenance: dict[str, object]) -> set[
         return {"app_surface_m2", "app_surface_kind"}
     missing = [field for field in ("app_surface_m2", "app_surface_kind") if field not in provenance]
     if missing:
-        _pdf_record_fact_projection(sale, missing, candidate=matching)
+        pdf_record_fact_projection(sale, missing, candidate=matching)
     return set()
 
 
@@ -514,7 +514,7 @@ def _clear_pdf_derived_source_description(
 ) -> None:
     """Drop a source-description projection that was built from PDF text.
 
-    ``_finalize_sale_for_app`` caches ``source_description`` for downstream
+    ``sale_finalization.finalize_sale_for_app`` caches ``source_description`` for downstream
     context.  When no source description exists, that cache can be the raw
     text with the PDF marker or the PDF-derived ``description`` itself.  It
     must not survive document replacement and become source evidence.
@@ -673,7 +673,7 @@ def _apply_pdf_textual_facts(
         value = property_type_extractor(combined)
         if value:
             sale.property_type = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["property_type"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )
@@ -682,7 +682,7 @@ def _apply_pdf_textual_facts(
         value = description_extractor(combined)
         if value:
             sale.description = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["description"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )
@@ -694,7 +694,7 @@ def _apply_pdf_textual_facts(
         value = clean_text(" | ".join(filter(None, [previous, risk_notes])))
         if value != previous:
             sale.risk_notes = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["risk_notes"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )
@@ -858,7 +858,7 @@ def _pdf_add_candidate_scope(candidate: dict[str, object], *, text: str | None =
     candidate["lot_labels"] = sorted(labels)
     return candidate
 
-def _pdf_surface_candidates_with_provenance(
+def pdf_surface_candidates_with_provenance(
     pdf_texts: list[dict[str, object]] | list[str],
     *,
     surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
@@ -902,62 +902,6 @@ def _pdf_surface_candidates_with_provenance(
     return _dedupe_pdf_candidates(candidates)
 
 
-def _document_surface_candidates(
-    item: dict[str, object],
-    text: str,
-    *,
-    surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
-    surface_scope_extractor: Callable[[str, str], str],
-) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-    pages = item.get("pages")
-    if isinstance(pages, list):
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            page_text = str(page.get("text") or "")
-            if not page_text:
-                continue
-            for surface in surface_extractor(page_text):
-                surface["surface_scope"] = surface_scope_extractor(
-                    f"{page_text}\n{text}", str(surface["evidence"])
-                )
-                surface["page_number"] = page.get("page")
-                surface["page_confidence"] = page.get("confidence")
-                surface["extraction_method"] = page.get("method")
-                candidates.append(surface)
-    if not candidates:
-        for surface in surface_extractor(text):
-            surface["surface_scope"] = surface_scope_extractor(text, str(surface["evidence"]))
-            candidates.append(surface)
-    return candidates
-
-
-def _document_land_surface_candidates(
-    item: dict[str, object],
-    text: str,
-    *,
-    land_surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
-) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-    pages = item.get("pages")
-    if isinstance(pages, list):
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            page_text = str(page.get("text") or "")
-            if not page_text:
-                continue
-            for surface in land_surface_extractor(page_text):
-                surface["page_number"] = page.get("page")
-                surface["page_confidence"] = page.get("confidence")
-                surface["extraction_method"] = page.get("method")
-                candidates.append(surface)
-    if not candidates:
-        candidates.extend(land_surface_extractor(text))
-    return candidates
-
-
 def _dedupe_pdf_candidates(candidates: list[dict[str, object]]) -> list[dict[str, object]]:
     unique: list[dict[str, object]] = []
     seen: set[tuple[str, str, str, object, object]] = set()
@@ -969,7 +913,7 @@ def _dedupe_pdf_candidates(candidates: list[dict[str, object]]) -> list[dict[str
             value_key = str(value)
         key = (
             value_key,
-            _normalize_document_classifier_text(str(candidate.get("evidence") or "")),
+            normalize_document_classifier_text(str(candidate.get("evidence") or "")),
             str(candidate.get("document_url") or candidate.get("document_label") or ""),
             candidate.get("page_number"),
             tuple(candidate.get("lot_labels") or []),
@@ -1172,7 +1116,7 @@ def _extract_bedrooms_count_candidates(text: str, *, chunk: dict[str, object] | 
     return _dedupe_scalar_candidates(candidates)
 
 
-def _extract_occupancy_candidates(
+def extract_occupancy_candidates(
     text: str,
     *,
     chunk: dict[str, object] | None = None,
@@ -1214,7 +1158,7 @@ def _dedupe_scalar_candidates(candidates: list[dict[str, object]]) -> list[dict[
     for candidate in candidates:
         key = (
             str(candidate.get("value")),
-            _normalize_document_classifier_text(str(candidate.get("evidence") or "")),
+            normalize_document_classifier_text(str(candidate.get("evidence") or "")),
             str(candidate.get("document_url") or candidate.get("document_label") or ""),
             candidate.get("page_number"),
         )
@@ -1298,7 +1242,7 @@ def _aggregate_pdf_count_candidates(
     return aggregate
 
 
-def _energy_diagnostic_candidates_from_documents(
+def energy_diagnostic_candidates_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
     *,
     diagnostic_extractor: Callable[[str], dict[str, object] | None],
@@ -1322,7 +1266,7 @@ def _energy_diagnostic_candidates_from_documents(
             continue
         item_candidates: list[dict[str, object]] = []
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -1414,7 +1358,7 @@ def _dedupe_energy_candidates(candidates: list[dict[str, object]]) -> list[dict[
     return unique
 
 
-def _energy_diagnostics_are_ambiguous(
+def energy_diagnostics_are_ambiguous(
     pdf_texts: list[dict[str, object]] | list[str],
     candidates: list[dict[str, object]],
     *,

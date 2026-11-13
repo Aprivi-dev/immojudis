@@ -27,12 +27,11 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from src.reference_data.rents import decode_csv
+from src.reference_data.download import decode_csv
 
 # Publié chaque année avec le COG (https://www.insee.fr/fr/information/8740222) : l'identifiant de la page et le
 # millésime du nom changent ; à mettre à jour avec le COG des communes (voir docs/operations/…).
 MOVEMENTS_URL = "https://www.insee.fr/fr/statistiques/fichier/8740222/v_mvt_commune_2026.csv"
-MOVEMENTS_SOURCE_URL = "https://www.insee.fr/fr/information/8740222"
 # Le fichier remonte à 1943 : avant cette date, un code a pu être réutilisé pour une autre commune.
 DEFAULT_SINCE = date(2015, 1, 1)
 CODE_CHANGE_MODALITIES = frozenset({"31", "32", "33", "34", "35", "41", "50"})

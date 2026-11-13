@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { AuthRequiredError, ForbiddenError, RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -58,14 +58,14 @@ describe("/api/api-keys", () => {
   });
 
   it("answers 401 when the token is rejected", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     expect((await get()).status).toBe(401);
   });
 
   it("answers 403 when the plan does not include API keys", async () => {
-    mocks.list.mockRejectedValue(new Error("Clés API réservées à l’offre Analyse."));
-    mocks.create.mockRejectedValue(new Error("Clés API réservées à l’offre Analyse."));
+    mocks.list.mockRejectedValue(new ForbiddenError("Clés API réservées à l’offre Analyse."));
+    mocks.create.mockRejectedValue(new ForbiddenError("Clés API réservées à l’offre Analyse."));
 
     expect((await get()).status).toBe(403);
     expect((await post(JSON.stringify({ name: "Ma clé" }))).status).toBe(403);

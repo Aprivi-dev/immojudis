@@ -20,10 +20,10 @@ import json
 import re
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
+from src.french_dates import MONTH_NAMES, PARIS
 from src.normalize import clean_text
 
 BASE_URL = "https://encheresimmobilieres.fr"
@@ -31,7 +31,6 @@ DOCUMENTS_URL = f"{BASE_URL}/documents"
 PHOTOS_URL = f"{BASE_URL}/images/photos"
 FEATURES_SCHEMA_VERSION = "encheres_immobilieres_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
-PARIS = ZoneInfo("Europe/Paris")
 # Libellés publiés par le site (fonction ``documentLabel`` de la page).
 DOCUMENT_LABELS = {
     "texte_complet": "Texte complet",
@@ -50,10 +49,6 @@ DOCUMENT_TYPES = {
 }
 STATUS_LABELS = {"en_cours": "Vente à venir", "resultat": "Résultat publié", "archive": "Archivée"}
 _FLIGHT_CHUNK_RE = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)', re.S)
-_MONTHS = (
-    "janvier", "février", "mars", "avril", "mai", "juin",
-    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-)
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
@@ -141,7 +136,7 @@ def _hour(value: datetime) -> str:
 
 
 def _day_label(value: datetime) -> str:
-    return f"{_WEEKDAYS[value.weekday()]} {value.day} {_MONTHS[value.month - 1]} {value.year}"
+    return f"{_WEEKDAYS[value.weekday()]} {value.day} {MONTH_NAMES[value.month - 1]} {value.year}"
 
 
 def _html_text(value: object) -> str | None:

@@ -68,7 +68,7 @@ export function deliveryActionOf(
 }
 
 /** Fenêtre et plafond des rebonds passagers : deux en 30 jours rendent l'adresse inutilisable. */
-export const TEMPORARY_BOUNCE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const TEMPORARY_BOUNCE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Dates des rebonds passagers à garder après un nouveau rebond (celles de moins de 30 jours, plus la nouvelle,
@@ -85,7 +85,7 @@ export function mergeTemporaryBounces(existing: unknown, bouncedAt: string): str
 }
 
 /** Écrit le rebond sur l'adresse (portée globale). Un `permanent` n'est jamais rétrogradé. */
-export async function recordInboundContactBounce(
+async function recordInboundContactBounce(
   email: string,
   status: "permanent" | "temporary",
   bouncedAt: string,

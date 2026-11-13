@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -280,17 +281,17 @@ describe("mesure à blanc des destinataires", () => {
     // mesure peut donc refuser.
     await expect(
       measureInformationAgentRecipients({ auth: NOT_ADMIN, saleIds: [] }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     await expect(
       measureInformationAgentRecipients({ auth: NOT_ADMIN, saleIds: [id(1)] }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(db.reads).toEqual([]);
   });
 
   it("la lecture des ventes a sa propre garde d'administrateur", async () => {
     await expect(
       loadInformationAgentContactSales({ auth: { isAdmin: false }, saleIds: [id(1)] }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(db.reads).toEqual([]);
     const loaded = await loadInformationAgentContactSales({
       auth: { isAdmin: true },
@@ -435,7 +436,7 @@ describe("opposition au niveau de la structure", () => {
     db.allowWrites = true;
     await expect(
       recordInformationAgentStructureOpposition({ auth: NOT_ADMIN, email: "etude@example.test" }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(db.writes).toEqual([]);
   });
 

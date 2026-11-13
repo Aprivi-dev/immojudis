@@ -1,14 +1,18 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { professionalPilotSaveSchema, saveProfessionalPilot } from "@/lib/sale-workspaces";
 
-export async function PUT(request: Request) {
-  try {
+export const PUT = apiRoute(
+  {
+    scope: "sale-workspace.professional-pilot",
+    fallbackMessage: "Enregistrement impossible",
+    emptyBody: { workspace: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await assertFeatureEntitlement(
       auth,
@@ -16,13 +20,6 @@ export async function PUT(request: Request) {
       "Espace de suivi réservé à l’offre Analyse.",
     );
     const input = professionalPilotSaveSchema.parse(await request.json());
-    return NextResponse.json(await saveProfessionalPilot({ auth, input }), {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-workspace.professional-pilot", {
-      fallbackMessage: "Enregistrement impossible",
-      extra: { workspace: null },
-    });
-  }
-}
+    return saveProfessionalPilot({ auth, input });
+  },
+);

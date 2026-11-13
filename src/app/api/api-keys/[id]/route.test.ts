@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ requireAuth: vi.fn(), revoke: vi.fn() }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },

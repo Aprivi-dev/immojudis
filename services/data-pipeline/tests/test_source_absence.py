@@ -113,7 +113,6 @@ class _FetchAll(_Result):
 
 
 def _finish(monkeypatch, db, calls):
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda url: nullcontext(db))
     monkeypatch.setattr(autonomous_runner, "record_source_presence", lambda *a, **k: None)
 
     def fake_withdraw(db_url, source, connect=None):
@@ -121,7 +120,7 @@ def _finish(monkeypatch, db, calls):
         return {"action": "withdrawn", "withdrawn": 1}
 
     monkeypatch.setattr(autonomous_runner, "withdraw_missing_sales", fake_withdraw)
-    autonomous_runner.finish_source("db", "run-1")
+    autonomous_runner.finish_source("db", "run-1", connect=lambda url: nullcontext(db))
 
 
 def test_finish_source_withdraws_after_a_complete_successful_inventory(monkeypatch) -> None:
@@ -166,11 +165,10 @@ def test_finish_source_records_a_complete_inventory_only_for_a_succeeded_run(
 ) -> None:
     presence: list[tuple] = []
     db = _FinishDb(status=status, coverage=coverage)
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda url: nullcontext(db))
     monkeypatch.setattr(autonomous_runner, "record_source_presence", lambda *args: presence.append(args[1:]))
     monkeypatch.setattr(autonomous_runner, "withdraw_missing_sales", lambda *args, **kwargs: None)
 
-    autonomous_runner.finish_source("db", "run-1")
+    autonomous_runner.finish_source("db", "run-1", connect=lambda url: nullcontext(db))
 
     assert [args[-1] for args in presence] == [inventory_complete]
     # Paramètres de la mise à jour de l'état : ..., inventaire complet, publication complète, source, run.

@@ -34,14 +34,15 @@ Aucune donnée personnelle n'est journalisée : seuls des codes et des compteurs
 from __future__ import annotations
 
 import logging
-import os
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.config import env_flag_on_unless_false
 from src.models import AuctionSale
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -168,14 +169,6 @@ def excluded_contact_reason(email: str) -> str | None:
     return None
 
 
-def is_court_registry_email(email: str) -> bool:
-    """Adresse d'une juridiction (greffe, accueil du tribunal), jamais sollicitée par l'agent.
-
-    Miroir de ``isCourtRegistryEmail`` (``src/lib/information-agent/excluded-addresses.ts``).
-    """
-    return excluded_contact_reason(email) == "court"
-
-
 @dataclass(frozen=True)
 class ContactBlocklist:
     """Registre de refus (``information_agent_contacts``) : opposition ou rebond permanent.
@@ -205,7 +198,8 @@ def usable_contact_emails(sale: AuctionSale, blocklist: ContactBlocklist = NO_BL
 # Contact de secours d'une vente au tribunal : l'adresse du greffe (référentiel des tribunaux)
 # --------------------------------------------------------------------------
 #: Origine de l'adresse d'un greffe dans le registre des contacts de l'agent (``source_kind``), miroir de
-#: ``INFORMATION_AGENT_COURT_REGISTRY_FALLBACK`` (``src/lib/information-agent/court-registry-fallback.ts``).
+#: ``INFORMATION_AGENT_COURT_REGISTRY_FALLBACK`` (``src/lib/information-agent/court-registry-fallback.ts``) ;
+#: ``tests/test_typescript_contracts.py`` vérifie l'accord.
 COURT_REGISTRY_FALLBACK = "court_registry_fallback"
 #: Sources qui ne sont jamais une vente au tribunal : notaires, cessions de l'État, AGRASC.
 COURT_FALLBACK_EXCLUDED_SOURCES = frozenset({"notaires", "cessions_etat", "agrasc"})
@@ -311,7 +305,7 @@ def sufficient_information(
 
 
 def gate_enabled() -> bool:
-    return (os.getenv(GATE_ENV) or "on").strip().lower() not in {"off", "0", "false", "no"}
+    return env_flag_on_unless_false(GATE_ENV)
 
 
 _ACTIVE_BLOCKLIST: ContactBlocklist = NO_BLOCKLIST
@@ -418,7 +412,7 @@ def load_court_registry(settings: Mapping[str, Any]) -> CourtRegistry:
         response = httpx.get(
             f"{url}/rest/v1/court_registry_contacts",
             params={"select": "court_code,emails", "limit": "1000"},
-            headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
+            headers=rest_headers(key),
             timeout=30,
         )
         response.raise_for_status()
@@ -453,7 +447,7 @@ def load_contact_blocklist(settings: Mapping[str, Any]) -> ContactBlocklist:
                 "or": "(opposition_status.eq.opposed,bounce_status.eq.permanent)",
                 "limit": "10000",
             },
-            headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
+            headers=rest_headers(key),
             timeout=30,
         )
         response.raise_for_status()

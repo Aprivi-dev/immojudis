@@ -2,6 +2,8 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,6 +15,7 @@ import {
   type SaleReminderAccuracy,
 } from "@/lib/admin-pilotage";
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
+import { PLAN_LIMITS } from "@/lib/plans";
 import {
   AdminPilotagePage,
   formatShare,
@@ -619,7 +622,7 @@ describe("page admin Pilotage", () => {
       expect(line("Réponses au questionnaire")).toBe("14");
       expect(line("Particulier")).toBe("8");
       expect(line("Marchand de biens")).toBe(MASKED);
-      expect(line("Médiane du prix jugé trop cher")).toBe("120 €");
+      expect(line("Médiane du prix jugé trop cher")).toBe("120\u00a0€");
       expect(line("Médiane du prix jugé bon marché")).toBe("moins de 10 réponses");
       expect(line("Ont accepté un entretien")).toBe(MASKED);
     });
@@ -716,6 +719,18 @@ describe("page admin Pilotage", () => {
       expect(inside(current, "Part des comptes Découverte à 3 déblocages")).toBe("5 %");
       expect(inside(current, "Part de ceux qui ont débloqué une vente")).toBe("33 %");
       expect(inside('[data-threshold-month="previous"]', "ont atteint 3 déblocages")).toBe(MASKED);
+    });
+
+    it("counts at the database the same threshold as the Discovery quota it names", () => {
+      const migration = readFileSync(
+        join(process.cwd(), "supabase/migrations/20261110180000_admin_pilotage_activation.sql"),
+        "utf8",
+      );
+      const thresholds = [...migration.matchAll(/'reached_three'[\s\S]*?u\.sales >= (\d+)\)/g)];
+      expect(thresholds).toHaveLength(2);
+      for (const [, threshold] of thresholds) {
+        expect(Number(threshold)).toBe(PLAN_LIMITS.decouverte.monthlyUnlocks);
+      }
     });
 
     it("computes shares without ever turning a missing figure into 0 %", () => {

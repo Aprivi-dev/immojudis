@@ -22,7 +22,10 @@ export function isAnilRentReference(
   return reference?.source.startsWith("anil_") === true;
 }
 
-/** « 11 décembre 2025 » à partir d'une date ISO, ou `null`. */
+/**
+ * « 11 décembre 2025 » (« 1er décembre 2025 ») à partir d'une date ISO, ou `null` : même règle que
+ * `formatDate` (`format/dates.ts`), écrite ici sans l'importer ; le test vérifie l'accord.
+ */
 export function formatRentSourceDate(value: string | null | undefined): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
   if (!match) return null;
@@ -33,7 +36,10 @@ export function formatRentSourceDate(value: string | null | undefined): string |
     month: "long",
     year: "numeric",
     timeZone: "UTC",
-  }).format(date);
+  })
+    .formatToParts(date)
+    .map(({ type, value: part }) => (type === "day" && part === "1" ? "1er" : part))
+    .join("");
 }
 
 /**

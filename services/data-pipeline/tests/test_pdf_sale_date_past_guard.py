@@ -1,9 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_fact_extraction without a circular import)
 from src.models import AuctionSale
-from src.pdf_fact_extraction import _assign_pdf_sale_date
-from src.pdf_sale_date_guard import pdf_sale_date_is_past
+from src.pdf_sale_date_guard import assign_pdf_sale_date, pdf_sale_date_is_past
 
 
 def _sale() -> AuctionSale:
@@ -14,7 +12,7 @@ def test_past_pdf_date_is_never_applied():
     sale = _sale()
     past = datetime(2001, 10, 12, 14, 0, tzinfo=UTC)
 
-    _assign_pdf_sale_date(sale, {"value": past, "document": "cahier.pdf"})
+    assign_pdf_sale_date(sale, {"value": past, "document": "cahier.pdf"})
 
     assert sale.sale_date is None
     assert sale.raw_payload["pdf_sale_date_rejected"]["reason"] == "past_date"
@@ -26,7 +24,7 @@ def test_future_pdf_date_is_applied():
     sale = _sale()
     future = datetime.now(UTC) + timedelta(days=30)
 
-    _assign_pdf_sale_date(sale, {"value": future})
+    assign_pdf_sale_date(sale, {"value": future})
 
     assert sale.sale_date == future
     assert "pdf_sale_date_rejected" not in sale.raw_payload
@@ -43,7 +41,7 @@ def test_far_future_pdf_date_is_never_applied():
     sale = _sale()
     misread = datetime.now(UTC) + timedelta(days=4000)
 
-    _assign_pdf_sale_date(sale, {"value": misread, "document": "cahier.pdf"})
+    assign_pdf_sale_date(sale, {"value": misread, "document": "cahier.pdf"})
 
     assert sale.sale_date is None
     assert sale.raw_payload["pdf_sale_date_rejected"]["reason"] == "too_far_ahead"

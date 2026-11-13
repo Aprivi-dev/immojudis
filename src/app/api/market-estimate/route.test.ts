@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   entitlement: vi.fn(),
-  included: vi.fn(),
+  publicationVisible: vi.fn(),
   refresh: vi.fn(),
   enforce: vi.fn(),
   record: vi.fn(),
@@ -15,9 +16,12 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.auth,
 }));
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
   assertFeatureEntitlementVia: mocks.entitlement,
-  featureIncludedForSale: mocks.included,
+}));
+vi.mock("@/lib/sale-publication-guard", () => ({
+  assertSalePublicationVisible: mocks.publicationVisible,
 }));
 vi.mock("@/lib/sale-market-estimates", () => ({
   refreshSaleValuationOnDemand: mocks.refresh,
@@ -40,6 +44,9 @@ const request = () =>
     body: JSON.stringify({ saleId }),
   });
 
+const ANALYSIS = { plan: { plan: "analyse" }, door: "plan" };
+const UNLOCK = { plan: { plan: "decouverte" }, door: "unlock" };
+
 function authWithVisibleSale(visible: boolean) {
   const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
   query.select.mockReturnValue(query);
@@ -54,8 +61,8 @@ describe("POST /api/market-estimate sale readiness", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    mocks.included.mockResolvedValue(true);
-    mocks.entitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
+    mocks.entitlement.mockResolvedValue(ANALYSIS);
+    mocks.publicationVisible.mockResolvedValue(undefined);
     mocks.enforce.mockResolvedValue(1);
     mocks.record.mockResolvedValue(true);
   });
@@ -72,19 +79,15 @@ describe("POST /api/market-estimate sale readiness", () => {
     expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
-  it("asks for the right of this very sale when the offer lacks the estimate", async () => {
+  it("reads the plan once, asking for the bid-ceiling right of this very sale", async () => {
     authWithVisibleSale(true);
-    mocks.included.mockResolvedValue(false);
+    mocks.entitlement.mockResolvedValue(UNLOCK);
     mocks.refresh.mockResolvedValue({ ok: false, estimate: null, status: "queued" });
 
     await POST(request());
 
-    expect(mocks.included).toHaveBeenCalledWith(
-      expect.anything(),
-      "property.valueEstimate",
-      saleId,
-    );
     // An unlock opens the bid ceiling, never the autonomous estimate.
+    expect(mocks.entitlement).toHaveBeenCalledTimes(1);
     expect(mocks.entitlement).toHaveBeenCalledWith(
       expect.anything(),
       "property.bidCeiling",
@@ -93,11 +96,26 @@ describe("POST /api/market-estimate sale readiness", () => {
     );
   });
 
+  it("answers 404 for a quarantined sale, before computing anything", async () => {
+    authWithVisibleSale(true);
+    mocks.entitlement.mockResolvedValue(UNLOCK);
+    mocks.publicationVisible.mockRejectedValue(
+      new NotFoundError("Vente introuvable ou inaccessible."),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(404);
+    expect(mocks.publicationVisible).toHaveBeenCalledWith(saleId);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+
   it("refuses an account that has neither the offer nor the unlock of this sale", async () => {
     authWithVisibleSale(true);
-    mocks.included.mockResolvedValue(false);
     mocks.entitlement.mockRejectedValue(
-      Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), { status: 403 }),
+      Object.assign(new ForbiddenError("Estimation de marché réservée à l’offre Analyse."), {
+        status: 403,
+      }),
     );
 
     const response = await POST(request());
@@ -146,7 +164,7 @@ describe("POST /api/market-estimate sale readiness", () => {
 
       expect(from).toHaveBeenCalledWith("v_auction_sales_app");
       expect(body.estimate).toEqual(estimate);
-      expect(mocks.entitlement).not.toHaveBeenCalled();
+      expect(mocks.entitlement).toHaveBeenCalledTimes(1);
     });
 
     it("measures, for the account, that the reference value of the ceiling was served", async () => {
@@ -161,15 +179,15 @@ describe("POST /api/market-estimate sale readiness", () => {
       });
     });
 
-    it("sends an unlocked sale only what the bid ceiling reads, through the discovery view", async () => {
+    it("sends an unlocked sale only what the bid ceiling reads, through the unlocked view", async () => {
       const { from } = authWithVisibleSale(true);
-      mocks.included.mockResolvedValue(false);
+      mocks.entitlement.mockResolvedValue(UNLOCK);
 
       const response = await POST(request());
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(from).toHaveBeenCalledWith("v_auction_sales_discovery");
+      expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
       expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
       // Exact shape (toEqual): the real count of sales, the effective sample size the ceiling
       // reads for fragility, the engine and the public gate; nothing else of the estimate.
@@ -239,9 +257,8 @@ describe("POST /api/market-estimate sale readiness", () => {
 
       it("keeps the rights of the sale: no unlock, no recomputed value", async () => {
         authWithVisibleSale(true);
-        mocks.included.mockResolvedValue(false);
         mocks.entitlement.mockRejectedValue(
-          Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), {
+          Object.assign(new ForbiddenError("Estimation de marché réservée à l’offre Analyse."), {
             status: 403,
           }),
         );

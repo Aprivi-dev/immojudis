@@ -62,26 +62,21 @@ describe("recordAccountProductEvent", () => {
     },
   );
 
-  describe("deployment order: the database does not have migration 20261029120100 yet", () => {
+  describe("a refused detail is a failure, never retried under another detail", () => {
     const refused = { data: null, error: { code: "23514", message: "check constraint" } };
 
     it.each(["daily_account", "daily_shared"] as const)(
-      "retries the %s cap with the former `daily` detail, so the cap is still counted",
+      "writes the %s cap once, and logs a refusal instead of recording `daily`",
       async (quota) => {
         mocks.rpc.mockResolvedValueOnce(refused).mockResolvedValueOnce({ data: true, error: null });
         await expect(
           recordAccountProductEvent(userId, { type: "quota_reached", quota }),
-        ).resolves.toBe(true);
-        expect(mocks.rpc).toHaveBeenCalledTimes(2);
-        expect(mocks.rpc).toHaveBeenNthCalledWith(1, "record_account_product_event", {
+        ).resolves.toBe(false);
+        expect(mocks.rpc).toHaveBeenCalledTimes(1);
+        expect(mocks.rpc).toHaveBeenCalledWith("record_account_product_event", {
           p_user_id: userId,
           p_event_type: "quota_reached",
           p_detail: quota,
-        });
-        expect(mocks.rpc).toHaveBeenNthCalledWith(2, "record_account_product_event", {
-          p_user_id: userId,
-          p_event_type: "quota_reached",
-          p_detail: "daily",
         });
       },
     );
@@ -101,12 +96,12 @@ describe("recordAccountProductEvent", () => {
       expect(mocks.rpc).toHaveBeenCalledTimes(1);
     });
 
-    it("never fails the journey when the retry is refused too", async () => {
+    it("never fails the journey when the database refuses the detail", async () => {
       mocks.rpc.mockResolvedValue(refused);
       await expect(
         recordAccountProductEvent(userId, { type: "quota_reached", quota: "daily_shared" }),
       ).resolves.toBe(false);
-      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
     });
   });
 

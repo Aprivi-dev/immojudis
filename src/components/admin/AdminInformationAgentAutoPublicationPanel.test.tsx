@@ -114,7 +114,9 @@ describe("AutoPublicationDecisionNote", () => {
         }}
       />,
     );
-    expect(screen.getByText("Simulation : aurait été publié, le 20/11/2026 à 10:00.")).toBeTruthy();
+    expect(
+      screen.getByText("Simulation : aurait été publié, le 20 nov. 2026, 10:00."),
+    ).toBeTruthy();
     cleanup();
     render(
       <AutoPublicationDecisionNote

@@ -1,20 +1,10 @@
 import type { MetadataRoute } from "next";
-import { loadSitemapSaleTotal, salesSitemapCount } from "@/lib/public-sitemap.server";
 import { isSiteIndexable } from "@/lib/seo-indexing";
-import { isNonProductionVercelDeployment, resolveSiteOrigin } from "@/lib/site-url";
+import { isNonProductionVercelDeployment, siteOrigin } from "@/lib/site-url";
+import { generateSitemaps as salesSitemaps } from "./sales/sitemap";
 
 // Lists the three kinds of sitemap: the pages, the articles and the sales files.
 export const dynamic = "force-dynamic";
-
-async function salesSitemaps(origin: string): Promise<string[]> {
-  try {
-    const count = salesSitemapCount(await loadSitemapSaleTotal());
-    return Array.from({ length: count }, (_, id) => `${origin}/sales/sitemap/${id}.xml`);
-  } catch {
-    // A database error must not remove the robots.txt: the other sitemaps stay listed.
-    return [];
-  }
-}
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   // A preview or development deployment is never a page to index (the same decision is sent as
@@ -38,13 +28,15 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   // snippet. Letting the crawler in is what lets the `noindex` take effect and drop the URL.
   if (!isSiteIndexable()) return { rules };
 
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   return {
     rules,
     sitemap: [
       `${origin}/sitemap.xml`,
       `${origin}/ressources/sitemap.xml`,
-      ...(await salesSitemaps(origin)),
+      // Exactly the files that /sales/sitemap/[id].xml generates (none while the database cannot
+      // be read: the other sitemaps stay listed).
+      ...(await salesSitemaps()).map(({ id }) => `${origin}/sales/sitemap/${id}.xml`),
     ],
   };
 }

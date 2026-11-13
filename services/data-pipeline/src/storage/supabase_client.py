@@ -13,7 +13,6 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import httpx
 from supabase import Client, create_client
@@ -37,40 +36,45 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import (
+    LLM_EXTRACTIONS_DIR,
+    PDF_DOCUMENT_TEXTS_DIR,
+    PDF_TEXTS_DIR,
+    direct_database_url,
+    load_settings,
+    supabase_configured,
+)
 from src.court_competence import tribunal_reference_rows
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.merge_guards import MAX_MERGES_PER_PASS, merges_cap, require_merge_trigger
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
-from src.pdf_document_types import document_type_with_content, with_content_document_types
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
+from src.pdf_document_text_cache import write_document_text_cache
+from src.pdf_document_types import classify_document_type, document_type_with_content, with_content_document_types
 from src.pdf_partial_tolerance import tolerated_partial_url_set
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
+    PDF_TEXT_CACHE_VERSION,
     document_url,
     is_modern_payload,
     modern_progress_entries,
 )
-from src.personal_data import persistable_payload, redact_storage_row
+from src.personal_data import redact_storage_row
+from src.rejected_listings import persistable_payload
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.sale_local_files import sale_storage_id
+from src.sha256_digest import is_sha256
 from src.stage_watchdog import track_stage
 from src.storage import internal_contacts
-from src.storage.column_sets import (
-    JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
-    POSTGRES_JSON_COLUMNS,
-    PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
-    UPSERT_COLUMNS,
-)
+from src.storage.column_sets import POSTGRES_JSON_COLUMNS, UPSERT_COLUMNS
 from src.storage.connection_guards import (
     POSTGRES_KEEPALIVE_OPTIONS,
-    DatabaseCallTimeout,  # noqa: F401 - re-exported: tests and callers read it here
     _client_deadline,
     postgres_ssl_options,
     retry_on_disconnect,
@@ -83,33 +87,16 @@ from src.storage.duplicate_sweep import (
     fetch_candidate_rows,
 )
 from src.storage.fact_claim_rows import (
-    FACT_CLAIMS_COLUMNS,  # noqa: F401
-    FACT_CLAIMS_RETRY_JOB_TYPE,
-    FACT_CLAIMS_RETRY_VERSION,  # noqa: F401
-    _fact_claim_retry_input_hash,
-    _FactClaimRetryQueueUnavailable,
     _insert_fact_claim_rows,
     _materialize_fact_claim_snapshot,
     _sale_ids_for_connection,
 )
-from src.storage.known_sale_projection import (
-    DATA_REFRESH_SALE_SELECT,
-    KNOWN_SALE_DETAIL_SELECT,
-    KNOWN_SALE_POSTGRES_SELECT,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_KEYS,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_PROJECTION,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE,  # noqa: F401
-    _build_known_sale_raw_payload_projection,  # noqa: F401
-    _known_sale_postgres_select,
-)
+from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT, _known_sale_postgres_select
 from src.storage.pdf_checkpoint_rules import (
     _checkpoint_manifest_text_hash,
     _checkpoint_page_coverage_matches,
     _checkpoint_pages_match_payload,
     _checkpoint_payload_text_hash,
-    _is_sha256,
     _manifest_urls,
     _refused,
     _reusable_pdf_checkpoint_pages,
@@ -123,31 +110,27 @@ from src.storage.pdf_persistence_rows import (
     PDF_EXTRACTION_PROVIDER,
     PDF_EXTRACTION_SCHEMA_VERSION,
     _enrichment_revision_for_sale,
-    _fresh_complete_pdf_fingerprint,  # noqa: F401
     _normalize_persisted_pdf_row,
     _read_persisted_pdf_rows_postgres,
     _rekey_pdf_job_after_checkpoint_with_connection,
 )
 from src.storage.postgrest_helpers import (
+    POSTGREST_RETRYABLE_STATUS_CODES,
     _claim_error_diagnostic,
     _claim_retry_after_seconds,
     _has_current_document_analysis,
-    _is_uuid,
     _known_source_urls,
     _postgrest_batch_size,
     _postgrest_batches,
     _postgrest_in_filter,
-    _rest_headers,
     _timestamped,
+    postgrest_request_with_retries,
+    rest_headers,
 )
-from src.storage.postgrest_payload import (
-    POSTGREST_MAX_PAYLOAD_DEPTH,  # noqa: F401
-    _sanitize_postgrest_payload,
-)
+from src.storage.postgrest_payload import _sanitize_postgrest_payload
 from src.storage.sale_row_builders import (
     _document_extraction_status,
     _judicial_sale_rows_for_sales,
-    _normalized_source_urls,  # noqa: F401
     _pdf_extraction_confidence,
     _property_rows_for_sales,
     _public_occurrence_row,
@@ -155,21 +138,17 @@ from src.storage.sale_row_builders import (
     _secondary_source_urls,
     _surface_derivation_rows_for_sale,
     _surface_measurement_rows_for_sale,
-    _surface_row_key,  # noqa: F401
-    _unique_rows_by_key,  # noqa: F401
     _unique_rows_by_keys,
     _unique_source_urls,
 )
+from src.timestamps import assumed_utc_timestamp, aware_timestamp
 from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
-POSTGREST_UPSERT_RETRIES = 5
-POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 CLAIM_RPC_ATTEMPTS = 4
 CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
-POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
 # A blocked statement must fail after two minutes instead of holding the job
@@ -192,25 +171,6 @@ PDF_CHECKPOINT_CONNECT_TIMEOUT = 5
 PDF_CHECKPOINT_LOCK_TIMEOUT = "5s"
 PDF_CHECKPOINT_STATEMENT_TIMEOUT = "15s"
 PDF_CHECKPOINT_QUEUE_OWNER = "python"
-EXPIRED_SALE_DELETE_TABLES = (
-    "auction_observations",
-    "auction_enrichment_jobs",
-    "auction_surface_derivations",
-    "auction_surface_measurements",
-    "auction_documents",
-    "auction_extractions",
-    "auction_cadastre_parcels",
-    "auction_dpe_diagnostics",
-    "auction_risk_occurrences",
-    "auction_urban_planning_signals",
-    "auction_score_factors",
-    "auction_risks",
-    "auction_features",
-    "auction_surfaces",
-    "judicial_sales",
-    "properties",
-    "auction_sales",
-)
 # The blank-page correction and the writer marker correction each require one
 # bounded replay of incomplete/legacy documents. The writer now preserves the
 # extractor's explicit markers; old rows without them must pass normal
@@ -240,11 +200,11 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
         with _postgres_connect(str(db_url)) as db:
             return load_reviewed_aliases(db)
     try:
-        response = _postgrest_request_with_retries(
+        response = postgrest_request_with_retries(
             "POST",
             f"{supabase_url.rstrip('/')}/rest/v1/rpc/list_reviewed_publication_aliases",
             "reviewed_publication_aliases",
-            headers=_rest_headers(api_key, prefer="count=none"),
+            headers=rest_headers(api_key),
             json={},
             timeout=30,
         )
@@ -265,6 +225,14 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
         raise ReviewedAliasRegistryError("Malformed reviewed-alias RPC response") from exc
 
 
+def _publication_connection() -> Any:
+    """The caller's publication transaction: catalogue tables are written nowhere else."""
+    connection = _PUBLICATION_CONNECTION.get()
+    if connection is None:
+        raise RuntimeError("Catalogue tables are written inside a publication transaction only")
+    return connection
+
+
 def _transaction_write(
     table: str,
     payload: list[dict[str, object]],
@@ -278,7 +246,7 @@ def _transaction_write(
     ``returning`` donne la ligne telle que la base l'a gardée, après ses déclencheurs, et non telle qu'elle a été
     envoyée.
     """
-    connection = _PUBLICATION_CONNECTION.get()
+    connection = _publication_connection()
     if not payload:
         return []
     columns = list(dict.fromkeys(key for row in payload for key in row))
@@ -449,7 +417,7 @@ def _coalesce_queued_display_revisions(
     }
 
 
-def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
+def _enqueue_due_enrichment(sales: list[AuctionSale]) -> None:
     from src.enrichment.extract_structured import needs_fact_extraction
 
     settings = load_settings()
@@ -475,29 +443,25 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
                          # Queue ordering applies age and urgency to every generation.
                          "priority": priority})
     if jobs:
-        if _PUBLICATION_CONNECTION.get() is not None:
-            connection = _PUBLICATION_CONNECTION.get()
-            coalesced = _coalesce_queued_display_revisions(connection, jobs)
-            coalesced_keys = {
-                (source_url, job_type)
-                for source_url, job_type, _ in coalesced
-            }
-            pending = [
-                job for job in jobs
-                if (
-                    str(job.get("source_url") or ""),
-                    str(job.get("job_type") or ""),
-                ) not in coalesced_keys
-            ]
-            if pending:
-                _transaction_write(
-                    "auction_enrichment_jobs",
-                    pending,
-                    "source_url,job_type,input_hash",
-                    ignore_conflicts=True,
-                )
-        else:
-            _postgrest_upsert(url, key, "auction_enrichment_jobs", jobs, "source_url,job_type,input_hash")
+        coalesced = _coalesce_queued_display_revisions(_publication_connection(), jobs)
+        coalesced_keys = {
+            (source_url, job_type)
+            for source_url, job_type, _ in coalesced
+        }
+        pending = [
+            job for job in jobs
+            if (
+                str(job.get("source_url") or ""),
+                str(job.get("job_type") or ""),
+            ) not in coalesced_keys
+        ]
+        if pending:
+            _transaction_write(
+                "auction_enrichment_jobs",
+                pending,
+                "source_url,job_type,input_hash",
+                ignore_conflicts=True,
+            )
 
 
 def upsert_sales_to_supabase(
@@ -513,70 +477,63 @@ def upsert_sales_to_supabase(
     if not sales:
         return 0
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
-    if not url or not key:
+    if not settings["supabase_url"] or not settings["supabase_service_role_key"]:
         LOGGER.info("Supabase variables are missing; skipping upsert")
         return 0
-    if db_url and _PUBLICATION_CONNECTION.get() is None and len(sales) > 25:
+    if _PUBLICATION_CONNECTION.get() is not None:
+        # Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule, donc lui qui ouvre la portée de
+        # la garde d'écho.
+        return _write_sale_revisions(sales, refresh_last_seen=refresh_last_seen)
+    db_url = direct_database_url(settings)
+    if len(sales) > 25:
         committed = 0
         for offset in range(0, len(sales), 25):
             committed += upsert_sales_to_supabase(sales[offset:offset + 25], refresh_last_seen=refresh_last_seen)
             LOGGER.info("Publication committed %s/%s sales", committed, len(sales))
         return committed
-    if db_url and _PUBLICATION_CONNECTION.get() is None:
-        # All product tables for each bounded batch commit together. A failed transaction never falls
-        # back to partially committed REST writes.
-        submitted_sales = sales
-        # La portée entoure la transaction : ce que la base a gardé des lignes écrites ne devient l'état de
-        # référence de la garde d'écho qu'une fois la transaction validée, et n'en laisse rien si elle est annulée.
-        with base_reads.written_scope(), _postgres_connect(str(db_url)) as connection:
-            connection.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
-            connection.execute("set local lock_timeout = '15s'")
-            connection.execute("set local statement_timeout = '120s'")
-            connection.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")
-            if refresh_last_seen:
-                from src.publication_identity import resolve_publication_identities
-                sales = resolve_publication_identities(connection, sales)
-                if not sales:
-                    return 0
-            if not refresh_last_seen:
-                sales = _guard_enrichment_revision(connection, sales)
-                if not sales:
-                    return 0
-            written_at = datetime.now(UTC)
-            token = _PUBLICATION_CONNECTION.set(connection)
-            try:
-                result = _write_sale_revisions(
-                    sales, settings, refresh_last_seen=refresh_last_seen, written_at=written_at,
-                )
-            finally:
-                _PUBLICATION_CONNECTION.reset(token)
-        # The next enrichment write compares the in-memory version with the
-        # committed row. Identity resolution may write copies of the caller's
-        # sales, so advance both only after the transaction has committed.
-        written_urls = {sale.source_url for sale in sales}
-        for sale in (*submitted_sales, *sales):
-            if sale.source_url in written_urls:
-                sale.updated_at = written_at
-        return result
-    # Deux cas sans portée ouverte ici. Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule,
-    # donc lui qui ouvre la portée. Repli REST (hors production) : ni verrou ni lecture sous verrou, la garde d'écho
-    # n'y agit pas et rien n'y est noté pour elle.
-    return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
+    # All product tables of a bounded batch commit together.
+    submitted_sales = sales
+    # La portée entoure la transaction : ce que la base a gardé des lignes écrites ne devient l'état de
+    # référence de la garde d'écho qu'une fois la transaction validée, et n'en laisse rien si elle est annulée.
+    with base_reads.written_scope(), _postgres_connect(db_url) as connection:
+        connection.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
+        connection.execute("set local lock_timeout = '15s'")
+        connection.execute("set local statement_timeout = '120s'")
+        connection.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")
+        if refresh_last_seen:
+            from src.publication_identity import resolve_publication_identities
+            sales = resolve_publication_identities(connection, sales)
+            if not sales:
+                return 0
+        if not refresh_last_seen:
+            sales = _guard_enrichment_revision(connection, sales)
+            if not sales:
+                return 0
+        written_at = datetime.now(UTC)
+        token = _PUBLICATION_CONNECTION.set(connection)
+        try:
+            result = _write_sale_revisions(sales, refresh_last_seen=refresh_last_seen, written_at=written_at)
+        finally:
+            _PUBLICATION_CONNECTION.reset(token)
+    # The next enrichment write compares the in-memory version with the
+    # committed row. Identity resolution may write copies of the caller's
+    # sales, so advance both only after the transaction has committed.
+    written_urls = {sale.source_url for sale in sales}
+    for sale in (*submitted_sales, *sales):
+        if sale.source_url in written_urls:
+            sale.updated_at = written_at
+    return result
 
 
 def _write_sale_revisions(
-    sales: list[AuctionSale], settings: dict, *, refresh_last_seen: bool,
+    sales: list[AuctionSale], *, refresh_last_seen: bool,
     written_at: datetime | None = None,
 ) -> int:
-    """Write all catalogue tables inside the caller's admission/version boundary."""
+    """Write all catalogue tables inside the caller's publication transaction (admission/version boundary)."""
     from src.freshness import settle_source_change_without_documents
     from src.publication_identity import ensure_room_bedroom_consistency
 
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
+    connection = _publication_connection()
     now = (written_at or datetime.now(UTC)).isoformat()
     payload = []
     for sale in sales:
@@ -605,52 +562,34 @@ def _write_sale_revisions(
     if tribunal_rows:
         # The FK target must exist before auction_sales and judicial_sales are
         # written. Only evidence-gated Ministry assignments produce rows here.
-        _postgrest_upsert(
-            str(url),
-            str(key),
-            "tribunals",
-            tribunal_rows,
-            on_conflict="code",
-        )
-    if _PUBLICATION_CONNECTION.get() is not None:
-        # L'écriture de ce processus n'est pas un mouvement de la base. La garde d'écho compare la lecture suivante
-        # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
-        # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
-        # (``upsert_sales_to_supabase``).
-        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
-        if len(kept) == len(payload):
-            base_reads.stage_written(kept)
-        else:
-            # La base n'a pas rendu une ligne par ligne envoyée : rien n'est noté pour ce lot. La lecture sous
-            # verrou suivante comparera à l'ancienne référence, ce qui ne peut que retenir une valeur relue.
-            LOGGER.warning(
-                "Publication write returned %s rows for %s sent; echo reference left unchanged", len(kept), len(payload)
-            )
-        _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
+        _transaction_write("tribunals", tribunal_rows, "code")
+    # L'écriture de ce processus n'est pas un mouvement de la base. La garde d'écho compare la lecture suivante
+    # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
+    # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
+    # (``upsert_sales_to_supabase``).
+    kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
+    if len(kept) == len(payload):
+        base_reads.stage_written(kept)
     else:
-        # Hors production : la collecte exige la connexion directe. À voir dans le journal si cela arrive.
-        LOGGER.warning("REST fallback wrote %s sales without transaction, lock or echo guard", len(payload))
-        _upsert_with_rest(str(url), str(key), payload)
-        _write_fact_claims_rest(str(url), str(key), sales)
-    _sync_normalized_sale_tables_with_rest(
-        str(url),
-        str(key),
-        sales,
-        now,
-        refresh_last_seen=refresh_last_seen,
-    )
-    _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
-    _enqueue_due_enrichment(sales, str(url), str(key))
-    internal_contacts.write_safely(sales, str(url), str(key), now, _PUBLICATION_CONNECTION.get(), _sale_ids_for_rest)
-    if refresh_last_seen and _PUBLICATION_CONNECTION.get() is not None:
+        # La base n'a pas rendu une ligne par ligne envoyée : rien n'est noté pour ce lot. La lecture sous
+        # verrou suivante comparera à l'ancienne référence, ce qui ne peut que retenir une valeur relue.
+        LOGGER.warning(
+            "Publication write returned %s rows for %s sent; echo reference left unchanged", len(kept), len(payload)
+        )
+    _write_fact_claims_postgres(sales, connection)
+    _sync_normalized_sale_tables(sales, now, refresh_last_seen=refresh_last_seen)
+    _upsert_asset_tables(sales, now)
+    _enqueue_due_enrichment(sales)
+    internal_contacts.write_safely(sales, now, connection)
+    if refresh_last_seen:
         from src.collection_evidence import record_sale_decisions
         for run_id in {sale.last_run_id for sale in sales if sale.last_run_id}:
             run_sales = [sale for sale in sales if sale.last_run_id == run_id]
             record_sale_decisions(str(run_id), [sale for sale in run_sales if not quarantine_reason(sale)],
-                                  decision="published", connection=_PUBLICATION_CONNECTION.get())
+                                  decision="published", connection=connection)
             for sale in (sale for sale in run_sales if quarantine_reason(sale)):
                 record_sale_decisions(str(run_id), [sale], decision="quarantined",
-                                      reason=quarantine_reason(sale), connection=_PUBLICATION_CONNECTION.get())
+                                      reason=quarantine_reason(sale), connection=connection)
     return sum(not quarantine_reason(sale) for sale in sales)
 
 
@@ -682,250 +621,37 @@ def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> in
     return len(rows)
 
 
-def _write_fact_claims_rest(
-    supabase_url: str,
-    api_key: str,
-    sales: list[AuctionSale],
-    *,
-    queue_on_failure: bool = True,
-) -> int:
-    """Persist candidates through PostgREST when direct Postgres is unavailable.
-
-    The catalogue write happens before this additive evidence write on the REST
-    path, so a transient PostgREST failure must not make the caller republish
-    the catalogue.  Keep the direct attempt bounded, then leave one durable
-    job in the existing enrichment queue.  The queue worker retries this
-    narrow write without invoking the LLM or rewriting the sale.
-    """
-    eligible_sales = [sale for sale in sales if build_fact_claim_candidates(sale)]
-    if not eligible_sales:
-        return 0
-    rows: list[dict[str, object]] = []
-    try:
-        sale_ids = _sale_ids_for_rest(supabase_url, api_key, eligible_sales)
-        missing_sales = [sale for sale in eligible_sales if not sale_ids.get(sale.source_url)]
-        rows = [
-            row
-            for sale in eligible_sales
-            for row in materialize_fact_claim_rows(sale, sale_ids.get(sale.source_url, ""))
-        ]
-        if not rows:
-            raise RuntimeError("Canonical auction sale id unavailable for fact claims")
-        _write_fact_claim_rows_rest(supabase_url, api_key, rows)
-        if missing_sales:
-            if not queue_on_failure:
-                raise RuntimeError("Canonical auction sale id unavailable for fact claims replay")
-            missing_queued = _queue_fact_claim_retry_rest(
-                supabase_url,
-                api_key,
-                missing_sales,
-                [],
-                failure=RuntimeError("Incomplete canonical auction sale id lookup"),
-            )
-            if not missing_queued:
-                raise _FactClaimRetryQueueUnavailable(
-                    "Fact claims retry queue unavailable for incomplete canonical sale lookup"
-                )
-            LOGGER.warning(
-                "Fact claims publication deferred for sales with incomplete target lookup queued=%s rows=%s missing_sales=%s",
-                missing_queued,
-                len(rows),
-                len(missing_sales),
-            )
-        LOGGER.info("Fact claims candidates persisted source=rest rows=%s sales=%s", len(rows), len(eligible_sales))
-        return len(rows)
-    except _FactClaimRetryQueueUnavailable:
-        raise
-    except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
-        if not queue_on_failure:
-            raise
-        queued = _queue_fact_claim_retry_rest(
-            supabase_url,
-            api_key,
-            eligible_sales,
-            rows,
-            failure=exc,
-        )
-        # Fact claims are additive telemetry. A transient claims endpoint must
-        # not turn a successfully published catalogue row into a retry storm,
-        # but it must remain visible and replayable when the queue is available.
-        LOGGER.warning(
-            "Fact claims publication deferred after catalogue write: error=%s queued=%s rows=%s sales=%s",
-            type(exc).__name__,
-            queued,
-            len(rows),
-            len(eligible_sales),
-        )
-        if not queued:
-            raise _FactClaimRetryQueueUnavailable(
-                "Fact claims publication failed and retry queue insertion was unavailable"
-            ) from exc
-        return 0
-
-
 def retry_fact_claims_to_supabase(
     sale: AuctionSale,
     *,
     snapshot: object | None = None,
 ) -> int:
-    """Replay one queued REST claim write without creating another queue row.
+    """Replay one queued ``fact_claims`` job in a direct transaction, without creating another queue row.
 
-    New jobs carry the exact candidate rows that failed to publish. Resolve the
+    Nothing queues these jobs any more; this drains the rows already in the queue. A job carries the exact candidate rows that failed to publish. Resolve the
     current canonical sale id before re-keying those rows, so a deleted and
     recreated sale cannot receive claims under a stale UUID. Legacy jobs with
     no snapshot fall back to the current sale payload, but an empty candidate
     set is an explicit failure rather than a silently successful replay.
     """
-    settings = load_settings()
-    url = settings.get("supabase_url")
-    key = settings.get("supabase_service_role_key")
-    if not url or not key:
-        raise RuntimeError("Supabase variables are missing; fact claims cannot be replayed")
-    if snapshot is None:
-        if not build_fact_claim_candidates(sale):
-            raise RuntimeError("Fact claims replay snapshot is unavailable and current candidates are empty")
-        written = _write_fact_claims_rest(str(url), str(key), [sale], queue_on_failure=False)
-    else:
-        sale_ids = _sale_ids_for_rest(str(url), str(key), [sale])
-        canonical_sale_id = sale_ids.get(sale.source_url)
-        if not canonical_sale_id:
-            raise RuntimeError("Canonical auction sale id unavailable for fact claims replay")
-        rows = _materialize_fact_claim_snapshot(snapshot, canonical_sale_id)
-        if not rows:
-            raise RuntimeError("Fact claims replay snapshot is malformed or empty")
-        written = _write_fact_claim_rows_rest(str(url), str(key), rows)
+    db_url = direct_database_url(load_settings())
+    if snapshot is None and not build_fact_claim_candidates(sale):
+        raise RuntimeError("Fact claims replay snapshot is unavailable and current candidates are empty")
+    with _postgres_connect(db_url) as connection:
+        if snapshot is None:
+            written = _write_fact_claims_postgres([sale], connection)
+        else:
+            canonical_sale_id = _sale_ids_for_connection(connection, [sale]).get(sale.source_url)
+            if not canonical_sale_id:
+                raise RuntimeError("Canonical auction sale id unavailable for fact claims replay")
+            rows = _materialize_fact_claim_snapshot(snapshot, canonical_sale_id)
+            if not rows:
+                raise RuntimeError("Fact claims replay snapshot is malformed or empty")
+            _insert_fact_claim_rows(connection, rows)
+            written = len(rows)
     if written <= 0:
         raise RuntimeError("Fact claims replay produced no persisted rows")
     return written
-
-
-def _write_fact_claim_rows_rest(
-    supabase_url: str,
-    api_key: str,
-    rows: list[dict[str, object]],
-) -> int:
-    """Write materialized candidate rows with no queue side effects."""
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_fact_claims"
-    for batch in _postgrest_batches(rows, _postgrest_batch_size("auction_fact_claims")):
-        response = _postgrest_request_with_retries(
-            "POST",
-            endpoint,
-            table="auction_fact_claims",
-            params={"on_conflict": "id"},
-            headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
-            json=_sanitize_postgrest_payload(batch),
-            timeout=POSTGREST_TIMEOUT,
-        )
-        if response.is_error:
-            raise httpx.HTTPStatusError(
-                f"{response.status_code} response from Supabase auction_fact_claims: {response.text}",
-                request=response.request,
-                response=response,
-            )
-    return len(rows)
-
-
-def _queue_fact_claim_retry_rest(
-    supabase_url: str,
-    api_key: str,
-    sales: list[AuctionSale],
-    rows: list[dict[str, object]],
-    *,
-    failure: Exception,
-) -> bool:
-    """Queue one deterministic retry per sale with a single best-effort request.
-
-    The normal claim writer already spent its bounded retry budget. Retrying the
-    queue insert with the same policy would double the load during an outage,
-    so this fallback makes exactly one request. The candidate snapshot is kept
-    on the service-role-only job row; replay rekeys it to the canonical sale id
-    and does not depend on the sale's mutable raw payload. The unique queue key
-    and claim UUIDs make repeated publication idempotent.
-    """
-    jobs: list[dict[str, object]] = []
-    for sale in sales:
-        # Rebuild this sale's candidate set independently of materialized rows.
-        # Two sales can share an observed source URL; filtering one batch's
-        # rows by URL would otherwise assign one sale's evidence to the other.
-        # Candidate rows deliberately omit the canonical id; replay resolves
-        # that id at the moment of publication.
-        sale_rows = build_fact_claim_candidates(sale)
-        if not sale_rows:
-            continue
-        jobs.append(
-            {
-                "source_url": sale.source_url,
-                "job_type": FACT_CLAIMS_RETRY_JOB_TYPE,
-                "priority": 35,
-                "input_hash": _fact_claim_retry_input_hash(sale_rows),
-                "fact_claims_snapshot": sale_rows,
-            }
-        )
-    if not jobs:
-        LOGGER.error(
-            "Fact claims retry queue skipped because no candidates were available error=%s",
-            type(failure).__name__,
-        )
-        return False
-
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_enrichment_jobs"
-    try:
-        response = httpx.post(
-            endpoint,
-            params={"on_conflict": "source_url,job_type,input_hash"},
-            headers=_rest_headers(api_key, prefer="resolution=ignore-duplicates,return=minimal"),
-            json=_sanitize_postgrest_payload(jobs),
-            timeout=30,
-        )
-    except httpx.HTTPError as exc:
-        LOGGER.error(
-            "Fact claims retry queue request failed error=%s original=%s",
-            type(exc).__name__,
-            type(failure).__name__,
-        )
-        return False
-    if response.is_error:
-        LOGGER.error(
-            "Fact claims retry queue rejected request status=%s original=%s",
-            response.status_code,
-            type(failure).__name__,
-        )
-        return False
-    LOGGER.info(
-        "Fact claims retry queued jobs=%s rows=%s original=%s",
-        len(jobs),
-        len(rows),
-        type(failure).__name__,
-    )
-    return True
-
-
-def _sale_ids_for_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> dict[str, str]:
-    resolved: dict[str, str] = {}
-    # The REST upsert also omits ``id``. Always read the committed parent row
-    # by source_url so a stale in-memory UUID cannot misattach a claim.
-    lookup_urls = [sale.source_url for sale in sales if sale.source_url]
-    if not lookup_urls:
-        return resolved
-    response = _postgrest_request_with_retries(
-        "GET",
-        f"{supabase_url.rstrip('/')}/rest/v1/auction_sales",
-        table="auction_sales_fact_claim_targets",
-        params={"select": "id,source_url", "source_url": _postgrest_in_filter(sorted(set(lookup_urls)))},
-        headers=_rest_headers(api_key, prefer="count=none"),
-        timeout=POSTGREST_TIMEOUT,
-    )
-    if response.is_error:
-        raise httpx.HTTPStatusError(
-            f"{response.status_code} response from Supabase auction_sales", request=response.request, response=response
-        )
-    payload = response.json()
-    if not isinstance(payload, list):
-        raise ValueError("Malformed auction_sales fact-claim target response")
-    for row in payload:
-        if isinstance(row, dict) and _is_uuid(row.get("id")) and row.get("source_url"):
-            resolved[str(row["source_url"])] = str(UUID(str(row["id"])))
-    return resolved
 
 
 def _guard_enrichment_revision(connection, sales: list[AuctionSale]) -> list[AuctionSale]:
@@ -953,7 +679,6 @@ def delete_secondary_sales_in_supabase(sales: list[AuctionSale]) -> int:
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
     secondary_urls = _secondary_source_urls(sales)
     if not url or not key or not secondary_urls:
         return 0
@@ -970,18 +695,7 @@ def delete_secondary_sales_in_supabase(sales: list[AuctionSale]) -> int:
         return 0
     if len(secondary_urls) > cap:
         LOGGER.warning("Secondary sale cleanup: %s rows left for a later pass (cap %s).", len(secondary_urls) - cap, cap)
-
-    if db_url:
-        try:
-            return _delete_secondary_sale_rows_with_postgres(str(db_url), sales, limit=cap)
-        except ReviewedAliasRegistryError:
-            raise
-        except Exception as exc:
-            LOGGER.warning(
-                "Direct Postgres secondary sale cleanup failed; falling back to REST: %s",
-                exc,
-            )
-    return _delete_secondary_sale_rows(str(url), str(key), sales, registry=reviewed_aliases, limit=cap)
+    return _delete_secondary_sale_rows_with_postgres(direct_database_url(settings), sales, limit=cap)
 
 
 def upsert_cadastre_parcels_to_supabase(rows: list[dict[str, object]]) -> int:
@@ -1067,11 +781,11 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
         "started_at": now,
         "updated_at": now,
     }
-    response = _postgrest_request_with_retries(
+    response = postgrest_request_with_retries(
         "POST",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
         "auction_runs",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=POSTGREST_TIMEOUT,
     )
@@ -1084,47 +798,22 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
 
 def start_existing_run_in_supabase(run_id: str, source: str, use_llm: bool) -> str | None:
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
+    if not supabase_configured(settings):
         return run_id
-    now = datetime.now(UTC).isoformat()
-    payload = {
-        "status": "running",
-        "source": source,
-        "use_llm": use_llm,
-        "started_at": now,
-        "finished_at": None,
-        "updated_at": now,
-    }
-    try:
-        response = _postgrest_request_with_retries(
-            "PATCH",
-            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-            "auction_runs",
-            params={"id": f"eq.{run_id}"},
-            headers=_rest_headers(str(key), prefer="return=minimal"),
-            json=payload,
-            timeout=POSTGREST_TIMEOUT,
-        )
-    except httpx.TransportError as exc:
-        LOGGER.warning("Supabase run start transport failed: %s", exc)
-        response = None
-    if response is None or response.is_error:
-        if response is not None:
-            LOGGER.warning("Supabase run start failed (%s): %s", response.status_code, response.text[:200])
-        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
-            with _postgres_connect(str(settings["supabase_db_url"])) as db:
-                row = db.execute(
-                    """update public.auction_runs
-                       set status='running', source=%s, use_llm=%s, started_at=now(),
-                           finished_at=null, updated_at=now()
-                       where id=%s returning id""",
-                    (source, use_llm, run_id),
-                ).fetchone()
-            return run_id if row else None
-        return None
-    return run_id
+    db_url = direct_database_url(settings)
+
+    def write() -> Any:
+        with _postgres_connect(db_url) as db:
+            return db.execute(
+                """update public.auction_runs
+                   set status='running', source=%s, use_llm=%s, started_at=now(),
+                       finished_at=null, updated_at=now()
+                   where id=%s returning id""",
+                (source, use_llm, run_id),
+            ).fetchone()
+
+    row = retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run start")
+    return run_id if row else None
 
 
 def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
@@ -1134,15 +823,17 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     if not url or not key:
         LOGGER.info("Supabase variables are missing; no queued run can be fetched")
         return None
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id,status,source,use_llm,started_at,created_at,summary,errors",
             "status": "eq.queued",
             "order": "created_at.asc",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     if response.is_error:
@@ -1177,7 +868,7 @@ def _claim_auction_enrichment_jobs_rpc(
         return []
     response = httpx.post(
         f"{str(url).rstrip('/')}/rest/v1/rpc/{rpc_name}",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=30,
     )
@@ -1240,7 +931,7 @@ def read_pdf_job_states_for_sale(
     response = httpx.get(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
         params=params,
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     response.raise_for_status()
@@ -1289,7 +980,7 @@ def _claim_auction_enrichment_jobs_request_rpc(
         try:
             response = httpx.post(
                 endpoint,
-                headers=_rest_headers(str(key), prefer="return=representation"),
+                headers=rest_headers(str(key), prefer="return=representation"),
                 json=payload,
                 timeout=30,
             )
@@ -1423,41 +1114,13 @@ def record_llm_usage_event(event: dict[str, Any]) -> None:
     try:
         response = httpx.post(
             f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
-            headers=_rest_headers(str(key), prefer="return=minimal"),
+            headers=rest_headers(str(key), prefer="return=minimal"),
             json=event,
             timeout=15,
         )
         response.raise_for_status()
     except Exception as exc:
         LOGGER.warning("Could not persist LLM usage telemetry: %s", exc)
-
-
-def llm_usage_budget_available(max_calls_per_hour: int) -> bool:
-    """Return false when the configured hourly prediction budget is exhausted."""
-    if max_calls_per_hour <= 0:
-        return True
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
-        return True
-    try:
-        response = httpx.get(
-            f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
-            params={
-                "select": "id",
-                "created_at": f"gte.{(datetime.now(UTC) - timedelta(hours=1)).isoformat()}",
-                "limit": str(max_calls_per_hour + 1),
-            },
-            headers={**_rest_headers(str(key)), "Prefer": "count=exact"},
-            timeout=15,
-        )
-        response.raise_for_status()
-        count_text = response.headers.get("content-range", "").rsplit("/", 1)[-1]
-        return count_text == "*" or int(count_text) < max_calls_per_hour
-    except Exception as exc:
-        LOGGER.warning("Could not check LLM usage budget: %s", exc)
-        return True
 
 
 def finish_auction_enrichment_job_in_supabase(
@@ -1486,20 +1149,16 @@ def finish_auction_enrichment_job_in_supabase(
     }
     if not succeeded and not cancelled:
         retry_at = now + timedelta(minutes=30)
-        if retry_not_before:
-            try:
-                requested = retry_not_before if isinstance(retry_not_before, datetime) else datetime.fromisoformat(str(retry_not_before).replace('Z', '+00:00'))
-                if requested.tzinfo is not None:
-                    retry_at = max(retry_at, requested)
-            except ValueError:
-                pass
+        requested = aware_timestamp(retry_not_before)
+        if requested is not None:
+            retry_at = max(retry_at, requested)
         payload["next_attempt_at"] = retry_at.isoformat()
     response = httpx.patch(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
         params={"select": "id", "id": f"eq.{job_id}", "status": "eq.running",
                 **({"locked_at": f"eq.{locked_at.isoformat() if isinstance(locked_at, datetime) else locked_at}"} if locked_at is not None else {}),
                 **({"attempt_count": f"eq.{attempt_count}"} if attempt_count is not None else {})},
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=30,
     )
@@ -1525,15 +1184,17 @@ def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
         LOGGER.info("Supabase variables are missing; no data refresh request can be fetched")
         return None
     endpoint = f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests"
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         endpoint,
+        "data_refresh_requests",
         params={
             "select": "id,user_id,sale_id,source_url,request_kind,status,priority,requested_payload,created_at",
             "status": "eq.queued",
             "order": "priority.desc,created_at.asc",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     if response.is_error:
@@ -1545,10 +1206,15 @@ def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
 
     request = rows[0]
     started_at = datetime.now(UTC).isoformat()
-    patch = httpx.patch(
+    # Sent again on a transient failure: the payload is fixed before the first attempt and the ``status=queued``
+    # filter makes a repeat a no-op once the row is running. A repeat whose first attempt did land returns no row,
+    # which the fallback below already reads as « locked ».
+    patch = postgrest_request_with_retries(
+        "PATCH",
         endpoint,
+        "data_refresh_requests",
         params={"id": f"eq.{request['id']}", "status": "eq.queued"},
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json={
             "status": "running",
             "started_at": started_at,
@@ -1584,10 +1250,14 @@ def finish_data_refresh_request_in_supabase(
         "completed_at": now if status in {"completed", "failed", "cancelled"} else None,
         "updated_at": now,
     }
-    response = httpx.patch(
+    # Sent again on a transient failure: the payload (timestamps included) is fixed before the first attempt, so a
+    # repeat writes the same row again.
+    response = postgrest_request_with_retries(
+        "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests",
+        "data_refresh_requests",
         params={"id": f"eq.{request_id}"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
+        headers=rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
         timeout=30,
     )
@@ -1603,14 +1273,16 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
         return 0
 
     cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id,summary,errors,started_at",
             "status": "eq.running",
             "started_at": f"lt.{cutoff.isoformat()}",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:
@@ -1618,26 +1290,36 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
         return 0
 
     rows = response.json()
+    closes = []
     for row in rows:
-        run_id = str(row.get("id") or "")
-        if not run_id:
+        if not row.get("id"):
             continue
-        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
         errors = row.get("errors") if isinstance(row.get("errors"), dict) else {}
         runner_errors = errors.get("runner") if isinstance(errors.get("runner"), list) else []
-        runner_errors = [
-            *runner_errors,
-            f"Run marqué failed automatiquement après {max_age_minutes} min sans fin GitHub Actions.",
-        ]
-        summary = {
-            **summary,
+        summary_patch = {
             "stale_cleanup": {
                 "max_age_minutes": max_age_minutes,
                 "started_at": row.get("started_at"),
                 "cleaned_at": datetime.now(UTC).isoformat(),
             },
         }
-        finish_run_in_supabase(run_id, "failed", summary, {**errors, "runner": runner_errors})
+        errors_patch = {
+            "runner": [
+                *runner_errors,
+                f"Run marqué failed automatiquement après {max_age_minutes} min sans fin GitHub Actions.",
+            ]
+        }
+        closes.append((str(row["id"]), summary_patch, errors_patch))
+    if not closes:
+        return len(rows)
+    db_url = direct_database_url(settings)
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            for run_id, summary_patch, errors_patch in closes:
+                close_open_run(db, run_id, "failed", summary_patch, errors_patch)
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Stale run close")
     return len(rows)
 
 
@@ -1649,15 +1331,17 @@ def has_active_running_run_in_supabase(max_age_minutes: int = 190) -> bool:
         return False
 
     cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id",
             "status": "eq.running",
             "started_at": f"gte.{cutoff.isoformat()}",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:
@@ -1672,52 +1356,94 @@ def finish_run_in_supabase(
     summary: dict[str, Any],
     errors: dict[str, list[str]] | None = None,
 ) -> None:
+    """Close the run this process executed, with its complete report.
+
+    ``summary`` and ``errors`` replace the stored ones, like the progress snapshots of
+    ``update_run_progress_in_supabase``: the worker is the author of its report, and the final one supersedes every
+    snapshot (a merge would keep keys that a snapshot carried and the final report dropped). A closer that does not
+    hold that report (another process, or ``queued_runner`` around ``run_pipeline``) uses ``close_open_run`` instead.
+    """
     if not run_id:
         return
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
+    if not supabase_configured(settings):
         return
-    now = datetime.now(UTC).isoformat()
-    payload = {
-        "status": status,
-        "finished_at": now,
-        "updated_at": now,
-        "summary": summary,
-        "errors": errors or {},
-    }
-    try:
-        response = _postgrest_request_with_retries(
-            "PATCH",
-            f"{str(url).rstrip('/')}/rest/v1/auction_runs",
-            "auction_runs",
-            params={"id": f"eq.{run_id}"},
-            headers=_rest_headers(str(key), prefer="return=minimal"),
-            json=_sanitize_postgrest_payload(payload),
-            timeout=POSTGREST_TIMEOUT,
-        )
-    except httpx.TransportError as exc:
-        LOGGER.warning("Supabase run finish transport failed: %s", exc)
-        response = None
-    if response is None or response.is_error:
-        if response is not None:
-            LOGGER.warning("Supabase run finish failed (%s): %s", response.status_code, response.text[:200])
-        if (response is None or response.status_code in POSTGREST_RETRYABLE_STATUS_CODES) and settings.get("supabase_db_url"):
-            with _postgres_connect(str(settings["supabase_db_url"])) as db:
-                db.execute(
-                    """update public.auction_runs
-                       set status=%s, finished_at=now(), updated_at=now(),
-                           summary=coalesce(summary,'{}'::jsonb) || %s,
-                           errors=coalesce(errors,'{}'::jsonb) || %s
-                       where id=%s""",
-                    (
-                        status,
-                        Jsonb(_sanitize_postgrest_payload(summary)),
-                        Jsonb(_sanitize_postgrest_payload(errors or {})),
-                        run_id,
-                    ),
-                )
+    db_url = direct_database_url(settings)
+    params = (
+        status,
+        Jsonb(_sanitize_postgrest_payload(summary)),
+        Jsonb(_sanitize_postgrest_payload(errors or {})),
+        run_id,
+    )
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            db.execute(
+                """update public.auction_runs
+                   set status=%s, finished_at=now(), updated_at=now(), summary=%s, errors=%s
+                   where id=%s""",
+                params,
+            )
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run finish")
+
+
+def close_open_run(
+    db: Any,
+    run_id: str,
+    status: str,
+    summary: dict[str, Any],
+    errors: dict[str, Any],
+) -> None:
+    """Close, on ``db``, a run whose report the closer does not hold: merge into it, only while the run is open.
+
+    Shared by every closer that is not the worker itself (``run_finalizer``, ``autonomous_runner``, ``queued_runner``
+    around ``run_pipeline``, the stale run cleanup): the worker may have written progress, or closed the run
+    already, and neither must be lost. The lease expiry of the SQL scheduler (``pipeline_dispatch_retries``
+    migrations) applies the same rule. Repeating it is a no-op once the run is closed.
+    """
+    db.execute(
+        """update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
+            errors=coalesce(errors,'{}') || %s,
+            summary=coalesce(summary,'{}') || %s
+            where id=%s and status in ('queued','running')""",
+        (status, Jsonb(_sanitize_postgrest_payload(errors)), Jsonb(_sanitize_postgrest_payload(summary)), run_id),
+    )
+
+
+def merge_into_run_report(db: Any, run_id: str, summary: dict[str, Any], errors: dict[str, Any]) -> None:
+    """Add, on ``db``, what a closer knows to the report of a run, whatever its status.
+
+    Follows ``close_open_run`` when the worker may have closed its run already (``autonomous_runner`` around
+    ``src.main``): the status stays the worker's, and the closer's facts and errors are not lost.
+    """
+    db.execute(
+        """update public.auction_runs set summary=coalesce(summary,'{}') || %s,
+            errors=coalesce(errors,'{}') || %s
+            where id=%s""",
+        (Jsonb(_sanitize_postgrest_payload(summary)), Jsonb(_sanitize_postgrest_payload(errors)), run_id),
+    )
+
+
+def close_open_run_in_supabase(
+    run_id: str | None,
+    status: str,
+    summary: dict[str, Any],
+    errors: dict[str, list[str]],
+) -> None:
+    """``close_open_run`` on its own connection, for a closer that holds none (``queued_runner``)."""
+    if not run_id:
+        return
+    settings = load_settings()
+    if not supabase_configured(settings):
+        return
+    db_url = direct_database_url(settings)
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            close_open_run(db, run_id, status, summary, errors)
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run close")
 
 
 def update_run_progress_in_supabase(
@@ -1738,12 +1464,12 @@ def update_run_progress_in_supabase(
     }
     if errors is not None:
         payload["errors"] = errors
-    response = _postgrest_request_with_retries(
+    response = postgrest_request_with_retries(
         "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
         "auction_runs",
         params={"id": f"eq.{run_id}", "status": "eq.running"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
+        headers=rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
         timeout=POSTGREST_TIMEOUT,
     )
@@ -1758,11 +1484,8 @@ def _historical_timestamp_is_valid(value: object) -> bool:
     extraction remains the responsibility of ``documents_are_current``; this
     guard only rejects malformed or future-dated provenance.
     """
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return False
-    return parsed.tzinfo is not None and parsed <= datetime.now(UTC)
+    parsed = aware_timestamp(str(value))
+    return parsed is not None and parsed <= datetime.now(UTC)
 
 
 def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | None:
@@ -1888,12 +1611,12 @@ def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | 
             or bool(proof_failed_pages)
             or proof_item.get("text_present") is not True
             or proof_text_chars <= 0
-            or not _is_sha256(proof_item.get("sha256"))
-            or not _is_sha256(proof_item.get("text_sha256"))
+            or not is_sha256(proof_item.get("sha256"))
+            or not is_sha256(proof_item.get("text_sha256"))
             or profile_status != "extracted"
             or profile.get("complete") is not True
             or bool(profile_failed_pages)
-            or not _is_sha256(profile.get("sha256"))
+            or not is_sha256(profile.get("sha256"))
             or clean_text(profile.get("sha256")) != clean_text(proof_item.get("sha256"))
             or profile_text_chars != proof_text_chars
             or not timestamp_is_fresh(proof_item.get("http_checked_at"))
@@ -1922,7 +1645,7 @@ def _has_usable_local_pdf_cache(sale: AuctionSale) -> bool:
     return _validate_pdf_document_checkpoint_payload(sale, analysis, payload) is not None
 
 
-def _validated_persisted_pdf_texts(
+def validated_persisted_pdf_texts(
     sale: AuctionSale,
     extraction_row: dict[str, object],
 ) -> list[dict[str, object]] | None:
@@ -1988,10 +1711,10 @@ def _validated_persisted_pdf_texts(
             and text_chars == len(text)
             and text_chars == proof_text_chars
             and clean_text(item.get("sha256")) == clean_text(proof_item.get("sha256"))
-            and _is_sha256(item.get("sha256"))
-            and _is_sha256(proof_item.get("sha256"))
+            and is_sha256(item.get("sha256"))
+            and is_sha256(proof_item.get("sha256"))
             and computed_text_sha == clean_text(proof_item.get("text_sha256"))
-            and _is_sha256(proof_item.get("text_sha256"))
+            and is_sha256(proof_item.get("text_sha256"))
             and (item_text_sha is None or item_text_sha == computed_text_sha)
         ):
             return None
@@ -2006,7 +1729,7 @@ def _validated_persisted_pdf_texts(
     return validated
 
 
-def _read_persisted_pdf_rows_rest(
+def read_persisted_pdf_rows_rest(
     supabase_url: str,
     api_key: str,
     source_urls: list[str],
@@ -2026,7 +1749,7 @@ def _read_persisted_pdf_rows_rest(
             "order": "updated_at.desc",
             "limit": str(min(len(source_urls) * 5, 100)),
         },
-        headers=_rest_headers(api_key, prefer="count=none"),
+        headers=rest_headers(api_key),
         timeout=PERSISTED_PDF_LOOKUP_TIMEOUT,
     )
     if response.is_error:
@@ -2257,8 +1980,6 @@ def persist_pdf_progress_checkpoint_to_supabase(
 
 def _fetch_persisted_pdf_texts_for_sales(
     sales: list[AuctionSale],
-    supabase_url: str,
-    api_key: str,
 ) -> dict[str, list[dict[str, object]]]:
     """Read complete persisted PDF text once per bounded URL batch.
 
@@ -2279,15 +2000,12 @@ def _fetch_persisted_pdf_texts_for_sales(
 
     persisted_rows: list[dict[str, object]] = []
     source_urls = list(candidates)
-    connection = _PUBLICATION_CONNECTION.get()
+    connection = _publication_connection()
     for offset in range(0, len(source_urls), PERSISTED_PDF_LOOKUP_BATCH_SIZE):
         batch = source_urls[offset : offset + PERSISTED_PDF_LOOKUP_BATCH_SIZE]
         try:
-            if connection is not None:
-                persisted_rows.extend(_read_persisted_pdf_rows_postgres(connection, batch))
-            else:
-                persisted_rows.extend(_read_persisted_pdf_rows_rest(supabase_url, api_key, batch))
-        except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
+            persisted_rows.extend(_read_persisted_pdf_rows_postgres(connection, batch))
+        except (RuntimeError, TypeError, ValueError) as exc:
             LOGGER.warning("Persisted PDF extraction lookup failed; keeping normal pending rows: %s", exc)
 
     rows_by_source: dict[str, list[dict[str, object]]] = {}
@@ -2297,7 +2015,7 @@ def _fetch_persisted_pdf_texts_for_sales(
             rows_by_source.setdefault(source_url, []).append(row)
     validated: dict[str, list[dict[str, object]]] = {}
     for source_url, sale in candidates.items():
-        # The SQL/REST paths order newest first.  Sorting again makes the
+        # The SQL read orders newest first.  Sorting again makes the
         # choice deterministic for test doubles and drivers that do not retain
         # the requested order.
         rows = sorted(
@@ -2306,20 +2024,20 @@ def _fetch_persisted_pdf_texts_for_sales(
             reverse=True,
         )
         for row in rows:
-            payload = _validated_persisted_pdf_texts(sale, row)
+            payload = validated_persisted_pdf_texts(sale, row)
             if payload is not None:
                 validated[source_url] = payload
                 break
     return validated
 
 
-def _validated_persisted_pdf_progress(
+def validated_persisted_pdf_progress(
     sale: AuctionSale,
     extraction_row: dict[str, object],
 ) -> list[dict[str, object]] | None:
     """Validate a partial modern PDF checkpoint for a cold worker.
 
-    This path is intentionally separate from ``_validated_persisted_pdf_texts``:
+    This path is intentionally separate from ``validated_persisted_pdf_texts``:
     it can restore only the modern per-document entries represented by the
     current progress manifest. It never makes a partial manifest current and
     never feeds the strict complete fallback.
@@ -2392,7 +2110,7 @@ def _validated_persisted_pdf_progress(
     return restored
 
 
-def _restore_pdf_page_caches_for_documents(
+def restore_pdf_page_caches_for_documents(
     restored: list[dict[str, object]],
     downloaded_documents: list[dict[str, object]],
 ) -> None:
@@ -2411,8 +2129,6 @@ def _restore_pdf_page_caches_for_documents(
         str(settings.get("pdf_ocr_language") or "fra+eng"),
         PDF_TEXT_CACHE_VERSION,
     )
-    from src.pdf_enrichment import _write_document_text_cache
-
     for payload in restored:
         url = document_url(payload)
         document = documents_by_url.get(url)
@@ -2457,9 +2173,22 @@ def _restore_pdf_page_caches_for_documents(
                 temporary.replace(page_path)
             local_payload = dict(payload)
             local_payload["file_path"] = str(file_path)
-            _write_document_text_cache(document, file_path, local_payload)
+            write_document_text_cache(document, file_path, local_payload, cache_root=PDF_DOCUMENT_TEXTS_DIR)
         except (OSError, TypeError, ValueError) as exc:
             LOGGER.warning("Could not materialize persisted PDF pages for %s: %s", url, exc)
+
+
+def newest_restorable_pdf_progress(
+    sale: AuctionSale,
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]] | None:
+    """Pièces lues à reprendre : celles de la ligne d'extraction la plus récente qui porte un texte complet valide,
+    sinon une progression partielle valide ; ``None`` si aucune ligne n'en porte."""
+    for row in sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True):
+        restored = validated_persisted_pdf_texts(sale, row) or validated_persisted_pdf_progress(sale, row)
+        if restored:
+            return restored
+    return None
 
 
 def restore_persisted_pdf_progress_for_sale(
@@ -2482,30 +2211,22 @@ def restore_persisted_pdf_progress_for_sale(
         if connection is not None:
             rows = _read_persisted_pdf_rows_postgres(connection, [source_url])
         else:
-            rows = _read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+            rows = read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
     except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
         LOGGER.warning("Cold PDF progress lookup failed; keeping pending documents: %s", exc)
         return []
-    rows = sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
-    restored: list[dict[str, object]] | None = None
-    for row in rows:
-        restored = _validated_persisted_pdf_texts(sale, row)
-        if restored is not None:
-            break
-        restored = _validated_persisted_pdf_progress(sale, row)
-        if restored is not None:
-            break
+    restored = newest_restorable_pdf_progress(sale, rows)
     if not restored:
         return []
-    from src.pdf_fact_extraction import _write_pdf_text_cache
+    from src.pdf_fact_extraction import write_pdf_text_cache
 
     try:
-        _write_pdf_text_cache(sale, restored)
+        write_pdf_text_cache(sale, restored)
     except (KeyError, OSError, TypeError, ValueError) as exc:
         LOGGER.warning("Could not materialize cold PDF progress for %s: %s", source_url, exc)
         return []
     if downloaded_documents:
-        _restore_pdf_page_caches_for_documents(restored, downloaded_documents)
+        restore_pdf_page_caches_for_documents(restored, downloaded_documents)
     return restored
 
 
@@ -2515,18 +2236,14 @@ def upsert_documents_to_supabase(
     persisted_pdf_texts: dict[str, list[dict[str, object]]] | None = None,
     prune_stale: bool = False,
 ) -> int:
+    """Write the document rows inside the caller's publication transaction."""
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
     if not sales:
         return 0
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
-        return 0
     if persisted_pdf_texts is None:
-        persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
+        persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales)
     # Per-document persisted evidence for the projection only (never the local text cache).
-    persisted_pdf_texts = with_document_evidence(_PUBLICATION_CONNECTION.get(), sales, persisted_pdf_texts, _load_pdf_texts)
+    persisted_pdf_texts = with_document_evidence(_publication_connection(), sales, persisted_pdf_texts, _load_pdf_texts)
     rows = [
         row
         for sale in sales
@@ -2537,9 +2254,9 @@ def upsert_documents_to_supabase(
     ]
     if rows:
         rows = _unique_rows_by_keys(rows, ("source_url", "document_url"))
-        _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="source_url,document_url")
+        _transaction_write("auction_documents", rows, "source_url,document_url")
     if prune_stale:
-        _prune_stale_document_rows(str(url), str(key), sales)
+        _prune_stale_document_rows(sales)
     return len(rows)
 
 
@@ -2557,7 +2274,7 @@ def _restore_persisted_pdf_text_caches(
     """
     if not persisted_pdf_texts:
         return
-    from src.pdf_fact_extraction import _write_pdf_text_cache
+    from src.pdf_fact_extraction import write_pdf_text_cache
 
     for sale in sales:
         source_url = clean_text(sale.source_url)
@@ -2565,24 +2282,20 @@ def _restore_persisted_pdf_text_caches(
         if not payload:
             continue
         try:
-            _write_pdf_text_cache(sale, payload)
+            write_pdf_text_cache(sale, payload)
         except (KeyError, OSError, TypeError, ValueError) as exc:
             LOGGER.warning("Could not restore persisted PDF cache for %s: %s", source_url, exc)
 
 
 def upsert_extractions_to_supabase(sales: list[AuctionSale]) -> int:
+    """Write the extraction rows inside the caller's publication transaction."""
     sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
     if not sales:
-        return 0
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
         return 0
     rows = [row for sale in sales for row in _extraction_rows_for_sale(sale)]
     if not rows:
         return 0
-    _postgrest_upsert(str(url), str(key), "auction_extractions", rows, on_conflict="source_url,provider,input_hash")
+    _transaction_write("auction_extractions", rows, "source_url,provider,input_hash")
     return len(rows)
 
 
@@ -2597,26 +2310,10 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     if not sales:
         return 0
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
-    if not url or not key:
+    if not settings["supabase_url"] or not settings["supabase_service_role_key"]:
         return 0
+    db_url = direct_database_url(settings)
     now = datetime.now(UTC).isoformat()
-
-    def _as_utc(value: object) -> datetime | None:
-        if isinstance(value, datetime):
-            parsed = value
-        elif value:
-            try:
-                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-            except (TypeError, ValueError):
-                return None
-        else:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
 
     def _content_freshness(observation: dict[str, object], content: object, source_url: str) -> datetime | None:
         # Ranking may use only timestamps carried by this observation. Parent
@@ -2629,7 +2326,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
                 check = checks.get(source_url)
                 if isinstance(check, dict):
                     candidates.append(check.get("checked_at"))
-        parsed = [_as_utc(value) for value in candidates]
+        parsed = [assumed_utc_timestamp(value) for value in candidates]
         valid = [value for value in parsed if value is not None]
         return max(valid) if valid else None
 
@@ -2670,7 +2367,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             content = persistable_payload(observation.get("raw_payload") or observation)
             # Keep the column's ingest/explicit observation meaning; checkpoint
             # evidence ranks duplicates but is not relabeled as observed_at.
-            observed_at = _as_utc(observation.get("observed_at"))
+            observed_at = assumed_utc_timestamp(observation.get("observed_at"))
             row = {
                 "source_name": observation.get("source_name") or sale.source_name,
                 "source_url": source_url,
@@ -2692,21 +2389,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
         payload.append(row)
     if not payload:
         return 0
-    if db_url:
-        try:
-            persisted = _postgres_upsert(str(db_url), "auction_observations", payload, on_conflict="source_url")
-            return persisted if isinstance(persisted, int) else len(payload)
-        except Exception as exc:
-            # The direct path is the only path that can lock the parent and
-            # child in one transaction.  Falling back here would reintroduce
-            # the orphan race this guard is intended to close.
-            LOGGER.error("Direct Postgres auction_observations upsert failed; refusing an unguarded REST write: %s", exc)
-            raise
-    payload = _rest_parented_observation_payload(str(url), str(key), payload)
-    if not payload:
-        return 0
-    _postgrest_upsert(str(url), str(key), "auction_observations", payload, on_conflict="source_url")
-    return len(payload)
+    return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict="source_url")
 
 
 def fetch_enriched_content_hashes(
@@ -2772,7 +2455,7 @@ def fetch_enriched_content_hashes(
                     "content_hash": _postgrest_in_filter(batch),
                     "score_version": "not.is.null",
                 },
-                headers=_rest_headers(str(key), prefer="count=none"),
+                headers=rest_headers(str(key)),
                 timeout=30,
             )
             if response.is_error:
@@ -2849,7 +2532,6 @@ def reconcile_duplicate_sales_in_supabase(
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
     if not url or not key:
         return 0
     if settings.get("dedupe_reconcile_mode") == "candidates":
@@ -2879,7 +2561,7 @@ def reconcile_duplicate_sales_in_supabase(
     impacted_sales = plan.impacted_sales
     if not impacted_sales:
         return 0
-    reviewed_aliases = plan.reviewed_aliases or _fetch_reviewed_alias_registry(str(url), str(key))
+    db_url = direct_database_url(settings)
 
     now = datetime.now(UTC).isoformat()
     payload = []
@@ -2896,27 +2578,18 @@ def reconcile_duplicate_sales_in_supabase(
         row["last_seen_at"] = data.get("last_seen_at") or now
         payload.append(row)
 
-    if db_url:
+    _postgres_upsert(db_url, "auction_sales", payload, on_conflict="source_url")
+    deleted = _delete_secondary_sale_rows_with_postgres(db_url, impacted_sales)
+    # Same child-table writers as the publication, in their own transaction: the
+    # rows of the kept sales are replaced together or not at all.
+    with _postgres_connect(db_url) as connection:
+        connection.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")
+        token = _PUBLICATION_CONNECTION.set(connection)
         try:
-            _postgres_upsert(str(db_url), "auction_sales", payload, on_conflict="source_url")
-            deleted = _delete_secondary_sale_rows_with_postgres(str(db_url), impacted_sales)
-            _sync_normalized_sale_tables_with_rest(str(url), str(key), impacted_sales, now)
-            _upsert_asset_tables_with_rest(str(url), str(key), impacted_sales, now)
-            return deleted
-        except ReviewedAliasRegistryError:
-            raise
-        except Exception as exc:
-            LOGGER.warning("Direct Postgres duplicate reconciliation failed; falling back to REST: %s", exc)
-
-    _upsert_with_rest(str(url), str(key), payload)
-    deleted = _delete_secondary_sale_rows(
-        str(url),
-        str(key),
-        impacted_sales,
-        registry=reviewed_aliases,
-    )
-    _sync_normalized_sale_tables_with_rest(str(url), str(key), impacted_sales, now)
-    _upsert_asset_tables_with_rest(str(url), str(key), impacted_sales, now)
+            _sync_normalized_sale_tables(impacted_sales, now)
+            _upsert_asset_tables(impacted_sales, now)
+        finally:
+            _PUBLICATION_CONNECTION.reset(token)
     return deleted
 
 
@@ -2948,6 +2621,9 @@ KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 KNOWN_SALE_DETAIL_STATEMENT_TIMEOUT = "60s"
 # Client-side limit: the server one does not apply when the pooler holds the query or the connection vanished.
 KNOWN_SALE_DETAIL_CLIENT_DEADLINE_SECONDS = 90.0
+# Start and finish of a run are idempotent updates: a dropped connection is retried instead of turning a
+# published run into a failed one (the former REST path gave it a second chance the same way).
+RUN_TRACKING_RETRY_DELAYS: tuple[float, ...] = (2.0, 5.0, 10.0)
 KNOWN_SALE_DETAIL_RETRY_DELAYS = (5.0, 20.0)
 
 
@@ -2965,7 +2641,7 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
             "source_url": f"eq.{source_url}",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:
@@ -3078,60 +2754,17 @@ def fetch_known_sale_details(
     The default collection index keeps scalar source facts and freshness proof
     but omits the wide enrichment JSONB.  Pass ``source_urls`` and
     ``include_enrichment_payload=True`` after source discovery to hydrate only
-    rows that will be reconciled in this run.  The REST fallback intentionally
-    keeps its historical full projection because PostgREST cannot express the
-    same reviewed-alias/source_urls predicate safely.
+    rows that will be reconciled in this run.
     """
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    db_url = settings.get("supabase_db_url")
     requested_urls = _unique_source_urls(source_urls) if source_urls is not None else []
     if source_urls is not None and not requested_urls:
         return {}
-    if db_url:
-        relevant_aliases, all_rows = _read_known_sales_snapshot_with_retries(
-            str(db_url), source_urls, requested_urls, include_enrichment_payload
-        )
-    else:
-        if not url or not key:
-            return {}
-        reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
-        relevant_aliases = (
-            reviewed_aliases.aliases_for_urls(requested_urls)
-            if source_urls is not None
-            else tuple(reviewed_aliases.by_alias_url.values())
-        )
-        endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-        all_rows = []
-        offset = 0
-        while True:
-            try:
-                response = _postgrest_request_with_retries(
-                    "GET",
-                    endpoint,
-                    "known_sale_details",
-                    params={
-                        "select": KNOWN_SALE_DETAIL_SELECT,
-                        "limit": str(KNOWN_SALE_DETAIL_PAGE_SIZE),
-                        "offset": str(offset),
-                    },
-                    headers=_rest_headers(str(key), prefer="count=none"),
-                    timeout=30,
-                )
-                if response.is_error:
-                    raise RuntimeError(
-                        f"Could not fetch known sale details ({response.status_code}): {response.text[:200]}"
-                    )
-                rows = response.json()
-                if not isinstance(rows, list):
-                    raise ReviewedAliasRegistryError("Malformed auction_sales detail response")
-            except httpx.HTTPError as exc:
-                raise RuntimeError(f"Known sale detail lookup failed: {exc}") from exc
-            all_rows.extend(rows)
-            if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
-                break
-            offset += KNOWN_SALE_DETAIL_PAGE_SIZE
+    if not supabase_configured(settings):
+        return {}
+    relevant_aliases, all_rows = _read_known_sales_snapshot_with_retries(
+        direct_database_url(settings), source_urls, requested_urls, include_enrichment_payload
+    )
 
     for row in all_rows:
         if not isinstance(row, dict):
@@ -3160,74 +2793,6 @@ def fetch_known_sale_details(
     return details
 
 
-def fetch_known_sale_signatures() -> dict[str, str]:
-    """Map source_url → change-signature for already-enriched listings."""
-    return {
-        source_url: str(row["_signature"])
-        for source_url, row in fetch_known_sale_details().items()
-        if row.get("_signature") and row.get("score_version")
-    }
-
-
-def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
-    """Refresh last_seen_at for listings whose detail fetch was skipped. Best effort."""
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    unique = [u for u in {u for u in source_urls if u}]
-    if not url or not key or not unique:
-        return 0
-
-    now = datetime.now(UTC).isoformat()
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    touched = 0
-    for index in range(0, len(unique), 150):
-        batch = unique[index : index + 150]
-        try:
-            response = httpx.patch(
-                endpoint,
-                params={"source_url": _postgrest_in_filter(batch)},
-                headers=_rest_headers(str(key), prefer="return=minimal"),
-                json={"last_seen_at": now},
-                timeout=30,
-            )
-            if not response.is_error:
-                touched += len(batch)
-        except httpx.HTTPError as exc:
-            LOGGER.warning("last_seen touch (source_url) failed: %s", exc)
-    return touched
-
-
-def touch_last_seen_for_content_hashes(content_hashes: list[str]) -> int:
-    """Refresh last_seen_at for listings skipped by the incremental run, so they
-    are not considered stale even though they were not re-upserted. Best effort."""
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    unique = [h for h in {h for h in content_hashes if h}]
-    if not url or not key or not unique:
-        return 0
-
-    now = datetime.now(UTC).isoformat()
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    touched = 0
-    for index in range(0, len(unique), 150):
-        batch = unique[index : index + 150]
-        try:
-            response = httpx.patch(
-                endpoint,
-                params={"content_hash": _postgrest_in_filter(batch)},
-                headers=_rest_headers(str(key), prefer="return=minimal"),
-                json={"last_seen_at": now},
-                timeout=30,
-            )
-            if not response.is_error:
-                touched += len(batch)
-        except httpx.HTTPError as exc:
-            LOGGER.warning("last_seen touch failed: %s", exc)
-    return touched
-
-
 def mark_past_sales_in_supabase() -> int:
     settings = load_settings()
     url = settings["supabase_url"]
@@ -3236,7 +2801,7 @@ def mark_past_sales_in_supabase() -> int:
         return 0
     response = httpx.post(
         f"{str(url).rstrip('/')}/rest/v1/rpc/mark_elapsed_auction_sales",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json={}, timeout=30,
     )
     response.raise_for_status()
@@ -3256,7 +2821,7 @@ def delete_expired_sales_in_supabase(now: datetime | None = None) -> int:
     for _ in range(40):
         response = httpx.post(
             f"{str(url).rstrip('/')}/rest/v1/rpc/purge_expired_auction_sales",
-            headers=_rest_headers(str(key), prefer="return=representation"),
+            headers=rest_headers(str(key), prefer="return=representation"),
             json={"p_now": current.isoformat(), "p_limit": 25}, timeout=120,
         )
         response.raise_for_status()
@@ -3265,44 +2830,6 @@ def delete_expired_sales_in_supabase(now: datetime | None = None) -> int:
         if result.get("busy") or not result.get("remaining") or not result["deleted"]:
             break
     return deleted
-
-
-def delete_vench_sales_without_surface_in_supabase() -> int:
-    """Compatibility shim: admission replaces destructive source-specific cleanup."""
-    return 0
-
-
-def _delete_sale_rows_by_source_urls(supabase_url: str, api_key: str, source_urls: list[str]) -> int:
-    unique = _unique_source_urls(source_urls)
-    if not unique:
-        return 0
-    for table in EXPIRED_SALE_DELETE_TABLES:
-        _postgrest_delete_by_source_urls(supabase_url, api_key, table, unique)
-    return len(unique)
-
-
-def _upsert_with_rest(supabase_url: str, api_key: str, payload: list[dict[str, object]]) -> None:
-    _postgrest_upsert(supabase_url, api_key, "auction_sales", payload, on_conflict="source_url")
-
-
-def _delete_secondary_sale_rows(
-    supabase_url: str,
-    api_key: str,
-    sales: list[AuctionSale],
-    *,
-    registry: ReviewedAliasRegistry | None = None,
-    limit: int | None = None,
-) -> int:
-    registry = registry or _fetch_reviewed_alias_registry(supabase_url, api_key)
-    protected_urls = registry.protected_source_urls()
-    secondary_urls = [
-        source_url
-        for source_url in _secondary_source_urls(sales)
-        if source_url not in protected_urls
-    ][:limit]
-    if not secondary_urls:
-        return 0
-    return _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_sales", secondary_urls)
 
 
 def _delete_secondary_sale_rows_with_postgres(
@@ -3319,7 +2846,7 @@ def _delete_secondary_sale_rows_with_postgres(
                 "select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1', 0))"
             )
             # Re-read the relation while holding the publication lock.  The
-            # REST snapshot used by the caller is only an early filter; this
+            # snapshot read by the caller is only an early filter; this
             # is the final guard immediately before deleting parent rows.
             reviewed_aliases = load_reviewed_aliases(cursor)
             protected_ids = reviewed_aliases.protected_sale_ids()
@@ -3360,51 +2887,6 @@ def _delete_secondary_sale_rows_with_postgres(
                 (deletable_ids,),
             )
     return len(deletable_ids)
-
-
-def _rest_parented_observation_payload(
-    supabase_url: str,
-    api_key: str,
-    payload: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Filter REST observations against exact canonical parent rows.
-
-    REST has no transaction spanning the parent read and child write.  The
-    production path therefore requires direct PostgreSQL; this fallback still
-    fails closed when the parent read is unavailable and relies on the FK for
-    the remaining concurrent-delete race.
-    """
-    canonical_urls = sorted({
-        str(row.get('canonical_source_url'))
-        for row in payload
-        if row.get('canonical_source_url')
-    })
-    if not canonical_urls:
-        return []
-    response = _postgrest_request_with_retries(
-        "GET",
-        f"{supabase_url.rstrip('/')}/rest/v1/auction_sales",
-        "auction_sales",
-        params={
-            "select": "source_url",
-            "source_url": _postgrest_in_filter(canonical_urls),
-        },
-        headers=_rest_headers(api_key, prefer="count=none"),
-        timeout=POSTGREST_TIMEOUT,
-    )
-    if response.is_error:
-        raise httpx.HTTPStatusError(
-            f"{response.status_code} response from Supabase auction_sales parent check: {response.text}",
-            request=response.request,
-            response=response,
-        )
-    rows = response.json()
-    existing = {
-        str(row.get('source_url'))
-        for row in rows
-        if isinstance(row, dict) and row.get('source_url')
-    }
-    return [row for row in payload if str(row.get('canonical_source_url') or '') in existing]
 
 
 def _parented_observation_payload(connection: Any, payload: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -3542,13 +3024,11 @@ def _postgres_upsert(
     table: str,
     payload: list[dict[str, object]],
     on_conflict: str,
-) -> int | None:
+) -> None:
     if psycopg is None or sql is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     if not payload:
-        return 0
-    if table == "auction_observations":
-        return _postgres_upsert_observations_with_parent_guard(db_url, payload, on_conflict)
+        return
     conflict_columns = tuple(column.strip() for column in on_conflict.split(",") if column.strip())
     if not conflict_columns:
         raise ValueError("Postgres upsert requires at least one conflict column")
@@ -3570,7 +3050,6 @@ def _postgres_upsert(
     with _postgres_connect(db_url) as connection:
         with connection.cursor() as cursor:
             cursor.executemany(insert_statement, rows)
-    return None
 
 
 def _statement_timeout_options(db_url: str, statement_timeout_ms: int | None) -> str | None:
@@ -3672,7 +3151,7 @@ _SHARED_CONNECTION_LOCK = threading.RLock()
 
 
 @contextmanager
-def _shared_postgres_connection(db_url: str):
+def shared_postgres_connection(db_url: str):
     """Yield one autocommit connection per process, instead of one per call.
 
     Meant for the short single-statement calls made once per LLM prediction or
@@ -3689,7 +3168,7 @@ def _shared_postgres_connection(db_url: str):
             if usable and time.monotonic() - entry[1] > POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS:
                 try:
                     connection.execute("select 1")
-                except Exception:
+                except Exception:  # whatever the failure, the idle session is not trusted any more: reconnect
                     usable = False
             if not usable:
                 _discard_shared_connection(key)
@@ -3716,7 +3195,7 @@ def _discard_shared_connection(key: tuple[int, str]) -> None:
     if entry is not None:
         try:
             entry[0].close()
-        except Exception:
+        except Exception:  # a broken session may fail to close; it is dropped from the pool either way
             pass
 
 
@@ -3729,9 +3208,7 @@ def _postgres_value(column: str, value: object) -> object:
     return value
 
 
-def _sync_normalized_sale_tables_with_rest(
-    supabase_url: str,
-    api_key: str,
+def _sync_normalized_sale_tables(
     sales: list[AuctionSale],
     now: str,
     *,
@@ -3746,26 +3223,26 @@ def _sync_normalized_sale_tables_with_rest(
         for row in _judicial_sale_rows_for_sales(sales, now, refresh_last_seen=refresh_last_seen)
     ]
     if properties:
-        _postgrest_upsert(supabase_url, api_key, "properties", properties, on_conflict="source_url")
+        _transaction_write("properties", properties, "source_url")
     if judicial_sales:
-        _postgrest_upsert(supabase_url, api_key, "judicial_sales", judicial_sales, on_conflict="source_url")
+        _transaction_write("judicial_sales", judicial_sales, "source_url")
 
 
-def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[AuctionSale], now: str) -> None:
+def _upsert_asset_tables(sales: list[AuctionSale], now: str) -> None:
     features = [_timestamped(build_auction_features_row(sale), now) for sale in sales]
     surfaces = [_timestamped(build_auction_surfaces_row(sale), now) for sale in sales]
     if features:
-        _postgrest_upsert(supabase_url, api_key, "auction_features", features, on_conflict="source_url")
+        _transaction_write("auction_features", features, "source_url")
     if surfaces:
-        _postgrest_upsert(supabase_url, api_key, "auction_surfaces", surfaces, on_conflict="source_url")
+        _transaction_write("auction_surfaces", surfaces, "source_url")
     source_urls = [sale.source_url for sale in sales]
     if source_urls:
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_surface_derivations", source_urls)
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_surface_measurements", source_urls)
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risks", source_urls)
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_risk_occurrences", source_urls)
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_urban_planning_signals", source_urls)
-        _postgrest_delete_by_source_urls(supabase_url, api_key, "auction_score_factors", source_urls)
+        _transaction_delete_by_source_urls("auction_surface_derivations", source_urls)
+        _transaction_delete_by_source_urls("auction_surface_measurements", source_urls)
+        _transaction_delete_by_source_urls("auction_risks", source_urls)
+        _transaction_delete_by_source_urls("auction_risk_occurrences", source_urls)
+        _transaction_delete_by_source_urls("auction_urban_planning_signals", source_urls)
+        _transaction_delete_by_source_urls("auction_score_factors", source_urls)
     risk_occurrences_by_source = {sale.source_url: _risk_occurrence_rows_for_sale(sale) for sale in sales}
     risk_rows = [
         _timestamped(row, now)
@@ -3776,46 +3253,31 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
         )
     ]
     if risk_rows:
-        _postgrest_insert(supabase_url, api_key, "auction_risks", risk_rows)
+        _transaction_write("auction_risks", risk_rows)
     risk_occurrences = [_timestamped(row, now) for rows in risk_occurrences_by_source.values() for row in rows]
     if risk_occurrences:
-        _postgrest_insert(supabase_url, api_key, "auction_risk_occurrences", risk_occurrences)
+        _transaction_write("auction_risk_occurrences", risk_occurrences)
     urban_planning_signals = [
         _timestamped(row, now)
         for sale in sales
         for row in build_urban_planning_signal_rows(sale, pdf_texts=_load_pdf_texts(sale))
     ]
     if urban_planning_signals:
-        _postgrest_insert(
-            supabase_url,
-            api_key,
-            "auction_urban_planning_signals",
-            urban_planning_signals,
-        )
+        _transaction_write("auction_urban_planning_signals", urban_planning_signals)
     surface_measurements = [
         _timestamped(row, now)
         for sale in sales
         for row in _surface_measurement_rows_for_sale(sale)
     ]
     if surface_measurements:
-        _postgrest_insert(
-            supabase_url,
-            api_key,
-            "auction_surface_measurements",
-            surface_measurements,
-        )
+        _transaction_write("auction_surface_measurements", surface_measurements)
     surface_derivations = [
         _timestamped(row, now)
         for sale in sales
         for row in _surface_derivation_rows_for_sale(sale)
     ]
     if surface_derivations:
-        _postgrest_insert(
-            supabase_url,
-            api_key,
-            "auction_surface_derivations",
-            surface_derivations,
-        )
+        _transaction_write("auction_surface_derivations", surface_derivations)
     score_factors = [
         _timestamped(row, now)
         for sale in sales
@@ -3825,11 +3287,11 @@ def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[
         )
     ]
     if score_factors:
-        _postgrest_insert(supabase_url, api_key, "auction_score_factors", score_factors)
+        _transaction_write("auction_score_factors", score_factors)
     # Read the strict historical recovery map once.  The document rows and
     # the post-extraction cache writer must consume this exact map so a cold
     # worker cannot perform two reads or materialize a partial sibling.
-    persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, supabase_url, api_key)
+    persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales)
     upsert_documents_to_supabase(
         sales,
         persisted_pdf_texts=persisted_pdf_texts,
@@ -3846,81 +3308,14 @@ def _postgrest_upsert(
     payload: list[dict[str, object]],
     on_conflict: str,
 ) -> None:
-    if _PUBLICATION_CONNECTION.get() is not None:
-        _transaction_write(table, payload, on_conflict)
-        return
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
     for batch in _postgrest_batches(payload, _postgrest_batch_size(table)):
-        response = _postgrest_upsert_batch(
-            endpoint,
-            api_key,
-            table,
-            batch,
-            on_conflict,
-        )
-        if response.is_error:
-            raise httpx.HTTPStatusError(
-                f"{response.status_code} response from Supabase {table}: {response.text}",
-                request=response.request,
-                response=response,
-            )
-
-
-def _postgrest_upsert_batch(
-    endpoint: str,
-    api_key: str,
-    table: str,
-    payload: list[dict[str, object]],
-    on_conflict: str,
-) -> httpx.Response:
-    last_timeout: httpx.TimeoutException | None = None
-    for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
-        try:
-            response = httpx.post(
-                endpoint,
-                params={"on_conflict": on_conflict},
-                headers=_rest_headers(api_key, prefer="resolution=merge-duplicates,return=minimal"),
-                json=_sanitize_postgrest_payload(payload),
-                timeout=POSTGREST_TIMEOUT,
-            )
-            if response.status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
-                return response
-            LOGGER.warning(
-                "Supabase %s upsert returned %s on attempt %s/%s for %s rows; retrying",
-                table,
-                response.status_code,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-                len(payload),
-            )
-        except httpx.TimeoutException as exc:
-            last_timeout = exc
-            if attempt == POSTGREST_UPSERT_RETRIES:
-                raise
-            LOGGER.warning(
-                "Supabase %s upsert timed out on attempt %s/%s for %s rows; retrying",
-                table,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-                len(payload),
-            )
-        time.sleep(2 * attempt)
-    if last_timeout is not None:
-        raise last_timeout
-    raise RuntimeError(f"Supabase {table} upsert failed before request")
-
-
-def _postgrest_insert(supabase_url: str, api_key: str, table: str, payload: list[dict[str, object]]) -> None:
-    if _PUBLICATION_CONNECTION.get() is not None:
-        _transaction_write(table, payload)
-        return
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
-    for batch in _postgrest_batches(payload, _postgrest_batch_size(table)):
-        response = _postgrest_request_with_retries(
+        response = postgrest_request_with_retries(
             "POST",
             endpoint,
-            table=table,
-            headers=_rest_headers(api_key, prefer="return=minimal"),
+            table,
+            params={"on_conflict": on_conflict},
+            headers=rest_headers(api_key, prefer="resolution=merge-duplicates,return=minimal"),
             json=_sanitize_postgrest_payload(batch),
             timeout=POSTGREST_TIMEOUT,
         )
@@ -3932,46 +3327,14 @@ def _postgrest_insert(supabase_url: str, api_key: str, table: str, payload: list
             )
 
 
-def _postgrest_delete(supabase_url: str, api_key: str, table: str, params: dict[str, str]) -> None:
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
-    response = _postgrest_request_with_retries(
-        "DELETE",
-        endpoint,
-        table=table,
-        params=params,
-        headers=_rest_headers(api_key, prefer="return=minimal"),
-        timeout=30,
+def _transaction_delete_by_source_urls(table: str, source_urls: list[str]) -> int:
+    _publication_connection().execute(
+        sql.SQL("delete from {} where source_url = any(%s)").format(sql.Identifier("public", table)), (source_urls,)
     )
-    if response.is_error:
-        raise httpx.HTTPStatusError(
-            f"{response.status_code} response from Supabase {table}: {response.text}",
-            request=response.request,
-            response=response,
-        )
+    return len(set(source_urls))
 
 
-def _postgrest_delete_by_source_urls(supabase_url: str, api_key: str, table: str, source_urls: list[str]) -> int:
-    connection = _PUBLICATION_CONNECTION.get()
-    if connection is not None:
-        connection.execute(sql.SQL("delete from {} where source_url = any(%s)").format(sql.Identifier("public", table)), (source_urls,))
-        return len(set(source_urls))
-    unique = _unique_source_urls(source_urls)
-    for index in range(0, len(unique), POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE):
-        batch = unique[index : index + POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE]
-        _postgrest_delete(
-            supabase_url,
-            api_key,
-            table,
-            {"source_url": _postgrest_in_filter(batch)},
-        )
-    return len(unique)
-
-
-def _prune_stale_document_rows(
-    supabase_url: str,
-    api_key: str,
-    sales: list[AuctionSale],
-) -> None:
+def _prune_stale_document_rows(sales: list[AuctionSale]) -> None:
     """Remove old attachment rows after a complete source revision.
 
     ``auction_documents`` is a child projection.  Upserting the current
@@ -4010,61 +3373,19 @@ def _prune_stale_document_rows(
     if not expected_by_source:
         return
 
-    connection = _PUBLICATION_CONNECTION.get()
-    if connection is not None:
-        for source_url, current_urls in expected_by_source.items():
-            if current_urls:
-                connection.execute(
-                    "delete from public.auction_documents "
-                    "where source_url = %s and not (document_url = any(%s))",
-                    (source_url, list(current_urls)),
-                )
-            else:
-                connection.execute(
-                    "delete from public.auction_documents where source_url = %s",
-                    (source_url,),
-                )
-        return
-
+    connection = _publication_connection()
     for source_url, current_urls in expected_by_source.items():
-        params = {"source_url": f"eq.{source_url}"}
         if current_urls:
-            params["document_url"] = f"not.{_postgrest_in_filter(sorted(current_urls))}"
-        _postgrest_delete(supabase_url, api_key, "auction_documents", params)
-
-
-def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
-    last_timeout: httpx.TimeoutException | None = None
-    request_method = getattr(httpx, method.lower())
-    for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
-        try:
-            response = request_method(endpoint, **kwargs)
-            status_code = getattr(response, "status_code", 200 if not response.is_error else 500)
-            if status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
-                return response
-            LOGGER.warning(
-                "Supabase %s %s returned %s on attempt %s/%s; retrying",
-                table,
-                method,
-                response.status_code,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
+            connection.execute(
+                "delete from public.auction_documents "
+                "where source_url = %s and not (document_url = any(%s))",
+                (source_url, list(current_urls)),
             )
-        except httpx.TimeoutException as exc:
-            last_timeout = exc
-            if attempt == POSTGREST_UPSERT_RETRIES:
-                raise
-            LOGGER.warning(
-                "Supabase %s %s timed out on attempt %s/%s; retrying",
-                table,
-                method,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
+        else:
+            connection.execute(
+                "delete from public.auction_documents where source_url = %s",
+                (source_url,),
             )
-        time.sleep(2 * attempt)
-    if last_timeout is not None:
-        raise last_timeout
-    raise RuntimeError(f"Supabase {table} {method} failed before request")
 
 
 def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:

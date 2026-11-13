@@ -8,7 +8,7 @@ import { DeferredGoogleAnalytics } from "@/components/DeferredGoogleAnalytics";
 import { SkipLink } from "@/components/SkipLink";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 
 // Police auto-hébergée dans src/fonts/ (voir le README du dossier) : le build ne télécharge rien
 // depuis Google Fonts. Manrope, seule police du site (décision du 25/10/2026, à la place de
@@ -40,10 +40,8 @@ const manrope = localFont({
   ],
 });
 
-const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
-
 export const metadata: Metadata = {
-  metadataBase: new URL(siteOrigin),
+  metadataBase: new URL(siteOrigin()),
   title: {
     default: "Immojudis - Les enchères immobilières, en toute clarté",
     template: "%s - Immojudis",

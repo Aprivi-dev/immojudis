@@ -89,3 +89,24 @@ describe("valuation backtest", () => {
     });
   });
 });
+
+describe("valuation backtest : fenêtre des ventes testées", () => {
+  it("compte les mois au calendrier : trois mois avant le 31 mai, c'est le 28 février", () => {
+    const backtest = buildValuationBacktest({
+      transactions: [
+        tx({ source_mutation_id: "le-1er-mars", sale_date: "2026-03-01" }),
+        tx({ source_mutation_id: "le-28-fevrier", sale_date: "2026-02-28" }),
+        tx({ source_mutation_id: "le-27-fevrier", sale_date: "2026-02-27" }),
+      ],
+      reference: { latitude: 44.8378, longitude: -0.5792 },
+      subject: { propertyType: "apartment", surfaceM2: 80 },
+      options: { radiusM: 1_000, months: 3, maxTests: 10, now: new Date("2026-05-31T00:00:00Z") },
+    });
+
+    // Avant : `setUTCMonth` menait au « 31 février », soit le 3 mars, et écartait les deux premières.
+    expect(backtest.points.map((point) => point.transactionId).sort()).toEqual([
+      "le-1er-mars",
+      "le-28-fevrier",
+    ]);
+  });
+});

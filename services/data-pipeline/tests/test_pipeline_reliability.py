@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 import psycopg
 import pytest
+from fake_publication import capture_enqueued_jobs
 
 from src.dedupe import merge_duplicate_sales
 from src.freshness import (
@@ -21,7 +22,9 @@ from src.freshness import (
     record_source_checks,
 )
 from src.normalize import normalize_sale
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, download_documents, sale_storage_id
+from src.pdf_enrichment import download_documents
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+from src.sale_local_files import sale_storage_id
 from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage
 
@@ -684,9 +687,8 @@ def test_publication_failure_rolls_back_without_rest_fallback(monkeypatch):
     monkeypatch.setattr(storage, "_postgres_connect", lambda _: Connection())
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
     monkeypatch.setattr(storage, "_transaction_write", lambda *args, **_kwargs: events.append("write") or [])
-    monkeypatch.setattr(storage, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *args: (_ for _ in ()).throw(ValueError("broken child table")))
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda *args: events.append("REST"))
+    monkeypatch.setattr(storage, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", lambda *args: (_ for _ in ()).throw(ValueError("broken child table")))
     sale = normalize_sale({"source_name": "avoventes", "starting_price_eur": 10000, "source_url": "https://example.test/a"})
     with pytest.raises(ValueError, match="broken child"):
         storage.upsert_sales_to_supabase([sale])
@@ -696,29 +698,29 @@ def test_publication_failure_rolls_back_without_rest_fallback(monkeypatch):
 
 def test_missing_surface_queues_fact_extraction_after_documents(monkeypatch):
     rows = []
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/a", "sale_date": "2099-01-01"})
     sale.raw_payload["document_analysis"] = {"documents_extracted": 1}
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     assert {row["job_type"] for row in rows} == {"fact_extraction"}
 
 
 def test_failed_pdf_retains_same_retry_identity_across_scans(monkeypatch):
     rows = []
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/retry", "sale_date": "2099-01-01", "documents": [{"url": "https://example.test/pv.pdf"}]})
     sale.raw_payload["document_analysis"] = {"failed_documents": 1, "checked_at": "2026-09-01T00:00:00+00:00"}
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     first = next(row["input_hash"] for row in rows if row["job_type"] == "pdf")
     rows.clear()
     sale.raw_payload["document_analysis"]["checked_at"] = "2026-09-02T00:00:00+00:00"
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     assert next(row["input_hash"] for row in rows if row["job_type"] == "pdf") == first
 
 
 def test_incomplete_pdf_gets_a_new_retry_generation_after_extractor_revision(monkeypatch):
     rows = []
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -731,12 +733,12 @@ def test_incomplete_pdf_gets_a_new_retry_generation_after_extractor_revision(mon
         "failed_documents": 1,
         "checked_at": "2026-09-01T00:00:00+00:00",
     }
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     first = next(row["input_hash"] for row in rows if row["job_type"] == "pdf")
 
     rows.clear()
     monkeypatch.setattr(storage, "PDF_RETRY_GENERATION", "pdf_text_v4_extractor_revision")
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     second = next(row["input_hash"] for row in rows if row["job_type"] == "pdf")
 
     assert second != first
@@ -918,25 +920,25 @@ def test_document_rows_do_not_reuse_old_cache_for_current_empty_or_unknown_profi
 
 def test_replaced_document_creates_new_fact_job_even_at_same_url(monkeypatch):
     rows = []
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/replaced", "sale_date": "2099-01-01"})
     sale.raw_payload["document_analysis"] = {"documents_extracted": 1, "profiles": [{"url": "https://example.test/pv.pdf", "sha256": "old"}]}
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     old = next(row["input_hash"] for row in rows if row["job_type"] == "fact_extraction")
     rows.clear()
     sale.raw_payload["document_analysis"]["profiles"][0]["sha256"] = "new"
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     assert next(row["input_hash"] for row in rows if row["job_type"] == "fact_extraction") != old
 
 
 def test_new_document_url_does_not_inherit_old_pdf_price_or_surface():
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
     raw = {"source_name": "licitor", "source_url": "https://example.test/newdoc",
            "documents": [{"url": "https://example.test/new.pdf"}], "starting_price_eur": 100000}
     known = {raw["source_url"]: {"surface_m2": 90, "surface_source": "pdf", "starting_price_eur": 200000,
              "documents": [{"url": "https://example.test/old.pdf"}],
              "raw_payload": {"llm_display_description": "Ancien document", "surface_extraction": {"source": "pdf"}}}}
-    _preserve_known_enrichment_payloads([raw], known)
+    preserve_known_enrichment_payloads([raw], known)
     assert raw["starting_price_eur"] == 100000
     assert not raw.get("surface_m2")
     assert not raw.get("llm_display_description")
@@ -965,9 +967,9 @@ def test_changed_bytes_without_local_cache_invalidate_facts_before_ocr():
 
 def test_unknown_date_still_queues_document_enrichment(monkeypatch):
     rows = []
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda url, key, table, payload, conflict: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
     sale = normalize_sale({"source_name": "licitor", "source_url": "https://example.test/no-date",
                            "documents": [{"url": "https://example.test/pv.pdf"}]})
     sale.status = "unknown"
-    storage._enqueue_due_enrichment([sale], "url", "key")
+    storage._enqueue_due_enrichment([sale])
     assert {row["job_type"] for row in rows} == {"pdf"}

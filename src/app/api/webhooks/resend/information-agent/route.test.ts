@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { InvalidWebhookSignatureError, WebhookPayloadTooLargeError } from "@/lib/resend-webhook";
 import { POST } from "./route";
 import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
 
@@ -8,9 +9,9 @@ vi.mock("@/lib/information-agent-inbound", () => ({
 
 describe("information-agent inbound webhook route", () => {
   it("rejects invalid signatures before returning a successful receipt", async () => {
-    const invalidSignature = new Error("Signature webhook invalide.");
-    invalidSignature.name = "InvalidInformationAgentWebhookSignatureError";
-    vi.mocked(processInformationAgentInboundWebhook).mockRejectedValueOnce(invalidSignature);
+    vi.mocked(processInformationAgentInboundWebhook).mockRejectedValueOnce(
+      new InvalidWebhookSignatureError(),
+    );
 
     const response = await POST(new Request("https://example.test/webhook", { method: "POST" }));
 
@@ -48,9 +49,9 @@ describe("information-agent inbound webhook route", () => {
   });
 
   it("returns 413 when the inbound webhook body exceeds its limit", async () => {
-    const payloadTooLarge = new Error("Corps du webhook trop volumineux.");
-    payloadTooLarge.name = "InformationAgentWebhookPayloadTooLargeError";
-    vi.mocked(processInformationAgentInboundWebhook).mockRejectedValueOnce(payloadTooLarge);
+    vi.mocked(processInformationAgentInboundWebhook).mockRejectedValueOnce(
+      new WebhookPayloadTooLargeError(),
+    );
 
     const response = await POST(new Request("https://example.test/webhook", { method: "POST" }));
 

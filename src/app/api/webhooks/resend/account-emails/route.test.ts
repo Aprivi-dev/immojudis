@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { InvalidWebhookSignatureError, WebhookPayloadTooLargeError } from "@/lib/resend-webhook";
 
 const mocks = vi.hoisted(() => ({ process: vi.fn() }));
 
@@ -12,12 +13,6 @@ const call = () =>
   POST(
     new Request("https://immojudis.test/api/webhooks/resend/account-emails", { method: "POST" }),
   );
-
-function failure(name: string, message = "x") {
-  const error = new Error(message);
-  error.name = name;
-  return error;
-}
 
 describe("POST /api/webhooks/resend/account-emails", () => {
   beforeEach(() => {
@@ -39,7 +34,7 @@ describe("POST /api/webhooks/resend/account-emails", () => {
   });
 
   it("answers 400 on an invalid signature", async () => {
-    mocks.process.mockRejectedValue(failure("InvalidAccountEmailWebhookSignatureError"));
+    mocks.process.mockRejectedValue(new InvalidWebhookSignatureError());
 
     const response = await call();
 
@@ -48,7 +43,7 @@ describe("POST /api/webhooks/resend/account-emails", () => {
   });
 
   it("answers 413 on an oversized body", async () => {
-    mocks.process.mockRejectedValue(failure("AccountEmailWebhookPayloadTooLargeError"));
+    mocks.process.mockRejectedValue(new WebhookPayloadTooLargeError());
 
     expect((await call()).status).toBe(413);
   });

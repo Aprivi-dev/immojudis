@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { isPlanPeriodActive } from "@/lib/plans";
+import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
-  ANALYSIS_ACCESS_DAYS,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
   ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_PRICE_CENTS,
   ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
-  ANALYSIS_PRICE_CENTS,
   ANALYSIS_TRIAL_DAYS,
+} from "@/lib/analysis-offer";
+import {
+  ANALYSIS_ACCESS_DAYS,
+  analysisSubscriptionPriceIds,
   billingPortalReturnUrl,
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
@@ -122,7 +126,7 @@ describe("billing helpers", () => {
   });
 
   it("keeps the historical one-time constants for webhook compatibility", () => {
-    expect(ANALYSIS_PRICE_CENTS).toBe(5_900);
+    expect(ANALYSIS_RECURRING_PRICE_CENTS).toBe(5_900);
     expect(ANALYSIS_ACCESS_DAYS).toBe(30);
   });
 
@@ -264,5 +268,34 @@ describe("billing helpers", () => {
     expect(isRecognisedAnalysisPrice({ id: "price_other", unit_amount: 5_900 }, env)).toBe(false);
     expect(isRecognisedAnalysisPrice({ id: "price_ok", unit_amount: 5_900 }, {})).toBe(false);
     expect(isRecognisedAnalysisPrice(undefined, env)).toBe(false);
+  });
+
+  it("contrôle le montant du Price que vend le checkout (`analysisPriceId`)", () => {
+    const env = { STRIPE_ANALYSIS_PRICE_ID: "price_1QxYz9AbCdEfGhIj" };
+    expect(analysisPriceId(env)).toBe("price_1QxYz9AbCdEfGhIj");
+    expect(
+      isRecognisedAnalysisPrice({ id: "price_1QxYz9AbCdEfGhIj", unit_amount: 5_900 }, env),
+    ).toBe(true);
+    expect(
+      isRecognisedAnalysisPrice({ id: "price_1QxYz9AbCdEfGhIj", unit_amount: 4_900 }, env),
+    ).toBe(false);
+  });
+
+  // Avant le lot 12, la variable brute était acceptée : un Price courant mal formé, que le checkout
+  // refuse, ouvrait l'accès quel que soit son montant (traité comme un ancien Price).
+  it("n'accepte comme Price courant que celui que vend le checkout (`analysisPriceId`)", () => {
+    const env = {
+      STRIPE_ANALYSIS_PRICE_ID: "price_abc-123",
+      STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old",
+    };
+    expect(analysisPriceId(env)).toBeUndefined();
+    expect(analysisSubscriptionPriceIds(env)).toEqual(["price_old"]);
+    expect(isRecognisedAnalysisPrice({ id: "price_abc-123", unit_amount: 100 }, env)).toBe(false);
+    expect(
+      analysisSubscriptionPriceIds({
+        STRIPE_ANALYSIS_PRICE_ID: "price_1QxYz9AbCdEfGhIj",
+        STRIPE_ANALYSIS_LEGACY_PRICE_IDS: " price_old , ",
+      }),
+    ).toEqual(["price_1QxYz9AbCdEfGhIj", "price_old"]);
   });
 });

@@ -1,11 +1,14 @@
 import { saleDateBoundary } from "./search/sale-date-range";
 import { getSupabase, type SupabaseBrowserClient } from "@/integrations/supabase/lazy";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
+import { occupancyClassCodes } from "@/lib/occupancy-filter";
+import { occupancyClass } from "@/lib/occupancy-status";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
 import {
   ALERT_DETAIL_COLUMNS,
   ALERT_EVALUATION_COLUMNS,
   DETAIL_VIEW,
+  DISCOVERY_VIEW as DISCOVERY_VIEW_NAME,
   SALE_LIST_COLUMNS,
   SEARCH_DETAIL_COLUMNS,
   SEARCH_SCAN_COLUMNS,
@@ -21,11 +24,9 @@ import {
   withPhotoMirror,
   type PhotoMirrorClient,
 } from "./photo-mirror";
-export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
-export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
-const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const DISCOVERY_VIEW = DISCOVERY_VIEW_NAME as typeof DETAIL_VIEW;
 const UNLOCKED_SALE_VIEW = UNLOCKED_VIEW as typeof DETAIL_VIEW;
 const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
@@ -77,12 +78,7 @@ const SALE_CARD_COLUMN_NAMES = [
   "completeness_tier",
 ] as const;
 
-export const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
-
-/** Les mêmes colonnes sans le palier de complétude (base où sa migration n'est pas appliquée). */
-const SALE_CARD_COLUMNS_WITHOUT_TIER = SALE_CARD_COLUMN_NAMES.filter(
-  (column) => column !== "completeness_tier",
-).join(",");
+const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
 
 const SALE_PREVIEW_COLUMNS = [
   "id",
@@ -124,45 +120,16 @@ type OrderableQuery<TQuery> = {
   order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => TQuery;
 };
 
-/**
- * Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). Sans
- * `withTier`, le palier de complétude est ignoré (repli d'une base qui n'a pas la colonne).
- */
+/** Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). */
 function applySearchOrder<TQuery extends OrderableQuery<TQuery>>(
   query: TQuery,
   sort: SortKey,
-  withTier = true,
 ): TQuery {
   let ordered = query.order("coordinates_rank", { ascending: true });
   for (const clause of SORT_CLAUSES[sort]) {
-    if (!withTier && clause.column === "completeness_tier") continue;
     ordered = ordered.order(clause.column, { ascending: clause.ascending, nullsFirst: false });
   }
   return ordered.order("id", { ascending: true });
-}
-
-/**
- * La colonne `completeness_tier` n'existe pas encore (migration pas appliquée, déploiement
- * échelonné) : PostgreSQL répond 42703, PostgREST une erreur `PGRST…` qui nomme la colonne.
- */
-function isMissingCompletenessTier(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const { code, message } = error as { code?: unknown; message?: unknown };
-  const missingColumn = code === "42703" || (typeof code === "string" && code.startsWith("PGRST"));
-  return missingColumn && typeof message === "string" && message.includes("completeness_tier");
-}
-
-/**
- * Lance la recherche avec le palier de complétude ; si la base ne l'a pas encore, la relance sans
- * la colonne et sans ce tri plutôt que d'afficher une erreur de recherche.
- */
-async function withCompletenessTierFallback<T>(run: (withTier: boolean) => Promise<T>): Promise<T> {
-  try {
-    return await run(true);
-  } catch (error) {
-    if (!isMissingCompletenessTier(error)) throw error;
-    return run(false);
-  }
 }
 
 type FilterableQuery = {
@@ -236,19 +203,9 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   if (filters.min_bedrooms != null) q = q.gte("bedrooms_count", filters.min_bedrooms);
   if (filters.min_bathrooms != null) q = q.gte("bathrooms_count", filters.min_bathrooms);
   if (filters.occupancy_status) {
-    // Match the same historical aliases as occupancyLabel, before count/pagination.
-    const occupancy = filters.occupancy_status.toLowerCase();
-    if (["free", "vacant", "libre"].includes(occupancy)) {
-      q = q.or(
-        "occupancy_status.ilike.%libre%,occupancy_status.ilike.vacant,occupancy_status.ilike.free",
-      );
-    } else if (["occupied", "occupé", "occupe"].includes(occupancy)) {
-      q = q.ilike("occupancy_status", "%occup%");
-    } else if (["rented", "loué", "loue"].includes(occupancy)) {
-      q = q.or(
-        "occupancy_status.ilike.%loué%,occupancy_status.ilike.%loue%,occupancy_status.ilike.%rented%",
-      );
-    } else q = q.eq("occupancy_status", filters.occupancy_status);
+    // Les codes de la classe du filtre (`matchesOccupancyFilter`), avant le décompte et la pagination.
+    const occupancy = occupancyClass(filters.occupancy_status);
+    q = q.in("occupancy_status", occupancy ? occupancyClassCodes(occupancy) : []);
   }
   if (filters.min_score != null) q = q.gte("investment_score", filters.min_score);
   if (filters.tribunal_code) q = q.eq("tribunal_code", filters.tribunal_code);
@@ -349,9 +306,8 @@ async function fetchSearchResultIds(
   limit: number,
   sort: SortKey,
   offset: number,
-  withTier: boolean,
 ): Promise<string[]> {
-  let q = applySearchOrder(db.from(catalogView).select("id"), sort, withTier).range(
+  let q = applySearchOrder(db.from(catalogView).select("id"), sort).range(
     offset,
     offset + limit - 1,
   );
@@ -393,18 +349,16 @@ export async function getSales(
   }
 
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  return withCompletenessTierFallback(async (withTier) => {
-    let q = applySearchOrder(db.from(catalogView).select(SALE_LIST_COLUMNS), sort, withTier).range(
-      offset,
-      offset + limit - 1,
-    );
+  let q = applySearchOrder(db.from(catalogView).select(SALE_LIST_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
 
-    q = applyAuthenticatedSaleFilters(q, filters);
+  q = applyAuthenticatedSaleFilters(q, filters);
 
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 /**
@@ -422,7 +376,6 @@ export async function getSalesForAlertEvaluation(
   let q = applySearchOrder(
     options.client.from(catalogView).select(ALERT_EVALUATION_COLUMNS),
     "date_asc",
-    false,
   ).range(offset, offset + limit - 1);
   q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -455,17 +408,14 @@ export async function getSalesForCompleteSearch(
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  return withCompletenessTierFallback(async (withTier) => {
-    let q = applySearchOrder(
-      db.from(catalogView).select(SEARCH_SCAN_COLUMNS),
-      sort,
-      withTier,
-    ).range(offset, offset + limit - 1);
-    q = applyAuthenticatedSaleFilters(q, filters);
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  let q = applySearchOrder(db.from(catalogView).select(SEARCH_SCAN_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
+  q = applyAuthenticatedSaleFilters(q, filters);
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 /**
@@ -485,15 +435,7 @@ export async function getSaleRowsByIds(
   if (columns === "detail") {
     return fetchSaleRowsByIds(db, catalogView, SEARCH_DETAIL_COLUMNS, {}, ids);
   }
-  return withCompletenessTierFallback((withTier) =>
-    fetchSaleRowsByIds(
-      db,
-      catalogView,
-      withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER,
-      {},
-      ids,
-    ),
-  );
+  return fetchSaleRowsByIds(db, catalogView, SALE_CARD_COLUMNS, {}, ids);
 }
 
 export async function getSalesForSearch(
@@ -508,48 +450,36 @@ export async function getSalesForSearch(
   const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
 
-  return withCompletenessTierFallback(async (withTier) => {
-    const cardColumns = withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER;
-
-    // The discovery view is a security barrier. EXPLAIN shows that selecting
-    // IDs and then re-reading the barrier doubles its materialization cost, so
-    // keep its existing single request. The app search view is invoker-safe and
-    // can prune the heavy lateral projections when the first request selects
-    // only IDs.
-    if (!options.discovery) {
-      const ids = await fetchSearchResultIds(
-        db,
-        catalogView,
-        filters,
-        limit,
-        sort,
-        offset,
-        withTier,
-      );
-      if (ids.length === 0) return [];
-      // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
-      // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
-      const rows = await fetchSaleRowsByIds(
-        db,
-        catalogView,
-        cardColumns,
-        { ...filters, ids: undefined },
-        ids,
-      );
-      return orderSalesByIds(rows, ids);
-    }
-
-    let q = applySearchOrder(db.from(catalogView).select(cardColumns), sort, withTier).range(
-      offset,
-      offset + limit - 1,
+  // The discovery view is a security barrier. EXPLAIN shows that selecting
+  // IDs and then re-reading the barrier doubles its materialization cost, so
+  // keep its existing single request. The app search view is invoker-safe and
+  // can prune the heavy lateral projections when the first request selects
+  // only IDs.
+  if (!options.discovery) {
+    const ids = await fetchSearchResultIds(db, catalogView, filters, limit, sort, offset);
+    if (ids.length === 0) return [];
+    // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
+    // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
+    const rows = await fetchSaleRowsByIds(
+      db,
+      catalogView,
+      SALE_CARD_COLUMNS,
+      { ...filters, ids: undefined },
+      ids,
     );
+    return orderSalesByIds(rows, ids);
+  }
 
-    q = applyAuthenticatedSaleFilters(q, filters);
+  let q = applySearchOrder(db.from(catalogView).select(SALE_CARD_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
 
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 export async function getSalesCount(
@@ -562,20 +492,6 @@ export async function getSalesCount(
   let q = supabase.from(catalogView).select("id", { count: "exact", head: true });
 
   q = applyAuthenticatedSaleFilters(q, filters);
-
-  const { count, error } = await q;
-  if (error) throw error;
-  return count ?? 0;
-}
-
-export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<number> {
-  if (!assertCloudConfigured()) return 0;
-  const supabase = await getSupabase();
-  let q = supabase.from(PUBLIC_PREVIEW_VIEW).select("id", { count: "exact", head: true });
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { count, error } = await q;
   if (error) throw error;
@@ -613,21 +529,10 @@ export async function getSaleById(
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   // Card-level facts of the public catalogue (type, surface, city, hearing date…).
-  // `unsupported` means the database function is not deployed yet: keep the
-  // minimal preview below so the page still works during a staggered release.
   const supabase = await getSupabase();
   const summary = await fetchPublicSaleSummary(supabase, id);
-  if (summary.kind === "found") {
-    return withPhotoMirror(summary.sale, await mirrorClient(), mirrorOptions);
-  }
   if (summary.kind === "missing") return null;
-  const { data, error } = await supabase
-    .from(PUBLIC_PREVIEW_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data as AuctionSale | null;
+  return withPhotoMirror(summary.sale, await mirrorClient(), mirrorOptions);
 }
 
 /** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */
@@ -649,7 +554,7 @@ const SALE_MAP_POINT_COLUMNS = [
 ].join(",");
 const MAP_POINT_PAGE_SIZE = 1000;
 /** Garde-fou : le catalogue entier (quelques milliers de ventes) tient largement dessous. */
-export const MAP_POINTS_HARD_LIMIT = 10_000;
+const MAP_POINTS_HARD_LIMIT = 10_000;
 
 /**
  * Tous les points géolocalisés d'une recherche (et non un échantillon), en colonnes
@@ -693,127 +598,4 @@ export async function getSaleMapPoints(
     },
   });
   return rows;
-}
-
-/**
- * Fetch sales within a bounding box around (lat,lng).
- * radiusKm is the half-side of the bbox; the caller is expected to filter
- * by exact haversine distance afterwards if needed.
- */
-export async function getNearbySales(
-  lat: number,
-  lng: number,
-  radiusKm: number,
-  excludeId?: string,
-  limit = 50,
-): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
-  // 1° latitude ≈ 111 km. 1° longitude ≈ 111 km × cos(lat).
-  const dLat = radiusKm / 111;
-  const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
-  const supabase = await getSupabase();
-  let q = supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_LIST_COLUMNS)
-    .gte("latitude", lat - dLat)
-    .lte("latitude", lat + dLat)
-    .gte("longitude", lng - dLng)
-    .lte("longitude", lng + dLng)
-    .order("sale_date", { ascending: true })
-    .limit(limit);
-  if (excludeId) q = q.neq("id", excludeId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return saleRows(data);
-}
-
-export async function getStats(): Promise<{
-  totalSales: number;
-  departments: number;
-  nextSale: string | null;
-}> {
-  if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
-  const supabase = await getSupabase();
-  const { count, error } = await supabase
-    .from(PUBLIC_PREVIEW_VIEW)
-    .select("*", { count: "exact", head: true });
-  if (error) throw error;
-  const totalSales = count ?? 0;
-
-  if (typeof window === "undefined") {
-    return { totalSales, departments: 0, nextSale: null };
-  }
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return { totalSales, departments: 0, nextSale: null };
-  const { data: deps } = await supabase
-    .from(DISCOVERY_VIEW)
-    .select("department")
-    .not("department", "is", null)
-    .limit(1000);
-  const uniqueDeps = new Set(
-    (deps ?? []).map((r: { department: string | null }) => r.department).filter(Boolean),
-  );
-  const { data: next } = await supabase
-    .from(DISCOVERY_VIEW)
-    .select("sale_date")
-    .gte("sale_date", new Date().toISOString())
-    .order("sale_date", { ascending: true })
-    .limit(1);
-  return {
-    totalSales,
-    departments: uniqueDeps.size,
-    nextSale: next?.[0]?.sale_date ?? null,
-  };
-}
-
-// Favorites
-export async function getFavorites(userId: string): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
-  const supabase = await getSupabase();
-  const { data: favs, error } = await supabase
-    .from("user_favorites")
-    .select("sale_id")
-    .eq("user_id", userId);
-  if (error) throw error;
-  const ids = (favs ?? []).map((f: { sale_id: string }) => f.sale_id);
-  if (ids.length === 0) return [];
-  const { data, error: e2 } = await supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_LIST_COLUMNS)
-    .in("id", ids);
-  if (e2) throw e2;
-  return saleRows(data);
-}
-
-export async function getFavoriteIds(userId: string): Promise<Set<string>> {
-  if (!assertCloudConfigured()) return new Set();
-  const supabase = await getSupabase();
-  const { data, error } = await supabase
-    .from("user_favorites")
-    .select("sale_id")
-    .eq("user_id", userId);
-  if (error) throw error;
-  return new Set((data ?? []).map((r: { sale_id: string }) => r.sale_id));
-}
-
-export async function addFavorite(userId: string, saleId: string) {
-  assertCloudConfigured();
-  const supabase = await getSupabase();
-  const { error } = await supabase
-    .from("user_favorites")
-    .insert({ user_id: userId, sale_id: saleId });
-  if (error && !error.message.includes("duplicate")) throw error;
-}
-
-export async function removeFavorite(userId: string, saleId: string) {
-  assertCloudConfigured();
-  const supabase = await getSupabase();
-  const { error } = await supabase
-    .from("user_favorites")
-    .delete()
-    .eq("user_id", userId)
-    .eq("sale_id", saleId);
-  if (error) throw error;
 }

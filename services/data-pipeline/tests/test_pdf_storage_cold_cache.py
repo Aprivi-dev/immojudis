@@ -8,14 +8,15 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from fake_publication import inside_publication
 
 from src.models import AuctionSale
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import supabase_client as storage
 
 
 def _persisted_sale_fixture() -> tuple[AuctionSale, list[dict[str, object]]]:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     labels = (
         "PV descriptif",
@@ -55,7 +56,7 @@ def _persisted_sale_fixture() -> tuple[AuctionSale, list[dict[str, object]]]:
         starting_price_eur=Decimal("100000"),
         documents=documents,
     )
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
     return sale, pdf_texts
 
 
@@ -68,7 +69,7 @@ def _validated_map(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> dic
         "result": [dict(item) for item in pdf_texts],
         "updated_at": "2026-09-29T01:24:38+00:00",
     }
-    validated = storage._validated_persisted_pdf_texts(sale, row)
+    validated = storage.validated_persisted_pdf_texts(sale, row)
     assert validated is not None
     assert all(item.get("_persisted_pdf_proof") is True for item in validated)
     return {sale.source_url: validated}
@@ -85,16 +86,10 @@ def test_cold_restore_keeps_provenance_and_is_idempotent(monkeypatch, tmp_path: 
     # The document upsert consumes the validated map without performing a
     # second persisted lookup.  Extraction upsert happens before the cache is
     # materialized, so it sees no synthetic current row on this cold pass.
-    monkeypatch.setattr(
-        storage,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
     document_writes: list[list[dict[str, object]]] = []
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda _url, _key, table, payload, on_conflict: document_writes.append(payload)
+    inside_publication(
+        monkeypatch,
+        on_write=lambda table, payload, _conflict: document_writes.append(payload)
         if table == "auction_documents"
         else None,
     )
@@ -144,7 +139,7 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
     monkeypatch.setattr(
         storage,
         "_fetch_persisted_pdf_texts_for_sales",
-        lambda sales, _url, _key: events.append(("fetch", sales)) or persisted_map,
+        lambda sales: events.append(("fetch", sales)) or persisted_map,
     )
     monkeypatch.setattr(
         storage,
@@ -161,16 +156,9 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
         "_restore_persisted_pdf_text_caches",
         lambda sales, persisted_pdf_texts: events.append(("cache", persisted_pdf_texts)),
     )
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage, "_postgrest_insert", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage, "_postgrest_delete_by_source_urls", lambda *_args, **_kwargs: None)
+    inside_publication(monkeypatch)
 
-    storage._upsert_asset_tables_with_rest(
-        "https://supabase.test",
-        "secret",
-        [sale],
-        "2026-09-30T10:00:00+00:00",
-    )
+    storage._upsert_asset_tables([sale], "2026-09-30T10:00:00+00:00")
 
     assert [name for name, _value in events] == ["fetch", "documents", "extractions", "cache"]
     assert events[1][1] is persisted_map
@@ -188,7 +176,7 @@ def test_failed_cold_restore_keeps_previous_cache_intact(monkeypatch, tmp_path: 
 
     old_payload = [dict(item) for item in pdf_texts]
     old_payload[0]["text"] = "ancienne preuve locale"
-    pdf_fact_extraction._write_pdf_text_cache(sale, old_payload)
+    pdf_fact_extraction.write_pdf_text_cache(sale, old_payload)
     cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
     previous_bytes = cache_path.read_bytes()
 
@@ -200,3 +188,23 @@ def test_failed_cold_restore_keeps_previous_cache_intact(monkeypatch, tmp_path: 
 
     assert cache_path.read_bytes() == previous_bytes
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_newest_row_with_texts_or_progress_is_the_one_restored(monkeypatch) -> None:
+    # Choix partagé par la reprise à froid et par la préparation des pièces (document_prefetch) : la ligne la plus
+    # récente qui porte quelque chose de valide, son texte complet avant sa progression partielle.
+    sale = AuctionSale(source_name="vench", source_url="https://example.test/newest", documents=[])
+    rows = [
+        {"updated_at": "2026-11-04T09:00:00Z", "texts": "old-complete"},
+        {"updated_at": "2026-11-04T11:00:00Z", "texts": None, "progress": None},
+        {"updated_at": "2026-11-04T10:00:00Z", "texts": None, "progress": "middle-partial"},
+    ]
+    monkeypatch.setattr(storage, "validated_persisted_pdf_texts", lambda _sale, row: row.get("texts") and [row["texts"]])
+    monkeypatch.setattr(
+        storage, "validated_persisted_pdf_progress", lambda _sale, row: row.get("progress") and [row["progress"]]
+    )
+
+    assert storage.newest_restorable_pdf_progress(sale, rows) == ["middle-partial"]
+    rows[2]["texts"] = "middle-complete"
+    assert storage.newest_restorable_pdf_progress(sale, rows) == ["middle-complete"]
+    assert storage.newest_restorable_pdf_progress(sale, rows[1:2]) is None

@@ -65,10 +65,11 @@ def test_refresh_reports_zero_when_the_function_returns_nothing() -> None:
     assert dvf_market_trends.refresh_commune_market_trends(_Connection(row=(None,))) == 0
 
 
-def test_a_function_not_migrated_yet_is_skipped_not_failed() -> None:
+def test_a_missing_function_fails_the_refresh() -> None:
     connection = _Connection(error=_SqlError("function does not exist", "42883"))
 
-    assert dvf_market_trends.refresh_commune_market_trends(connection) is None
+    with pytest.raises(_SqlError, match="does not exist"):
+        dvf_market_trends.refresh_commune_market_trends(connection)
 
 
 def test_any_other_database_error_fails_the_refresh() -> None:
@@ -86,25 +87,24 @@ def test_main_refreshes_through_the_configured_database(monkeypatch: pytest.Monk
         urls.append(url)
         return connection
 
-    monkeypatch.setattr(dvf_market_trends, "_postgres_connect", fake_connect)
     monkeypatch.setattr(dvf_market_trends, "load_settings", lambda: {"supabase_db_url": "postgres://example"})
     monkeypatch.setattr("sys.argv", ["dvf_market_trends"])
 
-    assert dvf_market_trends.main() == 0
+    assert dvf_market_trends.main(connect=fake_connect) == 0
 
     assert urls == ["postgres://example"]
     assert "- rows: 77" in capsys.readouterr().out
 
 
-def test_main_warns_and_succeeds_when_the_migration_is_missing(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+def test_main_fails_when_the_function_is_missing(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     connection = _Connection(error=_SqlError("function does not exist", "42883"))
-    monkeypatch.setattr(dvf_market_trends, "_postgres_connect", lambda url: connection)
     monkeypatch.setattr(dvf_market_trends, "load_settings", lambda: {"supabase_db_url": "postgres://example"})
     monkeypatch.setattr("sys.argv", ["dvf_market_trends"])
 
-    assert dvf_market_trends.main() == 0
+    with pytest.raises(_SqlError):
+        dvf_market_trends.main(connect=lambda url: connection)
 
-    assert "::warning::" in capsys.readouterr().out
+    assert "rows" not in capsys.readouterr().out
 
 
 def test_main_requires_a_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

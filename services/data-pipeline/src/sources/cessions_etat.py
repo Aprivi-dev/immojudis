@@ -31,6 +31,7 @@ from src.sources.common import (
     unique_dicts,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.timestamps import sale_window
 
 BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
 LIST_URL = f"{BASE_URL}/"
@@ -81,10 +82,6 @@ def cessions_tls_context() -> ssl.SSLContext:
     context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
     context.load_verify_locations(str(Path(__file__).with_name("certificates") / "sectigo-public-ov-r36.pem"))
     return context
-
-
-def scrape_cessions_etat_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_cessions_etat_aquitaine_result(max_pages=max_pages).sales
 
 
 def scrape_cessions_etat_aquitaine_result(
@@ -941,13 +938,14 @@ def _extract_sale_schedule(text: str) -> dict[str, str] | None:
     closing = re.search(r"\bdate\s+de\s+fin\s+de\s+vente\s*:\s*([^\n]+)", text, flags=re.I)
     if not opening or not closing:
         return None
-    start = parse_french_datetime(opening.group(1))
-    end = parse_french_datetime(closing.group(1))
-    if start is None or end is None or end <= start:
+    window = sale_window(
+        {"opens_at": parse_french_datetime(opening.group(1)), "closes_at": parse_french_datetime(closing.group(1))}
+    )
+    if window is None:
         return None
     return {
-        "opens_at": start.isoformat(),
-        "closes_at": end.isoformat(),
+        "opens_at": window[0].isoformat(),
+        "closes_at": window[1].isoformat(),
         "schedule_type": "sale_window",
     }
 

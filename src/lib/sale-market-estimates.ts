@@ -10,6 +10,10 @@ import {
   type MarketEstimate,
   type MarketEstimateErrorCode,
 } from "@/lib/market.server";
+import {
+  isMarketEstimateErrorCode,
+  isTransientMarketEstimateFailure,
+} from "@/lib/market-server/errors";
 import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
 import {
   acceptsEnteredBuiltSurface,
@@ -174,7 +178,7 @@ export function marketContextFromStoredRow(
       : row.status === "insufficient_data"
         ? "insufficient_data"
         : "failed",
-    code: storedErrorCode(row.last_error_code),
+    code: isMarketEstimateErrorCode(row.last_error_code) ? row.last_error_code : null,
     retryAfterSeconds: retryAfterSeconds(row.next_refresh_at),
     computedAt: row.computed_at,
   };
@@ -208,7 +212,7 @@ export async function getPrecomputedMarketEstimate(saleId: string): Promise<Mark
   return (await getStoredSaleMarketContext(saleId)).estimate;
 }
 
-export async function enqueueSaleValuation(
+async function enqueueSaleValuation(
   saleId: string,
   {
     priority = 100,
@@ -225,13 +229,11 @@ export async function enqueueSaleValuation(
   if (error) throw error;
 }
 
-export async function refreshSaleValuationOnDemand(
-  saleId: string,
-  now = new Date(),
-): Promise<MarketContext> {
+export async function refreshSaleValuationOnDemand(saleId: string): Promise<MarketContext> {
   const existing = await getStoredSaleMarketContext(saleId);
   if (existing.estimate) return existing;
 
+  const now = new Date();
   await enqueueSaleValuation(saleId, { now });
   await runSaleValuationPrecomputeForSale(saleId, now);
   return getStoredSaleMarketContext(saleId);
@@ -268,7 +270,7 @@ export async function estimateSaleValueWithEnteredSurface(
 }
 
 export async function runSaleValuationPrecomputeBatch({
-  limit = 50,
+  limit = 75,
   now = new Date(),
 }: {
   limit?: number;
@@ -287,7 +289,7 @@ export async function runSaleValuationPrecomputeBatch({
   return processClaimedValuations(claimedRows ?? [], now);
 }
 
-export async function runSaleValuationPrecomputeForSale(
+async function runSaleValuationPrecomputeForSale(
   saleId: string,
   now = new Date(),
 ): Promise<SaleValuationPrecomputeResult> {
@@ -371,7 +373,7 @@ async function processClaimedValuations(
       });
       if (!context.estimate) {
         const code = context.code ?? "INTERNAL_ERROR";
-        const transientFailure = code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR";
+        const transientFailure = isTransientMarketEstimateFailure(code);
         const outcome = transientFailure ? "failed" : "insufficient_data";
         const published = await publishStoredEstimateForClaim(sale.id, fingerprint, row, {
           status: outcome,
@@ -553,38 +555,22 @@ function errorMessage(error: unknown): string {
   return message.slice(0, 500);
 }
 
-function storedErrorCode(value: string | null): MarketEstimateErrorCode | null {
-  const supported: MarketEstimateErrorCode[] = [
-    "INVALID_INPUT",
-    "MISSING_LOCATION",
-    "MISSING_SURFACE",
-    "UNSUPPORTED_SEGMENT",
-    "NO_COMPARABLES",
-    "UPSTREAM_UNAVAILABLE",
-    "INTERNAL_ERROR",
-  ];
-  return supported.includes(value as MarketEstimateErrorCode)
-    ? (value as MarketEstimateErrorCode)
-    : null;
-}
-
 function retryAfterSeconds(nextRefreshAt: string): number {
   const remaining = Math.ceil((new Date(nextRefreshAt).getTime() - Date.now()) / 1_000);
   return Math.max(15, Math.min(86_400, Number.isFinite(remaining) ? remaining : 60));
 }
 
 function retryAt(now: Date, code: MarketEstimateErrorCode): Date {
-  const delay =
-    code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR"
-      ? 60 * 60 * 1_000
-      : code === "INVALID_INPUT"
-        ? 24 * 60 * 60 * 1_000
-        : 7 * 24 * 60 * 60 * 1_000;
+  const delay = isTransientMarketEstimateFailure(code)
+    ? 60 * 60 * 1_000
+    : code === "INVALID_INPUT"
+      ? 24 * 60 * 60 * 1_000
+      : 7 * 24 * 60 * 60 * 1_000;
   return addMilliseconds(now, delay);
 }
 
 function retryPriority(code: MarketEstimateErrorCode): number {
-  if (code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR") return 50;
+  if (isTransientMarketEstimateFailure(code)) return 50;
   if (code === "NO_COMPARABLES") return 20;
   return 10;
 }

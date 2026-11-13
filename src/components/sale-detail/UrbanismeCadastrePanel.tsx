@@ -26,6 +26,7 @@ import {
   type UrbanPlanningItem,
 } from "@/lib/urban-planning-analysis";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { CadastralPlanDisclosure } from "./CadastralPlanDisclosure";
 import { listingPluZone } from "@/lib/land-report-coherence";
 import { parcelOutlines } from "@/lib/land-parcel-outline";
@@ -245,7 +246,7 @@ export function UrbanismeCadastrePanel({
                               <StatusBadge tone="watch">Point géocodé · à recouper</StatusBadge>
                             ) : parcel.confidence != null ? (
                               <StatusBadge tone={parcel.confidence >= 0.8 ? "good" : "watch"}>
-                                Confiance {Math.round(parcel.confidence * 100)} %
+                                Confiance {formatShareAsPercent(parcel.confidence)}
                               </StatusBadge>
                             ) : null}
                           </div>

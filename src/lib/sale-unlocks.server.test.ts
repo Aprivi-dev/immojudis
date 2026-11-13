@@ -34,23 +34,15 @@ describe("sale unlock server helpers", () => {
   });
 
   it.each(["PGRST202", "42883"])(
-    "answers « nothing to unlock » instead of an error when the function is missing (%s)",
+    "raises a missing function (%s) instead of answering « nothing to unlock »",
     async (code) => {
-      const rpc = vi.fn().mockResolvedValue({ data: null, error: { code, message: "not found" } });
-      const status = await getSaleUnlockStatus(authWith(rpc), saleId);
-      expect(status).toMatchObject({
-        saleId,
-        unlocked: false,
-        unlockable: false,
-        analysisAccess: false,
-        limit: null,
-        remaining: null,
-      });
-      expect(Date.parse(status.resetsAt)).toBeGreaterThan(Date.parse(status.periodStart));
+      const failure = { code, message: "not found" };
+      const rpc = vi.fn().mockResolvedValue({ data: null, error: failure });
+      await expect(getSaleUnlockStatus(authWith(rpc), saleId)).rejects.toBe(failure);
     },
   );
 
-  it("does not hide a real database failure behind the missing-function fallback", async () => {
+  it("does not hide a real database failure", async () => {
     const failure = { code: "XX000", message: "boom" };
     const rpc = vi.fn().mockResolvedValue({ data: null, error: failure });
     await expect(getSaleUnlockStatus(authWith(rpc), saleId)).rejects.toBe(failure);
@@ -63,11 +55,10 @@ describe("sale unlock server helpers", () => {
     expect(await hasUnlockedSale(authWith(no), saleId)).toBe(false);
   });
 
-  it("falls back to « no », never to « yes », when the function is not deployed yet", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: { code: "PGRST202", message: "not found" } });
-    expect(await hasUnlockedSale(authWith(rpc), saleId)).toBe(false);
+  it("raises a missing function instead of answering « no » (or « yes »)", async () => {
+    const failure = { code: "PGRST202", message: "not found" };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: failure });
+    await expect(hasUnlockedSale(authWith(rpc), saleId)).rejects.toBe(failure);
   });
 
   it("does not hide a real database failure behind « no »", async () => {
@@ -173,10 +164,11 @@ describe("listUnlockedSales", () => {
   });
 
   it.each(["42P01", "PGRST205"])(
-    "answers an empty list when the view is not deployed (%s)",
+    "raises a missing view (%s) instead of an empty list",
     async (code) => {
-      const { auth } = authWithView({ data: null, error: { code, message: "missing" } });
-      expect(await listUnlockedSales(auth)).toEqual([]);
+      const failure = { code, message: "missing" };
+      const { auth } = authWithView({ data: null, error: failure });
+      await expect(listUnlockedSales(auth)).rejects.toBe(failure);
     },
   );
 

@@ -10,7 +10,8 @@ import pymupdf
 import pytest
 
 from src.normalize import normalize_sale
-from src.pdf_enrichment import PermanentDocumentFailure, extract_pdf_document, extract_pdf_pages
+from src.pdf_enrichment import extract_pdf_document, extract_pdf_pages
+from src.pdf_permanent_failure import PermanentDocumentFailure
 from src.pdf_progress import manifest_is_complete
 
 pdf_enrichment = importlib.import_module("src.pdf_enrichment")

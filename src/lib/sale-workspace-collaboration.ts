@@ -3,9 +3,12 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { featureIncluded } from "@/lib/plans";
+import { normalizeEmail } from "@/lib/account";
+import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+
+const INVITATION_UNAVAILABLE_MESSAGE = "Cette invitation n'est plus disponible.";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type CollaboratorRow = Database["public"]["Tables"]["sale_workspace_collaborators"]["Row"];
@@ -14,10 +17,9 @@ type AnnotationRow = Database["public"]["Tables"]["sale_workspace_annotations"][
 type AnnotationInsert = Database["public"]["Tables"]["sale_workspace_annotations"]["Insert"];
 type AnnotationUpdate = Database["public"]["Tables"]["sale_workspace_annotations"]["Update"];
 
-export const COLLABORATOR_ROLES = ["viewer", "commenter", "editor"] as const;
-export const COLLABORATOR_STATUSES = ["invited", "accepted", "revoked"] as const;
-export const ANNOTATION_TARGET_KINDS = ["general", "document", "page", "excerpt"] as const;
-export const ANNOTATION_STATUSES = ["open", "resolved", "archived"] as const;
+const COLLABORATOR_ROLES = ["viewer", "commenter", "editor"] as const;
+const ANNOTATION_TARGET_KINDS = ["general", "document", "page", "excerpt"] as const;
+const ANNOTATION_STATUSES = ["open", "resolved", "archived"] as const;
 
 export const collaboratorInviteSchema = z.object({
   saleId: z.string().guid(),
@@ -50,21 +52,15 @@ export const workspaceAnnotationUpdateSchema = z.object({
   body: z.string().trim().min(1).max(5000).optional(),
   status: z.enum(ANNOTATION_STATUSES).optional(),
 });
-
-export type CollaboratorInviteInput = z.input<typeof collaboratorInviteSchema>;
 export type CollaboratorInvitePayload = z.output<typeof collaboratorInviteSchema>;
-export type CollaboratorAcceptInput = z.input<typeof collaboratorAcceptSchema>;
 export type CollaboratorAcceptPayload = z.output<typeof collaboratorAcceptSchema>;
-export type CollaboratorRevokeInput = z.input<typeof collaboratorRevokeSchema>;
 export type CollaboratorRevokePayload = z.output<typeof collaboratorRevokeSchema>;
-export type WorkspaceAnnotationCreateInput = z.input<typeof workspaceAnnotationCreateSchema>;
 export type WorkspaceAnnotationCreatePayload = z.output<typeof workspaceAnnotationCreateSchema>;
-export type WorkspaceAnnotationUpdateInput = z.input<typeof workspaceAnnotationUpdateSchema>;
 export type WorkspaceAnnotationUpdatePayload = z.output<typeof workspaceAnnotationUpdateSchema>;
 
 export type SaleWorkspaceCollaborator = CollaboratorRow;
 export type SaleWorkspaceAnnotation = AnnotationRow;
-export type WorkspaceCollaborationRole = "owner" | (typeof COLLABORATOR_ROLES)[number];
+type WorkspaceCollaborationRole = "owner" | (typeof COLLABORATOR_ROLES)[number];
 
 export type SaleWorkspaceCollaborationResponse = {
   workspaceId: string | null;
@@ -161,13 +157,13 @@ export async function acceptSaleWorkspaceInvitation({
     .maybeSingle();
 
   if (error) throw error;
-  if (!invitation) throw new Error("Invitation introuvable.");
+  if (!invitation) throw new NotFoundError("Invitation introuvable.");
   if (invitation.status !== "invited") {
-    throw new Error("Cette invitation n'est plus disponible.");
+    throw new PublicApiError(INVITATION_UNAVAILABLE_MESSAGE, 409);
   }
   // No administrator override: only the invited, verified address can accept.
   if (normalizeEmail(invitation.invited_email) !== email) {
-    throw new Error("Cette invitation ne correspond pas à votre email.");
+    throw new PublicApiError("Cette invitation ne correspond pas à votre email.", 400);
   }
 
   const now = new Date().toISOString();
@@ -186,7 +182,7 @@ export async function acceptSaleWorkspaceInvitation({
     .maybeSingle();
 
   if (updateError) throw updateError;
-  if (!data) throw new Error("Cette invitation n'est plus disponible.");
+  if (!data) throw new PublicApiError(INVITATION_UNAVAILABLE_MESSAGE, 409);
   return { collaborator: data };
 }
 
@@ -196,13 +192,11 @@ export async function acceptSaleWorkspaceInvitation({
  */
 async function confirmedAccountEmail(userId: string): Promise<string> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-  if (error || !data.user) {
-    throw new Error("Invitation impossible à accepter sans email authentifié.");
-  }
-  const email = normalizeEmail(data.user.email ?? "");
-  if (!email) throw new Error("Invitation impossible à accepter sans email authentifié.");
-  if (!data.user.email_confirmed_at) {
-    throw new Error("Confirmez votre adresse email avant d'accepter cette invitation.");
+  if (error) throw error;
+  const email = normalizeEmail(data.user?.email);
+  if (!email) throw new ForbiddenError("Invitation impossible à accepter sans email authentifié.");
+  if (!data.user?.email_confirmed_at) {
+    throw new ForbiddenError("Confirmez votre adresse email avant d'accepter cette invitation.");
   }
   return email;
 }
@@ -245,7 +239,7 @@ export async function createSaleWorkspaceAnnotation({
     };
   }
   if (accessible.role === "viewer") {
-    throw new Error("Votre rôle permet la lecture, pas l'ajout d'annotations.");
+    throw new ForbiddenError("Votre rôle permet la lecture, pas l'ajout d'annotations.");
   }
 
   const payload: AnnotationInsert = {
@@ -298,16 +292,12 @@ export async function updateSaleWorkspaceAnnotation({
   return { annotation: data };
 }
 
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
 async function assertWorkspaceCollaborationAvailable(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.collaboration") && !auth.isAdmin) {
-    throw new Error("La collaboration de dossier est réservée à l’offre Analyse.");
+    throw new ForbiddenError("La collaboration de dossier est réservée à l’offre Analyse.");
   }
   return plan;
 }
@@ -332,7 +322,7 @@ async function assertCollaboratorLimitAvailable({
 
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Quota collaborateurs atteint pour ce dossier (${limit}).`);
+    throw new ForbiddenError(`Quota collaborateurs atteint pour ce dossier (${limit}).`);
   }
 }
 

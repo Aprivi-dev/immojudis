@@ -34,7 +34,6 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/client-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/client-api")>()),
-  fetchAccessPlan: state.fetchAccessPlan,
   fetchSalesAiReviewProjections: vi.fn(async () => ({ projections: [] })),
   fetchNotificationPreferences: vi.fn(async () => ({ preferences: {} })),
   fetchSaleUnlocksOverview: vi.fn(async () => ({ status: {}, sales: [] })),

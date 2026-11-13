@@ -234,6 +234,13 @@ describe("valeurs absentes", () => {
     expect(valueOf(empty, "Type de vente")).toBe("vente au tribunal ; tribunal: non renseigné");
   });
 
+  it("n'écrit pas un type non qualifié, mais garde le libellé enregistré d'un type qualifié", () => {
+    const unqualified = dossierLines({ sale: { propertyType: "Bien à qualifier" } });
+    expect(valueOf(unqualified, "Type")).toMatch(/^non renseigné ; /);
+    const house = dossierLines({ sale: { propertyType: "Maison" } });
+    expect(valueOf(house, "Type")).toMatch(/^Maison ; /);
+  });
+
   it("n'affiche jamais 0 €, NaN ni undefined", () => {
     const text = empty.join("\n");
     expect(text).not.toMatch(/\b0 €|NaN|undefined|null/);

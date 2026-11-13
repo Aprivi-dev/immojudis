@@ -13,8 +13,8 @@ import {
   renderInformationAgentEmailContent,
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
-import { isPublicErrorMessage } from "@/lib/api-errors";
-import { adminErrorResponse } from "@/lib/api-route-errors";
+import { isPublicErrorMessage } from "@/lib/api-error-detail";
+import { classifyApiError } from "@/lib/api-observability";
 import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
 import {
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
@@ -113,7 +113,7 @@ describe("questions admises", () => {
     );
     for (const key of ["sale_date", "starting_price_eur", "sale_terms", "diagnostics"] as const) {
       expect(isInformationAgentQuestionAllowed("notary", key)).toBe(false);
-      expect(() => informationAgentQuestionTextFor("state_service", key)).toThrow("non admise");
+      expect(() => informationAgentQuestionTextFor("state_service", key)).toThrow("not allowed");
     }
   });
 
@@ -386,10 +386,14 @@ describe("les messages de refus de l'agent arrivent tels quels à l'administrate
     ["aucune lacune", INFORMATION_AGENT_NO_GAP_MESSAGE],
     ["aucune lacune de la liste courte", INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE],
   ])("%s : ni marqueur technique ni longueur excessive", async (_label, message) => {
-    // `adminErrorResponse` remplace par « Erreur admin » tout message que ce filtre refuse.
+    // L'enveloppe des routes admin remplace par son message générique tout message que ce filtre refuse.
     expect(isPublicErrorMessage(message)).toBe(true);
-    const response = adminErrorResponse(new Error(message));
-    expect(await response.json()).toMatchObject({ error: message });
+    expect(
+      classifyApiError(new Error(message), {
+        fallbackMessage: "Action impossible.",
+        exposeBusinessMessages: true,
+      }),
+    ).toMatchObject({ status: 400, message });
   });
 
   it("le message de régénération nomme le bouton de l'écran", () => {

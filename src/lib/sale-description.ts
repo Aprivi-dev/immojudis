@@ -2,7 +2,12 @@ import type { AuctionSale } from "@/lib/types";
 import { atTribunal } from "@/lib/seo";
 import { getSaleProcedure, saleVenueLabel } from "./sale-procedure";
 import { formatDate, formatPrice, formatSurface, propertyTypeLabel } from "./format";
-import { listingOccupation, listingValuationConflict, listingSaleStatus } from "./listing-evidence";
+import {
+  INTERRUPTED_SALE_STATUSES,
+  listingOccupation,
+  listingValuationConflict,
+  listingSaleStatus,
+} from "./listing-evidence";
 import { saleSession, saleWindow } from "./sale-window";
 import { listingDate, listingVisits } from "./sale-listing";
 import { extractDpe } from "./dpe";
@@ -23,7 +28,7 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
   const session = saleSession(sale);
   const valuationConflict = listingValuationConflict(sale);
   const status = listingSaleStatus(sale, now);
-  const withdrawn = ["cancelled", "canceled", "postponed"].includes(sale.status ?? "");
+  const withdrawn = INTERRUPTED_SALE_STATUSES.includes(sale.status ?? "");
   const past = status?.startsWith("Date de vente passée") ?? false;
   const occupation = listingOccupation(sale);
   const surfaceLabel = valuationConflict ? "surface à vérifier" : saleSurfaceLabel(sale);

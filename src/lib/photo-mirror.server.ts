@@ -9,9 +9,9 @@ import {
 import type { SaleMediaMirror } from "@/lib/types";
 
 /** Les copies trouvées sont gardées 5 minutes, comme la première page et la fiche. */
-export const PHOTO_MIRROR_REVALIDATE_SECONDS = 300;
-export const PHOTO_MIRROR_CACHE_TAG = "photo-mirrors";
-export const PHOTO_MIRROR_CACHE_KEY = ["photo-mirrors", "v1"] as const;
+const PHOTO_MIRROR_REVALIDATE_SECONDS = 300;
+const PHOTO_MIRROR_CACHE_TAG = "photo-mirrors";
+const PHOTO_MIRROR_CACHE_KEY = ["photo-mirrors", "v1"] as const;
 
 /** Empreinte de l'ensemble des URL cherchées, quel que soit leur ordre. */
 export function photoMirrorUrlsHash(urls: string[]): string {

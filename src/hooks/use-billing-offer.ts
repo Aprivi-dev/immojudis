@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { analysisOfferOpen } from "@/lib/analysis-offer-open";
 import { fetchBillingOffer } from "@/lib/client-billing";
-import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
 
 /**
  * What the page knows about the Analyse offer.  `loading` and `error` are kept
@@ -27,8 +27,10 @@ export type BillingOfferSource = {
 };
 
 /**
- * Reads the public offer once.  /offres calls it once and hands the result to
- * `BillingActions`, which then skips its own request (`enabled: false`).
+ * Reads the public offer once. /offres calls it once and hands the result to `BillingActions`,
+ * which then skips its own request (`enabled: false`). Simple React state, not React Query: this
+ * hook is in the first JavaScript of the home page and of /offres, which do not load React Query's
+ * observers otherwise (11 Ko each, measured on 13/11/2026).
  */
 export function useBillingOffer(enabled = true): BillingOfferSource {
   const { user, loading } = useAuth();
@@ -49,7 +51,7 @@ export function useBillingOffer(enabled = true): BillingOfferSource {
         setOffer({
           status: "ready",
           configured: response.configured,
-          open: response.configured && legalPublisherConfigurationStatus().ready,
+          open: analysisOfferOpen(response),
           trialAvailable: response.trialAvailable !== false,
           label: response.label ?? null,
         });
@@ -64,4 +66,17 @@ export function useBillingOffer(enabled = true): BillingOfferSource {
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
   return { offer, reload };
+}
+
+/**
+ * Whether the Analyse subscription can be bought, asked at the moment a locked feature is used.
+ * Envoyer la personne vers `/offres` quand l'abonnement est fermé la mène dans une impasse :
+ * l'appelant affiche alors un message à la place. An offer that cannot be read counts as closed.
+ */
+export async function isAnalysisOfferOpen(): Promise<boolean> {
+  try {
+    return analysisOfferOpen(await fetchBillingOffer());
+  } catch {
+    return false;
+  }
 }

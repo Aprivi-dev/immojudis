@@ -29,16 +29,15 @@ import {
 } from "@/lib/client-api";
 import type { AdminSourceRefreshResponse } from "@/lib/admin-source-refresh";
 import { isValidInformationAgentEmail } from "@/lib/information-agent/email-address";
-import type {
-  InformationAgentMission,
-  InformationAgentPreviewResponse,
-} from "@/lib/information-agent";
+import type { InformationAgentMission } from "@/lib/information-agent/schemas";
+import type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
 
@@ -243,7 +242,7 @@ export function AdminInformationAgentMissionsPanel({
           .catch((error: unknown) => {
             preparingKeysRef.current.delete(requestKey);
             if (isCurrentSelection()) {
-              const message = error instanceof Error ? error.message : "Brouillon indisponible.";
+              const message = queryErrorMessage(error, "Brouillon indisponible.");
               setPreparingSelectionKey(null);
               // Régénération d'un brouillon déjà ouvert : le bloc d'erreur de la préparation n'est rendu
               // que sans mission ouverte. Le refus du serveur est donc notifié, jamais muet.
@@ -448,7 +447,7 @@ export function AdminInformationAgentMissionsPanel({
         toast.success("Brouillon régénéré. Aucun email n’a encore été envoyé.");
       })
       .catch((error: unknown) => {
-        toast.error(error instanceof Error ? error.message : "Brouillon indisponible.");
+        toast.error(queryErrorMessage(error, "Brouillon indisponible."));
       })
       .finally(() => {
         regeneratingRef.current = false;
@@ -504,7 +503,7 @@ export function AdminInformationAgentMissionsPanel({
       }
       toast.success("Destinataire, objet et message copiés.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Copie impossible.");
+      toast.error(queryErrorMessage(error, "Copie impossible."));
     }
   };
   const handleRecipientEmailChange = (value: string) => {
@@ -658,7 +657,7 @@ export function AdminInformationAgentMissionsPanel({
               </h3>
               <p className="mt-1 text-xs text-brand-navy/55">
                 Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}{" "}
-                · préparé le {formatDateTime(activeMission.createdAt)}
+                · préparé le {formatShortDateTime(activeMission.createdAt)}
               </p>
             </div>
             <span className="rounded-full border bg-white px-2.5 py-1 text-xs">
@@ -1159,15 +1158,20 @@ function selectionIdentityKey(selection: InformationRequestSelection): string {
   ]);
 }
 
+/**
+ * Copie de `normalizeEmail` (`account.ts`), gardée exprès : l'importer d'ici sépare `account.ts` du
+ * module de session dans le JavaScript commun à toutes les pages (+88 octets sur chacune, mesuré
+ * le 13/11/2026 sur /annonce-exemple, à 20 octets de son budget).
+ */
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
 const STALE_DRAFT_DAYS = 3;
 
-function isStaleDraft(createdAt: string, now = Date.now()): boolean {
+function isStaleDraft(createdAt: string): boolean {
   const created = Date.parse(createdAt);
-  return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
+  return Number.isFinite(created) && Date.now() - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function SourceRefreshStatus({
@@ -1203,7 +1207,7 @@ function SourceRefreshStatus({
   return (
     <p className="mt-2 text-xs text-sky-950/75">
       Dernier refresh : <strong>{sourceRefreshStatusLabel(request.status)}</strong>
-      {request.completedAt ? ` · terminé le ${formatDateTime(request.completedAt)}` : ""}
+      {request.completedAt ? ` · terminé le ${formatShortDateTime(request.completedAt)}` : ""}
       {detail}
     </p>
   );
@@ -1222,5 +1226,5 @@ function sourceRefreshStatusLabel(status: string): string {
 }
 
 function showError(error: unknown) {
-  toast.error(error instanceof Error ? error.message : "Action impossible");
+  toast.error(queryErrorMessage(error, "Action impossible"));
 }

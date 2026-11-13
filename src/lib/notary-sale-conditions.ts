@@ -16,12 +16,12 @@ import { asRecordOrNull } from "@/lib/guards";
 import type { AuctionSale } from "@/lib/types";
 
 /** Procédure notariale écrite par le pipeline : à la bougie (VAE) ou interactive (VNI). */
-export type NotaryProcedure = "notarial_auction" | "online_tender";
+type NotaryProcedure = "notarial_auction" | "online_tender";
 /** Le mode de la vente : « auction » (à la bougie) ou « online » (interactive, par offres). */
 export type NotarySaleMode = "auction" | "online";
 
 /** Nature du prix publié comme prix de départ (`notaires_price_nature.py`). */
-export type NotaryPriceNature = "mise_a_prix" | "displayed_price" | "first_offer_possible";
+type NotaryPriceNature = "mise_a_prix" | "displayed_price" | "first_offer_possible";
 
 export type NotarySaleConditions = {
   procedure: NotaryProcedure | null;

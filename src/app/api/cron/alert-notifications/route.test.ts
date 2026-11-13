@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -9,7 +10,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
-  positiveNumberFromEnv: () => undefined,
 }));
 vi.mock("@/lib/alert-notifications", () => ({
   dispatchDueAlertNotifications: mocks.dispatch,
@@ -44,7 +44,7 @@ describe("alert notifications cron route", () => {
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("alert-notifications");
     // `smart-alerts` : 08:15 ; l'envoi : 09:30 (voir vercel.json).
-    expect(options).toEqual({ catchUpSchedule: "30 9 * * *" });
+    expect(options).toBeUndefined();
   });
 
   it("déclare une durée maximale", () => {
@@ -67,7 +67,7 @@ describe("alert notifications cron route", () => {
     mocks.dispatch.mockResolvedValueOnce({ emailCandidateCount: 3 });
     mocks.confirmations.mockResolvedValueOnce({});
     mocks.assertComplete.mockImplementationOnce(() => {
-      throw new Error(
+      throw new ConfigurationError(
         "Alertes e-mail : 3 envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré.",
       );
     });

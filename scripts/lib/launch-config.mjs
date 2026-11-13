@@ -33,7 +33,7 @@ export const EXPLICIT_SITE_URL_ENV_NAMES = [
 ];
 
 /**
- * Same test as `isFilled` in src/lib/site-url.ts, which `resolveSiteOrigin` uses to pick the
+ * Same test as `firstFilled` in src/lib/env.ts (`siteUrl`), which `resolveSiteOrigin` uses to pick the
  * canonical origin: the first variable (in `EXPLICIT_SITE_URL_ENV_NAMES` order) whose value is
  * not blank. The guard must judge exactly the value the site will resolve, so a test compares
  * both. (The script is plain .mjs and cannot import the TypeScript module.)
@@ -186,7 +186,7 @@ export function blockingLaunchProblems(env) {
   return problems;
 }
 
-/** Valeurs reconnues de SALE_REMINDERS_MODE (src/lib/sale-reminders-mode.ts). */
+/** Valeurs reconnues de SALE_REMINDERS_MODE (src/lib/email-feature-mode.ts). */
 const SALE_REMINDERS_MODE_VALUES = ["off", "internal", "on"];
 
 /**

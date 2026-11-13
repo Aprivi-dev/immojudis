@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
@@ -24,20 +24,22 @@ import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { documentSignatureParts } from "@/lib/document-signature";
+import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
-export const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
-export const SALE_CHANGE_EVENT_KINDS = [
+const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
+const SALE_CHANGE_EVENT_KINDS = [
   "price_changed",
   "audience_changed",
   "status_changed",
   "documents_changed",
   "score_changed",
 ] as const;
-export const SALE_CHANGE_SEVERITIES = ["info", "important", "urgent"] as const;
+const SALE_CHANGE_SEVERITIES = ["info", "important", "urgent"] as const;
 
-export type SaleWatchKind = (typeof SALE_WATCH_KINDS)[number];
+type SaleWatchKind = (typeof SALE_WATCH_KINDS)[number];
 export type SaleChangeEventKind = (typeof SALE_CHANGE_EVENT_KINDS)[number];
-export type SaleChangeSeverity = (typeof SALE_CHANGE_SEVERITIES)[number];
+type SaleChangeSeverity = (typeof SALE_CHANGE_SEVERITIES)[number];
 
 type SaleWatchSnapshotRow = Database["public"]["Tables"]["user_sale_watch_snapshots"]["Row"];
 type SaleWatchSnapshotInsert = Database["public"]["Tables"]["user_sale_watch_snapshots"]["Insert"];
@@ -72,7 +74,7 @@ export type SaleChangeSnapshot = {
   sourceUrl: string | null;
 };
 
-export type SaleWatchSource = {
+type SaleWatchSource = {
   watchKind: SaleWatchKind;
   watchId: string;
   saleId: string;
@@ -121,7 +123,7 @@ export type SaleChangeMonitorResponse = {
   events: SaleChangeEventSummary[];
 };
 
-export type SaleChangeMonitorBatchUserResult = {
+type SaleChangeMonitorBatchUserResult = {
   userId: string;
   ok: boolean;
   /** Compte sans droit au suivi (offre de lancement sans email confirmé, plan Découverte) : écarté, pas en échec. */
@@ -338,7 +340,7 @@ export async function monitorUserSaleChanges({
   await upsertWatchSnapshots(snapshotRows);
   const insertedRows = await insertChangeEvents(eventRows);
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "sale_changes.monitored",
     subjectType: "sale_change_monitor",
@@ -635,7 +637,7 @@ function addChangeIfDifferent(
 async function assertRealtimeChangesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.realtimeChanges")) {
-    throw new Error("Suivi temps réel des changements réservé à l’offre Analyse.");
+    throw new ForbiddenError("Suivi temps réel des changements réservé à l’offre Analyse.");
   }
 }
 
@@ -1061,8 +1063,4 @@ function cleanString(value: string | null | undefined): string | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

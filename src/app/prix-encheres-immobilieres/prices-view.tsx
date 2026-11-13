@@ -2,49 +2,23 @@ import Link from "next/link";
 import { HideForLaunchOfferAccount, LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import type { ShareInterval } from "@/lib/adjudication-barometer";
+import { formatDate } from "@/lib/format/dates";
+import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 import type { PublicAdjudicationPrices } from "@/lib/public-adjudication-prices";
 import { PUBLIC_ADJUDICATION_MIN_SAMPLE } from "@/lib/public-adjudication-prices";
 
 const integer = new Intl.NumberFormat("fr-FR");
-const euro = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 0,
-});
-const percent = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 });
 const ratio = new Intl.NumberFormat("fr-FR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
-
-const dayFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
-const parisDayFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-/** Les dates de période sont des jours civils (`AAAA-MM-JJ`) : lues en UTC pour ne pas bouger. */
-function day(value: string): string {
-  return dayFormat.format(new Date(`${value}T00:00:00Z`));
-}
-
-function instant(value: string): string {
-  return parisDayFormat.format(new Date(value));
-}
 
 const multiple = (value: number) => `× ${ratio.format(value)}`;
 
 /** « intervalle à 95 % : de 63 % à 76 % » : l'incertitude de Wilson de la part affichée à côté. */
 function intervalText(interval: ShareInterval | null): string | null {
   return interval
-    ? `intervalle à 95 % : de ${percent.format(interval.low)} à ${percent.format(interval.high)}`
+    ? `intervalle à 95 % : de ${formatShareAsPercent(interval.low)} à ${formatShareAsPercent(interval.high)}`
     : null;
 }
 
@@ -112,7 +86,7 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
             <div>
               <dt className="text-sm text-ink-soft">Ventes adjugées au-dessus de la mise à prix</dt>
               <dd className="mt-1 font-display text-3xl font-semibold" data-testid="above-rate">
-                {percent.format(data.aboveStartingRate)}
+                {formatShareAsPercent(data.aboveStartingRate)}
               </dd>
               <dd className="mt-1 text-sm text-ink-soft">
                 Part des prix publiés strictement supérieurs à la mise à prix
@@ -125,7 +99,7 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
             <div>
               <dt className="text-sm text-ink-soft">Ventes adjugées au moins au double</dt>
               <dd className="mt-1 font-display text-3xl font-semibold">
-                {percent.format(data.atLeastDoubleRate)}
+                {formatShareAsPercent(data.atLeastDoubleRate)}
               </dd>
               <dd className="mt-1 text-sm text-ink-soft">
                 Part des prix publiés égaux ou supérieurs à deux fois la mise à prix
@@ -137,8 +111,8 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
             </div>
           </dl>
           <p className="mt-4 text-sm text-ink-soft">
-            Mise à prix médiane : {euro.format(data.medianStartingPriceEur)} ; prix adjugé publié
-            médian : {euro.format(data.medianHammerPriceEur)}. Ces deux médianes portent sur les
+            Mise à prix médiane : {formatPrice(data.medianStartingPriceEur)} ; prix adjugé publié
+            médian : {formatPrice(data.medianHammerPriceEur)}. Ces deux médianes portent sur les
             mêmes ventes mais ne se divisent pas pour retrouver le multiple médian : celui-ci est la
             médiane des rapports calculés vente par vente. Le multiple reflète la mise à prix
             choisie : une mise à prix basse donne mécaniquement un multiple élevé.
@@ -150,11 +124,11 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
           <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
             <Badge tone="neutral">Expérimental</Badge>
             <span>
-              Ventes du {day(data.periodStart)} au {day(data.periodEnd)} ·{" "}
+              Ventes du {formatDate(data.periodStart)} au {formatDate(data.periodEnd)} ·{" "}
               {integer.format(data.sampleSize)} prix adjugés publiés ·{" "}
               {integer.format(data.tribunalCount)} tribunaux ayant au moins{" "}
-              {PUBLIC_ADJUDICATION_MIN_SAMPLE} prix · calcul du {instant(data.builtAt)}, revu le{" "}
-              {instant(data.reviewedAt)}
+              {PUBLIC_ADJUDICATION_MIN_SAMPLE} prix · calcul du {formatDate(data.builtAt)}, revu le{" "}
+              {formatDate(data.reviewedAt)}
             </span>
           </p>
         </Card>
@@ -206,11 +180,11 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                         {multiple(item.ratioMiddle50.p25)} à {multiple(item.ratioMiddle50.p75)}
                       </td>
                       <td className="py-2">
-                        {percent.format(item.aboveStartingRate)}
+                        {formatShareAsPercent(item.aboveStartingRate)}
                         {item.aboveStartingInterval ? (
                           <span className="block text-xs text-ink-soft">
-                            de {percent.format(item.aboveStartingInterval.low)} à{" "}
-                            {percent.format(item.aboveStartingInterval.high)}
+                            de {formatShareAsPercent(item.aboveStartingInterval.low)} à{" "}
+                            {formatShareAsPercent(item.aboveStartingInterval.high)}
                           </span>
                         ) : null}
                       </td>
@@ -236,11 +210,11 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                 <li key={band.label} className="flex items-center justify-between gap-4">
                   <span>{band.label}</span>
                   <span className="text-right">
-                    <span className="font-semibold">{percent.format(band.share)}</span>
+                    <span className="font-semibold">{formatShareAsPercent(band.share)}</span>
                     {band.interval ? (
                       <span className="block text-xs text-ink-soft">
-                        de {percent.format(band.interval.low)} à{" "}
-                        {percent.format(band.interval.high)}
+                        de {formatShareAsPercent(band.interval.low)} à{" "}
+                        {formatShareAsPercent(band.interval.high)}
                       </span>
                     ) : null}
                   </span>

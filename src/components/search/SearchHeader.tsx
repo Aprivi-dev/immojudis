@@ -238,7 +238,7 @@ export function SearchHeader({
   );
 }
 
-export function GeographicSearch({
+function GeographicSearch({
   draft,
   setDraft,
 }: {

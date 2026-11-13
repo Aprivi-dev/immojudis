@@ -7,8 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.asset_normalization import _fill_quality_flags
-from src.asset_normalization_helpers import PRICE_PER_M2_IMPLAUSIBLE_FLAG
+from src.asset_normalization import PRICE_PER_M2_IMPLAUSIBLE_FLAG, _fill_quality_flags
 from src.court_competence import OfficialCourt, OfficialCourtLabelIndex
 from src.normalize import normalize_sale
 from src.personal_data import EMAIL_PLACEHOLDER, redact_email_addresses, redact_payload, redact_storage_row

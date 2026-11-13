@@ -8,8 +8,10 @@ from threading import Lock
 
 import pytest
 
+from src import known_enrichment, sale_finalization
 from src.config import EncheresPubliquesAccessNotAuthorized
 from src.freshness import document_fingerprint
+from src.lot_scope import surface_reasoning_context
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
 
@@ -491,9 +493,9 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw_sale], []))
     _fake_geocode.calls = calls
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(
         main,
         "restore_persisted_pdf_progress_for_sale",
@@ -505,7 +507,6 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
         calls.append("upsert")
@@ -617,14 +618,13 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
         calls.append("upsert")
@@ -680,9 +680,9 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
         [{**_raw_sale(), "source_name": "agrasc"}], [],
         {"coverage_complete": False, "scoped_inventory_complete": True},
     ))
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
@@ -707,11 +707,6 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
     )
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: calls.append("mark_past") or 0)
     monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: calls.append("delete_expired") or 3)
-    monkeypatch.setattr(
-        main,
-        "delete_vench_sales_without_surface_in_supabase",
-        lambda: calls.append("delete_vench") or 0,
-    )
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -729,7 +724,6 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
         *([dedupe_call] if dedupe_call else []),
         "mark_past",
         "delete_expired",
-        "delete_vench",
     ]
     if global_cleanup:
         assert calls[-len(expected_cleanup) :] == expected_cleanup
@@ -788,16 +782,15 @@ def test_main_cleanup_refuses_to_merge_without_the_account_data_trigger(monkeypa
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: cleanup.append("mark_past") or 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
@@ -841,9 +834,9 @@ def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, col
         "scrape_avoventes_aquitaine_result",
         lambda known=None: ScrapeResult([_raw_sale()], ["source validation failed"] if collection_failed else []),
     )
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
@@ -876,11 +869,6 @@ def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, col
         "delete_expired_sales_in_supabase",
         lambda: cleanup_calls.append("delete_expired") or 0,
     )
-    monkeypatch.setattr(
-        main,
-        "delete_vench_sales_without_surface_in_supabase",
-        lambda: cleanup_calls.append("delete_vench") or 0,
-    )
 
     result = main.run_pipeline(
         main.PipelineOptions(source="all", use_llm=False, heavy_enrichment=False, upsert=True)
@@ -912,16 +900,15 @@ def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypa
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
@@ -956,16 +943,15 @@ def test_pipeline_recovers_when_only_early_supabase_publication_fails(monkeypatc
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "build_extraction_gap_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
@@ -995,15 +981,14 @@ def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) 
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: calls.append("geocode") or sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "classify_sale_procedure", lambda sale: sale)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: calls.append("geocode") or sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "classify_sale_procedure", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(
         main, "upsert_sales_to_supabase", lambda sales: calls.append(f"upsert:{len(sales)}") or len(sales)
     )
@@ -1040,14 +1025,13 @@ def test_pipeline_enriches_cadastre_after_final_geocode(monkeypatch) -> None:
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1101,14 +1085,13 @@ def test_pipeline_enriches_dpe_after_final_geocode(monkeypatch) -> None:
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
     _fake_geocode.calls = calls
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1165,15 +1148,14 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set(hashes))
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
     _fake_geocode.calls = calls
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or (_raise_pdf()))
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1206,9 +1188,9 @@ def test_pipeline_makes_no_llm_call_without_fact_evidence(monkeypatch) -> None:
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
 
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set(hashes))
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: calls.append("pdf") or (_raise_pdf()))
     monkeypatch.setattr(
         main,
@@ -1219,7 +1201,6 @@ def test_pipeline_makes_no_llm_call_without_fact_evidence(monkeypatch) -> None:
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
@@ -1248,16 +1229,15 @@ def test_pipeline_incremental_skip_requires_only_the_document_analysis(monkeypat
     monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([_raw_sale()], []))
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", lambda sale: None)
     monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *args, **kwargs: main.LLMEnrichmentStats())
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
@@ -1470,7 +1450,7 @@ def test_sparse_known_hydration_preserves_sale_schedule_and_date_precision() -> 
     }
 
     assert main._hydrate_known_unchanged_sales([unchanged, failed], known) == 1
-    main._preserve_known_enrichment_payloads([sparse], known)
+    known_enrichment.preserve_known_enrichment_payloads([sparse], known)
 
     for sale in (unchanged, failed, sparse):
         for key, value in retention_metadata.items():
@@ -1504,8 +1484,8 @@ def test_fresh_complete_source_does_not_restore_stale_source_metadata() -> None:
         "source_url": source_url,
     }
 
-    main._preserve_known_enrichment_payloads([fresh], known)
-    main._preserve_known_enrichment_payloads([sparse], known)
+    known_enrichment.preserve_known_enrichment_payloads([fresh], known)
+    known_enrichment.preserve_known_enrichment_payloads([sparse], known)
 
     assert "source_sale_schedule" not in fresh
     assert "date_precision" not in fresh
@@ -1545,7 +1525,7 @@ def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None
         }
     }
 
-    preserved = main._preserve_known_enrichment_payloads([raw], known)
+    preserved = known_enrichment.preserve_known_enrichment_payloads([raw], known)
 
     assert preserved == 8
     assert raw["surface_m2"] == 3.78
@@ -1619,7 +1599,7 @@ def test_cold_worker_roundtrip_keeps_pdf_provenance_and_matching_source_facts() 
         }
     }
 
-    main._preserve_known_enrichment_payloads([raw], known)
+    known_enrichment.preserve_known_enrichment_payloads([raw], known)
 
     snapshot = raw["source_factual_snapshot"]
     assert {key: snapshot[key] for key in source_facts} == source_facts
@@ -1642,7 +1622,7 @@ def test_cold_worker_roundtrip_keeps_pdf_provenance_and_matching_source_facts() 
         "_known_unchanged": True,
     }
     main._hydrate_known_unchanged_sales([cold_raw], {source_url: persisted_row})
-    main._preserve_known_enrichment_payloads([cold_raw], {source_url: persisted_row})
+    known_enrichment.preserve_known_enrichment_payloads([cold_raw], {source_url: persisted_row})
 
     assert cold_raw["source_factual_snapshot"] == snapshot
     assert cold_raw["pdf_fact_provenance"] == pdf_markers["pdf_fact_provenance"]
@@ -1665,7 +1645,7 @@ def test_cold_worker_preserves_vench_source_contract_from_bounded_snapshot() -> 
     raw = {"source_name": "vench", "source_url": source_url}
     known = {source_url: {"raw_payload": contract}}
 
-    main._preserve_known_enrichment_payloads([raw], known)
+    known_enrichment.preserve_known_enrichment_payloads([raw], known)
 
     for key, value in contract.items():
         assert raw[key] == value
@@ -1696,7 +1676,7 @@ def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() ->
         }
     }
 
-    preserved = main._preserve_known_enrichment_payloads([raw], known)
+    preserved = known_enrichment.preserve_known_enrichment_payloads([raw], known)
 
     assert preserved == 3
     assert raw["starting_price_eur"] == Decimal("10500")
@@ -1709,7 +1689,7 @@ def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() ->
         "starting_price_eur": "12 000 €",
     }
 
-    assert main._preserve_known_enrichment_payloads([changed_raw], known) == 0
+    assert known_enrichment.preserve_known_enrichment_payloads([changed_raw], known) == 0
     assert changed_raw["starting_price_eur"] == "12 000 €"
     assert "starting_price_extraction" not in changed_raw
     assert "document_facts_version" not in changed_raw
@@ -1814,9 +1794,9 @@ def _raw_sale() -> dict[str, object]:
 
 def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> None:
     """Give freshness checks the same complete evidence as a real PDF pass."""
-    from src.pdf_document_selection import _store_document_analysis_status
-    from src.pdf_enrichment import sale_storage_id
+    from src.pdf_document_selection import store_document_analysis_status
     from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+    from src.sale_local_files import sale_storage_id
 
     monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
     text = "Preuve PDF stable pour la fixture."
@@ -1836,7 +1816,7 @@ def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> 
         "page_count": 1,
         "http_checked_at": datetime.now(UTC).isoformat(),
     }
-    _store_document_analysis_status(sale, sale.documents, [payload])
+    store_document_analysis_status(sale, sale.documents, [payload])
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
         json.dumps([payload]),
         encoding="utf-8",
@@ -1872,7 +1852,7 @@ def test_prepared_batch_survives_interruption_on_next_listing(monkeypatch):
     def prepare(sale, **kw):
         if sale is sales[-1]:
             raise KeyboardInterrupt('runner interrupted')
-    monkeypatch.setattr(main, '_finalize_sale_for_app', prepare)
+    monkeypatch.setattr(main, 'finalize_sale_for_app', prepare)
     monkeypatch.setattr(main, 'upsert_sales_to_supabase', lambda rows: committed.extend(rows) or len(rows))
     monkeypatch.setattr(main, 'upsert_observations_to_supabase', lambda rows: len(rows))
     with pytest.raises(KeyboardInterrupt):
@@ -1885,7 +1865,7 @@ def test_surface_context_deduplicates_copied_fields_without_losing_distinct_evid
     sale = AuctionSale(source_name='test', source_url='https://example.test/context',
                        description=repeated, raw_text=repeated,
                        raw_payload={'source_description': repeated, 'source_blocks': {'extra': 'Terrain 500 m².'}})
-    assert main._surface_reasoning_context_for_sale(sale) == repeated + '\nTerrain 500 m².'
+    assert surface_reasoning_context(sale) == repeated + '\nTerrain 500 m².'
 
 
 def test_mismatched_detail_never_rehydrates_previous_contaminated_content():
@@ -1894,7 +1874,7 @@ def test_mismatched_detail_never_rehydrates_previous_contaminated_content():
     known = {raw['source_url']: {'description': 'Wrong property 9490 with a longer description',
                                'surface_m2': 999, 'raw_payload': {'llm_display_description': 'Wrong summary'}}}
     assert main._hydrate_known_unchanged_sales([raw], known) == 0
-    assert main._preserve_known_enrichment_payloads([raw], known) == 0
+    assert known_enrichment.preserve_known_enrichment_payloads([raw], known) == 0
     assert raw['description'] == 'List card'
     assert 'surface_m2' not in raw
     assert 'llm_display_description' not in raw
@@ -1906,7 +1886,7 @@ def test_superseded_enrichment_checkpoint_is_skipped(monkeypatch):
         source_url="https://example.test/superseded",
         starting_price_eur=10000,
     )
-    monkeypatch.setattr(main, "_finalize_sale_for_app", lambda sale, **kwargs: None)
+    monkeypatch.setattr(main, "finalize_sale_for_app", lambda sale, **kwargs: None)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: 0)
 
     assert main._checkpoint_enrichment(sale) is False
@@ -1924,7 +1904,7 @@ def test_progressive_batch_writes_each_announcement_once(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "record_items", record_items)
     monkeypatch.setattr(main, "_hydrate_known_unchanged_sales", lambda *a, **k: None)
-    monkeypatch.setattr(main, "_preserve_known_enrichment_payloads", lambda *a, **k: None)
+    monkeypatch.setattr(main, "preserve_known_enrichment_payloads", lambda *a, **k: None)
     monkeypatch.setattr(main, "record_source_checks", lambda *a, **k: None)
     normalized: list[str] = []
 
