@@ -9,7 +9,7 @@ from src import probable_duplicates
 from src.normalize import normalize_sale
 from src.position_quality import PROBABLE_DUPLICATE, preserved_position_flags, remove_flags
 from src.probable_duplicates import MAX_WRITES_PER_PASS, flag_probable_duplicates, plan_flag_updates
-from src.storage import duplicate_sweep, supabase_client
+from src.storage import duplicate_sweep, postgrest_helpers
 from src.storage.duplicate_sweep import DuplicateMergeGroup, DuplicateRowSummary, DuplicateSweepPlan
 
 
@@ -205,7 +205,7 @@ def _run(monkeypatch, *, plan, flagged_pages, write: bool, patch_status: int | l
 
     monkeypatch.setattr(probable_duplicates.httpx, "get", fake_get)
     monkeypatch.setattr(probable_duplicates.httpx, "patch", fake_patch)
-    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
     code = flag_probable_duplicates(write=write)
     return code, patches, gets
 
@@ -260,7 +260,7 @@ def test_a_failed_write_is_reported_and_the_others_still_go_through(monkeypatch)
 
 
 def test_a_transient_write_failure_is_retried_by_the_shared_rest_writer(monkeypatch) -> None:
-    """Même règle que les autres écritures REST (``_postgrest_request_with_retries``) : la liste écrite est complète."""
+    """Même règle que les autres écritures REST (``postgrest_request_with_retries``) : la liste écrite est complète."""
     plan = _plan((_summary("kept"), (_summary("copy"),)))
 
     code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=[503, 204])
@@ -275,7 +275,7 @@ def test_a_write_still_failing_after_the_retries_is_reported(monkeypatch) -> Non
     code, patches, _ = _run(monkeypatch, plan=plan, flagged_pages=[[]], write=True, patch_status=500)
 
     assert code == 1
-    assert len(patches) == supabase_client.POSTGREST_UPSERT_RETRIES
+    assert len(patches) == postgrest_helpers.POSTGREST_REQUEST_ATTEMPTS
 
 
 def test_the_number_of_writes_per_pass_is_capped(monkeypatch) -> None:

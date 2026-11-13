@@ -44,7 +44,8 @@ from src.sources.licitor_extraction import refresh_licitor_raw_sale
 from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
 from src.storage.column_sets import UPSERT_COLUMNS
 from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
-from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
+from src.storage.postgrest_helpers import postgrest_request_with_retries
+from src.storage.supabase_client import upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
@@ -237,7 +238,7 @@ def backfill_catalogue_readiness(
             params = {"id": f"eq.{update['id']}"}
             if update["observed_updated_at"]:
                 params["updated_at"] = f"eq.{update['observed_updated_at']}"
-            response = _postgrest_request_with_retries(
+            response = postgrest_request_with_retries(
                 "PATCH",
                 endpoint,
                 table="auction_sales",
@@ -569,7 +570,7 @@ def _fetch_sales(
         filters["status"] = "in.(upcoming,unknown,postponed)"
 
     def get(params: dict[str, str]) -> list[dict[str, Any]]:
-        response = _postgrest_request_with_retries(
+        response = postgrest_request_with_retries(
             "GET",
             endpoint,
             table="auction_sales",

@@ -290,7 +290,7 @@ def test_rest_observation_parent_guard_filters_unknown_canonicals(monkeypatch) -
 
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_request_with_retries",
+        "postgrest_request_with_retries",
         lambda *args, **kwargs: Response(),
     )
     payload = [

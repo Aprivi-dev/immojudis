@@ -505,7 +505,6 @@ def test_run_pipeline_upserts_light_sale_before_pdf_enrichment(monkeypatch) -> N
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
         calls.append("upsert")
@@ -624,7 +623,6 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
         calls.append("upsert")
@@ -707,11 +705,6 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
     )
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: calls.append("mark_past") or 0)
     monkeypatch.setattr(main, "delete_expired_sales_in_supabase", lambda: calls.append("delete_expired") or 3)
-    monkeypatch.setattr(
-        main,
-        "delete_vench_sales_without_surface_in_supabase",
-        lambda: calls.append("delete_vench") or 0,
-    )
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -729,7 +722,6 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(
         *([dedupe_call] if dedupe_call else []),
         "mark_past",
         "delete_expired",
-        "delete_vench",
     ]
     if global_cleanup:
         assert calls[-len(expected_cleanup) :] == expected_cleanup
@@ -797,7 +789,6 @@ def test_main_cleanup_refuses_to_merge_without_the_account_data_trigger(monkeypa
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: cleanup.append("mark_past") or 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
@@ -876,11 +867,6 @@ def test_pipeline_skips_every_cleanup_when_outcome_bridge_fails(monkeypatch, col
         "delete_expired_sales_in_supabase",
         lambda: cleanup_calls.append("delete_expired") or 0,
     )
-    monkeypatch.setattr(
-        main,
-        "delete_vench_sales_without_surface_in_supabase",
-        lambda: cleanup_calls.append("delete_vench") or 0,
-    )
 
     result = main.run_pipeline(
         main.PipelineOptions(source="all", use_llm=False, heavy_enrichment=False, upsert=True)
@@ -921,7 +907,6 @@ def test_pipeline_returns_failure_when_final_supabase_publication_fails(monkeypa
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
@@ -965,7 +950,6 @@ def test_pipeline_recovers_when_only_early_supabase_publication_fails(monkeypatc
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "format_extraction_gap_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
     def upsert_sales(sales: list[AuctionSale]) -> int:
@@ -1003,7 +987,6 @@ def test_pipeline_skips_redundant_final_sale_upsert_when_unchanged(monkeypatch) 
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(
         main, "upsert_sales_to_supabase", lambda sales: calls.append(f"upsert:{len(sales)}") or len(sales)
     )
@@ -1047,7 +1030,6 @@ def test_pipeline_enriches_cadastre_after_final_geocode(monkeypatch) -> None:
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1108,7 +1090,6 @@ def test_pipeline_enriches_dpe_after_final_geocode(monkeypatch) -> None:
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1173,7 +1154,6 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         main, "upsert_observations_to_supabase", lambda sales: calls.append("observations") or len(sales)
@@ -1219,7 +1199,6 @@ def test_pipeline_makes_no_llm_call_without_fact_evidence(monkeypatch) -> None:
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 
@@ -1257,7 +1236,6 @@ def test_pipeline_incremental_skip_requires_only_the_document_analysis(monkeypat
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: len(sales))
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **kwargs: len(sales))
 

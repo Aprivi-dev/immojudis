@@ -17,7 +17,7 @@ from src.court_competence import CompetentCourtAssignment
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
-from src.storage import supabase_client
+from src.storage import postgrest_helpers, supabase_client
 from src.storage.supabase_client import (
     POSTGREST_MAX_PAYLOAD_DEPTH,
     _sanitize_postgrest_payload,
@@ -123,32 +123,52 @@ def test_pdf_prerequisite_lookup_ignores_exhausted_jobs(monkeypatch) -> None:
     assert seen[0]["source_url"] == "eq.https://example.test/sale"
 
 
-def test_postgrest_upsert_batch_retries_cloudflare_520(monkeypatch) -> None:
+def test_postgrest_upsert_retries_cloudflare_520(monkeypatch) -> None:
     responses = iter(
         [
             httpx.Response(520, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
             httpx.Response(201, request=httpx.Request("POST", "https://supabase.test/rest/v1/properties")),
         ]
     )
-    attempts: list[int] = []
+    attempts: list[dict[str, object]] = []
 
-    def fake_post(*args, **kwargs):
-        attempts.append(1)
+    def fake_post(endpoint, **kwargs):
+        attempts.append({"endpoint": endpoint, **kwargs})
         return next(responses)
 
     monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
-    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
 
-    response = supabase_client._postgrest_upsert_batch(
-        "https://supabase.test/rest/v1/properties",
+    supabase_client._postgrest_upsert(
+        "https://supabase.test",
         "secret",
         "properties",
-        [{"source_url": "https://example.test/sale"}],
+        [{"source_url": "https://example.test/sale\x00"}],
         "source_url",
     )
 
-    assert response.status_code == 201
     assert len(attempts) == 2
+    assert attempts[1]["endpoint"] == "https://supabase.test/rest/v1/properties"
+    assert attempts[1]["params"] == {"on_conflict": "source_url"}
+    assert attempts[1]["headers"]["Prefer"] == "resolution=merge-duplicates,return=minimal"
+    assert attempts[1]["json"] == [{"source_url": "https://example.test/sale"}]
+
+
+def test_postgrest_upsert_raises_once_the_retries_are_spent(monkeypatch) -> None:
+    attempts: list[int] = []
+
+    def fake_post(endpoint, **_kwargs):
+        attempts.append(1)
+        return httpx.Response(503, text="unavailable", request=httpx.Request("POST", endpoint))
+
+    monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(httpx.HTTPStatusError, match="503 response from Supabase properties"):
+        supabase_client._postgrest_upsert(
+            "https://supabase.test", "secret", "properties", [{"source_url": "https://example.test/sale"}], "source_url"
+        )
+    assert len(attempts) == postgrest_helpers.POSTGREST_REQUEST_ATTEMPTS
 
 
 def test_postgrest_read_retries_cloudflare_521(monkeypatch) -> None:
@@ -160,9 +180,9 @@ def test_postgrest_read_retries_cloudflare_521(monkeypatch) -> None:
     )
     attempts = []
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *_args, **_kwargs: attempts.append(1) or next(responses))
-    monkeypatch.setattr(supabase_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
 
-    response = supabase_client._postgrest_request_with_retries(
+    response = postgrest_helpers.postgrest_request_with_retries(
         "GET", "https://supabase.test/rest/v1/auction_sales", "known_sale_details"
     )
 
@@ -277,15 +297,14 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
     }
 
     assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
-    for field in (
-        "latitude",
-        "longitude",
-        "risk_notes",
-        "investment_score",
-        "investment_summary",
-    ):
-        assert field in supabase_client.KNOWN_SALE_DETAIL_SELECT.split(",")
     compact_select = supabase_client._known_sale_postgres_select(compact_presence=True)
+    for select in (supabase_client._known_sale_postgres_select(compact_presence=False), compact_select):
+        columns = select.split(",")
+        for field in ("latitude", "longitude", "risk_notes", "investment_score", "investment_summary"):
+            assert field in columns
+        # raw_payload is read once, through its key projection: never as a whole column next to it.
+        assert "raw_payload" not in columns
+        assert select.count(" as raw_payload") == 1
     assert "app_private.auction_sale_source_presence_json(id)" in compact_select
     for key in required:
         assert f"raw_payload->'{key}'" in compact_select
@@ -475,7 +494,7 @@ class _RunDb:
 def test_run_lifecycle_writes_through_postgres_only(monkeypatch) -> None:
     monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
     monkeypatch.setattr(
-        supabase_client, "_postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
+        supabase_client, "postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
     )
     calls: list[tuple[str, tuple]] = []
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls))
@@ -532,7 +551,7 @@ def test_run_lifecycle_refuses_supabase_without_direct_connection(monkeypatch) -
         lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
     monkeypatch.setattr(
-        supabase_client, "_postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
+        supabase_client, "postgrest_request_with_retries", lambda *_args, **_kwargs: pytest.fail("no REST run write")
     )
 
     with pytest.raises(DirectDatabaseMissing):
@@ -559,7 +578,7 @@ def test_run_start_payloads_use_one_deterministic_updated_at(monkeypatch) -> Non
         requests.append((method, kwargs["json"]))
         return httpx.Response(201, json=[{"id": "run-new"}], request=httpx.Request(method, endpoint))
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
     calls: list[tuple[str, tuple]] = []
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls, row=("run-existing",)))
 
@@ -602,7 +621,7 @@ def test_run_progress_payload_includes_deterministic_updated_at(monkeypatch) -> 
         captured.update(kwargs)
         return httpx.Response(204, request=httpx.Request(method, endpoint))
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
 
     supabase_client.update_run_progress_in_supabase(
         "run-progress",
@@ -714,6 +733,7 @@ def test_secondary_source_urls_excludes_batch_primary_urls() -> None:
     assert _secondary_source_urls([first, second]) == ["https://avoventes.test/poor"]
 
 
+@pytest.mark.skip(reason="fetch_known_sale_signatures retirée (code mort, lot 8) : proposé à la suppression")
 def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,
@@ -1063,6 +1083,9 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
     ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
 
 
+@pytest.mark.skip(
+    reason="delete_vench_sales_without_surface_in_supabase retirée (renvoyait toujours 0, lot 8) : proposé à la suppression"
+)
 def test_legacy_vench_cleanup_does_not_delete_existing_rows(monkeypatch):
     monkeypatch.setattr(supabase_client, "load_settings", lambda: pytest.fail("legacy cleanup accessed DB"))
     assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 0
@@ -2279,11 +2302,7 @@ def test_surface_reasoning_rows_preserve_evidence_and_formula() -> None:
 
 
 def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
 
     class Response:
         is_error = False
@@ -2293,7 +2312,7 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
                 {
                     "id": "run-1",
                     "summary": {"trigger": "admin_dashboard"},
-                    "errors": {},
+                    "errors": {"runner": ["earlier"]},
                     "started_at": "2026-06-29T14:41:12Z",
                 }
             ]
@@ -2304,19 +2323,160 @@ def test_fail_stale_running_runs_marks_rows_failed(monkeypatch) -> None:
         assert params["started_at"].startswith("lt.")
         return Response()
 
-    finished = []
+    calls: list[tuple[str, tuple]] = []
     monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: _RunDb(calls))
     monkeypatch.setattr(
-        supabase_client,
-        "finish_run_in_supabase",
-        lambda run_id, status, summary, errors: finished.append((run_id, status, summary, errors)),
+        supabase_client, "finish_run_in_supabase", lambda *_args: pytest.fail("the worker's closing rule replaces")
     )
 
     assert supabase_client.fail_stale_running_runs_in_supabase(max_age_minutes=190) == 1
-    assert finished[0][0] == "run-1"
-    assert finished[0][1] == "failed"
-    assert "stale_cleanup" in finished[0][2]
-    assert finished[0][3]["runner"]
+    assert len(calls) == 1
+    query, params = calls[0]
+    # Fermeture par un autre processus : fusion dans le bilan, et seulement si le run est encore ouvert.
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj["runner"][0] == "earlier"
+    assert "190 min" in params[1].obj["runner"][1]
+    assert set(params[2].obj) == {"stale_cleanup"}
+    assert params[3] == "run-1"
+
+
+def test_fail_stale_running_runs_needs_no_connection_when_nothing_is_stale(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+    )
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda endpoint, **_kwargs: httpx.Response(200, json=[], request=httpx.Request("GET", endpoint)),
+    )
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: pytest.fail("no connection"))
+
+    assert supabase_client.fail_stale_running_runs_in_supabase() == 0
+
+
+def test_close_open_run_merges_and_only_closes_an_open_run() -> None:
+    calls: list[tuple[str, tuple]] = []
+
+    supabase_client.close_open_run(
+        _RunDb(calls), "run-1", "failed", {"completion_status": "interrupted"}, {"runner": ["cut\x00 off"]}
+    )
+
+    query, params = calls[0]
+    assert "errors=coalesce(errors,'{}') || %s" in query
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "where id=%s and status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj == {"runner": ["cut off"]}
+    assert params[2].obj == {"completion_status": "interrupted"}
+    assert params[3] == "run-1"
+
+
+def _transient_then(method: str, endpoint: str, final: httpx.Response, attempts: list[str]):
+    """Une réponse 503 puis ``final`` : simule une erreur passagère de PostgREST."""
+    responses = iter([httpx.Response(503, request=httpx.Request(method, endpoint)), final])
+
+    def send(url, **_kwargs):
+        attempts.append(f"{method} {url}")
+        return next(responses)
+
+    return send
+
+
+@pytest.mark.parametrize(
+    "call,expected",
+    [
+        (lambda: supabase_client.fetch_next_queued_run_from_supabase(), {"id": "run-1"}),
+        (lambda: supabase_client.has_active_running_run_in_supabase(), True),
+    ],
+)
+def test_run_queue_reads_are_retried_on_a_transient_failure(monkeypatch, call, expected) -> None:
+    """Une lecture se rejoue sans danger : une erreur passagère ne fait plus sauter le tour du worker."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/auction_runs"
+    attempts: list[str] = []
+    final = httpx.Response(200, json=[{"id": "run-1"}], request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, final, attempts))
+
+    assert call() == expected
+    assert attempts == [f"GET {endpoint}"] * 2
+
+
+def test_stale_run_read_is_retried_on_a_transient_failure(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/auction_runs"
+    attempts: list[str] = []
+    final = httpx.Response(200, json=[], request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, final, attempts))
+
+    assert supabase_client.fail_stale_running_runs_in_supabase() == 0
+    assert len(attempts) == 2
+
+
+def test_data_refresh_lock_sent_again_finds_its_row_already_locked(monkeypatch) -> None:
+    """Le verrou est rejoué à l'identique ; une première tentative arrivée à la base laisse la seconde sans ligne."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/data_refresh_requests"
+    attempts: list[str] = []
+    queued = [{"id": "refresh-1", "status": "queued", "request_kind": "dpe"}]
+    read = httpx.Response(200, json=queued, request=httpx.Request("GET", endpoint))
+    monkeypatch.setattr(supabase_client.httpx, "get", _transient_then("GET", endpoint, read, attempts))
+    payloads: list[dict[str, object]] = []
+    responses = iter(
+        [
+            httpx.Response(504, request=httpx.Request("PATCH", endpoint)),
+            httpx.Response(200, json=[], request=httpx.Request("PATCH", endpoint)),
+        ]
+    )
+
+    def fake_patch(url, params, headers, json, timeout):
+        assert params == {"id": "eq.refresh-1", "status": "eq.queued"}
+        payloads.append(json)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    request = supabase_client.fetch_next_data_refresh_request_from_supabase()
+
+    assert len(attempts) == 2
+    assert len(payloads) == 2 and payloads[0] == payloads[1]
+    assert request is not None
+    assert request["id"] == "refresh-1"
+    assert request["status"] == "running"
+
+
+def test_data_refresh_finish_is_sent_again_with_the_same_payload(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr(postgrest_helpers.time, "sleep", lambda _seconds: None)
+    endpoint = "https://supabase.test/rest/v1/data_refresh_requests"
+    payloads: list[dict[str, object]] = []
+    responses = iter(
+        [
+            httpx.Response(502, request=httpx.Request("PATCH", endpoint)),
+            httpx.Response(204, request=httpx.Request("PATCH", endpoint)),
+        ]
+    )
+
+    def fake_patch(url, params, headers, json, timeout):
+        assert url == endpoint
+        assert params == {"id": "eq.refresh-1"}
+        payloads.append(json)
+        return next(responses)
+
+    monkeypatch.setattr(supabase_client.httpx, "patch", fake_patch)
+
+    supabase_client.finish_data_refresh_request_in_supabase("refresh-1", "completed", {"dpe_rows": 1})
+
+    assert len(payloads) == 2 and payloads[0] == payloads[1]
+    assert payloads[0]["status"] == "completed"
+    assert payloads[0]["completed_at"] == payloads[0]["updated_at"]
 
 
 def test_has_active_running_run_checks_recent_running_rows(monkeypatch) -> None:

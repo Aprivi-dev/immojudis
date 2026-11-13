@@ -384,7 +384,7 @@ def test_rest_writer_uses_ignore_duplicates_and_keeps_candidate_status(monkeypat
             )
         return SimpleNamespace(is_error=False, status_code=201, text="", request=None)
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
 
     written = supabase_client._write_fact_claims_rest(
         "https://supabase.example", "service-role-test", [sale]
@@ -437,7 +437,7 @@ def test_rest_writer_queues_one_deterministic_replay_after_claim_failure(monkeyp
         queued.append({"endpoint": endpoint, **kwargs})
         return SimpleNamespace(is_error=False, status_code=201, text="")
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
     monkeypatch.setattr(supabase_client.httpx, "post", fake_post)
 
     assert supabase_client._write_fact_claims_rest(
@@ -653,7 +653,7 @@ def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(
             )
         return SimpleNamespace(is_error=False, status_code=201, text="", request=None)
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fake_request)
     monkeypatch.setattr(
         supabase_client.httpx,
         "post",
@@ -687,7 +687,7 @@ def test_rest_writer_surfaces_missing_retry_queue_as_an_explicit_failure(monkeyp
     )
     monkeypatch.setattr(
         supabase_client,
-        "_postgrest_request_with_retries",
+        "postgrest_request_with_retries",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("target lookup unavailable")),
     )
     monkeypatch.setattr(
@@ -716,7 +716,7 @@ def test_rest_writer_queues_when_canonical_sale_lookup_fails(monkeypatch) -> Non
     def fail_target_lookup(*args, **kwargs):
         raise RuntimeError("target lookup unavailable")
 
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fail_target_lookup)
+    monkeypatch.setattr(supabase_client, "postgrest_request_with_retries", fail_target_lookup)
     monkeypatch.setattr(
         supabase_client.httpx,
         "post",

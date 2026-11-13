@@ -97,7 +97,6 @@ from src.storage.fact_claim_rows import (
 from src.storage.known_sale_projection import (
     DATA_REFRESH_SALE_SELECT,
     KNOWN_SALE_DETAIL_SELECT,  # noqa: F401  (re-exported)
-    KNOWN_SALE_POSTGRES_SELECT,  # noqa: F401
     KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS,  # noqa: F401
     KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION,  # noqa: F401
     KNOWN_SALE_RAW_PAYLOAD_KEYS,  # noqa: F401
@@ -131,6 +130,7 @@ from src.storage.pdf_persistence_rows import (
     _rekey_pdf_job_after_checkpoint_with_connection,
 )
 from src.storage.postgrest_helpers import (
+    POSTGREST_RETRYABLE_STATUS_CODES,
     _claim_error_diagnostic,
     _claim_retry_after_seconds,
     _has_current_document_analysis,
@@ -138,8 +138,9 @@ from src.storage.postgrest_helpers import (
     _postgrest_batch_size,
     _postgrest_batches,
     _postgrest_in_filter,
-    _rest_headers,
     _timestamped,
+    postgrest_request_with_retries,
+    rest_headers,
 )
 from src.storage.postgrest_payload import (
     POSTGREST_MAX_PAYLOAD_DEPTH,  # noqa: F401
@@ -165,8 +166,6 @@ from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
-POSTGREST_UPSERT_RETRIES = 5
-POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 CLAIM_RPC_ATTEMPTS = 4
 CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
@@ -221,11 +220,11 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
         with _postgres_connect(str(db_url)) as db:
             return load_reviewed_aliases(db)
     try:
-        response = _postgrest_request_with_retries(
+        response = postgrest_request_with_retries(
             "POST",
             f"{supabase_url.rstrip('/')}/rest/v1/rpc/list_reviewed_publication_aliases",
             "reviewed_publication_aliases",
-            headers=_rest_headers(api_key, prefer="count=none"),
+            headers=rest_headers(api_key, prefer="count=none"),
             json={},
             timeout=30,
         )
@@ -802,11 +801,11 @@ def create_run_in_supabase(source: str, use_llm: bool, run_id: str | None = None
         "started_at": now,
         "updated_at": now,
     }
-    response = _postgrest_request_with_retries(
+    response = postgrest_request_with_retries(
         "POST",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
         "auction_runs",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=POSTGREST_TIMEOUT,
     )
@@ -844,15 +843,17 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     if not url or not key:
         LOGGER.info("Supabase variables are missing; no queued run can be fetched")
         return None
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id,status,source,use_llm,started_at,created_at,summary,errors",
             "status": "eq.queued",
             "order": "created_at.asc",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     if response.is_error:
@@ -887,7 +888,7 @@ def _claim_auction_enrichment_jobs_rpc(
         return []
     response = httpx.post(
         f"{str(url).rstrip('/')}/rest/v1/rpc/{rpc_name}",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=30,
     )
@@ -950,7 +951,7 @@ def read_pdf_job_states_for_sale(
     response = httpx.get(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
         params=params,
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     response.raise_for_status()
@@ -999,7 +1000,7 @@ def _claim_auction_enrichment_jobs_request_rpc(
         try:
             response = httpx.post(
                 endpoint,
-                headers=_rest_headers(str(key), prefer="return=representation"),
+                headers=rest_headers(str(key), prefer="return=representation"),
                 json=payload,
                 timeout=30,
             )
@@ -1133,7 +1134,7 @@ def record_llm_usage_event(event: dict[str, Any]) -> None:
     try:
         response = httpx.post(
             f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
-            headers=_rest_headers(str(key), prefer="return=minimal"),
+            headers=rest_headers(str(key), prefer="return=minimal"),
             json=event,
             timeout=15,
         )
@@ -1181,7 +1182,7 @@ def finish_auction_enrichment_job_in_supabase(
         params={"select": "id", "id": f"eq.{job_id}", "status": "eq.running",
                 **({"locked_at": f"eq.{locked_at.isoformat() if isinstance(locked_at, datetime) else locked_at}"} if locked_at is not None else {}),
                 **({"attempt_count": f"eq.{attempt_count}"} if attempt_count is not None else {})},
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json=payload,
         timeout=30,
     )
@@ -1207,15 +1208,17 @@ def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
         LOGGER.info("Supabase variables are missing; no data refresh request can be fetched")
         return None
     endpoint = f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests"
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         endpoint,
+        "data_refresh_requests",
         params={
             "select": "id,user_id,sale_id,source_url,request_kind,status,priority,requested_payload,created_at",
             "status": "eq.queued",
             "order": "priority.desc,created_at.asc",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         timeout=30,
     )
     if response.is_error:
@@ -1227,10 +1230,15 @@ def fetch_next_data_refresh_request_from_supabase() -> dict[str, Any] | None:
 
     request = rows[0]
     started_at = datetime.now(UTC).isoformat()
-    patch = httpx.patch(
+    # Sent again on a transient failure: the payload is fixed before the first attempt and the ``status=queued``
+    # filter makes a repeat a no-op once the row is running. A repeat whose first attempt did land returns no row,
+    # which the fallback below already reads as « locked ».
+    patch = postgrest_request_with_retries(
+        "PATCH",
         endpoint,
+        "data_refresh_requests",
         params={"id": f"eq.{request['id']}", "status": "eq.queued"},
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json={
             "status": "running",
             "started_at": started_at,
@@ -1266,10 +1274,14 @@ def finish_data_refresh_request_in_supabase(
         "completed_at": now if status in {"completed", "failed", "cancelled"} else None,
         "updated_at": now,
     }
-    response = httpx.patch(
+    # Sent again on a transient failure: the payload (timestamps included) is fixed before the first attempt, so a
+    # repeat writes the same row again.
+    response = postgrest_request_with_retries(
+        "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/data_refresh_requests",
+        "data_refresh_requests",
         params={"id": f"eq.{request_id}"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
+        headers=rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
         timeout=30,
     )
@@ -1285,14 +1297,16 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
         return 0
 
     cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id,summary,errors,started_at",
             "status": "eq.running",
             "started_at": f"lt.{cutoff.isoformat()}",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key), prefer="count=none"),
         timeout=30,
     )
     if response.is_error:
@@ -1300,26 +1314,36 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
         return 0
 
     rows = response.json()
+    closes = []
     for row in rows:
-        run_id = str(row.get("id") or "")
-        if not run_id:
+        if not row.get("id"):
             continue
-        summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
         errors = row.get("errors") if isinstance(row.get("errors"), dict) else {}
         runner_errors = errors.get("runner") if isinstance(errors.get("runner"), list) else []
-        runner_errors = [
-            *runner_errors,
-            f"Run marqué failed automatiquement après {max_age_minutes} min sans fin GitHub Actions.",
-        ]
-        summary = {
-            **summary,
+        summary_patch = {
             "stale_cleanup": {
                 "max_age_minutes": max_age_minutes,
                 "started_at": row.get("started_at"),
                 "cleaned_at": datetime.now(UTC).isoformat(),
             },
         }
-        finish_run_in_supabase(run_id, "failed", summary, {**errors, "runner": runner_errors})
+        errors_patch = {
+            "runner": [
+                *runner_errors,
+                f"Run marqué failed automatiquement après {max_age_minutes} min sans fin GitHub Actions.",
+            ]
+        }
+        closes.append((str(row["id"]), summary_patch, errors_patch))
+    if not closes:
+        return len(rows)
+    db_url = direct_database_url(settings)
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            for run_id, summary_patch, errors_patch in closes:
+                close_open_run(db, run_id, "failed", summary_patch, errors_patch)
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Stale run close")
     return len(rows)
 
 
@@ -1331,15 +1355,17 @@ def has_active_running_run_in_supabase(max_age_minutes: int = 190) -> bool:
         return False
 
     cutoff = datetime.now(UTC) - timedelta(minutes=max_age_minutes)
-    response = httpx.get(
+    response = postgrest_request_with_retries(
+        "GET",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
+        "auction_runs",
         params={
             "select": "id",
             "status": "eq.running",
             "started_at": f"gte.{cutoff.isoformat()}",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key), prefer="count=none"),
         timeout=30,
     )
     if response.is_error:
@@ -1354,6 +1380,13 @@ def finish_run_in_supabase(
     summary: dict[str, Any],
     errors: dict[str, list[str]] | None = None,
 ) -> None:
+    """Close the run this process executed, with its complete report.
+
+    ``summary`` and ``errors`` replace the stored ones, like the progress snapshots of
+    ``update_run_progress_in_supabase``: the worker is the author of its report, and the final one supersedes every
+    snapshot (a merge would keep keys that a snapshot carried and the final report dropped). A process closing a run
+    it did not execute uses ``close_open_run`` instead.
+    """
     if not run_id:
         return
     settings = load_settings()
@@ -1379,6 +1412,29 @@ def finish_run_in_supabase(
     retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run finish")
 
 
+def close_open_run(
+    db: Any,
+    run_id: str,
+    status: str,
+    summary: dict[str, Any],
+    errors: dict[str, Any],
+) -> None:
+    """Close, on ``db``, a run that another process executed: merge into its report, only while it is still open.
+
+    Shared by every closer that is not the worker itself (``run_finalizer``, ``autonomous_runner``, the stale run
+    cleanup): the worker may have written progress, or closed the run already, and neither must be lost. The lease
+    expiry of the SQL scheduler (``pipeline_dispatch_retries`` migrations) applies the same rule. Repeating it is a
+    no-op once the run is closed.
+    """
+    db.execute(
+        """update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
+            errors=coalesce(errors,'{}') || %s,
+            summary=coalesce(summary,'{}') || %s
+            where id=%s and status in ('queued','running')""",
+        (status, Jsonb(_sanitize_postgrest_payload(errors)), Jsonb(_sanitize_postgrest_payload(summary)), run_id),
+    )
+
+
 def update_run_progress_in_supabase(
     run_id: str | None,
     summary: dict[str, Any],
@@ -1397,12 +1453,12 @@ def update_run_progress_in_supabase(
     }
     if errors is not None:
         payload["errors"] = errors
-    response = _postgrest_request_with_retries(
+    response = postgrest_request_with_retries(
         "PATCH",
         f"{str(url).rstrip('/')}/rest/v1/auction_runs",
         "auction_runs",
         params={"id": f"eq.{run_id}", "status": "eq.running"},
-        headers=_rest_headers(str(key), prefer="return=minimal"),
+        headers=rest_headers(str(key), prefer="return=minimal"),
         json=_sanitize_postgrest_payload(payload),
         timeout=POSTGREST_TIMEOUT,
     )
@@ -1685,7 +1741,7 @@ def _read_persisted_pdf_rows_rest(
             "order": "updated_at.desc",
             "limit": str(min(len(source_urls) * 5, 100)),
         },
-        headers=_rest_headers(api_key, prefer="count=none"),
+        headers=rest_headers(api_key, prefer="count=none"),
         timeout=PERSISTED_PDF_LOOKUP_TIMEOUT,
     )
     if response.is_error:
@@ -2402,7 +2458,7 @@ def fetch_enriched_content_hashes(
                     "content_hash": _postgrest_in_filter(batch),
                     "score_version": "not.is.null",
                 },
-                headers=_rest_headers(str(key), prefer="count=none"),
+                headers=rest_headers(str(key), prefer="count=none"),
                 timeout=30,
             )
             if response.is_error:
@@ -2588,7 +2644,7 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
             "source_url": f"eq.{source_url}",
             "limit": "1",
         },
-        headers=_rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key), prefer="count=none"),
         timeout=30,
     )
     if response.is_error:
@@ -2740,15 +2796,6 @@ def fetch_known_sale_details(
     return details
 
 
-def fetch_known_sale_signatures() -> dict[str, str]:
-    """Map source_url → change-signature for already-enriched listings."""
-    return {
-        source_url: str(row["_signature"])
-        for source_url, row in fetch_known_sale_details().items()
-        if row.get("_signature") and row.get("score_version")
-    }
-
-
 def mark_past_sales_in_supabase() -> int:
     settings = load_settings()
     url = settings["supabase_url"]
@@ -2757,7 +2804,7 @@ def mark_past_sales_in_supabase() -> int:
         return 0
     response = httpx.post(
         f"{str(url).rstrip('/')}/rest/v1/rpc/mark_elapsed_auction_sales",
-        headers=_rest_headers(str(key), prefer="return=representation"),
+        headers=rest_headers(str(key), prefer="return=representation"),
         json={}, timeout=30,
     )
     response.raise_for_status()
@@ -2777,7 +2824,7 @@ def delete_expired_sales_in_supabase(now: datetime | None = None) -> int:
     for _ in range(40):
         response = httpx.post(
             f"{str(url).rstrip('/')}/rest/v1/rpc/purge_expired_auction_sales",
-            headers=_rest_headers(str(key), prefer="return=representation"),
+            headers=rest_headers(str(key), prefer="return=representation"),
             json={"p_now": current.isoformat(), "p_limit": 25}, timeout=120,
         )
         response.raise_for_status()
@@ -2786,11 +2833,6 @@ def delete_expired_sales_in_supabase(now: datetime | None = None) -> int:
         if result.get("busy") or not result.get("remaining") or not result["deleted"]:
             break
     return deleted
-
-
-def delete_vench_sales_without_surface_in_supabase() -> int:
-    """Compatibility shim: admission replaces destructive source-specific cleanup."""
-    return 0
 
 
 def _delete_secondary_sale_rows_with_postgres(
@@ -3271,12 +3313,14 @@ def _postgrest_upsert(
 ) -> None:
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}"
     for batch in _postgrest_batches(payload, _postgrest_batch_size(table)):
-        response = _postgrest_upsert_batch(
+        response = postgrest_request_with_retries(
+            "POST",
             endpoint,
-            api_key,
             table,
-            batch,
-            on_conflict,
+            params={"on_conflict": on_conflict},
+            headers=rest_headers(api_key, prefer="resolution=merge-duplicates,return=minimal"),
+            json=_sanitize_postgrest_payload(batch),
+            timeout=POSTGREST_TIMEOUT,
         )
         if response.is_error:
             raise httpx.HTTPStatusError(
@@ -3284,50 +3328,6 @@ def _postgrest_upsert(
                 request=response.request,
                 response=response,
             )
-
-
-def _postgrest_upsert_batch(
-    endpoint: str,
-    api_key: str,
-    table: str,
-    payload: list[dict[str, object]],
-    on_conflict: str,
-) -> httpx.Response:
-    last_timeout: httpx.TimeoutException | None = None
-    for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
-        try:
-            response = httpx.post(
-                endpoint,
-                params={"on_conflict": on_conflict},
-                headers=_rest_headers(api_key, prefer="resolution=merge-duplicates,return=minimal"),
-                json=_sanitize_postgrest_payload(payload),
-                timeout=POSTGREST_TIMEOUT,
-            )
-            if response.status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
-                return response
-            LOGGER.warning(
-                "Supabase %s upsert returned %s on attempt %s/%s for %s rows; retrying",
-                table,
-                response.status_code,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-                len(payload),
-            )
-        except httpx.TimeoutException as exc:
-            last_timeout = exc
-            if attempt == POSTGREST_UPSERT_RETRIES:
-                raise
-            LOGGER.warning(
-                "Supabase %s upsert timed out on attempt %s/%s for %s rows; retrying",
-                table,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-                len(payload),
-            )
-        time.sleep(2 * attempt)
-    if last_timeout is not None:
-        raise last_timeout
-    raise RuntimeError(f"Supabase {table} upsert failed before request")
 
 
 def _transaction_delete_by_source_urls(table: str, source_urls: list[str]) -> int:
@@ -3389,40 +3389,6 @@ def _prune_stale_document_rows(sales: list[AuctionSale]) -> None:
                 "delete from public.auction_documents where source_url = %s",
                 (source_url,),
             )
-
-
-def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
-    last_timeout: httpx.TimeoutException | None = None
-    request_method = getattr(httpx, method.lower())
-    for attempt in range(1, POSTGREST_UPSERT_RETRIES + 1):
-        try:
-            response = request_method(endpoint, **kwargs)
-            status_code = getattr(response, "status_code", 200 if not response.is_error else 500)
-            if status_code not in POSTGREST_RETRYABLE_STATUS_CODES or attempt == POSTGREST_UPSERT_RETRIES:
-                return response
-            LOGGER.warning(
-                "Supabase %s %s returned %s on attempt %s/%s; retrying",
-                table,
-                method,
-                response.status_code,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-            )
-        except httpx.TimeoutException as exc:
-            last_timeout = exc
-            if attempt == POSTGREST_UPSERT_RETRIES:
-                raise
-            LOGGER.warning(
-                "Supabase %s %s timed out on attempt %s/%s; retrying",
-                table,
-                method,
-                attempt,
-                POSTGREST_UPSERT_RETRIES,
-            )
-        time.sleep(2 * attempt)
-    if last_timeout is not None:
-        raise last_timeout
-    raise RuntimeError(f"Supabase {table} {method} failed before request")
 
 
 def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:

@@ -24,7 +24,7 @@ from src.models import AuctionSale
 from src.position_quality import PROBABLE_DUPLICATE
 from src.reviewed_aliases import ReviewedAliasRegistry
 from src.storage.column_sets import DEDUPLICATION_SALE_SELECT
-from src.storage.postgrest_helpers import _postgrest_in_filter, _rest_headers
+from src.storage.postgrest_helpers import _postgrest_in_filter, rest_headers
 from src.storage.sale_row_builders import _secondary_source_urls
 
 LOGGER = logging.getLogger(__name__)
@@ -175,7 +175,7 @@ def fetch_candidate_rows(
             response = httpx.get(
                 endpoint,
                 params=params,
-                headers=_rest_headers(api_key, prefer="count=none"),
+                headers=rest_headers(api_key, prefer="count=none"),
                 timeout=_TIMEOUT,
             )
             failure = f"({response.status_code}) {response.text[:300]}" if response.is_error else None
