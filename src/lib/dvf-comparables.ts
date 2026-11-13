@@ -17,6 +17,7 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
+import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfComparableRow =
@@ -188,7 +189,7 @@ async function fetchDvfCandidates({
     p_latitude: latitude,
     p_longitude: longitude,
     p_radius_m: radiusM,
-    p_minimum_date: addMonths(now, -months),
+    p_minimum_date: addUtcCalendarMonths(now, -months).toISOString().slice(0, 10),
     p_segment: segment,
     p_limit: DVF_SAMPLE_LIMIT,
   });
@@ -265,12 +266,6 @@ async function withDisplayDetails(
         : comparable;
     }),
   };
-}
-
-function addMonths(date: Date, months: number): string {
-  const copy = new Date(date);
-  copy.setUTCMonth(copy.getUTCMonth() + months);
-  return copy.toISOString().slice(0, 10);
 }
 
 function finiteNumber(value: number | null | undefined): number | null {

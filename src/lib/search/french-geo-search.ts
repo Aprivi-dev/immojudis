@@ -1,3 +1,4 @@
+import { departmentFromPostalCode } from "@/lib/commune-names";
 import { DEPARTMENT_REGIONS } from "@/lib/department-geography";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
 import type { AuctionSale } from "@/lib/types";
@@ -101,6 +102,20 @@ export function resolveFrenchGeoSearch(
   }
 
   return { kind: "text", text: raw };
+}
+
+/**
+ * Le département que désigne un texte saisi, quand il n'en désigne qu'un : son nom ou son code
+ * (« Gironde », « 33 », « 2A », « 974 ») ou un code postal (« 33000 », `departmentFromPostalCode`).
+ * `null` pour une région, plusieurs départements (« 66, 65, 05 »), un code qui n'est pas celui d'un
+ * département (« 20 ») ou tout autre texte.
+ */
+export function departmentFromSearchText(text: string | null | undefined): string | null {
+  const scope = resolveFrenchGeoSearch(text);
+  if (scope.kind === "postal_code") return departmentFromPostalCode(scope.postalCode);
+  return scope.kind === "department" && scope.departments.length === 1
+    ? (scope.departments[0] ?? null)
+    : null;
 }
 
 /**

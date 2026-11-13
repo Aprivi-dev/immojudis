@@ -20,6 +20,7 @@ import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
 import { featureIncluded, hasStandingAnalysisAccess } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import { OPEN_SALE_STATUSES } from "@/lib/listing-evidence";
 import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
@@ -120,13 +121,6 @@ export type SmartAlertBatchRunResult = {
   totalNotificationCount: number;
   results: SmartAlertBatchUserResult[];
 };
-
-/**
- * Statuts des ventes que les alertes évaluent : ceux de la recherche du catalogue
- * (`statusValuesForSearch`, src/lib/search/search-filters.ts). Une vente reportée ou au statut encore
- * inconnu que la recherche affiche doit aussi alerter.
- */
-const ALERT_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
 /**
  * Pré-filtre SQL d'une alerte gratuite sur son département : le code et le nom (« 33 » et « Gironde »),
@@ -750,7 +744,7 @@ async function loadSalesToEvaluate({
       : start;
   });
   const filters: SaleFilters = {
-    status_in: [...ALERT_SALE_STATUSES],
+    status_in: [...OPEN_SALE_STATUSES],
     ...(neverEvaluated ? {} : { updated_since: new Date(Math.min(...windowStarts)).toISOString() }),
     ...(discovery && alerts.length === 1
       ? { city: alerts[0].city ?? undefined, ...departmentPrefilter(alerts[0].department) }
@@ -792,7 +786,7 @@ async function loadSalesByIds({
   for (const chunk of chunks(ids)) {
     sales.push(
       ...(await getSalesForAlertEvaluation(
-        { status_in: [...ALERT_SALE_STATUSES], ids: chunk },
+        { status_in: [...OPEN_SALE_STATUSES], ids: chunk },
         chunk.length,
         0,
         { client: auth.supabase, discovery },

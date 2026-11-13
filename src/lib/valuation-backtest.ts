@@ -17,7 +17,9 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { matchesPropertyFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
-import { averageRounded } from "@/lib/rounding";
+import { averageRounded, roundToTenth } from "@/lib/rounding";
+import { quantileSorted } from "@/lib/stats";
+import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
 import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
 import { readSaleThroughDoor } from "@/lib/entitlements.server";
 
@@ -296,7 +298,7 @@ export function buildValuationBacktest({
   };
 }): ValuationBacktestResult {
   const now = options.now ?? new Date();
-  const oldestTestDate = addMonthsDate(now, -options.months);
+  const oldestTestDate = addUtcCalendarMonths(now, -options.months);
   const normalized = transactions
     .map((transaction) => normalizeTransaction(transaction, reference))
     .filter((transaction): transaction is NormalizedBacktestTransaction => transaction != null)
@@ -361,7 +363,9 @@ async function fetchBacktestTransactions({
 }): Promise<DvfBacktestTransaction[]> {
   const bbox = bboxAround(latitude, longitude, radiusM);
   const comparableLookbackMonths = Math.min(36, months);
-  const minSaleDate = addMonths(now, -(months + comparableLookbackMonths));
+  const minSaleDate = addUtcCalendarMonths(now, -(months + comparableLookbackMonths))
+    .toISOString()
+    .slice(0, 10);
   let query = supabaseAdmin
     .from("dvf_transactions")
     .select(DVF_BACKTEST_COLUMNS)
@@ -492,8 +496,8 @@ function buildBacktestSummary({
     .map((point) => point.absoluteErrorPct)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
     .sort((a, b) => a - b);
-  const medianError = percentileRounded(errors, 0.5, 1);
-  const p75Error = percentileRounded(errors, 0.75, 1);
+  const medianError = roundToTenth(quantileSorted(errors, 0.5));
+  const p75Error = roundToTenth(quantileSorted(errors, 0.75));
   const intervalCoveragePct = shareTrue(
     usable
       .map((point) => point.withinPredictionInterval)
@@ -730,28 +734,6 @@ function bboxAround(lat: number, lng: number, radiusM: number) {
     lngMin: lng - dLng,
     lngMax: lng + dLng,
   };
-}
-
-function addMonths(date: Date, months: number): string {
-  return addMonthsDate(date, months).toISOString().slice(0, 10);
-}
-
-function addMonthsDate(date: Date, months: number): Date {
-  const copy = new Date(date);
-  copy.setUTCMonth(copy.getUTCMonth() + months);
-  return copy;
-}
-
-function percentileRounded(values: number[], percentile: number, digits = 0): number | null {
-  if (!values.length) return null;
-  const index = (values.length - 1) * percentile;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const value =
-    lower === upper
-      ? values[lower]
-      : values[lower] + (values[upper] - values[lower]) * (index - lower);
-  return round(value, digits);
 }
 
 function shareUnder(values: number[], threshold: number): number | null {

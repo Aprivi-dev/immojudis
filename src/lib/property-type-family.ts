@@ -53,6 +53,18 @@ export function propertyFamily(value: string | null | undefined): PropertyFamily
 }
 
 /**
+ * Filtre « Type de bien » de la recherche et des alertes : une vente le passe quand son type est de la
+ * famille du filtre. Chaque code de la base est le nom de sa propre famille : la recherche serveur,
+ * qui compare la colonne au code du filtre (`queries.ts`, recherche publique), suit la même règle.
+ */
+export function matchesPropertyTypeFilter(
+  propertyType: string | null | undefined,
+  filter: string,
+): boolean {
+  return propertyFamily(propertyType) === propertyFamily(filter);
+}
+
+/**
  * Un bien de type `candidate` est-il comparable à un bien de type `subject` (même famille) ? Un
  * sujet de type inconnu accepte tout ; un sujet « autre » n'accepte rien : deux types qu'aucune
  * famille ne reconnaît (une dépendance, une cave) ne se ressemblent pas pour autant.

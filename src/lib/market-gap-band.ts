@@ -10,9 +10,6 @@ import {
   marketDiscountPct,
 } from "@/lib/market-gap";
 
-// Les prédicats d'occupation vivent dans `occupancy-status.ts` ; ils restent exportés d'ici.
-export { isOccupiedOccupancyStatus, isVacantOccupancyStatus };
-
 /**
  * Écart au marché en trois bandes, pour la fiche publique (sans compte). Aucun chiffre : ni
  * pourcentage, ni valeur, ni fourchette. Le détail reste à l'offre Analyse et au compte gratuit.

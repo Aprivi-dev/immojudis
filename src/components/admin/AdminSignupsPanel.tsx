@@ -13,6 +13,7 @@ import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { formatShortDate, formatShortDateTime } from "@/lib/format/dates";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
@@ -517,15 +518,11 @@ function UsageCell({ value }: { value: number | undefined }) {
 function AccessPill({ access }: { access: AdminSignupAccess }) {
   const tone =
     access === "decouverte"
-      ? "border-brand-navy/15 bg-brand-navy/[0.04] text-brand-navy/75"
+      ? "neutral"
       : access === "trial" || access === "trial_extended"
-        ? "border-warning/25 bg-warning-tint text-warning"
-        : "border-success/25 bg-success-tint text-success";
-  return (
-    <span className={`inline-flex w-fit rounded-full border px-2.5 py-0.5 text-xs ${tone}`}>
-      {ADMIN_SIGNUP_ACCESS_LABELS[access]}
-    </span>
-  );
+        ? "warning"
+        : "success";
+  return <AdminPill tone={tone}>{ADMIN_SIGNUP_ACCESS_LABELS[access]}</AdminPill>;
 }
 
 function accessDetail(account: AdminSignupAccount): string {

@@ -1,10 +1,10 @@
 import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
+import { occupancyClass, type OccupancyClass } from "@/lib/occupancy-status";
 import type { AuctionSale } from "@/lib/types";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { dedupeEvidence, excerpt, normalizeText } from "@/lib/analysis-text";
 import { cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
-import { riskTexts } from "@/lib/sale-risk-texts";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
@@ -116,9 +116,15 @@ export function buildOccupancyAnalysis(sale: AuctionSale): OccupancyAnalysis {
         : summary({ status, evidence, hasLeaseSignal, hasEvictionSignal }),
     decisionImpact: decisionImpact({ status, hasLeaseSignal, hasEvictionSignal }),
     nextActions: nextActions({ status, hasLeaseSignal, hasEvictionSignal }),
-    limitations: limitations(status),
+    limitations: limitations(status, sources),
   };
 }
+
+const FIELD_STATUS_BY_CLASS: Record<OccupancyClass, OccupancyEvidence["status"]> = {
+  vacant: "free",
+  occupied: "occupied",
+  rented: "rented",
+};
 
 function evidenceFromOccupancyStatus(status: AuctionSale["occupancy_status"]): OccupancyEvidence[] {
   const normalized = normalizeText(status ?? "");
@@ -132,10 +138,12 @@ function evidenceFromOccupancyStatus(status: AuctionSale["occupancy_status"]): O
       },
     ];
   }
-  const detected = detectStatus(normalized);
+  // Le champ est un code de la base (owner_occupied, squatted…) : il se lit par sa classe, comme
+  // l'écart au marché et le plafond ; les motifs de `detectStatus` sont faits pour les textes.
+  const occupancy = occupancyClass(status);
   return [
     {
-      status: detected ?? "to_confirm",
+      status: occupancy ? FIELD_STATUS_BY_CLASS[occupancy] : "to_confirm",
       label: occupancyLabel(status),
       excerpt: occupancyLabel(status),
       source: "Champ occupation",
@@ -240,7 +248,7 @@ function decisionImpact({
   hasEvictionSignal: boolean;
 }): string {
   if (status === "conflicting") {
-    return "Ne pas figer l’enchère plafond avant arbitrage des pièces contradictoires.";
+    return "Ne pas figer l’enchère plafond avant d'avoir levé la contradiction entre les sources (annonce, PV descriptif, cahier des conditions).";
   }
   if (status === "free") {
     return "Hypothèse favorable pour la jouissance et les travaux, sous réserve de confirmation au PV.";
@@ -279,13 +287,23 @@ function nextActions({
   return actions.slice(0, 4);
 }
 
-function limitations(status: OccupancyStatusKind): string[] {
+function limitations(status: OccupancyStatusKind, sources: string[]): string[] {
   const items = [
     "L'analyse repose sur les champs collectés et les extraits disponibles, pas sur une consultation juridique.",
     "Le statut réel doit être confirmé dans les pièces officielles et, si possible, lors de la visite.",
   ];
   if (status === "conflicting" || status === "to_confirm") {
     items.unshift("Le dossier ne permet pas encore de qualifier fermement l'occupation.");
+  }
+  if (sources.length === 1 && sources[0] === "Champ occupation") {
+    items.push(
+      "Le statut provient des données collectées sur la vente ; aucun extrait de pièce ne le confirme dans ce rapport.",
+    );
+  }
+  if (status === "occupied") {
+    items.push(
+      "Le délai de libération dépend du statut de l'occupant et de la procédure d'expulsion applicable ; il est à faire estimer par un conseil.",
+    );
   }
   return items;
 }
@@ -302,45 +320,12 @@ function statusLabel(status: OccupancyStatusKind): string {
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-
-  addCandidate(candidates, sale.description, "Description annonce");
-  addCandidate(candidates, sale.source_description, "Description source");
-  // `risk_notes` is the pipeline's own output (model text read back): not independent evidence.
-
-  // Generated scores and summaries are not independent evidence about the property.
-
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    if (OCCUPANCY_KEY.test(item.path) || hasOccupancyText(item.value)) {
-      addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-    }
-  }
-
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      if (OCCUPANCY_KEY.test(item.path) || hasOccupancyText(item.value)) {
-        addCandidate(
-          candidates,
-          `${item.path}: ${cleanText(item.value)}`,
-          `Données source ${sourceName}`,
-        );
-      }
-    }
-  }
-
-  for (const document of sale.documents_rich ?? []) {
-    addCandidate(
-      candidates,
-      `${document.type ?? ""} ${document.document_type ?? ""} ${document.label ?? ""}`,
-      "Pièces du dossier",
-    );
-  }
-
-  for (const risk of sale.risks ?? []) {
-    for (const text of riskTexts(risk)) addCandidate(candidates, text, "Preuves de risques");
-  }
-
-  return candidates.filter((candidate) => hasOccupancyText(candidate.text));
+  return collectSaleTextCandidates(sale, {
+    descriptions: "each",
+    sourceFields: ({ path, value }) => OCCUPANCY_KEY.test(path) || hasOccupancyText(value),
+    documents: sale.documents_rich,
+    risks: sale.risks,
+  }).filter((candidate) => hasOccupancyText(candidate.text));
 }
 
 function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
@@ -352,13 +337,4 @@ function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
 function hasOccupancyText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function dedupeEvidence(evidence: OccupancyEvidence[]): OccupancyEvidence[] {
-  const byKey = new Map<string, OccupancyEvidence>();
-  for (const item of evidence) {
-    const key = `${item.status}-${normalizeText(item.excerpt)}-${item.source}`;
-    if (!byKey.has(key)) byKey.set(key, item);
-  }
-  return [...byKey.values()];
 }

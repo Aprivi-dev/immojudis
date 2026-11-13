@@ -28,6 +28,11 @@ import {
 } from "@/lib/sale-publication-guard";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToAnalysis } from "@/lib/dpe-diagnostic-row";
 import { NotFoundError } from "@/lib/api-errors";
+import {
+  comparisonScopes,
+  filterComparisonScope,
+  type ComparisonScope,
+} from "@/lib/comparison-scopes";
 
 export async function getSale(supabase: SupabaseClient, saleId: string): Promise<AuctionSale> {
   const { data, error } = await supabase
@@ -47,19 +52,19 @@ export async function getSale(supabase: SupabaseClient, saleId: string): Promise
   return appSaleRowToAuctionSale(data);
 }
 
-type ActiveComparableScope = {
-  label: string;
-  city?: string | null;
-  department?: string | null;
-  tribunalCode?: string | null;
-  propertyType?: string | null;
-};
-
 export async function getActiveComparableSales(
   supabase: SupabaseClient,
   sale: AuctionSale,
 ): Promise<ActiveComparableSales> {
-  const scopes = buildActiveComparableScopes(sale);
+  const scopes = comparisonScopes(
+    {
+      city: sale.city,
+      department: sale.department,
+      tribunalCode: sale.tribunal_code,
+      propertyType: sale.property_type,
+    },
+    { nationwide: true },
+  );
   const byId = new Map<string, AuctionSale>();
   const usedLabels: string[] = [];
   const nowIso = new Date().toISOString();
@@ -254,49 +259,6 @@ export async function getValuationBacktestForReport(
   }
 }
 
-function buildActiveComparableScopes(sale: AuctionSale): ActiveComparableScope[] {
-  const scopes: ActiveComparableScope[] = [];
-  if (sale.city && sale.department) {
-    scopes.push({
-      label: "Même ville et même type de bien",
-      city: sale.city,
-      department: sale.department,
-      propertyType: sale.property_type,
-    });
-  }
-  if (sale.tribunal_code) {
-    scopes.push({
-      label: "Même tribunal et même type de bien",
-      tribunalCode: sale.tribunal_code,
-      propertyType: sale.property_type,
-    });
-  }
-  if (sale.department) {
-    scopes.push({
-      label: "Même département et même type de bien",
-      department: sale.department,
-      propertyType: sale.property_type,
-    });
-    scopes.push({
-      label: "Même département",
-      department: sale.department,
-    });
-  }
-  if (sale.city) {
-    scopes.push({
-      label: "Même ville",
-      city: sale.city,
-    });
-  }
-  if (sale.property_type) {
-    scopes.push({
-      label: "Même type de bien",
-      propertyType: sale.property_type,
-    });
-  }
-  return uniqueActiveComparableScopes(scopes);
-}
-
 async function queryActiveComparableSales({
   supabase,
   sale,
@@ -306,25 +268,23 @@ async function queryActiveComparableSales({
 }: {
   supabase: SupabaseClient;
   sale: AuctionSale;
-  scope: ActiveComparableScope;
+  scope: ComparisonScope;
   nowIso: string;
   limit: number;
 }): Promise<AppSaleRow[]> {
-  let query = supabase
-    .from("v_auction_sales_app")
-    .select("*")
-    .not("id", "is", null)
-    .or(
-      `sale_date.gte.${nowIso.slice(0, 10)},sale_procedure->sale_window.not.is.null,sale_procedure->sale_session.not.is.null`,
-    )
-    .order("sale_date", { ascending: true })
-    .order("id", { ascending: true });
-
-  if (sale.id) query = query.neq("id", sale.id);
-  if (scope.city) query = query.eq("city", scope.city);
-  if (scope.department) query = query.eq("department", scope.department);
-  if (scope.tribunalCode) query = query.eq("tribunal_code", scope.tribunalCode);
-  if (scope.propertyType) query = query.eq("property_type", scope.propertyType);
+  const query = filterComparisonScope(
+    supabase
+      .from("v_auction_sales_app")
+      .select("*")
+      .not("id", "is", null)
+      .or(
+        `sale_date.gte.${nowIso.slice(0, 10)},sale_procedure->sale_window.not.is.null,sale_procedure->sale_session.not.is.null`,
+      )
+      .order("sale_date", { ascending: true })
+      .order("id", { ascending: true }),
+    scope,
+    sale.id,
+  );
 
   const matches: AppSaleRow[] = [];
   const batchSize = 64;
@@ -339,18 +299,6 @@ async function queryActiveComparableSales({
     if (rows.length < batchSize) break;
   }
   return matches.slice(0, limit);
-}
-
-function uniqueActiveComparableScopes(scopes: ActiveComparableScope[]): ActiveComparableScope[] {
-  const seen = new Set<string>();
-  return scopes.filter((scope) => {
-    const key = [scope.city, scope.department, scope.tribunalCode, scope.propertyType]
-      .map((value) => value ?? "")
-      .join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 export async function getReport(

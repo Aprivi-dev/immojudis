@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminSignupAccount, AdminSignupListResponse } from "@/lib/admin-signups";
+import { AdminPill, type AdminPillTone } from "@/components/admin/admin-pill";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -121,6 +122,16 @@ describe("AdminSignupsPanel", () => {
     const premium = screen.getByRole("checkbox", { name: "Sélectionner premium@exemple.fr" });
     expect((premium as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole("form", { name: /Prolonger/ })).toBeNull();
+  });
+
+  it("montre l'accès dans la pastille commune de l'administration, avec son ton", async () => {
+    renderPanel();
+    await screen.findByText("investisseur@exemple.fr");
+    const pillClass = (tone: AdminPillTone) =>
+      render(<AdminPill tone={tone}>x</AdminPill>).container.firstElementChild?.className;
+
+    const trial = screen.getAllByText("Essai 7 jours").find((node) => node.tagName === "SPAN");
+    expect(trial?.className).toBe(pillClass("warning"));
   });
 
   it("montre l'usage de chaque compte, et « non mesuré » quand il n'est pas lu", async () => {

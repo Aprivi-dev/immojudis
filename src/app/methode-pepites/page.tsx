@@ -13,8 +13,8 @@ import { formatPrice } from "@/lib/format/numbers";
 import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { pageMetadata } from "@/lib/page-metadata";
 import { activePepiteRuleVersion, pepiteV2EnabledFromEnv } from "@/lib/pepite-rule-switch.server";
+import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
-  PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
   PEPITE_V12_RULE_PARAMS,
   pepiteV12EffectiveClause,

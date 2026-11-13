@@ -2,7 +2,10 @@ import { validCalendarDay } from "./calendar-day";
 import { saleDateBoundary } from "./search/sale-date-range";
 import { departmentCode } from "@/lib/department-code";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
-import { propertyFamily } from "@/lib/property-type-family";
+import { currentFilterValue } from "@/lib/legacy-filter-values";
+import { matchesOccupancyFilter } from "@/lib/occupancy-filter";
+import { occupancyClass } from "@/lib/occupancy-status";
+import { matchesPropertyTypeFilter, propertyFamily } from "@/lib/property-type-family";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import {
   frenchSearchTerms,
@@ -99,7 +102,7 @@ export function alertMatchesSale(
   if (alert.department && !sameDepartment(sale.department, alert.department)) {
     return noMatch("département différent");
   }
-  if (alert.property_type && !matchesText(sale.property_type, alert.property_type)) {
+  if (alert.property_type && !matchesPropertyTypeFilter(sale.property_type, alert.property_type)) {
     return noMatch("type de bien différent");
   }
   if (alert.max_price_eur != null && (sale.starting_price_eur ?? Infinity) > alert.max_price_eur) {
@@ -108,8 +111,12 @@ export function alertMatchesSale(
   if (alert.min_surface_m2 != null && (surface == null || surface < alert.min_surface_m2)) {
     return noMatch("surface insuffisante");
   }
-  if (alert.occupancy_status && !sameText(sale.occupancy_status, alert.occupancy_status)) {
-    return noMatch("occupation différente");
+  if (alert.occupancy_status) {
+    // Une valeur enregistrée sans classe d'occupation ne retient aucune vente.
+    const occupancy = occupancyClass(currentFilterValue(alert.occupancy_status));
+    if (!occupancy || !matchesOccupancyFilter(sale.occupancy_status, occupancy)) {
+      return noMatch("occupation différente");
+    }
   }
   if (
     alert.min_investment_score != null &&
@@ -183,19 +190,6 @@ function matchesAlertQueryScope(sale: AuctionSale, query: unknown): boolean {
 }
 
 /**
- * Code du département quand le texte de recherche n'est que cela (« 26 », « 2A », « 974 » ou un nom
- * de département) : l'alerte l'enregistre alors comme son département plutôt que comme texte libre.
- * `null` pour tout autre texte, une région, un code postal ou plusieurs départements (« 66, 65, 05 »
- * reste dans le texte enregistré, que l'évaluation lit comme ces trois départements).
- */
-export function departmentFromSearchQuery(query: string | null | undefined): string | null {
-  const scope = resolveFrenchGeoSearch(query);
-  return scope.kind === "department" && scope.departments.length === 1
-    ? (scope.departments[0] ?? null)
-    : null;
-}
-
-/**
  * Maison ou immeuble avec un terrain ou un jardin connu (critère `require_house_with_land`, que la
  * colonne décrit ainsi). Le titre ne sert que si le type de bien n'est pas qualifié.
  */
@@ -227,10 +221,6 @@ function sameDepartment(
   const actual = departmentCode(saleDepartment);
   if (wanted && actual) return wanted === actual;
   return sameText(saleDepartment, alertDepartment);
-}
-
-function matchesText(value: string | null | undefined, expected: string): boolean {
-  return normalize(value).includes(normalize(expected));
 }
 
 function normalize(value: string | null | undefined): string {

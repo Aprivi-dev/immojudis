@@ -44,7 +44,7 @@ export function summarizeSalesSample(sales: AuctionSale[]): SalesSampleSummary {
   };
 }
 
-export function medianRounded(values: number[], digits = 0): number | null {
+function medianRounded(values: number[], digits = 0): number | null {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);

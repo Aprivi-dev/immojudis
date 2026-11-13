@@ -22,7 +22,7 @@ import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInfo
 import { AdminInformationAgentUnroutedPanel } from "@/components/admin/AdminInformationAgentUnroutedPanel";
 import { useInformationAgentSummary } from "@/components/admin/use-information-agent-summary";
 import { toggle } from "@/components/admin/emails/email-ui";
-import type { InformationAgentMission } from "@/lib/information-agent";
+import type { InformationAgentMission } from "@/lib/information-agent/schemas";
 
 // Imports statiques, comme le module Emails : un `dynamic()` par onglet recopie les modules communs
 // dans chaque groupe de chargement et coûte plus de JavaScript qu'il n'en économise.

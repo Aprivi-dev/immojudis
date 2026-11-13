@@ -24,18 +24,6 @@ import type {
 // `information-agent/` : schemas.ts, draft.ts (brouillon), preview.ts (aperçu), send.ts (envoi),
 // mission-store.ts (accès aux missions), config.ts (configuration d'envoi).
 
-// Types encore importés d'ici par `src/components/admin/` et `src/lib/client-api/` (hors de ce lot).
-export type {
-  InformationAgentAdminActionPayload,
-  InformationAgentAdminListResponse,
-  InformationAgentAdminMissionPage,
-  InformationAgentCreateInput,
-  InformationAgentMission,
-  InformationAgentPreviewInput,
-} from "@/lib/information-agent/schemas";
-export type { InformationAgentPrepareResponse } from "@/lib/information-agent/prepare";
-export type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
-
 export async function listAdminInformationAgentMissions({
   auth,
   saleId,

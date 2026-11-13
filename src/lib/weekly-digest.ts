@@ -24,7 +24,12 @@ import {
   type WeeklyDigestContent,
   type WeeklyDigestSaleItem,
 } from "@/lib/weekly-digest-emails";
-import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
+import {
+  EMAIL_PASS_BUDGET_MS,
+  followedSalesInWindow,
+  readOncePerSale,
+  runEmailPass,
+} from "@/lib/email-campaign-pass";
 
 /**
  * Récapitulatif hebdomadaire « Ma semaine » : un seul email par semaine et par compte, envoyé par le
@@ -219,31 +224,14 @@ export async function buildDigestContent({
     : new Set<string>();
   const followedVisible = followed.filter((sale) => visible.has(sale.id));
 
-  // Une seule lecture de la date publique par vente et par passage.
-  const calendarCache = new Map<string, Promise<SaleCalendarRow | null>>();
-  const calendarOf = (saleId: string) => {
-    let cached = calendarCache.get(saleId);
-    if (!cached) {
-      cached = store.calendarEvent(saleId);
-      calendarCache.set(saleId, cached);
-    }
-    return cached;
-  };
+  const calendarOf = readOncePerSale((saleId) => store.calendarEvent(saleId));
 
   // 1. Audiences des 14 prochains jours : la date stockée tombe dans la fenêtre, puis la base confirme
   // que la date est sourcée et que la vente a été revérifiée à la source récemment.
-  const todayKey = parisDateKey(now);
-  const inWindow: Array<{ sale: FollowedSale; days: number }> = [];
-  for (const sale of followedVisible) {
-    if (!sale.saleDate) continue;
-    const stored = new Date(sale.saleDate);
-    if (!Number.isFinite(stored.getTime())) continue;
-    const days = calendarDaysBetween(todayKey, parisDateKey(stored));
-    if (days == null || days < 0 || days > AUDIENCE_WINDOW_DAYS) continue;
-    inWindow.push({ sale, days });
-  }
-  inWindow.sort((a, b) => a.days - b.days || a.sale.id.localeCompare(b.sale.id));
-  const examined = inWindow.slice(0, MAX_EXAMINED_SALES).map(({ sale }) => sale);
+  const { sales: examined } = followedSalesInWindow(followedVisible, now, {
+    maxDays: AUDIENCE_WINDOW_DAYS,
+    limit: MAX_EXAMINED_SALES,
+  });
   const verifiedAt = examined.length
     ? await store.lastVerifiedAt(examined.map((sale) => sale.id))
     : new Map<string, string | null>();
@@ -536,21 +524,7 @@ export async function runWeeklyDigest({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
-    const settledBatch = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settledBatch.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence de contenu : le passage échoue
-      // pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Weekly digest: user processing failed.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Weekly digest" });
+  summary.truncated = pass.truncated;
   return summary;
 }

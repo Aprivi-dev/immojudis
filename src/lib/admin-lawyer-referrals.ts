@@ -1,7 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
+import { asJson } from "@/lib/supabase-json";
 import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -761,8 +762,4 @@ function referencedLawyerToOption(
     city: lawyer.city,
     department: lawyer.department,
   };
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

@@ -1,23 +1,29 @@
-import { occupancyClass } from "@/lib/occupancy-status";
+import { occupancyClass, occupancyDetail } from "@/lib/occupancy-status";
 import { propertyFamily, type PropertyFamily } from "@/lib/property-type-family";
 
 /**
  * Libellé français de `occupancy_status` (contrainte SQL : vacant, occupied, rented, owner_occupied,
- * squatted, unknown), qui suit la classe de l'écart au marché et du plafond (`occupancyClass`) :
- * « inoccupé » est un bien libre, un bien squatté est « occupé sans droit ni titre », un bien loué
- * est « loué ».
+ * squatted, unknown), qui suit la classe de l'écart au marché et du plafond (`occupancyClass`) et sa
+ * précision (`occupancyDetail`) : « inoccupé » est un bien libre, un bien squatté est « occupé sans
+ * droit ni titre », un bien loué est « loué ».
  */
 export function occupancyLabel(status: string | null | undefined): string {
   if (!status) return "Non renseigné";
   const s = status.trim().toLocaleLowerCase("fr-FR");
   if (s === "unknown" || s === "inconnu") return "À confirmer";
-  const occupancy = occupancyClass(s);
-  if (occupancy === "vacant" || s === "free") return "Libre";
-  if (occupancy === null) return status;
-  if (/squat/.test(s)) return "Occupé sans droit ni titre";
-  if (occupancy === "rented") return "Loué";
-  if (s === "owner_occupied" || /propri[eé]taire/.test(s)) return "Occupé par le propriétaire";
-  return "Occupé";
+  switch (occupancyClass(s)) {
+    case "vacant":
+      return "Libre";
+    case "rented":
+      return "Loué";
+    case "occupied": {
+      const detail = occupancyDetail(s);
+      if (detail === "squatted") return "Occupé sans droit ni titre";
+      return detail === "owner_occupied" ? "Occupé par le propriétaire" : "Occupé";
+    }
+    default:
+      return status;
+  }
 }
 
 const UNTYPED_PROPERTY_LABEL = "Bien";

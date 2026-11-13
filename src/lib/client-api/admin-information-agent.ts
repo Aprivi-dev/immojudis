@@ -32,10 +32,10 @@ import type {
   InformationAgentAdminListResponse,
   InformationAgentAdminMissionPage,
   InformationAgentCreateInput,
-  InformationAgentPrepareResponse,
   InformationAgentPreviewInput,
-  InformationAgentPreviewResponse,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent/schemas";
+import type { InformationAgentPrepareResponse } from "@/lib/information-agent/prepare";
+import type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
 import type {
   InformationAgentEmailTemplateContent,
   InformationAgentEmailTemplatePreview,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import {
+  departmentFromSearchText,
   departmentSearchValues,
   matchesFrenchGeoSearch,
   normalizeFrenchSearchText,
@@ -143,3 +144,36 @@ function sale(overrides: Partial<AuctionSale>): AuctionSale {
     ...overrides,
   } as AuctionSale;
 }
+
+/**
+ * Une seule règle pour l'accueil (`firstSearchToUrl`) et la création d'une alerte (`use-create-alert`) :
+ * avant le lot 10, la première ne lisait pas un nom (« Gironde ») et prenait « 20 » pour un
+ * département, la seconde ne lisait pas de code postal.
+ */
+describe("departmentFromSearchText", () => {
+  it.each([
+    ["26", "26"],
+    ["Drôme", "26"],
+    ["Gironde", "33"],
+    ["département de la Gironde", "33"],
+    ["2a", "2A"],
+    ["974", "974"],
+    ["33000", "33"],
+    ["20090", "2A"],
+    ["97400", "974"],
+  ])("lit %s comme le département %s", (text, department) => {
+    expect(departmentFromSearchText(text)).toBe(department);
+  });
+
+  it.each([
+    // La liste reste dans le texte enregistré, que l'évaluation lit comme ces trois départements.
+    "66, 65, 05",
+    "Nouvelle-Aquitaine",
+    "20",
+    "Bordeaux",
+    "",
+    null,
+  ])("ne désigne pas un seul département : %s", (text) => {
+    expect(departmentFromSearchText(text)).toBeNull();
+  });
+});

@@ -141,6 +141,20 @@ describe("comparables DVF détaillés (n° 23)", () => {
     expect(mocks.from).toHaveBeenCalledWith("dvf_transactions");
   });
 
+  it("compte les mois au calendrier : 36 mois avant le 29 février 2028, c'est le 28 février 2025", async () => {
+    await getDvfComparables({
+      auth: authContext(),
+      input: dvfComparablesQuerySchema.parse({ saleId: SALE_ID }),
+      now: new Date("2028-02-29T12:00:00.000Z"),
+    });
+
+    // Avant : `setUTCMonth` menait au « 29 février 2025 », soit le 1er mars.
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "search_dvf_market_comparables",
+      expect.objectContaining({ p_minimum_date: "2025-02-28" }),
+    );
+  });
+
   it("donne la même médiane et les mêmes quartiles pour limit=3 et limit=50", async () => {
     const run = (limit: number) =>
       getDvfComparables({

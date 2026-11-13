@@ -1,9 +1,9 @@
 import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { AuctionSale } from "@/lib/types";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import { cleanTextDeep as cleanText, type TextCandidate } from "@/lib/clean-text";
-import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { excerpt, normalizeText } from "@/lib/analysis-text";
+import type { TextCandidate } from "@/lib/clean-text";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
@@ -414,22 +414,10 @@ function nextActions({
 }
 
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-  for (const item of flattenKeyValues(sale.source_blocks ?? {})) {
-    addCandidate(candidates, `${item.path}: ${cleanText(item.value)}`, "Données source");
-  }
-  for (const [sourceName, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    for (const item of flattenKeyValues(blocks)) {
-      addCandidate(
-        candidates,
-        `${item.path}: ${cleanText(item.value)}`,
-        `Données source ${sourceName}`,
-      );
-    }
-  }
-
-  return candidates.filter((candidate) =>
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    sourceFields: () => true,
+  }).filter((candidate) =>
     SIGNAL_DEFINITIONS.some((definition) => matches(definition, candidate.text)),
   );
 }

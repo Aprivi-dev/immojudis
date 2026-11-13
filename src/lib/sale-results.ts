@@ -27,7 +27,7 @@ import {
 } from "@/lib/sale-result-emails";
 import { seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import { surenchereWindow } from "@/lib/surenchere-window";
-import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
+import { EMAIL_PASS_BUDGET_MS, runEmailPass } from "@/lib/email-campaign-pass";
 
 /**
  * Alerte de résultat ou de remise en vente d'une vente suivie (favoris et ventes débloquées),
@@ -478,21 +478,7 @@ export async function runSaleResults({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
-    const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settled.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence d'alerte : le passage échoue
-      // pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Sale results: user processing failed.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Sale results" });
+  summary.truncated = pass.truncated;
   return summary;
 }

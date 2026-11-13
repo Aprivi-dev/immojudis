@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { currentFilterValue } from "@/lib/legacy-filter-values";
 import { isQualifiedPropertyType, occupancyLabel, propertyTypeLabel } from "./property-labels";
 
 describe("occupancyLabel", () => {
@@ -18,7 +19,6 @@ describe("occupancyLabel", () => {
     ["inoccupé", "Libre"],
     ["Inoccupé", "Libre"],
     ["libre", "Libre"],
-    ["free", "Libre"],
     ["loué", "Loué"],
     ["Occupé par le propriétaire", "Occupé par le propriétaire"],
     ["inconnu", "À confirmer"],
@@ -37,6 +37,11 @@ describe("occupancyLabel", () => {
     ]) {
       expect(occupancyLabel(status), status).not.toMatch(/[a-z]_[a-z]|squatted|vacant|rented/);
     }
+  });
+
+  it("labels the old filter value « free » once read by the compatibility table", () => {
+    // Une alerte enregistrée garde parfois `free` : son résumé passe par `currentFilterValue`.
+    expect(occupancyLabel(currentFilterValue("free"))).toBe("Libre");
   });
 
   it("keeps a free-text status that no rule recognizes", () => {

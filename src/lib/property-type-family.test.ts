@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isHouseWithLand } from "@/lib/alerts";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { resolveMarketPropertySegment } from "@/lib/market-estimation-engine";
-import { matchesPropertyFamily, propertyFamily } from "@/lib/property-type-family";
+import {
+  matchesPropertyFamily,
+  matchesPropertyTypeFilter,
+  propertyFamily,
+} from "@/lib/property-type-family";
 import { isRentApplicable, rentSegmentFor } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import { listingPropertyClass } from "@/lib/tribunal-listing-statistics";
@@ -147,5 +151,30 @@ describe("matchesPropertyFamily", () => {
   it("ne rapproche jamais deux types « autre »", () => {
     expect(matchesPropertyFamily("other", "other")).toBe(false);
     expect(matchesPropertyFamily("Dépendance", "other")).toBe(false);
+  });
+});
+
+describe("matchesPropertyTypeFilter", () => {
+  // La recherche serveur compare la colonne au code du filtre : la règle n'est la même que si chaque
+  // code de la contrainte SQL de `property_type` est le nom de sa propre famille.
+  it.each([
+    "apartment",
+    "house",
+    "building",
+    "land",
+    "commercial",
+    "parking",
+    "mixed",
+    "other",
+    "unknown",
+  ])("le code %s est sa propre famille", (code) => {
+    expect(propertyFamily(code)).toBe(code);
+  });
+
+  it("compare les familles, pas le texte", () => {
+    expect(matchesPropertyTypeFilter("parking", "garage")).toBe(true);
+    expect(matchesPropertyTypeFilter("house", "Maison")).toBe(true);
+    expect(matchesPropertyTypeFilter("apartment", "house")).toBe(false);
+    expect(matchesPropertyTypeFilter(null, "house")).toBe(false);
   });
 });

@@ -17,13 +17,13 @@ import {
 import {
   distributionRates,
   filterAdjudicationTribunals,
-  propertyTypeLabels,
   tribunalComparisonCsv,
   wilsonShareInterval,
   type TribunalSort,
 } from "@/lib/adjudication-barometer";
 import { downloadBlob } from "@/lib/download-blob";
 import { formatShortDate } from "@/lib/format/dates";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { formatPrice, formatShareAsPercent } from "@/lib/format/numbers";
 import styles from "./AdjudicationBarometer.module.css";
 
@@ -118,7 +118,7 @@ export function AdjudicationBarometer({
             </h3>
             <p>
               Prix adjugé publié (hors frais, avant surenchère) ·{" "}
-              {selectedType ? propertyTypeLabels[propertyType] : "Tous types de biens"}
+              {selectedType ? propertyTypeLabel(propertyType) : "Tous types de biens"}
             </p>
             <p>
               Périmètre : lots adjugés dont le prix est publié. Les lots non adjugés, retirés ou
@@ -152,7 +152,7 @@ export function AdjudicationBarometer({
                   <option value="">Tous types confondus</option>
                   {types.map((item) => (
                     <option key={item.propertyType} value={item.propertyType}>
-                      {propertyTypeLabels[item.propertyType]} ·{" "}
+                      {propertyTypeLabel(item.propertyType)} ·{" "}
                       {integer.format(item.distribution.sampleSize)} prix
                     </option>
                   ))}
@@ -203,7 +203,7 @@ export function AdjudicationBarometer({
         <p className={styles.description}>
           Chaque vente est comptée une seule fois, selon le rapport prix adjugé / mise à prix.{" "}
           {scope?.label}
-          {selectedType ? ` · ${propertyTypeLabels[propertyType]}` : ""}.
+          {selectedType ? ` · ${propertyTypeLabel(propertyType)}` : ""}.
         </p>
         {distribution ? (
           <DistributionChart distribution={distribution} />
@@ -259,9 +259,9 @@ export function AdjudicationBarometer({
                               setPropertyType(item.propertyType);
                               profileHeading.current?.focus();
                             }}
-                            aria-label={`Analyser le type ${propertyTypeLabels[item.propertyType]}`}
+                            aria-label={`Analyser le type ${propertyTypeLabel(item.propertyType)}`}
                           >
-                            {propertyTypeLabels[item.propertyType]}{" "}
+                            {propertyTypeLabel(item.propertyType)}{" "}
                             <ArrowUpRight size={14} aria-hidden />
                           </button>
                         </th>

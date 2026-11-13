@@ -3,9 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), headers: vi.fn(), fetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), session: vi.fn(), fetch: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth() }));
-vi.mock("@/lib/client-api-core", () => ({ authHeaders: mocks.headers }));
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => true,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: mocks.session() } }) },
+  }),
+}));
 
 import { SaleSignalFeedback } from "./SaleSignalFeedback";
 
@@ -23,7 +28,7 @@ function lastBody() {
 describe("SaleSignalFeedback", () => {
   beforeEach(() => {
     mocks.auth.mockReturnValue({ user: { id: "user-1" }, loading: false });
-    mocks.headers.mockResolvedValue({ Authorization: "Bearer token" });
+    mocks.session.mockReturnValue({ access_token: "token" });
     respond(true);
     vi.stubGlobal("fetch", mocks.fetch);
   });
@@ -148,7 +153,7 @@ describe("SaleSignalFeedback", () => {
   });
 
   it("says so when the session is missing or the network fails", async () => {
-    mocks.headers.mockRejectedValue(new Error("Connexion requise."));
+    mocks.session.mockReturnValue(null);
     render(<SaleSignalFeedback saleId={saleId} signal="market_gap_band" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Utile" }));

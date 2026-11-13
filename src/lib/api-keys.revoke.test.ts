@@ -50,6 +50,17 @@ describe("revokeUserApiKey", () => {
     expect(fromMock).not.toHaveBeenCalled();
   });
 
+  it("accepts any UUID Postgres accepts, as the rest of the application (`uuid.ts`)", async () => {
+    // Version 0 and upper case: refused by zod's strict UUID, accepted by Postgres.
+    const keyId = "ABCDEF12-0000-0000-0000-000000000000";
+    const update = query({ data: keyRow({ id: keyId, revoked_at: "2026-10-31T10:00:00.000Z" }) });
+    fromMock.mockReturnValueOnce(update);
+
+    await revokeUserApiKey({ auth, keyId });
+
+    expect(update.eq).toHaveBeenCalledWith("id", keyId);
+  });
+
   it("revokes an active key of the account and sets the revocation date", async () => {
     const update = query({ data: keyRow({ revoked_at: "2026-10-31T10:00:00.000Z" }) });
     fromMock.mockReturnValueOnce(update);

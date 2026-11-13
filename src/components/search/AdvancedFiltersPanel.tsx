@@ -17,6 +17,7 @@ import {
   HOME_TYPE_OPTIONS,
   NO_POINTS_TO_VERIFY_FILTER_HINT,
   NO_POINTS_TO_VERIFY_FILTER_LABEL,
+  OCCUPANCY_OPTIONS,
   STATUS_OPTIONS,
 } from "@/lib/search/search-filters";
 import { type SearchDraft, surfaceRangeError, toggleValue } from "./search-page-state";
@@ -291,9 +292,11 @@ export function MobileFilterDrawer({
                   className="form-input h-10 w-full cursor-pointer bg-white text-sm"
                 >
                   <option value="all">Toutes</option>
-                  <option value="free">Libre</option>
-                  <option value="occupied">Occupé</option>
-                  <option value="rented">Loué</option>
+                  {OCCUPANCY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </FilterField>
               <FilterField label="Note minimale (classement Immojudis)">

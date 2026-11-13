@@ -12,6 +12,7 @@ import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import {
+  CATALOGUE_READINESS_QUERY_KEY,
   REVIEW_QUERY_KEY as QUERY_KEY,
   reviewQuery,
 } from "@/components/admin/information-agent-queries";
@@ -58,7 +59,7 @@ export function AdminInformationAgentReviewPanel() {
     onSuccess: (_response, input) => {
       setRejectNotes((previous) => ({ ...previous, [input.factId]: "" }));
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: CATALOGUE_READINESS_QUERY_KEY });
       toast.success("Information contrôlée. La fiche sera réévaluée après enrichissement.");
     },
     onError: (error) => toast.error(queryErrorMessage(error, "Revue impossible")),

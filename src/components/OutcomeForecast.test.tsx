@@ -7,7 +7,8 @@ import {
   buildOutcomeGraphRefusal,
   type OutcomeGraphCohort,
 } from "@/lib/outcome-graph";
-import { OutcomeForecast, type OutcomeGraphForecastQuery } from "./OutcomeForecast";
+import type { OutcomeGraphForecastQuery } from "@/hooks/use-outcome-graph-forecast";
+import { OutcomeForecast } from "./OutcomeForecast";
 
 describe("OutcomeForecast", () => {
   afterEach(cleanup);

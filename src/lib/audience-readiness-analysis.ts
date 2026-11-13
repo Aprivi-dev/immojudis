@@ -142,6 +142,10 @@ function buildChecklist({
 }): AudienceReadinessItem[] {
   const hasConditions = hasDocument(documents, /cahier|conditions/i);
   const hasDescriptiveReport = hasDocument(documents, /pv|descriptif|commissaire|huissier/i);
+  const occupancyStatusKnown =
+    occupancyAnalysis.status === "free" ||
+    occupancyAnalysis.status === "occupied" ||
+    occupancyAnalysis.status === "rented";
   const hasDiagnostics = hasDocument(documents, /diagnostic|dpe|amiante|plomb|termite/i);
   const currentVisits = visitDates.filter(
     (value) => publishedDay(value) && !visitHasPassed(value, now),
@@ -234,17 +238,21 @@ function buildChecklist({
     {
       key: "occupation",
       label: "Occupation",
-      status:
-        occupancyAnalysis.status === "free" ||
-        occupancyAnalysis.status === "occupied" ||
-        occupancyAnalysis.status === "rented"
+      // Un statut repéré n'est « fait » que confirmé par le PV descriptif : sans pièce, la ligne
+      // reste à vérifier (relecture juridique du 13/11/2026).
+      status: !occupancyStatusKnown
+        ? occupancyAnalysis.status === "conflicting"
+          ? "watch"
+          : "to_do"
+        : hasDescriptiveReport
           ? "done"
-          : occupancyAnalysis.status === "conflicting"
-            ? "watch"
-            : "to_do",
+          : "watch",
       priority: "high",
       source: "Analyse occupation",
-      detail: occupancyAnalysis.summary,
+      detail:
+        occupancyStatusKnown && !hasDescriptiveReport
+          ? `${occupancyAnalysis.summary} Aucun PV descriptif repéré pour confirmer ce statut.`
+          : occupancyAnalysis.summary,
       action: occupancyAnalysis.nextActions[0] ?? "Qualifier l'occupation exacte avant audience.",
     },
     {

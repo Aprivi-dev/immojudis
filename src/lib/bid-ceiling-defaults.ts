@@ -15,7 +15,7 @@ import {
 import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
-import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
+import { occupancyClass, occupancyDetail } from "@/lib/occupancy-status";
 import { propertyFamily } from "@/lib/property-type-family";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
@@ -103,18 +103,21 @@ export type CeilingUserChoices = {
 };
 
 /**
- * Cas d'occupation du plafond pour un `occupancy_status`. Mêmes règles que l'écart au marché
- * (`isVacantOccupancyStatus`, `isOccupiedOccupancyStatus`) : « inoccupé » est un bien libre (aucun
- * coût de libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
+ * Cas d'occupation du plafond pour un `occupancy_status`. Même classe que l'écart au marché et le
+ * libellé (`occupancyClass`, `occupancyDetail`) : « inoccupé » est un bien libre (aucun coût de
+ * libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
  */
 export function occupationCaseForStatus(status: string | null | undefined): OccupationCase {
-  const value = (status ?? "").trim().toLocaleLowerCase("fr-FR");
-  if (!value || value === "unknown" || value === "inconnu") return "inconnu";
-  if (isVacantOccupancyStatus(value) || value === "free") return "libre";
-  if (!isOccupiedOccupancyStatus(value)) return "inconnu";
-  if (/squat/.test(value)) return "squat";
-  if (value === "rented" || value === "tenant_occupied" || /lou[eé]/.test(value)) return "loue";
-  return "occupe";
+  switch (occupancyClass(status)) {
+    case "vacant":
+      return "libre";
+    case "rented":
+      return "loue";
+    case "occupied":
+      return occupancyDetail(status) === "squatted" ? "squat" : "occupe";
+    default:
+      return "inconnu";
+  }
 }
 
 /**

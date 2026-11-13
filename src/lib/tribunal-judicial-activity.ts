@@ -621,12 +621,9 @@ function sampleMetric(
   return { status: "published", value: round(value, 2), sampleSize: sample.length };
 }
 
-function rangeMetric(
-  values: number[],
-  minimum = TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE,
-): TribunalJudicialActivityRangeMetric {
+function rangeMetric(values: number[]): TribunalJudicialActivityRangeMetric {
   const sample = values.filter((value) => Number.isFinite(value) && value >= 0);
-  if (sample.length < minimum) {
+  if (sample.length < TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE) {
     return {
       status: "insufficient_data",
       p25: null,

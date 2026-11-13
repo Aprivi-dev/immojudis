@@ -1,6 +1,7 @@
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale } from "@/lib/types";
 import { cleanText, type TextCandidate } from "@/lib/clean-text";
+import { collectSaleTextCandidates } from "@/lib/sale-text-candidates";
 
 type NearbyServiceCategoryKey =
   | "transport"
@@ -285,25 +286,15 @@ function nearbyLimitations(status: NearbyServicesAnalysis["status"]): string[] {
   return limitations;
 }
 
+const NEARBY_SOURCE_FIELD =
+  /(?:^|\.)(?:quartier|neighborhood|proximite|nearby_services|services_proximite)(?:\.|$)/i;
+
 function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
-  const candidates: TextCandidate[] = [];
-  addCandidate(candidates, sale.source_description ?? sale.description, "Description source");
-  const addBlocks = (blocks: unknown, source: string) => {
-    for (const item of flattenKeyValues(blocks)) {
-      if (
-        /(?:^|\.)(?:quartier|neighborhood|proximite|nearby_services|services_proximite)(?:\.|$)/i.test(
-          item.path,
-        )
-      ) {
-        addCandidate(candidates, item.value, source);
-      }
-    }
-  };
-  addBlocks(sale.source_blocks, "Données source");
-  for (const [source, blocks] of Object.entries(sale.source_blocks_by_source ?? {})) {
-    addBlocks(blocks, `Données source ${source}`);
-  }
-  return candidates;
+  // D'un champ, la valeur seule, sans son chemin : ses phrases sont citées telles quelles.
+  return collectSaleTextCandidates(sale, {
+    descriptions: "one",
+    sourceFields: ({ path }) => NEARBY_SOURCE_FIELD.test(path),
+  }).flatMap(({ text, source, field }) => distanceSentences(field ? field.value : text, source));
 }
 
 function resolveLocationQuality(sale: AuctionSale): NearbyServicesAnalysis["locationQuality"] {
@@ -313,16 +304,16 @@ function resolveLocationQuality(sale: AuctionSale): NearbyServicesAnalysis["loca
   return "missing";
 }
 
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
+/** Les phrases du texte qui parlent de proximité ou de distance. */
+function distanceSentences(value: unknown, source: string): TextCandidate[] {
   const text = cleanText(value);
-  if (!text) return;
-  for (const sentence of text.split(/[.!?;\n]+/)) {
-    if (
+  if (!text) return [];
+  return text
+    .split(/[.!?;\n]+/)
+    .filter((sentence) =>
       /\b(?:proche|proximite|deux pas|a cote|distance|a pied)\b|\b\d+\s*(?:m|metres|km|minutes|min)\b/i.test(
         normalizeText(sentence),
-      )
-    ) {
-      candidates.push({ text: sentence.trim(), source });
-    }
-  }
+      ),
+    )
+    .map((sentence) => ({ text: sentence.trim(), source }));
 }

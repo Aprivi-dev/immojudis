@@ -5,6 +5,7 @@ import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
 import { MarketEstimateError } from "@/lib/market-server/errors";
 import { haversineMeters } from "@/lib/market-server/geometry";
 import { roundTo } from "@/lib/market-server/numbers";
+import { propertyFamily } from "@/lib/property-type-family";
 import { quantileSorted } from "@/lib/stats";
 import { fetchCommune, officialDvfCommuneCode } from "@/lib/market-server/sources";
 import { recentEnough } from "@/lib/market-server/radius-analysis";
@@ -172,5 +173,5 @@ function filterParkingOutliers<T extends DataGouvParkingSale>(
 }
 
 export function isParkingProperty(propertyType: string | null | undefined): boolean {
-  return /parking|stationnement|garage|\bbox\b/i.test(propertyType ?? "");
+  return propertyFamily(propertyType) === "parking";
 }

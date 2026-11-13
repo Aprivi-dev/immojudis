@@ -29,10 +29,8 @@ import {
 } from "@/lib/client-api";
 import type { AdminSourceRefreshResponse } from "@/lib/admin-source-refresh";
 import { isValidInformationAgentEmail } from "@/lib/information-agent/email-address";
-import type {
-  InformationAgentMission,
-  InformationAgentPreviewResponse,
-} from "@/lib/information-agent";
+import type { InformationAgentMission } from "@/lib/information-agent/schemas";
+import type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 import {
   INFORMATION_AGENT_QUESTIONS,
@@ -1160,6 +1158,11 @@ function selectionIdentityKey(selection: InformationRequestSelection): string {
   ]);
 }
 
+/**
+ * Copie de `normalizeEmail` (`account.ts`), gardée exprès : l'importer d'ici sépare `account.ts` du
+ * module de session dans le JavaScript commun à toutes les pages (+88 octets sur chacune, mesuré
+ * le 13/11/2026 sur /annonce-exemple, à 20 octets de son budget).
+ */
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }

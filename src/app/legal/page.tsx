@@ -10,11 +10,5 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function Page() {
-  // Le précharge est ici et non dans `LegalPage` : le fichier de la route est ancré par son
-  // sha256 dans `LEGAL_DOCUMENTS` (toute modification demande une nouvelle version du document).
-  return (
-    <>
-      <LegalPage />
-    </>
-  );
+  return <LegalPage />;
 }

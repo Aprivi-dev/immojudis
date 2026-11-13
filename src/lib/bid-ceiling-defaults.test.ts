@@ -6,7 +6,7 @@ import {
 } from "@/lib/bid-ceiling-defaults";
 import { DEFAULT_PRELIMINARY_FEES } from "@/lib/profitability";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
-import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { RentReference } from "@/lib/rent-reference";
 import { DEFAULTS } from "@/lib/profitability";
@@ -59,7 +59,9 @@ describe("occupationCaseForStatus", () => {
     ["inoccupé", "libre"],
     ["Inoccupé", "libre"],
     ["libre", "libre"],
-    ["free", "libre"],
+    // Ancienne valeur du filtre « Libre », jamais un statut de la base : le plafond ne la devine pas
+    // (les adresses et les alertes la lisent par `currentFilterValue`).
+    ["free", "inconnu"],
     ["loué", "loue"],
     ["Occupé par le propriétaire", "occupe"],
     ["inconnu", "inconnu"],

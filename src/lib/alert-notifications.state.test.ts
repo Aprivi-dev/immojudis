@@ -11,7 +11,10 @@ vi.mock("@/lib/notification-preferences", () => ({ emailAlertConsentEnabled: vi.
 vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
 
 import { PublicApiError } from "@/lib/api-errors";
-import { updateAlertNotificationState } from "@/lib/alert-notifications";
+import {
+  alertNotificationUpdateSchema,
+  updateAlertNotificationState,
+} from "@/lib/alert-notifications";
 
 const NOTIFICATION_ID = "0b6f1d2c-3a4e-4f5a-8b9c-1d2e3f4a5b6c";
 
@@ -123,5 +126,16 @@ describe("updateAlertNotificationState", () => {
         action: "read",
       }),
     ).rejects.toThrow("connection reset");
+  });
+});
+
+describe("alertNotificationUpdateSchema", () => {
+  it("accepte tout UUID que Postgres accepte, comme le reste de l'application (`uuid.ts`)", () => {
+    const parse = (notificationId: string) =>
+      alertNotificationUpdateSchema.safeParse({ notificationId, action: "read" }).success;
+
+    expect(parse("00000000-0000-0000-0000-000000000000")).toBe(true);
+    expect(parse(NOTIFICATION_ID.toUpperCase())).toBe(true);
+    expect(parse("pas-un-uuid")).toBe(false);
   });
 });

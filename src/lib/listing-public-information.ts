@@ -1,6 +1,7 @@
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { occupancyLabel, propertyTypeLabel } from "@/lib/format/property-labels";
+import { propertyFamily } from "@/lib/property-type-family";
 import { listingDate, listingVisits } from "@/lib/sale-listing";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import { getDisplaySurface } from "@/lib/surface";
@@ -712,9 +713,7 @@ function selectFieldIds(
 }
 
 function isPublicFieldApplicable(fieldId: string, sale: AuctionSale): boolean {
-  const propertyType = normalize(sale.property_type);
-  const isLand = /^(?:land|terrain|parcelle|agricole|bois)(?:_|$)/.test(propertyType);
-  if (!isLand) return true;
+  if (propertyFamily(sale.property_type) !== "land") return true;
   return !new Set([
     "rooms_count",
     "bedrooms_count",

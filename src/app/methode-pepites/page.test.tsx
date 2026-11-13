@@ -7,8 +7,8 @@ import { MARKET_GAP_METHOD_PATH } from "@/lib/market-gap";
 import { FLOOD_ADDRESS_MIN_SCORE, FLOOD_PARCEL_MAX_PROBES } from "@/lib/flood-risk";
 import { FLOOD_FORBIDDEN_WORDS, floodWarning } from "@/lib/pepite-flood-copy";
 import * as policy from "@/lib/pepite-policy";
+import { PEPITE_METHOD_PATH } from "@/lib/pepite-copy";
 import {
-  PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
   PEPITE_V12_RULE_PARAMS,
   PEPITE_V1_1_RULE_VERSION,

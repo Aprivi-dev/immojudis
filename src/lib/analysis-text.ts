@@ -52,3 +52,15 @@ export function matchesAnyPattern(definition: { patterns: RegExp[] }, text: stri
   const normalized = normalizeText(text);
   return definition.patterns.some((pattern) => pattern.test(normalized));
 }
+
+/** Une preuve par statut, extrait (sans accents ni casse) et provenance : la première est gardée. */
+export function dedupeEvidence<T extends { status: string; excerpt: string; source: string }>(
+  evidence: T[],
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const item of evidence) {
+    const key = `${item.status}-${normalizeText(item.excerpt)}-${item.source}`;
+    if (!byKey.has(key)) byKey.set(key, item);
+  }
+  return [...byKey.values()];
+}

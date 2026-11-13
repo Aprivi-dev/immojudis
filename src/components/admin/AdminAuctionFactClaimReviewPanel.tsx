@@ -12,6 +12,8 @@ import { formatShortDateTime } from "@/lib/format/dates";
 import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { AdminPill } from "@/components/admin/admin-pill";
+import { CATALOGUE_READINESS_QUERY_KEY } from "@/components/admin/information-agent-queries";
 import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
@@ -49,7 +51,7 @@ export function AdminAuctionFactClaimReviewPanel() {
     onSuccess: () => {
       setDrafts({});
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-readiness"] });
+      void queryClient.invalidateQueries({ queryKey: CATALOGUE_READINESS_QUERY_KEY });
       toast.success("Décision enregistrée. La fiche sera réévaluée avec ce contrôle.");
     },
     onError: (error) => toast.error(queryErrorMessage(error, "Décision impossible.")),
@@ -194,20 +196,14 @@ function ClaimLine({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
-                item.status === "conflicted"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-amber-200 bg-amber-50 text-amber-800"
-              }`}
-            >
+            <AdminPill tone={item.status === "conflicted" ? "danger" : "warning"}>
               {item.status === "conflicted" ? (
                 <AlertTriangle className="size-3" />
               ) : (
                 <CheckCircle className="size-3" />
               )}
               {item.status === "conflicted" ? "Conflit" : "À confirmer"}
-            </span>
+            </AdminPill>
             <span className="text-xs text-brand-navy/55">{factFieldLabel(item.fieldKey)}</span>
             <span className="font-mono text-[11px] text-brand-navy/45">
               {shortId(item.claimId)}

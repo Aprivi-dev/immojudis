@@ -9,13 +9,11 @@ import { AdminPepitesPage } from "./admin-pepites-page";
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { email: "admin@example.test" } }) }));
-vi.mock("@/lib/client-api-core", async () => ({
-  authHeaders: async () => ({ Authorization: "Bearer jeton" }),
-  readJson: async (response: Response) => {
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error);
-    return body;
-  },
+vi.mock("@/integrations/supabase/lazy", () => ({
+  hasSupabaseAuthHint: () => true,
+  getSupabase: async () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "jeton" } } }) },
+  }),
 }));
 vi.mock("@/components/admin/AdminShell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/admin/AdminShell")>()),
@@ -83,7 +81,7 @@ const view: AdminPepitesView = {
 };
 
 describe("page d'administration des pépites", () => {
-  it("lit la page préparée par le serveur, avec le jeton de l'administrateur, sans cache", async () => {
+  it("lit la page préparée par le serveur, avec le jeton de l'administrateur et un délai", async () => {
     renderPage(Response.json(view));
 
     expect(await screen.findByText("Mode : shadow")).toBeTruthy();
@@ -91,7 +89,7 @@ describe("page d'administration des pépites", () => {
       "/api/admin/pepites",
       expect.objectContaining({
         headers: { Authorization: "Bearer jeton" },
-        cache: "no-store",
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(screen.getByText("Observation.")).toBeTruthy();
@@ -172,7 +170,12 @@ describe("page d'administration des pépites", () => {
       expect(confirm).toHaveBeenCalled();
       const [url, init] = mocks.fetch.mock.calls[1];
       expect(url).toBe("/api/admin/pepites");
-      expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ mode: "shadow" }) });
+      // Écriture d'administration : le même délai de 30 s que les lectures.
+      expect(init).toMatchObject({
+        method: "POST",
+        body: JSON.stringify({ mode: "shadow" }),
+        signal: expect.any(AbortSignal),
+      });
       await waitFor(() =>
         expect(screen.queryByRole("button", { name: "Suspendre les pépites" })).toBeNull(),
       );

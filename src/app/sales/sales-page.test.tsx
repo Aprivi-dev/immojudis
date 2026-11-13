@@ -96,4 +96,10 @@ describe("SalesPage : page rendue à la demande", () => {
     expect(getByTestId("page").textContent).toBe("page 5");
     expect(state.searches.at(-1)).toMatchObject({ page: 5, city: "Pau" });
   });
+
+  it("lit les anciennes valeurs des filtres d'une adresse partagée", () => {
+    window.history.replaceState(null, "", "/sales?homeTypes=garage&occupancy=free");
+    render(<SalesPage serverSeeded />);
+    expect(state.searches.at(-1)).toMatchObject({ homeTypes: ["parking"], occupancy: "vacant" });
+  });
 });

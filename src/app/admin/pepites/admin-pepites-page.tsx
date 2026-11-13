@@ -5,7 +5,7 @@ import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPane
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 import type { AdminPepitesView, PepitesViewCell } from "@/lib/admin-pepites-view";
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { apiRequest } from "@/lib/client-api-core";
 
 /**
  * Page des pépites : un afficheur de sections préparées par le serveur (`buildAdminPepitesView`). Rien
@@ -15,27 +15,17 @@ export function AdminPepitesPage() {
   const { user } = useAuth();
   const query = useQuery({
     queryKey: ["admin-pepites"],
-    queryFn: async () =>
-      readJson<AdminPepitesView>(
-        await fetch("/api/admin/pepites", {
-          signal: AbortSignal.timeout(30_000),
-          headers: await authHeaders(),
-          cache: "no-store",
-        }),
-      ),
+    queryFn: () => apiRequest<AdminPepitesView>("/api/admin/pepites"),
     staleTime: 60_000,
   });
 
   // Arrêt d'urgence : « on » vers « shadow » seulement, jamais l'inverse (la base le refuse aussi).
   const suspend = useMutation({
-    mutationFn: async () =>
-      readJson<{ mode: string }>(
-        await fetch("/api/admin/pepites", {
-          method: "POST",
-          headers: { ...(await authHeaders()), "content-type": "application/json" },
-          body: JSON.stringify({ mode: "shadow" }),
-        }),
-      ),
+    mutationFn: () =>
+      apiRequest<{ mode: string }>("/api/admin/pepites", {
+        method: "POST",
+        body: { mode: "shadow" },
+      }),
     onSuccess: () => void query.refetch(),
   });
 

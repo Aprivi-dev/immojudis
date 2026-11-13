@@ -1,5 +1,6 @@
 import "server-only";
 import { resolveMx, resolveTxt } from "node:dns/promises";
+import { withTimeout } from "@/lib/with-timeout";
 
 /**
  * Vérification publique des DNS (ce que voit le reste d'Internet, indépendamment de Resend) : DMARC,
@@ -34,14 +35,6 @@ export function recommendedDmarc(reportAddress: string | null): string {
   return `v=DMARC1; p=none${reportAddress ? `; rua=mailto:${reportAddress}` : ""}`;
 }
 
-function withTimeout<T>(task: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("dns-timeout")), LOOKUP_TIMEOUT_MS);
-  });
-  return Promise.race([task, timeout]).finally(() => clearTimeout(timer));
-}
-
 const ABSENT_CODES = new Set(["ENOTFOUND", "ENODATA", "NXDOMAIN"]);
 
 async function lookup<T>(
@@ -49,7 +42,7 @@ async function lookup<T>(
   pick: (result: T) => unknown,
 ): Promise<DnsLookup<T>> {
   try {
-    const result = await withTimeout(task());
+    const result = await withTimeout(task(), LOOKUP_TIMEOUT_MS, () => new Error("dns-timeout"));
     return pick(result) ? { status: "present", value: result } : { status: "absent" };
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;

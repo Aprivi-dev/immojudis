@@ -13,6 +13,12 @@ import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 import { quantile } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
+import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
+import {
+  comparisonScopes,
+  filterComparisonScope,
+  type ComparisonScope,
+} from "@/lib/comparison-scopes";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -144,14 +150,6 @@ export type MarketAnalyticsResponse = MarketAnalyticsSnapshot & {
   };
 };
 
-type AnalyticsScope = {
-  label: string;
-  city?: string | null;
-  department?: string | null;
-  tribunalCode?: string | null;
-  propertyType?: string | null;
-};
-
 export async function getMarketAnalytics({
   auth,
   input,
@@ -169,9 +167,14 @@ export async function getMarketAnalytics({
   const referenceSale = input.saleId
     ? await readSaleThroughDoor<MarketSaleRow>(auth, input.saleId, "plan", MARKET_COLUMNS)
     : null;
-  const scopes = buildAnalyticsScopes(input, referenceSale);
-  const fromDate = addMonthsIso(now, -input.months);
-  const toDate = addMonthsIso(now, input.futureMonths);
+  const scopes = comparisonScopes({
+    city: input.city ?? referenceSale?.city,
+    department: input.department ?? referenceSale?.department,
+    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
+    propertyType: input.propertyType ?? referenceSale?.property_type,
+  });
+  const fromDate = addUtcCalendarMonths(now, -input.months).toISOString();
+  const toDate = addUtcCalendarMonths(now, input.futureMonths).toISOString();
   let selectedScope = scopes[0];
   let rows: MarketSaleRow[] = [];
 
@@ -182,6 +185,7 @@ export async function getMarketAnalytics({
       fromDate,
       toDate,
       limit: input.limit,
+      referenceSaleId: input.saleId ?? null,
     });
     selectedScope = scope;
     if (rows.length >= 5) break;
@@ -269,65 +273,22 @@ export function buildMarketAnalyticsSnapshot(
   };
 }
 
-function buildAnalyticsScopes(input: MarketAnalyticsQuery, referenceSale: MarketSaleRow | null) {
-  const base = {
-    city: input.city ?? referenceSale?.city ?? null,
-    department: input.department ?? referenceSale?.department ?? null,
-    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code ?? null,
-    propertyType: input.propertyType ?? referenceSale?.property_type ?? null,
-  };
-  const scopes: AnalyticsScope[] = [];
-
-  if (base.city && base.department) {
-    scopes.push({
-      label: "Même ville et même type de bien",
-      city: base.city,
-      department: base.department,
-      propertyType: base.propertyType,
-    });
-  }
-  if (base.tribunalCode) {
-    scopes.push({
-      label: "Même tribunal et même type de bien",
-      tribunalCode: base.tribunalCode,
-      propertyType: base.propertyType,
-    });
-  }
-  if (base.department) {
-    scopes.push({
-      label: "Même département et même type de bien",
-      department: base.department,
-      propertyType: base.propertyType,
-    });
-    scopes.push({
-      label: "Même département",
-      department: base.department,
-    });
-  }
-  if (base.city) {
-    scopes.push({
-      label: "Même ville",
-      city: base.city,
-    });
-  }
-
-  return uniqueScopes(scopes.length ? scopes : [{ label: "Périmètre demandé", ...base }]);
-}
-
 async function queryMarketSales({
   auth,
   scope,
   fromDate,
   toDate,
   limit,
+  referenceSaleId,
 }: {
   auth: SupabaseAuthContext;
-  scope: AnalyticsScope;
+  scope: ComparisonScope;
   fromDate: string;
   toDate: string;
   limit: number;
+  referenceSaleId: string | null;
 }): Promise<MarketSaleRow[]> {
-  let query = auth.supabase
+  const query = auth.supabase
     .from("v_auction_sales_app")
     .select(MARKET_COLUMNS)
     .not("id", "is", null)
@@ -337,12 +298,7 @@ async function queryMarketSales({
     .order("sale_date", { ascending: false })
     .limit(limit);
 
-  if (scope.city) query = query.eq("city", scope.city);
-  if (scope.department) query = query.eq("department", scope.department);
-  if (scope.tribunalCode) query = query.eq("tribunal_code", scope.tribunalCode);
-  if (scope.propertyType) query = query.eq("property_type", scope.propertyType);
-
-  const { data, error } = await query;
+  const { data, error } = await filterComparisonScope(query, scope, referenceSaleId);
   if (error) throw error;
   return data ?? [];
 }
@@ -747,27 +703,6 @@ function rotationInterpretation({
     return `${label} : renforcer la décote exigée et vérifier la profondeur de demande locale.`;
   }
   return `${label} : l'échantillon ne suffit pas encore à qualifier la rotation du marché.`;
-}
-
-function uniqueScopes(scopes: AnalyticsScope[]): AnalyticsScope[] {
-  const seen = new Set<string>();
-  return scopes.filter((scope) => {
-    const key = JSON.stringify([
-      scope.city ?? null,
-      scope.department ?? null,
-      scope.tribunalCode ?? null,
-      scope.propertyType ?? null,
-    ]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return Boolean(scope.city || scope.department || scope.tribunalCode || scope.propertyType);
-  });
-}
-
-function addMonthsIso(now: Date, months: number): string {
-  const date = new Date(now);
-  date.setUTCMonth(date.getUTCMonth() + months);
-  return date.toISOString();
 }
 
 function daysBetween(start: Date, end: Date): number {

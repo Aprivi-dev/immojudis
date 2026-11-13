@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
+  INTERRUPTED_SALE_STATUSES,
   listingOccupation,
   listingValuationConflict,
   listingSaleStatus,
@@ -544,7 +545,7 @@ export function ListingPracticalDetails({
   aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const status = listingSaleStatus(sale);
-  const interrupted = ["cancelled", "canceled", "postponed"].includes(sale.status ?? "");
+  const interrupted = INTERRUPTED_SALE_STATUSES.includes(sale.status ?? "");
   const window = saleWindow(sale);
   const session = saleSession(sale);
   const schedule = window ?? session;

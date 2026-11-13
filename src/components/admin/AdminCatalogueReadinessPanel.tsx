@@ -174,14 +174,12 @@ function QueueLine({
               {item.readinessScore == null ? "Non scorée" : `${item.readinessScore}/100`}
             </span>
             {item.contactClass && item.contactClass !== "D" ? (
-              <span className="rounded-full border px-2 py-0.5 text-xs">
-                {CONTACT_CLASS_LABELS[item.contactClass]}
-              </span>
+              <AdminPill>{CONTACT_CLASS_LABELS[item.contactClass]}</AdminPill>
             ) : null}
             {item.override ? (
-              <span className="rounded-full border px-2 py-0.5 text-[11px]">
+              <AdminPill>
                 Dérogation : {item.override === "publish" ? "publier" : "retenir"}
-              </span>
+              </AdminPill>
             ) : null}
           </div>
           <h3 className="mt-2 truncate font-semibold">{title}</h3>

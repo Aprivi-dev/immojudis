@@ -12,6 +12,12 @@ import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 import { median } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
+import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
+import {
+  comparisonScopes,
+  filterComparisonScope,
+  type ComparisonScope,
+} from "@/lib/comparison-scopes";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -86,14 +92,6 @@ export type SaleHistoryResponse = {
   };
 };
 
-type HistoryScope = {
-  label: string;
-  city?: string | null;
-  department?: string | null;
-  tribunalCode?: string | null;
-  propertyType?: string | null;
-};
-
 export async function getSaleHistory({
   auth,
   input,
@@ -111,8 +109,13 @@ export async function getSaleHistory({
   const referenceSale = input.saleId
     ? await readSaleThroughDoor<HistorySaleRow>(auth, input.saleId, "plan", HISTORY_COLUMNS)
     : null;
-  const scopes = buildHistoryScopes(input, referenceSale);
-  const fromDate = monthsAgoIso(now, input.months);
+  const scopes = comparisonScopes({
+    city: input.city ?? referenceSale?.city,
+    department: input.department ?? referenceSale?.department,
+    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
+    propertyType: input.propertyType ?? referenceSale?.property_type,
+  });
+  const fromDate = addUtcCalendarMonths(now, -input.months).toISOString();
   const toDate = now.toISOString();
   let selectedScope = scopes[0];
   let rows: HistorySaleRow[] = [];
@@ -124,7 +127,7 @@ export async function getSaleHistory({
       fromDate,
       toDate,
       limit: input.limit,
-      excludeSaleId: input.saleId ?? null,
+      referenceSaleId: input.saleId ?? null,
     });
     selectedScope = scope;
     if (rows.length > 0) break;
@@ -201,71 +204,22 @@ export function buildSaleHistorySummary(items: SaleHistoryItem[]): SaleHistorySu
   };
 }
 
-function buildHistoryScopes(input: SaleHistoryQuery, referenceSale: HistorySaleRow | null) {
-  const base = {
-    city: input.city ?? referenceSale?.city ?? null,
-    department: input.department ?? referenceSale?.department ?? null,
-    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code ?? null,
-    propertyType: input.propertyType ?? referenceSale?.property_type ?? null,
-  };
-  const scopes: HistoryScope[] = [];
-
-  if (base.city && base.department) {
-    scopes.push({
-      label: "Même ville et même type de bien",
-      city: base.city,
-      department: base.department,
-      propertyType: base.propertyType,
-    });
-  }
-
-  if (base.tribunalCode) {
-    scopes.push({
-      label: "Même tribunal",
-      tribunalCode: base.tribunalCode,
-      propertyType: base.propertyType,
-    });
-  }
-
-  if (base.department) {
-    scopes.push({
-      label: "Même département et même type de bien",
-      department: base.department,
-      propertyType: base.propertyType,
-    });
-    scopes.push({
-      label: "Même département",
-      department: base.department,
-    });
-  }
-
-  if (base.city) {
-    scopes.push({
-      label: "Même ville",
-      city: base.city,
-      propertyType: base.propertyType,
-    });
-  }
-
-  return uniqueScopes(scopes.length ? scopes : [{ label: "Périmètre demandé", ...base }]);
-}
-
 async function queryPastSales({
   auth,
   scope,
   fromDate,
   toDate,
   limit,
-  excludeSaleId,
+  referenceSaleId,
 }: {
   auth: SupabaseAuthContext;
-  scope: HistoryScope;
+  scope: ComparisonScope;
   fromDate: string;
   toDate: string;
   limit: number;
-  excludeSaleId: string | null;
+  referenceSaleId: string | null;
 }): Promise<HistorySaleRow[]> {
-  let query = auth.supabase
+  const query = auth.supabase
     .from("v_auction_sales_app")
     .select(HISTORY_COLUMNS)
     .not("id", "is", null)
@@ -275,13 +229,7 @@ async function queryPastSales({
     .order("sale_date", { ascending: false })
     .limit(limit);
 
-  if (excludeSaleId) query = query.neq("id", excludeSaleId);
-  if (scope.city) query = query.eq("city", scope.city);
-  if (scope.department) query = query.eq("department", scope.department);
-  if (scope.tribunalCode) query = query.eq("tribunal_code", scope.tribunalCode);
-  if (scope.propertyType) query = query.eq("property_type", scope.propertyType);
-
-  const { data, error } = await query;
+  const { data, error } = await filterComparisonScope(query, scope, referenceSaleId);
   if (error) throw error;
   return data ?? [];
 }
@@ -315,27 +263,6 @@ function rowToHistoryItem(row: HistorySaleRow): SaleHistoryItem {
     sourceName: row.source_name,
     sourceUrl: row.source_url,
   };
-}
-
-function uniqueScopes(scopes: HistoryScope[]): HistoryScope[] {
-  const seen = new Set<string>();
-  return scopes.filter((scope) => {
-    const key = JSON.stringify([
-      scope.city ?? null,
-      scope.department ?? null,
-      scope.tribunalCode ?? null,
-      scope.propertyType ?? null,
-    ]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return Boolean(scope.city || scope.department || scope.tribunalCode || scope.propertyType);
-  });
-}
-
-function monthsAgoIso(now: Date, months: number): string {
-  const date = new Date(now);
-  date.setUTCMonth(date.getUTCMonth() - months);
-  return date.toISOString();
 }
 
 function isPositiveFinite(value: unknown): value is number {

@@ -2,7 +2,7 @@ import { runMonitoredCron } from "@/lib/cron-jobs";
 import { assertTrialEndNoticesComplete, runTrialEndNotices } from "@/lib/trial-end-notices";
 
 // Quelques lectures et un envoi Resend par compte ; le passage s'arrête de lui-même après 50 s
-// (`TRIAL_END_BUDGET_MS`) puis échoue pour être vu. Next.js veut un littéral ici.
+// (`EMAIL_PASS_BUDGET_MS`) puis échoue pour être vu. Next.js veut un littéral ici.
 export const maxDuration = 60;
 
 /**

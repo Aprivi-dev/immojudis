@@ -32,6 +32,41 @@ describe("audience readiness analysis", () => {
     if (days === 0) expect(analysis.urgencyLabel).toBe("Audience aujourd'hui");
   });
 
+  // Relecture juridique du 13/11/2026 : un statut d'occupation repéré n'est « fait » que confirmé
+  // par le PV descriptif ; sans lui, la ligne reste à vérifier et le dit.
+  it.each([
+    [[], "watch", "Libre. Aucun PV descriptif repéré pour confirmer ce statut."],
+    [
+      [
+        {
+          url: "https://example.test/pv.pdf",
+          label: "PV descriptif",
+          type: "pv_descriptif",
+          extraction_status: null,
+        },
+      ],
+      "done",
+      "Libre.",
+    ],
+  ])(
+    "marks the occupation line done only with a descriptive report",
+    (documents, status, detail) => {
+      const analysis = buildAudienceReadinessAnalysis({
+        sale: EXAMPLE_SALE,
+        documents,
+        auctionCostAnalysis: costAnalysis({ withConsignation: true }),
+        occupancyAnalysis: occupancyAnalysis("free"),
+        renovationAnalysis: renovationAnalysis("good"),
+        legalAttentionAnalysis: legalAttentionAnalysis("low"),
+        bidCeilingAvailable: true,
+        now,
+      });
+      const line = analysis.checklist.find((item) => item.key === "occupation");
+      expect(line?.status).toBe(status);
+      expect(line?.detail).toBe(detail);
+    },
+  );
+
   it.each(["", "javascript:alert(1)", "https://example.test/conditions.pdf"])(
     "requires a usable document URL before marking conditions present: %s",
     (url) => {

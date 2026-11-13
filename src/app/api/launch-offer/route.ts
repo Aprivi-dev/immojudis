@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-route";
-import { LAUNCH_OFFER_CACHE_SECONDS, type LaunchOfferResponse } from "@/lib/launch-offer";
+import { LAUNCH_OFFER_CACHE_SECONDS, type LaunchOfferResponse } from "@/lib/launch-offer-response";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";

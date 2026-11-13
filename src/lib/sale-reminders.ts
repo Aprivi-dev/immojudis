@@ -21,7 +21,12 @@ import {
 } from "@/lib/sale-reminder-emails";
 import { saleRemindersMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { saleHearingTime, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
-import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
+import {
+  EMAIL_PASS_BUDGET_MS,
+  followedSalesInWindow,
+  readOncePerSale,
+  runEmailPass,
+} from "@/lib/email-campaign-pass";
 
 /**
  * Rappels d'audience (J-7, J-1) et avertissements graves sur les ventes qu'une personne suit
@@ -328,33 +333,17 @@ async function detectRemindersForUser({
     const key = `${reminder.saleId}|${reminder.kind}|${reminder.dedupeKey}`;
     if (!detected.has(key)) detected.set(key, reminder);
   };
-  // Une seule lecture de la date publique par vente et par passage.
-  const calendarCache = new Map<string, Promise<SaleCalendarRow | null>>();
-  const calendarOf = (saleId: string) => {
-    let cached = calendarCache.get(saleId);
-    if (!cached) {
-      cached = store.calendarEvent(saleId);
-      calendarCache.set(saleId, cached);
-    }
-    return cached;
-  };
+  const calendarOf = readOncePerSale((saleId) => store.calendarEvent(saleId));
 
   // 1. Rappels d'audience : seulement les ventes dont la date stockée tombe dans la fenêtre (les plus
   // proches d'abord, MAX_FOLLOWED_SALES_PER_USER au plus), puis la base confirme que la date est
   // sourcée et que la vente a été revérifiée à la source récemment.
-  const todayKey = parisDateKey(now);
-  const maxDays = Math.max(...REMINDER_DAYS.map((reminder) => reminder.days));
-  const inWindow: Array<{ sale: FollowedSale; days: number }> = [];
-  for (const sale of followedVisible) {
-    const storedDate = parseDate(sale.saleDate);
-    if (!storedDate) continue;
-    const days = calendarDaysBetween(todayKey, parisDateKey(storedDate));
-    if (days == null || days < 0 || days > maxDays) continue;
-    inWindow.push({ sale, days });
-  }
-  inWindow.sort((a, b) => a.days - b.days || a.sale.id.localeCompare(b.sale.id));
-  if (stats && inWindow.length > MAX_FOLLOWED_SALES_PER_USER) stats.truncatedUsers += 1;
-  const examined = inWindow.slice(0, MAX_FOLLOWED_SALES_PER_USER).map(({ sale }) => sale);
+  const inWindow = followedSalesInWindow(followedVisible, now, {
+    maxDays: Math.max(...REMINDER_DAYS.map((reminder) => reminder.days)),
+    limit: MAX_FOLLOWED_SALES_PER_USER,
+  });
+  if (stats && inWindow.truncated) stats.truncatedUsers += 1;
+  const examined = inWindow.sales;
   const verifiedAt = examined.length
     ? await store.lastVerifiedAt(examined.map((sale) => sale.id))
     : new Map<string, string | null>();
@@ -605,22 +594,8 @@ export async function runSaleReminders({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
-    if (Date.now() > deadline) {
-      summary.truncated = true;
-      break;
-    }
-    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
-    const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
-    const failure = settled.find((result) => result.status === "rejected");
-    if (failure && failure.status === "rejected") {
-      // Une erreur de lecture (base injoignable) n'est pas une absence de rappel : le passage
-      // échoue pour être vu et rejoué, le journal empêchant tout doublon.
-      throw failure.reason instanceof Error
-        ? failure.reason
-        : new Error("Sale reminders: user processing failed.");
-    }
-  }
+  const pass = await runEmailPass(recipients, processUser, { deadline, name: "Sale reminders" });
+  summary.truncated = pass.truncated;
 
   summary.purgedJournalRows = await store.purgeJournal();
   return summary;

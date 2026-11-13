@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertMatchesSale, departmentFromSearchQuery, isHouseWithLand } from "@/lib/alerts";
+import { alertMatchesSale, isHouseWithLand } from "@/lib/alerts";
 import type { AuctionSale, UserWatchedZone } from "@/lib/types";
 
 type AlertCriteria = Parameters<typeof alertMatchesSale>[0];
@@ -29,7 +29,7 @@ function makeSale(overrides: Partial<AuctionSale> = {}): AuctionSale {
     adjudication_price_eur: null,
     latitude: null,
     longitude: null,
-    occupancy_status: "free",
+    occupancy_status: "vacant",
     habitable_surface_m2: 100,
     carrez_surface_m2: null,
     land_surface_m2: 220,
@@ -81,6 +81,7 @@ function makeAlert(overrides: Partial<AlertCriteria> = {}): AlertCriteria {
     property_type: "house",
     max_price_eur: 150_000,
     min_surface_m2: 80,
+    // Ancienne valeur du filtre « Libre », que des alertes enregistrées gardent (`currentFilterValue`).
     occupancy_status: "free",
     min_investment_score: 70,
     max_price_per_m2: 1_500,
@@ -389,13 +390,6 @@ describe("recherche texte enregistrée dans l'alerte (query)", () => {
     expect(matches("66, 65, 05", { department: "65" })).toBe(true);
     expect(matches("66, 65, 05", { department: "05" })).toBe(true);
     expect(matches("66, 65, 05", { department: "33" })).toBe(false);
-  });
-
-  it("n'enregistre comme département de l'alerte qu'un seul département", () => {
-    expect(departmentFromSearchQuery("26")).toBe("26");
-    expect(departmentFromSearchQuery("Drôme")).toBe("26");
-    // La liste reste dans le texte enregistré, que l'évaluation lit comme ces trois départements.
-    expect(departmentFromSearchQuery("66, 65, 05")).toBeNull();
   });
 
   it("n'écarte rien pour une requête vide ou un texte libre", () => {
