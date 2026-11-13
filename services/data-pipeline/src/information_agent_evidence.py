@@ -402,7 +402,7 @@ def _prepare_heif_for_processing(
         with fitz.open(stream=content, filetype=mime_type.split("/")[-1]) as document:
             if document.page_count:
                 return content, mime_type
-    except Exception:
+    except Exception:  # this PyMuPDF has no HEIF decoder or refuses the image: try the external converter
         pass
 
     executable = shutil.which("heif-convert")
@@ -438,6 +438,7 @@ def _prepare_heif_for_processing(
                 return None
             return converted, "image/png"
     except Exception:
+        # Untrusted attachment that cannot be converted: the caller reports the format as unsupported.
         if process is not None:
             _terminate_process_group(process)
         return None
@@ -480,7 +481,7 @@ def _prepare_image_for_vision(
                 normalized = pixmap.tobytes("jpeg", jpg_quality=quality)
                 if len(normalized) <= MAX_VISION_IMAGE_BYTES:
                     return normalized, "image/jpeg"
-    except Exception:
+    except Exception:  # undecodable photo: the caller records VISION_IMAGE_NORMALIZATION_FAILED
         return None
     return None
 
@@ -753,9 +754,9 @@ def _ocr_pdf_page(
         if isinstance(text, str) and clean_text(text):
             return text, "ocr_pymupdf", 0.74
     except Exception:
+        # The page keeps its native text (« fallback_text »); no OCR child is left running.
         if process is not None:
             _terminate_process_group(process)
-        pass
     finally:
         if temporary_source is not None:
             temporary_source.cleanup()
@@ -781,7 +782,7 @@ def _terminate_process_group(process: subprocess.Popen) -> None:
         process.kill()
     try:
         process.communicate(timeout=1)
-    except Exception:
+    except Exception:  # whatever stopped the wait, the child must not outlive us
         process.kill()
 
 
@@ -830,6 +831,7 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
                 return ""
             return stdout if process.returncode == 0 else ""
     except Exception:
+        # No OCR text for this image: the analysis goes on without it; no child is left running.
         if process is not None:
             _terminate_process_group(process)
         return ""

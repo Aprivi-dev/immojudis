@@ -153,6 +153,15 @@ class AuctionSale(BaseModel):
         return data
 
 
+def add_quality_flag(flags: list[str], flag: str) -> None:
+    """Ajoute ``flag`` en fin de ``flags`` s'il n'y est pas : l'ordre d'arrivée est gardé, sans doublon.
+
+    ``flags`` est ``AuctionSale.quality_flags`` ou la liste de la vente brute qui deviendra ce champ.
+    """
+    if flag not in flags:
+        flags.append(flag)
+
+
 def compact_validation_error(exc: ValidationError) -> str:
     """Erreurs de validation Pydantic sur une ligne : ``champ: message; ...``."""
     parts: list[str] = []

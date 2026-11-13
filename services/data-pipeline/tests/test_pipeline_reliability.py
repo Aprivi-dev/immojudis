@@ -932,13 +932,13 @@ def test_replaced_document_creates_new_fact_job_even_at_same_url(monkeypatch):
 
 
 def test_new_document_url_does_not_inherit_old_pdf_price_or_surface():
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
     raw = {"source_name": "licitor", "source_url": "https://example.test/newdoc",
            "documents": [{"url": "https://example.test/new.pdf"}], "starting_price_eur": 100000}
     known = {raw["source_url"]: {"surface_m2": 90, "surface_source": "pdf", "starting_price_eur": 200000,
              "documents": [{"url": "https://example.test/old.pdf"}],
              "raw_payload": {"llm_display_description": "Ancien document", "surface_extraction": {"source": "pdf"}}}}
-    _preserve_known_enrichment_payloads([raw], known)
+    preserve_known_enrichment_payloads([raw], known)
     assert raw["starting_price_eur"] == 100000
     assert not raw.get("surface_m2")
     assert not raw.get("llm_display_description")

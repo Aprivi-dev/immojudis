@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
-from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from src.config import PDF_TEXTS_DIR
@@ -15,11 +14,10 @@ from src.enrichment.surface_reasoning import (
     extract_surface_facts_from_text,
 )
 from src.french_dates import MONTH_PATTERN
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.normalize import (
     clean_text,
     normalize_property_type,
-    normalize_status,
     parse_french_datetime,
     parse_price,
     source_sale_timezone,
@@ -69,7 +67,7 @@ from src.pdf_occupancy import (
     pdf_occupancy_status,
 )
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
-from src.pdf_sale_date_guard import reject_past_pdf_sale_date
+from src.pdf_sale_date_guard import assign_pdf_sale_date
 from src.pdf_starting_price import _extract_starting_price_with_evidence
 from src.pdf_surface_patterns import (
     _extract_land_surface_candidates_with_evidence,
@@ -224,15 +222,15 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         # State page announces a new procedure (« Procédure à venir »): that deadline belongs to an earlier round.
         listing = sale.raw_payload.get("state_listing")
         pending = isinstance(listing, dict) and listing.get("reason") == "procedure_pending"
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
     if sale.sale_date is None:
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
         )
         if sale_date:
-            _assign_pdf_sale_date(sale, sale_date)
+            assign_pdf_sale_date(sale, sale_date)
     if sale.sale_date is None and offer_deadline:
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     starting_price = _extract_starting_price_from_documents(pdf_texts, tender=sale.source_name in OFFER_PROCEDURE_SOURCES)
     if starting_price:
         _reconcile_pdf_starting_price(sale, starting_price)
@@ -713,8 +711,7 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
     surface_scope = clean_text(surface.get("surface_scope"))
     if surface_scope == "partial":
         sale.surface_scope = "partial"
-        if "partial_surface_measurement" not in sale.quality_flags:
-            sale.quality_flags.append("partial_surface_measurement")
+        add_quality_flag(sale.quality_flags, "partial_surface_measurement")
     sale.surface_source = sale.surface_source or "pdf"
     sale.surface_confidence = sale.surface_confidence or (
         Decimal("0.45") if surface_scope == "partial" else Decimal("0.75")
@@ -783,12 +780,10 @@ def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, objec
     elif _should_replace_starting_price_with_document(source_value, value):
         sale.starting_price_eur = value
         status = "resolved"
-        if "starting_price_conflict_resolved" not in sale.quality_flags:
-            sale.quality_flags.append("starting_price_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "starting_price_conflict_resolved")
     else:
         status = "conflict_unresolved"
-        if "starting_price_conflict" not in sale.quality_flags:
-            sale.quality_flags.append("starting_price_conflict")
+        add_quality_flag(sale.quality_flags, "starting_price_conflict")
 
     sale.raw_payload["starting_price_extraction"] = {
         "version": DOCUMENT_FACTS_VERSION,
@@ -815,27 +810,6 @@ def _should_replace_starting_price_with_document(current: Decimal, documented: D
     if current <= 0:
         return True
     return current < Decimal("1000") and documented >= Decimal("3000") and documented / current >= Decimal("20")
-
-def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
-    parsed = sale_date.get("value")
-    if not isinstance(parsed, datetime) or reject_past_pdf_sale_date(sale, parsed, sale_date):
-        return
-    sale.sale_date = parsed
-    sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
-    _pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
-    if sale.status in {"", "unknown"} or (sale_date.get("offer_deadline_expired") and sale.status in {"active", "upcoming"}):
-        previous_status = sale.status or "unknown"
-        projected_status = normalize_status(None, parsed)
-        sale.status = projected_status
-        if projected_status != previous_status:
-            _pdf_record_fact_projection(
-                sale,
-                ["status"],
-                candidate=sale_date,
-                baseline=previous_status,
-                previous_value=previous_status,
-                payload_keys=("pdf_sale_date_extraction",),
-            )
 
 def write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1026,7 +1000,7 @@ def _parse_decimal_number(value: str) -> Decimal | None:
         return None
     try:
         return Decimal(text.replace(",", "."))
-    except Exception:
+    except InvalidOperation:
         return None
 
 def _decimal_to_int_or_float(value: Decimal | None) -> int | float | None:

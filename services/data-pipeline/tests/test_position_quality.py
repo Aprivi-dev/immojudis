@@ -16,7 +16,7 @@ from src.position_quality import (
     street_name_tokens,
     street_names_match,
 )
-from src.recompute_scoring import _sale_from_storage_row
+from src.stored_sales import sale_from_storage_row
 
 COMMUNES = [
     {"code_insee": "06069", "name_normalized": "grasse", "department_code": "06",
@@ -330,7 +330,7 @@ def test_recompute_keeps_position_flags_and_drops_the_others() -> None:
         "raw_payload": {},
     }
 
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.quality_flags == ["implausible_coordinates", "unverified_source_coordinates"]
 

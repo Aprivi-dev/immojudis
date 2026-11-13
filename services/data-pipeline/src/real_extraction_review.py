@@ -122,7 +122,7 @@ def _file_sha256(path: Path) -> str:
 def _timestamp(value: Any, description: str) -> datetime:
     text = _require_text(value, description)
     try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError as exc:
         raise ValueError(f"{description} must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

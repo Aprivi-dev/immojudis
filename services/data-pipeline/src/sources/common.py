@@ -413,7 +413,7 @@ def _looks_like_html_challenge(response: httpx.Response) -> bool:
         body = response.text[:8192].lstrip().casefold()
     except SourceTaskDeadlineExceeded:
         raise
-    except Exception:
+    except Exception:  # an unreadable body is refused like a challenge, never read as an empty policy
         return True
     if re.search(r"<(?:(?:!doctype)\s+)?html\b", body):
         return True

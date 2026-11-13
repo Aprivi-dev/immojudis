@@ -2,7 +2,7 @@
 
 ``python -m src.photo_mirror [--max-photos 400] [--budget-minutes 15] [--automatic]``
 
-Étape séparée et bornée, jamais appelée par la collecte ni par ``_finalize_sale_for_app`` : elle ne lit
+Étape séparée et bornée, jamais appelée par la collecte ni par ``sale_finalization.finalize_sale_for_app`` : elle ne lit
 que ``auction_sales`` et n'y écrit jamais (une écriture déclencherait une quinzaine de déclencheurs). Elle
 écrit dans le bucket Storage ``sale-photos`` et dans ``public.sale_photos`` (migration
 ``20261026100000_sale_photo_mirrors.sql``).

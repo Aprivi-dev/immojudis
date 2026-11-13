@@ -32,6 +32,7 @@ import httpx
 
 from src import source_withdrawal
 from src.config import DEFAULT_USER_AGENT, RAW_DIR, load_settings
+from src.outcome_ingestion.adapters import LICITOR_RESULTS_SOURCE_NAME
 from src.sources.common import RobotsRules, is_allowed_origin_url
 from src.sources.licitor import ALLOWED_ORIGINS
 from src.sources.licitor_history import (
@@ -85,8 +86,8 @@ def log(event: str, **values: Any) -> None:
 
 def read_authorization(path: Path) -> dict[str, Any]:
     record = json.loads(path.read_text(encoding="utf-8"))
-    if record.get("source") != "licitor_public_results":
-        raise LicitorHistoricalAuthorizationError("Authorization must name licitor_public_results")
+    if record.get("source") != LICITOR_RESULTS_SOURCE_NAME:
+        raise LicitorHistoricalAuthorizationError(f"Authorization must name {LICITOR_RESULTS_SOURCE_NAME}")
     if record.get("basis") not in {"operator_reported_verbal_consent", "written_source_consent"}:
         raise LicitorHistoricalAuthorizationError("Authorization basis is missing or unsupported")
     if not record.get("reference") or "public_historical_results" not in record.get("scope", []):

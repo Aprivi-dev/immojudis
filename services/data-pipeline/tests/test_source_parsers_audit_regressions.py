@@ -12,11 +12,11 @@ from src import municipality_location
 from src.commune_insee import POSTAL_CODE_INFERENCE_FIELD, record_sale_commune
 from src.lifecycle import mark_past_sales
 from src.normalize import normalize_sale
-from src.recompute_scoring import _sale_from_storage_row
 from src.sources import info_encheres
 from src.sources.encheres_publiques_extraction import fill_text_schedule, text_event_sale_date
 from src.sources.notaires import parse_notaires_detail_json
 from src.sources.notaires_text_terms import text_sale_date, text_starting_price
+from src.stored_sales import sale_from_storage_row
 from src.tribunal_labels import clean_city_label
 
 # --- Villes -------------------------------------------------------------------------------------------------
@@ -289,7 +289,7 @@ def test_recompute_restores_source_date_and_price_hidden_by_empty_columns() -> N
             "visit_dates": ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"],
         },
     }
-    sale = _sale_from_storage_row(row)
+    sale = sale_from_storage_row(row)
 
     assert sale.sale_date == datetime(2026, 9, 1, 11, 30, tzinfo=UTC)
     assert sale.starting_price_eur == Decimal("120000.00")

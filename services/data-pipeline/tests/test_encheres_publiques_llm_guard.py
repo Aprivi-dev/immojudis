@@ -54,7 +54,7 @@ def test_ordinary_pipeline_skips_unauthorized_ep_document_before_enrichment(monk
     monkeypatch.setattr(main, "_run_scraper", lambda *args, **kwargs: (result, 0.0))
     monkeypatch.setattr(main, "record_sale_decisions", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "merge_duplicate_sales", lambda sales: sales)
-    monkeypatch.setattr(main, "_finalize_sale_for_app", lambda sale, *, geocode: None)
+    monkeypatch.setattr(main, "finalize_sale_for_app", lambda sale, *, geocode: None)
     monkeypatch.setattr(main, "mark_past_sales", lambda sales: SimpleNamespace(marked_past=0))
     monkeypatch.setattr(main, "export_sales", lambda sales: ("sales.json", "sales.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})

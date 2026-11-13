@@ -38,7 +38,7 @@ from typing import Any
 
 import pytest
 
-from src import base_reads
+from src import base_reads, known_enrichment
 from src import main as pipeline
 from src.asset_normalization import normalize_asset_features
 from src.config import load_settings
@@ -498,7 +498,7 @@ def _url() -> str:
 def _collect(raw: dict[str, Any], known: dict[str, dict[str, Any]]) -> AuctionSale:
     raws = [raw]
     pipeline._hydrate_known_unchanged_sales(raws, known)
-    pipeline._preserve_known_enrichment_payloads(raws, known)
+    known_enrichment.preserve_known_enrichment_payloads(raws, known)
     record_source_checks(raws, known)
     sale = normalize_sale(raw)
     normalize_asset_features(sale)

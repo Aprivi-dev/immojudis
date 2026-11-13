@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from fake_sale_base import FakeSaleBase, patch_publication
 
-from src import base_reads
+from src import base_reads, known_enrichment
 from src import main as pipeline
 from src.asset_normalization import normalize_asset_features
 from src.freshness import record_source_checks
@@ -111,7 +111,7 @@ def collect(raw: dict[str, Any], known: dict[str, dict[str, Any]]) -> AuctionSal
     """Ce que fait la collecte d'une vente brute avant de la publier (``publish_factual_batch``)."""
     raws = [raw]
     pipeline._hydrate_known_unchanged_sales(raws, known)
-    pipeline._preserve_known_enrichment_payloads(raws, known)
+    known_enrichment.preserve_known_enrichment_payloads(raws, known)
     record_source_checks(raws, known)
     sale = normalize_sale(raw)
     normalize_asset_features(sale)

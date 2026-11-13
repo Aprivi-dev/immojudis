@@ -17,6 +17,8 @@ from src.text_folding import ascii_lower_single_spaced
 
 from .base import canonical_sha256, has_excessive_controls, looks_like_html
 
+# Nom de la source dans ``data_sources`` : celui des enregistrements produits ici et de leur politique d'ingestion.
+ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME = "encheres_publiques_open_data"
 ENCHERES_PUBLIQUES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/"
     "distribution-des-prix-de-vente-des-biens-immobiliers-des-tribunaux-judiciaires-francais"
@@ -316,7 +318,7 @@ def _parse_candidate_row(row: dict[str, str]) -> tuple[dict[str, Any], Counter[s
         "record_type": "auction_hearing_candidate",
         "event_type": "auction_hearing_candidate",
         "stable_id": stable_id,
-        "source_name": "encheres_publiques_open_data",
+        "source_name": ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
         "source_url": source_url,
         "source_dataset_url": ENCHERES_PUBLIQUES_DATASET_URL,
         "source_is_official": False,
@@ -346,7 +348,7 @@ def _parse_court_reference_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "court_reference_candidate",
         "stable_id": f"encheres_publiques:court:{organizer_id}",
-        "source_name": "encheres_publiques_open_data",
+        "source_name": ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
         "source_url": profile_url,
         "source_dataset_url": ENCHERES_PUBLIQUES_DATASET_URL,
         "source_is_official": False,

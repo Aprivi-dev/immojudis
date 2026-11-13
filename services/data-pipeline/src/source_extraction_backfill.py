@@ -29,9 +29,9 @@ from src.asset_normalization import normalize_asset_features
 from src.config import load_settings
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.extraction_profiles import attach_source_property_features
-from src.recompute_scoring import _sale_from_storage_row
 from src.sale_procedure import classify_sale_procedure
 from src.storage.postgrest_helpers import rest_headers
+from src.stored_sales import sale_from_storage_row
 
 BACKFILL_SCHEMA_VERSION = "source_extraction_backfill_v1"
 BACKFILL_NAMESPACE = "source_extraction_backfill"
@@ -352,7 +352,7 @@ def _recompute_sale(row: Mapping[str, Any]) -> Any:
     # Several enrichers update nested ``source_blocks`` in place.  Hydrate a
     # deep copy so planning never mutates the operator's input snapshot (or the
     # backup that was written from it).
-    sale = _sale_from_storage_row(copy.deepcopy(dict(row)))
+    sale = sale_from_storage_row(copy.deepcopy(dict(row)))
     sale.raw_payload = _editorial_payload(sale.raw_payload)
     sale.raw_text = _bounded_editorial_value(sale.raw_text)
     sale.description = _bounded_editorial_value(sale.description)

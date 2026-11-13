@@ -132,7 +132,7 @@ def test_cross_source_operational_revision_does_not_certify_unknown_pending_flag
 def test_source_detail_revision_keeps_documentary_invalidation_through_write_and_enqueue(monkeypatch):
     from copy import deepcopy
 
-    from src import main, source_detail
+    from src import sale_finalization, source_detail
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
     from src.storage import supabase_client as storage
@@ -162,7 +162,7 @@ def test_source_detail_revision_keeps_documentary_invalidation_through_write_and
         llm_display_status='pending',
     )
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     revised = source_detail.prepare_source_revision(existing, {
         **base,
         'starting_price_eur': 90000,
@@ -202,7 +202,7 @@ def test_source_detail_revision_keeps_documentary_invalidation_through_write_and
 def test_source_detail_operational_revision_of_a_sale_without_documents_is_settled_at_write(monkeypatch):
     from copy import deepcopy
 
-    from src import main, source_detail
+    from src import sale_finalization, source_detail
     from src.config import load_settings
     from src.freshness import record_source_checks
     from src.normalize import normalize_sale
@@ -240,7 +240,7 @@ def test_source_detail_operational_revision_of_a_sale_without_documents_is_settl
         llm_prompt_version=settings['llm_prompt_version'],
     )
 
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(sale_finalization, 'finalize_sale_for_app', lambda sale, **kwargs: None)
     revised = source_detail.prepare_source_revision(existing, {
         **base,
         'starting_price_eur': 90000,

@@ -32,8 +32,8 @@ def compare_fields(stored: dict, extracted: dict) -> dict:
         elif field.endswith('_m2') or field == 'starting_price_eur':
             state = 'matched' if abs(float(before) - float(after)) < 0.01 else 'difference'
         elif field == 'sale_date':
-            a = datetime.fromisoformat(str(before).replace('Z', '+00:00'))
-            b = datetime.fromisoformat(str(after).replace('Z', '+00:00'))
+            a = datetime.fromisoformat(str(before))
+            b = datetime.fromisoformat(str(after))
             state = 'matched' if a == b else 'difference'
         else:
             state = 'matched' if str(before).casefold().strip() == str(after).casefold().strip() else 'difference'

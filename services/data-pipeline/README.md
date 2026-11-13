@@ -286,7 +286,7 @@ Hors périmètre de la garde, à connaître :
   pendant le passage et que la vente en mémoire n'en a pas, l'écriture la vide (hors
   champ tenu, que la base retient) ;
 - au recalcul, `visit_dates` est repris brut de l'instantané
-  (`recompute_scoring._sale_from_storage_row`) : pour un instantané Licitor à
+  (`stored_sales.sale_from_storage_row`) : pour un instantané Licitor à
   plusieurs lots pris avant le 03/11/2026, ce sont les visites de la page entière.
 
 Limite connue : après une fusion entre sources, la vente en mémoire porte le
@@ -1164,7 +1164,7 @@ du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
 ### Copier la photo principale des ventes
 
-Étape séparée de la collecte (jamais dans `_finalize_sale_for_app`, aucune écriture dans
+Étape séparée de la collecte (jamais dans `finalize_sale_for_app`, aucune écriture dans
 `auction_sales`). Tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true`, aucune photo n'est
 téléchargée ni copiée, mais les retraits s'appliquent quand même (un retrait n'attend pas la
 réactivation) :

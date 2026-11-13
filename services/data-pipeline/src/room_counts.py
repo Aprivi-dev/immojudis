@@ -10,6 +10,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from src.lot_scope import describes_one_lot
+from src.models import add_quality_flag
 from src.null_text import clean_text
 
 
@@ -294,8 +295,8 @@ def reconcile_room_counts(sale: object, text: str) -> None:
             "reason": reason,
         }
     flags = getattr(sale, "quality_flags", None)
-    if isinstance(flags, list) and "room_count_conflict" not in flags:
-        flags.append("room_count_conflict")
+    if isinstance(flags, list):
+        add_quality_flag(flags, "room_count_conflict")
 
 
 def _describes_several_dwellings(sale: object, text: str) -> bool:

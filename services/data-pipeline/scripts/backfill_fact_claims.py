@@ -268,7 +268,7 @@ def _as_utc(value: object, *, default: datetime = EPOCH) -> datetime:
         parsed = value
     elif value:
         try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(str(value))
         except (TypeError, ValueError):
             return default
     else:

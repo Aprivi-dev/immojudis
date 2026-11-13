@@ -66,6 +66,7 @@ def is_decorative_edge_only_page(page: fitz.Page) -> bool:
         )
         return vertical_edge or horizontal_edge
     except Exception:
+        # An inspection failure must not exclude the page: it stays eligible for retries and OCR.
         return False
 
 
@@ -244,6 +245,8 @@ def profile_pdf_for_docling(path: Path) -> dict[str, float | int]:
                 len(document[index].get_text("text") or "") for index in range(min(page_count, 5))
             )
     except Exception:
+        # A PDF that PyMuPDF cannot open is profiled as empty; Docling decides on that profile and reports its
+        # own failure if it cannot read the file either.
         return {"size_mb": size_mb, "page_count": 0, "first_pages_text_chars": 0}
     return {
         "size_mb": size_mb,

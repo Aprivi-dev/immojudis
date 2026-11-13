@@ -24,7 +24,7 @@ from src.text_folding import ascii_alnum_words, strip_accents
 # document claims receive a new UUID without duplicating unchanged v2 claims.
 # v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (``SOURCE_SNAPSHOT_KEY`` :
 # ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée,
-# ``src.main._preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
+# ``src.known_enrichment.preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
 # collecte avait seulement relue en base ; un lecteur de la table peut les écarter par leur version.
 FACT_CLAIMS_VERSION = "auction_fact_claims_v3"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"

@@ -6,7 +6,7 @@ Ce qui ne sert qu'à un de ces modules vit dans ce module.
 from __future__ import annotations
 
 import re
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from src.asset_score_axes import FACTOR_AXIS
@@ -127,7 +127,7 @@ def decimal_value(value: object | None) -> Decimal | None:
             return None
         try:
             return Decimal(text)
-        except Exception:
+        except InvalidOperation:
             return None
     return None
 
@@ -186,7 +186,3 @@ def json_safe(value: object | None) -> object | None:
 def float_or_none(value: Decimal | None) -> float | None:
     return float(value) if value is not None else None
 
-
-def add_quality_flag(sale: AuctionSale, flag: str) -> None:
-    if flag not in sale.quality_flags:
-        sale.quality_flags.append(flag)

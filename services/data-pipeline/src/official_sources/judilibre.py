@@ -12,6 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.config import DEFAULT_USER_AGENT, is_true_value
+from src.timestamps import aware_timestamp
 
 from .base import (
     OfficialSourceConfigurationError,
@@ -1001,7 +1002,7 @@ def _iso_value(value: str | date | datetime) -> str:
 def _aware_iso_datetime(value: str, *, field_name: str) -> str:
     candidate = value.strip()
     try:
-        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(candidate)
     except ValueError as exc:
         raise ValueError(f"{field_name} must be ISO-8601") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -1016,19 +1017,8 @@ def _same_history_boundary(left: str, right: str) -> bool:
         left_date = date.fromisoformat(left)
         right_date = date.fromisoformat(right)
     except ValueError:
-        try:
-            left_datetime = datetime.fromisoformat(left.replace("Z", "+00:00"))
-            right_datetime = datetime.fromisoformat(right.replace("Z", "+00:00"))
-        except ValueError:
-            return False
-        if (
-            left_datetime.tzinfo is None
-            or left_datetime.utcoffset() is None
-            or right_datetime.tzinfo is None
-            or right_datetime.utcoffset() is None
-        ):
-            return False
-        return left_datetime == right_datetime
+        left_datetime, right_datetime = aware_timestamp(left), aware_timestamp(right)
+        return left_datetime is not None and right_datetime is not None and left_datetime == right_datetime
     return left == left_date.isoformat() and right == right_date.isoformat() and left_date == right_date
 
 

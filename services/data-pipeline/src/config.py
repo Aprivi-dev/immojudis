@@ -222,6 +222,12 @@ def _dedupe_reconcile_mode(value: str) -> str:
     return mode if mode in {"apply", "candidates"} else "candidates"
 
 
+def load_env_fallbacks() -> None:
+    """Variables des fichiers ``.env`` locaux pour les commandes lancées à la main (recalcul, rapport des ventes)."""
+    load_dotenv(ROOT_DIR / ".env")
+    load_dotenv(ROOT_DIR.parents[1] / "apps" / "scout" / ".env.local")
+
+
 def load_settings() -> dict[str, str | float | None]:
     load_dotenv(ROOT_DIR / ".env")
     return {

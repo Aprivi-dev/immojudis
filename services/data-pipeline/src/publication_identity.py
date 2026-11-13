@@ -36,6 +36,7 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
 )
 from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
+from src.timestamps import aware_timestamp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -88,18 +89,8 @@ def _merge_observations(
             check = checks.get(observation.get('source_url'))
             if isinstance(check, dict):
                 values.append(check.get('checked_at'))
-        parsed_values = []
-        for value in values:
-            if not value:
-                continue
-            try:
-                parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-            except (TypeError, ValueError):
-                continue
-            if parsed.tzinfo is None:
-                continue
-            parsed_values.append(parsed)
-        return max(parsed_values, default=datetime.min.replace(tzinfo=UTC))
+        parsed_values = [aware_timestamp(str(value)) for value in values if value]
+        return max((value for value in parsed_values if value is not None), default=datetime.min.replace(tzinfo=UTC))
 
     observations: list[dict] = []
     positions: dict[tuple[object, ...], int] = {}
@@ -163,8 +154,8 @@ def _merge_latest_source_checks(
         new_time = str(check.get('checked_at') or '')
         if old_time and new_time:
             try:
-                old_checked = datetime.fromisoformat(old_time.replace('Z', '+00:00'))
-                new_checked = datetime.fromisoformat(new_time.replace('Z', '+00:00'))
+                old_checked = datetime.fromisoformat(old_time)
+                new_checked = datetime.fromisoformat(new_time)
             except ValueError:
                 old_checked = new_checked = None
             if old_checked is not None and new_checked is not None and old_checked > new_checked:
@@ -300,8 +291,8 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
     new_time = str((new_checks.get(incoming_url) or {}).get('checked_at') or '')
     # A resumed old checkpoint must not replace a newer source observation.
     if existing.source_name == incoming.source_name and old_time and new_time:
-        old_checked = datetime.fromisoformat(old_time.replace('Z', '+00:00'))
-        new_checked = datetime.fromisoformat(new_time.replace('Z', '+00:00'))
+        old_checked = datetime.fromisoformat(old_time)
+        new_checked = datetime.fromisoformat(new_time)
         if old_checked > new_checked:
             return existing.model_copy(deep=True, update={'last_run_id': incoming.last_run_id})
     if existing.source_url == incoming_url:

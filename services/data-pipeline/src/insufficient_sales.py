@@ -180,10 +180,10 @@ def drop_insufficient_sales(
     report_path: str | None,
 ) -> int:
     """Rapport (par défaut) ou suppression (``execute``) ; renvoie un code de sortie."""
-    from src.config import load_settings
+    from src.config import load_env_fallbacks, load_settings
     from src.information_sufficiency import load_contact_blocklist, load_court_registry, set_active_court_registry
-    from src.recompute_scoring import _fetch_sales, _load_env_fallbacks, _sale_from_storage_row
     from src.storage.supabase_client import connect
+    from src.stored_sales import fetch_sales, sale_from_storage_row
 
     if execute and (source or limit):
         LOGGER.error(
@@ -191,15 +191,15 @@ def drop_insufficient_sales(
             "--source and --limit are refused with it (use the report to read a scope)"
         )
         return 1
-    _load_env_fallbacks()
+    load_env_fallbacks()
     settings = load_settings()
-    rows = _fetch_sales(source=source, limit=limit)
+    rows = fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested scope")
         return 1
     blocklist = load_contact_blocklist(settings)
     set_active_court_registry(load_court_registry(settings))  # la règle d'écriture, avec l'email du tribunal
-    candidates, stats = evaluate_rows(rows, _sale_from_storage_row, blocklist)
+    candidates, stats = evaluate_rows(rows, sale_from_storage_row, blocklist)
     links = fetch_links(settings, [c.sale_id for c in candidates]) if candidates else {}
     report = build_report(candidates, stats, links)
     report["mode"] = "execute" if execute else "dry-run"

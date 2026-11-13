@@ -15,6 +15,7 @@ from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.french_dates import MONTH_NUMBERS, PARIS
 from src.listing_location import extract_adresse_du_bien
+from src.models import add_quality_flag
 from src.normalize import clean_text
 from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
@@ -333,9 +334,9 @@ def _enrich_sale_from_detail(
         sale["source_detail_status"] = "failed"
         sale["source_detail_failure_reason"] = "identity_mismatch"
         sale["source_identity_mismatch"] = mismatch
-        quality_flags = sale.get("quality_flags") if isinstance(sale.get("quality_flags"), list) else []
-        if "source_identity_mismatch" not in quality_flags:
-            sale["quality_flags"] = [*quality_flags, "source_identity_mismatch"]
+        quality_flags = list(sale["quality_flags"]) if isinstance(sale.get("quality_flags"), list) else []
+        add_quality_flag(quality_flags, "source_identity_mismatch")
+        sale["quality_flags"] = quality_flags
         LOGGER.warning(
             "EncheresImmobilieres detail identity mismatch for %s: listing=%s detail=%s",
             source_url,

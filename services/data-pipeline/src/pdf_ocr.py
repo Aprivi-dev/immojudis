@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pymupdf as fitz
 
 from src.normalize import clean_text
-from src.pdf_page_analysis import VISUAL_BLANK_INK_RATIO_MAX, VISUAL_BLANK_INK_THRESHOLD
+from src.pdf_page_analysis import VISUAL_BLANK_INK_RATIO_MAX, VISUAL_BLANK_INK_THRESHOLD, page_text_confidence
 
 OCR_NO_TEXT_METHOD = "ocr_tesseract_no_text"
 # Tesseract n'a rien lu sur une page qui porte de l'encre : « vide » n'est pas prouvé (page scannée de travers,
@@ -94,6 +94,10 @@ class PdfDeadlineExceeded(PdfExtractionDeferred):
 
 class PdfDocumentOcrBudgetExceeded(PdfExtractionDeferred):
     """One OCR-heavy document yielded after its bounded pass budget."""
+
+
+# The worker cutoff and the per-document budget stop the OCR of a page: never swallowed as an OCR failure.
+_DEADLINE_ERRORS = (PdfDeadlineExceeded, PdfDocumentOcrBudgetExceeded)
 
 
 @contextmanager
@@ -250,9 +254,6 @@ def extract_page_text_with_ocr_result(
     settings: dict[str, object],
     ensure_deadline: Callable[..., object],
     deadline_bounded_timeout: Callable[..., tuple[float, bool]],
-    page_text_confidence: Callable[..., float],
-    deadline_exception: type[BaseException],
-    deadline_exceptions: tuple[type[BaseException], ...] = (),
     deadline_exception_factory: Callable[..., BaseException] | None = None,
     checkpointed_pages: int = 0,
     total_pages: int = 0,
@@ -260,7 +261,6 @@ def extract_page_text_with_ocr_result(
 ) -> dict[str, object]:
     """Run bounded OCR while keeping the enrichment module's deadline contract."""
     tessdata = settings.get("pdf_ocr_tessdata")
-    deadline_error_types = (deadline_exception, *deadline_exceptions)
     remaining = ensure_deadline(
         operation="starting OCR",
         checkpointed_pages=checkpointed_pages,
@@ -278,9 +278,6 @@ def extract_page_text_with_ocr_result(
             timeout=60.0,
             ensure_deadline=ensure_deadline,
             deadline_bounded_timeout=deadline_bounded_timeout,
-            page_text_confidence=page_text_confidence,
-            deadline_exception=deadline_exception,
-            deadline_exceptions=deadline_exceptions,
             deadline_exception_factory=deadline_exception_factory,
             checkpointed_pages=checkpointed_pages,
             total_pages=total_pages,
@@ -304,7 +301,7 @@ def extract_page_text_with_ocr_result(
                 "status": "extracted",
                 "retryable": False,
             }
-    except deadline_error_types:
+    except _DEADLINE_ERRORS:
         raise
     except Exception as exc:
         LOGGER.debug("PDF OCR unavailable or failed: %s", exc)
@@ -316,9 +313,6 @@ def extract_page_text_with_ocr_result(
         timeout=60.0,
         ensure_deadline=ensure_deadline,
         deadline_bounded_timeout=deadline_bounded_timeout,
-        page_text_confidence=page_text_confidence,
-        deadline_exception=deadline_exception,
-        deadline_exceptions=deadline_exceptions,
         deadline_exception_factory=deadline_exception_factory,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
@@ -418,9 +412,6 @@ def _extract_page_text_with_tesseract_result(
     timeout: float,
     ensure_deadline: Callable[..., object],
     deadline_bounded_timeout: Callable[..., tuple[float, bool]],
-    page_text_confidence: Callable[..., float],
-    deadline_exception: type[BaseException],
-    deadline_exceptions: tuple[type[BaseException], ...] = (),
     deadline_exception_factory: Callable[..., BaseException] | None,
     checkpointed_pages: int,
     total_pages: int,
@@ -603,7 +594,7 @@ def _extract_page_text_with_tesseract_result(
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
     except subprocess.TimeoutExpired as exc:
         if deadline_bounded:
-            error_factory = deadline_exception_factory or deadline_exception
+            error_factory = deadline_exception_factory or PdfDeadlineExceeded
             raise error_factory(
                 "PDF bounded deadline reached during OCR; retry resumes from checkpoint",
                 checkpointed_pages=checkpointed_pages,
@@ -617,7 +608,7 @@ def _extract_page_text_with_tesseract_result(
             new_progress_pages=new_progress_pages,
         )
         LOGGER.debug("Tesseract OCR timed out after %.1fs", timeout)
-    except (deadline_exception, *deadline_exceptions):
+    except _DEADLINE_ERRORS:
         raise
     except Exception as exc:
         LOGGER.debug("Tesseract OCR fallback failed: %s", exc)

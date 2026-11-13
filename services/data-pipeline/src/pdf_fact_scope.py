@@ -154,7 +154,7 @@ def _pdf_datetime_for_compare(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
     except ValueError:
         return None
 
@@ -514,7 +514,7 @@ def _clear_pdf_derived_source_description(
 ) -> None:
     """Drop a source-description projection that was built from PDF text.
 
-    ``_finalize_sale_for_app`` caches ``source_description`` for downstream
+    ``sale_finalization.finalize_sale_for_app`` caches ``source_description`` for downstream
     context.  When no source description exists, that cache can be the raw
     text with the PDF marker or the PDF-derived ``description`` itself.  It
     must not survive document replacement and become source evidence.

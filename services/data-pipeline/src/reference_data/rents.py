@@ -8,7 +8,8 @@ euros per square metre per month, charges included, unfurnished, and the 95 % pr
 interval.
 
 Mandatory credit: « Estimations ANIL, à partir des données du Groupe SeLoger et de
-leboncoin ».
+leboncoin ». The web app shows it with the rents (``src/lib/rent-source-notice.ts``); the
+pipeline publishes no text of its own.
 
 This module only parses: it never opens a connection. The resources are found by their
 title in the data.gouv.fr API (identifiers change with every republication), and the
@@ -37,7 +38,6 @@ ANIL_SEARCH_URL = (
     "https://www.data.gouv.fr/api/1/datasets/"
     "?q=Carte%20des%20loyers%20indicateurs%20de%20loyers%20d%27annonce&page_size=20"
 )
-ANIL_ATTRIBUTION = "Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin"
 
 SEGMENTS = ("apt_all", "apt_1_2", "apt_3p", "house")
 # Plausible advertised rents in euros per square metre per month. The published values go from

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import normalize
+from src import known_enrichment, normalize
 from src.config import DirectDatabaseMissing
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.models import AuctionSale
@@ -14,7 +14,7 @@ from src.storage import supabase_client
 def normalize_sale(raw: dict) -> AuctionSale:
     """Une vente telle que la collecte la publie : sa fiche a été lue, elle porte donc un instantané.
 
-    La collecte le pose avant la normalisation (``main._preserve_known_enrichment_payloads``). Ici il ne nomme que
+    La collecte le pose avant la normalisation (``known_enrichment.preserve_known_enrichment_payloads``). Ici il ne nomme que
     sa source, sauf si le test donne le sien : aucun champ n'y est ajouté.
     """
     sale = normalize.normalize_sale(raw)
@@ -851,7 +851,7 @@ def test_an_unchanged_listing_hydrated_from_the_base_claims_nothing_for_the_rere
     }
     known = {LICITOR_URL: known_row}
     pipeline._hydrate_known_unchanged_sales([card], known)
-    pipeline._preserve_known_enrichment_payloads([card], known)
+    known_enrichment.preserve_known_enrichment_payloads([card], known)
     record_source_checks([card], known)
     sale = normalize_sale(card)
     # La vente garde les valeurs de la base : la collecte continue de juger la fiche sur ce qui est affiché.
@@ -1019,7 +1019,7 @@ def _unread_secondary_card(snapshot_owner: str) -> AuctionSale:
             "title": "Une maison", "_known_unchanged": True, "sale_date": "2026-12-15T14:00:00+01:00",
             "starting_price_eur": 90000}
     pipeline._hydrate_known_unchanged_sales([card], known)
-    pipeline._preserve_known_enrichment_payloads([card], known)
+    known_enrichment.preserve_known_enrichment_payloads([card], known)
     assert card["source_factual_snapshot"]["surface_m2"] == "54 m²"  # l'instantané stocké est bien posé sur la carte
     return normalize_sale(card)
 

@@ -235,10 +235,10 @@ def factual_batch(monkeypatch):
     by_url: dict[str, AuctionSale] = {}
     monkeypatch.setattr(main, "record_items", lambda *a, **k: None)
     monkeypatch.setattr(main, "_hydrate_known_unchanged_sales", lambda *a, **k: None)
-    monkeypatch.setattr(main, "_preserve_known_enrichment_payloads", lambda *a, **k: None)
+    monkeypatch.setattr(main, "preserve_known_enrichment_payloads", lambda *a, **k: None)
     monkeypatch.setattr(main, "record_source_checks", lambda *a, **k: None)
     monkeypatch.setattr(main, "normalize_sale", lambda raw: by_url[raw["source_url"]])
-    monkeypatch.setattr(main, "_finalize_sale_for_app", lambda *a, **k: None)
+    monkeypatch.setattr(main, "finalize_sale_for_app", lambda *a, **k: None)
     monkeypatch.setattr(main, "merge_duplicate_sales", lambda sales: sales)
     monkeypatch.setattr(main, "mark_past_sales", lambda sales: None)
     monkeypatch.setattr(

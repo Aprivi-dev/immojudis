@@ -232,7 +232,7 @@ def catalogue_writer_lock(
     finally:
         try:
             connection.close()
-        except Exception:
+        except Exception:  # a lost session cannot be closed cleanly; its end releases the lock on the server
             pass
 
 

@@ -22,6 +22,7 @@ from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
 from src.storage.supabase_client import close_open_run, merge_into_run_report
 from src.storage.supabase_client import connect as postgres_connect
+from src.timestamps import aware_timestamp
 
 # Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
 INVENTORY_CADENCE = timedelta(hours=12)
@@ -74,22 +75,11 @@ def _enrichment_exhausted_detail(row: tuple[object, ...]) -> dict[str, object]:
     }
 
 
-def _retry_not_before_deadline(value: str | None) -> datetime | None:
-    """Parse a source's Retry-After deadline; ``None`` when absent or unusable."""
-    if not value:
-        return None
-    try:
-        other = datetime.fromisoformat(value.replace('Z', '+00:00'))
-    except ValueError:
-        return None
-    return other if other.tzinfo else None
-
-
 def next_attempt(*, failures: int, access_denied: bool, retry_not_before: str | None,
                  now: datetime) -> datetime:
     delay = timedelta(hours=24) if access_denied and failures >= 2 else timedelta(minutes=min(360, 15 * 2 ** min(failures, 5)))
     deadline = now + delay
-    other = _retry_not_before_deadline(retry_not_before)
+    other = aware_timestamp(retry_not_before)
     if other is not None:
         deadline = max(deadline, other)
     return deadline
@@ -108,28 +98,13 @@ def access_denied(coverage: dict[str, object], problems: Iterable[object]) -> bo
     )
 
 
-def _aware_timestamp(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        candidate = value
-    elif isinstance(value, str):
-        try:
-            candidate = datetime.fromisoformat(value.replace('Z', '+00:00'))
-        except ValueError:
-            return None
-    else:
-        return None
-    if candidate.tzinfo is None or candidate.utcoffset() is None:
-        return None
-    return candidate.astimezone(UTC)
-
-
 def _near_sale(row: dict[str, object], now: datetime) -> bool:
     evidence = row.get('evidence')
     evidence = evidence if isinstance(evidence, dict) else {}
     status = str(row.get('status') or evidence.get('status') or '').lower()
     if status not in ACTIVE_LISTING_STATUSES:
         return False
-    sale_date = _aware_timestamp(row.get('sale_date')) or _aware_timestamp(evidence.get('sale_date'))
+    sale_date = aware_timestamp(row.get('sale_date')) or aware_timestamp(evidence.get('sale_date'))
     return sale_date is not None and now <= sale_date <= now + NEAR_SALE_HORIZON
 
 
@@ -139,14 +114,14 @@ def _source_check_times(payload: object, *, source: str, source_url: str, now: d
         return []
     result: list[datetime] = []
     if allow_checkpoint_checked_at:
-        checkpoint_checked_at = _aware_timestamp(payload.get('_checkpoint_checked_at'))
+        checkpoint_checked_at = aware_timestamp(payload.get('_checkpoint_checked_at'))
         if checkpoint_checked_at is not None and checkpoint_checked_at <= now:
             result.append(checkpoint_checked_at)
     checks = payload.get('source_checks')
     if isinstance(checks, dict):
         check = checks.get(source_url)
         if isinstance(check, dict) and (not check.get('source_name') or check.get('source_name') == source):
-            checked_at = _aware_timestamp(check.get('checked_at'))
+            checked_at = aware_timestamp(check.get('checked_at'))
             if checked_at is not None and checked_at <= now:
                 result.append(checked_at)
     nested = payload.get('raw_payload')
@@ -180,10 +155,10 @@ def next_inventory_deadline(*, now: datetime, started_at: object | None, source:
     actually checked, while ``started_at`` is only a conservative fallback for
     a row observed by this run without a usable check timestamp.
     """
-    current = _aware_timestamp(now)
+    current = aware_timestamp(now)
     if current is None:
         raise ValueError('now must be timezone-aware')
-    run_started = _aware_timestamp(started_at)
+    run_started = aware_timestamp(started_at)
     anchors: list[datetime] = []
     for row in evidence_rows:
         if not _near_sale(row, current):
@@ -398,7 +373,7 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
                 evidence_rows=_schedule_evidence_rows(db, run_id, source),
             )
             # A Retry-After announced during a noisy-but-published run is still honoured.
-            retry_deadline = _retry_not_before_deadline(coverage.get('retry_not_before'))
+            retry_deadline = aware_timestamp(coverage.get('retry_not_before'))
             if retry_deadline is not None:
                 deadline = max(deadline, retry_deadline)
         # Un run en échec (budget épuisé, arrêt brutal) ne prouve rien sur l'absence : seul un run
@@ -508,6 +483,17 @@ DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
 DOCUMENT_BACKLOG_BUDGET_SECONDS = 10 * 60
 
 
+def _run_optional_pass(label: str, command: list[str], *, env: dict[str, str], timeout: float) -> int:
+    """Exit code of a pass that follows the worker; a timeout or a failure to start it counts as 1."""
+    try:
+        return int(subprocess.run(command, env=env, timeout=timeout, check=False).returncode)
+    except Exception as exc:
+        # Every failure, whatever its type: an optional pass never changes the run status, its code only goes
+        # to the run summary. The type is printed so the job log says why the code is 1.
+        print(f'{label} did not finish: {type(exc).__name__}')
+        return 1
+
+
 def _run_document_backlog(env: dict[str, str]) -> int:
     """Bounded catch-up of unread attachments after the enrichment queue (src.document_backlog).
 
@@ -518,16 +504,10 @@ def _run_document_backlog(env: dict[str, str]) -> int:
     its exit code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_backlog', '--max-sales', '6', '--budget-minutes', '8']
-    try:
-        result = subprocess.run(
-            command,
-            env={**env, 'DOCUMENT_READING_ENABLED': 'false'},
-            timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
-            check=False,
-        )
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass(
+        'Document backlog', command, env={**env, 'DOCUMENT_READING_ENABLED': 'false'},
+        timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
+    )
 
 
 def _run_document_reading(env: dict[str, str]) -> int:
@@ -537,11 +517,7 @@ def _run_document_reading(env: dict[str, str]) -> int:
     changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_reading', '--max-sales', '15', '--budget-minutes', '4']
-    try:
-        result = subprocess.run(command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('Document reading', command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS)
 
 
 ADDRESS_POSITIONS_BUDGET_SECONDS = 6 * 60
@@ -555,11 +531,7 @@ def _run_address_positions(env: dict[str, str]) -> int:
     code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.address_positions', '--max-sales', '500', '--budget-seconds', '170']
-    try:
-        result = subprocess.run(command, env=env, timeout=ADDRESS_POSITIONS_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('Address positions', command, env=env, timeout=ADDRESS_POSITIONS_BUDGET_SECONDS)
 
 
 PDF_PHOTOS_BUDGET_SECONDS = 6 * 60
@@ -576,11 +548,7 @@ def _run_pdf_photos(env: dict[str, str]) -> int:
     like the document reading: its exit code is reported in the run summary and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.pdf_photos', '--max-sales', '25', '--budget-seconds', '180']
-    try:
-        result = subprocess.run(command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS, check=False)
-        return int(result.returncode)
-    except Exception:
-        return 1
+    return _run_optional_pass('PDF photos', command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS)
 
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
@@ -605,15 +573,16 @@ def _run_licitor_history_refresh(env: dict[str, str]) -> int:
         result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
         return int(result.returncode)
     except subprocess.TimeoutExpired:
-        # The tick was stopped before the scenarios' copy of the lots: refresh it alone.
-        try:
-            subprocess.run(
-                [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS, check=False
-            )
-        except Exception:
-            pass
+        print('Licitor history did not finish: TimeoutExpired')
+        # The tick was stopped before the scenarios' copy of the lots: refresh it alone. Its own code is not
+        # reported: the tick already counts as failed.
+        _run_optional_pass(
+            'Licitor scenarios copy', [*command, '--snapshot-only'], env=env, timeout=LICITOR_SNAPSHOT_ONLY_SECONDS
+        )
         return 1
-    except Exception:
+    except Exception as exc:
+        # Optional like the other passes: never a run failure (see ``_run_optional_pass``).
+        print(f'Licitor history did not finish: {type(exc).__name__}')
         return 1
 
 

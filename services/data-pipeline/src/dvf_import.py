@@ -903,6 +903,7 @@ def _finalize_failed_import(
                 try:
                     working_connection.rollback()
                 except Exception:
+                    # A session that cannot even roll back is gone (Supabase restart): open a new one.
                     _close_connection(working_connection)
                     working_connection = connect(db_url)
 
@@ -966,7 +967,7 @@ def _is_transient_postgres_error(error: Exception) -> bool:
 def _close_connection(connection: Any) -> None:
     try:
         connection.close()
-    except Exception:
+    except Exception:  # closing a session the server already dropped may fail; it is gone either way
         pass
 
 
