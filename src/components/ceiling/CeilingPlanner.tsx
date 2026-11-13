@@ -30,7 +30,7 @@ import {
 } from "@/lib/bid-ceiling-gaps";
 import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { labelsOf, type FeeRegimeLabels } from "@/lib/fee-regime-definitions";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
 import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
@@ -807,7 +807,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           ? `Vous restez ${formatPrice(evaluation.headroom)} sous votre coût total maximal.`
           : `Vous dépassez votre coût total maximal de ${formatPrice(-evaluation.headroom)}.`}
         {evaluation.netYieldPct != null
-          ? ` ${hypotheses.rent.chargesIncluded ? "Rendement brut estimé, charges comprises" : "Rendement net estimé"} : ${evaluation.netYieldPct.toLocaleString("fr-FR")} %.`
+          ? ` ${hypotheses.rent.chargesIncluded ? "Rendement brut estimé, charges comprises" : "Rendement net estimé"} : ${formatPercent(evaluation.netYieldPct, 1)}.`
           : ""}
         {evaluation.resaleProfit != null
           ? ` Bénéfice avant impôt à la revente : ${formatPrice(evaluation.resaleProfit)}.`

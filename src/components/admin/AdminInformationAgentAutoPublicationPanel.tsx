@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminAutoPublication,
@@ -108,7 +109,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
               <ul className="mt-2 space-y-1">
                 {view.changes.map((change, index) => (
                   <li key={`${change.at}-${index}`}>
-                    {formatDateTime(change.at)} · {change.label}
+                    {formatShortDateTime(change.at)} · {change.label}
                   </li>
                 ))}
               </ul>
@@ -140,21 +141,10 @@ export function AutoPublicationDecisionNote({
       }`}
     >
       Simulation : {decision.label.toLowerCase()}
-      {decision.decidedAt ? `, le ${formatDecisionDate(decision.decidedAt)}` : ""}
+      {decision.decidedAt
+        ? `, le ${formatShortDateTime(decision.decidedAt, "date illisible")}`
+        : ""}
       {decision.reasons.length ? ` (${decision.reasons.join(" ; ")})` : ""}.
     </p>
   );
-}
-
-/** Date et heure de Paris d'une décision (« 20/11/2026 à 10:00 »). */
-function formatDecisionDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "date illisible";
-  const day = date.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });
-  const time = date.toLocaleTimeString("fr-FR", {
-    timeZone: "Europe/Paris",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${day} à ${time}`;
 }

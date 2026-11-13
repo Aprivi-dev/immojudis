@@ -38,7 +38,8 @@ import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
 
@@ -658,7 +659,7 @@ export function AdminInformationAgentMissionsPanel({
               </h3>
               <p className="mt-1 text-xs text-brand-navy/55">
                 Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}{" "}
-                · préparé le {formatDateTime(activeMission.createdAt)}
+                · préparé le {formatShortDateTime(activeMission.createdAt)}
               </p>
             </div>
             <span className="rounded-full border bg-white px-2.5 py-1 text-xs">
@@ -1203,7 +1204,7 @@ function SourceRefreshStatus({
   return (
     <p className="mt-2 text-xs text-sky-950/75">
       Dernier refresh : <strong>{sourceRefreshStatusLabel(request.status)}</strong>
-      {request.completedAt ? ` · terminé le ${formatDateTime(request.completedAt)}` : ""}
+      {request.completedAt ? ` · terminé le ${formatShortDateTime(request.completedAt)}` : ""}
       {detail}
     </p>
   );

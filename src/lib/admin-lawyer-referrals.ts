@@ -18,7 +18,7 @@ import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { PublicApiError } from "@/lib/api-errors";
 import type { AdminPageQuery } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
-import { formatWholeEuros as formatPrice } from "@/lib/format-euros";
+import { formatPrice } from "@/lib/format/numbers";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];

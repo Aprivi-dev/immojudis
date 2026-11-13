@@ -1,4 +1,4 @@
-import { propertyTypeLabel } from "@/lib/format";
+import { formatNumericDate, propertyTypeLabel } from "@/lib/format";
 import { PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { saleTypeFilterLabel } from "@/lib/sale-types";
 import { compactPrice } from "@/lib/search/search-filters";
@@ -89,9 +89,7 @@ export function activeFilterChips(search: SalesSearchParams): ActiveFilterChip[]
       minBaths: undefined,
     },
   );
-  const dates = range(search.minSaleDate, search.maxSaleDate, (value) =>
-    new Date(value).toLocaleDateString("fr-FR"),
-  );
+  const dates = range(search.minSaleDate, search.maxSaleDate, formatNumericDate);
   add("saleDate", dates && `Vente ${dates}`, { minSaleDate: undefined, maxSaleDate: undefined });
   add("occupancy", search.occupancy && `Occupation : ${search.occupancy}`, {
     occupancy: undefined,

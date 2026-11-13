@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import {
   calculateReportRentalScenario,
   REPORT_RENTAL_EXPENSE_FIELDS,
@@ -88,13 +88,6 @@ export function calculateRentalScenario(inputs: RentalScenarioInputs): RentalSce
     monthlyDebtService: inputs.monthlyDebtService ?? null,
     missingExpenseFields: [],
   });
-}
-
-function formatYield(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 2,
-  }).format(value)} %`;
 }
 
 function formatInputValue(value: number | null | undefined): string {
@@ -325,7 +318,7 @@ export function ListingRental({
               ) : null}
               <div className={`${styles.resultCard} ${styles.primaryResult}`}>
                 <span>Rendement brut</span>
-                <strong>{formatYield(rentalResult.grossYieldPct)}</strong>
+                <strong>{formatPercent(rentalResult.grossYieldPct, 2, 1)}</strong>
                 <small>
                   {formatPrice(Math.round(rentalResult.annualPotentialRent))} de loyers / an
                 </small>
@@ -338,7 +331,7 @@ export function ListingRental({
                 </div>
                 <div className={styles.resultCard}>
                   <span>Rendement net d&apos;exploitation</span>
-                  <strong>{formatYield(rentalResult.netOperatingYieldPct)}</strong>
+                  <strong>{formatPercent(rentalResult.netOperatingYieldPct, 2, 1)}</strong>
                   <small>après vacance et charges saisies</small>
                 </div>
               </div>

@@ -369,7 +369,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(view?.details).toContain("Un plan de prévention seulement prescrit n’apparaît pas");
     expect(view?.details).toContain("Un risque d’inondation peut exister en dehors de ces zones.");
     expect(view?.sourceLine).toMatch(
-      /^Source : Géorisques .*scénario de crue fréquente ; carte du 18 décembre 2013 ; consulté le 05 novembre 2026\.$/,
+      /^Source : Géorisques .*scénario de crue fréquente ; carte du 18 décembre 2013 ; consulté le 5 novembre 2026\.$/,
     );
     expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
@@ -380,7 +380,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     const view = pepiteFloodView({
       flood: { verdict: "none_found", observedAt: "2026-11-05T09:00:00.000Z", mapDate: null },
     });
-    expect(view?.sourceLine).toMatch(/crue fréquente ; consulté le 05 novembre 2026\.$/);
+    expect(view?.sourceLine).toMatch(/crue fréquente ; consulté le 5 novembre 2026\.$/);
     expect(view?.sourceLine).not.toMatch(/carte du/);
   });
 
@@ -428,7 +428,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     expect(JSON.stringify(view)).not.toMatch(/ni dans le périmètre/);
     expect(JSON.stringify(view)).not.toMatch(/Cartes consultées/);
     // La source est celle du TRI seul : le Géoportail n'a pas été lu.
-    expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 05 novembre 2026\.$/);
+    expect(view?.sourceLine).toMatch(/^Source : Géorisques .*consulté le 5 novembre 2026\.$/);
     expect(view?.sourceUrl).toBe("https://www.georisques.gouv.fr/");
     expect(view?.warning).toMatch(/sans valeur d’expertise/);
   });
@@ -473,7 +473,7 @@ describe("contrôle d'inondation d'une pépite (règle v2)", () => {
     const withDate = pepiteFloodView({
       flood: { verdict: "unknown", observedAt: "2026-11-05T09:00:00.000Z" },
     });
-    expect(withDate?.line).toMatch(/Dernier contrôle réussi le 05 novembre 2026\.$/);
+    expect(withDate?.line).toMatch(/Dernier contrôle réussi le 5 novembre 2026\.$/);
     // Jamais le libellé générique « à confirmer ».
     expect(withDate?.line).not.toMatch(/à confirmer/);
   });

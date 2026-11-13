@@ -7,7 +7,9 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useEffect, useState } from "react";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
@@ -215,7 +217,7 @@ function ClaimLine({
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
           <p className="mt-1 text-xs text-brand-navy/55">
-            {[item.sale.city, item.sale.saleDate ? formatDateTime(item.sale.saleDate) : null]
+            {[item.sale.city, item.sale.saleDate ? formatShortDateTime(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -249,9 +251,9 @@ function ClaimLine({
                 Confiance :{" "}
                 {item.evidence.confidence == null
                   ? "non renseignée"
-                  : `${Math.round(item.evidence.confidence * 100)} %`}
+                  : formatShareAsPercent(item.evidence.confidence)}
               </span>
-              <span>Capturé le {formatDateTime(item.evidence.capturedAt)}</span>
+              <span>Capturé le {formatShortDateTime(item.evidence.capturedAt)}</span>
             </div>
           </div>
         </div>

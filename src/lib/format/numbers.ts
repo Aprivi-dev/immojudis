@@ -57,3 +57,41 @@ export function formatSurface(m2: number | null | undefined): string {
   if (m2 == null) return "—";
   return `${Math.round(m2)} m²`;
 }
+
+/** Montant au centime : « 1 234,50 € » (frais détaillés, remboursements). */
+export function formatPriceWithCents(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return PRICE_NOT_COMMUNICATED;
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(value);
+}
+
+/** Loyer au mètre carré, à une décimale : « 12,5 €/m² ». */
+export function formatRentPerM2(value: number): string {
+  return `${new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)} €/m²`;
+}
+
+/**
+ * Pourcentage déjà exprimé de 0 à 100 : 12.5 → « 12,5 % » avec une décimale. Au plus
+ * `maximumFractionDigits` décimales ; `minimumFractionDigits` garde les zéros (« 5,0 % »).
+ */
+export function formatPercent(
+  value: number | null | undefined,
+  maximumFractionDigits = 0,
+  minimumFractionDigits = 0,
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits,
+    maximumFractionDigits,
+  }).format(value)} %`;
+}
+
+/** Part de 0 à 1 en pourcentage : 0.125 → « 13 % », ou « 12,5 % » avec une décimale. */
+export function formatShareAsPercent(
+  share: number | null | undefined,
+  maximumFractionDigits = 0,
+): string {
+  return formatPercent(share == null ? share : share * 100, maximumFractionDigits);
+}

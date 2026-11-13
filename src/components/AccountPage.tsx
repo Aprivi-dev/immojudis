@@ -13,17 +13,12 @@ import { Card, Notice, PageShell, buttonClasses } from "@/components/ui/primitiv
 import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
+import { formatDate } from "@/lib/format/dates";
 import { accountLinksFor } from "@/lib/navigation";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, signupTrialStatusText } from "@/lib/launch-offer";
 import { hasLiveStripeSubscription } from "@/lib/plans";
 import * as queryKeys from "@/lib/query-keys";
 import { unlockUsageLine } from "@/lib/sale-unlocks";
-
-const dateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
 
 const TOGGLE_CLASS =
   "mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm";
@@ -35,12 +30,6 @@ const SPACE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "/compte/ventes-debloquees": "Les ventes que vous avez ouvertes en détail.",
   "/comparaisons": "Vos ventes mises côte à côte.",
 };
-
-function formatDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : dateFormat.format(date);
-}
 
 export function AccountPage() {
   const { user } = useAuth();
@@ -60,8 +49,8 @@ export function AccountPage() {
     (link) => link.href in SPACE_DESCRIPTIONS,
   );
   const pastDue = plan?.billing?.status === "past_due";
-  const graceEnd = formatDate(plan?.billing?.graceEndsAt);
-  const periodEnd = formatDate(plan?.currentPeriodEnd);
+  const graceEnd = plan?.billing?.graceEndsAt ? formatDate(plan.billing.graceEndsAt) : null;
+  const periodEnd = plan?.currentPeriodEnd ? formatDate(plan.currentPeriodEnd) : null;
   // Plan Analyse grâce à l'essai à l'inscription : pas d'abonnement, donc ni portail ni période payée.
   const launchOffer = plan?.launchOffer === true;
   const trialStatus = plan ? signupTrialStatusText(plan) : null;

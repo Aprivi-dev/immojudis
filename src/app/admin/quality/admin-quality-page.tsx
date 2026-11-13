@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatPercent, formatShareAsPercent } from "@/lib/format/numbers";
 import { saleDetailPath } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -225,12 +226,12 @@ export function AdminQualityPage() {
             <QualityMetric
               icon={<Sparkles />}
               label="Hybride LightGBM"
-              value={formatOptionalPct(valuationOverview?.runtime.hybridSharePct)}
+              value={formatPercent(valuationOverview?.runtime.hybridSharePct, 1)}
             />
             <QualityMetric
               icon={<ShieldCheck />}
               label="Actionnables"
-              value={formatOptionalPct(valuationOverview?.runtime.actionableSharePct)}
+              value={formatPercent(valuationOverview?.runtime.actionableSharePct, 1)}
             />
           </div>
           {valuationOverview?.runtime.driftSignals.length ? (
@@ -254,8 +255,8 @@ export function AdminQualityPage() {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {model.version} · erreur médiane{" "}
-                  {formatOptionalPct(model.metrics.testMedianApePct)} · couverture{" "}
-                  {formatOptionalPct(model.metrics.intervalCoveragePct)}
+                  {formatPercent(model.metrics.testMedianApePct, 1)} · couverture{" "}
+                  {formatPercent(model.metrics.intervalCoveragePct, 1)}
                 </p>
               </article>
             ))}
@@ -270,10 +271,6 @@ export function AdminQualityPage() {
       </div>
     </AdminShell>
   );
-}
-
-function formatOptionalPct(value: number | null | undefined): string {
-  return value == null ? "—" : `${value.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}%`;
 }
 
 function QualityMetric({
@@ -318,7 +315,7 @@ function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
         <span className="text-xs text-muted-foreground">{sale.flags.join(" · ")}</span>
       </span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-        {sale.score_confidence != null ? `${Math.round(sale.score_confidence * 100)}%` : "—"}
+        {formatShareAsPercent(sale.score_confidence)}
       </span>
     </Link>
   );
@@ -381,10 +378,7 @@ function buildQualityMetrics(report: DataQualityReport | undefined) {
     highConfidence: report?.highConfidenceCount ?? 0,
     riskSales: report?.riskSales ?? 0,
     sourcedRisks: report?.sourcedRiskSales ?? 0,
-    avgConfidence:
-      report?.averageConfidencePct == null
-        ? "—"
-        : String(Math.round(report.averageConfidencePct)) + "%",
+    avgConfidence: formatPercent(report?.averageConfidencePct),
     sources: (report?.sourceCoverage ?? []).map(sourceCoverageToQuality),
   };
 }
@@ -397,15 +391,11 @@ function sourceCoverageToQuality(source: DataQualitySourceCoverage): SourceQuali
     withGps: source.count - source.missingLocation,
     withDocs: source.count - source.missingDocuments,
     withOccupation: source.count - source.missingOccupation,
-    avgConfidence:
-      source.averageConfidencePct == null
-        ? "—"
-        : String(Math.round(source.averageConfidencePct)) + "%",
+    avgConfidence: formatPercent(source.averageConfidencePct),
     weakCount: source.weakCount,
   };
 }
 
 function pct(count: number, total: number): string {
-  if (total === 0) return "0%";
-  return `${Math.round((count / total) * 100)}%`;
+  return formatShareAsPercent(total === 0 ? 0 : count / total);
 }

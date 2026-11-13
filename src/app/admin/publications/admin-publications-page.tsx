@@ -6,7 +6,9 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
-import { formatDateTime, formatPrice, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 import { EmptyState, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -265,14 +267,18 @@ function PublicationRequestCard({
           <div className="flex flex-wrap items-center gap-2">
             <PublicationStatusPill status={request.status} />
             <span className="text-xs text-muted-foreground">
-              {formatDateTime(request.created_at)}
+              {formatShortDateTime(request.created_at)}
             </span>
           </div>
           <h3 className="mt-3 text-lg font-semibold text-foreground">{request.title}</h3>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span>{request.location ?? "Localisation à préciser"}</span>
             <span>{request.court ?? "Tribunal à préciser"}</span>
-            <span>{formatPrice(request.starting_price_eur)}</span>
+            <span>
+              {request.starting_price_eur == null
+                ? "Mise à prix à préciser"
+                : formatPrice(request.starting_price_eur)}
+            </span>
           </div>
           <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
             {request.description ?? "Description non renseignée."}
@@ -327,7 +333,7 @@ function PublicationRequestCard({
                 Ouvrir la vente liée
               </a>
               {request.published_at ? (
-                <span>Créée le {formatDateTime(request.published_at)}</span>
+                <span>Créée le {formatShortDateTime(request.published_at)}</span>
               ) : null}
               <span>Enrichissement et vérification à terminer</span>
             </div>

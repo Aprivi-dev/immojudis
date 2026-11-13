@@ -6,13 +6,8 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
 import { AdminPanel, AdminPrimaryButton, AdminSectionHeading } from "@/components/admin/AdminShell";
-import {
-  errorCount,
-  formatDateTime,
-  runDuration,
-  shortId,
-  summaryNumber,
-} from "@/components/admin/admin-format";
+import { errorCount, runDuration, shortId, summaryNumber } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { StatusPill } from "@/components/admin/admin-ui";
 import { adminRunRestartRequest, type AdminRunRequest } from "@/lib/admin-run-actions";
 import { collectionSourceResults } from "@/lib/admin-source-collection";
@@ -78,7 +73,7 @@ export function OperationsRunTable({
                 <span className="truncate text-brand-navy/72">{run.source ?? "—"}</span>
                 <StatusPill status={run.status} />
                 <span className="text-brand-navy/65">
-                  {run.startedAt ? formatDateTime(run.startedAt) : "—"}
+                  {run.startedAt ? formatShortDateTime(run.startedAt) : "—"}
                 </span>
                 <span className="text-brand-navy/65">{runDuration(run)}</span>
                 <span className="tabular-nums text-brand-navy">
@@ -135,7 +130,9 @@ export function RunDetails({
         <dt className="text-brand-navy/55">Source</dt>
         <dd className="text-brand-navy">{run.source ?? "—"}</dd>
         <dt className="text-brand-navy/55">Début</dt>
-        <dd className="text-brand-navy">{run.startedAt ? formatDateTime(run.startedAt) : "—"}</dd>
+        <dd className="text-brand-navy">
+          {run.startedAt ? formatShortDateTime(run.startedAt) : "—"}
+        </dd>
         <dt className="text-brand-navy/55">Durée</dt>
         <dd className="text-brand-navy">{runDuration(run)}</dd>
       </dl>

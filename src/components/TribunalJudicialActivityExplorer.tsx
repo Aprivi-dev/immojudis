@@ -26,6 +26,7 @@ import type {
 import * as queryKeys from "@/lib/query-keys";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
 import { formatWholeEuros as formatCurrency } from "@/lib/format-euros";
+import { propertyTypeLabel } from "@/lib/format/property-labels";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -737,21 +738,6 @@ function formatDate(value: string | null): string {
     year: "numeric",
     timeZone: "Europe/Paris",
   }).format(new Date(value));
-}
-
-function propertyTypeLabel(value: string): string {
-  return (
-    {
-      apartment: "Appartement",
-      house: "Maison",
-      commercial: "Local commercial",
-      building: "Immeuble",
-      land: "Terrain",
-      parking: "Stationnement",
-      mixed: "Bien mixte",
-      other: "Autre",
-    }[value] ?? value
-  );
 }
 
 function normalizeSearch(value: string): string {

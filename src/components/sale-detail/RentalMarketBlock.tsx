@@ -3,6 +3,7 @@
 import { RentSourceNotice } from "@/components/RentSourceNotice";
 import { estimateSaleGrossYieldRange, type GrossYieldRange } from "@/lib/geo";
 import { feeRegimeKeyForSale } from "@/lib/fee-regime-key";
+import { formatPercent, formatRentPerM2 } from "@/lib/format/numbers";
 import {
   HOUSING_TENSION_NOTE,
   tensionAttribution,
@@ -25,18 +26,9 @@ const SEGMENT_LABELS: Record<RentSegment, string> = {
   house: "maisons",
 };
 
-const rentFormat = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-const percentFormat = new Intl.NumberFormat("fr-FR", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
 const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 
-const perM2 = (value: number) => `${rentFormat.format(value)} €/m²`;
-const percent = (value: number) => `${percentFormat.format(value)} %`;
+const percent = (value: number) => formatPercent(value, 1, 1);
 
 /**
  * Le rendement à afficher : une référence fiable donne la valeur centrale et sa fourchette ; une référence
@@ -118,9 +110,9 @@ export function RentalMarketBlock({
           <div className="mt-2 space-y-1.5">
             <p>
               Loyer d’annonce estimé, {SEGMENT_LABELS[anil.segment ?? "apt_all"]} :{" "}
-              <strong>{perM2(anil.rentPerM2)} par mois</strong>, charges comprises
+              <strong>{formatRentPerM2(anil.rentPerM2)} par mois</strong>, charges comprises
               {low != null && high != null
-                ? ` (fourchette de ${perM2(Math.min(low, high))} à ${perM2(Math.max(low, high))})`
+                ? ` (fourchette de ${formatRentPerM2(Math.min(low, high))} à ${formatRentPerM2(Math.max(low, high))})`
                 : ""}
               .
             </p>

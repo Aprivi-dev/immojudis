@@ -18,6 +18,7 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useCheckoutReturn } from "@/hooks/use-checkout-return";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatShortDate } from "@/lib/format/dates";
 import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
@@ -540,14 +541,8 @@ function formatAccessEnd(
     billing?.status === "past_due"
       ? (billing.graceEndsAt ?? pastDueGraceEnd(currentPeriodEnd))
       : currentPeriodEnd;
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const formatted = new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  const formatted = formatShortDate(value, "");
+  if (!formatted) return null;
   // Abonnement en cours : la date est l'échéance mensuelle (renouvellement, ou fin si résilié), pas
   // la fin d'un accès à durée fixe comme l'ancien accès de 30 jours.
   if (

@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
+import { formatPercent } from "@/lib/format/numbers";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
@@ -508,9 +509,9 @@ function operationalHealthDetail({
   if (!lastRunFresh) return "La dernière mesure de santé date de plus de 30 minutes.";
   if (successRatePercent == null) return "Le SLO ne peut pas encore être calculé sans exécution.";
   if (successRatePercent < sloTargetPercent) {
-    return `Le contrôle de santé atteint ${successRatePercent.toFixed(3)} % sur 30 jours, sous le SLO de ${sloTargetPercent} %.`;
+    return `Le contrôle de santé atteint ${formatPercent(successRatePercent, 3, 3)} sur 30 jours, sous le SLO de ${formatPercent(sloTargetPercent, 3)}.`;
   }
-  return `Le scheduler, le canal externe et le SLO (${successRatePercent.toFixed(3)} % sur 30 jours) sont opérationnels.`;
+  return `Le scheduler, le canal externe et le SLO (${formatPercent(successRatePercent, 3, 3)} sur 30 jours) sont opérationnels.`;
 }
 
 function overallStatus(items: ReadinessItem[]): ReadinessStatus {

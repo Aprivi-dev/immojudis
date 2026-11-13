@@ -152,7 +152,11 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // partagés) : total mesuré 6 836 966 pour 6 727 012 sur la branche (+109 954), les plafonds par page tenus ;
 // Turbopack recopie ces modules dans 1 à 3 chunks de plus. Décision du propriétaire (12/11/2026) :
 // relèvement à 6 850 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_850_000;
+// Refonte du 13/11/2026 (lot 6 : formatage unique des dates, euros et pourcentages) : total mesuré
+// 6 882 377 pour 6 808 188 après le lot 4, les plafonds par page tenus (+3 ko au plus par page) ;
+// Turbopack recopie le module de formatage dans environ 25 chunks. Décision du propriétaire
+// (13/11/2026) : relèvement à 6 890 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_890_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

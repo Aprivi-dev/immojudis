@@ -30,7 +30,7 @@ import {
   lawyerSourceForDisplayedValue,
 } from "@/lib/lawyer-fact-sources";
 import { isPastSaleDay } from "@/lib/sale-countdown";
-import { formatPrice, formatPricePerM2 } from "@/lib/format";
+import { formatPrice, formatPricePerM2, formatShortDate } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
@@ -312,19 +312,6 @@ function NumberedSection({
       {body}
     </div>
   );
-}
-
-const shortDateFormat = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
-function shortSaleDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? shortDateFormat.format(date) : null;
 }
 
 export function SalePublicPreview({
@@ -980,7 +967,7 @@ export function SalePublicPreview({
                   : "À confirmer"}
             </p>
             <p className={styles.mobileBarNote}>
-              {[state ? "prix publié" : "mise à prix", shortSaleDate(preview.sale_date)]
+              {[state ? "prix publié" : "mise à prix", formatShortDate(preview.sale_date, "")]
                 .filter(Boolean)
                 .join(" · ")}
             </p>

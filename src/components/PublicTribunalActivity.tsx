@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { TribunalFinder, type TribunalFinderRow } from "@/app/tribunaux/tribunal-finder";
 import { departmentFromCode } from "@/lib/department-pages";
-import { formatPrice } from "@/lib/format";
+import { formatDayMonth, formatPrice } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import {
   publicTribunalTotals,
@@ -21,15 +21,6 @@ const PRICE_RULE =
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(value);
-}
-
-function formatShortDate(value: string | null): string {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "short",
-    timeZone: "Europe/Paris",
-  }).format(new Date(value));
 }
 
 function mix(item: PublicTribunalActivity): string {
@@ -110,13 +101,13 @@ function Row({
           <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
         ) : null}
         <span className="block text-xs font-normal text-ink-soft sm:hidden">
-          Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
+          Audience le {formatDayMonth(item.nextSaleDate)} · {mix(item)}
         </span>
       </th>
       {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
       <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
       <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
-        {formatShortDate(item.nextSaleDate)}
+        {formatDayMonth(item.nextSaleDate)}
       </td>
       <td className="hidden py-3 pr-4 text-right tabular-nums sm:table-cell">
         {formatCount(figure.sampleSize)}

@@ -3,10 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
-import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatPrice, formatShareAsPercent, formatShortDateTime } from "@/lib/format";
 import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
@@ -217,10 +217,7 @@ export function formatReminderRate(accuracy: SaleReminderAccuracy | null): strin
   if (accuracy.measuredReminders != null && accuracy.measuredReminders < PILOTAGE_MASK_BELOW) {
     return MASKED;
   }
-  const percent = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(
-    accuracy.contradictionRate * 100,
-  );
-  return `${percent} %`;
+  return formatShareAsPercent(accuracy.contradictionRate, 1);
 }
 
 export function AdminPilotagePage() {
@@ -315,7 +312,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
         <AdminSectionHeading title="Agrégats sur 7 et 30 jours glissants" />
         {/* Texte secondaire en /70 : la description du titre partagé est plus pâle. */}
         <p className="mt-1 text-sm text-brand-navy/70">
-          {data.generatedAt ? `Calculés le ${formatDateTime(data.generatedAt)}. ` : ""}
+          {data.generatedAt ? `Calculés le ${formatShortDateTime(data.generatedAt)}. ` : ""}
           Une donnée absente s’affiche « {NOT_MEASURED} », jamais zéro ; un nombre inférieur à{" "}
           {PILOTAGE_MASK_BELOW} s’affiche « {MASKED} ».
         </p>
@@ -618,7 +615,7 @@ const FEEDBACK_SIGNALS: Array<{ signal: SaleSignal; label: string; reasons: stri
 export function formatUsefulShare(counts: SignalFeedbackCounts | null): string {
   if (!counts || counts.total == null || counts.useful == null) return NOT_MEASURED;
   if (counts.total < PILOTAGE_MASK_BELOW) return MASKED;
-  return `${Math.round((counts.useful / counts.total) * 100)} %`;
+  return formatShareAsPercent(counts.useful / counts.total);
 }
 
 /**
@@ -708,7 +705,7 @@ function RuleVersionsLine({ versions }: { versions: Record<string, number> }) {
 export function formatShare(numerator: number | null, denominator: number | null): string {
   if (numerator == null || denominator == null || denominator <= 0) return NOT_MEASURED;
   if (denominator < PILOTAGE_MASK_BELOW) return MASKED;
-  return `${Math.round((numerator / denominator) * 100)} %`;
+  return formatShareAsPercent(numerator / denominator);
 }
 
 /**
@@ -894,7 +891,9 @@ function OfferOpeningInterviewees() {
                     key={`${person.email}-${person.consentedAt}`}
                     className="border-t border-brand-navy/10"
                   >
-                    <td className="py-1 pr-4 tabular-nums">{formatDateTime(person.consentedAt)}</td>
+                    <td className="py-1 pr-4 tabular-nums">
+                      {formatShortDateTime(person.consentedAt)}
+                    </td>
                     <td className="py-1 pr-4">{profileLabel(person.profile)}</td>
                     <td className="py-1">{person.email}</td>
                   </tr>
@@ -929,7 +928,7 @@ export function formatSurveyMedian(
 ): string {
   if (price.answers == null) return NOT_MEASURED;
   if (price.medianEur == null) return `moins de ${minAnswers} réponses`;
-  return `${formatInteger(Math.round(price.medianEur))} €`;
+  return formatPrice(price.medianEur);
 }
 
 /**

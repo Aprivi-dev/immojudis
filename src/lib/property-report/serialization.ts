@@ -544,6 +544,9 @@ function reportStatusLabel(status: string): string {
     missing: "Non renseigné",
     pass: "Vérifié",
     fail: "Point à résoudre",
+    // Points de contrôle de l'estimation (`valuation-audit.ts`).
+    ok: "OK",
+    risk: "Risque",
   };
   return labels[status] ?? "À vérifier";
 }

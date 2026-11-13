@@ -5,7 +5,8 @@ import { useMemo } from "react";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import { MAX_SURENCHERE_PRICE_EUR, minimumSurenchere } from "@/lib/surenchere";
 import type { SurenchereReminder } from "@/lib/surenchere-reminder";
-import { AmountField, euro, euroWhole, toAmount } from "./fields";
+import { formatPrice, formatPriceWithCents } from "@/lib/format/numbers";
+import { AmountField, toAmount } from "./fields";
 import { SimulatorDisclaimer } from "./SimulatorDisclaimer";
 
 export const DEFAULT_SURENCHERE_PRICE = 100_000;
@@ -65,19 +66,20 @@ export function SurenchereMode({
             className="mt-1 break-words font-display text-3xl font-semibold tabular-nums"
           >
             {amounts
-              ? euro.format(amounts.minimumBid)
+              ? formatPriceWithCents(amounts.minimumBid)
               : tooHigh
                 ? "Prix trop élevé"
                 : "Saisissez un prix"}
           </p>
           {amounts ? (
             <p className="mt-1 text-sm text-ink-soft">
-              Le prix principal de {euro.format(amounts.principalPrice)} augmenté de 10 %, soit un
-              dixième de {euro.format(amounts.tenth)}, arrondi au centime supérieur.
+              Le prix principal de {formatPriceWithCents(amounts.principalPrice)} augmenté de 10 %,
+              soit un dixième de {formatPriceWithCents(amounts.tenth)}, arrondi au centime
+              supérieur.
             </p>
           ) : tooHigh ? (
             <p className="mt-1 text-sm text-ink-soft">
-              Ce calcul va jusqu’à {euroWhole.format(MAX_SURENCHERE_PRICE_EUR)}. Saisissez le prix
+              Ce calcul va jusqu’à {formatPrice(MAX_SURENCHERE_PRICE_EUR)}. Saisissez le prix
               d’adjudication tel qu’il figure au jugement.
             </p>
           ) : (

@@ -171,7 +171,7 @@ describe("buildAdminCatalogueQualityView", () => {
     );
     expect(view.snapshot?.isToday).toBe(false);
     expect(view.snapshot?.title).toMatch(
-      /^Pas encore de cliché aujourd’hui : dernier cliché du 04 novembre 2026/,
+      /^Pas encore de cliché aujourd’hui : dernier cliché du 4 novembre 2026/,
     );
   });
 
@@ -195,12 +195,12 @@ describe("buildAdminCatalogueQualityView", () => {
       now,
     );
     expect(view.snapshot).toMatchObject({ isToday: true, liveSales: "862" });
-    expect(view.snapshot?.title).toMatch(/^Cliché du 05 novembre 2026/);
+    expect(view.snapshot?.title).toMatch(/^Cliché du 5 novembre 2026/);
     expect(view.alerts).toEqual([
       {
         key: alertKey("licitor_lot_mismatch"),
         label: "Lots Licitor discordants avec leur carte",
-        seen: expect.stringMatching(/^Ouverte le 03 novembre 2026 .*, vue le 05 novembre 2026/),
+        seen: expect.stringMatching(/^Ouverte le 3 novembre 2026 .*, vue le 5 novembre 2026/),
         detail: "7 au dernier passage",
       },
       {

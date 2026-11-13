@@ -10,6 +10,7 @@ import {
   catalogueReadinessQuery,
 } from "@/components/admin/information-agent-queries";
 import { runAdminCatalogueReadinessActionClient } from "@/lib/client-api";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 
 /**
@@ -109,7 +110,7 @@ export function AdminCatalogueReadinessSettings() {
       </div>
       <p className="mt-3 text-xs text-brand-navy/55">
         Politique {overview.policy.policyVersion} · seuil {overview.policy.premiumReadyMin}/100 ·
-        confiance minimale {Math.round(overview.policy.minimumScoreConfidence * 100)} %
+        confiance minimale {formatShareAsPercent(overview.policy.minimumScoreConfidence)}
       </p>
     </section>
   );

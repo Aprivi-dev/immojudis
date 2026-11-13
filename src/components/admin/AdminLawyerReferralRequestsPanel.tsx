@@ -3,7 +3,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState } from "react";
-import { formatDate, formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminLawyerReferralRequests,
@@ -15,7 +15,12 @@ import type {
   AdminLawyerReferralUpdateInput,
 } from "@/lib/admin-lawyer-referrals";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { formatPrice, formatStartingPrice } from "@/lib/format";
+import {
+  formatPrice,
+  formatShortDate,
+  formatShortDateTime,
+  formatStartingPrice,
+} from "@/lib/format";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
@@ -161,7 +166,7 @@ function LawyerReferralRequestCard({
           <div className="flex flex-wrap items-center gap-2">
             <ReferralStatusPill status={request.status} />
             <span className="text-xs text-muted-foreground">
-              {formatDateTime(request.createdAt)}
+              {formatShortDateTime(request.createdAt)}
             </span>
             <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
               {request.matchingStatus}
@@ -180,7 +185,9 @@ function LawyerReferralRequestCard({
             </span>
             <span>{formatStartingPrice(request.sale.startingPriceEur)}</span>
             <span>
-              {request.sale.saleDate ? formatDate(request.sale.saleDate) : "Audience à préciser"}
+              {request.sale.saleDate
+                ? formatShortDate(request.sale.saleDate)
+                : "Audience à préciser"}
             </span>
           </div>
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
@@ -201,9 +208,9 @@ function LawyerReferralRequestCard({
             </p>
           ) : null}
           <div className="mt-3 text-xs text-muted-foreground">
-            Assignée : {request.assignedAt ? formatDateTime(request.assignedAt) : "—"} · Envoyée :{" "}
-            {request.sentAt ? formatDateTime(request.sentAt) : "—"} · Réponse :{" "}
-            {request.respondedAt ? formatDateTime(request.respondedAt) : "—"}
+            Assignée : {request.assignedAt ? formatShortDateTime(request.assignedAt) : "—"} ·
+            Envoyée : {request.sentAt ? formatShortDateTime(request.sentAt) : "—"} · Réponse :{" "}
+            {request.respondedAt ? formatShortDateTime(request.respondedAt) : "—"}
           </div>
           {request.emailDelivery ? (
             <div className="mt-2 text-xs text-muted-foreground">

@@ -23,6 +23,8 @@ import {
   PageShell,
   PageTitle,
 } from "@/components/ui/primitives";
+import { formatShortDate } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 import { pathWithSearch } from "@/lib/navigation";
 import { PROFESSIONAL_ACCESS_REQUEST_HREF } from "@/lib/professional-access";
 import { useAuth } from "@/hooks/use-auth";
@@ -329,9 +331,11 @@ function RequestCard({
           <StatusPill status={request.status} />
         </div>
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-soft">
-          <span>{formatDate(request.createdAt)}</span>
+          <span>{formatShortDate(request.createdAt, "À préciser")}</span>
           <span>{request.documentCount} pièce(s)</span>
-          {request.publishedAt ? <span>Publié le {formatDate(request.publishedAt)}</span> : null}
+          {request.publishedAt ? (
+            <span>Publié le {formatShortDate(request.publishedAt, "À préciser")}</span>
+          ) : null}
         </div>
       </button>
       {request.publishedUrl ? (
@@ -369,7 +373,7 @@ function RequestDetailPanel({
             {request.title}
           </h2>
           <p className="mt-2 text-sm text-ink-soft">
-            Déposé le {formatDate(request.createdAt)} ·{" "}
+            Déposé le {formatShortDate(request.createdAt, "À préciser")} ·{" "}
             {request.location ?? "Localisation à préciser"}
           </p>
         </div>
@@ -377,8 +381,16 @@ function RequestDetailPanel({
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        <DetailStat label="Mise à prix" value={formatPrice(request.startingPriceEur)} />
-        <DetailStat label="Date de vente" value={formatDate(request.hearingDate)} />
+        <DetailStat
+          label="Mise à prix"
+          value={
+            request.startingPriceEur == null ? "À préciser" : formatPrice(request.startingPriceEur)
+          }
+        />
+        <DetailStat
+          label="Date de vente"
+          value={formatShortDate(request.hearingDate, "À préciser")}
+        />
         <DetailStat label="Tribunal" value={request.court ?? "À préciser"} />
         <DetailStat label="Pièces" value={`${request.documentCount} fichier(s)`} />
       </div>
@@ -560,20 +572,4 @@ function WorkspaceMessage({
       </Card>
     </main>
   );
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "À préciser";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "À préciser";
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(date);
-}
-
-function formatPrice(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "À préciser";
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
 }

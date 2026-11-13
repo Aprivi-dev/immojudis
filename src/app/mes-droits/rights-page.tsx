@@ -5,6 +5,7 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState } from "react";
+import { formatDate } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { Badge, buttonClasses, Card, Notice, PageShell } from "@/components/ui/primitives";
@@ -235,12 +236,4 @@ function statusLabel(value: string) {
       } as Record<string, string>
     )[value] ?? value
   );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(value));
 }

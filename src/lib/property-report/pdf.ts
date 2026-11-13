@@ -213,7 +213,7 @@ export function reportToPdfLines(
     ? analysis.legalAttentionPoints
     : [];
   const cadastral = asRecord(analysis.cadastralAnalysis);
-  const cadastralReferences = normalizeCadastralReferences(cadastral.références);
+  const cadastralReferences = normalizeCadastralReferences(cadastral.references);
   const cadastralNextActions = normalizeStringList(cadastral.nextActions);
   const nearbyServices = asRecord(analysis.nearbyServices);
   const nearbyCategories = normalizeNearbyCategoryLabels(nearbyServices.categories);

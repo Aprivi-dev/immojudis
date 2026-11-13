@@ -18,13 +18,13 @@ import type { ComponentType } from "react";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import {
   errorCount,
-  formatDateTime,
   formatRelativeTime,
   queryErrorMessage,
   runDuration,
   shortId,
   summaryNumber,
 } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import {
   AdminQueryErrorNotice,
   EmptyState,
@@ -385,7 +385,7 @@ function LatestRun({ run }: { run: AuctionRun }) {
           </div>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <div>{run.startedAt ? formatDateTime(run.startedAt) : "—"}</div>
+          <div>{run.startedAt ? formatShortDateTime(run.startedAt) : "—"}</div>
           <div className="mt-1">{runDuration(run)}</div>
         </div>
       </div>

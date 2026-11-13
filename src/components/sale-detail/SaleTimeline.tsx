@@ -2,29 +2,24 @@
 
 import { Terme } from "@/components/ceiling/Terme";
 import { listingSaleStatus, saleTimeConflict } from "@/lib/listing-evidence";
-import { formatPrice } from "@/lib/format";
+import { formatDayMonth, formatPrice } from "@/lib/format";
 import { getSaleProcedure, paymentDeadlineLabel, saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleKeyFacts } from "@/lib/sale-key-facts";
 import type { AuctionSale } from "@/lib/types";
 import { lowerFirst } from "./FirstAuctionGuide";
 import styles from "./SaleOverview.module.css";
 
-const SHORT_DATE = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "short",
-  timeZone: "Europe/Paris",
-});
 const TIME = new Intl.DateTimeFormat("fr-FR", {
   hour: "2-digit",
   minute: "2-digit",
   timeZone: "Europe/Paris",
 });
 
-/** « 19 nov. », ou `null` pour une date illisible. */
+/** « 19 nov. » et « 14 h 30 », ou `null` pour une date illisible. */
 function shortDate(value: string): { day: string; time: string } | null {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  return { day: SHORT_DATE.format(date), time: TIME.format(date).replace(":", " h ") };
+  return { day: formatDayMonth(value), time: TIME.format(date).replace(":", " h ") };
 }
 
 /**

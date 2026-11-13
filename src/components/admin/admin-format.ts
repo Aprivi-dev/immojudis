@@ -1,4 +1,5 @@
 import type { AuctionRun } from "@/lib/admin.server";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 
 export function queryErrorMessage(error: unknown, fallback: string): string {
@@ -9,31 +10,17 @@ export function formatInteger(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(value);
 }
 
-/** « 12 nov. 2026, 14:30 », heure de Paris. */
-export function formatDateTime(value: string): string {
-  return formatParisDate(value, { dateStyle: "medium", timeStyle: "short" });
-}
-
-/** « 12 nov. 2026 », jour de Paris. */
-export function formatDate(value: string): string {
-  return formatParisDate(value, { dateStyle: "medium" });
-}
-
-/** « 12/11 14:30 », heure de Paris : colonnes étroites des tableaux. */
-export function formatShortDateTime(value: string): string {
-  return formatParisDate(value, {
+/** « 12/11 14:30 », heure de Paris : colonnes étroites des tableaux. Une valeur illisible est rendue telle quelle. */
+export function formatCompactDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
-}
-
-/** Une valeur illisible est rendue telle quelle plutôt que de faire échouer l'écran. */
-function formatParisDate(value: string, options: Intl.DateTimeFormatOptions): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: PARIS_TIME_ZONE }).format(date);
+    timeZone: PARIS_TIME_ZONE,
+  }).format(date);
 }
 
 export function formatRelativeTime(value: string): string {
@@ -42,16 +29,7 @@ export function formatRelativeTime(value: string): string {
   if (elapsedMinutes < 60) return `il y a ${elapsedMinutes} min`;
   const hours = Math.floor(elapsedMinutes / 60);
   if (hours < 24) return `il y a ${hours} h`;
-  return formatDateTime(value);
-}
-
-export function formatPrice(value: number | null): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "Mise à prix à préciser";
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return formatShortDateTime(value);
 }
 
 export function shortId(id: string): string {
