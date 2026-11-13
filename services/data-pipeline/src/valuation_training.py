@@ -21,20 +21,11 @@ if sys.version_info >= (3, 14):
 import numpy as np
 import pandas as pd
 
-from src.valuation_activation_gate import (  # noqa: F401  (re-exported: callers and tests use vt.<name>)
+from src.valuation_activation_gate import (
     CONFIDENCE_LEVEL,
-    GAP_BOOTSTRAP_CONFIDENCE,
-    GAP_BOOTSTRAP_RESAMPLES,
-    GAP_BOOTSTRAP_SEED,
-    MIN_ACTIVATION_TEST_ROWS,
     MIN_PROMOTION_COVERAGE_PCT,
-    PromotionDecision,
-    ape_errors,
     build_error_gap,
     decide_activation,
-    gap_interval_reason,
-    paired_bootstrap_error_gap,
-    served_blend_reasons,
 )
 from src.valuation_served_blend import evaluate_served_blend
 

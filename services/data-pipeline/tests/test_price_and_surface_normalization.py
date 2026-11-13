@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.normalize import extract_adjudication_price, extract_starting_price, normalize_sale, parse_price
-from src.sources import agrasc, cessions_etat, common, info_encheres, licitor, petites_affiches, vench
+from src.sources import agrasc, cessions_etat, common, info_encheres, licitor, licitor_lots, petites_affiches, vench
 from src.sources import encheres_publiques as encheres_publiques_source
 
 # --- parse_price -------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def test_extract_surface_prefers_labelled_pattern_then_skips_excluded_matches():
     assert common.extract_surface("terrain 5 000 m²", exclude=exclude) == "5000"
 
 
-@pytest.mark.parametrize("module", [agrasc, cessions_etat, licitor, vench, info_encheres])
+@pytest.mark.parametrize("module", [agrasc, cessions_etat, licitor_lots, vench, info_encheres])
 def test_sources_share_the_surface_number_normalizer(module):
     assert module.normalize_surface_number is common.normalize_surface_number
     assert not hasattr(module, "_normalize_surface_number")

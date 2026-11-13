@@ -37,13 +37,12 @@ from src.main import (
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PDF_FINALIZATION_MARGIN_SECONDS,
-    PdfDeadlineExceeded,
-    PdfExtractionDeferred,
     enrich_sale_from_pdfs,
     pdf_deadline_scope,
     sale_storage_id,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
+from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
 from src.pdf_pass_outcomes import (
     complete_manifest_with_excluded_url,
     discarded_write_ending,
@@ -82,9 +81,6 @@ from src.storage.supabase_client import (
     upsert_sales_to_supabase,
 )
 from src.tribunal import fill_tribunal
-
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
@@ -1302,7 +1298,7 @@ def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None
         db_url = str(settings.get("supabase_db_url") or "")
         if not db_url:
             return None
-        with _postgres_connect(
+        with connect(
             db_url,
             connect_timeout=3,
             retry_delays=(),
@@ -1444,7 +1440,7 @@ def _read_due_enrichment_family_counts() -> dict[str, int]:
     try:
         # This count only changes the lane ratio. Never spend the worker budget
         # on the regular write-connection retry sequence for optional telemetry.
-        with _postgres_connect(db_url, connect_timeout=3, retry_delays=()) as connection:
+        with connect(db_url, connect_timeout=3, retry_delays=()) as connection:
             connection.execute("set transaction read only")
             connection.execute("set local lock_timeout = '1000ms'")
             connection.execute("set local statement_timeout = '3000ms'")

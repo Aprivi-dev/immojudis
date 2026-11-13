@@ -26,14 +26,7 @@ from pathlib import Path
 
 from src.config import load_settings
 from src.dedupe_candidates import report_duplicate_candidates
-from src.merge_guards import (  # noqa: F401 - noms historiques, gardés pour les appelants et les tests
-    MAX_MERGES_PER_PASS,
-    MERGE_TRIGGER,
-    MergeGuardRefused,
-    merge_trigger_deployed,
-    merges_cap,
-    refusal_message,
-)
+from src.merge_guards import MergeGuardRefused, merge_trigger_deployed, merges_cap, refusal_message
 
 LOGGER = logging.getLogger(__name__)
 

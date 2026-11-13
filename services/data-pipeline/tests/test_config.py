@@ -99,3 +99,16 @@ def test_replicate_wait_seconds_stays_within_provider_header_limit(monkeypatch) 
 
     monkeypatch.setenv("REPLICATE_WAIT_SECONDS", "0")
     assert load_settings()["replicate_wait_seconds"] == 1
+
+
+def test_evidence_vision_is_off_unless_explicitly_enabled(monkeypatch) -> None:
+    monkeypatch.delenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", raising=False)
+    assert load_settings()["information_agent_evidence_vision_enabled"] is False
+
+    for value in ("1", "true", "yes", "on", " TRUE "):
+        monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", value)
+        assert load_settings()["information_agent_evidence_vision_enabled"] is True
+
+    for value in ("", "0", "false", "off", "enabled"):
+        monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", value)
+        assert load_settings()["information_agent_evidence_vision_enabled"] is False

@@ -50,16 +50,18 @@ from src.freshness import document_fingerprint, documents_are_current, timestamp
 from src.merge_guards import MAX_MERGES_PER_PASS, merges_cap, require_merge_trigger
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
-from src.pdf_document_types import document_type_with_content, with_content_document_types
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
+from src.pdf_document_types import classify_document_type, document_type_with_content, with_content_document_types
+from src.pdf_enrichment import sale_storage_id
 from src.pdf_partial_tolerance import tolerated_partial_url_set
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
+    PDF_TEXT_CACHE_VERSION,
     document_url,
     is_modern_payload,
     modern_progress_entries,
 )
-from src.personal_data import persistable_payload, redact_storage_row
+from src.personal_data import redact_storage_row
+from src.rejected_listings import persistable_payload
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -200,7 +202,7 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
             "POST",
             f"{supabase_url.rstrip('/')}/rest/v1/rpc/list_reviewed_publication_aliases",
             "reviewed_publication_aliases",
-            headers=rest_headers(api_key, prefer="count=none"),
+            headers=rest_headers(api_key),
             json={},
             timeout=30,
         )
@@ -1282,7 +1284,7 @@ def fail_stale_running_runs_in_supabase(max_age_minutes: int = 190) -> int:
             "status": "eq.running",
             "started_at": f"lt.{cutoff.isoformat()}",
         },
-        headers=rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:
@@ -1341,7 +1343,7 @@ def has_active_running_run_in_supabase(max_age_minutes: int = 190) -> bool:
             "started_at": f"gte.{cutoff.isoformat()}",
             "limit": "1",
         },
-        headers=rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:
@@ -1752,7 +1754,7 @@ def _read_persisted_pdf_rows_rest(
             "order": "updated_at.desc",
             "limit": str(min(len(source_urls) * 5, 100)),
         },
-        headers=rest_headers(api_key, prefer="count=none"),
+        headers=rest_headers(api_key),
         timeout=PERSISTED_PDF_LOOKUP_TIMEOUT,
     )
     if response.is_error:
@@ -2469,7 +2471,7 @@ def fetch_enriched_content_hashes(
                     "content_hash": _postgrest_in_filter(batch),
                     "score_version": "not.is.null",
                 },
-                headers=rest_headers(str(key), prefer="count=none"),
+                headers=rest_headers(str(key)),
                 timeout=30,
             )
             if response.is_error:
@@ -2655,7 +2657,7 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
             "source_url": f"eq.{source_url}",
             "limit": "1",
         },
-        headers=rest_headers(str(key), prefer="count=none"),
+        headers=rest_headers(str(key)),
         timeout=30,
     )
     if response.is_error:

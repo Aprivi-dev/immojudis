@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import dedupe_apply
+from src import dedupe_apply, merge_guards
 from src.outcome_ingestion import catalogue_bridge
 from src.storage import supabase_client
 
@@ -133,16 +133,16 @@ def test_the_trigger_check_fails_closed(monkeypatch) -> None:
     for present in (True, False):
         db = Db(present)
         monkeypatch.setattr(supabase_client, "connect", lambda url, db=db: nullcontext(db))
-        assert dedupe_apply.merge_trigger_deployed("postgresql://db") is present
+        assert merge_guards.merge_trigger_deployed("postgresql://db") is present
         assert "pg_trigger" in db.sql
-    assert dedupe_apply.merge_trigger_deployed(None) is False
-    assert dedupe_apply.merge_trigger_deployed("") is False
+    assert merge_guards.merge_trigger_deployed(None) is False
+    assert merge_guards.merge_trigger_deployed("") is False
 
     def unreachable(url):
         raise OSError("down")
 
     monkeypatch.setattr(supabase_client, "connect", unreachable)
-    assert dedupe_apply.merge_trigger_deployed("postgresql://db") is False
+    assert merge_guards.merge_trigger_deployed("postgresql://db") is False
 
 
 def test_a_zero_cap_does_nothing(calls) -> None:

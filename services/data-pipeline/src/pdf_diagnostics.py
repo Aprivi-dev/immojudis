@@ -4,17 +4,17 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import pymupdf as fitz
 
 from src.config import DOCUMENTS_DIR, PROCESSED_DIR, load_settings
-from src.pdf_enrichment import _docling_cache_path, classify_document_type
+from src.pdf_document_types import classify_document_type
+from src.pdf_enrichment import _docling_cache_path, _profile_pdf_for_docling, _should_docling_ocr
 
 
 def build_pdf_diagnostics(documents_dir: Path = DOCUMENTS_DIR) -> list[dict[str, object]]:
     settings = load_settings()
     rows = []
     for path in sorted(documents_dir.glob("*/*.pdf")):
-        profile = _profile_pdf(path)
+        profile = _profile_pdf_for_docling(path)
         row = {
             "sale_id": path.parent.name,
             "file_name": path.name,
@@ -24,7 +24,7 @@ def build_pdf_diagnostics(documents_dir: Path = DOCUMENTS_DIR) -> list[dict[str,
             "page_count": profile["page_count"],
             "first_pages_text_chars": profile["first_pages_text_chars"],
             "docling_cached": _docling_cache_path(path).exists(),
-            "docling_ocr_auto": _would_docling_ocr(profile, settings),
+            "docling_ocr_auto": _should_docling_ocr(path, {**settings, "pdf_docling_ocr_mode": "auto"}, profile),
             "diagnostic_reason": _diagnostic_reason(profile, settings),
         }
         rows.append(row)
@@ -38,31 +38,6 @@ def export_pdf_diagnostics(rows: list[dict[str, object]], output_dir: Path = PRO
     json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     pd.DataFrame(rows).to_csv(csv_path, index=False)
     return json_path, csv_path
-
-
-def _profile_pdf(path: Path) -> dict[str, float | int]:
-    size_mb = path.stat().st_size / 1024 / 1024
-    try:
-        with fitz.open(path) as document:
-            page_count = document.page_count
-            first_pages_text_chars = sum(
-                len(document[index].get_text("text") or "") for index in range(min(page_count, 5))
-            )
-    except Exception:
-        return {"size_mb": size_mb, "page_count": 0, "first_pages_text_chars": 0}
-    return {
-        "size_mb": size_mb,
-        "page_count": page_count,
-        "first_pages_text_chars": first_pages_text_chars,
-    }
-
-
-def _would_docling_ocr(profile: dict[str, float | int], settings: dict[str, object]) -> bool:
-    if profile["page_count"] > int(settings["pdf_docling_ocr_max_pages"]):
-        return False
-    if profile["size_mb"] > float(settings["pdf_docling_ocr_max_size_mb"]):
-        return False
-    return profile["first_pages_text_chars"] < int(settings["pdf_docling_threshold_chars"])
 
 
 def _diagnostic_reason(profile: dict[str, float | int], settings: dict[str, object]) -> str:

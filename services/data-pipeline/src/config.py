@@ -274,6 +274,9 @@ def load_settings() -> dict[str, str | float | None]:
             1,
             min(10, int(os.getenv("INFORMATION_AGENT_EVIDENCE_BATCH_SIZE", "5"))),
         ),
+        # Porte des appels payants de vision (Replicate) sur les photos reçues : éteinte par défaut.
+        "information_agent_evidence_vision_enabled": os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", "").strip().lower()
+        in {"1", "true", "yes", "on"},
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
         "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()

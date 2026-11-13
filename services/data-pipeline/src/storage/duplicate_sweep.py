@@ -175,7 +175,7 @@ def fetch_candidate_rows(
             response = httpx.get(
                 endpoint,
                 params=params,
-                headers=rest_headers(api_key, prefer="count=none"),
+                headers=rest_headers(api_key),
                 timeout=_TIMEOUT,
             )
             failure = f"({response.status_code}) {response.text[:300]}" if response.is_error else None

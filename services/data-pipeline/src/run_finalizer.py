@@ -8,9 +8,6 @@ from uuid import UUID
 from src.config import load_settings
 from src.storage.supabase_client import close_open_run, connect
 
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
-
 
 def register_run(run_id: str | None) -> None:
     if run_id and os.getenv('GITHUB_ENV'):
@@ -34,7 +31,7 @@ def main() -> int:
     settings = load_settings()
     if not settings.get('supabase_db_url'):
         raise RuntimeError('Run finalization requires SUPABASE_DB_URL')
-    with _postgres_connect(str(settings['supabase_db_url'])) as db:
+    with connect(str(settings['supabase_db_url'])) as db:
         close_open_run(
             db,
             run_id,

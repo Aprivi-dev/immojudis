@@ -12,7 +12,7 @@ from decimal import Decimal
 from src.enrichment.surface_text_rules import room_measurement_before, value_is_ground_area
 from src.land_parcels import EXCLUSIVE_USE_BASIS, read_parcel_land_surface
 from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
-from src.pdf_enrichment import _normalize_document_classifier_text
+from src.pdf_document_types import _normalize_document_classifier_text
 
 
 def _extract_surface(text: str) -> Decimal | None:

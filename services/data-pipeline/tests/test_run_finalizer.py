@@ -27,7 +27,7 @@ def test_manual_workflow_still_uses_requested_run_fallback(monkeypatch):
     monkeypatch.setenv("REQUESTED_AUTOMATIC", "false")
     monkeypatch.setenv("REQUESTED_RUN_ID", "22222222-2222-4222-8222-222222222222")
     monkeypatch.setattr(run_finalizer, "load_settings", lambda: {"supabase_db_url": "postgres.test"})
-    monkeypatch.setattr(run_finalizer, "_postgres_connect", lambda _url: FakeDb())
+    monkeypatch.setattr(run_finalizer, "connect", lambda _url: FakeDb())
 
     assert run_finalizer.main() == 0
     assert len(calls) == 1

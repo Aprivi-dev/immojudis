@@ -13,9 +13,8 @@ from src.extraction_profiles import build_procedure_profile
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import clean_text
-from src.pdf_enrichment import (
+from src.pdf_document_types import (
     DEFAULT_DOCUMENT_GROUPS,
-    DOCUMENT_FACTS_VERSION,
     PDF_ANNOUNCE_GROUP,
     PDF_BAIL_GROUP,
     PDF_CONDITIONS_GROUP,
@@ -23,8 +22,8 @@ from src.pdf_enrichment import (
     PDF_DIAGNOSTICS_GROUP,
     _canonical_document_type,
     _normalize_document_classifier_text,
-    _profile_pdf_for_docling,
 )
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, _profile_pdf_for_docling
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
 from src.pdf_partial_tolerance import tolerated_partial_documents
 from src.pdf_progress import (
