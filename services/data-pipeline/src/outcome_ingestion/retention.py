@@ -15,6 +15,7 @@ from src.outcome_ingestion.artifact_store import (
     RawArtifactStorageError,
     SupabaseRawArtifactStore,
 )
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME
 from src.storage.supabase_client import connect as connect_postgres
 
 PURGE_WORKER_VERSION = "outcome-retention/1"
@@ -124,7 +125,7 @@ class OutcomeRetentionRepository:
                     select artifact.id, artifact.source_id, artifact.content_hash
                     from public.raw_artifacts artifact
                     join public.data_sources source on source.id = artifact.source_id
-                    where source.name = 'judilibre'
+                    where source.name = %s
                       and artifact.captured_at <= now() - (%s * interval '1 second')
                       and not exists (
                         select 1
@@ -154,7 +155,7 @@ class OutcomeRetentionRepository:
                     limit %s
                     for update of artifact skip locked
                     """,
-                    (int(retention_period.total_seconds()), limit),
+                    (JUDILIBRE_SOURCE_NAME, int(retention_period.total_seconds()), limit),
                 )
                 candidates = list(cursor.fetchall())
                 for artifact_id, source_id, content_hash in candidates:

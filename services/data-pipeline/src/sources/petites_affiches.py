@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 from datetime import datetime
@@ -26,11 +25,14 @@ from src.sources.common import (
     fetch_detail_html,
     parse_html,
     should_fetch_detail,
+    source_budget_deadline,
+    source_budget_expired,
     unique_dicts,
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 from src.sources.petites_affiches_extraction import extract_petites_affiches_fields
+from src.sources.source_features import as_text_list, merge_text_values
 from src.text_folding import strip_accents
 
 BASE_URL = "https://www.petitesaffiches.fr"
@@ -72,21 +74,6 @@ DETAIL_AUTHORITATIVE_FIELDS = {"city", "visit_dates", "sale_date", "lawyer_name"
 SALE_TYPES_BY_URL_SEGMENT = {"j": "Judiciaire", "judiciaire": "Judiciaire", "n": "Notariale", "licitation": "Licitation"}
 SOURCE_BUDGET_ENV = "PETITES_AFFICHES_SOURCE_BUDGET_SECONDS"
 CURSOR_SCHEMA = "petites_affiches_cursor_v1"
-
-
-def _source_budget_deadline() -> float | None:
-    raw = os.getenv(SOURCE_BUDGET_ENV)
-    if not raw:
-        return None
-    try:
-        seconds = float(raw)
-    except ValueError:
-        return None
-    return time.monotonic() + seconds if seconds > 0 else None
-
-
-def _source_budget_expired(deadline: float | None) -> bool:
-    return deadline is not None and time.monotonic() >= deadline
 
 
 def _cursor_pages(cursor: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -182,7 +169,7 @@ def scrape_petites_affiches_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:
     settings = load_settings()
-    deadline = _source_budget_deadline()
+    deadline = source_budget_deadline(SOURCE_BUDGET_ENV)
     client = PoliteHttpClient(
         base_url=BASE_URL,
         user_agent=str(settings["user_agent"]),
@@ -230,7 +217,7 @@ def scrape_petites_affiches_aquitaine_result(
         parsed_urls.setdefault(partition, set())
         page_pending = False
         for page_url in pages:
-            if _source_budget_expired(deadline):
+            if source_budget_expired(deadline):
                 budget_exhausted = True
                 page_pending = True
                 _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
@@ -267,7 +254,7 @@ def scrape_petites_affiches_aquitaine_result(
             proof = catalogue.observe(html, page_url, page_sales, partition=partition)
             page_pending = False
             for sale in page_sales:
-                if _source_budget_expired(deadline):
+                if source_budget_expired(deadline):
                     budget_exhausted = True
                     page_pending = True
                     break
@@ -289,7 +276,7 @@ def scrape_petites_affiches_aquitaine_result(
             metrics = pages.metrics()
             _save_page_cursor(partition, department, pages, completed_proofs, parsed_urls,
                               resumed=resumed, scan_complete=metrics["linked_pages_complete"])
-            if _source_budget_expired(deadline):
+            if source_budget_expired(deadline):
                 budget_exhausted = True
                 break
         partition_metrics = pages.metrics()
@@ -757,7 +744,7 @@ def _merge_detail_into_sale(sale: dict[str, Any], detail: dict[str, Any]) -> Non
             sale[key] = _merge_documents(sale.get(key), value)
             continue
         if key == "source_images":
-            sale[key] = _merge_text_values(sale.get(key), value)
+            sale[key] = merge_text_values(sale.get(key), value)
             if not sale.get("raw_image_url") and sale[key]:
                 sale["raw_image_url"] = sale[key][0]
             continue
@@ -824,7 +811,7 @@ def refresh_petites_affiches_raw_sale(raw_sale: dict[str, Any]) -> bool:
     if isinstance(raw_sale.get("visit_dates"), list):
         raw_sale["visit_dates"] = _clean_legacy_visits(raw_sale["visit_dates"])
     # L'image générique d'un lot sans photo n'est ni une photo ni une vignette.
-    images = [url for url in _as_text_list(raw_sale.get("source_images")) if "default-pic" not in url.lower()]
+    images = [url for url in as_text_list(raw_sale.get("source_images")) if "default-pic" not in url.lower()]
     if "source_images" in raw_sale:
         raw_sale["source_images"] = images
     if "default-pic" in str(raw_sale.get("raw_image_url") or "").lower():
@@ -1149,22 +1136,6 @@ def _merge_documents(existing: object, incoming: object) -> list[dict[str, str]]
             "type": str(document.get("type") or ("pdf" if url.lower().endswith(".pdf") else "document")),
         }
     return list(merged.values())
-
-
-def _merge_text_values(existing: object, incoming: object) -> list[str]:
-    values: list[str] = []
-    for item in [*_as_text_list(existing), *_as_text_list(incoming)]:
-        if item not in values:
-            values.append(item)
-    return values
-
-
-def _as_text_list(value: object) -> list[str]:
-    if isinstance(value, str):
-        return [value] if clean_text(value) else []
-    if not isinstance(value, list):
-        return []
-    return [text for item in value if (text := clean_text(item))]
 
 
 def _detail_visits(page_text: str) -> list[str]:

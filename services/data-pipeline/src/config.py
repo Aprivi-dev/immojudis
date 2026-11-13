@@ -175,6 +175,31 @@ def autonomous_run_id() -> str | None:
     return os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") or None
 
 
+def write_step_summary(text: str) -> None:
+    """Ajoute ``text`` au résumé du job GitHub Actions (``GITHUB_STEP_SUMMARY``) ; hors GitHub, ne fait rien.
+
+    Le résumé n'est qu'un compte rendu : un fichier impossible à écrire laisse un avertissement, pas un échec.
+    """
+    path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with Path(path).open("a", encoding="utf-8") as handle:
+            handle.write(text)
+    except OSError as exc:
+        LOGGER.warning("Could not write the GitHub step summary: %s", exc)
+
+
+def licitor_collector_database_url() -> str:
+    """Connexion à la base dédiée du collecteur Licitor (``LICITOR_DATABASE_URL``) ; vide si elle manque."""
+    return os.environ.get("LICITOR_DATABASE_URL", "")
+
+
+def cron_secret() -> str | None:
+    """``CRON_SECRET`` : jeton qu'exigent les appels planifiés du collecteur Licitor sur Vercel."""
+    return os.environ.get("CRON_SECRET")
+
+
 DOCUMENT_READING_DEFAULT_MAX_SALES = 40
 DOCUMENT_READING_MAX_SALES_LIMIT = 500
 DOCUMENT_READING_DEFAULT_BUDGET_MINUTES = 20.0

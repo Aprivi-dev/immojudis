@@ -37,6 +37,20 @@ from src.outcome_ingestion.judilibre_contract import (
     JUDILIBRE_SOURCE_NAME,
     JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
 )
+from src.outcome_ingestion.judilibre_match_contract import (
+    JUDILIBRE_COURT_CODE_EXACT,
+    JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME,
+    JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
+    JUDILIBRE_MATCH_METHODS,
+    judilibre_case_reference_manifest_sha256,
+    judilibre_case_references,
+    judilibre_claims_manifest_sha256,
+    judilibre_match_score_and_method,
+    judilibre_source_record_sha256,
+    judilibre_target_context_sha256,
+    normalize_judilibre_case_reference,
+    validate_judilibre_match_signals,
+)
 from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
@@ -630,27 +644,20 @@ class OutcomeIngestionRepository:
             raise OutcomeIngestionError("psycopg is required for Outcome ingestion writes")
         if not is_lowercase_sha256(expected_source_content_hash):
             raise ValueError("Judilibre source projection hash must be SHA-256")
-        if not 0 <= max_date_delta_days <= 30:
-            raise ValueError("Judilibre date delta must be between 0 and 30 days")
-        if match_method not in {
-            "exact_case_number",
-            "exact_portalis_number",
-            "composite",
-        }:
+        if not 0 <= max_date_delta_days <= JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX:
+            raise ValueError(
+                f"Judilibre date delta must be between 0 and {JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX} days"
+            )
+        if match_method not in JUDILIBRE_MATCH_METHODS:
             raise ValueError("Judilibre match method is not review-safe")
         if re.fullmatch(r"(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)", match_score) is None:
             raise ValueError("Judilibre match score must be between 0 and 1")
-        _validate_judilibre_match_signals(
+        validate_judilibre_match_signals(
             match_signals,
             expected_source_content_hash=expected_source_content_hash,
             match_method=match_method,
         )
-        if match_signals.get("source_record_sha256") != canonical_sha256(
-            {
-                "schema_version": "judilibre_source_record_reference_v1",
-                "source_record_id": source_record_id,
-            }
-        ):
+        if match_signals.get("source_record_sha256") != judilibre_source_record_sha256(source_record_id):
             raise ValueError("Judilibre source-record provenance is inconsistent")
         lock_key = _match_target_lock_key(
             source_record_id=source_record_id,
@@ -838,12 +845,7 @@ class OutcomeIngestionRepository:
                     len(source_claim_types) != len(source_claims)
                     or match_signals.get("claim_types") != source_claim_types
                     or match_signals.get("claims_manifest_sha256")
-                    != canonical_sha256(
-                        {
-                            "schema_version": "judilibre_claim_manifest_v1",
-                            "claims": source_claims,
-                        }
-                    )
+                    != judilibre_claims_manifest_sha256(source_claims)
                 ):
                     raise OutcomeIngestionError(
                         "Judilibre claim manifest changed before match persistence"
@@ -898,12 +900,12 @@ class OutcomeIngestionRepository:
                         "Judilibre auction target moved outside the bounded date window"
                     )
 
-                references = _judilibre_projection_references(normalized_data)
+                references = judilibre_case_references(normalized_data)
                 case_number_match = (
-                    _normalize_match_reference(target_row[5]) in references
+                    normalize_judilibre_case_reference(target_row[5]) in references
                 )
                 portalis_number_match = (
-                    _normalize_match_reference(target_row[6]) in references
+                    normalize_judilibre_case_reference(target_row[6]) in references
                 )
                 if (
                     match_signals.get("case_number") is not case_number_match
@@ -919,37 +921,27 @@ class OutcomeIngestionRepository:
                     raise OutcomeIngestionError(
                         "Judilibre auction target does not have enough objective signals"
                     )
-                expected_score, expected_method = (
-                    ("0.9800" if date_delta_days == 0 else "0.9400", "exact_portalis_number")
-                    if portalis_number_match
-                    else (
-                        ("0.9500" if date_delta_days == 0 else "0.9000", "exact_case_number")
-                        if case_number_match
-                        else ("0.7500", "composite")
-                    )
+                expected_score, expected_method = judilibre_match_score_and_method(
+                    portalis_number_match=portalis_number_match,
+                    case_number_match=case_number_match,
+                    date_delta_days=date_delta_days,
                 )
                 if match_score != expected_score or match_method != expected_method:
                     raise OutcomeIngestionError(
                         "Judilibre match score or method is not canonical"
                     )
-                if match_signals.get("case_reference_manifest_sha256") != canonical_sha256(
-                    {
-                        "schema_version": "judilibre_case_reference_manifest_v1",
-                        "references": references,
-                    }
-                ):
+                if match_signals.get(
+                    "case_reference_manifest_sha256"
+                ) != judilibre_case_reference_manifest_sha256(references):
                     raise OutcomeIngestionError(
                         "Judilibre case-reference manifest changed before persistence"
                     )
-                if match_signals.get("target_context_sha256") != canonical_sha256(
-                    {
-                        "schema_version": "judilibre_target_context_v1",
-                        "case_id": str(target_row[0]),
-                        "lot_id": str(target_row[1]),
-                        "round_id": str(target_row[2]),
-                        "court_id": str(target_row[3]),
-                        "scheduled_date": scheduled_date,
-                    }
+                if match_signals.get("target_context_sha256") != judilibre_target_context_sha256(
+                    case_id=str(target_row[0]),
+                    lot_id=str(target_row[1]),
+                    round_id=str(target_row[2]),
+                    court_id=str(target_row[3]),
+                    scheduled_date=scheduled_date,
                 ):
                     raise OutcomeIngestionError(
                         "Judilibre target-context manifest changed before persistence"
@@ -1519,15 +1511,17 @@ class OutcomeIngestionRepository:
     ) -> list[StoredJudilibreAuctionMatchContext]:
         if not court_id.strip():
             raise ValueError("Judilibre court id is required")
-        if max_date_delta_days < 0 or max_date_delta_days > 30:
-            raise ValueError("Judilibre date delta must be between 0 and 30 days")
+        if not 0 <= max_date_delta_days <= JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX:
+            raise ValueError(
+                f"Judilibre date delta must be between 0 and {JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX} days"
+            )
         if limit < 1 or limit > 5_001:
             raise ValueError("Judilibre context query limit must be between 1 and 5001")
         normalized_references = tuple(
             dict.fromkeys(
                 normalized
                 for value in case_references
-                if (normalized := _normalize_match_reference(value)) is not None
+                if (normalized := normalize_judilibre_case_reference(value)) is not None
             )
         )
         with self._connect(self._db_url) as connection:
@@ -2041,38 +2035,6 @@ def _match_target_lock_key(
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big", signed=True)
 
 
-def _normalize_match_reference(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = re.sub(r"\s+", " ", value.strip()).lower()
-    if not normalized or len(normalized) > 128 or any(
-        character in normalized for character in ("\x00", "\r", "\n")
-    ):
-        return None
-    return normalized
-
-
-def _judilibre_projection_references(
-    normalized_data: Mapping[str, object],
-) -> tuple[str, ...]:
-    number = normalized_data.get("number")
-    numbers = normalized_data.get("numbers")
-    if number is not None and not isinstance(number, str):
-        raise OutcomeIngestionError("Judilibre source number has an invalid type")
-    if numbers is not None and not isinstance(numbers, list):
-        raise OutcomeIngestionError("Judilibre source numbers has an invalid type")
-    if isinstance(numbers, list) and any(not isinstance(value, str) for value in numbers):
-        raise OutcomeIngestionError("Judilibre source numbers contains a non-text value")
-    values: list[object] = [number] if number is not None else []
-    values.extend(numbers or [])
-    references: list[str] = []
-    for value in values:
-        normalized = _normalize_match_reference(value)
-        if normalized is not None and normalized not in references:
-            references.append(normalized)
-    return tuple(references)
-
-
 def _load_current_judilibre_court_resolutions(
     cursor: Any,
     *,
@@ -2102,11 +2064,11 @@ def _load_current_judilibre_court_resolutions(
             StoredJudilibreCourtResolution(
                 court_id=str(row[0]),
                 court_code=str(row[1]),
-                resolution_method="outcome_court_code_exact",
+                resolution_method=JUDILIBRE_COURT_CODE_EXACT,
                 reference_sha256=canonical_sha256(
                     {
                         "schema_version": "judilibre_court_resolution_v1",
-                        "method": "outcome_court_code_exact",
+                        "method": JUDILIBRE_COURT_CODE_EXACT,
                         "court_code": str(row[1]),
                     }
                 ),
@@ -2232,120 +2194,11 @@ def _load_current_judilibre_court_resolutions(
         StoredJudilibreCourtResolution(
             court_id=str(row[0]),
             court_code=str(row[1]),
-            resolution_method="justice_structure_insee_exact_name",
+            resolution_method=JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME,
             reference_sha256=str(row[2]),
         )
         for row in rows
     ]
-
-
-def _validate_judilibre_match_signals(
-    signals: Mapping[str, object],
-    *,
-    expected_source_content_hash: str,
-    match_method: str,
-) -> None:
-    required_keys = {
-        "schema_version",
-        "match_rule_version",
-        "court",
-        "court_resolution_method",
-        "court_resolution_reference_sha256",
-        "hearing_date",
-        "hearing_date_exact",
-        "hearing_date_delta_days",
-        "case_number",
-        "portalis_number",
-        "claim_types",
-        "claims_manifest_sha256",
-        "case_reference_manifest_sha256",
-        "source_projection_sha256",
-        "target_context_sha256",
-        "source_record_version_current_at_scan",
-        "source_training_eligible",
-        "selection_requires_human_review",
-        "automatic_link_allowed",
-        "outcome_creation_allowed",
-        "training_eligible",
-        "claim_value_used_for_matching",
-        "price_used_for_matching",
-        "text_used_for_matching",
-        "address_used_for_matching",
-        "personal_identity_used_for_matching",
-        "source_record_sha256",
-    }
-    if set(signals) != required_keys:
-        raise ValueError("Judilibre match signals do not match the reviewed schema")
-    if signals.get("schema_version") != "judilibre_match_signals_v1":
-        raise ValueError("Judilibre match signal schema is unsupported")
-    if signals.get("match_rule_version") != "judilibre-review-match-v1":
-        raise ValueError("Judilibre match rule version is unsupported")
-    if signals.get("court_resolution_method") not in {
-        "outcome_court_code_exact",
-        "justice_structure_insee_exact_name",
-    }:
-        raise ValueError("Judilibre court resolution is not objective")
-    true_flags = {
-        "court",
-        "hearing_date",
-        "source_record_version_current_at_scan",
-        "selection_requires_human_review",
-    }
-    false_flags = {
-        "source_training_eligible",
-        "automatic_link_allowed",
-        "outcome_creation_allowed",
-        "training_eligible",
-        "claim_value_used_for_matching",
-        "price_used_for_matching",
-        "text_used_for_matching",
-        "address_used_for_matching",
-        "personal_identity_used_for_matching",
-    }
-    if any(signals.get(key) is not True for key in true_flags) or any(
-        signals.get(key) is not False for key in false_flags
-    ):
-        raise ValueError("Judilibre match safety flags are invalid")
-    for key in ("hearing_date_exact", "case_number", "portalis_number"):
-        if type(signals.get(key)) is not bool:
-            raise ValueError("Judilibre objective signal flags must be booleans")
-    date_delta = signals.get("hearing_date_delta_days")
-    if type(date_delta) is not int or not 0 <= date_delta <= 30:
-        raise ValueError("Judilibre hearing date delta is invalid")
-    claim_types = signals.get("claim_types")
-    if (
-        not isinstance(claim_types, list)
-        or not claim_types
-        or len(claim_types) != len(set(claim_types))
-        or any(
-            claim_type
-            not in {"starting_price_eur", "hammer_price_eur", "procedural_event"}
-            for claim_type in claim_types
-        )
-    ):
-        raise ValueError("Judilibre claim types are invalid")
-    for key in (
-        "court_resolution_reference_sha256",
-        "claims_manifest_sha256",
-        "case_reference_manifest_sha256",
-        "source_projection_sha256",
-        "target_context_sha256",
-        "source_record_sha256",
-    ):
-        if not is_lowercase_sha256(signals.get(key)):
-            raise ValueError("Judilibre match provenance must contain SHA-256 only")
-    if signals.get("source_projection_sha256") != expected_source_content_hash:
-        raise ValueError("Judilibre source projection provenance is inconsistent")
-    if match_method == "exact_portalis_number" and signals.get("portalis_number") is not True:
-        raise ValueError("Judilibre Portalis match method lacks its exact signal")
-    if match_method == "exact_case_number" and signals.get("case_number") is not True:
-        raise ValueError("Judilibre case-number match method lacks its exact signal")
-    if match_method == "composite" and not (
-        signals.get("hearing_date_exact") is True
-        and signals.get("case_number") is False
-        and signals.get("portalis_number") is False
-    ):
-        raise ValueError("Judilibre composite match must be a unique exact court/date candidate")
 
 
 def _load_source_policy(cursor: Any, source_name: str) -> SourcePolicy:

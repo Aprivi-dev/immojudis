@@ -140,20 +140,23 @@ def restore_checkpointed_pages(sale: Any, downloaded: list[dict[str, Any]]) -> N
     Page caches are keyed by file content and never go stale; the locked pass rebuilds the manifest itself.
     """
     from src.config import load_settings
-    from src.storage import supabase_client as storage
+    from src.storage.supabase_client import (
+        read_persisted_pdf_rows_rest,
+        restore_pdf_page_caches_for_documents,
+        validated_persisted_pdf_progress,
+        validated_persisted_pdf_texts,
+    )
 
     settings = load_settings()
     supabase_url, api_key = settings.get("supabase_url"), settings.get("supabase_service_role_key")
     source_url = str(getattr(sale, "source_url", "") or "")
     if not supabase_url or not api_key or not source_url or not downloaded:
         return
-    rows = storage._read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+    rows = read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
     for row in sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True):
-        restored = storage._validated_persisted_pdf_texts(sale, row) or storage._validated_persisted_pdf_progress(
-            sale, row
-        )
+        restored = validated_persisted_pdf_texts(sale, row) or validated_persisted_pdf_progress(sale, row)
         if restored:
-            storage._restore_pdf_page_caches_for_documents(restored, downloaded)
+            restore_pdf_page_caches_for_documents(restored, downloaded)
             return
 
 

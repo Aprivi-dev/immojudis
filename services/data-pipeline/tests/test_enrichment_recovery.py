@@ -576,7 +576,7 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
         "result": [partial_payload],
         "updated_at": "2026-09-30T12:00:00+00:00",
     }
-    restored = storage._validated_persisted_pdf_progress(sale, persisted_row)
+    restored = storage.validated_persisted_pdf_progress(sale, persisted_row)
     assert restored is not None
     assert restored[0]["text"] == ""
     assert restored[0].get("text_sha256", "") == ""

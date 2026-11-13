@@ -4,7 +4,6 @@ import argparse
 import json
 import logging
 import math
-import os
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
@@ -21,6 +20,7 @@ if sys.version_info >= (3, 14):
 import numpy as np
 import pandas as pd
 
+from src.config import write_step_summary
 from src.valuation_activation_gate import (
     CONFIDENCE_LEVEL,
     MIN_PROMOTION_COVERAGE_PCT,
@@ -1465,10 +1465,8 @@ def main() -> int:
             bundle.metrics.interval_coverage_pct,
             bundle.training_rows,
         )
-    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
-    if bundles and summary_path:
-        with Path(summary_path).open("a", encoding="utf-8") as handle:
-            handle.write(format_step_summary(bundles))
+    if bundles:
+        write_step_summary(format_step_summary(bundles))
     return 0 if bundles else 2
 
 

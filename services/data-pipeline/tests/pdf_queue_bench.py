@@ -124,7 +124,7 @@ class QueueBench:
         monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", self._finish)
         monkeypatch.setattr(queued_runner, "defer_budget_jobs", self._defer)
         monkeypatch.setattr(
-            supabase_client, "_read_persisted_pdf_rows_rest", lambda *_args: [dict(row) for row in self.extraction_rows]
+            supabase_client, "read_persisted_pdf_rows_rest", lambda *_args: [dict(row) for row in self.extraction_rows]
         )
         monkeypatch.setattr(supabase_client, "_persist_pdf_document_checkpoint_payload_to_supabase", self._checkpoint)
         monkeypatch.setattr(document_backlog, "_fetch_sale", lambda _url: self.stored_sale())

@@ -70,7 +70,12 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from src import photo_image, source_withdrawal
-from src.config import EncheresPubliquesAccessNotAuthorized, encheres_publiques_access_enabled, load_settings
+from src.config import (
+    EncheresPubliquesAccessNotAuthorized,
+    encheres_publiques_access_enabled,
+    load_settings,
+    write_step_summary,
+)
 from src.document_politeness import (
     DocumentPoliteness,
     DocumentRobotsDisallowed,
@@ -1314,9 +1319,6 @@ def _update_host_health(host: str, result: PhotoResult, failures: Counter[str], 
 
 
 def _write_step_summary(summary: Mapping[str, Any]) -> None:
-    path = os.getenv("GITHUB_STEP_SUMMARY")
-    if not path:
-        return
     lines = [
         "### Copie des photos principales",
         "",
@@ -1329,11 +1331,7 @@ def _write_step_summary(summary: Mapping[str, Any]) -> None:
         f"{summary['withdrawn_files_removed']} fichier(s) supprimé(s) ; copies périmées supprimées : "
         f"{summary['stale_deleted']}",
     ]
-    try:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write("\n".join(lines) + "\n")
-    except OSError as exc:
-        LOGGER.warning("Could not write the GitHub step summary: %s", exc)
+    write_step_summary("\n".join(lines) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
