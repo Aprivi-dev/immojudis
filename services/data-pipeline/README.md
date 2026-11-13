@@ -112,15 +112,21 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 Si ces variables sont absentes, le pipeline collecte, normalise, déduplique et exporte seulement les fichiers locaux.
 
-Pour les écritures directes du pipeline, ajouter aussi l'URL Postgres Supabase :
+Pour écrire le catalogue, ajouter aussi l'URL Postgres Supabase (obligatoire dès que
+`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont renseignées) :
 
 ```bash
 SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
 ```
 
-Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
-Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
-factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
+Le catalogue (ventes, tables dérivées comme `auction_risks`, documents, score
+factors, surfaces, observations, suppressions après fusion) ne s'écrit qu'en
+Postgres direct, dans une transaction : il n'y a pas de chemin d'écriture REST.
+Sans `SUPABASE_DB_URL` alors que `SUPABASE_URL` et la clé de service sont
+renseignées, le démarrage d'un traitement qui écrit le catalogue échoue
+(`DirectDatabaseMissing`, levée par le verrou d'écriture du catalogue ou par la
+première écriture). L'API REST service-role reste utilisée pour des lectures, le
+suivi des runs et des files, le cadastre et le DPE.
 
 Le port 6543 (pooler en mode transaction) convient aux écritures, mais pas au
 verrou d'écriture du catalogue (`src/catalogue_lock.py`), qui est un verrou
@@ -235,8 +241,6 @@ Ce que la garde note d'une écriture :
   d'un appelant ne confirme rien elle-même ;
 - si la base ne rend pas une ligne par ligne envoyée, rien n'est noté pour le lot et
   une ligne de journal le dit ;
-- le repli REST (hors production) n'a ni verrou ni lecture sous verrou : la garde
-  n'y agit pas et rien n'y est noté.
 
 Quand un groupe est repris de la base, ce qui décrit la même valeur le suit : pour
 la surface, `habitable_surface_m2`, `carrez_surface_m2`, `surface_scope`,
@@ -270,8 +274,6 @@ Hors périmètre de la garde, à connaître :
 - la mémoire de la garde n'est remise à zéro que par `main._open_run`. Les traitements
   qui n'ouvrent pas de passage (relecture de fiche, lecture des pièces, vérification)
   gardent celle de leur processus ;
-- le repli REST (hors production) écrit sans transaction, sans verrou et sans garde ;
-  une ligne de journal (`REST fallback wrote … sales …`) le dit quand il sert ;
 
 - `lawyer_contact` repris de la ligne connue (carte notaires inchangée) n'est pas un
   groupe de la garde : il est réécrit tel que lu ;
@@ -674,7 +676,7 @@ migration `20261117100700`, qui ne montre que la dernière génération par vent
   version 2 sont masquées, quel que soit leur champ. C'est pourquoi une vente sans
   instantané n'émet rien en version 3 : elle garde toutes celles de la version 2 ;
 - les observations d'une vente partent dans la transaction de sa publication, en
-  une fois (le repli REST, hors production, écrit par lots).
+  une fois.
 
 Le mode par défaut est une lecture sans écriture Supabase :
 

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fake_publication import inside_publication
 
 from src import listing_minimum, rejected_listings
 from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS
@@ -269,14 +270,15 @@ def test_the_publication_never_writes_the_technical_keys(monkeypatch) -> None:
     )
     written: list[dict] = []
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, rows: written.extend(rows))
-    for name in ("_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest", "_enqueue_due_enrichment"):
+    inside_publication(
+        monkeypatch, on_write=lambda table, rows, _conflict: written.extend(rows) if table == "auction_sales" else None
+    )
+    for name in ("_sync_normalized_sale_tables", "_upsert_asset_tables", "_enqueue_due_enrichment"):
         monkeypatch.setattr(storage, name, lambda *args, **kwargs: None)
-    monkeypatch.setattr(storage, "_write_fact_claims_rest", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(storage, "_write_fact_claims_postgres", lambda *args, **kwargs: 0)
     monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *args, **kwargs: None)
 
-    storage._write_sale_revisions([sale], {"supabase_url": "https://db.test", "supabase_service_role_key": "k"},
-                                  refresh_last_seen=True)
+    storage._write_sale_revisions([sale], refresh_last_seen=True)
 
     assert len(written) == 1
     assert not set(TECHNICAL) & set(written[0]["raw_payload"])

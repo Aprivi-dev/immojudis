@@ -8,6 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from fake_publication import inside_publication
 
 from src.models import AuctionSale
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
@@ -85,16 +86,10 @@ def test_cold_restore_keeps_provenance_and_is_idempotent(monkeypatch, tmp_path: 
     # The document upsert consumes the validated map without performing a
     # second persisted lookup.  Extraction upsert happens before the cache is
     # materialized, so it sees no synthetic current row on this cold pass.
-    monkeypatch.setattr(
-        storage,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
     document_writes: list[list[dict[str, object]]] = []
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda _url, _key, table, payload, on_conflict: document_writes.append(payload)
+    inside_publication(
+        monkeypatch,
+        on_write=lambda table, payload, _conflict: document_writes.append(payload)
         if table == "auction_documents"
         else None,
     )
@@ -144,7 +139,7 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
     monkeypatch.setattr(
         storage,
         "_fetch_persisted_pdf_texts_for_sales",
-        lambda sales, _url, _key: events.append(("fetch", sales)) or persisted_map,
+        lambda sales: events.append(("fetch", sales)) or persisted_map,
     )
     monkeypatch.setattr(
         storage,
@@ -161,16 +156,9 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
         "_restore_persisted_pdf_text_caches",
         lambda sales, persisted_pdf_texts: events.append(("cache", persisted_pdf_texts)),
     )
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage, "_postgrest_insert", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage, "_postgrest_delete_by_source_urls", lambda *_args, **_kwargs: None)
+    inside_publication(monkeypatch)
 
-    storage._upsert_asset_tables_with_rest(
-        "https://supabase.test",
-        "secret",
-        [sale],
-        "2026-09-30T10:00:00+00:00",
-    )
+    storage._upsert_asset_tables([sale], "2026-09-30T10:00:00+00:00")
 
     assert [name for name, _value in events] == ["fetch", "documents", "extractions", "cache"]
     assert events[1][1] is persisted_map

@@ -59,7 +59,7 @@ def writes(monkeypatch, database: str) -> list[list[str]]:
     monkeypatch.setattr(storage, "load_settings", lambda: settings)
     written: list[list[str]] = []
 
-    def witness(sales, _settings, **_kwargs) -> int:
+    def witness(sales, **_kwargs) -> int:
         written.append([sale.source_url for sale in sales])
         return len(sales)
 

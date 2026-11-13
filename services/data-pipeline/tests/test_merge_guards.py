@@ -56,7 +56,6 @@ def test_secondary_cleanup_refuses_without_the_account_data_trigger(monkeypatch,
     monkeypatch.setattr(
         supabase_client, "_delete_secondary_sale_rows_with_postgres", lambda *a, **k: deletions.append("pg") or 1
     )
-    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", lambda *a, **k: deletions.append("rest") or 1)
 
     with pytest.raises(merge_guards.MergeGuardRefused, match="auction_sales_carry_sale_user_data"):
         supabase_client.delete_secondary_sales_in_supabase([_sale_with_secondaries(2)])
@@ -67,7 +66,6 @@ def test_secondary_cleanup_refuses_without_the_account_data_trigger(monkeypatch,
 def test_secondary_cleanup_refuses_without_a_database_url(monkeypatch, settings) -> None:
     """Sans SUPABASE_DB_URL le déclencheur est invérifiable : refus, pas de repli REST."""
     settings(supabase_db_url=None)
-    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", lambda *a, **k: pytest.fail("REST delete"))
 
     with pytest.raises(merge_guards.MergeGuardRefused):
         supabase_client.delete_secondary_sales_in_supabase([_sale_with_secondaries(1)])
@@ -95,6 +93,21 @@ def test_secondary_cleanup_deletes_at_most_the_pass_cap(monkeypatch, settings, c
     assert seen == ([expected] if expected else [])
 
 
+def test_secondary_cleanup_has_no_fallback_when_postgres_fails(monkeypatch, settings) -> None:
+    settings(supabase_db_url="postgresql://example")
+    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("postgres down")),
+    )
+    monkeypatch.setattr(supabase_client.httpx, "delete", lambda *a, **k: pytest.fail("no REST delete"))
+
+    with pytest.raises(RuntimeError, match="postgres down"):
+        supabase_client.delete_secondary_sales_in_supabase([_sale_with_secondaries(150)])
+
+
+@pytest.mark.skip(reason="Repli REST retiré : proposé à la suppression (voir test_secondary_cleanup_has_no_fallback_when_postgres_fails)")
 def test_secondary_cleanup_cap_applies_to_the_rest_fallback_too(monkeypatch, settings) -> None:
     deleted_urls: list[str] = []
     settings(supabase_db_url="postgresql://example")

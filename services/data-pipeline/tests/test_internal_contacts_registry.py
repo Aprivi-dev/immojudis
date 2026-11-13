@@ -137,6 +137,7 @@ def _writes(rest: _Rest) -> list[tuple[str, str, dict[str, Any]]]:
     return [call for call in rest.calls if call[0] != "GET"]
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_path_inserts_a_new_row_without_overwriting_an_existing_one() -> None:
     rest = _Rest()
 
@@ -153,6 +154,7 @@ def test_rest_path_inserts_a_new_row_without_overwriting_an_existing_one() -> No
     assert all(EMAIL not in str(call[2].get("params")) and EMAIL not in call[1] for call in rest.calls)
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_path_refreshes_a_sale_listing_row_but_leaves_other_kinds_alone() -> None:
     existing = [
         {"id": "row-1", "scope_sale_id": SALE_ID, "normalized_email": EMAIL, "source_kind": "sale_listing",
@@ -170,6 +172,7 @@ def test_rest_path_refreshes_a_sale_listing_row_but_leaves_other_kinds_alone() -
     assert writes[0][2]["json"] == {"observed_at": NOW, "source_url": URL, "last_seen_at": NOW}
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_path_never_writes_an_opposed_address() -> None:
     rest = _Rest(opposed=[EMAIL])
 
@@ -177,6 +180,7 @@ def test_rest_path_never_writes_an_opposed_address() -> None:
     assert _writes(rest) == []
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_path_fails_closed_without_leaking_the_address_when_the_registry_errors() -> None:
     class _Failing(_Rest):
         def get(self, url: str, **kwargs: Any) -> _Response:
@@ -197,31 +201,23 @@ def test_a_registry_failure_never_fails_the_collection_nor_logs_the_address(
     connection = _Connection(fail_insert=True)
 
     with caplog.at_level(logging.DEBUG):
-        written = registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, connection, _ids)
+        written = registry.write_safely([_sale(EMAIL)], NOW, connection)
 
     assert written == 0
     assert "RuntimeError" in caplog.text
     assert EMAIL not in caplog.text
 
 
-def test_write_goes_through_the_transaction_when_there_is_one_and_through_rest_otherwise(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_write_goes_through_the_publication_transaction(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
         registry, "write_internal_contacts_connection", lambda connection, sales, now: calls.append("connection") or 1
     )
-    monkeypatch.setattr(
-        registry,
-        "write_internal_contacts_rest",
-        lambda url, key, sales, ids, now, **kwargs: calls.append("rest") or 1,
-    )
 
-    assert registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, None, _ids) == 1
-    assert registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, object(), _ids) == 1
-    assert registry.write_safely([_sale()], "https://example.test", "key", NOW, object(), _ids) == 0
+    assert registry.write_safely([_sale(EMAIL)], NOW, object()) == 1
+    assert registry.write_safely([_sale()], NOW, object()) == 0
 
-    assert calls == ["rest", "connection"]
+    assert calls == ["connection"]
 
 
 def test_the_publication_write_calls_the_registry_after_the_sale_write() -> None:
@@ -230,7 +226,7 @@ def test_the_publication_write_calls_the_registry_after_the_sale_write() -> None
     source = inspect.getsource(supabase_client._write_sale_revisions)
 
     assert "internal_contacts.write_safely(" in source
-    assert source.index("_upsert_asset_tables_with_rest") < source.index("internal_contacts.write_safely(")
+    assert source.index("_upsert_asset_tables") < source.index("internal_contacts.write_safely(")
 
 
 # --- Points de sauvegarde, pagination, source et fenêtre de conservation ------------------------------------
@@ -297,15 +293,6 @@ def test_the_first_observation_date_is_never_rewritten() -> None:
     assert "created_at" not in insert
     assert set(re.findall(r"(\w+) = excluded", update)) == {"observed_at", "source_url", "last_seen_at"}
 
-    rest = _Rest(
-        existing=[
-            {"id": "row-1", "scope_sale_id": SALE_ID, "normalized_email": EMAIL, "source_kind": "sale_listing",
-             "opposition_status": "none"}
-        ]
-    )
-    rest.run([_sale(EMAIL)])
-    assert "created_at" not in _writes(rest)[0][2]["json"]
-
 
 @pytest.mark.parametrize(
     "overrides",
@@ -327,14 +314,6 @@ def test_no_write_nor_refresh_after_the_sale_is_over_or_withdrawn(overrides: dic
     connection = _Connection()
     assert registry.write_internal_contacts_connection(connection, [sale], NOW) == 0
     assert connection.statements == []
-    rest = _Rest(
-        existing=[
-            {"id": "row-1", "scope_sale_id": SALE_ID, "normalized_email": EMAIL, "source_kind": "sale_listing",
-             "opposition_status": "none"}
-        ]
-    )
-    assert rest.run([sale]) == 0
-    assert rest.calls == []
 
 
 @pytest.mark.parametrize(
@@ -378,6 +357,7 @@ class _Server(_Rest):
         return _Response(page, headers={"Content-Range": f"{span}/{total}"})
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_opposition_list_is_read_page_by_page_and_an_address_on_a_later_page_is_honoured() -> None:
     opposed = [f"x{index}@exemple.test" for index in range(1000)] + [EMAIL]
     rest = _Server(opposed, max_rows=1000)
@@ -387,6 +367,7 @@ def test_rest_opposition_list_is_read_page_by_page_and_an_address_on_a_later_pag
     assert _writes(rest) == []
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_pagination_survives_a_server_cap_below_the_page_size() -> None:
     # max_rows = 400 : le décalage suit les lignes reçues, aucune ligne n'est sautée.
     opposed = [f"x{index}@exemple.test" for index in range(1100)] + [EMAIL]
@@ -397,6 +378,7 @@ def test_rest_pagination_survives_a_server_cap_below_the_page_size() -> None:
     assert _writes(rest) == []
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_reading_fails_closed_when_the_rows_read_differ_from_the_announced_total() -> None:
     rest = _Server([f"x{index}@exemple.test" for index in range(10)], max_rows=1000, lie_about_total=42)
 
@@ -405,6 +387,7 @@ def test_rest_reading_fails_closed_when_the_rows_read_differ_from_the_announced_
     assert _writes(rest) == []
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_reading_without_a_total_stops_on_an_empty_page() -> None:
     class _NoTotal(_Server):
         def get(self, url: str, **kwargs: Any) -> _Response:
@@ -418,6 +401,7 @@ def test_rest_reading_without_a_total_stops_on_an_empty_page() -> None:
     assert rest.offsets == [0, 1000, 1501]
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_reading_fails_closed_after_the_page_cap_and_writes_nothing() -> None:
     class _Endless(_Rest):
         def get(self, url: str, **kwargs: Any) -> _Response:
@@ -431,6 +415,7 @@ def test_rest_reading_fails_closed_after_the_page_cap_and_writes_nothing() -> No
     assert len([call for call in rest.calls if call[0] == "GET"]) == registry.MAX_PAGES
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_rest_existing_rows_are_read_by_chunks_of_sale_ids() -> None:
     sales = []
     ids: dict[str, str] = {}
@@ -479,6 +464,7 @@ def _sale_in_run(run_id: str | None, *emails: str) -> AuctionSale:
     return sale
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_the_opposition_list_is_read_once_per_run_and_not_for_every_batch() -> None:
     rest = _Rest(opposed=["opposee@exemple.test"])
     cache = registry.OpposedAddressCache()
@@ -492,6 +478,7 @@ def test_the_opposition_list_is_read_once_per_run_and_not_for_every_batch() -> N
     assert len(_opposition_reads(rest)) == 2
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_the_opposition_cache_default_delay_is_sixty_seconds() -> None:
     assert registry.OPPOSED_CACHE_TTL_SECONDS == 60.0
     clock = [0.0]
@@ -507,6 +494,7 @@ def test_the_opposition_cache_default_delay_is_sixty_seconds() -> None:
     assert len(_opposition_reads(rest)) == 2
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_the_opposition_list_is_read_again_for_a_new_run_or_after_the_delay() -> None:
     clock = [1000.0]
     rest = _Rest()
@@ -524,6 +512,7 @@ def test_the_opposition_list_is_read_again_for_a_new_run_or_after_the_delay() ->
     assert len(_opposition_reads(rest)) == 3
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_a_new_opposition_is_honoured_as_soon_as_the_list_is_read_again() -> None:
     clock = [0.0]
     rest = _Rest()
@@ -535,6 +524,7 @@ def test_a_new_opposition_is_honoured_as_soon_as_the_list_is_read_again() -> Non
     assert _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)]) == 0
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_a_failed_opposition_read_leaves_nothing_in_the_cache_and_writes_nothing() -> None:
     class _Flaky(_Rest):
         fail = True
@@ -572,6 +562,7 @@ def process_cache_with(monkeypatch: pytest.MonkeyPatch):
     registry._OPPOSED_CACHE.clear()
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_write_safely_shares_one_opposition_read_between_batches(process_cache_with) -> None:
     rest = _Rest(opposed=["opposee@exemple.test"])
     process_cache_with(rest)
@@ -583,6 +574,7 @@ def test_write_safely_shares_one_opposition_read_between_batches(process_cache_w
     assert len(_opposition_reads(rest)) == 2
 
 
+@pytest.mark.skip(reason="Chemin REST du registre retiré (écriture dans la transaction de publication seulement) : proposé à la suppression")
 def test_stopping_at_the_page_limit_is_visible_in_the_log_without_any_address(
     caplog: pytest.LogCaptureFixture, process_cache_with
 ) -> None:

@@ -42,6 +42,27 @@ def encheres_publiques_access_enabled(settings: Mapping[str, object]) -> bool:
     )
 
 
+class DirectDatabaseMissing(RuntimeError):
+    """Supabase is configured without ``SUPABASE_DB_URL``: the catalogue has no other write path."""
+
+
+DIRECT_DATABASE_MISSING_MESSAGE = (
+    "SUPABASE_DB_URL is required: the catalogue is written through direct PostgreSQL only (no REST write path)"
+)
+
+
+def supabase_configured(settings: Mapping[str, object]) -> bool:
+    """Without the Supabase URL and service key, the pipeline only exports local files."""
+    return bool(settings.get("supabase_url") and settings.get("supabase_service_role_key"))
+
+
+def direct_database_url(settings: Mapping[str, object]) -> str:
+    db_url = settings.get("supabase_db_url")
+    if not db_url:
+        raise DirectDatabaseMissing(DIRECT_DATABASE_MISSING_MESSAGE)
+    return str(db_url)
+
+
 def require_encheres_publiques_access(settings: Mapping[str, object]) -> None:
     """Fail closed before constructing a client for Encheres Publiques."""
 

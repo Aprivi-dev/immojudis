@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from src import normalize
+from src.config import DirectDatabaseMissing
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.models import AuctionSale
 from src.storage import supabase_client
@@ -354,6 +355,7 @@ def test_postgres_writer_inserts_candidates_without_updating_existing_claims() -
     assert any("on conflict (id) do nothing" in statement for statement in statements)
 
 
+@pytest.mark.skip(reason="Chemin REST retiré (écriture des observations par PostgREST et file de rejeu) : proposé à la suppression")
 def test_rest_writer_uses_ignore_duplicates_and_keeps_candidate_status(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -397,6 +399,7 @@ def test_rest_writer_uses_ignore_duplicates_and_keeps_candidate_status(monkeypat
     assert calls[1]["json"][0]["auction_sale_id"] == "00000000-0000-4000-8000-000000000099"
 
 
+@pytest.mark.skip(reason="Chemin REST retiré (écriture des observations par PostgREST et file de rejeu) : proposé à la suppression")
 def test_rest_writer_queues_one_deterministic_replay_after_claim_failure(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -452,6 +455,44 @@ def test_rest_writer_queues_one_deterministic_replay_after_claim_failure(monkeyp
     assert queued[0]["params"] == {"on_conflict": "source_url,job_type,input_hash"}
 
 
+class _ReplayConnection:
+    """Connexion directe du rejeu : rend l'id canonique de la vente, garde les observations insérées."""
+
+    def __init__(self, sale_ids: dict[str, str] | None = None) -> None:
+        self.sale_ids = sale_ids or {}
+        self.inserted: list[dict[str, object]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        return None
+
+
+def _patch_replay(monkeypatch, connection: _ReplayConnection) -> None:
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {
+            "supabase_url": "https://supabase.example",
+            "supabase_service_role_key": "service-role-test",
+            "supabase_db_url": "postgresql://replay.test/postgres",
+        },
+    )
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: connection)
+    monkeypatch.setattr(
+        supabase_client,
+        "_sale_ids_for_connection",
+        lambda _connection, sales: {sale.source_url: connection.sale_ids[sale.source_url] for sale in sales
+                                    if sale.source_url in connection.sale_ids},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_insert_fact_claim_rows",
+        lambda _connection, rows: connection.inserted.extend(rows),
+    )
+
+
 def test_fact_claim_replay_surfaces_failure_to_the_bounded_worker(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -460,21 +501,37 @@ def test_fact_claim_replay_surfaces_failure_to_the_bounded_worker(monkeypatch) -
             "source_blocks": {"occupation": "Libre de toute occupation"},
         }
     )
+    _patch_replay(monkeypatch, _ReplayConnection())
     monkeypatch.setattr(
         supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.example",
-            "supabase_service_role_key": "service-role-test",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_write_fact_claims_rest",
+        "_write_fact_claims_postgres",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary outage")),
     )
 
     with pytest.raises(RuntimeError, match="temporary outage"):
+        supabase_client.retry_fact_claims_to_supabase(sale)
+
+
+def test_fact_claim_replay_requires_the_direct_connection(monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://source.example/rest-retry-no-db",
+            "source_blocks": {"occupation": "Libre de toute occupation"},
+        }
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "load_settings",
+        lambda: {"supabase_url": "https://supabase.example", "supabase_service_role_key": "service-role-test"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_connect",
+        lambda _url: pytest.fail("no connection without SUPABASE_DB_URL"),
+    )
+
+    with pytest.raises(DirectDatabaseMissing, match="SUPABASE_DB_URL"):
         supabase_client.retry_fact_claims_to_supabase(sale)
 
 
@@ -489,30 +546,11 @@ def test_fact_claim_replay_rekeys_snapshot_to_current_canonical_sale(monkeypatch
     old_sale_id = "00000000-0000-4000-8000-000000000010"
     current_sale_id = "00000000-0000-4000-8000-000000000011"
     snapshot = materialize_fact_claim_rows(sale, old_sale_id)
-    posted: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.example",
-            "supabase_service_role_key": "service-role-test",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sale_ids_for_rest",
-        lambda *args, **kwargs: {sale.source_url: current_sale_id},
-    )
-
-    def fake_request(method, endpoint, table, **kwargs):
-        if method == "POST":
-            posted.extend(kwargs["json"])
-        return SimpleNamespace(is_error=False, status_code=201, text="", request=None)
-
-    monkeypatch.setattr(supabase_client, "_postgrest_request_with_retries", fake_request)
+    connection = _ReplayConnection({sale.source_url: current_sale_id})
+    _patch_replay(monkeypatch, connection)
 
     assert supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot) == len(snapshot)
+    posted = connection.inserted
     assert posted
     assert {row["auction_sale_id"] for row in posted} == {current_sale_id}
     assert {row["id"] for row in posted} != {row["id"] for row in snapshot}
@@ -530,19 +568,7 @@ def test_fact_claim_replay_rejects_empty_or_malformed_snapshot(monkeypatch, snap
             "source_url": "https://source.example/rest-invalid-snapshot",
         }
     )
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.example",
-            "supabase_service_role_key": "service-role-test",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sale_ids_for_rest",
-        lambda *args, **kwargs: {sale.source_url: "00000000-0000-4000-8000-000000000012"},
-    )
+    _patch_replay(monkeypatch, _ReplayConnection({sale.source_url: "00000000-0000-4000-8000-000000000012"}))
 
     with pytest.raises(RuntimeError, match="snapshot"):
         supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot)
@@ -565,32 +591,15 @@ def test_fact_claim_replay_rejects_mixed_snapshot_without_partial_write(monkeypa
         },
         {"field_key": "property.occupancy_status"},
     ]
-    posted: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.example",
-            "supabase_service_role_key": "service-role-test",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sale_ids_for_rest",
-        lambda *args, **kwargs: {sale.source_url: "00000000-0000-4000-8000-000000000014"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_request_with_retries",
-        lambda method, endpoint, table, **kwargs: posted.append(kwargs["json"])
-        or SimpleNamespace(is_error=False, status_code=201, text="", request=None),
-    )
+    connection = _ReplayConnection({sale.source_url: "00000000-0000-4000-8000-000000000014"})
+    _patch_replay(monkeypatch, connection)
 
     with pytest.raises(RuntimeError, match="missing"):
         supabase_client.retry_fact_claims_to_supabase(sale, snapshot=snapshot)
-    assert posted == []
+    assert connection.inserted == []
 
 
+@pytest.mark.skip(reason="Chemin REST retiré (écriture des observations par PostgREST et file de rejeu) : proposé à la suppression")
 def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(monkeypatch) -> None:
     sales = [
         normalize_sale(
@@ -667,6 +676,7 @@ def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(
     }
 
 
+@pytest.mark.skip(reason="Chemin REST retiré (écriture des observations par PostgREST et file de rejeu) : proposé à la suppression")
 def test_rest_writer_surfaces_missing_retry_queue_as_an_explicit_failure(monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -692,6 +702,7 @@ def test_rest_writer_surfaces_missing_retry_queue_as_an_explicit_failure(monkeyp
         )
 
 
+@pytest.mark.skip(reason="Chemin REST retiré (écriture des observations par PostgREST et file de rejeu) : proposé à la suppression")
 def test_rest_writer_queues_when_canonical_sale_lookup_fails(monkeypatch) -> None:
     sale = normalize_sale(
         {

@@ -1,8 +1,7 @@
-"""Fact-claim snapshot, retry hash and Postgres insert helpers."""
+"""Fact-claim snapshot and Postgres insert helpers."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
 from uuid import UUID, uuid5
@@ -32,14 +31,6 @@ FACT_CLAIMS_COLUMNS = (
     "extractor_name",
     "extractor_version",
 )
-FACT_CLAIMS_RETRY_JOB_TYPE = "fact_claims"
-FACT_CLAIMS_RETRY_VERSION = "fact_claims_rest_v2"
-
-
-class _FactClaimRetryQueueUnavailable(RuntimeError):
-    """The one allowed queue insertion did not create durable retry work."""
-
-
 def _materialize_fact_claim_snapshot(
     snapshot: object,
     canonical_sale_id: str,
@@ -103,41 +94,6 @@ def _materialize_fact_claim_snapshot(
             }
         )
     return rows
-
-
-def _fact_claim_retry_input_hash(rows: list[dict[str, object]]) -> str:
-    identity = [
-        {
-            key: row.get(key)
-            for key in (
-                "id",
-                "auction_sale_id",
-                "field_key",
-                "value_jsonb",
-                "source_url",
-                "evidence_locator",
-            )
-        }
-        for row in rows
-    ]
-    identity.sort(
-        key=lambda item: json.dumps(
-            item,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        )
-    )
-    serialized = json.dumps(
-        identity,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-    return f"{FACT_CLAIMS_RETRY_VERSION}:{digest}"
 
 
 def _sale_ids_for_connection(connection: Any, sales: list[AuctionSale]) -> dict[str, str]:

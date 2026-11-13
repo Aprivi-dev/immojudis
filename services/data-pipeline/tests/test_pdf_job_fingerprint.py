@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+from fake_publication import capture_enqueued_jobs
+
 from src.normalize import normalize_sale
 from src.storage import supabase_client as storage
 
@@ -100,24 +102,20 @@ def test_enqueue_uses_pdf_hash_constructor(monkeypatch) -> None:
         "src.enrichment.extract_structured.needs_fact_extraction",
         lambda _sale: False,
     )
-    monkeypatch.setattr(
-        storage,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, _conflict: rows.extend(payload),
-    )
+    capture_enqueued_jobs(monkeypatch, rows)
 
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     first_hash = rows[-1]["input_hash"]
     assert rows[-1]["job_type"] == "pdf"
     assert first_hash == storage.pdf_enrichment_input_hash_for_sale(sale, SETTINGS)
 
     sale.raw_payload["document_analysis"]["checked_at"] = "2026-09-30T10:30:00+00:00"
     sale.raw_payload["source_checks"][SOURCE_URL]["fingerprint"] = "source-v2"
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     assert rows[-1]["input_hash"] == first_hash
 
     sale.raw_payload["document_analysis"]["profiles"][0]["sha256"] = "d" * 64
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
     assert rows[-1]["input_hash"] != first_hash
 
 
