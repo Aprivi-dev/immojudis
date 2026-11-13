@@ -80,7 +80,7 @@ async function loadSharedStructureCounts(now: Date): Promise<SharedStructureCoun
     .in("status", ["sending", "sent", "replied", "review", "completed", "failed"])
     .limit(SHARED_SENDS_LIMIT);
   if (error) throw error;
-  if (!data) throw new Error("Compteur des envois par structure indisponible.");
+  if (!data) throw new Error("Shared-structure send counter read returned no data");
   if (data.length >= SHARED_SENDS_LIMIT) {
     return {
       todayBySharedStructure: {},

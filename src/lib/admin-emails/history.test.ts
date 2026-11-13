@@ -47,6 +47,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 vi.mock("@/lib/email-delivery-log", () => ({ recordEmailDeliveryEvent: vi.fn() }));
 
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
 import { MASKED_LINK } from "./link-masking";
 import {
@@ -167,18 +168,19 @@ describe("listEmailHistory : envoyés", () => {
     ["adresse trop courte", { cursor: null, address: "a" }],
     ["adresse avec joker *", { cursor: null, address: "al*" }],
   ])("refuse une entrée invalide : %s", async (_name, input) => {
-    await expect(
-      listEmailHistory({ adminUserId: ADMIN, box: "sent", ...input }),
-    ).rejects.toBeInstanceOf(EmailHistoryInputError);
+    const refused = listEmailHistory({ adminUserId: ADMIN, box: "sent", ...input });
+    await expect(refused).rejects.toBeInstanceOf(EmailHistoryInputError);
+    await expect(refused).rejects.toMatchObject({ status: 400 });
     expect(state.calls).toEqual([]);
   });
 
   it("n'affiche rien si la trace de consultation ne peut pas être écrite", async () => {
     state.results.email_send_log = { data: [sentRow(1)], error: null };
     state.insertError = { message: "indisponible" };
+    // Panne d'une dépendance : 503, message de repli de la route.
     await expect(
       listEmailHistory({ adminUserId: ADMIN, box: "sent", cursor: null, address: null }),
-    ).rejects.toThrow("consultation refusée");
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it("« Actualiser » relit chez Resend au plus 20 envois de moins de 72 h encore sans issue", async () => {
@@ -628,7 +630,7 @@ describe("readEmailMessage", () => {
         id: `log:${ID}`,
         fetchImpl: fetchImpl as unknown as typeof fetch,
       }),
-    ).rejects.toThrow("consultation refusée");
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

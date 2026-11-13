@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { PublicApiError } from "@/lib/api-errors";
 
 export const MAX_PUBLISHED_PHOTO_BYTES = 2 * 1024 * 1024;
 
@@ -12,10 +13,10 @@ export async function optimizeInformationAgentPhoto(input: Uint8Array): Promise<
     }).metadata();
     format = metadata.format;
   } catch {
-    throw new Error("Photo illisible ou trop grande : publication impossible.");
+    throw new PublicApiError("Photo illisible ou trop grande : publication impossible.", 422);
   }
   if (!format || !["jpeg", "png", "webp", "heif"].includes(format)) {
-    throw new Error("Format photo non pris en charge pour publication.");
+    throw new PublicApiError("Format photo non pris en charge pour publication.", 422);
   }
 
   for (const [edge, quality] of [
@@ -31,8 +32,14 @@ export async function optimizeInformationAgentPhoto(input: Uint8Array): Promise<
         .toBuffer();
       if (output.byteLength <= MAX_PUBLISHED_PHOTO_BYTES) return output;
     } catch {
-      throw new Error("Photo impossible à convertir en WebP : publication suspendue.");
+      throw new PublicApiError(
+        "Photo impossible à convertir en WebP : publication suspendue.",
+        422,
+      );
     }
   }
-  throw new Error("Photo trop volumineuse après compression : publication suspendue.");
+  throw new PublicApiError(
+    "Photo trop volumineuse après compression : publication suspendue.",
+    422,
+  );
 }

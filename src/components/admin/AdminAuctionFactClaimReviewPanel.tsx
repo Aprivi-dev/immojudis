@@ -7,13 +7,10 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useEffect, useState } from "react";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
-import {
-  factFieldLabel,
-  formatFactDate,
-  formatFactValue,
-} from "@/components/admin/fact-claim-format";
+import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
   fetchAdminAuctionFactClaimReview,
@@ -53,8 +50,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-readiness"] });
       toast.success("Décision enregistrée. La fiche sera réévaluée avec ce contrôle.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Décision impossible."),
+    onError: (error) => toast.error(queryErrorMessage(error, "Décision impossible.")),
   });
 
   const items = query.data?.items ?? [];
@@ -114,9 +110,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       ) : query.error ? (
         <div className="p-5">
           <p role="alert" className="text-sm text-red-700">
-            {query.error instanceof Error
-              ? query.error.message
-              : "La revue des faits est indisponible."}
+            {queryErrorMessage(query.error, "La revue des faits est indisponible.")}
           </p>
           <button
             type="button"
@@ -221,7 +215,7 @@ function ClaimLine({
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
           <p className="mt-1 text-xs text-brand-navy/55">
-            {[item.sale.city, item.sale.saleDate ? formatFactDate(item.sale.saleDate) : null]
+            {[item.sale.city, item.sale.saleDate ? formatDateTime(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -257,7 +251,7 @@ function ClaimLine({
                   ? "non renseignée"
                   : `${Math.round(item.evidence.confidence * 100)} %`}
               </span>
-              <span>Capturé le {formatFactDate(item.evidence.capturedAt)}</span>
+              <span>Capturé le {formatDateTime(item.evidence.capturedAt)}</span>
             </div>
           </div>
         </div>

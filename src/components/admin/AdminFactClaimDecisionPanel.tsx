@@ -7,12 +7,9 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPagination } from "@/components/admin/AdminPagination";
-import {
-  factFieldLabel,
-  formatFactDate,
-  formatFactValue,
-} from "@/components/admin/fact-claim-format";
+import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import type {
   AdminFactClaimDecisionInput,
   AdminFactClaimDecisionItem,
@@ -106,10 +103,7 @@ export function AdminFactClaimDecisionPanel() {
       toast.success(message);
     },
     onError: (error) => {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "La décision n’a pas pu être enregistrée.";
+      const message = queryErrorMessage(error, "La décision n’a pas pu être enregistrée.");
       // Après un refus, la confirmation d’une décision définitive est à redonner.
       setDraft((current) => (current ? { ...current, finalConfirmed: false } : current));
       setOutcome({ kind: "error", message });
@@ -218,9 +212,7 @@ export function AdminFactClaimDecisionPanel() {
       ) : query.error ? (
         <div className="p-5">
           <p role="alert" className="text-sm text-danger">
-            {query.error instanceof Error && query.error.message
-              ? query.error.message
-              : "La liste des observations est indisponible."}
+            {queryErrorMessage(query.error, "La liste des observations est indisponible.")}
           </p>
           <button
             type="button"
@@ -320,7 +312,7 @@ function DecisionLine({
         </span>
         {item.latestDecision ? (
           <span className="text-xs text-brand-navy/55">
-            Décision du {formatFactDate(item.latestDecision.decidedAt)}
+            Décision du {formatDateTime(item.latestDecision.decidedAt)}
           </span>
         ) : null}
       </div>
@@ -333,7 +325,7 @@ function DecisionLine({
       </h3>
       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/55">
         {item.sale.city ? <span>{item.sale.city}</span> : null}
-        {item.sale.saleDate ? <span>Vente du {formatFactDate(item.sale.saleDate)}</span> : null}
+        {item.sale.saleDate ? <span>Vente du {formatDateTime(item.sale.saleDate)}</span> : null}
         <Link
           href={`/sales/${item.saleId}`}
           className="inline-flex min-h-6 items-center font-medium text-gold-text underline"
@@ -372,7 +364,7 @@ function DecisionLine({
         ) : (
           <span>Pièce sans lien public</span>
         )}
-        <span>Reçue le {formatFactDate(item.capturedAt)}</span>
+        <span>Reçue le {formatDateTime(item.capturedAt)}</span>
       </div>
 
       {item.allowedActions.length ? (

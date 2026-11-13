@@ -17,7 +17,11 @@ import {
   AdminSectionHeading,
   AdminShell,
 } from "@/components/admin/AdminShell";
-import { formatInteger, formatRelativeTime } from "@/components/admin/admin-format";
+import {
+  formatInteger,
+  formatRelativeTime,
+  queryErrorMessage,
+} from "@/components/admin/admin-format";
 import {
   AdminQueryErrorNotice,
   OverviewMetric,
@@ -73,7 +77,7 @@ export function AdminOperationsPage() {
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
     },
     onError: async (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de lancer la collecte");
+      toast.error(queryErrorMessage(err, "Impossible de lancer la collecte"));
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
     },
   });

@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   courtRegistryDailyCap,
   courtRegistryFallbackEmails,
@@ -13,7 +14,7 @@ import {
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { type InformationAgentContactCandidate } from "@/lib/information-agent/contact-resolution";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
-import { startOfParisDay } from "@/lib/information-agent/paris-time";
+import { startOfParisDay } from "@/lib/paris-time";
 
 /**
  * Greffe de secours (lecture du référentiel `court_registry_contacts`, limites d'envoi). Seul module
@@ -143,7 +144,7 @@ export async function assertCourtRegistryFallbackAddress(
   const normalized = normalizedEmail(email);
   const contact = await loadCourtRegistryContact(courtCode);
   if (!normalized || !contact?.emails.some((item) => normalizedEmail(item) === normalized)) {
-    throw new Error(COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE);
+    throw new PublicApiError(COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE, 409);
   }
 }
 
@@ -204,14 +205,16 @@ export async function assertCourtRegistryFallbackLimits({
   const forSale = [...(saleSent.data ?? []), ...(saleUnverified.data ?? [])];
   if (forSale.length > 0) {
     const on = formatInformationAgentOriginDate(forSale[0]?.approved_at ?? null);
-    throw new Error(
+    throw new PublicApiError(
       `Ce tribunal a déjà été sollicité pour cette vente${on ? ` le ${on}` : ""} : une seule demande est autorisée par tribunal et par vente.`,
+      409,
     );
   }
   const today = [...(daySent.data ?? []), ...(dayUnverified.data ?? [])];
   if (today.length >= cap) {
-    throw new Error(
+    throw new PublicApiError(
       `Plafond atteint : ${cap} demande${cap > 1 ? "s" : ""} aux greffes par tribunal et par jour (INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP). Ce tribunal a déjà été sollicité ${today.length} fois aujourd’hui ; réessayez demain.`,
+      409,
     );
   }
 }

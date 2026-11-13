@@ -3,9 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import { BillingActions } from "@/components/BillingActions";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useHasHydrated } from "@/hooks/use-has-hydrated";
-import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-client";
 import { AdjudicationBarometer } from "@/components/AdjudicationBarometer";
 import { CourtAuctionSummaryTable } from "@/components/CourtAuctionSummaryTable";
@@ -18,13 +18,7 @@ export function PremiumAdjudicationExplorer({
 } = {}) {
   const { session, loading: authLoading } = useAuth();
   const hydrated = useHasHydrated();
-  const planQuery = useQuery({
-    queryKey: queryKeys.adjudicationStatisticsPlan(session?.user.id),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(session) && !authLoading,
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
+  const planQuery = useAccessPlanQuery(session?.user.id);
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const statisticsQuery = useQuery({
     queryKey: queryKeys.adjudicationPriceStatisticsDirectory(session?.user.id),

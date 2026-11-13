@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import {
@@ -43,9 +44,7 @@ export function AdminInformationAgentTemplatePanel() {
     return (
       <AdminPanel className="p-6">
         <p className="text-sm text-red-700">
-          {templateQuery.error instanceof Error
-            ? templateQuery.error.message
-            : "Le template d’email est indisponible."}
+          {queryErrorMessage(templateQuery.error, "Le template d’email est indisponible.")}
         </p>
         <button
           type="button"
@@ -106,7 +105,7 @@ function InformationAgentTemplateEditor({
     mutationFn: () => previewAdminInformationAgentEmailTemplate(template),
     onSuccess: (response) => setPreview(response.preview),
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Prévisualisation impossible");
+      toast.error(queryErrorMessage(error, "Prévisualisation impossible"));
     },
   });
   const saveMutation = useMutation({
@@ -124,7 +123,7 @@ function InformationAgentTemplateEditor({
       toast.success("Brouillon enregistré.");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Enregistrement impossible");
+      toast.error(queryErrorMessage(error, "Enregistrement impossible"));
     },
   });
   const publishMutation = useMutation({
@@ -138,7 +137,7 @@ function InformationAgentTemplateEditor({
       toast.success("Le nouveau template est publié.");
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Publication impossible");
+      toast.error(queryErrorMessage(error, "Publication impossible"));
     },
   });
 
@@ -558,11 +557,4 @@ function StatusBadge({ label, tone }: { label: string; tone: "green" | "amber" }
       {label}
     </span>
   );
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

@@ -7,7 +7,7 @@ import {
 } from "@/lib/public-adjudication-prices";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import { loadTribunalAndHearingPaths } from "@/lib/sitemap-tribunal-hearing-pages.server";
 
 // `/sitemap.xml` lists the static pages only. The articles have `/ressources/sitemap.xml`
@@ -59,7 +59,7 @@ const PUBLIC_ROUTES = [
 ] as const;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
 
   // `loadPublicTribunalActivity` reports an unavailable database as an error result, and
   // `/tribunaux` then stays listed (only a successful read that finds no court removes it).

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferSource } from "@/hooks/use-billing-offer";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
@@ -20,17 +21,11 @@ import { useRouter } from "next/navigation";
 import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
-  fetchAccessPlan,
   openBillingPortal,
   openSubscriptionCancellation,
   startAnalyseCheckout,
 } from "@/lib/client-billing";
-import {
-  hasLiveStripeSubscription,
-  pastDueGraceEnd,
-  type PlanBilling,
-  type PlanCode,
-} from "@/lib/plans";
+import { hasLiveStripeSubscription, pastDueGraceEnd, type PlanBilling } from "@/lib/plans";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
   ANALYSIS_RECURRING_LABEL,
@@ -73,12 +68,16 @@ export function BillingActions({
   const { offer, reload: reloadOffer } = offerSource ?? ownOffer;
   const checkoutReturn = useCheckoutReturn(handleCheckoutReturn);
   const launch = useLaunchOffer();
-  const [plan, setPlan] = useState<PlanCode | null>(null);
+  const planQuery = useAccessPlanQuery(userId);
+  const entitlements = userId ? planQuery.data?.plan : undefined;
+  const plan = entitlements?.plan ?? null;
   // Plan Analyse pendant l'essai gratuit à l'inscription (pas d'abonnement) : aucun parcours de paiement.
-  const [launchOfferPlan, setLaunchOfferPlan] = useState(false);
-  const [planState, setPlanState] = useState<PlanReadState>("loading");
-  const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
-  const [billing, setBilling] = useState<PlanBilling | null>(null);
+  const launchOfferPlan = entitlements?.launchOffer === true;
+  const currentPeriodEnd = entitlements?.currentPeriodEnd ?? null;
+  const billing = entitlements?.billing ?? null;
+  const planState: PlanReadState =
+    !userId || entitlements ? "ready" : planQuery.isError ? "error" : "loading";
+  const refetchPlan = planQuery.refetch;
   const [activation, setActivation] = useState<ActivationState>("idle");
   const [busy, setBusy] = useState<"checkout" | "portal" | "cancel" | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -91,38 +90,6 @@ export function BillingActions({
   const trialAvailable =
     offer.status === "ready" ? offer.trialAvailable : STRIPE_CHECKOUT_TRIAL_OFFERED;
   const offerLabel = (offer.status === "ready" ? offer.label : null) ?? resolveAnalysisOfferLabel();
-
-  useEffect(() => {
-    let active = true;
-    setPlan(null);
-    setLaunchOfferPlan(false);
-    setCurrentPeriodEnd(null);
-    setBilling(null);
-
-    if (!userId) {
-      setPlanState("ready");
-      return;
-    }
-    setPlanState("loading");
-    fetchAccessPlan()
-      .then((response) => {
-        if (!active) return;
-        setPlan(response.plan.plan);
-        setLaunchOfferPlan(response.plan.launchOffer === true);
-        setCurrentPeriodEnd(response.plan.currentPeriodEnd);
-        setBilling(response.plan.billing ?? null);
-        setPlanState("ready");
-      })
-      .catch(() => {
-        if (!active) return;
-        setPlan(null);
-        setPlanState("error");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [userId]);
 
   // Back from a successful Stripe payment: the subscription is activated by a webhook,
   // so the plan may still read "Découverte" for a few seconds.
@@ -138,17 +105,8 @@ export function BillingActions({
     setActivation("pending");
 
     const poll = async () => {
-      try {
-        const response = await fetchAccessPlan();
-        if (!active) return;
-        setCurrentPeriodEnd(response.plan.currentPeriodEnd);
-        setBilling(response.plan.billing ?? null);
-        setPlan(response.plan.plan);
-        setLaunchOfferPlan(response.plan.launchOffer === true);
-        if (response.plan.plan === "analyse") return;
-      } catch {
-        if (!active) return;
-      }
+      const { data } = await refetchPlan();
+      if (!active || data?.plan.plan === "analyse") return;
       if (Date.now() - (activationStartedAt.current ?? Date.now()) >= ACTIVATION_POLL_WINDOW_MS) {
         setActivation("timeout");
         return;
@@ -161,7 +119,7 @@ export function BillingActions({
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [checkoutReturn, userId, planState, plan]);
+  }, [checkoutReturn, userId, planState, plan, refetchPlan]);
 
   // Abonné (ou premium, administrateur) : le portail de paiement s'applique. Le surclassement de
   // l'offre de lancement n'est pas un abonnement : il n'ouvre ni portail ni résiliation.

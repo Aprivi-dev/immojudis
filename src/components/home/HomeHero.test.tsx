@@ -210,7 +210,7 @@ describe("home texts", () => {
   });
 
   it("promet 7 jours d'accès à l'offre Analyse, sans « complet »", async () => {
-    const { HOME_TRIAL_NOTE } = await import("./HomePrimaryAction");
+    const { HOME_TRIAL_NOTE } = await import("@/lib/launch-offer");
     expect(HOME_TRIAL_NOTE).toBe(
       "7 jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.",
     );

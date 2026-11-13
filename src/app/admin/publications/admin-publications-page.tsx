@@ -78,7 +78,7 @@ export function AdminPublicationsPage() {
       await queryClient.invalidateQueries({ queryKey: ["admin-publication-requests"] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de mettre à jour la demande");
+      toast.error(queryErrorMessage(err, "Impossible de mettre à jour la demande"));
     },
   });
 

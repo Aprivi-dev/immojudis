@@ -148,5 +148,3 @@ export {
   fetchSalesStatistics,
   exportSalesCsv,
 } from "@/lib/client-api/sale-analysis";
-
-export { fetchAccessPlan } from "@/lib/client-billing";

@@ -30,8 +30,6 @@ import { Terme } from "@/components/ceiling/Terme";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 
-export { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
-
 export function SaleProcedureSummary({
   sale,
   showBadge = true,

@@ -19,7 +19,7 @@ import type { InformationAgentQuestionAudience } from "@/lib/information-agent/r
 
 const block = (id: string) => {
   const found = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find((entry) => entry.id === id);
-  if (!found) throw new Error(`Bloc « ${id} » absent du modèle de message.`);
+  if (!found) throw new Error(`Default email template has no block "${id}"`);
   return found;
 };
 

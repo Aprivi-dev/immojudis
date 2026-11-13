@@ -19,6 +19,7 @@ import { uncertaintyCircle, uncertaintyOverlay } from "@/lib/mapbox-accuracy";
 import { addMapboxBuildingVolumes } from "@/lib/mapbox-preview";
 import { mapLoadNeedsGesture, type AerialOrbitTarget } from "@/lib/sale-aerial-orbit";
 import { cn } from "@/lib/utils";
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
 const ORBIT_STYLE = "mapbox://styles/mapbox/standard-satellite";
 // Quelques pâtés de maisons autour du repère : assez près pour reconnaître l'immeuble, assez loin
@@ -39,12 +40,6 @@ const ACCURACY_ID = "immojudis-orbit-accuracy";
 const SCROLL_LOCK_ATTRIBUTE = "data-scroll-locked";
 
 type OrbitStatus = "poster" | "loading" | "ready" | "error";
-
-function reducedMotionQuery() {
-  return typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)")
-    : null;
-}
 
 /**
  * Visuel principal de la fiche quand la position est sûre : une vue aérienne Mapbox qui tourne
@@ -82,9 +77,16 @@ export function AerialOrbitHero({
   const [inView, setInView] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  // Préférence de mouvement réduit, suivie en direct.
+  const reducedMotion = usePrefersReducedMotion();
   // Un clic sur « Lancer / Reprendre » vaut accord pour l'animation malgré le mouvement réduit.
   const [motionConsent, setMotionConsent] = useState(startImmediately);
+  // Le nouveau réglage prime sur un accord donné avant.
+  const [previousReducedMotion, setPreviousReducedMotion] = useState(reducedMotion);
+  if (reducedMotion !== previousReducedMotion) {
+    setPreviousReducedMotion(reducedMotion);
+    if (reducedMotion) setMotionConsent(false);
+  }
   // Image à noms de rues ; si Mapbox la refuse, l'imagerie seule la remplace.
   const [plainPoster, setPlainPoster] = useState(false);
   const token = getMapboxAccessToken();
@@ -104,20 +106,6 @@ export function AerialOrbitHero({
     overlay: uncertaintyOverlay(lat, lng, accuracyMeters),
   });
   const posterAlt = `Vue aérienne autour de l’adresse ${address}, avec la position approximative de « ${title} »`;
-
-  // Préférence de mouvement réduit, suivie en direct.
-  useEffect(() => {
-    const query = reducedMotionQuery();
-    if (!query) return;
-    setReducedMotion(query.matches);
-    const onChange = (event: MediaQueryListEvent) => {
-      setReducedMotion(event.matches);
-      // Le nouveau réglage prime sur un accord donné avant.
-      if (event.matches) setMotionConsent(false);
-    };
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
 
   // Onglet masqué et fenêtre modale ouverte : la rotation attend.
   useEffect(() => {

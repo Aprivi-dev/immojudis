@@ -7,7 +7,7 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
-import { formatAdminShortDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { formatShortDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 
 const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
@@ -46,9 +46,7 @@ export function AdminReadinessPanel() {
 
       {readinessQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {readinessQuery.error instanceof Error
-            ? readinessQuery.error.message
-            : "Diagnostic indisponible"}
+          {queryErrorMessage(readinessQuery.error, "Diagnostic indisponible")}
         </div>
       ) : null}
 
@@ -58,7 +56,7 @@ export function AdminReadinessPanel() {
           <div className="mt-4 grid gap-3 text-sm">
             <DiagnosticLine
               label="Dernière vérification"
-              value={readiness?.checkedAt ? formatDateTime(readiness.checkedAt) : "Chargement"}
+              value={readiness?.checkedAt ? formatShortDateTime(readiness.checkedAt) : "Chargement"}
             />
             <DiagnosticLine
               label="Migration attendue"
@@ -80,7 +78,7 @@ export function AdminReadinessPanel() {
               label="Contrôle santé"
               value={
                 readiness?.operations.lastHealthRunAt
-                  ? formatDateTime(readiness.operations.lastHealthRunAt)
+                  ? formatShortDateTime(readiness.operations.lastHealthRunAt)
                   : "Non vérifié"
               }
             />
@@ -147,7 +145,7 @@ export function AdminReadinessPanel() {
                 <div className="min-w-0">
                   <div className="truncate font-mono text-foreground">{alert.key}</div>
                   <div className="mt-1 text-muted-foreground">
-                    {alert.category} · {formatDateTime(alert.lastSeenAt)}
+                    {alert.category} · {formatShortDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
                 <span className="text-foreground">{alert.severity}</span>

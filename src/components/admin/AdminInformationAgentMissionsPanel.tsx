@@ -38,7 +38,7 @@ import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
 
@@ -243,7 +243,7 @@ export function AdminInformationAgentMissionsPanel({
           .catch((error: unknown) => {
             preparingKeysRef.current.delete(requestKey);
             if (isCurrentSelection()) {
-              const message = error instanceof Error ? error.message : "Brouillon indisponible.";
+              const message = queryErrorMessage(error, "Brouillon indisponible.");
               setPreparingSelectionKey(null);
               // Régénération d'un brouillon déjà ouvert : le bloc d'erreur de la préparation n'est rendu
               // que sans mission ouverte. Le refus du serveur est donc notifié, jamais muet.
@@ -448,7 +448,7 @@ export function AdminInformationAgentMissionsPanel({
         toast.success("Brouillon régénéré. Aucun email n’a encore été envoyé.");
       })
       .catch((error: unknown) => {
-        toast.error(error instanceof Error ? error.message : "Brouillon indisponible.");
+        toast.error(queryErrorMessage(error, "Brouillon indisponible."));
       })
       .finally(() => {
         regeneratingRef.current = false;
@@ -504,7 +504,7 @@ export function AdminInformationAgentMissionsPanel({
       }
       toast.success("Destinataire, objet et message copiés.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Copie impossible.");
+      toast.error(queryErrorMessage(error, "Copie impossible."));
     }
   };
   const handleRecipientEmailChange = (value: string) => {
@@ -1222,5 +1222,5 @@ function sourceRefreshStatusLabel(status: string): string {
 }
 
 function showError(error: unknown) {
-  toast.error(error instanceof Error ? error.message : "Action impossible");
+  toast.error(queryErrorMessage(error, "Action impossible"));
 }

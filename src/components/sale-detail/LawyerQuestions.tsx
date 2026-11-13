@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button, Card } from "@/components/ui/primitives";
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import { lawyerQuestionsText, type LawyerQuestionsResponse } from "@/lib/lawyer-questions-text";
+import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 
 const HEADING = "Mes questions pour l’avocat";
@@ -43,7 +44,7 @@ export function LawyerQuestions({
   userKey: string;
 }) {
   const query = useQuery({
-    queryKey: ["lawyer-questions", saleId, access, userKey] as const,
+    queryKey: queryKeys.lawyerQuestions(saleId, access, userKey),
     queryFn: () => fetchLawyerQuestions(saleId),
     staleTime: 5 * 60_000,
     retry: false,

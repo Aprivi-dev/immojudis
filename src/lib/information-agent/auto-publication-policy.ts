@@ -5,8 +5,6 @@ import {
 } from "@/lib/information-agent/auto-publication-text";
 import { getDisplaySurface, getRecordedSurface } from "@/lib/surface";
 
-export { mentionsDoNotPublish, namesPrivatePerson };
-
 /**
  * Moteur de décision « publier ou relire » des informations extraites d'une réponse (étape 3 du plan
  * d'enrichissement, propositions 6 et 7). MODULE PUR : ni réseau, ni base, ni horloge (la date de

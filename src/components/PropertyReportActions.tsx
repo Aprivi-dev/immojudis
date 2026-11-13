@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { downloadBlob } from "@/lib/download-blob";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 
@@ -435,17 +436,6 @@ function actionClassName(variant: "primary" | "secondary") {
       ? "bg-foreground text-background hover:bg-foreground/90"
       : "border border-border bg-white text-foreground hover:border-gold/50 hover:text-gold-text",
   );
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
 }
 
 async function copyText(value: string) {

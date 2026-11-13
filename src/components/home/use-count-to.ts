@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
 const DURATION_MS = 700;
 
@@ -13,11 +14,12 @@ const DURATION_MS = 700;
 export function useCountTo(target: number): number {
   const [shown, setShown] = useState(target);
   const shownRef = useRef(target);
+  const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const start = shownRef.current;
     if (start === target) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    if (reducedMotion) {
       shownRef.current = target;
       setShown(target);
       return;
@@ -34,7 +36,7 @@ export function useCountTo(target: number): number {
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [target]);
+  }, [target, reducedMotion]);
 
   return shown;
 }

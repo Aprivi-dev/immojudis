@@ -15,7 +15,7 @@ import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { jsonLdString } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/page-metadata";
 import { aboutPageStructuredData } from "@/lib/seo";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 
 export const metadata: Metadata = pageMetadata({
   path: "/a-propos",
@@ -24,7 +24,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function Page() {
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   return (
     <>
       <script

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FavoriteButton } from "./FavoriteButton";
+import * as queryKeys from "@/lib/query-keys";
 
 const mocks = vi.hoisted(() => ({
   auth: { user: { id: "alice" } as { id: string } | null, loading: false },
@@ -105,7 +106,7 @@ describe("favorite account isolation", () => {
     mocks.read.mockResolvedValue({ data: null, error: null });
     mocks.add.mockResolvedValue({ favorite: { saleId: "sale" } });
     const view = setup();
-    view.client.setQueryData(["search-favorite-status", "alice", ["sale"]], []);
+    view.client.setQueryData(queryKeys.searchFavoriteStatus("alice", ["sale"]), []);
 
     await waitFor(() =>
       expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(false),
@@ -113,7 +114,7 @@ describe("favorite account isolation", () => {
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(mocks.add).toHaveBeenCalledOnce());
     await waitFor(() =>
-      expect(view.client.getQueryData(["search-favorite-status", "alice", ["sale"]])).toEqual([
+      expect(view.client.getQueryData(queryKeys.searchFavoriteStatus("alice", ["sale"]))).toEqual([
         "sale",
       ]),
     );

@@ -6,6 +6,7 @@ import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/
 import { formatDateTime, formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { formatDate } from "@/lib/format";
 import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
@@ -222,10 +223,6 @@ export function formatReminderRate(accuracy: SaleReminderAccuracy | null): strin
   return `${percent} %`;
 }
 
-function formatDay(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(value));
-}
-
 export function AdminPilotagePage() {
   const { user } = useAuth();
   const { isRefreshing, refresh } = useAdminRefresh(PILOTAGE_QUERY_KEY);
@@ -386,7 +383,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
                           ) : null}
                           {partial ? (
                             <span className="block text-xs font-normal text-brand-navy/70">
-                              depuis le {formatDay(measuredSince)}
+                              depuis le {formatDate(measuredSince)}
                             </span>
                           ) : null}
                         </td>
@@ -467,7 +464,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
           </li>
           <li>
             Les événements ne sont enregistrés que depuis le début de la mesure
-            {measuredSince ? ` (${formatDay(measuredSince)})` : ""}. Tant qu’une fenêtre commence
+            {measuredSince ? ` (${formatDate(measuredSince)})` : ""}. Tant qu’une fenêtre commence
             avant, son chiffre est exact mais partiel, et la date est indiquée sous le nombre. Un
             même compte compte une fois par jour pour un même événement sur une même vente. Ils sont
             conservés 90 jours.
@@ -811,7 +808,7 @@ function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null 
             <div key={index} data-threshold-month={index === 0 ? "current" : "previous"}>
               <h3 className="text-sm font-semibold text-brand-navy">
                 {index === 0 ? "Mois en cours (depuis le 1er)" : "Mois précédent"}
-                {month?.monthStart ? ` · ${formatDay(month.monthStart)}` : ""}
+                {month?.monthStart ? ` · ${formatDate(month.monthStart)}` : ""}
               </h3>
               <dl className="mt-2 grid gap-y-1.5 text-sm">
                 {lines.map((line) => (

@@ -4,10 +4,6 @@
  */
 import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 
-// Le plafond quotidien du pilote suit le jour civil de Paris, pas une fenêtre glissante de 24 heures.
-// Repris par les modules du pilote qui le lisaient ici avant `@/lib/paris-time`.
-export { startOfParisDay } from "@/lib/paris-time";
-
 type ParisParts = {
   year: number;
   month: number;

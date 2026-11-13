@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPanel } from "@/components/admin/AdminShell";
 import {
@@ -29,7 +30,7 @@ export function AdminOfferOpeningPanel() {
   const test = useMutation({
     mutationFn: sendAdminOfferOpeningTest,
     onSuccess: (result) => toast.success(`Message d’essai envoyé à ${result.sentTo}.`),
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Envoi impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Envoi impossible")),
   });
   const send = useMutation({
     mutationFn: sendAdminOfferOpeningBatch,
@@ -43,7 +44,7 @@ export function AdminOfferOpeningPanel() {
           (result.stoppedEarly ? " : relancez l’envoi pour la suite." : "."),
       );
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Envoi impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Envoi impossible")),
   });
 
   const audience = query.data;

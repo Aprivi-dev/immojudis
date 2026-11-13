@@ -28,13 +28,3 @@ export function formatFactValue(value: unknown): string {
     return "Valeur non affichable";
   }
 }
-
-export function formatFactDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(date);
-}

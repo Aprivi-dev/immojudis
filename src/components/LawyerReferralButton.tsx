@@ -3,11 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Handshake from "lucide-react/dist/esm/icons/handshake.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { toast } from "@/lib/toast";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
-  fetchAccessPlan,
   fetchLawyerReferralPreview,
   fetchLawyerReferrals,
   requestLawyerReferral,
@@ -36,12 +36,7 @@ export function LawyerReferralButton({
   // P4-13: the user sees what is shared with the lawyer and confirms before anything is sent.
   const [confirming, setConfirming] = useState(false);
   const [consent, setConsent] = useState(false);
-  const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !loading,
-    staleTime: 5 * 60_000,
-  });
+  const { data: entitlementsData, isLoading: entitlementsLoading } = useAccessPlanQuery(user?.id);
   const { data: referralData, isLoading: referralsLoading } = useQuery({
     queryKey: queryKeys.lawyerReferrals(user?.id ?? "anonymous", saleId),
     queryFn: () => fetchLawyerReferrals({ saleId, limit: 1 }),

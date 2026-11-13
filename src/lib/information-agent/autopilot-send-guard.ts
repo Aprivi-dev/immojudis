@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   informationAgentAddressHygieneIssue,
   isConsumerMailAddress,
@@ -42,7 +43,10 @@ export async function assertAutopilotSendAllowed({
   now?: Date;
 }): Promise<void> {
   const refuse = (code: string): never => {
-    throw new Error(`Envoi automatique refusé (${code}) : validation manuelle requise.`);
+    throw new PublicApiError(
+      `Envoi automatique refusé (${code}) : validation manuelle requise.`,
+      409,
+    );
   };
   const settings = await loadAutopilotSettings();
   if (settings.mode !== "live") refuse("not_live");

@@ -17,6 +17,7 @@ import {
 import { buildAutopilotView, type AutopilotView } from "@/lib/information-agent/autopilot-view";
 import { asObject } from "@/lib/information-agent/mission-store";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
 
 /**
  * Panneau du pilote automatique (administrateurs). Lecture : modèle de vue déjà mis en forme. Écriture : les
@@ -60,25 +61,6 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
-
-/**
- * Erreur d'une RPC du pilote : seuls les refus métier voulus par les fonctions (droit, paramètre, état) sont montrés ;
- * toute autre erreur de la base devient un message générique (le détail reste dans le journal serveur).
- */
-/** Refus voulus par les fonctions de la base (droit, paramètre, état), écrits pour l'administrateur. */
-const RPC_REFUSAL_STATUS: Readonly<Record<string, number>> = {
-  "42501": 403,
-  "22023": 400,
-  "55000": 409,
-};
-
-function rpcFailure(error: { code?: string; message?: string }): Error {
-  const status = error.code ? RPC_REFUSAL_STATUS[error.code] : undefined;
-  if (status)
-    return new PublicApiError(error.message ?? "Action refusée.", status, { cause: error });
-  console.error(JSON.stringify({ scope: "admin.autopilot", code: error.code ?? null }));
-  return new Error("Database call failed", { cause: error });
-}
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
   const [settings, stats] = await Promise.all([loadAutopilotSettings(), loadAutopilotStats(now)]);
@@ -163,7 +145,7 @@ export async function runAdminAutopilotAction({
       p_mode: input.mode,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else if (input.action === "update_settings") {
     const {
       capTotalOverride,
@@ -183,19 +165,19 @@ export async function runAdminAutopilotAction({
       p_changes: changes,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else if (input.action === "emergency_stop") {
     // Toujours permis : aucune condition, motif facultatif.
     const { error } = await auth.supabase.rpc("stop_information_agent_autopilot", {
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   } else {
     const { error } = await auth.supabase.rpc("attest_information_agent_aipd", {
       p_version: input.version,
       p_reason: input.reason,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   }
   return getAdminAutopilotView(authToken, { env });
 }

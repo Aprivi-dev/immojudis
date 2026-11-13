@@ -94,7 +94,9 @@ export function FavoriteSales() {
           onClick: () => {
             restoreRemovedFavorite(saleId, removed)
               // La clé de « Mon dossier » est sous le préfixe `favorites` : rafraîchie avec la liste.
-              .then(() => queryClient.invalidateQueries({ queryKey: ["favorites", user?.id] }))
+              .then(() =>
+                queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user?.id) }),
+              )
               .catch((error: unknown) =>
                 toast.error(userMessage(error, "Impossible de rétablir ce favori.")),
               );

@@ -1,14 +1,22 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdjudicationPriceStatisticsDirectoryResponse } from "@/lib/adjudication-price-statistics";
 
-const mocks = vi.hoisted(() => ({ useAuth: vi.fn(), fetchPlan: vi.fn(), fetchDirectory: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  useAuth: vi.fn(),
+  fetchPlan: vi.fn(),
+  fetchDirectory: vi.fn(),
+  fetchTribunals: vi.fn(),
+}));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
-vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: mocks.fetchPlan }));
+vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
+  fetchTribunalJudicialActivityDirectory: mocks.fetchTribunals,
+}));
 vi.mock("@/components/CourtAuctionSummaryTable", () => ({ CourtAuctionSummaryTable: () => null }));
 vi.mock("@/lib/adjudication-price-statistics-client", () => ({
   fetchAdjudicationPriceStatisticsDirectory: mocks.fetchDirectory,
@@ -18,6 +26,7 @@ vi.mock("@/components/BillingActions", () => ({
 }));
 
 import { PremiumAdjudicationExplorer } from "./PremiumAdjudicationExplorer";
+import { TribunalJudicialActivityExplorer } from "./TribunalJudicialActivityExplorer";
 
 const scope = (
   scopeType: "national" | "tribunal",
@@ -92,6 +101,20 @@ describe("PremiumAdjudicationExplorer", () => {
 
     renderExplorer();
     expect(screen.getByRole("status").textContent).toBe("Vérification de votre accès Analyse…");
+  });
+
+  it("lit les droits du compte une seule fois avec l'observatoire des tribunaux", async () => {
+    mocks.fetchTribunals.mockReturnValue(new Promise(() => undefined));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TribunalJudicialActivityExplorer adjudicationStatisticsEnabled />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findAllByText(/126\s?000/)).not.toHaveLength(0);
+    await waitFor(() => expect(mocks.fetchTribunals).toHaveBeenCalled());
+    expect(mocks.fetchPlan).toHaveBeenCalledTimes(1);
   });
 
   it("n’expose aucun chiffre protégé au visiteur ou au plan Découverte", async () => {

@@ -253,7 +253,9 @@ const routeBudgets = [
     entryKey: "[project]/src/app/sales/page",
     // zod 4 puis zod/mini : 522 993 octets (24/10/2026), plafond d'origine rétabli.
     // Décision du fondateur du 01/11/2026 (session /equipe du 31/10, 14 lots) : 560 401 mesurés, relevé à 565 000.
-    maxBytes: 565_000,
+    // Accord du propriétaire du 13/11/2026 (refonte, lot 4) : 565 132 mesurés, le résumé du catalogue
+    // suit désormais la règle des statistiques du serveur au lieu d'une copie ; relevé à 566 000.
+    maxBytes: 566_000,
   },
   {
     name: "sale-detail",

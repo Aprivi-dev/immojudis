@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
 const COUNT_MS = 1_400;
 const NUMBER = new Intl.NumberFormat("fr-FR");
@@ -35,8 +36,9 @@ function inViewport(element: Element): boolean {
  * visiteur a demandé de réduire les animations.
  */
 export function HomeMotion() {
+  const reducedMotion = usePrefersReducedMotion();
   useEffect(() => {
-    if (!window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (reducedMotion) return;
     if (typeof IntersectionObserver === "undefined") return;
     const root = document.documentElement;
     const pending = [...document.querySelectorAll<HTMLElement>("[data-reveal]")].filter(
@@ -64,6 +66,6 @@ export function HomeMotion() {
       observer.disconnect();
       delete root.dataset.homeMotion;
     };
-  }, []);
+  }, [reducedMotion]);
   return null;
 }

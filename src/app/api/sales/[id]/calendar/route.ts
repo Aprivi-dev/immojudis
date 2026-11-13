@@ -5,7 +5,7 @@ import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { buildSaleCalendarFile, type SaleCalendarRow } from "@/lib/sale-calendar";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
@@ -62,7 +62,7 @@ export const GET = apiRoute<{ id: string }>(
     if (!row) throw new NotFoundError("Vente introuvable.");
 
     // Never derived from the request: the answer is kept by shared caches.
-    const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+    const origin = siteOrigin();
     const file = buildSaleCalendarFile(row, { origin });
     if (!file) {
       throw new PublicApiError(

@@ -19,6 +19,7 @@ import {
 } from "@/lib/information-agent-signed-link";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { courtRegistryDailyCap } from "@/lib/information-agent/court-registry-fallback";
+import { InformationAgentInvalidContactEmailError } from "@/lib/information-agent/contacts";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 /**
@@ -130,7 +131,7 @@ function optOutUrl({
   }
   const normalized = normalizedEmail(email);
   if (!normalized) {
-    refuse(new Error("Adresse email du contact invalide."));
+    refuse(new InformationAgentInvalidContactEmailError());
     return placeholder.toString();
   }
   return buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret });

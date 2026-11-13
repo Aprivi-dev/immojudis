@@ -10,7 +10,7 @@ import {
   type AutoPublicationMode,
   type AutoPublicationPlanItem,
 } from "@/lib/information-agent/auto-publication-policy";
-import { startOfParisDay } from "@/lib/information-agent/paris-time";
+import { startOfParisDay } from "@/lib/paris-time";
 
 /**
  * Accès en base du moteur « publier ou relire » (migration 20261115100000) : lecture du mode, passe de
@@ -99,7 +99,7 @@ export async function loadAutoPublicationMode(): Promise<AutoPublicationMode> {
   if (error) throw error;
   const mode = data?.mode;
   if (!mode || !(AUTO_PUBLICATION_MODES as readonly string[]).includes(mode)) {
-    throw new Error("Réglage de publication automatique absent ou illisible.");
+    throw new Error("Auto-publication setting missing or unreadable");
   }
   return mode as AutoPublicationMode;
 }
@@ -179,7 +179,7 @@ async function loadOpenCandidates(
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) throw error;
     if (typeof count !== "number") {
-      throw Object.assign(new Error("Total des faits ouverts inconnu."), { code: "count_missing" });
+      throw Object.assign(new Error("Open facts total missing"), { code: "count_missing" });
     }
     total = count;
     rows.push(...((data ?? []) as CandidateRow[]));
@@ -636,6 +636,6 @@ export async function loadLatestAutoPublicationDecisions(
 ): Promise<Map<string, AutoPublicationDecisionRow>> {
   if (!factIds.length) return new Map();
   const latest = await readLatestDecisions(factIds);
-  if (!latest) throw new Error("Journal des décisions illisible ou tronqué.");
+  if (!latest) throw new Error("Auto-publication decision log unreadable or truncated");
   return latest;
 }

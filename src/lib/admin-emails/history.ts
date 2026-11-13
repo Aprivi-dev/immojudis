@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError, ServiceUnavailableError } from "@/lib/api-errors";
 import { AUTH_EMAIL_TEMPLATES, type AuthEmailTemplateId } from "@/lib/auth-email-templates";
 import { recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
 import { deliveryStateOfLog, EMAIL_DELIVERY_LABELS } from "@/lib/email-delivery-status";
@@ -106,9 +107,9 @@ const rowLabel = (row: { template_key: string; subject: string }) =>
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CURSOR_PATTERN = /^(\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i;
 
-export class EmailHistoryInputError extends Error {
+export class EmailHistoryInputError extends PublicApiError {
   constructor(message: string) {
-    super(message);
+    super(message, 400);
     this.name = "EmailHistoryInputError";
   }
 }
@@ -147,7 +148,8 @@ async function traceAccess(
     target_id: detail.targetId ?? null,
     row_count: detail.rows ?? null,
   });
-  if (error) throw new Error("Trace de consultation impossible : consultation refusée.");
+  // Sans trace, pas de consultation : la route répond « indisponible ».
+  if (error) throw new ServiceUnavailableError("Admin email access trace failed", { cause: error });
 }
 
 type SentRow = {

@@ -113,7 +113,7 @@ describe("questions admises", () => {
     );
     for (const key of ["sale_date", "starting_price_eur", "sale_terms", "diagnostics"] as const) {
       expect(isInformationAgentQuestionAllowed("notary", key)).toBe(false);
-      expect(() => informationAgentQuestionTextFor("state_service", key)).toThrow("non admise");
+      expect(() => informationAgentQuestionTextFor("state_service", key)).toThrow("not allowed");
     }
   });
 

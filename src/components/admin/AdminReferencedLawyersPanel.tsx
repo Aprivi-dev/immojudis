@@ -6,10 +6,12 @@ import Save from "lucide-react/dist/esm/icons/save.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { fetchAdminReferencedLawyers, saveAdminReferencedLawyer } from "@/lib/client-api";
 import type { AdminReferencedLawyerInput, AdminReferencedLawyerSummary } from "@/lib/admin-lawyers";
 import { parseTimestamp as dateToTimestamp } from "@/lib/timestamp";
+import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 
@@ -65,7 +67,7 @@ export function AdminReferencedLawyersPanel() {
       await queryClient.invalidateQueries({ queryKey: LAWYER_QUERY_KEY });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Sauvegarde impossible");
+      toast.error(queryErrorMessage(error, "Sauvegarde impossible"));
     },
   });
 
@@ -91,9 +93,7 @@ export function AdminReferencedLawyersPanel() {
 
       {lawyersQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {lawyersQuery.error instanceof Error
-            ? lawyersQuery.error.message
-            : "Chargement impossible"}
+          {queryErrorMessage(lawyersQuery.error, "Chargement impossible")}
         </div>
       ) : null}
 
@@ -569,8 +569,12 @@ function formFromLawyer(lawyer: AdminReferencedLawyerSummary): LawyerFormState {
     profileSummary: lawyer.profileSummary ?? "",
     practiceTags: lawyer.practiceTags.join(", "),
     priorityWeight: String(lawyer.priorityWeight),
-    paidPlacementStartsAt: isoToDateTimeLocal(lawyer.paidPlacementStartsAt),
-    paidPlacementEndsAt: isoToDateTimeLocal(lawyer.paidPlacementEndsAt),
+    paidPlacementStartsAt: lawyer.paidPlacementStartsAt
+      ? formatDateTimeLocalInput(new Date(lawyer.paidPlacementStartsAt))
+      : "",
+    paidPlacementEndsAt: lawyer.paidPlacementEndsAt
+      ? formatDateTimeLocalInput(new Date(lawyer.paidPlacementEndsAt))
+      : "",
     acceptsJudicialAuctions: lawyer.acceptsJudicialAuctions,
     acceptsRemoteContact: lawyer.acceptsRemoteContact,
     coverage: lawyer.coverage.length
@@ -606,8 +610,8 @@ function formToInput(form: LawyerFormState): AdminReferencedLawyerInput {
       .map((tag) => tag.trim())
       .filter(Boolean),
     priorityWeight: Number(form.priorityWeight || 0),
-    paidPlacementStartsAt: dateTimeLocalToIso(form.paidPlacementStartsAt) ?? undefined,
-    paidPlacementEndsAt: dateTimeLocalToIso(form.paidPlacementEndsAt) ?? undefined,
+    paidPlacementStartsAt: dateTimeLocalToUtcIso(form.paidPlacementStartsAt),
+    paidPlacementEndsAt: dateTimeLocalToUtcIso(form.paidPlacementEndsAt),
     acceptsJudicialAuctions: form.acceptsJudicialAuctions,
     acceptsRemoteContact: form.acceptsRemoteContact,
     coverage: form.coverage.filter((coverage) =>
@@ -633,8 +637,8 @@ function isFormPlacementEligible(form: LawyerFormState): boolean {
       ),
     ) &&
     isPlacementWindowOpen(
-      dateTimeLocalToIso(form.paidPlacementStartsAt),
-      dateTimeLocalToIso(form.paidPlacementEndsAt),
+      dateTimeLocalToUtcIso(form.paidPlacementStartsAt) ?? null,
+      dateTimeLocalToUtcIso(form.paidPlacementEndsAt) ?? null,
     )
   );
 }
@@ -654,18 +658,4 @@ function isPlacementWindowOpen(startsAt: string | null, endsAt: string | null): 
   const starts = dateToTimestamp(startsAt);
   const ends = dateToTimestamp(endsAt);
   return (starts == null || starts <= now) && (ends == null || ends >= now);
-}
-
-function isoToDateTimeLocal(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function dateTimeLocalToIso(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }

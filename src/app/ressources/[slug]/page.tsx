@@ -14,7 +14,7 @@ import {
 } from "@/lib/resource-articles";
 import { relatedResources } from "@/lib/resource-related";
 import { siteLogoUrl } from "@/lib/seo";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
 import { jsonLdString } from "@/lib/json-ld";
 
@@ -64,7 +64,7 @@ export default async function Page({ params }: Props) {
   const article = getResourceArticle(slug);
   if (!article) notFound();
 
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   const structuredData = {
     "@context": "https://schema.org",
     "@graph": [

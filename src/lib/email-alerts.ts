@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createHash } from "node:crypto";
 import { serverEnv } from "@/lib/env";
+import { NotFoundError } from "@/lib/api-errors";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
@@ -443,7 +444,7 @@ export async function unsubscribeEmailAlertsByNotificationId({
     .maybeSingle();
 
   if (notificationError) throw notificationError;
-  if (!notification) throw new Error("Lien de désinscription invalide ou expiré.");
+  if (!notification) throw new NotFoundError("Lien de désinscription invalide ou expiré.");
   return revokeEmailAlertConsent({ userId: notification.user_id, now });
 }
 
@@ -951,6 +952,21 @@ export function resolveReplyTo(env: Pick<NodeJS.ProcessEnv, string> = process.en
   return null;
 }
 
+/**
+ * Réponse d'erreur de Resend : un refus établi (l'email n'est pas parti), à distinguer d'un délai
+ * dépassé. `status` est le statut HTTP de Resend (429 : envoi trop rapide, à reprendre plus tard).
+ * Le message (motif donné par Resend, sinon le statut) est un détail pour l'administrateur.
+ */
+export class ResendRejectedError extends Error {
+  readonly status: number;
+
+  constructor(status: number, detail?: string) {
+    super(detail ?? `Resend a refusé l'envoi (${status}).`);
+    this.name = "ResendRejectedError";
+    this.status = status;
+  }
+}
+
 export async function sendResendEmail({
   apiKey,
   message,
@@ -999,9 +1015,7 @@ export async function sendResendEmail({
   });
   const body = await readResendBody(response);
 
-  if (!response.ok) {
-    throw new Error(body.error ?? `Resend a refusé l'envoi (${response.status}).`);
-  }
+  if (!response.ok) throw new ResendRejectedError(response.status, body.error);
 
   return { id: body.id ?? null };
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { isNotaryMailDomain } from "@/lib/information-agent/contact-structure";
 import { resolveSiteOrigin } from "@/lib/site-url";
-import { ConfigurationError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 // Configuration d'envoi de l'agent et garde-fous d'environnement (interrupteur, canari). Extraits
 // de `information-agent.ts` sans changement de comportement.
@@ -14,7 +14,7 @@ export const INFORMATION_AGENT_CANARY_ONLY_MESSAGE =
 
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
   if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
-    throw new Error(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE, 409);
   }
 }
 
@@ -41,7 +41,7 @@ export function assertInformationAgentNotarySendAllowed(
     return;
   }
   if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {
-    throw new Error(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE, 409);
   }
 }
 
@@ -52,7 +52,7 @@ export function assertInformationAgentCanaryRecipient(
 ): void {
   if (env.INFORMATION_AGENT_OUTBOUND_CANARY_ONLY === "false") return;
   if (email.trim().toLowerCase() !== "delivered@resend.dev") {
-    throw new Error(INFORMATION_AGENT_CANARY_ONLY_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_CANARY_ONLY_MESSAGE, 409);
   }
 }
 

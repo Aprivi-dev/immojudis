@@ -34,10 +34,8 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 vi.mock("@/integrations/supabase/lazy", () => ({ hasSupabaseAuthHint: () => mocks.hint }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
-vi.mock("@/lib/client-api", () => ({
-  fetchAccessPlan: mocks.entitlements,
-  fetchSaleUnlockStatus: mocks.unlockStatus,
-}));
+vi.mock("@/lib/client-api", () => ({ fetchSaleUnlockStatus: mocks.unlockStatus }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: mocks.entitlements }));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
 vi.mock("@/lib/sale-lawyer-fact-sources.client", () => ({
   getSaleLawyerFactSources: async (id: string) => {
@@ -45,8 +43,8 @@ vi.mock("@/lib/sale-lawyer-fact-sources.client", () => ({
     return mocks.lawyerSources;
   },
 }));
-vi.mock("@/components/DiscoverySaleDetailView", () => ({
-  DiscoverySaleDetailView: ({
+vi.mock("@/components/SimplifiedSaleDetailView", () => ({
+  FreeSaleDetailView: ({
     unlockStatus,
     onSaleUnlocked,
   }: {
@@ -66,8 +64,6 @@ vi.mock("@/components/DiscoverySaleDetailView", () => ({
       </button>
     </div>
   ),
-}));
-vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   UnlockedSaleDetailView: () => <div>Vente débloquée</div>,
   AnalysisSaleDetailView: ({ sale }: { sale: { lawyer_fact_sources?: unknown[] } }) => (
     <div

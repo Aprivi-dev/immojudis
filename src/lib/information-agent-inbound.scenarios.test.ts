@@ -662,7 +662,7 @@ describe("information-agent offline inbound scenarios", () => {
     const state = fixture({ bodyAssetCollisionSha256: "0".repeat(64) });
     receivedEmail({ text: "Surface habitable : 84 m²." });
 
-    await expect(webhook()).rejects.toThrow("contenu différent");
+    await expect(webhook()).rejects.toThrow("different content");
     expect(state.bodyAssets).toHaveLength(1);
     expect(state.bodyAssets[0]?.sha256).toBe("0".repeat(64));
     expect(state.messages[0]?.metadata).toMatchObject({
@@ -993,7 +993,7 @@ describe("information-agent offline inbound scenarios", () => {
     });
     const fetchImpl = vi.fn(async () => new Response("", { status: 503 }));
 
-    await expect(webhook(fetchImpl)).rejects.toThrow("nouvelle tentative");
+    await expect(webhook(fetchImpl)).rejects.toThrow("retry required");
     expect(state.messages[0]?.metadata).toMatchObject({
       inbound_processing: { status: "failed", attempts: 1 },
     });
@@ -1373,7 +1373,7 @@ describe("information-agent offline inbound scenarios", () => {
       error: null,
     });
 
-    await expect(webhook()).rejects.toThrow("autre dossier");
+    await expect(webhook()).rejects.toThrow("already attached to another case");
     expect(state.messages).toHaveLength(1);
     expect(state.facts.every((fact) => fact.sale_id === SALE_A)).toBe(true);
     expect(state.cases[1]?.status).toBe("sent");

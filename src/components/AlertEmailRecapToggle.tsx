@@ -1,10 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { toast } from "@/lib/toast";
-import {
-  fetchAccessPlan,
-  fetchNotificationPreferences,
-  updateNotificationPreferences,
-} from "@/lib/client-api";
+import { fetchNotificationPreferences, updateNotificationPreferences } from "@/lib/client-api";
 import * as queryKeys from "@/lib/query-keys";
 import { userMessage } from "@/lib/user-messages";
 
@@ -22,11 +19,7 @@ export function AlertEmailRecapToggle({
   className: string;
 }) {
   const queryClient = useQueryClient();
-  const entitlements = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userId),
-    queryFn: fetchAccessPlan,
-  });
-  const hasAnalysisAccess = entitlements.data?.plan.hasAnalysisAccess === true;
+  const hasAnalysisAccess = useHasAnalysisAccess(userId) === true;
   const preferencesQuery = useQuery({
     queryKey: queryKeys.notificationPreferences(userId),
     queryFn: fetchNotificationPreferences,

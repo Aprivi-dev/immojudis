@@ -218,7 +218,7 @@ export async function findReusableInformationAgentAddress({
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error("Lecture des annonces du professionnel trop longue.")),
+      () => reject(new Error("Address reuse read exceeded its time budget")),
       Math.max(1, timeoutMs),
     );
   });
@@ -243,7 +243,7 @@ export async function findReusableInformationAgentAddress({
   const rows = new Map<string, ReusableAddressRow>();
   for (const { data, error } of results) {
     if (error) throw error;
-    if (!data) throw new Error("Annonces du professionnel indisponibles.");
+    if (!data) throw new Error("Address reuse read returned no data");
     // Une lecture tronquée peut cacher une seconde adresse : on ne réemploie rien (et on le dit).
     if (data.length >= MAX_ROWS) {
       console.warn(

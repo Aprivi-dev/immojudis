@@ -689,7 +689,7 @@ function SaleDetailWorkspace({
   // prix (clé de requête partagée). Un visiteur n'y a pas droit ; l'annonce exemple la calcule sur
   // son estimation fictive. Rien tant que la valeur ou le prix sont en cours de vérification.
   const valuePreviewQuery = useQuery({
-    queryKey: ["value-preview", sale.id],
+    queryKey: queryKeys.valuePreview(sale.id),
     queryFn: () => fetchValuePreview(sale.id),
     enabled: Boolean(user) && !publicDemo,
     staleTime: 60 * 60_000,

@@ -9,12 +9,13 @@ import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDeta
 import { SalePublicPreview } from "@/components/SalePublicPreview";
 import { Button, Notice } from "@/components/ui/primitives";
 import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
-import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
+import { fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
@@ -25,21 +26,20 @@ import type { RentReference } from "@/lib/rent-reference";
 import type { PublicRentalYield } from "@/lib/public-rental-yield";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
-const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
-const loadSimplifiedViews = () => import("@/components/SimplifiedSaleDetailView");
+const loadSaleViews = () => import("@/components/SimplifiedSaleDetailView");
 
 const DiscoverySaleDetailView = dynamic(
-  () => loadDiscoveryView().then((module) => module.DiscoverySaleDetailView),
+  () => loadSaleViews().then((module) => module.FreeSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
 const AnalysisSaleDetailView = dynamic(
-  () => loadSimplifiedViews().then((module) => module.AnalysisSaleDetailView),
+  () => loadSaleViews().then((module) => module.AnalysisSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
 const UnlockedSaleDetailView = dynamic(
-  () => loadSimplifiedViews().then((module) => module.UnlockedSaleDetailView),
+  () => loadSaleViews().then((module) => module.UnlockedSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
@@ -48,9 +48,8 @@ const UnlockedSaleDetailView = dynamic(
  * that it is already there when the access mode is known. A failed download is ignored: the
  * `dynamic` loaders import the module again when the view is actually displayed.
  */
-function preloadSaleViews(views: { discovery: boolean; simplified: boolean }) {
-  if (views.discovery) void loadDiscoveryView().catch(() => undefined);
-  if (views.simplified) void loadSimplifiedViews().catch(() => undefined);
+function preloadSaleViews() {
+  void loadSaleViews().catch(() => undefined);
 }
 
 type SaleDetailRouteData = {
@@ -139,12 +138,7 @@ function SaleDetailContent({
     isLoading: entitlementsLoading,
     error: entitlementsError,
     refetch: retryEntitlements,
-  } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(sessionKey),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(session) && !authLoading,
-    staleTime: 5 * 60_000,
-  });
+  } = useAccessPlanQuery(authLoading ? null : session?.user.id);
   const discovery = Boolean(session) && entitlementsData?.plan.hasAnalysisAccess !== true;
   // « 3 déblocages par mois » : un compte Découverte peut avoir débloqué cette vente. Sans réponse
   // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
@@ -171,27 +165,23 @@ function SaleDetailContent({
   const handleSaleUnlocked = (result: SaleUnlockResult) => {
     setJustUnlocked(true);
     queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
-    void queryClient.invalidateQueries({ queryKey: ["sale-detail", id] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.saleDetailForSale(id) });
   };
   const signedIn = Boolean(session) && !authLoading;
   useEffect(() => {
     if (!signedIn) return;
-    if (entitlementsKnown) {
-      preloadSaleViews({ discovery, simplified: !discovery || unlockEnabled });
-      return;
-    }
-    // Rights not known yet: the code of both families of views is fetched now, and the free
-    // listing (the one every signed-in account may read) is read while the rights are being
-    // checked. It is only displayed if the rights say « Découverte » (`accessReady` below); any
-    // other mode reads its own view afterwards, exactly as before.
-    preloadSaleViews({ discovery: true, simplified: true });
+    preloadSaleViews();
+    if (entitlementsKnown) return;
+    // Rights not known yet: the free listing (the one every signed-in account may read) is read
+    // while the rights are being checked. It is only displayed if the rights say « Découverte »
+    // (`accessReady` below); any other mode reads its own view afterwards.
     void queryClient.prefetchQuery({
       queryKey: queryKeys.saleDetail(id, sessionKey, "discovery"),
       queryFn: () =>
         loadSaleDetailRouteData(id, { discovery: true, unlocked: false, authenticated: true }),
       staleTime: 5 * 60_000,
     });
-  }, [signedIn, entitlementsKnown, discovery, unlockEnabled, queryClient, id, sessionKey]);
+  }, [signedIn, entitlementsKnown, queryClient, id, sessionKey]);
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
   const { data, isLoading, error, refetch, isFetching } = useQuery({

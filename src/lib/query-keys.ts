@@ -33,6 +33,8 @@ export const alertNotifications = (userId: string) => ["alert-notifications", us
 export const notificationPreferences = (userId: string) =>
   ["notification-preferences", userId] as const;
 export const privacyRequests = () => ["privacy-requests"] as const;
+/** Offre Analyse publique ; l'essai proposé dépend du compte, d'où le compte dans la clé. */
+export const billingOffer = (userKey: Id) => ["billing-offer", userKey] as const;
 
 // Favorites
 export const favorites = (userId: Id) => ["favorites", userId] as const;
@@ -80,6 +82,12 @@ export const searchLawyerPlacement = (city: Id, department: Id) =>
 // Sale detail
 export const saleDetail = (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
   ["sale-detail", saleId, sessionKey, mode] as const;
+/** Prefix of {@link saleDetail} for every account and view of a sale. */
+export const saleDetailForSale = (saleId: string) => ["sale-detail", saleId] as const;
+/** Aperçu de la valeur d'une vente : partagé par le panneau de prix et le repère marché de la fiche. */
+export const valuePreview = (saleId: string) => ["value-preview", saleId] as const;
+export const lawyerQuestions = (saleId: string, access: SaleAccessMode, userKey: string) =>
+  ["lawyer-questions", saleId, access, userKey] as const;
 /** Liste publique des identifiants des pépites (une lecture par page de résultats ou par fiche). */
 export const pepiteSaleIds = () => ["pepite-sale-ids"] as const;
 export const pepiteFloodExposedIds = () => ["pepite-flood-exposed-ids"] as const;
@@ -145,12 +153,9 @@ export const lawyerProsecutedSales = (userKey: Id, lawyerIds: readonly string[])
 export const saleAnalysisSets = (userId: string) => ["sale-analysis-sets", userId] as const;
 
 // Tribunal and adjudication statistics
-export const tribunalJudicialActivityPlan = (userId: Id) =>
-  ["tribunal-judicial-activity-plan", userId] as const;
 export const tribunalJudicialActivityDirectory = (historyMonths: number) =>
   ["tribunal-judicial-activity-directory", historyMonths] as const;
-export const adjudicationStatisticsPlan = (userId: Id) =>
-  ["adjudication-statistics-plan", userId] as const;
+export const courtAuctionSummaries = () => ["court-auction-summaries"] as const;
 export const adjudicationPriceStatisticsDirectory = (userId: Id) =>
   ["adjudication-price-statistics-directory", userId] as const;
 

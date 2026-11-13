@@ -41,6 +41,12 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { asObject, cancelMission } from "@/lib/information-agent/mission-store";
+import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
+import {
+  InformationAgentSentButUnrecordedError,
+  InformationAgentUnverifiedSendError,
+} from "@/lib/information-agent/send";
+import { ResendRejectedError } from "@/lib/email-alerts";
 import { issueAutopilotTrigger } from "@/lib/information-agent/schemas";
 
 /**
@@ -157,25 +163,6 @@ export function blockersAfterSimulationTolerance(blockers: readonly string[]): s
       blocker !== INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE &&
       blocker !== INFORMATION_AGENT_CANARY_ONLY_MESSAGE,
   );
-}
-
-function isRateLimited(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /\(429\)|\b429\b|rate.?limit|too many requests/i.test(message);
-}
-
-/** Message accepté par le fournisseur mais enregistrement incomplet : il est parti, ce n'est pas une erreur d'envoi. */
-function isAcceptedButIncomplete(error: unknown): boolean {
-  return error instanceof Error && /Message accepté par Resend/.test(error.message);
-}
-
-/** Refus du plafond de validations d'un administrateur : une limite, pas une erreur du fournisseur. */
-function isApprovalCapRefusal(error: unknown): boolean {
-  return error instanceof Error && /Plafond de \d+ validations/.test(error.message);
-}
-
-function isUnverified(error: unknown): boolean {
-  return error instanceof Error && /Envoi à vérifier/.test(error.message);
 }
 
 export function defaultAutopilotDeps(
@@ -491,18 +478,18 @@ export async function runInformationAgentAutopilot(
           template_revision_current: true,
         });
       } catch (error) {
-        if (isUnverified(error)) {
+        if (error instanceof InformationAgentUnverifiedSendError) {
           await deps.autoStop("unverified_send", { saleId: candidate.saleId });
           return finish("stopped", "unverified_send");
         }
-        if (!isAcceptedButIncomplete(error)) {
+        if (!(error instanceof InformationAgentSentButUnrecordedError)) {
           // Ni un plafond (limite, pas une erreur d'API), ni un 429 ne comptent comme erreurs consécutives.
-          if (isApprovalCapRefusal(error)) {
+          if (error instanceof AdminDailyApprovalCapError) {
             skip("approval_cap");
             await deps.record("skip", runId, { code: "approval_cap", saleId: candidate.saleId });
             break;
           }
-          const rateLimited = isRateLimited(error);
+          const rateLimited = error instanceof ResendRejectedError && error.status === 429;
           await deps.record("send_error", runId, {
             status: rateLimited ? 429 : 500,
             saleId: candidate.saleId,

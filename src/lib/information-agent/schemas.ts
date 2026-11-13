@@ -199,6 +199,6 @@ export function assertIssuedAutopilotTrigger(
   trigger: InformationAgentSendTrigger | undefined,
 ): void {
   if (trigger && !issuedTriggers.has(trigger)) {
-    throw new Error("Déclencheur d'envoi automatique non reconnu.");
+    throw new Error("Unrecognized autopilot send trigger");
   }
 }

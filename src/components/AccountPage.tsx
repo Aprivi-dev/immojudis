@@ -10,9 +10,9 @@ import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { SaleResultsToggle } from "@/components/SaleResultsToggle";
 import { WeeklyDigestToggle } from "@/components/WeeklyDigestToggle";
 import { Card, Notice, PageShell, buttonClasses } from "@/components/ui/primitives";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
-import { fetchAccessPlan } from "@/lib/client-billing";
 import { accountLinksFor } from "@/lib/navigation";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, signupTrialStatusText } from "@/lib/launch-offer";
 import { hasLiveStripeSubscription } from "@/lib/plans";
@@ -44,12 +44,7 @@ function formatDate(value: string | null | undefined): string | null {
 
 export function AccountPage() {
   const { user } = useAuth();
-  const planQuery = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user),
-    staleTime: 60_000,
-  });
+  const planQuery = useAccessPlanQuery(user?.id);
   const plan = planQuery.data?.plan;
   // « 3 déblocages par mois » : seul un compte qui n'a pas déjà toutes les ventes les consomme.
   const unlocksQuery = useQuery({

@@ -1,29 +1,20 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchAccessPlan } from "@/lib/client-billing";
 import { signupTrialDateLabel } from "@/lib/launch-offer";
-import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Au-dessus de la liste des ventes, pour un compte en essai gratuit : la date de fin de son essai, en
  * une ligne factuelle. Ni compte à rebours, ni incitation à s'abonner (voir `AccountLaunchOfferEnd`).
  * La date est celle des droits du compte (`plan.trialEndsAt`) : la fin de l'essai, ou, si
- * l'administrateur l'a prolongé, la fin de la prolongation. Même requête de plan que les autres écrans
- * (clé partagée), donc aucune lecture de plus ; rien n'est montré avant qu'elle réponde.
+ * l'administrateur l'a prolongé, la fin de la prolongation. Rien n'est montré avant que les droits
+ * répondent.
  */
 export function LaunchOfferTrialEnd() {
   const { user } = useAuth();
-  const { data } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user),
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const plan = data?.plan;
+  const plan = useAccessPlan(user?.id);
   if (!user || plan?.launchOffer !== true || !plan.trialEndsAt) return null;
   return (
     <p

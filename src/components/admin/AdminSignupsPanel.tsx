@@ -10,7 +10,12 @@ import Users from "lucide-react/dist/esm/icons/users.js";
 import { useEffect, useState } from "react";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
-import { formatInteger } from "@/components/admin/admin-format";
+import {
+  formatDate,
+  formatDateTime,
+  formatInteger,
+  queryErrorMessage,
+} from "@/components/admin/admin-format";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
@@ -25,7 +30,6 @@ import {
 } from "@/lib/admin-signups-format";
 import type { AdminSignupAccount, AdminTrialExtensionResponse } from "@/lib/admin-signups";
 import { toast } from "@/lib/toast";
-import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
 
 export const SIGNUPS_QUERY_KEY = ["admin-signups"] as const;
 
@@ -96,7 +100,7 @@ export function AdminSignupsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Prolongation impossible");
+      toast.error(queryErrorMessage(error, "Prolongation impossible"));
     },
   });
 
@@ -541,8 +545,4 @@ function accessDetail(account: AdminSignupAccount): string {
   }
   if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value));
 }

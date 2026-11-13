@@ -379,7 +379,7 @@ describe("lecture en base", () => {
         now: NOW,
         timeoutMs: 30,
       }),
-    ).rejects.toThrow("trop longue");
+    ).rejects.toThrow("time budget");
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 
 /**
  * Flattens a PDF before publication (plan P4-11): every page is rasterised and re-assembled as an
@@ -22,7 +23,7 @@ export async function flattenPdfForPublication(input: Uint8Array): Promise<Uint8
     const output = assembleImageOnlyPdf(pages);
     if (output.byteLength <= MAX_FLATTENED_BYTES) return output;
   }
-  throw new Error("PDF trop volumineux après aplatissement : publication suspendue.");
+  throw new PublicApiError("PDF trop volumineux après aplatissement : publication suspendue.", 422);
 }
 
 async function renderPdfPages(
@@ -45,11 +46,14 @@ async function renderPdfPages(
   try {
     document = await loadingTask.promise;
   } catch {
-    throw new Error("PDF illisible ou protégé : publication impossible.");
+    throw new PublicApiError("PDF illisible ou protégé : publication impossible.", 422);
   }
   try {
     if (document.numPages < 1 || document.numPages > MAX_FLATTENED_PAGES) {
-      throw new Error(`PDF de plus de ${MAX_FLATTENED_PAGES} pages : publication suspendue.`);
+      throw new PublicApiError(
+        `PDF de plus de ${MAX_FLATTENED_PAGES} pages : publication suspendue.`,
+        422,
+      );
     }
     const pages: RenderedPage[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {

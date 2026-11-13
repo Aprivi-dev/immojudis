@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPanel } from "@/components/admin/AdminShell";
 import type { EmailViewTone } from "@/lib/admin-emails/views";
 
@@ -53,7 +54,7 @@ export function queryProblem(
       role="alert"
       className="rounded-lg border border-danger/30 bg-danger-tint p-4 text-sm text-danger"
     >
-      <p>{query.error instanceof Error ? query.error.message : "Chargement impossible."}</p>
+      <p>{queryErrorMessage(query.error, "Chargement impossible.")}</p>
       <button
         type="button"
         className="admin-button-secondary mt-3"

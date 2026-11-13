@@ -6,6 +6,7 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import {
@@ -58,7 +59,7 @@ export function AdminInformationAgentReviewPanel() {
       void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-readiness"] });
       toast.success("Information contrôlée. La fiche sera réévaluée après enrichissement.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Revue impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Revue impossible")),
   });
   const messageAction = useMutation({
     mutationFn: runAdminInformationAgentMessageActionClient,
@@ -72,7 +73,7 @@ export function AdminInformationAgentReviewPanel() {
             : "Réponse marquée comme traitée.",
       );
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
   const recordOpposition = (messageId: string) => {
     if (
@@ -95,8 +96,7 @@ export function AdminInformationAgentReviewPanel() {
           : "Droits restreints. La pièce ne pourra pas être publiée.",
       );
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Décision sur les droits impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Décision sur les droits impossible")),
   });
 
   const openEvidenceAsset = async (assetId: string) => {
@@ -114,7 +114,7 @@ export function AdminInformationAgentReviewPanel() {
       openedWindow.location.assign(signedUrl);
     } catch (error) {
       openedWindow.close();
-      toast.error(error instanceof Error ? error.message : "Impossible d’ouvrir cette pièce.");
+      toast.error(queryErrorMessage(error, "Impossible d’ouvrir cette pièce."));
     } finally {
       setOpeningAssetId(null);
     }
@@ -126,9 +126,7 @@ export function AdminInformationAgentReviewPanel() {
       const signedUrl = await fetchAdminInformationAgentEvidenceUrlClient(assetId);
       setPreview({ assetId, signedUrl });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Impossible de prévisualiser cette pièce.",
-      );
+      toast.error(queryErrorMessage(error, "Impossible de prévisualiser cette pièce."));
     } finally {
       setPreviewingAssetId(null);
     }
@@ -180,7 +178,7 @@ export function AdminInformationAgentReviewPanel() {
         <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
       ) : query.error ? (
         <p role="alert" className="p-5 text-sm text-red-700">
-          {query.error instanceof Error ? query.error.message : "Réponses indisponibles"}
+          {queryErrorMessage(query.error, "Réponses indisponibles")}
         </p>
       ) : facts.length || messages.length ? (
         <div className="divide-y">
@@ -823,11 +821,7 @@ function FactProvenance({ source }: { source: InformationAgentFactSource | undef
       : source.channel === "admin_manual_reply"
         ? "Réponse consignée par un administrateur (expéditeur non vérifié)"
         : "Réponse par e-mail";
-  const received = source.receivedAt
-    ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(
-        new Date(source.receivedAt),
-      )
-    : null;
+  const received = source.receivedAt ? formatDateTime(source.receivedAt) : null;
   return (
     <p className="mt-1 text-xs text-brand-navy/60">
       Provenance : {channel}

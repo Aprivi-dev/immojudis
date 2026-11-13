@@ -11,8 +11,8 @@ import type {
   AdminSubscriptionSummary,
 } from "@/lib/admin-subscriptions";
 import { PLAN_LABELS, type PlanCode, type PlanStatus } from "@/lib/plans";
-import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
-import { formatAdminShortDateTime as formatDate } from "@/lib/admin-date-format";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { formatShortDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 
@@ -37,7 +37,6 @@ export function AdminSubscriptionsPanel() {
   });
 
   const subscriptions = subscriptionsQuery.data?.subscriptions ?? [];
-  const totalCount = subscriptionsQuery.data?.total ?? subscriptions.length;
 
   const grantMutation = useMutation({
     mutationFn: () => grantAdminSubscription({ data: formToInput(form) }),
@@ -52,7 +51,7 @@ export function AdminSubscriptionsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Attribution impossible");
+      toast.error(queryErrorMessage(error, "Attribution impossible"));
     },
   });
 
@@ -84,15 +83,13 @@ export function AdminSubscriptionsPanel() {
 
       {subscriptionsQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {subscriptionsQuery.error instanceof Error
-            ? subscriptionsQuery.error.message
-            : "Chargement impossible"}
+          {queryErrorMessage(subscriptionsQuery.error, "Chargement impossible")}
         </div>
       ) : null}
       {subscriptionsQuery.data ? (
         <p className="mt-4 text-xs text-muted-foreground">
-          {subscriptions.length} accès affiché{subscriptions.length > 1 ? "s" : ""} sur {totalCount}
-          . Les plus récents sont chargés en priorité.
+          {subscriptions.length} accès affiché{subscriptions.length > 1 ? "s" : ""} sur{" "}
+          {subscriptionsQuery.data.total}. Les plus récents sont chargés en priorité.
         </p>
       ) : null}
 
@@ -189,17 +186,15 @@ export function AdminSubscriptionsPanel() {
           </div>
         </div>
       </div>
-      {subscriptionsQuery.data && totalCount > 0 ? (
+      {subscriptionsQuery.data ? (
         <AdminPagination
-          offset={offset}
-          count={subscriptions.length}
-          totalCount={totalCount}
-          hasMore={subscriptionsQuery.data.hasMore}
+          label="accès payants"
+          offset={subscriptionsQuery.data.offset}
+          limit={subscriptionsQuery.data.limit}
+          total={subscriptionsQuery.data.total}
+          shown={subscriptions.length}
           busy={subscriptionsQuery.isFetching}
-          onPrevious={() =>
-            setOffset((current) => Math.max(0, current - subscriptionsQuery.data!.limit))
-          }
-          onNext={() => setOffset((current) => current + subscriptionsQuery.data!.limit)}
+          onOffsetChange={setOffset}
         />
       ) : null}
     </section>
@@ -221,7 +216,9 @@ function SubscriptionLine({ subscription }: { subscription: AdminSubscriptionSum
         {PLAN_LABELS[subscription.planCode]}
       </span>
       <StatusPill status={subscription.status} />
-      <span className="text-xs text-muted-foreground">{formatDate(subscription.updatedAt)}</span>
+      <span className="text-xs text-muted-foreground">
+        {formatShortDateTime(subscription.updatedAt)}
+      </span>
     </div>
   );
 }

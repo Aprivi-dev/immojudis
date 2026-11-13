@@ -464,7 +464,7 @@ async function stageApprovedEvidencePublication(
 
   // Mandatory human step: someone checked that personal data is redacted on the visible pages.
   if (!redaction.confirmed || redaction.verifiedBy.trim().length < 3) {
-    throw new Error(REDACTION_CHECK_REQUIRED_MESSAGE);
+    throw new PublicApiError(REDACTION_CHECK_REQUIRED_MESSAGE, 400);
   }
   const publishable = publicRenditionKind(fact.fact_key, asset.mime_type);
   if (!publishable) {
