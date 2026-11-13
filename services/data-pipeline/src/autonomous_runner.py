@@ -15,7 +15,23 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from src import source_withdrawal
-from src.config import SOURCE_NAMES, load_settings
+from src.catalogue_lock import LOCK_WAIT_ENV
+from src.config import (
+    AUTONOMOUS_RUN_ID_ENV,
+    CADASTRE_ENRICH_ENABLED_ENV,
+    DEFAULT_REPLICATE_CANCEL_AFTER,
+    DPE_ENRICH_ENABLED_ENV,
+    REPLICATE_CANCEL_AFTER_ENV,
+    SOURCE_NAMES,
+    load_settings,
+)
+from src.document_reading import READING_ENABLED_ENV
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.run_finalizer import register_run
 from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
@@ -507,7 +523,7 @@ def _run_document_backlog(env: dict[str, str]) -> int:
     """
     command = [sys.executable, '-m', 'src.document_backlog', '--max-sales', '6', '--budget-minutes', '8']
     return _run_optional_pass(
-        'Document backlog', command, env={**env, 'DOCUMENT_READING_ENABLED': 'false'},
+        'Document backlog', command, env={**env, READING_ENABLED_ENV: 'false'},
         timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
     )
 
@@ -618,11 +634,19 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
         _skip_withdrawn_run(db_url, run_id, source, connect=connect)
         return 0
     register_run(run_id)
-    env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'180', 'REPLICATE_CANCEL_AFTER':'5m',
-           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false',
-           # A scheduled unit must not sit on the catalogue writer lock for
-           # long (its budget is minutes); a busy catalogue fails the unit fast.
-           'PIPELINE_LOCK_WAIT_SECONDS':'300'}
+    env = {
+        **os.environ,
+        AUTONOMOUS_RUN_ID_ENV: run_id,
+        # Les plafonds du travailleur et le délai d'annulation par défaut : une valeur héritée du job est écrasée.
+        ENRICHMENT_BUDGET_SECONDS_ENV: str(ENRICHMENT_BUDGET_SECONDS),
+        ENRICHMENT_MAX_JOBS_ENV: str(ENRICHMENT_MAX_JOBS),
+        REPLICATE_CANCEL_AFTER_ENV: DEFAULT_REPLICATE_CANCEL_AFTER,
+        CADASTRE_ENRICH_ENABLED_ENV: 'false',
+        DPE_ENRICH_ENABLED_ENV: 'false',
+        # A scheduled unit must not sit on the catalogue writer lock for
+        # long (its budget is minutes); a busy catalogue fails the unit fast.
+        LOCK_WAIT_ENV: '300',
+    }
     # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
     env['PYTHONFAULTHANDLER'] = '1'
     if source == 'enrichment-queue':

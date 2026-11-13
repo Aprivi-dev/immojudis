@@ -311,14 +311,24 @@ def test_tj_insee_resolution_requires_current_official_justice_structure_and_exa
     assert "record.record_kind = %s" in justice_statement
     assert "record.normalized_data->>'schema_version' = %s" in justice_statement
     assert "record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')" in justice_statement
+    assert "record.normalized_data->>'review_status' = %s" in justice_statement
+    assert "record.normalized_data->>'source_grade' = %s" in justice_statement
     assert "newer.record_version > record.record_version" in justice_statement
     assert "public.source_purge_events" in justice_statement
     assert "extensions.unaccent" in justice_statement
     assert "extensions.unaccent(lower(court_row.name))" in justice_statement
     assert "jsonb_array_elements_text" in justice_statement
     assert "join public.outcome_courts" in justice_statement
-    # Source, nature et schéma écrits par l'import Justice (src.official_sources.justice_open_data).
-    assert parameters == ("justice_open_data", "court_reference_candidate", "justice_court_structure_v1", "33063")
+    # Source, nature, schéma, état de revue et grade écrits par l'import Justice (src.official_sources.justice_open_data
+    # et src.outcome_ingestion.adapters).
+    assert parameters == (
+        "justice_open_data",
+        "court_reference_candidate",
+        "justice_court_structure_v1",
+        "33063",
+        "pending",
+        "A",
+    )
 
 
 def test_unrecognized_court_code_is_diagnostic_only_without_fuzzy_query() -> None:

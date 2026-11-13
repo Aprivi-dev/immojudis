@@ -10,6 +10,12 @@ import pytest
 from src import pdf_deadline
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
 from src.lot_scope import surface_reasoning_context
@@ -1290,6 +1296,31 @@ def test_worker_stops_general_claims_after_llm_budget_exhaustion_and_keeps_caps(
     assert all(family == queued_runner.SOURCE_DETAIL_FAMILY for _, family in calls[2:])
     assert all(limit == 1 for limit, _ in calls)
     assert queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.get() is None
+
+
+@pytest.mark.parametrize(
+    "max_jobs_env,expected_jobs",
+    [(None, ENRICHMENT_MAX_JOBS), ("2", 2), (str(ENRICHMENT_MAX_JOBS + 10), ENRICHMENT_MAX_JOBS)],
+)
+def test_enrichment_worker_reads_its_job_limit_under_the_name_the_runner_sets(
+    monkeypatch, max_jobs_env, expected_jobs
+) -> None:
+    """Le nom posé par le lanceur abaisse le plafond du travailleur, sans jamais le dépasser."""
+    if max_jobs_env is None:
+        monkeypatch.delenv(ENRICHMENT_MAX_JOBS_ENV, raising=False)
+    else:
+        monkeypatch.setenv(ENRICHMENT_MAX_JOBS_ENV, max_jobs_env)
+    monkeypatch.setenv(ENRICHMENT_BUDGET_SECONDS_ENV, str(ENRICHMENT_BUDGET_SECONDS))
+    monkeypatch.setattr(
+        queued_runner,
+        "_read_due_enrichment_family_counts",
+        lambda: {queued_runner.SOURCE_DETAIL_FAMILY: 1_000, queued_runner.ENRICHMENT_FAMILY: 1_000},
+    )
+    monkeypatch.setattr(
+        queued_runner, "run_enrichment_queue_batch", lambda *, limit, family, provider_clients=None: 1
+    )
+
+    assert queued_runner.run_enrichment_queue_worker() == expected_jobs
 
 
 def test_worker_reaches_bounded_180_job_cap_without_concurrent_claims(monkeypatch) -> None:

@@ -13,6 +13,7 @@ from src.official_sources.justice_open_data import (
     JUSTICE_COMPETENCES_DATASET_URL,
     JUSTICE_OPEN_DATA_SOURCE_NAME,
     JUSTICE_RECORD_KINDS,
+    JUSTICE_REVIEW_STATUS,
     JUSTICE_SCHEMA_VERSIONS,
     JUSTICE_STRUCTURES_DATASET_URL,
 )
@@ -92,7 +93,7 @@ def justice_open_data_to_json_record(record: Mapping[str, Any]) -> JsonSourceRec
 
     normalized = _candidate_projection(record)
     normalized["training_eligible"] = False
-    normalized["review_status"] = "pending"
+    normalized["review_status"] = JUSTICE_REVIEW_STATUS
     normalized["schema_version"] = JUSTICE_SCHEMA_VERSIONS[record_type]
     return JsonSourceRecord(
         source_name=JUSTICE_OPEN_DATA_SOURCE_NAME,

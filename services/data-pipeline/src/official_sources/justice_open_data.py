@@ -28,6 +28,11 @@ JUSTICE_RECORD_KINDS = {
     "court_competence": "territorial_jurisdiction",
     "justice_court_structure": "court_reference_candidate",
 }
+# Grade de la source et état de revue d'un enregistrement stocké : le grade est écrit par les deux lecteurs de ligne
+# ci-dessous, l'état de revue par ``src.outcome_ingestion.adapters`` ; la résolution des tribunaux de
+# ``src.outcome_ingestion.repository`` exige les deux.
+JUSTICE_SOURCE_GRADE = "A"
+JUSTICE_REVIEW_STATUS = "pending"
 JUSTICE_COMPETENCES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france"
 )
@@ -315,7 +320,7 @@ def _parse_competence_row(row: dict[str, str]) -> dict[str, Any]:
         "stable_id": stable_id,
         "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_COMPETENCES_DATASET_URL,
-        "source_grade": "A",
+        "source_grade": JUSTICE_SOURCE_GRADE,
         "insee_code": insee_code,
         "commune_name": commune_name,
         "ca_origin_code": ca_origin,
@@ -368,7 +373,7 @@ def _parse_structure_row(row: dict[str, str]) -> dict[str, Any]:
         "stable_id": stable_id,
         "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_STRUCTURES_DATASET_URL,
-        "source_grade": "A",
+        "source_grade": JUSTICE_SOURCE_GRADE,
         "dataset_year": 2026,
         "structure_type_code": structure_type,
         "insee_code": insee_code,

@@ -44,6 +44,8 @@ from src.personal_data import redact_personal_text
 from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
+# Interrupteur de la lecture ; ``src.autonomous_runner`` l'éteint pendant le rattrapage des pièces.
+READING_ENABLED_ENV = "DOCUMENT_READING_ENABLED"
 
 # v2 (12/10/2026): DPE class only when written for the dwelling, no alert for
 # boilerplate clauses of the conditions of sale.
@@ -1162,7 +1164,7 @@ def revalidate_stored_readings(db_url: str, *, limit: int) -> dict[str, int]:
 
 
 def reading_enabled() -> bool:
-    return env_flag_on_unless_false("DOCUMENT_READING_ENABLED")
+    return env_flag_on_unless_false(READING_ENABLED_ENV)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1171,7 +1173,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--budget-minutes", type=float, help="défaut : DOCUMENT_READING_BUDGET_MINUTES, sinon 20")
     args = parser.parse_args(argv)
     if not reading_enabled():
-        print(json.dumps({"skipped": "DOCUMENT_READING_ENABLED is off"}))
+        print(json.dumps({"skipped": f"{READING_ENABLED_ENV} is off"}))
         return 0
     db_url = str(load_settings().get("supabase_db_url") or "")
     if not db_url:
