@@ -9,8 +9,14 @@ from decimal import Decimal
 from hashlib import sha256
 from typing import Any
 
-from src.outcome_evaluation.engine import evaluate, validate_public_report
-from src.outcome_evaluation.models import EvaluationConfig, EvaluationInputError, EvaluationRecord, PriceQuantiles
+from src.outcome_evaluation.engine import evaluate, utc_iso, validate_public_report
+from src.outcome_evaluation.models import (
+    COMMERCIAL_THRESHOLDS_V1,
+    EvaluationConfig,
+    EvaluationInputError,
+    EvaluationRecord,
+    PriceQuantiles,
+)
 from src.outcome_evaluation.reporting import build_promotion_summary
 from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
@@ -540,9 +546,9 @@ class OutcomeEvaluationRepository:
             raise OutcomeEvaluationRepositoryError("invalid evaluations cannot be persisted")
         if report.get("evaluation_mode") != config.mode:
             raise OutcomeEvaluationRepositoryError("evaluation mode and report do not match")
-        if report.get("threshold_version") != "outcome-commercial-v1":
+        if report.get("threshold_version") != COMMERCIAL_THRESHOLDS_V1.version:
             raise OutcomeEvaluationRepositoryError("only the commercial evaluation policy can be persisted")
-        if report.get("computed_at") != _utc_iso(computed_at):
+        if report.get("computed_at") != utc_iso(computed_at):
             raise OutcomeEvaluationRepositoryError("evaluation computation time does not match the report")
         if report.get("writes") != 0:
             raise OutcomeEvaluationRepositoryError("only an unpersisted evaluation report can be appended")
@@ -799,7 +805,3 @@ def _report_count(coverage: Mapping[str, Any], key: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise OutcomeEvaluationRepositoryError("evaluation counter is missing or invalid")
     return value
-
-
-def _utc_iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

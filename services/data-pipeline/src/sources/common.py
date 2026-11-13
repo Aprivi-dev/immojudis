@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 import re
 import signal
 import ssl
@@ -19,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from src.config import source_budget_seconds
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
     ensure_source_task_deadline,
@@ -238,18 +238,10 @@ def _source_task_sleep(seconds: float, operation: str) -> None:
 
 
 def source_budget_deadline(env_name: str) -> float | None:
-    """Échéance, sur l'horloge monotone, du budget de temps qu'un lanceur donne à une source dans ``env_name``.
-
-    La valeur est en secondes ; absente, illisible ou non positive, la source n'a pas de budget (``None``).
-    """
-    raw = os.getenv(env_name)
-    if not raw:
-        return None
-    try:
-        seconds = float(raw)
-    except ValueError:
-        return None
-    return time.monotonic() + seconds if seconds > 0 else None
+    """Échéance, sur l'horloge monotone, du budget de temps qu'un lanceur donne à une source dans ``env_name``
+    (lu par ``config.source_budget_seconds``) ; ``None`` sans budget."""
+    seconds = source_budget_seconds(env_name)
+    return time.monotonic() + seconds if seconds is not None else None
 
 
 def source_budget_expired(deadline: float | None) -> bool:

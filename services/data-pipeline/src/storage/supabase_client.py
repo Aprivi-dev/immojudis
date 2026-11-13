@@ -2178,6 +2178,19 @@ def restore_pdf_page_caches_for_documents(
             LOGGER.warning("Could not materialize persisted PDF pages for %s: %s", url, exc)
 
 
+def newest_restorable_pdf_progress(
+    sale: AuctionSale,
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]] | None:
+    """Pièces lues à reprendre : celles de la ligne d'extraction la plus récente qui porte un texte complet valide,
+    sinon une progression partielle valide ; ``None`` si aucune ligne n'en porte."""
+    for row in sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True):
+        restored = validated_persisted_pdf_texts(sale, row) or validated_persisted_pdf_progress(sale, row)
+        if restored:
+            return restored
+    return None
+
+
 def restore_persisted_pdf_progress_for_sale(
     sale: AuctionSale,
     *,
@@ -2202,15 +2215,7 @@ def restore_persisted_pdf_progress_for_sale(
     except (RuntimeError, TypeError, ValueError, httpx.HTTPError) as exc:
         LOGGER.warning("Cold PDF progress lookup failed; keeping pending documents: %s", exc)
         return []
-    rows = sorted(rows, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
-    restored: list[dict[str, object]] | None = None
-    for row in rows:
-        restored = validated_persisted_pdf_texts(sale, row)
-        if restored is not None:
-            break
-        restored = validated_persisted_pdf_progress(sale, row)
-        if restored is not None:
-            break
+    restored = newest_restorable_pdf_progress(sale, rows)
     if not restored:
         return []
     from src.pdf_fact_extraction import write_pdf_text_cache

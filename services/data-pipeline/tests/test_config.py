@@ -226,3 +226,32 @@ def test_licitor_collector_credentials_are_read_at_call_time(monkeypatch) -> Non
     monkeypatch.setenv("CRON_SECRET", "secret")
     assert config.licitor_collector_database_url() == "postgresql://licitor_collector@db.example.supabase.co/postgres"
     assert config.cron_secret() == "secret"
+
+
+def test_vercel_environment_and_main_database_are_read_at_call_time(monkeypatch) -> None:
+    monkeypatch.delenv("VERCEL_ENV", raising=False)
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    assert config.vercel_env() is None
+    assert config.supabase_db_url() is None
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://db.example/postgres")
+    assert config.vercel_env() == "preview"
+    assert config.supabase_db_url() == "postgresql://db.example/postgres"
+    assert load_settings()["supabase_db_url"] == "postgresql://db.example/postgres"
+
+
+def test_source_budget_needs_a_positive_number_of_seconds(monkeypatch) -> None:
+    monkeypatch.delenv("SOME_SOURCE_BUDGET_SECONDS", raising=False)
+    assert config.source_budget_seconds("SOME_SOURCE_BUDGET_SECONDS") is None
+    for raw, expected in (("", None), ("abc", None), ("0", None), ("-5", None), ("nan", None), ("25", 25.0), ("2.5", 2.5)):
+        monkeypatch.setenv("SOME_SOURCE_BUDGET_SECONDS", raw)
+        assert config.source_budget_seconds("SOME_SOURCE_BUDGET_SECONDS") == expected
+
+
+def test_github_actions_is_detected_only_by_its_true_marker(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert config.in_github_actions() is False
+    for value, expected in (("true", True), ("1", False), ("TRUE", False), ("", False)):
+        monkeypatch.setenv("GITHUB_ACTIONS", value)
+        assert config.in_github_actions() is expected

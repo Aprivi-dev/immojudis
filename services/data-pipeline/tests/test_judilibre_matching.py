@@ -8,6 +8,7 @@ import pytest
 from src.official_sources.base import canonical_sha256
 from src.outcome_ingestion.judilibre_match_contract import (
     JUDILIBRE_MATCH_METHODS,
+    judilibre_match_rank,
     judilibre_match_score_and_method,
     validate_judilibre_match_signals,
 )
@@ -250,6 +251,39 @@ def test_match_score_and_method_rule_shared_with_the_repository(
 
     assert result == expected
     assert result[1] in JUDILIBRE_MATCH_METHODS
+
+
+@pytest.mark.parametrize(
+    ("portalis", "case_number", "expected_rank"),
+    [(True, True, 2), (True, False, 2), (False, True, 1), (False, False, 0)],
+)
+def test_match_rank_follows_the_method_rule(portalis: bool, case_number: bool, expected_rank: int) -> None:
+    # Rang lu par le rapprochement et par les deux classements SQL du dépôt : il suit la méthode attribuée.
+    assert judilibre_match_rank(portalis_number_match=portalis, case_number_match=case_number) == expected_rank
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"candidate_grade": "B"},
+        {"review_status": "approved"},
+        {"extraction_status": "no_candidate_facts"},
+        {"text_storage": "projection"},
+        {"claims": [{**_projection()["claims"][0], "claim_type": "x"}]},
+        {
+            "claims": [
+                {**_projection()["claims"][0], "claim_type": "procedural_event", "normalized_value": "x"}
+            ]
+        },
+    ],
+)
+def test_projection_values_outside_the_contract_are_invalid(overrides: dict[str, object]) -> None:
+    repository = FakeJudilibreMatchingRepository(records=[_record(projection=_projection(**overrides))])
+
+    summary = JudilibreDecisionMatchingService(repository).run(source_limit=10)
+
+    assert summary.invalid_source_records == 1
+    assert repository.court_calls == []
 
 
 def test_persisted_signals_follow_the_contract_the_repository_revalidates() -> None:

@@ -2,7 +2,7 @@
 
 ``judilibre_matching`` construit les signaux d'un candidat ; ``repository.append_judilibre_match_candidate`` les
 valide, recalcule dans sa transaction les empreintes, le score et la méthode, et refuse tout écart. Les deux lisent
-ce module : une version, une clé ou une règle qui change ici change des deux côtés. Module feuille, comme
+ce module : une version, une clé ou une règle qui change ici change des deux côtés. Module feuille, qui ne lit que
 ``judilibre_contract`` : le dépôt ne peut pas lire le rapprochement, qui l'importe.
 """
 
@@ -13,16 +13,23 @@ from collections.abc import Mapping
 from datetime import date
 
 from src.official_sources.base import canonical_sha256
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_CLAIM_TYPES
 from src.sha256_digest import is_lowercase_sha256
 
 _SIGNAL_SCHEMA = "judilibre_match_signals_v1"
 _RULE_VERSION = "judilibre-review-match-v1"
 JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX = 30
+# Contextes d'audience examinés au plus pour une décision. Le rapprochement en demande un de plus au dépôt : une
+# réponse pleine signale la troncature.
+JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX = 5_000
 # Façons de résoudre la cour de la décision, que le dépôt attribue et qu'un candidat déclare.
 JUDILIBRE_COURT_CODE_EXACT = "outcome_court_code_exact"
 JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME = "justice_structure_insee_exact_name"
+# Rang de chaque méthode : le contexte retenu pour une décision est celui de plus haut rang, puis de date la plus
+# proche, dans le rapprochement comme dans le classement que le dépôt recalcule en SQL.
+_METHOD_RANKS: Mapping[str, int] = {"composite": 0, "exact_case_number": 1, "exact_portalis_number": 2}
 # Méthodes que ``judilibre_match_score_and_method`` peut attribuer.
-JUDILIBRE_MATCH_METHODS = frozenset({"exact_portalis_number", "exact_case_number", "composite"})
+JUDILIBRE_MATCH_METHODS = frozenset(_METHOD_RANKS)
 
 # Ce que tout candidat garantit (vrai) et s'interdit (faux), quel que soit le contexte rapproché.
 _FIXED_SIGNALS: Mapping[str, bool] = {
@@ -41,7 +48,6 @@ _FIXED_SIGNALS: Mapping[str, bool] = {
     "personal_identity_used_for_matching": False,
 }
 _COURT_RESOLUTION_METHODS = frozenset({JUDILIBRE_COURT_CODE_EXACT, JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME})
-_CLAIM_TYPES = frozenset({"starting_price_eur", "hammer_price_eur", "procedural_event"})
 _PROVENANCE_DIGEST_KEYS = (
     "court_resolution_reference_sha256",
     "claims_manifest_sha256",
@@ -125,19 +131,36 @@ def judilibre_source_record_sha256(source_record_id: str) -> str:
     )
 
 
+def _match_method(*, portalis_number_match: bool, case_number_match: bool) -> str:
+    """Méthode : Portalis, puis numéro d'affaire, puis cour et date seules (``composite``)."""
+    if portalis_number_match:
+        return "exact_portalis_number"
+    if case_number_match:
+        return "exact_case_number"
+    return "composite"
+
+
+def judilibre_match_rank(*, portalis_number_match: bool, case_number_match: bool) -> int:
+    """Rang de la méthode que ces signaux font attribuer (voir ``_METHOD_RANKS``)."""
+    return _METHOD_RANKS[
+        _match_method(portalis_number_match=portalis_number_match, case_number_match=case_number_match)
+    ]
+
+
 def judilibre_match_score_and_method(
     *,
     portalis_number_match: bool,
     case_number_match: bool,
     date_delta_days: int,
 ) -> tuple[str, str]:
-    """Score (texte à quatre décimales) et méthode : Portalis, puis numéro d'affaire, puis cour et date seules."""
+    """Score (texte à quatre décimales) et méthode ; une date d'audience exacte relève le score d'une référence."""
+    method = _match_method(portalis_number_match=portalis_number_match, case_number_match=case_number_match)
     exact_date = date_delta_days == 0
-    if portalis_number_match:
-        return ("0.9800" if exact_date else "0.9400"), "exact_portalis_number"
-    if case_number_match:
-        return ("0.9500" if exact_date else "0.9000"), "exact_case_number"
-    return "0.7500", "composite"
+    if method == "exact_portalis_number":
+        return ("0.9800" if exact_date else "0.9400"), method
+    if method == "exact_case_number":
+        return ("0.9500" if exact_date else "0.9000"), method
+    return "0.7500", method
 
 
 def judilibre_match_signals(
@@ -219,7 +242,7 @@ def validate_judilibre_match_signals(
         not isinstance(claim_types, list)
         or not claim_types
         or len(claim_types) != len(set(claim_types))
-        or any(claim_type not in _CLAIM_TYPES for claim_type in claim_types)
+        or any(claim_type not in JUDILIBRE_CLAIM_TYPES for claim_type in claim_types)
     ):
         raise ValueError("Judilibre claim types are invalid")
     for key in _PROVENANCE_DIGEST_KEYS:

@@ -141,10 +141,9 @@ def restore_checkpointed_pages(sale: Any, downloaded: list[dict[str, Any]]) -> N
     """
     from src.config import load_settings
     from src.storage.supabase_client import (
+        newest_restorable_pdf_progress,
         read_persisted_pdf_rows_rest,
         restore_pdf_page_caches_for_documents,
-        validated_persisted_pdf_progress,
-        validated_persisted_pdf_texts,
     )
 
     settings = load_settings()
@@ -153,11 +152,9 @@ def restore_checkpointed_pages(sale: Any, downloaded: list[dict[str, Any]]) -> N
     if not supabase_url or not api_key or not source_url or not downloaded:
         return
     rows = read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
-    for row in sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True):
-        restored = validated_persisted_pdf_texts(sale, row) or validated_persisted_pdf_progress(sale, row)
-        if restored:
-            restore_pdf_page_caches_for_documents(restored, downloaded)
-            return
+    restored = newest_restorable_pdf_progress(sale, rows)
+    if restored:
+        restore_pdf_page_caches_for_documents(restored, downloaded)
 
 
 class DocumentPrefetcher:
