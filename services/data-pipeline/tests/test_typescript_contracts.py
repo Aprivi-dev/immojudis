@@ -11,6 +11,8 @@ from pathlib import Path
 from src.cache_invalidation import BATCH_SIZE
 from src.config import SOURCE_NAMES
 from src.document_reading import MAX_QUOTE_CHARS, THEMES
+from src.information_agent_review_signals import MIN_STATEMENT_CHARS, REVIEW_REASON_LABELS
+from src.information_sufficiency import COURT_REGISTRY_FALLBACK
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -62,3 +64,19 @@ def test_the_admin_starts_every_pipeline_source_but_the_withdrawn_ones() -> None
     assert ADMIN_OMITTED_SOURCES <= set(SOURCE_NAMES)
     assert len(choices) == len(set(choices))
     assert set(choices) == {"all"} | (set(SOURCE_NAMES) - ADMIN_OMITTED_SOURCES)
+
+
+def test_a_short_statement_has_the_same_length_for_the_ai_reading_and_the_typescript_rules() -> None:
+    rules = _typescript("src/lib/information-agent-inbound/review-signals.ts")
+    match = re.search(r"^const MIN_STATEMENT_CHARS = (\d+);$", rules, re.M)
+    assert match is not None
+    assert MIN_STATEMENT_CHARS == int(match.group(1))
+    # The label of the reason states the same length (both label lists are compared by a vitest test).
+    assert REVIEW_REASON_LABELS["short_citation"] == f"phrase de moins de {MIN_STATEMENT_CHARS} caractères"
+
+
+def test_the_court_registry_origin_is_the_one_the_application_writes() -> None:
+    fallback = _typescript("src/lib/information-agent/court-registry-fallback.ts")
+    match = re.search(r'^export const INFORMATION_AGENT_COURT_REGISTRY_FALLBACK = "([a-z_]+)";$', fallback, re.M)
+    assert match is not None
+    assert COURT_REGISTRY_FALLBACK == match.group(1)

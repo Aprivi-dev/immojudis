@@ -7,6 +7,7 @@ collecte : 99 ventes relues dans la journée ont été invalidées de nouveau sa
 
 from __future__ import annotations
 
+from src import known_enrichment
 from src.dedupe import merge_duplicate_sales
 from src.freshness import is_new_source_change, record_source_checks
 from src.normalize import normalize_sale
@@ -101,7 +102,7 @@ def test_dedupe_does_not_reinvalidate_an_inherited_flag() -> None:
 
 
 def test_a_collection_keeps_the_document_facts_until_the_source_really_changes() -> None:
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
 
     url = "https://www.licitor.com/annonce/keep.html"
     first = {"source_url": url, "source_name": "licitor", "starting_price_eur": 100000, "raw_text": "Appartement"}
@@ -110,7 +111,7 @@ def test_a_collection_keeps_the_document_facts_until_the_source_really_changes()
     known = {url: {"source_url": url, "documents": [], "raw_payload": stored_payload}}
 
     unchanged = {"source_url": url, "source_name": "licitor", "starting_price_eur": 100000, "raw_text": "Appartement"}
-    _preserve_known_enrichment_payloads([unchanged], known)
+    preserve_known_enrichment_payloads([unchanged], known)
     record_source_checks([unchanged], known)
     assert unchanged.get("document_facts_version") == V5
     assert not unchanged.get("source_content_changed")
@@ -123,7 +124,7 @@ def test_a_collection_keeps_the_document_facts_until_the_source_really_changes()
         "description": "Maison de 4 pièces avec jardin, occupée par le propriétaire.",
         "rooms_count": 4,
     }
-    _preserve_known_enrichment_payloads([changed], known)
+    preserve_known_enrichment_payloads([changed], known)
     record_source_checks([changed], known)
     assert "document_facts_version" not in changed
     assert changed["source_content_changed"] is True
@@ -140,8 +141,6 @@ def _raw(url: str, documents: list[dict], source_name: str = "licitor") -> dict:
 
 def test_a_secondary_source_does_not_change_the_documents_of_a_merged_sale() -> None:
     """05/11/2026 : chaque passe Licitor effaçait la lecture des pièces d'environ 70 ventes fusionnées."""
-    from src import main
-
     primary = "https://avoventes.fr/enchere/maison"
     secondary = "https://www.licitor.com/annonce/1.html"
     stored = [
@@ -152,27 +151,25 @@ def test_a_secondary_source_does_not_change_the_documents_of_a_merged_sale() -> 
 
     for documents in ([], [{"url": "https://www.licitor.com/doc/pv.pdf", "label": "Procès-verbal"}]):
         raw = _raw(secondary, documents)
-        main._preserve_known_enrichment_payloads([raw], {secondary: known})
+        known_enrichment.preserve_known_enrichment_payloads([raw], {secondary: known})
         assert "source_content_changed_at" not in raw
         assert raw.get("document_facts_version") == V5
 
     added = _raw(secondary, [{"url": "https://www.licitor.com/doc/diag.pdf", "label": "Diagnostics"}])
-    main._preserve_known_enrichment_payloads([added], {secondary: known})
+    known_enrichment.preserve_known_enrichment_payloads([added], {secondary: known})
     assert added["source_content_changed"] is True
     assert "source_content_changed_at" in added
 
 
 def test_the_primary_source_still_sees_a_removed_or_renamed_document() -> None:
-    from src import main
-
     primary = "https://avoventes.fr/enchere/maison"
     stored = [{"url": "https://avoventes.fr/doc/ccv.pdf", "label": "CCV"}]
     known = {"source_url": primary, "documents": stored, "raw_payload": {"document_facts_version": V5}}
 
     removed = _raw(primary, [], source_name="avoventes")
-    main._preserve_known_enrichment_payloads([removed], {primary: known})
+    known_enrichment.preserve_known_enrichment_payloads([removed], {primary: known})
     assert removed["source_content_changed"] is True
 
     unchanged = _raw(primary, list(stored), source_name="avoventes")
-    main._preserve_known_enrichment_payloads([unchanged], {primary: known})
+    known_enrichment.preserve_known_enrichment_payloads([unchanged], {primary: known})
     assert "source_content_changed_at" not in unchanged

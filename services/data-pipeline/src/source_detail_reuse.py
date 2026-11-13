@@ -7,16 +7,9 @@ from typing import Any
 
 from src.freshness import SOURCE_EXTRACTION_VERSION
 from src.storage import supabase_client as storage
+from src.timestamps import aware_timestamp
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _timestamp(value: Any) -> datetime | None:
-    try:
-        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return parsed.astimezone(UTC) if parsed.tzinfo else None
-    except (ValueError, TypeError):
-        return None
 
 
 def verified_detail_satisfies_job(
@@ -31,10 +24,10 @@ def verified_detail_satisfies_job(
         return False
     if check.get("source_name") != job.get("detail_source_name") or check.get("extractor_version") != SOURCE_EXTRACTION_VERSION or not check.get("fingerprint"):
         return False
-    checked, created = _timestamp(check.get("checked_at")), _timestamp(job.get("created_at"))
+    checked, created = aware_timestamp(check.get("checked_at")), aware_timestamp(job.get("created_at"))
     if checked is None or created is None or not created < checked <= now:
         return False
-    date = _timestamp(sale_date)
+    date = aware_timestamp(sale_date)
     cadence = timedelta(hours=5 if date is not None and now <= date <= now + timedelta(days=7) else 23)
     return now - checked < cadence
 

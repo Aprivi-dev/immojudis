@@ -1280,7 +1280,7 @@ def _load_fact_failure_retry_after(cache_key: str, stage: str = FACT_FAILURE_STA
     if not isinstance(retry_after, str) or not retry_after.strip():
         return None
     try:
-        parsed = datetime.fromisoformat(retry_after.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(retry_after)
     except ValueError:
         return None
     if parsed.tzinfo is None:
@@ -1345,6 +1345,8 @@ def _validated_extraction_payload(payload: Any) -> LLMExtraction | None:
     try:
         return _validated_llm_extraction(_payload_without_cache_metadata(payload))
     except Exception:
+        # A cached extraction that no longer validates (schema changed since it was written, damaged file) is a
+        # cache miss: the extraction runs again.
         return None
 
 

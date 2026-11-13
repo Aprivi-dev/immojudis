@@ -40,6 +40,11 @@ REVIEW_REASON_LABELS: dict[str, str] = {
 }
 
 NUMERIC_FACT_KEYS = frozenset({"surface_m2", "land_surface_m2", "rooms_count", "starting_price_eur"})
+# Une phrase plus courte ne prouve rien seule : elle n'est pas jetée, elle part en relecture (`short_citation`). La
+# longueur porte sur la phrase, pas sur la citation choisie par le modèle. Même valeur dans les règles TypeScript
+# (`MIN_STATEMENT_CHARS` de `src/lib/information-agent-inbound/review-signals.ts`) et dans le libellé du motif ;
+# `tests/test_typescript_contracts.py` les relie. Sans lien avec `document_reading.MIN_QUOTE_CHARS`, qui mesure la
+# citation d'une lecture des pièces et l'écarte.
 MIN_STATEMENT_CHARS = 25
 
 

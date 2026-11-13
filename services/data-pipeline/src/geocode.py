@@ -21,7 +21,7 @@ from src.geocode_query import (
     is_filterable_postcode,
     municipality_postcode,
 )
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
 from src.municipality_location import (
     commune_name_for_postal_code,
@@ -38,7 +38,6 @@ from src.position_quality import (
     IMPLAUSIBLE_COORDINATES,
     POSITION_FLAGS,
     UNVERIFIED_SOURCE_COORDINATES,
-    add_position_flag,
     classify_distance_to_commune,
     distance_km,
     remove_flags,
@@ -348,9 +347,9 @@ def verify_source_coordinates(sale: AuctionSale) -> str | None:
         sale.latitude = None
         sale.longitude = None
         sale.raw_payload.pop("geo_precision", None)
-        add_position_flag(flags, IMPLAUSIBLE_COORDINATES)
+        add_quality_flag(flags, IMPLAUSIBLE_COORDINATES)
     elif status == "unverified":
-        add_position_flag(flags, UNVERIFIED_SOURCE_COORDINATES)
+        add_quality_flag(flags, UNVERIFIED_SOURCE_COORDINATES)
     sale.quality_flags = flags
     if status is None and commune is not None and department:
         # Point cohérent, dans le département et à moins de 12 km de sa commune : s'il n'est pas sur le centre de la
@@ -433,7 +432,7 @@ def _result_commune_mismatch(sale: AuctionSale, result: GeocodeResult) -> bool:
 def _reject_commune_mismatch(sale: AuctionSale, *, query: str, result: GeocodeResult) -> None:
     LOGGER.warning("Ignoring BAN result in another commune for %s: %s", sale.source_url, result.citycode)
     reset_source_promotion(sale)
-    add_position_flag(sale.quality_flags, GEOCODE_COMMUNE_MISMATCH)
+    add_quality_flag(sale.quality_flags, GEOCODE_COMMUNE_MISMATCH)
     _store_geocode_evidence(
         sale,
         query=query,
@@ -447,7 +446,7 @@ def _reject_outside_department(sale: AuctionSale, *, query: str, result: Geocode
     LOGGER.warning("Ignoring BAN result outside department for %s", sale.source_url)
     # Le drapeau pose un doute sur la position : la précision d'un point de la source ne tient plus.
     reset_source_promotion(sale)
-    add_position_flag(sale.quality_flags, GEOCODE_OUTSIDE_DEPARTMENT)
+    add_quality_flag(sale.quality_flags, GEOCODE_OUTSIDE_DEPARTMENT)
     _store_geocode_evidence(
         sale,
         query=query,
@@ -745,7 +744,7 @@ def _parse_datetime(value: object) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.strip())
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

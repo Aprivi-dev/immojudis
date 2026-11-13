@@ -1036,7 +1036,9 @@ def _llm_generator() -> tuple[Callable[[str, str], Mapping[str, object]] | None,
         client.max_tokens = max(int(client.max_tokens or 0), READING_MAX_OUTPUT_TOKENS)
         client.max_retries = 0
         return client.generate_json_once, str(client.model or "") or None
-    except Exception:
+    except Exception as exc:
+        # Without a client the pass reads nothing (« unavailable ») and stays optional; the type says why.
+        LOGGER.warning("Document reading has no LLM client: %s", type(exc).__name__)
         return None, None
 
 

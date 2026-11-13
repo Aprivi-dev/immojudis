@@ -6,7 +6,6 @@ from typing import Any
 
 from src.app_surface_withholding import withhold_ambiguous_app_surface
 from src.asset_normalization_helpers import (
-    add_quality_flag,
     compact_dict,
     confidence_note,
     document_context_label,
@@ -24,7 +23,7 @@ from src.asset_surface_normalization import (
     fill_surfaces,
 )
 from src.lot_scope import sale_fact_text
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.normalize import (
     _property_feature_bool,
     clean_text,
@@ -219,8 +218,7 @@ def _clear_scoped_feature_false_positives(sale: AuctionSale, text: str) -> None:
             "resolved_land_surface_m2": None,
             "basis": "rez_de_jardin_is_a_level_not_land_evidence",
         }
-        if "parcel_surface_scope_unverified" not in sale.quality_flags:
-            sale.quality_flags.append("parcel_surface_scope_unverified")
+        add_quality_flag(sale.quality_flags, "parcel_surface_scope_unverified")
 
 
 def _feature_is_scope_only(text: str, feature: str) -> bool:
@@ -327,7 +325,7 @@ def _restore_partial_document_surface_scope(sale: AuctionSale) -> None:
         "documented_partial_surface_m2": str(documented_value),
         "basis": "structured_pdf_extraction_scope",
     }
-    add_quality_flag(sale, "partial_surface_scope_restored")
+    add_quality_flag(sale.quality_flags, "partial_surface_scope_restored")
 
 
 def build_auction_features_row(sale: AuctionSale) -> dict[str, Any]:
@@ -1106,20 +1104,20 @@ def _starting_price_per_m2_is_implausible(sale: AuctionSale) -> bool:
 
 def _fill_quality_flags(sale: AuctionSale) -> None:
     if sale.latitude is None or sale.longitude is None:
-        add_quality_flag(sale, "missing_gps")
+        add_quality_flag(sale.quality_flags, "missing_gps")
     else:
         # Un drapeau hérité d'une lecture sans coordonnées ne survit pas à l'arrivée des coordonnées.
         sale.quality_flags = [flag for flag in sale.quality_flags if flag != "missing_gps"]
     if _starting_price_per_m2_is_implausible(sale):
-        add_quality_flag(sale, PRICE_PER_M2_IMPLAUSIBLE_FLAG)
+        add_quality_flag(sale.quality_flags, PRICE_PER_M2_IMPLAUSIBLE_FLAG)
     else:
         sale.quality_flags = [flag for flag in sale.quality_flags if flag != PRICE_PER_M2_IMPLAUSIBLE_FLAG]
     if isinstance(sale.raw_payload, dict) and sale.raw_payload.get("sale_date_unverified"):
-        add_quality_flag(sale, "sale_date_implausible")
+        add_quality_flag(sale.quality_flags, "sale_date_implausible")
     if not sale.documents:
-        add_quality_flag(sale, "source_page_only")
+        add_quality_flag(sale.quality_flags, "source_page_only")
     if sale_type_context(sale).get("status") == "non_judicial":
-        add_quality_flag(sale, "non_judicial_sale_context")
+        add_quality_flag(sale.quality_flags, "non_judicial_sale_context")
     llm_confidence = sale.raw_payload.get("llm_extraction", {}).get("confidence", {})
     if isinstance(llm_confidence, dict) and any(float(value or 0) < 0.55 for value in llm_confidence.values()):
-        add_quality_flag(sale, "low_confidence_extraction")
+        add_quality_flag(sale.quality_flags, "low_confidence_extraction")

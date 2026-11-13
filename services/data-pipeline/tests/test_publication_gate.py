@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from test_main import _fake_geocode, _raw_sale, _settings
 
-from src import listing_minimum, main
+from src import listing_minimum, main, sale_finalization
 from src.admission import admit_sales, publication_rejection
 from src.information_sufficiency import GATE_ENV, ContactBlocklist, publication_gate, set_active_blocklist
 from src.models import AuctionSale
@@ -106,9 +106,9 @@ def _run_pipeline(monkeypatch, raw_sales):
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set())
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult(raw_sales, []))
-    monkeypatch.setattr(main, "geocode_sale", _fake_geocode)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", _fake_geocode)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))
     monkeypatch.setattr(main, "build_quality_report", lambda *args, **kwargs: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])

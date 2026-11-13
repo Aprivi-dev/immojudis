@@ -141,6 +141,7 @@ from src.storage.sale_row_builders import (
     _unique_rows_by_keys,
     _unique_source_urls,
 )
+from src.timestamps import aware_timestamp
 from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
@@ -1148,13 +1149,9 @@ def finish_auction_enrichment_job_in_supabase(
     }
     if not succeeded and not cancelled:
         retry_at = now + timedelta(minutes=30)
-        if retry_not_before:
-            try:
-                requested = retry_not_before if isinstance(retry_not_before, datetime) else datetime.fromisoformat(str(retry_not_before).replace('Z', '+00:00'))
-                if requested.tzinfo is not None:
-                    retry_at = max(retry_at, requested)
-            except ValueError:
-                pass
+        requested = aware_timestamp(retry_not_before)
+        if requested is not None:
+            retry_at = max(retry_at, requested)
         payload["next_attempt_at"] = retry_at.isoformat()
     response = httpx.patch(
         f"{str(url).rstrip('/')}/rest/v1/auction_enrichment_jobs",
@@ -1487,11 +1484,8 @@ def _historical_timestamp_is_valid(value: object) -> bool:
     extraction remains the responsibility of ``documents_are_current``; this
     guard only rejects malformed or future-dated provenance.
     """
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return False
-    return parsed.tzinfo is not None and parsed <= datetime.now(UTC)
+    parsed = aware_timestamp(str(value))
+    return parsed is not None and parsed <= datetime.now(UTC)
 
 
 def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | None:
@@ -2321,7 +2315,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             parsed = value
         elif value:
             try:
-                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(str(value))
             except (TypeError, ValueError):
                 return None
         else:
@@ -3183,7 +3177,7 @@ def shared_postgres_connection(db_url: str):
             if usable and time.monotonic() - entry[1] > POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS:
                 try:
                     connection.execute("select 1")
-                except Exception:
+                except Exception:  # whatever the failure, the idle session is not trusted any more: reconnect
                     usable = False
             if not usable:
                 _discard_shared_connection(key)
@@ -3210,7 +3204,7 @@ def _discard_shared_connection(key: tuple[int, str]) -> None:
     if entry is not None:
         try:
             entry[0].close()
-        except Exception:
+        except Exception:  # a broken session may fail to close; it is dropped from the pool either way
             pass
 
 

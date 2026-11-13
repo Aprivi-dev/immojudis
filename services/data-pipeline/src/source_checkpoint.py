@@ -15,6 +15,7 @@ from psycopg.types.json import Jsonb
 
 from src.config import autonomous_run_id, load_settings
 from src.models import INTERNAL_CONTACTS_KEY
+from src.timestamps import aware_timestamp
 
 # Checkpoint retention is deliberately independent from source freshness.  A
 # detail captured by an interrupted run may be reusable after the source's
@@ -111,17 +112,9 @@ def save_source_cursor(partition: str, payload: dict[str, Any]) -> bool:
 
 
 def _stored_checked_at(payload: object, fallback: datetime) -> datetime:
-    if isinstance(payload, dict):
-        value = payload.get("_checkpoint_checked_at")
-        if isinstance(value, datetime) and value.tzinfo:
-            return value.astimezone(UTC)
-        if isinstance(value, str):
-            try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                parsed = None
-            if parsed is not None and parsed.tzinfo:
-                return parsed.astimezone(UTC)
+    stored = aware_timestamp(payload.get("_checkpoint_checked_at")) if isinstance(payload, dict) else None
+    if stored is not None:
+        return stored
     return fallback.astimezone(UTC) if fallback.tzinfo else fallback.replace(tzinfo=UTC)
 
 

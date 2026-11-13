@@ -198,7 +198,8 @@ def usable_contact_emails(sale: AuctionSale, blocklist: ContactBlocklist = NO_BL
 # Contact de secours d'une vente au tribunal : l'adresse du greffe (référentiel des tribunaux)
 # --------------------------------------------------------------------------
 #: Origine de l'adresse d'un greffe dans le registre des contacts de l'agent (``source_kind``), miroir de
-#: ``INFORMATION_AGENT_COURT_REGISTRY_FALLBACK`` (``src/lib/information-agent/court-registry-fallback.ts``).
+#: ``INFORMATION_AGENT_COURT_REGISTRY_FALLBACK`` (``src/lib/information-agent/court-registry-fallback.ts``) ;
+#: ``tests/test_typescript_contracts.py`` vérifie l'accord.
 COURT_REGISTRY_FALLBACK = "court_registry_fallback"
 #: Sources qui ne sont jamais une vente au tribunal : notaires, cessions de l'État, AGRASC.
 COURT_FALLBACK_EXCLUDED_SOURCES = frozenset({"notaires", "cessions_etat", "agrasc"})

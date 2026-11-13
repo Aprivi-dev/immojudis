@@ -6,7 +6,7 @@ produit le 11/11/2026 deux violations de ``auction_sales_occupancy_status_check`
 deux erreurs « '>' not supported between 'str' and 'int' » (« 85,5 », encheres_immobilieres). Relue sans le
 contexte de la collecte, elle donnait à un lot Licitor la mise à prix, la surface ou les pièces d'un autre lot.
 
-Les instantanés de ces tests sont posés par le vrai code de la collecte (``_preserve_known_enrichment_payloads``)
+Les instantanés de ces tests sont posés par le vrai code de la collecte (``known_enrichment.preserve_known_enrichment_payloads``)
 sur des ventes brutes : celles des parseurs de chaque source, la fiche Licitor réelle à deux lots et les lignes
 Licitor réelles à lots numérotés. La valeur attendue est celle de ``normalize_sale(vente brute)``.
 """
@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 import time_machine
 
-from src import main, pdf_fact_scope
+from src import known_enrichment, main, pdf_fact_scope
 from src.models import AuctionSale
 from src.normalize import OCCUPANCY_ENUM, normalize_sale
 from src.pdf_enrichment import _invalidate_replaced_document_facts
@@ -41,7 +41,7 @@ DOCUMENT_URL = "https://example.test/restored/cahier.pdf"
 # Valeurs admises par la contrainte CHECK de auction_sales.property_type (migration 20260520202829).
 PROPERTY_TYPES = {"apartment", "house", "building", "land", "commercial", "parking", "mixed", "other", "unknown"}
 RESTORABLE = tuple(
-    field for field in main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if field not in {"source_name", "source_url", "raw_text"}
+    field for field in known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if field not in {"source_name", "source_url", "raw_text"}
 )
 STORED_ROWS = json.loads(
     (Path(__file__).parent / "fixtures" / "licitor_lignes_stockees_lots_numerotes.json").read_text(encoding="utf-8")
@@ -81,8 +81,8 @@ def _published(raw: dict[str, Any]) -> tuple[AuctionSale, AuctionSale]:
     """La vente publiée par la collecte après lecture de sa fiche, et la lecture de référence de la vente brute."""
     reference = normalize_sale(copy.deepcopy(raw))
     published = copy.deepcopy(raw)
-    main._preserve_known_enrichment_payloads([published], {})
-    assert set(published["source_factual_snapshot"]) == set(main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
+    known_enrichment.preserve_known_enrichment_payloads([published], {})
+    assert set(published["source_factual_snapshot"]) == set(known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
     return normalize_sale(published), reference
 
 
@@ -310,7 +310,7 @@ def test_the_title_of_the_sale_is_used_when_the_stored_payload_has_none() -> Non
 
 
 def test_the_fields_trusted_without_a_lot_are_those_the_lot_reading_writes() -> None:
-    lot_fields = set(licitor_lots._LOT_FIELDS) & set(main.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
+    lot_fields = set(licitor_lots._LOT_FIELDS) & set(known_enrichment.KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
 
     assert pdf_fact_scope._LOT_WRITTEN_SNAPSHOT_FIELDS == lot_fields | {"visit_dates", "sale_date", "status"}
 

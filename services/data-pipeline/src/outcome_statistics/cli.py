@@ -162,9 +162,8 @@ def _bundle_summary(bundle: StatisticsBundle) -> dict[str, object]:
 
 
 def _iso_datetime(value: str) -> datetime:
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
-        parsed = datetime.fromisoformat(normalized)
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("value must be an ISO-8601 datetime") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

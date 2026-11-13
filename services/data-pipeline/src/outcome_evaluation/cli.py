@@ -231,9 +231,8 @@ def _iso_datetime(value: str) -> datetime:
 def _json_datetime(value: object) -> datetime:
     if not isinstance(value, str):
         raise EvaluationInputError("timestamp must be an ISO-8601 string")
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
-        parsed = datetime.fromisoformat(normalized)
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise EvaluationInputError("timestamp is invalid") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

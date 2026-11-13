@@ -4,10 +4,10 @@ import re
 from decimal import Decimal
 from typing import Any
 
-from src.asset_normalization_helpers import add_quality_flag, decimal_value, evidence_excerpt
+from src.asset_normalization_helpers import decimal_value, evidence_excerpt
 from src.land_parcels import parcel_m2_list, read_parcel_land_surface
 from src.lot_scope import describes_one_lot, sale_fact_text
-from src.models import AuctionSale
+from src.models import AuctionSale, add_quality_flag
 from src.multi_unit_surface import is_single_unit_surface_of_several, single_dwelling_lot_surface
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
@@ -85,7 +85,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
         sale.surface_scope = "unknown"
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
     if sale.habitable_surface_m2 is None:
         sale.habitable_surface_m2 = _extract_surface_kind(text, "habitable_surface_m2", sale)
     text_carrez_surface = _extract_surface_kind(text, "carrez_surface_m2", sale)
@@ -103,7 +103,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
             "resolved_carrez_surface_m2": str(text_carrez_surface),
             "basis": "explicit_decimal_carrez_text",
         }
-        add_quality_flag(sale, "surface_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "surface_conflict_resolved")
     coproperty_scoped_land_surface = _is_coproperty_scoped_land_surface(sale.raw_payload, text)
     text_land_surface = (
         None
@@ -112,7 +112,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
     )
     if coproperty_scoped_land_surface and sale.land_surface_m2 is not None:
         sale.land_surface_m2 = None
-        add_quality_flag(sale, "parcel_surface_scope_unverified")
+        add_quality_flag(sale.quality_flags, "parcel_surface_scope_unverified")
     if sale.land_surface_m2 is None:
         sale.land_surface_m2 = text_land_surface
     elif _should_prefer_text_land_surface(sale, text_land_surface):
@@ -124,7 +124,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
             "resolved_land_surface_m2": str(text_land_surface),
             "basis": "explicit_land_text_over_stored_value",
         }
-        add_quality_flag(sale, "land_surface_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "land_surface_conflict_resolved")
     elif text_land_surface is None and _should_clear_misclassified_land_surface(sale):
         rejected_land_surface = sale.land_surface_m2
         sale.land_surface_m2 = None
@@ -134,7 +134,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
             "resolved_land_surface_m2": None,
             "basis": "duplicated_built_surface_without_land_evidence",
         }
-        add_quality_flag(sale, "land_surface_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "land_surface_conflict_resolved")
     _sum_listed_land_parcels(sale, text)
     _drop_dwelling_surfaces_of_bare_land(sale)
     rejected_equal_to_land = _reject_built_surface_equal_to_land(sale)
@@ -171,7 +171,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
             "habitable_surface_m2": str(sale.habitable_surface_m2),
             "basis": carrez_basis,
         }
-        add_quality_flag(sale, "surface_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "surface_conflict_resolved")
     _prefer_carrez_over_smaller_generic_surface(sale)
     explicit_app_surface = None
     min_app_surface = Decimal("20")
@@ -208,7 +208,7 @@ def fill_surfaces(sale: AuctionSale, text: str) -> None:
     _flag_ambiguous_surface(sale)
     _flag_source_surface_conflict(sale)
     if rejected_equal_to_land and sale.app_surface_m2 is None:
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
     if (
         sale.surface_scope is None
         and sale.app_surface_m2 is None
@@ -249,7 +249,7 @@ def _flag_source_surface_conflict(sale: AuctionSale) -> None:
         "selected_surface_kind": sale.app_surface_kind,
         "rule": "named_measurement_wins_over_unlabelled_source_counter",
     }
-    add_quality_flag(sale, "surface_source_conflict")
+    add_quality_flag(sale.quality_flags, "surface_source_conflict")
 
 
 def _prefer_carrez_over_smaller_generic_surface(sale: AuctionSale) -> None:
@@ -272,7 +272,7 @@ def _prefer_carrez_over_smaller_generic_surface(sale: AuctionSale) -> None:
     sale.surface_m2 = carrez
     if sale.app_surface_m2 == generic:
         sale.app_surface_m2 = None
-    add_quality_flag(sale, "surface_conflict_resolved")
+    add_quality_flag(sale.quality_flags, "surface_conflict_resolved")
 
 
 def _drop_dwelling_surfaces_of_bare_land(sale: AuctionSale) -> None:
@@ -295,7 +295,7 @@ def _drop_dwelling_surfaces_of_bare_land(sale: AuctionSale) -> None:
     sale.habitable_surface_m2 = None
     sale.carrez_surface_m2 = None
     sale.raw_payload["dwelling_surface_on_land_withheld"] = rejected
-    add_quality_flag(sale, "ambiguous_surface")
+    add_quality_flag(sale.quality_flags, "ambiguous_surface")
 
 
 def _sum_listed_land_parcels(sale: AuctionSale, text: str) -> None:
@@ -318,7 +318,7 @@ def _sum_listed_land_parcels(sale: AuctionSale, text: str) -> None:
         "basis": "sum_of_all_listed_parcels",
     }
     sale.land_surface_m2 = total
-    add_quality_flag(sale, "land_surface_conflict_resolved")
+    add_quality_flag(sale.quality_flags, "land_surface_conflict_resolved")
 
 
 def _record_conflicting_surface_values(sale: AuctionSale) -> list[Decimal]:
@@ -361,7 +361,7 @@ def _reject_built_surface_equal_to_land(sale: AuctionSale) -> bool:
             "basis": "land_equal_to_explicit_built_surface",
         }
         sale.land_surface_m2 = None
-        add_quality_flag(sale, "land_surface_conflict_resolved")
+        add_quality_flag(sale.quality_flags, "land_surface_conflict_resolved")
         return False
     for field in fields:
         setattr(sale, field, None)
@@ -371,7 +371,7 @@ def _reject_built_surface_equal_to_land(sale: AuctionSale) -> bool:
         "rejected_surface_m2": str(sale.land_surface_m2),
         "basis": "built_surface_equal_to_land_surface",
     }
-    add_quality_flag(sale, "surface_conflict_resolved")
+    add_quality_flag(sale.quality_flags, "surface_conflict_resolved")
     if sale.surface_scope == "total":
         # La portée « totale » se rapportait à la valeur retirée.
         sale.surface_scope = None
@@ -558,7 +558,7 @@ def _record_surface_conflict_resolution(
         "resolved_built_surface_m2": str(resolved_surface),
         "basis": "matching_title_and_description",
     }
-    add_quality_flag(sale, "surface_conflict_resolved")
+    add_quality_flag(sale.quality_flags, "surface_conflict_resolved")
 
 
 def apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
@@ -574,7 +574,7 @@ def apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None
         )
         previous_value = sale.property_type
         sale.property_type = "apartment"
-        add_quality_flag(sale, "type_corrected_from_documents")
+        add_quality_flag(sale.quality_flags, "type_corrected_from_documents")
         _record_business_rule(
             sale,
             "property_type_from_specific_asset",
@@ -605,7 +605,7 @@ def apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None
         )
         previous_value = sale.occupancy_status
         sale.occupancy_status = "unknown"
-        add_quality_flag(sale, "occupation_conflict")
+        add_quality_flag(sale.quality_flags, "occupation_conflict")
         _record_business_rule(
             sale,
             "occupation_conflict_requires_confirmation",
@@ -743,7 +743,7 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
         # Total écrit, liste complète additionnée ; jamais la première parcelle d'une liste (src/land_parcels.py).
         if (parcels := read_parcel_land_surface(text)) is not None:
             if parcels.value is None and sale is not None:
-                add_quality_flag(sale, 'parcel_surface_scope_unverified')
+                add_quality_flag(sale.quality_flags, 'parcel_surface_scope_unverified')
             return parcels.value
     for pattern in SURFACE_PATTERNS[kind]:
         match = next(
@@ -927,7 +927,7 @@ def _set_app_surface(sale: AuctionSale) -> None:
         sale.app_surface_kind = "built"
         # « unknown » relu en base vient d'un retrait précédent (e34acc33) : il est recalculé ensuite.
         sale.surface_scope = "total" if sale.surface_scope in {None, "unknown"} else sale.surface_scope
-        add_quality_flag(sale, "surface_type_unverified")
+        add_quality_flag(sale.quality_flags, "surface_type_unverified")
 
 
 def _validate_app_surface_scope(sale: AuctionSale) -> None:
@@ -946,11 +946,11 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
                 "minimum_dwelling_m2": str(MIN_DWELLING_SURFACE_M2),
             }
             sale.property_type = "other"
-            add_quality_flag(sale, "annex_lot")
+            add_quality_flag(sale.quality_flags, "annex_lot")
         sale.surface_scope = "room_or_annex"
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
     elif (
         sale.property_type in {"commercial", "mixed", "other", "unknown"}
         and sale.app_surface_m2 > Decimal("1000")
@@ -959,7 +959,7 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
         sale.surface_scope = "unknown"
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
     elif (ceiling := _plausible_surface_ceiling(sale)) is not None and sale.app_surface_m2 > ceiling:
         _demote_implausible_built_surface(sale, ceiling)
     elif sale.property_type == "land":
@@ -996,7 +996,7 @@ def _demote_implausible_built_surface(sale: AuctionSale, ceiling: Decimal) -> No
         "ceiling_m2": str(ceiling),
         "basis": "built_surface_above_plausibility_ceiling",
     }
-    add_quality_flag(sale, "ambiguous_surface")
+    add_quality_flag(sale.quality_flags, "ambiguous_surface")
 
 
 _LAND_QUALIFIER_PATTERN = re.compile(
@@ -1066,9 +1066,9 @@ def _flag_ambiguous_surface(sale: AuctionSale) -> None:
         if value is not None
     }
     if len(surface_values) > 1 and sale.property_type not in {"house", "building"}:
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
     if sale.app_surface_m2 is None and sale.surface_m2 is not None:
-        add_quality_flag(sale, "ambiguous_surface")
+        add_quality_flag(sale.quality_flags, "ambiguous_surface")
 
 
 def _extract_count(text: str, patterns: tuple[str, ...]) -> int | None:

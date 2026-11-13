@@ -1256,7 +1256,7 @@ def _date_at_utc_midnight(value: date | None) -> datetime | None:
 
 
 def _parse_datetime(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("Judilibre timestamps must include a timezone")
     return parsed.astimezone(UTC)

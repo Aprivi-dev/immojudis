@@ -17,6 +17,7 @@ from src.admission import sale_date_has_passed
 from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN
 from src.normalize import clean_text, parse_french_datetime, source_sale_timezone
 from src.pdf_document_types import canonical_document_type
+from src.pdf_sale_date_guard import assign_pdf_sale_date
 from src.text_folding import strip_accents
 
 _E = "[eéèêEÉÈÊ]"
@@ -257,15 +258,13 @@ def apply_page_offer_deadline(sale: object) -> None:
     timezone = source_sale_timezone(raw_payload if isinstance(raw_payload, dict) else {})
     extraction = extract_offer_deadline_from_documents([page], local_timezone=timezone)
     if extraction:
-        from src.pdf_fact_extraction import _assign_pdf_sale_date
-
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(extraction))
+        assign_pdf_sale_date(sale, offer_deadline_sale_date(extraction))
 
 
 def offer_deadline_sale_date(
     extraction: dict[str, object], *, allow_expired: bool = False, now: datetime | None = None
 ) -> dict[str, object]:
-    """Candidate for ``_assign_pdf_sale_date``; its value is None when not allowed.
+    """Candidate for ``assign_pdf_sale_date``; its value is None when not allowed.
 
     ``allow_expired`` (a call for offers, whose deadline is the sale's échéance): a deadline read without
     ambiguity that has passed closes the sale (``offer_deadline_expired``) instead of leaving it undated

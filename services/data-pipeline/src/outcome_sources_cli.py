@@ -15,11 +15,13 @@ from typing import Any, Literal
 from src.config import load_settings
 from src.official_sources.base import OfficialSourceError
 from src.official_sources.encheres_publiques_open_data import (
+    ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME,
     parse_encheres_publiques_courts_csv,
     parse_encheres_publiques_csv,
 )
 from src.official_sources.judilibre import JudilibreClient
 from src.official_sources.justice_open_data import (
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
     parse_justice_open_data_csv,
     validate_justice_competence_semantics,
 )
@@ -30,7 +32,7 @@ from src.outcome_ingestion.adapters import (
     justice_open_data_to_json_record,
 )
 from src.outcome_ingestion.artifact_store import RawArtifactStorageError, SupabaseRawArtifactStore
-from src.outcome_ingestion.dvf_adjudication import iter_dvf_adjudication_candidates
+from src.outcome_ingestion.dvf_adjudication import DVF_OFFICIAL_SOURCE_NAME, iter_dvf_adjudication_candidates
 from src.outcome_ingestion.dvf_matching import (
     DVF_MATCH_PAGE_SIZE_DEFAULT,
     DVF_MATCH_PAGE_SIZE_MAX,
@@ -40,6 +42,7 @@ from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_SEARCH_MAX_RESULTS,
     JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW,
     JUDILIBRE_SEARCH_PROFILES,
+    JUDILIBRE_SOURCE_NAME,
     JudilibreOutcomeIngestor,
     validate_judilibre_search_request,
 )
@@ -58,10 +61,10 @@ LOCAL_SOURCES: tuple[LocalSource, ...] = (
     "encheres-courts",
 )
 SOURCE_POLICIES: dict[LocalSource, tuple[str, Literal["automated", "manual"]]] = {
-    "dvf-adjudications": ("dvf_dgfip", "automated"),
-    "justice": ("justice_open_data", "automated"),
-    "encheres-hearings": ("encheres_publiques_open_data", "manual"),
-    "encheres-courts": ("encheres_publiques_open_data", "manual"),
+    "dvf-adjudications": (DVF_OFFICIAL_SOURCE_NAME, "automated"),
+    "justice": (JUSTICE_OPEN_DATA_SOURCE_NAME, "automated"),
+    "encheres-hearings": (ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME, "manual"),
+    "encheres-courts": (ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME, "manual"),
 }
 
 
@@ -233,7 +236,7 @@ def _run_plan(_args: argparse.Namespace) -> int:
         {
             "schema_version": "outcome_source_activation_plan_v1",
             "sources": {
-                "judilibre": {
+                JUDILIBRE_SOURCE_NAME: {
                     "channel": "automated",
                     "default_state": "runtime_gated_after_review",
                     "requires": [
@@ -245,17 +248,17 @@ def _run_plan(_args: argparse.Namespace) -> int:
                         "private outcome-raw-artifacts bucket",
                     ],
                 },
-                "dvf_dgfip": {
+                DVF_OFFICIAL_SOURCE_NAME: {
                     "channel": "automated",
                     "record_kind": "auction_result_candidate",
                     "training_eligible": False,
                 },
-                "justice_open_data": {
+                JUSTICE_OPEN_DATA_SOURCE_NAME: {
                     "channel": "automated",
                     "record_kinds": ["territorial_jurisdiction", "court_reference_candidate"],
                     "training_eligible": False,
                 },
-                "encheres_publiques_open_data": {
+                ENCHERES_PUBLIQUES_OPEN_DATA_SOURCE_NAME: {
                     "channel": "manual",
                     "default_state": "inactive_pending_review",
                     "record_kinds": ["auction_hearing_candidate", "court_reference_candidate"],
@@ -415,7 +418,7 @@ def _run_match_dvf(args: argparse.Namespace) -> int:
     settings = load_settings()
     repository = OutcomeIngestionRepository.from_settings(settings)
     if args.persist:
-        repository.require_source_policy("dvf_dgfip", "automated")
+        repository.require_source_policy(DVF_OFFICIAL_SOURCE_NAME, "automated")
     summary = DvfAdjudicationMatchingService(repository).run(
         source_limit=None if args.all else args.limit,
         context_limit=args.context_limit,
@@ -441,7 +444,7 @@ def _live_judilibre_ingestor() -> tuple[JudilibreOutcomeIngestor, JudilibreClien
     # The DB approval gate is checked before constructing anything capable of
     # writing or making a source request. The client independently requires the
     # explicit JUDILIBRE_ENABLED runtime gate and PISTE credentials.
-    repository.require_source_policy("judilibre", "automated")
+    repository.require_source_policy(JUDILIBRE_SOURCE_NAME, "automated")
     artifact_store = SupabaseRawArtifactStore.from_settings(settings)
     client = JudilibreClient.from_settings(settings)
     service = OutcomeSourceIngestionService(repository=repository, artifact_store=artifact_store)

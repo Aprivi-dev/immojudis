@@ -94,7 +94,7 @@ def _fire(
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.flush()
-        except Exception:
+        except Exception:  # same rule as the journal: nothing may prevent the exit
             pass
     exit_process(WATCHDOG_EXIT_CODE)
 

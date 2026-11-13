@@ -60,7 +60,7 @@ _SERVICE_NAME_RE = re.compile(r"\b(?:service|p[oô]le|prie|direction|ddfip|drfip
 
 def parse_observed_at(value: object | None) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value or ""))
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

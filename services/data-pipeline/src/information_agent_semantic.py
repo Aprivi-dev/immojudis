@@ -20,7 +20,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 
 from src.config import is_true_value
-from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
+from src.document_reading import sold_lot_from_sale
 from src.french_dates import MONTH_ABBREVIATIONS, MONTH_NUMBERS
 from src.information_agent_review_signals import (
     REVIEW_REASON_LABELS,
@@ -44,9 +44,6 @@ SEMANTIC_MAX_OUTPUT_TOKENS = 1_024
 # date de vente distinguée d'une date de visite ou de renvoi, DPE distingué du GES, type de bien non déduit
 # d'un mot composé. Seule l'étiquette change : aucune réanalyse n'est déclenchée par ce numéro.
 SEMANTIC_PROCESSOR_VERSION = "semantic_evidence_v3"
-# Comme la lecture des documents (`document_reading.MIN_QUOTE_CHARS`) : une citation plus courte ne prouve
-# rien seule. Elle n'est pas jetée, mais part en relecture avec le motif `short_citation`.
-MIN_SEMANTIC_EXCERPT_CHARS = MIN_QUOTE_CHARS
 MAX_VISION_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_PHOTO_DESCRIPTION_CHARS = 800
 MAX_PHOTO_OBSERVATIONS = 8

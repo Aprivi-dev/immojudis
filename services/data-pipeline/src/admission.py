@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from src.french_dates import PARIS
 from src.lot_scope import lot_selected
 from src.models import AuctionSale
+from src.timestamps import aware_timestamp
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
 
@@ -125,13 +126,10 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
     ):
         if not isinstance(schedule, dict):
             continue
-        try:
-            start = datetime.fromisoformat(str(schedule["opens_at"]).replace("Z", "+00:00"))
-            end = datetime.fromisoformat(str(schedule["closes_at"]).replace("Z", "+00:00"))
-            if start.tzinfo is not None and end.tzinfo is not None and end > start:
-                return end.astimezone(UTC)
-        except (KeyError, TypeError, ValueError):
-            continue
+        start = aware_timestamp(str(schedule.get("opens_at")))
+        end = aware_timestamp(str(schedule.get("closes_at")))
+        if start is not None and end is not None and end > start:
+            return end
 
     raw_date = str(raw_payload.get("sale_date") or "")
     precision = (

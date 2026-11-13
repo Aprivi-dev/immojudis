@@ -607,7 +607,7 @@ def persisted_revalidation_due_at(analysis: object, documents: list[dict[str, An
     _, checks = _persisted_http_checks(analysis, documents)
     if not checks or any(not timestamp_is_fresh(checked_at) for checked_at in checks.values()):
         return None
-    oldest = min(datetime.fromisoformat(str(checked_at).replace("Z", "+00:00")) for checked_at in checks.values())
+    oldest = min(datetime.fromisoformat(str(checked_at)) for checked_at in checks.values())
     return oldest + HTTP_REVALIDATION_WINDOW
 
 

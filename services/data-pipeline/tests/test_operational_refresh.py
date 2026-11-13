@@ -86,7 +86,7 @@ def test_source_check_records_detail_proof_only_for_validated_detail():
 
 
 def test_pending_documentary_flag_survives_a_later_operational_rescan():
-    from src.main import _preserve_known_enrichment_payloads
+    from src.known_enrichment import preserve_known_enrichment_payloads
 
     source_url = "https://example.test/documentary-then-operational"
     base = {
@@ -105,7 +105,7 @@ def test_pending_documentary_flag_survives_a_later_operational_rescan():
     )
     incoming = deepcopy(base)
     incoming["starting_price_eur"] = 90000
-    _preserve_known_enrichment_payloads(
+    preserve_known_enrichment_payloads(
         [incoming], {source_url: {"raw_payload": known_payload}},
     )
     record_source_checks([incoming], {source_url: {"raw_payload": known_payload}})

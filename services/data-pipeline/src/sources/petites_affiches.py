@@ -15,6 +15,7 @@ from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
+from src.models import add_quality_flag
 from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
@@ -797,9 +798,9 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         sale["source_detail_status"] = "failed"
         sale["source_detail_failure_reason"] = "identity_mismatch"
         sale["source_identity_mismatch"] = mismatch
-        quality_flags = sale.get("quality_flags") if isinstance(sale.get("quality_flags"), list) else []
-        if "source_identity_mismatch" not in quality_flags:
-            sale["quality_flags"] = [*quality_flags, "source_identity_mismatch"]
+        quality_flags = list(sale["quality_flags"]) if isinstance(sale.get("quality_flags"), list) else []
+        add_quality_flag(quality_flags, "source_identity_mismatch")
+        sale["quality_flags"] = quality_flags
         LOGGER.warning(
             "Petites Affiches detail identity mismatch for %s: requested_city=%s detail_city=%s",
             source_url,

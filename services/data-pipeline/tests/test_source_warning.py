@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from test_main import _raw_sale, _settings
 
-from src import autonomous_runner, main
+from src import autonomous_runner, main, sale_finalization
 from src.source_health import (
     SOURCE_WARNING_EXIT_CODE,
     failed_sources,
@@ -71,9 +71,9 @@ def _run(monkeypatch, scraper, *, upsert=lambda sales, **kwargs: len(sales), pub
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **k: set())
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", scraper)
-    monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
-    monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
-    monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "geocode_sale", lambda sale: sale)
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", lambda sale: None)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: sale)
     monkeypatch.setattr(main, "enrich_sale_from_pdfs", pdf)
     monkeypatch.setattr(main, "enrich_sale_with_llm", lambda *a, **k: main.LLMEnrichmentStats())
     monkeypatch.setattr(main, "export_sales", lambda sales: ("out.json", "out.csv"))

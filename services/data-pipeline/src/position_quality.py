@@ -59,11 +59,6 @@ def preserved_position_flags(flags: object) -> list[str]:
     return list(dict.fromkeys(flag for flag in flags if isinstance(flag, str) and flag in PRESERVED_FLAGS))
 
 
-def add_position_flag(flags: list[str], flag: str) -> None:
-    if flag not in flags:
-        flags.append(flag)
-
-
 def remove_flags(flags: list[str], names: Iterable[str]) -> list[str]:
     removed = set(names)
     return [flag for flag in flags if flag not in removed]

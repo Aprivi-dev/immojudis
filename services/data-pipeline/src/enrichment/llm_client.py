@@ -1162,7 +1162,7 @@ def _is_fact_extraction_prompt(system_prompt: str) -> bool:
 def _response_error_message(response: httpx.Response) -> str:
     try:
         payload = response.json()
-    except Exception:
+    except Exception:  # an error body that is not JSON: its text is read below
         payload = None
     if isinstance(payload, dict):
         message = payload.get("detail") or payload.get("message") or payload.get("error")

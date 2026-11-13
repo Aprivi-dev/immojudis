@@ -1,7 +1,7 @@
 """Reprise, depuis le détail déjà connu d'une vente, des champs établis par les pièces (surfaces, mise à prix).
 
 Une collecte qui relit la fiche source (liste ou détail) ne doit pas écraser une valeur que les documents PDF ont
-établie : ``src.main`` copie ces champs depuis la ligne publiée quand la fiche collectée ne les porte pas.
+établie : ``src.known_enrichment`` copie ces champs depuis la ligne publiée quand la fiche collectée ne les porte pas.
 """
 
 from __future__ import annotations

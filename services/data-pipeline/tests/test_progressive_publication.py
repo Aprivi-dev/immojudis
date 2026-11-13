@@ -56,7 +56,7 @@ def test_a_lost_lock_stops_the_collection_before_its_next_batch(monkeypatch) -> 
     run.settings = {"pipeline_pdf_workers": 1, "pipeline_llm_workers": 1}
     run.canonical_sales = [SimpleNamespace(source_name="licitor", source_url="https://example.test/a")]
     monkeypatch.setattr(main, "warm_image_validations", lambda sales: None)
-    monkeypatch.setattr(main, "_finalize_sale_for_app", lambda sale, geocode: None)
+    monkeypatch.setattr(main, "finalize_sale_for_app", lambda sale, geocode: None)
     monkeypatch.setattr(main, "mark_past_sales", lambda batch: SimpleNamespace(marked_past=0))
     monkeypatch.setattr(main, "admit_sales", lambda batch, record: list(batch))
     monkeypatch.setattr(main, "record_sale_decisions", lambda *args, **kwargs: None)

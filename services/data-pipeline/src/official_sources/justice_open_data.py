@@ -16,6 +16,8 @@ from src.text_folding import ascii_alnum_words, strip_accents, to_ascii
 
 from .base import canonical_sha256, has_excessive_controls, looks_like_html
 
+# Nom de la source dans ``data_sources`` : celui des enregistrements produits ici et de leur politique d'ingestion.
+JUSTICE_OPEN_DATA_SOURCE_NAME = "justice_open_data"
 JUSTICE_COMPETENCES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france"
 )
@@ -301,7 +303,7 @@ def _parse_competence_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "court_competence",
         "stable_id": stable_id,
-        "source_name": "justice_open_data",
+        "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_COMPETENCES_DATASET_URL,
         "source_grade": "A",
         "insee_code": insee_code,
@@ -354,7 +356,7 @@ def _parse_structure_row(row: dict[str, str]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "record_type": "justice_court_structure",
         "stable_id": stable_id,
-        "source_name": "justice_open_data",
+        "source_name": JUSTICE_OPEN_DATA_SOURCE_NAME,
         "source_url": JUSTICE_STRUCTURES_DATASET_URL,
         "source_grade": "A",
         "dataset_year": 2026,

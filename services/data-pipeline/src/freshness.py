@@ -16,6 +16,7 @@ from src.display_invalidation import (
 )
 from src.normalize import clean_text
 from src.sale_local_files import sale_storage_id
+from src.timestamps import aware_timestamp
 
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
 
@@ -44,14 +45,14 @@ def source_evidence_fingerprint(content: dict) -> str:
 
 
 def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None = None) -> bool:
-    try:
-        checked = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if checked.tzinfo is None:
-            return False
-        age = (now or datetime.now(UTC)) - checked
-        return timedelta(0) <= age < timedelta(hours=hours)
-    except (ValueError, TypeError):
+    checked = aware_timestamp(str(value))
+    if checked is None:
         return False
+    try:
+        age = (now or datetime.now(UTC)) - checked
+    except TypeError:  # a naive ``now`` does not compare with an instant
+        return False
+    return timedelta(0) <= age < timedelta(hours=hours)
 
 
 # Sources whose robots.txt Crawl-delay makes a daily re-read of every detail
@@ -72,12 +73,9 @@ def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
         return False
     source_name = str(check.get("source_name") or row.get("source_name") or "")
     hours = SOURCE_DETAIL_FRESHNESS_HOURS.get(source_name, 24)
-    try:
-        sale_date = datetime.fromisoformat(str(row.get("sale_date")).replace("Z", "+00:00"))
-        if sale_date.tzinfo and timedelta(0) <= sale_date - datetime.now(UTC) <= timedelta(days=7):
-            hours = 6
-    except (ValueError, TypeError):
-        pass
+    sale_date = aware_timestamp(str(row.get("sale_date")))
+    if sale_date is not None and timedelta(0) <= sale_date - datetime.now(UTC) <= timedelta(days=7):
+        hours = 6
     return timestamp_is_fresh(check.get("checked_at"), hours=hours)
 
 
@@ -173,7 +171,7 @@ def is_new_source_change(incoming: Any, existing: Any) -> bool:
     """Whether ``incoming`` carries a source change the stored row has not already absorbed.
 
     The collection copies ``source_content_changed`` from the stored row while it waits for the LLM stage
-    (``_preserve_known_enrichment_payloads``). Taken as a new change, that inherited flag invalidated the document
+    (``known_enrichment.preserve_known_enrichment_payloads``). Taken as a new change, that inherited flag invalidated the document
     facts at every collection (04/11/2026: 99 sales read in the day, then invalidated again by the next pass,
     without any change of the page). A real change is dated when it is detected (``record_source_checks``);
     an inherited flag carries the stored date.
