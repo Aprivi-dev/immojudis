@@ -1,11 +1,13 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
-import { createSupabaseSaleReminderStore, dispatchJournalMarks } from "@/lib/sale-reminders-store";
+import {
+  createSupabaseSaleReminderStore,
+  dispatchJournalMarks,
+  listConsentingPreferences,
+} from "@/lib/sale-reminders-store";
 import type { FollowedSnapshot, SaleResultStore } from "@/lib/sale-results";
-import { EMAIL_PASS_MAX_CONSENTING_USERS } from "@/lib/email-campaign-pass";
 
-const PAGE_SIZE = 1_000;
 /** Instantanés lus au plus par compte et par passage. */
 const MAX_SNAPSHOTS_PER_USER = 200;
 
@@ -27,23 +29,7 @@ export function createSupabaseSaleResultStore(): SaleResultStore {
     userEmail: (userId) => reminders.userEmail(userId),
 
     async listConsentingUserIds() {
-      const ids: string[] = [];
-      for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
-        // Consentement actif, daté par la base ET texte présenté connu (posé par la route serveur) :
-        // une écriture directe sans version ne vaut pas consentement.
-        const { data, error } = await supabaseAdmin
-          .from("user_notification_preferences")
-          .select("user_id")
-          .eq("sale_results_enabled", true)
-          .not("sale_results_consented_at", "is", null)
-          .not("sale_results_consent_text_version", "is", null)
-          .order("user_id", { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        ids.push(...(data ?? []).map((row) => row.user_id));
-        if ((data ?? []).length < PAGE_SIZE) break;
-      }
-      return ids;
+      return (await listConsentingPreferences("sale_results")).map((row) => row.user_id);
     },
 
     async recentSnapshots(userId, since) {

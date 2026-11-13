@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 import { readUserEmail } from "@/lib/email-alerts";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import { saleChangeEventRowToSummary } from "@/lib/sale-change-monitor";
@@ -38,6 +38,46 @@ export function latestSourceVerification(row: {
   return candidates.length ? new Date(Math.max(...candidates)).toISOString() : null;
 }
 
+/** Campagne d'emails à consentement : préfixe de ses colonnes dans `user_notification_preferences`. */
+type ConsentCampaign = "sale_reminders" | "sale_results" | "weekly_digest";
+
+type NotificationPreferencesRow =
+  Database["public"]["Tables"]["user_notification_preferences"]["Row"];
+type ConsentingRow<Column extends keyof NotificationPreferencesRow> = Pick<
+  NotificationPreferencesRow,
+  "user_id" | Column
+>;
+
+/**
+ * Comptes qui consentent à une campagne, page par page, triés : consentement actif, daté par la base
+ * ET texte présenté connu (posé par la route serveur). Une écriture directe sans version ne vaut pas
+ * consentement. `columns` : colonnes lues en plus de `user_id`. Une lecture en échec lève une erreur.
+ */
+export async function listConsentingPreferences<
+  Column extends keyof NotificationPreferencesRow = never,
+>(
+  campaign: ConsentCampaign,
+  columns: readonly Column[] = [],
+): Promise<Array<ConsentingRow<Column>>> {
+  const rows: Array<ConsentingRow<Column>> = [];
+  for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("user_notification_preferences")
+      .select(["user_id", ...columns].join(","))
+      .eq(`${campaign}_enabled`, true)
+      .not(`${campaign}_consented_at`, "is", null)
+      .not(`${campaign}_consent_text_version`, "is", null)
+      .order("user_id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    // Colonnes choisies par l'appelant : la requête n'en déduit pas le type des lignes.
+    const page = (data ?? []) as unknown as Array<ConsentingRow<Column>>;
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 /**
  * Lecture et écriture réelles du cron `sale-reminders` (service_role). Les lectures qui échouent
  * lèvent une erreur : un passage qui ne peut pas lire ne conclut jamais qu'il n'y a rien à
@@ -46,20 +86,7 @@ export function latestSourceVerification(row: {
 export function createSupabaseSaleReminderStore(): SaleReminderStore {
   return {
     async listConsentingUserIds() {
-      const ids: string[] = [];
-      for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
-        const { data, error } = await supabaseAdmin
-          .from("user_notification_preferences")
-          .select("user_id")
-          .eq("sale_reminders_enabled", true)
-          .not("sale_reminders_consented_at", "is", null)
-          .order("user_id", { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        ids.push(...(data ?? []).map((row) => row.user_id));
-        if ((data ?? []).length < PAGE_SIZE) break;
-      }
-      return ids;
+      return (await listConsentingPreferences("sale_reminders")).map((row) => row.user_id);
     },
 
     async filterAdminUserIds(userIds) {

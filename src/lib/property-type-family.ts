@@ -31,7 +31,7 @@ export type PropertyFamily =
 const FAMILY_PATTERNS: ReadonlyArray<readonly [PropertyFamily, RegExp, "accented"?]> = [
   [
     "apartment",
-    /appartement|apartment|\bappart|\bapt\b|studio|duplex|triplex|loft|\bflat\b|\bt[1-9]\b/,
+    /appartement|apartment|\bappart|\bapt\b|studio|studette|duplex|triplex|loft|\bflat\b|\bt[1-9]\b/,
   ],
   ["house", /maison|house|villa|pavillon|chalet|\blongere\b|\bchateau\b|\bmas\b|bastide/],
   // Une ferme est une maison, un box ou un garage « fermé » n'en est pas une : seul l'accent

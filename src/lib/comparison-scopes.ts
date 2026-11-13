@@ -37,16 +37,13 @@ function scope(criteria: Omit<ComparisonScope, "label">): ComparisonScope {
 /**
  * La cascade : ville, tribunal, puis département, avec le type de bien ; puis département et ville
  * sans le type. La ville est prise avec son département quand il est connu : des communes de
- * départements différents portent le même nom. Le type seul, partout en France, ferme la cascade
- * avec `nationwide` ; sans lieu connu, c'est le seul périmètre.
+ * départements différents portent le même nom. Le type seul, partout en France, ferme la cascade ;
+ * sans lieu connu, c'est le seul périmètre.
  *
  * Un type inconnu ou « autre » n'est pas un critère (`matchesPropertyFamily`) : « unknown » ne dit
  * rien du bien, et deux biens « other » ne se ressemblent pas pour autant.
  */
-export function comparisonScopes(
-  base: ComparisonBase,
-  options: { nationwide?: boolean } = {},
-): ComparisonScope[] {
+export function comparisonScopes(base: ComparisonBase): ComparisonScope[] {
   const city = base.city || undefined;
   const department = base.department || undefined;
   const tribunalCode = base.tribunalCode || undefined;
@@ -62,9 +59,7 @@ export function comparisonScopes(
     scopes.push(scope({ department }));
   }
   if (city) scopes.push(scope({ city, department }));
-  if (propertyType && (options.nationwide || scopes.length === 0)) {
-    scopes.push(scope({ propertyType }));
-  }
+  if (propertyType) scopes.push(scope({ propertyType }));
 
   const seen = new Set<string>();
   return scopes.filter((item) => {

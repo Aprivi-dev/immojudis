@@ -104,7 +104,7 @@ export type SaleReminderFailureCode = (typeof SALE_REMINDER_FAILURE_CODES)[numbe
 
 /** Accès aux données : réel en production (`sale-reminders-store.ts`), simulé dans les tests. */
 export interface SaleReminderStore {
-  /** Personnes ayant un consentement actif et daté aux rappels. */
+  /** Personnes ayant un consentement actif, daté et versionné aux rappels. */
   listConsentingUserIds(): Promise<string[]>;
   /** Parmi ces personnes, les administrateurs (mode `internal`). */
   filterAdminUserIds(userIds: string[]): Promise<Set<string>>;

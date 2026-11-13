@@ -56,15 +56,12 @@ export async function getActiveComparableSales(
   supabase: SupabaseClient,
   sale: AuctionSale,
 ): Promise<ActiveComparableSales> {
-  const scopes = comparisonScopes(
-    {
-      city: sale.city,
-      department: sale.department,
-      tribunalCode: sale.tribunal_code,
-      propertyType: sale.property_type,
-    },
-    { nationwide: true },
-  );
+  const scopes = comparisonScopes({
+    city: sale.city,
+    department: sale.department,
+    tribunalCode: sale.tribunal_code,
+    propertyType: sale.property_type,
+  });
   const byId = new Map<string, AuctionSale>();
   const usedLabels: string[] = [];
   const nowIso = new Date().toISOString();
