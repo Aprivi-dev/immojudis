@@ -5,7 +5,6 @@ from __future__ import annotations
 import gzip
 import hmac
 import json
-import os
 import time
 from datetime import UTC, date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
@@ -15,7 +14,7 @@ import httpx
 import psycopg
 
 from src import source_withdrawal
-from src.config import cron_secret, licitor_collector_database_url
+from src.config import cron_secret, licitor_collector_database_url, supabase_db_url, vercel_env
 from src.sources.common import RobotsRules, is_allowed_origin_url
 from src.sources.licitor import ALLOWED_ORIGINS
 from src.sources.licitor_cloud_store import CloudStore, LeaseLost
@@ -306,12 +305,12 @@ class CollectorHandler(BaseHTTPRequestHandler):
         if not request_authorized(self.headers.get("Authorization")):
             self.respond(401, {"ok": False, "error": "Unauthorized"})
             return
-        if os.environ.get("VERCEL_ENV") != "production":
+        if vercel_env() != "production":
             self.respond(409, {"ok": False, "error": "Collection is production-only"})
             return
-        # Read directly, not through load_settings(): this Vercel handler needs this one variable, and load_settings()
-        # would parse the whole pipeline configuration (any malformed number in it raises) on every request.
-        if source_withdrawal.is_source_withdrawn("licitor", os.environ.get("SUPABASE_DB_URL")):
+        # Not through load_settings(): this Vercel handler needs this one variable, and load_settings() would parse
+        # the whole pipeline configuration (any malformed number in it raises) on every request.
+        if source_withdrawal.is_source_withdrawn("licitor", supabase_db_url()):
             # No source is withdrawn today; without the main database URL the switch cannot be read and the source runs.
             self.respond(409, {"ok": False, "error": "Source withdrawn from the catalogue"})
             return

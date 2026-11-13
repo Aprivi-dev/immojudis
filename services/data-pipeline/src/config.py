@@ -175,6 +175,11 @@ def autonomous_run_id() -> str | None:
     return os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") or None
 
 
+def in_github_actions() -> bool:
+    """Exécution dans un job GitHub Actions, qui pose ``GITHUB_ACTIONS=true``."""
+    return os.getenv("GITHUB_ACTIONS") == "true"
+
+
 def write_step_summary(text: str) -> None:
     """Ajoute ``text`` au résumé du job GitHub Actions (``GITHUB_STEP_SUMMARY``) ; hors GitHub, ne fait rien.
 
@@ -198,6 +203,34 @@ def licitor_collector_database_url() -> str:
 def cron_secret() -> str | None:
     """``CRON_SECRET`` : jeton qu'exigent les appels planifiés du collecteur Licitor sur Vercel."""
     return os.environ.get("CRON_SECRET")
+
+
+def vercel_env() -> str | None:
+    """``VERCEL_ENV`` : environnement du déploiement Vercel (``production``, ``preview``...) ; ``None`` hors Vercel."""
+    return os.environ.get("VERCEL_ENV")
+
+
+def supabase_db_url() -> str | None:
+    """``SUPABASE_DB_URL`` : connexion directe à la base principale ; ``None`` si elle manque.
+
+    Lisible seule : un appelant qui n'a besoin que d'elle n'analyse pas tous les réglages de ``load_settings``.
+    """
+    return os.getenv("SUPABASE_DB_URL")
+
+
+def source_budget_seconds(env_name: str) -> float | None:
+    """Budget de temps, en secondes, qu'un lanceur donne à une source dans ``env_name``.
+
+    Absent, illisible ou non positif : la source n'a pas de budget (``None``).
+    """
+    raw = os.getenv(env_name)
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    return seconds if seconds > 0 else None
 
 
 DOCUMENT_READING_DEFAULT_MAX_SALES = 40
@@ -252,7 +285,7 @@ def load_settings() -> dict[str, str | float | None]:
     return {
         "supabase_url": os.getenv("SUPABASE_URL"),
         "supabase_service_role_key": os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-        "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
+        "supabase_db_url": supabase_db_url(),
         # Judilibre is fail-closed: credentials alone never enable network calls.
         # JUDILIBRE_ENABLED is the runtime projection of the approved source policy.
         "judilibre_enabled": env_flag("JUDILIBRE_ENABLED", False),

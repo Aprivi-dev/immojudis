@@ -188,3 +188,23 @@ def test_failed_cold_restore_keeps_previous_cache_intact(monkeypatch, tmp_path: 
 
     assert cache_path.read_bytes() == previous_bytes
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_newest_row_with_texts_or_progress_is_the_one_restored(monkeypatch) -> None:
+    # Choix partagé par la reprise à froid et par la préparation des pièces (document_prefetch) : la ligne la plus
+    # récente qui porte quelque chose de valide, son texte complet avant sa progression partielle.
+    sale = AuctionSale(source_name="vench", source_url="https://example.test/newest", documents=[])
+    rows = [
+        {"updated_at": "2026-11-04T09:00:00Z", "texts": "old-complete"},
+        {"updated_at": "2026-11-04T11:00:00Z", "texts": None, "progress": None},
+        {"updated_at": "2026-11-04T10:00:00Z", "texts": None, "progress": "middle-partial"},
+    ]
+    monkeypatch.setattr(storage, "validated_persisted_pdf_texts", lambda _sale, row: row.get("texts") and [row["texts"]])
+    monkeypatch.setattr(
+        storage, "validated_persisted_pdf_progress", lambda _sale, row: row.get("progress") and [row["progress"]]
+    )
+
+    assert storage.newest_restorable_pdf_progress(sale, rows) == ["middle-partial"]
+    rows[2]["texts"] = "middle-complete"
+    assert storage.newest_restorable_pdf_progress(sale, rows) == ["middle-complete"]
+    assert storage.newest_restorable_pdf_progress(sale, rows[1:2]) is None

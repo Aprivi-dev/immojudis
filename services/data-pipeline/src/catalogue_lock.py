@@ -39,7 +39,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from src.config import DirectDatabaseMissing, load_settings, supabase_configured
+from src.config import DirectDatabaseMissing, in_github_actions, load_settings, supabase_configured
 
 LOGGER = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ def catalogue_writer_lock(
     """
     url = db_url if db_url is not None else str(load_settings().get("supabase_db_url") or "")
     if not url:
-        if os.getenv("GITHUB_ACTIONS") == "true" or supabase_configured(load_settings()):
+        if in_github_actions() or supabase_configured(load_settings()):
             raise DirectDatabaseMissing("SUPABASE_DB_URL is required to take the catalogue writer lock")
         LOGGER.warning("No database URL: %s runs without the catalogue writer lock", label)
         yield CatalogueLockHandle(label)

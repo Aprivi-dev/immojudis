@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import get_args, get_type_hints
 
 from src.official_sources.judilibre import JudilibreDecision
+from src.outcome_ingestion import judilibre_extraction
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CLAIM_TYPES,
+    JUDILIBRE_MONEY_CLAIM_TYPES,
+    JUDILIBRE_PROCEDURAL_EVENTS,
+)
 from src.outcome_ingestion.judilibre_extraction import (
+    JudilibreCandidateClaim,
     extract_judilibre_candidate_facts,
     parse_french_money,
 )
@@ -502,3 +510,18 @@ def test_missing_text_stays_unknown_instead_of_becoming_a_negative_outcome() -> 
     assert result.normalized_fields()["text_available"] is False
     assert result.normalized_fields()["claims"] == []
     assert result.field_provenance()["claims"] == {}
+
+
+def test_claim_type_is_the_contract_list_the_repository_and_matcher_require() -> None:
+    claim_type = get_type_hints(JudilibreCandidateClaim)["claim_type"]
+
+    assert get_args(claim_type) == JUDILIBRE_CLAIM_TYPES
+    assert JUDILIBRE_CLAIM_TYPES == ("starting_price_eur", "hammer_price_eur", "procedural_event")
+    assert JUDILIBRE_MONEY_CLAIM_TYPES == ("starting_price_eur", "hammer_price_eur")
+
+
+def test_procedural_patterns_cover_exactly_the_contract_events() -> None:
+    # Le rapprochement refuse un événement hors du contrat : chaque motif en produit un, et chacun a son motif.
+    events = [event for event, _confidence, _pattern in judilibre_extraction._PROCEDURAL_PATTERNS]
+
+    assert sorted(events) == sorted(JUDILIBRE_PROCEDURAL_EVENTS)

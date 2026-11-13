@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.config import DEFAULT_USER_AGENT, RAW_DIR
+from src.config import DEFAULT_USER_AGENT, RAW_DIR, in_github_actions
 from src.court_competence import CourtCompetenceReference
 from src.official_sources.justice_open_data import (
     JusticeOpenDataSchemaError,
@@ -489,7 +489,7 @@ def _main() -> int:
         )
     except JusticeReferenceSyncError as exc:
         message = f"Justice references unavailable: {exc}"
-        if os.getenv("GITHUB_ACTIONS") == "true":
+        if in_github_actions():
             print(f"::error title=Justice references unavailable::{message}", file=sys.stderr)
         else:
             print(message, file=sys.stderr)

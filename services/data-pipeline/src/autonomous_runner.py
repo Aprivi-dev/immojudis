@@ -19,6 +19,8 @@ from src.config import SOURCE_NAMES, load_settings
 from src.run_finalizer import register_run
 from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
+from src.sources.licitor import SOURCE_BUDGET_ENV as LICITOR_SOURCE_BUDGET_ENV
+from src.sources.petites_affiches import SOURCE_BUDGET_ENV as PETITES_AFFICHES_SOURCE_BUDGET_ENV
 from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
 from src.storage.supabase_client import close_open_run, merge_into_run_report
 from src.storage.supabase_client import connect as postgres_connect
@@ -637,13 +639,13 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
         if source == 'petites_affiches':
             # Leave time for the main process to flush factual publications and
             # persist the partial run before the scheduler's hard kill.
-            env['PETITES_AFFICHES_SOURCE_BUDGET_SECONDS'] = str(budget - 5 * 60)
+            env[PETITES_AFFICHES_SOURCE_BUDGET_ENV] = str(budget - 5 * 60)
         if source == LICITOR_SOURCE:
             # Same contract: the detail pages (sequential, spaced) of a national
             # inventory can outlast the scheduler budget, which killed eight runs
             # in a row. The source stops reading details LICITOR_BUDGET_MARGIN_SECONDS
             # before the hard kill, publishes the whole list and resumes next run.
-            env['LICITOR_SOURCE_BUDGET_SECONDS'] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
+            env[LICITOR_SOURCE_BUDGET_ENV] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
     failure = None
     execution_started = datetime.now(UTC)
     try:

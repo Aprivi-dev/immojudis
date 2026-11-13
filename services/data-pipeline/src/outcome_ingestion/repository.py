@@ -29,22 +29,29 @@ from src.outcome_ingestion.dvf_adjudication import (
     DVF_OFFICIAL_SOURCE_NAME,
 )
 from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CANDIDATE_GRADE,
+    JUDILIBRE_CLAIM_TYPES,
+    JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
     JUDILIBRE_EVIDENCE_HASH_VERSION,
     JUDILIBRE_EXTRACTOR_NAME,
     JUDILIBRE_EXTRACTOR_VERSION,
     JUDILIBRE_NORMALIZED_SCHEMA,
     JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_REVIEW_STATUS,
     JUDILIBRE_SOURCE_NAME,
+    JUDILIBRE_TEXT_STORAGE,
     JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
 )
 from src.outcome_ingestion.judilibre_match_contract import (
     JUDILIBRE_COURT_CODE_EXACT,
     JUDILIBRE_JUSTICE_STRUCTURE_EXACT_NAME,
+    JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,
     JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX,
     JUDILIBRE_MATCH_METHODS,
     judilibre_case_reference_manifest_sha256,
     judilibre_case_references,
     judilibre_claims_manifest_sha256,
+    judilibre_match_rank,
     judilibre_match_score_and_method,
     judilibre_source_record_sha256,
     judilibre_target_context_sha256,
@@ -80,6 +87,17 @@ _JUDILIBRE_V3_CANDIDATE_PARAMETERS = {
     "extractor_name": JUDILIBRE_EXTRACTOR_NAME,
     "extractor_version": JUDILIBRE_EXTRACTOR_VERSION,
     "hash_version": JUDILIBRE_EVIDENCE_HASH_VERSION,
+    "candidate_grade": JUDILIBRE_CANDIDATE_GRADE,
+    "review_status": JUDILIBRE_REVIEW_STATUS,
+    "extraction_status": JUDILIBRE_CLAIMS_EXTRACTED_STATUS,
+    "text_storage": JUDILIBRE_TEXT_STORAGE,
+}
+# Rangs des méthodes du contrat, lus par les deux classements SQL des contextes d'audience. Leurs ``case`` testent
+# Portalis puis le numéro d'affaire, dans l'ordre de ``judilibre_match_rank``.
+_JUDILIBRE_MATCH_RANK_PARAMETERS = {
+    "portalis_rank": judilibre_match_rank(portalis_number_match=True, case_number_match=False),
+    "case_number_rank": judilibre_match_rank(portalis_number_match=False, case_number_match=True),
+    "composite_rank": judilibre_match_rank(portalis_number_match=False, case_number_match=False),
 }
 
 
@@ -721,15 +739,15 @@ class OutcomeIngestionRepository:
                       and nullif(btrim(record.normalized_data->>'location'), '') is not null
                       and record.normalized_data->>'decision_date'
                         = record.decision_date::text
+                      and record.normalized_data->>'candidate_grade' = %(candidate_grade)s
+                      and record.normalized_data->>'review_status' = %(review_status)s
+                      and record.normalized_data->>'extraction_status' = %(extraction_status)s
+                      and record.normalized_data->>'text_storage' = %(text_storage)s
                       and record.normalized_data @> '{
-                        "candidate_grade": "C",
-                        "review_status": "pending",
                         "training_eligible": false,
                         "personal_identity_features_allowed": false,
-                        "extraction_status": "candidate_facts_extracted",
                         "ambiguous_claim_types": [],
                         "to_be_deleted": false,
-                        "text_storage": "private_raw_artifact",
                         "text_available": true
                       }'::jsonb
                       and record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb
@@ -961,17 +979,17 @@ class OutcomeIngestionRepository:
                           when regexp_replace(
                             lower(btrim(coalesce(case_row.portalis_number, ''))),
                             '\\s+', ' ', 'g'
-                          ) = any(%s::text[]) then 2
+                          ) = any(%(references)s::text[]) then %(portalis_rank)s
                           when regexp_replace(
                             lower(btrim(coalesce(case_row.court_case_number, ''))),
                             '\\s+', ' ', 'g'
-                          ) = any(%s::text[]) then 1
-                          else 0
+                          ) = any(%(references)s::text[]) then %(case_number_rank)s
+                          else %(composite_rank)s
                         end as reference_rank,
                         abs((
                           round_row.scheduled_at
                           at time zone round_row.local_timezone
-                        )::date - %s::date) as date_delta_days
+                        )::date - %(decision_date)s::date) as date_delta_days
                       from public.auction_rounds round_row
                       join public.auction_lots lot on lot.id = round_row.lot_id
                       join public.auction_cases case_row
@@ -980,13 +998,14 @@ class OutcomeIngestionRepository:
                         on court_row.id = round_row.court_id
                       where lot.active
                         and court_row.active
-                        and round_row.court_id = %s
-                        and case_row.court_id = %s
+                        and round_row.court_id = %(court_id)s
+                        and case_row.court_id = %(court_id)s
                         and round_row.scheduled_at is not null
                         and (
                           round_row.scheduled_at
                           at time zone round_row.local_timezone
-                        )::date between %s::date - %s and %s::date + %s
+                        )::date between %(decision_date)s::date - %(max_date_delta_days)s
+                          and %(decision_date)s::date + %(max_date_delta_days)s
                     ), ranked as (
                       select
                         eligible.*,
@@ -994,7 +1013,7 @@ class OutcomeIngestionRepository:
                           partition by reference_rank, date_delta_days
                         ) as tied_at_rank
                       from eligible
-                      where reference_rank > 0 or date_delta_days = 0
+                      where reference_rank > %(composite_rank)s or date_delta_days = 0
                     )
                     select
                       case_id,
@@ -1006,7 +1025,7 @@ class OutcomeIngestionRepository:
                       (
                         select count(distinct reference_case.case_id)
                         from eligible reference_case
-                        where reference_case.reference_rank > 0
+                        where reference_case.reference_rank > %(composite_rank)s
                       ) as exact_reference_case_count
                     from ranked
                     order by
@@ -1017,21 +1036,18 @@ class OutcomeIngestionRepository:
                       round_id
                     limit 1
                     """,
-                    (
-                        list(references),
-                        list(references),
-                        source_decision_date,
-                        expected_court_id,
-                        expected_court_id,
-                        source_decision_date,
-                        max_date_delta_days,
-                        source_decision_date,
-                        max_date_delta_days,
-                    ),
+                    {
+                        **_JUDILIBRE_MATCH_RANK_PARAMETERS,
+                        "references": list(references),
+                        "decision_date": source_decision_date,
+                        "court_id": expected_court_id,
+                        "max_date_delta_days": max_date_delta_days,
+                    },
                 )
                 objective_top = cursor.fetchone()
-                expected_reference_rank = 2 if portalis_number_match else (
-                    1 if case_number_match else 0
+                expected_reference_rank = judilibre_match_rank(
+                    portalis_number_match=portalis_number_match,
+                    case_number_match=case_number_match,
                 )
                 if (
                     objective_top is None
@@ -1381,15 +1397,15 @@ class OutcomeIngestionRepository:
                       and extraction.output_hash = record.content_hash
                       and extraction.field_provenance->>'hash_version' = %(hash_version)s
                       and jsonb_typeof(extraction.field_provenance->'claims') = 'object'
+                      and record.normalized_data->>'candidate_grade' = %(candidate_grade)s
+                      and record.normalized_data->>'review_status' = %(review_status)s
+                      and record.normalized_data->>'extraction_status' = %(extraction_status)s
+                      and record.normalized_data->>'text_storage' = %(text_storage)s
                       and record.normalized_data @> '{{
-                        "candidate_grade": "C",
-                        "review_status": "pending",
                         "training_eligible": false,
                         "personal_identity_features_allowed": false,
-                        "extraction_status": "candidate_facts_extracted",
                         "ambiguous_claim_types": [],
                         "to_be_deleted": false,
-                        "text_storage": "private_raw_artifact",
                         "text_available": true
                       }}'::jsonb
                       and record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb
@@ -1406,9 +1422,7 @@ class OutcomeIngestionRepository:
                           end
                         ) claim
                         where jsonb_typeof(claim) <> 'object'
-                          or claim->>'claim_type' not in (
-                            'starting_price_eur', 'hammer_price_eur', 'procedural_event'
-                          )
+                          or claim->>'claim_type' <> all(%(claim_types)s::text[])
                           or coalesce(claim->>'claim_id', '') !~ '^[0-9a-f]{{64}}$'
                           or coalesce(claim->>'evidence_hash', '') !~ '^[0-9a-f]{{64}}$'
                           or nullif(btrim(claim->>'normalized_value'), '') is null
@@ -1465,6 +1479,7 @@ class OutcomeIngestionRepository:
                     """,
                     {
                         **_JUDILIBRE_V3_CANDIDATE_PARAMETERS,
+                        "claim_types": list(JUDILIBRE_CLAIM_TYPES),
                         "cursor_created_at": cursor_position[0] if cursor_position is not None else None,
                         "cursor_id": cursor_position[1] if cursor_position is not None else None,
                         "limit": limit,
@@ -1515,8 +1530,11 @@ class OutcomeIngestionRepository:
             raise ValueError(
                 f"Judilibre date delta must be between 0 and {JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX} days"
             )
-        if limit < 1 or limit > 5_001:
-            raise ValueError("Judilibre context query limit must be between 1 and 5001")
+        # Le rapprochement demande une ligne de plus que sa limite pour voir la troncature.
+        if limit < 1 or limit > JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX + 1:
+            raise ValueError(
+                f"Judilibre context query limit must be between 1 and {JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX + 1}"
+            )
         normalized_references = tuple(
             dict.fromkeys(
                 normalized
@@ -1540,20 +1558,20 @@ class OutcomeIngestionRepository:
                       abs((
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date - %s::date) as date_delta_days,
+                      )::date - %(decision_date)s::date) as date_delta_days,
                       case
-                        when cardinality(%s::text[]) = 0 then false
+                        when cardinality(%(references)s::text[]) = 0 then false
                         else regexp_replace(
                           lower(btrim(coalesce(case_row.court_case_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[])
+                        ) = any(%(references)s::text[])
                       end as case_number_match,
                       case
-                        when cardinality(%s::text[]) = 0 then false
+                        when cardinality(%(references)s::text[]) = 0 then false
                         else regexp_replace(
                           lower(btrim(coalesce(case_row.portalis_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[])
+                        ) = any(%(references)s::text[])
                       end as portalis_number_match
                     from public.auction_rounds round_row
                     join public.auction_lots lot on lot.id = round_row.lot_id
@@ -1563,53 +1581,43 @@ class OutcomeIngestionRepository:
                       on court_row.id = round_row.court_id
                     where lot.active
                       and court_row.active
-                      and round_row.court_id = %s
-                      and case_row.court_id = %s
+                      and round_row.court_id = %(court_id)s
+                      and case_row.court_id = %(court_id)s
                       and round_row.scheduled_at is not null
                       and (
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date between %s::date - %s and %s::date + %s
+                      )::date between %(decision_date)s::date - %(max_date_delta_days)s
+                        and %(decision_date)s::date + %(max_date_delta_days)s
                     order by
                       case
-                        when cardinality(%s::text[]) > 0 and regexp_replace(
+                        when cardinality(%(references)s::text[]) > 0 and regexp_replace(
                           lower(btrim(coalesce(case_row.portalis_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[]) then 0
-                        when cardinality(%s::text[]) > 0 and regexp_replace(
+                        ) = any(%(references)s::text[]) then %(portalis_rank)s
+                        when cardinality(%(references)s::text[]) > 0 and regexp_replace(
                           lower(btrim(coalesce(case_row.court_case_number, ''))),
                           '\\s+', ' ', 'g'
-                        ) = any(%s::text[]) then 1
-                        else 2
-                      end,
+                        ) = any(%(references)s::text[]) then %(case_number_rank)s
+                        else %(composite_rank)s
+                      end desc,
                       abs((
                         round_row.scheduled_at
                         at time zone round_row.local_timezone
-                      )::date - %s::date),
+                      )::date - %(decision_date)s::date),
                       case_row.id,
                       lot.id,
                       round_row.id
-                    limit %s
+                    limit %(limit)s
                     """,
-                    (
-                        decision_date,
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        court_id,
-                        court_id,
-                        decision_date,
-                        max_date_delta_days,
-                        decision_date,
-                        max_date_delta_days,
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        list(normalized_references),
-                        decision_date,
-                        limit,
-                    ),
+                    {
+                        **_JUDILIBRE_MATCH_RANK_PARAMETERS,
+                        "decision_date": decision_date,
+                        "references": list(normalized_references),
+                        "court_id": court_id,
+                        "max_date_delta_days": max_date_delta_days,
+                        "limit": limit,
+                    },
                 )
                 rows = cursor.fetchall()
         return [

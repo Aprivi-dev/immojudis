@@ -20,11 +20,14 @@ from src.official_sources.judilibre import (
     JudilibreTransaction,
 )
 from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_CANDIDATE_GRADE,
     JUDILIBRE_EXTRACTOR_NAME,
     JUDILIBRE_EXTRACTOR_VERSION,
     JUDILIBRE_NORMALIZED_SCHEMA,
     JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_REVIEW_STATUS,
     JUDILIBRE_SOURCE_NAME,
+    JUDILIBRE_TEXT_STORAGE,
 )
 from src.outcome_ingestion.judilibre_extraction import (
     JudilibreExtractionResult,
@@ -265,10 +268,10 @@ def normalized_judilibre_decision(
         # Make source-record versioning sensitive to corrections in private raw
         # fields without projecting the text or any personal identity.
         "raw_representation_sha256": decision.canonical_sha256(),
-        "candidate_grade": "C",
-        "review_status": "pending",
+        "candidate_grade": JUDILIBRE_CANDIDATE_GRADE,
+        "review_status": JUDILIBRE_REVIEW_STATUS,
         "training_eligible": False,
-        "text_storage": "private_raw_artifact",
+        "text_storage": JUDILIBRE_TEXT_STORAGE,
         "personal_identity_features_allowed": False,
     }
     projection.update(resolved_extraction.normalized_fields())

@@ -5,17 +5,25 @@ from types import SimpleNamespace
 import pytest
 
 from src import autonomous_runner
+from src.sources import licitor, petites_affiches
 
 
 @pytest.mark.parametrize(
-    "source,returncode,previous_completion,expected_budget,expected_completion",
+    "source,returncode,previous_completion,expected_budget,expected_completion,budget_env,expected_source_budget",
     [
-        ("licitor", 0, "complete", 50 * 60, "complete"),
-        ("petites_affiches", 1, "partial_success", 35 * 60, "partial_success"),
+        ("licitor", 0, "complete", 50 * 60, "complete", licitor.SOURCE_BUDGET_ENV, 42 * 60),
+        ("petites_affiches", 1, "partial_success", 35 * 60, "partial_success", petites_affiches.SOURCE_BUDGET_ENV, 30 * 60),
     ],
 )
 def test_automatic_run_keeps_publication_budget_and_partial_result(
-    monkeypatch, source, returncode, previous_completion, expected_budget, expected_completion
+    monkeypatch,
+    source,
+    returncode,
+    previous_completion,
+    expected_budget,
+    expected_completion,
+    budget_env,
+    expected_source_budget,
 ) -> None:
     run_id = "00000000-0000-0000-0000-000000000001"
     updates = []
@@ -42,6 +50,8 @@ def test_automatic_run_keeps_publication_budget_and_partial_result(
 
     assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == returncode
     assert subprocess_calls[0][1]["timeout"] == expected_budget
+    # Le budget de la source est posé sous le nom que la source lit.
+    assert subprocess_calls[0][1]["env"][budget_env] == str(expected_source_budget)
     assert updates[0][2].obj["completion_status"] == expected_completion
     assert updates[0][0] == ("failed" if returncode else "succeeded")
 
