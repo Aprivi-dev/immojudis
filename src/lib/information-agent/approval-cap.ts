@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { startOfParisDay } from "@/lib/information-agent/paris-time";
+import { PublicApiError } from "@/lib/api-errors";
+import { startOfParisDay } from "@/lib/paris-time";
 
 /**
  * Plafond de validations par administrateur et par jour (jour calendaire de Paris). Un administrateur qui
@@ -22,6 +23,14 @@ export function adminDailyApprovalCapMessage(cap: number): string {
   return `Plafond de ${cap} validations par jour atteint : les envois reprennent demain.`;
 }
 
+/** Refus du plafond de validations du jour : une limite, ni une erreur du fournisseur ni une panne. */
+export class AdminDailyApprovalCapError extends PublicApiError {
+  constructor(cap: number) {
+    super(adminDailyApprovalCapMessage(cap), 409);
+    this.name = "AdminDailyApprovalCapError";
+  }
+}
+
 export async function assertAdminDailyApprovalCap(
   adminId: string,
   {
@@ -36,5 +45,5 @@ export async function assertAdminDailyApprovalCap(
     .eq("user_id", adminId)
     .gte("approved_at", startOfParisDay(now).toISOString());
   if (error) throw error;
-  if ((count ?? 0) >= cap) throw new Error(adminDailyApprovalCapMessage(cap));
+  if ((count ?? 0) >= cap) throw new AdminDailyApprovalCapError(cap);
 }

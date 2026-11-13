@@ -102,12 +102,12 @@ export async function fetchInboundAttachments(resend: Resend, emailId: string) {
       limit: 100,
       after,
     });
-    if (error) throw new Error(error.message || "Pièces jointes Resend indisponibles.");
+    if (error) throw new Error("Inbound attachment list failed", { cause: error });
     const page = data?.data ?? [];
     attachments.push(...page);
     if (!data?.has_more) return { attachments, truncated: false };
     const next = page.at(-1)?.id;
-    if (!next || next === after) throw new Error("Pagination des pièces jointes Resend invalide.");
+    if (!next || next === after) throw new Error("Inbound attachment pagination cursor invalid");
     after = next;
   }
   return { attachments: attachments.slice(0, MAX_LISTED_ATTACHMENTS), truncated: true };
@@ -177,7 +177,7 @@ export async function persistInboundBodyEvidence({
   if (existingError) throw existingError;
   if (existing) {
     if (existing.sha256 !== sha256) {
-      throw new Error("Asset du corps entrant déjà enregistré avec un contenu différent.");
+      throw new Error("Inbound body asset already stored with different content");
     }
     return {
       id: existing.id,
@@ -232,7 +232,7 @@ export async function persistInboundBodyEvidence({
       throw assetError;
     }
     if (concurrentAsset.sha256 !== sha256) {
-      throw new Error("Asset concurrent du corps entrant avec un contenu différent.");
+      throw new Error("Concurrent inbound body asset has different content");
     }
     return {
       id: concurrentAsset.id,
@@ -342,12 +342,12 @@ export async function storeInboundAttachments({
       // A Resend attachment URL is short-lived. Let the signed webhook be
       // retried for transient transport failures so a fresh URL can be
       // obtained from the provider before falling back to manual review.
-      throw new Error("Téléchargement temporairement indisponible ; nouvelle tentative requise.");
+      throw new Error("Attachment download unavailable; retry required");
     }
     if (!response.ok) {
       if ([408, 425, 429].includes(response.status) || response.status >= 500) {
         throw new Error(
-          `Téléchargement temporairement indisponible (HTTP ${response.status}) ; nouvelle tentative requise.`,
+          `Attachment download unavailable (HTTP ${response.status}); retry required`,
         );
       }
       rejected.push({

@@ -7,7 +7,7 @@ import { pageMetadata } from "@/lib/page-metadata";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { tryLoadPublicTribunalDirectory } from "@/lib/public-tribunal-directory.server";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import {
   TRIBUNAL_PAGES_PATH,
   emptyTribunalActivity,
@@ -170,7 +170,7 @@ export default async function Page({ params }: PageProps) {
     page.activity,
     sales,
   );
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   const itemList = departmentItemListStructuredData(origin, listed);
 
   return (

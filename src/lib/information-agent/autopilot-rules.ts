@@ -14,7 +14,8 @@ import {
   type InformationAgentCapStructure,
 } from "@/lib/information-agent/contact-structure";
 import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
-import { isWithinAutopilotSendWindow, startOfParisDay } from "@/lib/information-agent/paris-time";
+import { isWithinAutopilotSendWindow } from "@/lib/information-agent/paris-time";
+import { startOfParisDay } from "@/lib/paris-time";
 
 export type AutopilotMode = "off" | "simulation" | "live";
 

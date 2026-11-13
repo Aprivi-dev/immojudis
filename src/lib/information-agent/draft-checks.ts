@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isAvailableInformationAgentStatus } from "@/lib/admin-information-agent-sale";
+import { PublicApiError } from "@/lib/api-errors";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 
@@ -35,13 +36,17 @@ export async function assertInformationAgentSaleCurrent(
     .maybeSingle();
   if (error) throw error;
   if (!data || !isAvailableInformationAgentStatus(data.status ?? null)) {
-    throw new Error(
+    throw new PublicApiError(
       "La vente n’est plus disponible (retirée, vendue ou supprimée) : la demande n’a plus d’objet.",
+      409,
     );
   }
   const saleTime = data.sale_date ? Date.parse(data.sale_date) : Number.NaN;
   if (Number.isFinite(saleTime) && saleTime + 24 * 60 * 60 * 1000 < now.getTime()) {
-    throw new Error("La date annoncée de la vente est passée : la demande n’a plus d’objet.");
+    throw new PublicApiError(
+      "La date annoncée de la vente est passée : la demande n’a plus d’objet.",
+      409,
+    );
   }
   const snapshot = asObject(mission.sale_snapshot);
   const sameDate = (left: unknown, right: unknown) =>
@@ -59,8 +64,9 @@ export async function assertInformationAgentSaleCurrent(
       : null,
   ].filter(Boolean);
   if (changed.length) {
-    throw new Error(
+    throw new PublicApiError(
       `La vente a changé depuis la préparation du brouillon (${changed.join(" et ")}) : régénérez le brouillon pour que le message reste exact.`,
+      409,
     );
   }
 }
@@ -73,7 +79,9 @@ export const INFORMATION_AGENT_NO_QUESTION_MESSAGE =
  * « les points suivants » suivis de rien. Une question est une ligne commençant par « - » ou « • ».
  */
 export function assertInformationAgentHasQuestion(bodyText: string): void {
-  if (!/^\s*[-•]\s+\S/m.test(bodyText)) throw new Error(INFORMATION_AGENT_NO_QUESTION_MESSAGE);
+  if (!/^\s*[-•]\s+\S/m.test(bodyText)) {
+    throw new PublicApiError(INFORMATION_AGENT_NO_QUESTION_MESSAGE, 400);
+  }
 }
 
 /**
@@ -92,8 +100,9 @@ export async function assertNoSentCaseForRecipient(saleId: string, email: string
   const sent = data?.[0];
   if (sent) {
     const on = formatInformationAgentOriginDate(sent.sent_at ?? sent.created_at);
-    throw new Error(
+    throw new PublicApiError(
       `Ce professionnel a déjà été sollicité pour cette vente${on ? ` le ${on}` : ""} : un nouveau brouillon n’enverrait rien. Rouvrez la demande existante dans la liste des missions.`,
+      409,
     );
   }
 }

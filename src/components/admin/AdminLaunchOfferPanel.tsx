@@ -5,7 +5,7 @@ import Gift from "lucide-react/dist/esm/icons/gift.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPanel } from "@/components/admin/AdminShell";
-import { formatInteger } from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
 import {
   Dialog,
   DialogClose,
@@ -54,7 +54,7 @@ export function AdminLaunchOfferPanel() {
       toast.success(message);
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : "Action impossible";
+      const message = queryErrorMessage(error, "Action impossible");
       setAnnouncement(`Essai gratuit non modifié : ${message}`);
       toast.error(message);
     },

@@ -109,7 +109,7 @@ export type PrivacyErasureReport = {
 export type PrivacyRequestListResponse = { requests: PrivacyRequestSummary[] };
 export type PrivacyRequestAdminListResponse = {
   requests: PrivacyRequestAdminSummary[];
-  totalCount: number;
+  total: number;
   openCount: number;
   overdueCount: number;
   truncated: boolean;
@@ -219,7 +219,7 @@ export async function listPrivacyRequestsForAdmin(
         ...adminFields(typed),
       };
     }),
-    totalCount: totalCount ?? data?.length ?? 0,
+    total: totalCount ?? data?.length ?? 0,
     openCount: openCount ?? 0,
     overdueCount: overdueCount ?? 0,
     truncated: (totalCount ?? data?.length ?? 0) > (data?.length ?? 0),

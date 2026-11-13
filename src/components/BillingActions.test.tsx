@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
@@ -101,7 +102,12 @@ beforeEach(() => {
 });
 
 function renderActions(props: Parameters<typeof BillingActions>[0] = {}) {
-  return render(<BillingActions {...props} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <BillingActions {...props} />
+    </QueryClientProvider>,
+  );
 }
 
 describe("BillingActions", () => {
@@ -799,6 +805,8 @@ describe("BillingActions : retour de Stripe", () => {
 
     await flush(2_000);
     expect(mocks.fetchAccessPlan).toHaveBeenCalledTimes(3);
+    // React Query hands the new plan to the page on the next timer tick.
+    await flush(10);
     expect(screen.getByText(/Votre accès Analyse est activé/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Gérer mon abonnement Analyse" })).toBeTruthy();
 

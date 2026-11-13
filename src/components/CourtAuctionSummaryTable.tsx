@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import { fetchCourtAuctionSummaries } from "@/lib/client-api";
 import { formatEuro, formatPercent, formatRatio } from "@/lib/auction-scenarios";
+import * as queryKeys from "@/lib/query-keys";
 
 const number = new Intl.NumberFormat("fr-FR");
 
@@ -16,7 +17,7 @@ const number = new Intl.NumberFormat("fr-FR");
 export function CourtAuctionSummaryTable() {
   const [filter, setFilter] = useState("");
   const query = useQuery({
-    queryKey: ["court-auction-summaries"],
+    queryKey: queryKeys.courtAuctionSummaries(),
     queryFn: fetchCourtAuctionSummaries,
     retry: false,
     staleTime: 30 * 60_000,

@@ -3,6 +3,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState } from "react";
+import { formatDate, formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminLawyerReferralRequests,
@@ -14,7 +15,8 @@ import type {
   AdminLawyerReferralUpdateInput,
 } from "@/lib/admin-lawyer-referrals";
 import { cleanSaleTitle } from "@/lib/sale-title";
-import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { formatPrice, formatStartingPrice } from "@/lib/format";
+import { AdminPagination } from "@/components/admin/AdminPagination";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
 
@@ -44,7 +46,6 @@ export function AdminLawyerReferralRequestsPanel() {
     requests.filter((request) =>
       ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
     ).length;
-  const totalCount = requestsQuery.data?.total ?? requests.length;
 
   const updateMutation = useMutation({
     mutationFn: (data: AdminLawyerReferralUpdateInput) =>
@@ -54,7 +55,7 @@ export function AdminLawyerReferralRequestsPanel() {
       await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Mise à jour impossible");
+      toast.error(queryErrorMessage(error, "Mise à jour impossible"));
     },
   });
 
@@ -91,16 +92,14 @@ export function AdminLawyerReferralRequestsPanel() {
 
       {requestsQuery.error ? (
         <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {requestsQuery.error instanceof Error
-            ? requestsQuery.error.message
-            : "Chargement impossible"}
+          {queryErrorMessage(requestsQuery.error, "Chargement impossible")}
         </div>
       ) : null}
       {requestsQuery.data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
-          . Le compteur des demandes ouvertes couvre toute la file.
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur{" "}
+          {requestsQuery.data.total}. Le compteur des demandes ouvertes couvre toute la file.
         </p>
       ) : null}
 
@@ -125,17 +124,15 @@ export function AdminLawyerReferralRequestsPanel() {
           </div>
         )}
       </div>
-      {requestsQuery.data && totalCount > 0 ? (
+      {requestsQuery.data ? (
         <AdminPagination
-          offset={offset}
-          count={requests.length}
-          totalCount={totalCount}
-          hasMore={requestsQuery.data.hasMore}
+          label="demandes avocat"
+          offset={requestsQuery.data.offset}
+          limit={requestsQuery.data.limit}
+          total={requestsQuery.data.total}
+          shown={requests.length}
           busy={requestsQuery.isFetching}
-          onPrevious={() =>
-            setOffset((current) => Math.max(0, current - requestsQuery.data!.limit))
-          }
-          onNext={() => setOffset((current) => current + requestsQuery.data!.limit)}
+          onOffsetChange={setOffset}
         />
       ) : null}
     </section>
@@ -181,7 +178,7 @@ function LawyerReferralRequestCard({
             <span>
               {request.sale.tribunal ?? request.sale.tribunalCode ?? "Tribunal à préciser"}
             </span>
-            <span>{formatPrice(request.sale.startingPriceEur)}</span>
+            <span>{formatStartingPrice(request.sale.startingPriceEur)}</span>
             <span>
               {request.sale.saleDate ? formatDate(request.sale.saleDate) : "Audience à préciser"}
             </span>
@@ -335,30 +332,4 @@ function emailDeliveryLabel(
   if (status === "sent") return "envoyé";
   if (status === "failed") return "échec";
   return "non envoyé";
-}
-
-function formatPrice(value: number | null): string {
-  if (!value) return "Prix à préciser";
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }

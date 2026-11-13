@@ -4,7 +4,8 @@ import {
   formatInformationAgentOriginDate,
   INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
 } from "@/lib/information-agent-compliance";
-import { normalizedEmail } from "@/lib/information-agent/email-address";
+import { PublicApiError } from "@/lib/api-errors";
+import { requireInformationAgentContactEmail } from "@/lib/information-agent/contacts";
 
 const COOLDOWN_BLOCKING_MISSION_STATUSES = [
   "approved",
@@ -52,8 +53,7 @@ export async function assertInformationAgentRecipientCooldown({
   courtRegistryFallback?: boolean;
 }): Promise<void> {
   if (courtRegistryFallback) return;
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const normalized = requireInformationAgentContactEmail(email);
   const since = new Date(
     now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * DAY_MS,
   ).toISOString();
@@ -90,8 +90,9 @@ export async function assertInformationAgentRecipientCooldown({
   if (approvals.length) {
     const last = new Date(Math.max(...approvals));
     const reopens = new Date(last.getTime() + INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * DAY_MS);
-    throw new Error(
+    throw new PublicApiError(
       `Ce destinataire a déjà été sollicité le ${formatInformationAgentOriginDate(last)}, toutes ventes confondues : un seul email est autorisé par période de ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} jours. Prochain envoi possible à partir du ${formatInformationAgentOriginDate(reopens)}.`,
+      409,
     );
   }
 }

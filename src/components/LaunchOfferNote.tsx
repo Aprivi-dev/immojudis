@@ -1,12 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { fetchAccessPlan } from "@/lib/client-billing";
 import { launchOfferText } from "@/lib/launch-offer";
-import * as queryKeys from "@/lib/query-keys";
 
 /**
  * Mention de l'essai gratuit à l'inscription pour les pages rendues côté serveur (comment ça marche,
@@ -45,17 +43,11 @@ export function LaunchOfferNote({ className = "mt-4" }: { className?: string }) 
 /**
  * Une incitation à « découvrir l'offre Analyse » (page rendue côté serveur) : montrée à tous, sauf à
  * un compte connecté en essai gratuit (`plan.launchOffer`), qui a déjà l'offre Analyse. Un compte dont
- * l'essai est fini la revoit. Même requête de plan que les autres écrans (clé partagée).
+ * l'essai est fini la revoit.
  */
 export function HideForLaunchOfferAccount({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { active } = useLaunchOffer();
-  const { data } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user && active),
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  return user && active && data?.plan.launchOffer === true ? null : <>{children}</>;
+  const plan = useAccessPlan(active ? user?.id : null);
+  return user && active && plan?.launchOffer === true ? null : <>{children}</>;
 }

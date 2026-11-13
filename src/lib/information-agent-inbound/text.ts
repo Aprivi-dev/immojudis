@@ -2,8 +2,6 @@ import "server-only";
 import { Parser } from "htmlparser2";
 import type { Json } from "@/integrations/supabase/types";
 import { trimmedStringValue } from "@/lib/guards";
-import { normalizeComparableText } from "@/lib/normalize-comparable-text";
-export { normalizeComparableText };
 
 const MAX_HTML_BODY_CHARS = 500_000;
 const MAX_EXTRACTED_BODY_CHARS = 20_000;

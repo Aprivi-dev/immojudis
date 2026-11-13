@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import type { Metadata } from "next";
 import { describe, expect, it } from "vitest";
 
 const ADMIN_DIR = join(process.cwd(), "src/app/admin");
@@ -49,13 +50,16 @@ describe("arborescence /admin", () => {
     );
   });
 
-  it("n’indexe aucune vue admin", () => {
+  it("n’indexe aucune vue admin", async () => {
+    const { metadata: layout } = await import("./layout");
     for (const page of adminPages) {
-      expect(readFileSync(page, "utf8"), relative(ADMIN_DIR, page)).toMatch(
-        /robots: \{ index: false, follow: false \}/,
-      );
+      const { metadata } = (await import(/* @vite-ignore */ page)) as { metadata: Metadata };
+      // Règle de Next.js : les métadonnées des segments sont fusionnées clé par clé, la page en
+      // dernier ; une clé `robots` dans une page remplacerait celle du layout.
+      const rendered: Metadata = { ...layout, ...metadata };
+      expect(rendered.robots, relative(ADMIN_DIR, page)).toEqual({ index: false, follow: false });
     }
-  });
+  }, 60_000);
 
   it("a une page pour chaque lien de la navigation latérale", () => {
     const shell = readFileSync(join(process.cwd(), "src/components/admin/AdminShell.tsx"), "utf8");

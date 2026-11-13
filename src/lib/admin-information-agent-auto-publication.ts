@@ -3,6 +3,7 @@ import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
 import {
   AUTO_PUBLICATION_CASE_CAP,
   AUTO_PUBLICATION_DAILY_CAP,
@@ -65,21 +66,6 @@ export type AutoPublicationView = {
   changes: Array<{ at: string; label: string }>;
 };
 
-/** Refus voulus par les fonctions de la base (droit, paramètre, état), écrits pour l'administrateur. */
-const RPC_REFUSAL_STATUS: Readonly<Record<string, number>> = {
-  "42501": 403,
-  "22023": 400,
-  "55000": 409,
-};
-
-function rpcFailure(error: { code?: string; message?: string }): Error {
-  const status = error.code ? RPC_REFUSAL_STATUS[error.code] : undefined;
-  if (status)
-    return new PublicApiError(error.message ?? "Action refusée.", status, { cause: error });
-  console.error(JSON.stringify({ scope: "admin.auto_publication", code: error.code ?? "unknown" }));
-  return new Error("Database call failed", { cause: error });
-}
-
 function modeLabel(mode: string): string {
   return (AUTO_PUBLICATION_MODES as readonly string[]).includes(mode)
     ? AUTO_PUBLICATION_MODE_LABELS[mode as AutoPublicationMode]
@@ -123,15 +109,15 @@ export async function runAdminAutoPublicationAction({
   const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
     // Verrou de l'étape 3 : refus avant tout appel à la base (la RPC et la contrainte refusent aussi).
-    if (input.mode === "auto") throw new Error(AUTO_PUBLICATION_LOCKED_MESSAGE);
+    if (input.mode === "auto") throw new PublicApiError(AUTO_PUBLICATION_LOCKED_MESSAGE, 409);
     const { error } = await auth.supabase.rpc("set_information_agent_auto_publication_mode", {
       p_mode: input.mode,
     });
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.auto_publication", error);
   } else {
     // Arrêt d'urgence : toujours permis, sans condition.
     const { error } = await auth.supabase.rpc("stop_information_agent_auto_publication");
-    if (error) throw rpcFailure(error);
+    if (error) throw adminInformationAgentRpcFailure("admin.auto_publication", error);
   }
   return getAdminAutoPublicationView(authToken);
 }

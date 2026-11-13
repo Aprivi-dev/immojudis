@@ -42,3 +42,11 @@ export function resolveSiteOrigin(
   }
   return url.origin;
 }
+
+/**
+ * Origine publique utilisée par les pages, les sitemaps et robots.txt. Sans adresse configurée
+ * (poste local, CI), `http://localhost:3000`.
+ */
+export function siteOrigin(): string {
+  return resolveSiteOrigin(process.env, "http://localhost:3000")!;
+}

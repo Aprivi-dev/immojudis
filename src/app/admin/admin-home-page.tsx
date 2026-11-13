@@ -20,6 +20,7 @@ import {
   errorCount,
   formatDateTime,
   formatRelativeTime,
+  queryErrorMessage,
   runDuration,
   shortId,
   summaryNumber,
@@ -178,7 +179,7 @@ export function AdminHomePage() {
               </p>
               {healthState === "error" ? (
                 <div role="alert" className="mt-3 text-sm text-red-700">
-                  <p>{error instanceof Error ? error.message : "Erreur de chargement admin"}</p>
+                  <p>{queryErrorMessage(error, "Erreur de chargement admin")}</p>
                   <button type="button" className="admin-button-secondary mt-3" onClick={retry}>
                     Réessayer
                   </button>

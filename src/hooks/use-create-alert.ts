@@ -5,10 +5,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { enableAlertEmailRecap } from "@/components/search/alert-email-consent";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
+import { isAnalysisOfferOpen } from "@/hooks/use-billing-offer";
 import {
   createWatchedZone as createWatchedZoneRequest,
-  fetchAccessPlan,
   fetchNotificationPreferences,
 } from "@/lib/client-api";
 import { departmentFromSearchQuery } from "@/lib/alerts";
@@ -23,7 +24,6 @@ import {
   countAlertableSearchFilters,
   hasUnalertableSearchFilters,
 } from "@/lib/search/search-filters";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { userMessage } from "@/lib/user-messages";
 
@@ -96,12 +96,7 @@ export function useCreateAlert({
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const [saving, setSaving] = useState(false);
-  const { data: entitlements, isLoading: entitlementsLoading } = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 5 * 60_000,
-  });
+  const { data: entitlements, isLoading: entitlementsLoading } = useAccessPlanQuery(user?.id);
   const { data: notificationPreferences } = useQuery({
     queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
     queryFn: fetchNotificationPreferences,
@@ -295,5 +290,5 @@ export function useCreateAlert({
   /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
   const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
 
-  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
+  return { createAlertFromSearch, explainReservedFeature, saving, emailRecapEnabled, ready };
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import MailQuestion from "lucide-react/dist/esm/icons/mail-question.js";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
@@ -47,7 +48,7 @@ export function AdminInformationAgentUnroutedPanel() {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Message marqué comme traité.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
 
   const page = query.data;
@@ -70,15 +71,12 @@ export function AdminInformationAgentUnroutedPanel() {
         <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
       ) : query.error ? (
         <p role="alert" className="p-5 text-sm text-danger">
-          {query.error instanceof Error ? query.error.message : "Messages indisponibles"}
+          {queryErrorMessage(query.error, "Messages indisponibles")}
         </p>
       ) : messages.length ? (
         <div className="divide-y">
           {messages.map((message) => {
-            const received = new Intl.DateTimeFormat("fr-FR", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            }).format(new Date(message.received_at));
+            const received = formatDateTime(message.received_at);
             const authentication = message.sender_authentication
               ? (AUTHENTICATION_LABELS[message.sender_authentication] ??
                 message.sender_authentication)

@@ -11,8 +11,8 @@ import {
   missionDeliveryLabel,
   missionStatusLabel,
 } from "@/components/admin/information-agent-missions-ui";
-import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
-import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
+import { adminClampOffset } from "@/lib/admin-pagination";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import type { InformationAgentMission } from "@/lib/information-agent";
 import { saleDetailPath } from "@/lib/navigation";
 
@@ -50,7 +50,7 @@ export function AdminInformationAgentMissionsList({
           <p className="mt-3 text-sm text-brand-navy/55">Chargement…</p>
         ) : query.error ? (
           <p role="alert" className="mt-3 text-sm text-red-700">
-            {query.error instanceof Error ? query.error.message : "Missions indisponibles"}
+            {queryErrorMessage(query.error, "Missions indisponibles")}
           </p>
         ) : query.data?.missions.length ? (
           <div className="mt-3 divide-y rounded-lg border">
@@ -122,9 +122,9 @@ export function AdminInformationAgentMissionsList({
             })}
             <AdminPagination
               label="missions récentes"
-              offset={query.data.offset ?? 0}
-              limit={query.data.limit ?? ADMIN_PAGE_SIZE}
-              total={query.data.total ?? query.data.missions.length}
+              offset={query.data.offset}
+              limit={query.data.limit}
+              total={query.data.total}
               shown={query.data.missions.length}
               busy={query.isFetching}
               onOffsetChange={setListOffset}

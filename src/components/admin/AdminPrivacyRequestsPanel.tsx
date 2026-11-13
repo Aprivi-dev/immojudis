@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
+import { formatDate, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   executeAdminContractWithdrawal,
@@ -18,7 +19,7 @@ import type {
   PrivacyRequestAdminUpdate,
   PrivacyRequestStatus,
 } from "@/lib/privacy-requests";
-import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { AdminPagination } from "@/components/admin/AdminPagination";
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "received", label: "Reçue" },
@@ -43,9 +44,7 @@ export function AdminPrivacyRequestsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
     },
     onError: (mutationError) => {
-      toast.error(
-        mutationError instanceof Error ? mutationError.message : "Mise à jour impossible",
-      );
+      toast.error(queryErrorMessage(mutationError, "Mise à jour impossible"));
     },
   });
   const withdrawal = useMutation({
@@ -57,9 +56,7 @@ export function AdminPrivacyRequestsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
     },
     onError: (mutationError) => {
-      toast.error(
-        mutationError instanceof Error ? mutationError.message : "Rétractation impossible",
-      );
+      toast.error(queryErrorMessage(mutationError, "Rétractation impossible"));
     },
   });
   const erasure = useMutation({
@@ -72,7 +69,7 @@ export function AdminPrivacyRequestsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Effacement impossible");
+      toast.error(queryErrorMessage(mutationError, "Effacement impossible"));
     },
   });
   const professionalExport = useMutation({
@@ -88,7 +85,7 @@ export function AdminPrivacyRequestsPanel() {
       toast.success("Export des données du professionnel téléchargé.");
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Export impossible");
+      toast.error(queryErrorMessage(mutationError, "Export impossible"));
     },
   });
   const requests = data?.requests ?? [];
@@ -102,7 +99,6 @@ export function AdminPrivacyRequestsPanel() {
       (request) =>
         !["completed", "rejected"].includes(request.status) && new Date(request.dueAt) < new Date(),
     ).length;
-  const totalCount = data?.totalCount ?? requests.length;
 
   return (
     <section className="admin-panel mt-6 rounded-lg p-5 sm:p-6">
@@ -134,13 +130,13 @@ export function AdminPrivacyRequestsPanel() {
       {isLoading ? <p className="mt-5 text-sm text-muted-foreground">Chargement…</p> : null}
       {error ? (
         <p className="mt-5 text-sm text-danger">
-          {error instanceof Error ? error.message : "Demandes indisponibles"}
+          {queryErrorMessage(error, "Demandes indisponibles")}
         </p>
       ) : null}
       {data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {data.total}
           . Les compteurs ouverts et en retard couvrent toute la file.
         </p>
       ) : null}
@@ -166,15 +162,15 @@ export function AdminPrivacyRequestsPanel() {
           />
         ))}
       </div>
-      {data && totalCount > 0 ? (
+      {data ? (
         <AdminPagination
-          offset={offset}
-          count={requests.length}
-          totalCount={totalCount}
-          hasMore={data.hasMore}
+          label="demandes RGPD et rétractations"
+          offset={data.offset}
+          limit={data.limit}
+          total={data.total}
+          shown={requests.length}
           busy={isFetching}
-          onPrevious={() => setOffset((current) => Math.max(0, current - data.limit))}
-          onNext={() => setOffset((current) => current + data.limit)}
+          onOffsetChange={setOffset}
         />
       ) : null}
     </section>
@@ -419,12 +415,4 @@ function PrivacyRequestEditor({
       </div>
     </article>
   );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
 }

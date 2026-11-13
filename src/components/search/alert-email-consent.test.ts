@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({ updateNotificationPreferences: mocks.update }));
 
 import { enableAlertEmailRecap } from "./alert-email-consent";
+import * as queryKeys from "@/lib/query-keys";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -21,7 +22,7 @@ describe("enableAlertEmailRecap", () => {
       consentSource: "alert_creation",
     });
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: ["notification-preferences", "user-1"],
+      queryKey: queryKeys.notificationPreferences("user-1"),
     });
   });
 

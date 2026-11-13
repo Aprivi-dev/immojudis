@@ -1,4 +1,5 @@
 import type { AuctionRun } from "@/lib/admin.server";
+import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 
 export function queryErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -8,11 +9,31 @@ export function formatInteger(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(value);
 }
 
+/** « 12 nov. 2026, 14:30 », heure de Paris. */
 export function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatParisDate(value, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** « 12 nov. 2026 », jour de Paris. */
+export function formatDate(value: string): string {
+  return formatParisDate(value, { dateStyle: "medium" });
+}
+
+/** « 12/11 14:30 », heure de Paris : colonnes étroites des tableaux. */
+export function formatShortDateTime(value: string): string {
+  return formatParisDate(value, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Une valeur illisible est rendue telle quelle plutôt que de faire échouer l'écran. */
+function formatParisDate(value: string, options: Intl.DateTimeFormatOptions): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: PARIS_TIME_ZONE }).format(date);
 }
 
 export function formatRelativeTime(value: string): string {

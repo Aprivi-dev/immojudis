@@ -26,9 +26,11 @@ vi.mock("@/hooks/use-auth", () => ({
 }));
 vi.mock("@/lib/client-api", () => ({
   fetchLawyerDirectory: vi.fn(() => new Promise(() => undefined)),
-  fetchAccessPlan: vi.fn(() => new Promise(() => undefined)),
 }));
-vi.mock("@/lib/client-billing", () => ({}));
+vi.mock("@/lib/client-billing", () => ({
+  fetchAccessPlan: vi.fn(() => new Promise(() => undefined)),
+  fetchBillingOffer: vi.fn(),
+}));
 
 import { OffersPage } from "./offres/offers-page";
 import { LawyerDirectoryPage } from "./avocats/lawyer-directory-page";

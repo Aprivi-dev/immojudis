@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import {
   fetchAdminAutoPublication,
@@ -31,7 +32,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
       void queryClient.invalidateQueries({ queryKey: REVIEW_QUERY_KEY });
       toast.success(`Publication automatique : ${view.modeLabel.toLowerCase()}.`);
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
   const view = query.data;
 
@@ -107,8 +108,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
               <ul className="mt-2 space-y-1">
                 {view.changes.map((change, index) => (
                   <li key={`${change.at}-${index}`}>
-                    {new Date(change.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })} ·{" "}
-                    {change.label}
+                    {formatDateTime(change.at)} · {change.label}
                   </li>
                 ))}
               </ul>

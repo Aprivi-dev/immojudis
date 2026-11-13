@@ -14,6 +14,7 @@ import {
 } from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
+import * as queryKeys from "@/lib/query-keys";
 
 const testState = vi.hoisted(() => {
   const favoriteQuery = {
@@ -1220,7 +1221,9 @@ describe("catalogue favorite status", () => {
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
     await waitFor(() =>
       expect(
-        client.getQueryData(["search-favorite-status", "user-a", ["sale-a", "sale-b", "sale-c"]]),
+        client.getQueryData(
+          queryKeys.searchFavoriteStatus("user-a", ["sale-a", "sale-b", "sale-c"]),
+        ),
       ).toEqual(["sale-a"]),
     );
     expect(testState.favoriteQuery.in).toHaveBeenCalledWith("sale_id", [
@@ -1251,7 +1254,7 @@ describe("catalogue favorite status", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy(),
     );
-    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toEqual([
+    expect(client.getQueryData(queryKeys.searchFavoriteStatus("user-a", ["sale-a"]))).toEqual([
       "sale-a",
     ]);
 
@@ -1334,7 +1337,9 @@ describe("catalogue favorite status", () => {
 
     resolveInitial({ data: [], error: null });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toBeUndefined();
+    expect(
+      client.getQueryData(queryKeys.searchFavoriteStatus("user-a", ["sale-a"])),
+    ).toBeUndefined();
 
     resolveAdd();
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2));

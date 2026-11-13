@@ -4,6 +4,7 @@ const { from } = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from } }));
 
 import {
+  AdminDailyApprovalCapError,
   adminDailyApprovalCap,
   adminDailyApprovalCapMessage,
   assertAdminDailyApprovalCap,
@@ -50,9 +51,11 @@ describe("plafond de validations par administrateur et par jour", () => {
     countingQuery(29);
     await expect(assertAdminDailyApprovalCap("admin-1", { env: {} })).resolves.toBeUndefined();
     countingQuery(30);
-    await expect(assertAdminDailyApprovalCap("admin-1", { env: {} })).rejects.toThrow(
-      adminDailyApprovalCapMessage(30),
-    );
+    const refused = assertAdminDailyApprovalCap("admin-1", { env: {} });
+    await expect(refused).rejects.toThrow(adminDailyApprovalCapMessage(30));
+    // Typé : le pilote le reconnaît sans lire le texte, la route le rend tel quel (409).
+    await expect(refused).rejects.toBeInstanceOf(AdminDailyApprovalCapError);
+    await expect(refused).rejects.toMatchObject({ status: 409 });
     countingQuery(5);
     await expect(
       assertAdminDailyApprovalCap("admin-1", {

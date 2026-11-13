@@ -2,7 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { SaleProcedureBadge, SaleProcedurePanel, SaleProcedureSummary } from "./SaleProcedurePanel";
+import { SaleProcedureBadge } from "./SaleProcedureBadge";
+import { SaleProcedurePanel, SaleProcedureSummary } from "./SaleProcedurePanel";
 import type { AuctionSale } from "@/lib/types";
 
 describe("sale procedure identity", () => {

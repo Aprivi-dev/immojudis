@@ -229,7 +229,7 @@ export async function createAdminInformationAgentDraft({
   // Les questions dépendent du destinataire (recipient-questions.ts) : elles sont arrêtées une fois celui-ci
   // connu. Sans lacune ni question choisie, rien n'est lu ni enregistré.
   if (!(requestedQuestionKeys ?? gaps).length) {
-    throw new Error(INFORMATION_AGENT_NO_GAP_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_NO_GAP_MESSAGE, 400);
   }
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
@@ -284,18 +284,20 @@ export async function createAdminInformationAgentDraft({
     candidatesSkippedForOpposition,
   });
   if (trigger && (courtFallback || foundContact)) {
-    throw new Error(
+    throw new PublicApiError(
       "Le pilote automatique n'écrit ni à un greffe ni à une adresse retrouvée par recherche.",
+      409,
     );
   }
   const recipientEmail =
     explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
     if (candidatesSkippedForOpposition > 0 && !contactCandidates.length) {
-      throw new Error(
+      throw new PublicApiError(
         [...opposedKeys].some(isInformationAgentStructureKey)
           ? INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE
           : INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+        409,
       );
     }
     throw new PublicApiError(
@@ -361,10 +363,11 @@ export async function createAdminInformationAgentDraft({
     );
   const audienceTemplate = informationAgentAudienceTemplate(questionAudience);
   if (!questionKeys.length) {
-    throw new Error(
+    throw new PublicApiError(
       audienceTemplate
         ? INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE
         : INFORMATION_AGENT_NO_GAP_MESSAGE,
+      400,
     );
   }
   // Refused now rather than at the preview, after the admin has read the whole draft.
@@ -467,10 +470,10 @@ export async function createAdminInformationAgentDraft({
         saleId: sale.id,
         candidates: [recordedContact],
       });
-    } catch {
+    } catch (error) {
       // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
       await cancelMission({ adminId: auth.userId, missionId: data.id }).catch(() => undefined);
-      throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
+      throw new PublicApiError(ADDRESS_NOT_RECORDED_MESSAGE, 503, { cause: error });
     }
   }
   // « Régénérer » replaces the previous draft for this sale and address: cancel it, so the queue

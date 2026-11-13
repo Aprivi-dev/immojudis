@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 import { disableMapboxTelemetry, getMapboxAccessToken, mapboxLocaleFr } from "@/lib/mapbox";
 import {
   mapboxPreviewCamera,
@@ -107,6 +108,14 @@ function MapboxPreviewCanvas({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<PreviewStatus>("idle");
+  const reducedMotion = usePrefersReducedMotion();
+  // La rotation, lancée au chargement de la carte, suit la préférence sans recréer la carte.
+  const reducedMotionRef = useRef(reducedMotion);
+  const syncRotationRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    reducedMotionRef.current = reducedMotion;
+    syncRotationRef.current?.();
+  }, [reducedMotion]);
   const token = getMapboxAccessToken();
   const coordinateLabel =
     lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : null;
@@ -195,10 +204,6 @@ function MapboxPreviewCanvas({
           if (mode === "aerial3d") {
             // Rotation lente : 30 images/s au plus, deux tours au plus, jamais en mouvement réduit
             // (suivi en direct) ni onglet masqué. La boucle ne tourne que quand tout cela est réuni.
-            const reducedMotion =
-              typeof window.matchMedia === "function"
-                ? window.matchMedia("(prefers-reduced-motion: reduce)")
-                : null;
             let rotated = 0;
             const animate = (now: number) => {
               if (!map) return;
@@ -216,17 +221,17 @@ function MapboxPreviewCanvas({
             };
             const syncRotation = () => {
               const wanted =
-                !reducedMotion?.matches && !document.hidden && rotated < PREVIEW_MAX_DEGREES;
+                !reducedMotionRef.current && !document.hidden && rotated < PREVIEW_MAX_DEGREES;
               if (!wanted) stopRotation();
               else if (!frameId) {
                 previous = performance.now();
                 frameId = window.requestAnimationFrame(animate);
               }
             };
-            reducedMotion?.addEventListener("change", syncRotation);
+            syncRotationRef.current = syncRotation;
             document.addEventListener("visibilitychange", syncRotation);
             removeRotationListeners = () => {
-              reducedMotion?.removeEventListener("change", syncRotation);
+              syncRotationRef.current = null;
               document.removeEventListener("visibilitychange", syncRotation);
             };
             syncRotation();

@@ -11,9 +11,6 @@ import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { ArrowRight, ShieldCheck } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
-// Définie dans `@/lib/launch-offer` (la page de l'annonce exemple la lit sans ce composant client).
-export { HOME_TRIAL_NOTE };
-
 /**
  * L'action principale de l'accueil, la même en haut et en bas de page : pour un visiteur, créer son
  * compte gratuit, avec en dessous l'essai de 7 jours (ou, l'essai fermé, la ligne du compte

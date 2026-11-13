@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestOpenNotifications } from "@/lib/notification-center-events";
 import { AlertNotificationCenter } from "./AlertNotificationCenter";
+import * as queryKeys from "@/lib/query-keys";
 const state = vi.hoisted(() => ({
   userId: "first" as string | null,
   list: vi.fn(),
@@ -16,9 +17,9 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: state.userId ? { id: state.userId } : null, loading: false }),
 }));
+vi.mock("@/lib/client-billing", () => ({ fetchAccessPlan: state.entitlements }));
 vi.mock("@/lib/client-api", () => ({
   fetchAlertNotifications: state.list,
-  fetchAccessPlan: state.entitlements,
   fetchNotificationPreferences: state.preferences,
   updateAlertNotification: state.updateNotification,
   updateNotificationPreferences: state.updatePreferences,
@@ -104,7 +105,7 @@ describe("notification panel", () => {
     ui.rerender(ui.view());
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() =>
-      expect(ui.client.getQueryData(["alert-notifications", "second"])).toEqual({
+      expect(ui.client.getQueryData(queryKeys.alertNotifications("second"))).toEqual({
         notifications: [],
       }),
     );

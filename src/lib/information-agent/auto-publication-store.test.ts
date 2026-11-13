@@ -230,7 +230,9 @@ describe("passe de simulation : modes", () => {
 
   it("un réglage illisible lève une erreur", async () => {
     db.information_agent_auto_publication_settings = [];
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toThrow(/absent ou illisible/);
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toThrow(
+      /missing or unreadable/,
+    );
   });
 });
 
@@ -496,7 +498,7 @@ describe("dernières décisions pour l'affichage", () => {
       });
     }
     await expect(loadLatestAutoPublicationDecisions(["fact-a", "fact-b"])).rejects.toThrow(
-      /tronqué/,
+      /truncated/,
     );
   });
 });

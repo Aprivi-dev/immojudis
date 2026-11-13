@@ -1,5 +1,4 @@
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { extractDpe, type DpeClass } from "@/lib/dpe";
 import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
 import type { RentLookup } from "@/lib/rent-reference";
 import { RENT_ATTRIBUTION } from "@/lib/rent-source-notice";
@@ -17,9 +16,13 @@ import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/sea
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
-import { emptyDpeCounts } from "@/lib/dpe-counts";
-import { round } from "@/lib/rounding";
-import { averageRounded } from "@/lib/rounding";
+import { averageRounded, round } from "@/lib/rounding";
+import {
+  isPositiveNumber,
+  medianRounded,
+  summarizeSalesSample,
+  type SalesSampleSummary,
+} from "@/lib/sales-statistics-summary";
 import { ForbiddenError } from "@/lib/api-errors";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
@@ -33,19 +36,9 @@ type SalesStatisticsSegment = {
   medianPricePerM2: number | null;
 };
 
-export type SalesStatisticsSummary = {
+export type SalesStatisticsSummary = SalesSampleSummary & {
   sampleSize: number;
   capped: boolean;
-  medianPriceEur: number | null;
-  averagePriceEur: number | null;
-  medianPricePerM2: number | null;
-  averagePricePerM2: number | null;
-  averageInvestmentScore: number | null;
-  medianInvestmentScore: number | null;
-  upcomingSales: number;
-  adjudicatedSales: number;
-  dpeKnownCount: number;
-  dpeCounts: Record<DpeClass, number>;
   averageGrossYieldPct: number | null;
   medianGrossYieldPct: number | null;
 };
@@ -158,44 +151,14 @@ export function buildSalesStatisticsSummary(
   now = new Date(),
   rents?: RentLookup,
 ): SalesStatisticsSummary {
-  const prices = sales.map((sale) => sale.starting_price_eur).filter(isPositiveNumber);
-  const pricePerM2Values = sales
-    .map((sale) => pricePerM2(sale.starting_price_eur, getSaleSurface(sale).value))
-    .filter(isPositiveNumber);
-  const scores = sales.map((sale) => sale.investment_score).filter(isFiniteNumber);
   const yields = sales
     .map((sale) => estimateSaleGrossYieldPct(sale, getSaleSurface(sale).value, rents?.(sale)))
     .filter(isPositiveNumber);
-  const dpeCounts = emptyDpeCounts();
-  let dpeKnownCount = 0;
-  let upcomingSales = 0;
-  let adjudicatedSales = 0;
-
-  for (const sale of sales) {
-    const dpe = extractDpe(sale).class;
-    if (dpe) {
-      dpeCounts[dpe] += 1;
-      dpeKnownCount += 1;
-    }
-    if (sale.sale_date && Date.parse(sale.sale_date) >= now.getTime()) upcomingSales += 1;
-    if (isAdjudicatedStatus(sale.status) || isPositiveNumber(sale.adjudication_price_eur)) {
-      adjudicatedSales += 1;
-    }
-  }
 
   return {
     sampleSize: sales.length,
     capped,
-    medianPriceEur: medianRounded(prices),
-    averagePriceEur: averageRounded(prices),
-    medianPricePerM2: medianRounded(pricePerM2Values),
-    averagePricePerM2: averageRounded(pricePerM2Values),
-    averageInvestmentScore: averageRounded(scores),
-    medianInvestmentScore: medianRounded(scores),
-    upcomingSales,
-    adjudicatedSales,
-    dpeKnownCount,
-    dpeCounts,
+    ...summarizeSalesSample(sales, now),
     averageGrossYieldPct: averageRounded(yields, 1),
     medianGrossYieldPct: medianRounded(yields, 1),
   };
@@ -231,28 +194,7 @@ function buildSegments(
     .slice(0, 8);
 }
 
-function isAdjudicatedStatus(status: string | null): boolean {
-  return Boolean(status && /adjud|sold|pass/i.test(status));
-}
-
 function cleanSegmentValue(value: string | null | undefined): string | null {
   const text = value?.trim();
   return text || null;
-}
-
-function medianRounded(values: number[], digits = 0): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const value =
-    sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-  return round(value, digits);
-}
-
-function isFiniteNumber(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isPositiveNumber(value: number | null | undefined): value is number {
-  return isFiniteNumber(value) && value > 0;
 }

@@ -5,6 +5,7 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import MailPlus from "lucide-react/dist/esm/icons/mail-plus.js";
 import { useEffect, useState } from "react";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import {
@@ -55,7 +56,7 @@ export function AdminCatalogueReadinessPanel({
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Décision de maturité enregistrée.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
   });
 
   if (query.isPending) {
@@ -65,9 +66,7 @@ export function AdminCatalogueReadinessPanel({
     return (
       <section className="rounded-xl border bg-white p-5">
         <p role="alert" className="text-sm text-red-700">
-          {query.error instanceof Error
-            ? query.error.message
-            : "La file de maturité est indisponible."}
+          {queryErrorMessage(query.error, "La file de maturité est indisponible.")}
         </p>
         <button className="admin-button-secondary mt-3" onClick={() => void query.refetch()}>
           Réessayer

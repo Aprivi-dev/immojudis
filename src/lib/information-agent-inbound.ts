@@ -276,7 +276,7 @@ async function settleUnroutedInboundEmail({
       html_format: "cid",
     });
     // Throwing makes the provider retry the delivery instead of losing a possible opposition.
-    if (error || !data) throw new Error(error?.message || "Email entrant Resend introuvable.");
+    if (error || !data) throw new Error("Inbound email read failed", { cause: error });
     email = data;
   }
   const senderEmail = normalizeEmail(email.from);
@@ -354,7 +354,7 @@ async function ingestReceivedEmail({
     { html_format: "cid" },
   );
   if (receiveError || !received) {
-    throw new Error(receiveError?.message || "Email entrant Resend introuvable.");
+    throw new Error("Inbound email read failed", { cause: receiveError });
   }
   const receivedExtras = parseReceivedEmailExtras(received);
   const receivedTo = receivedExtras.to;
@@ -1022,7 +1022,7 @@ export async function runInformationAgentInboundQueue({
   limit = 5,
 }: InformationAgentInboundQueueOptions = {}): Promise<Record<string, unknown>> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 10) {
-    throw new Error("La file entrante doit être traitée par lots de 1 à 10 messages.");
+    throw new Error("Inbound queue batch size must be between 1 and 10");
   }
   const apiKey = env.RESEND_API_KEY?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
@@ -1064,7 +1064,7 @@ export async function runInformationAgentInboundQueue({
         .eq("id", job.case_id)
         .maybeSingle();
       if (caseError) throw caseError;
-      if (!sharedCase) throw new Error("Dossier de réception introuvable.");
+      if (!sharedCase) throw new Error("Inbound job case not found");
 
       // A case can be closed after the verified receipt is queued. Keep the
       // message checkpoint in sync with the durable job before retiring it so

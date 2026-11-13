@@ -1,6 +1,7 @@
 import "server-only";
 import { Resolver } from "node:dns/promises";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES,
   informationAgentAddressHygieneIssue,
@@ -182,15 +183,16 @@ export async function assertInformationAgentAddressDeliverable(
 ): Promise<void> {
   if (!informationAgentAddressCheckEnabled(deps.env ?? process.env)) return;
   const issue = informationAgentAddressHygieneIssue(email);
-  if (issue) throw new Error(INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES[issue]);
+  if (issue) throw new PublicApiError(INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES[issue], 400);
   const status = await checkMailDomain(mailDomainOf(email), { resolver: deps.resolver });
-  if (status === "no_mail") throw new Error(INFORMATION_AGENT_NO_MAIL_DOMAIN_MESSAGE);
+  if (status === "no_mail") throw new PublicApiError(INFORMATION_AGENT_NO_MAIL_DOMAIN_MESSAGE, 400);
   let bounces: number;
   try {
     bounces = await (deps.countTemporaryBounces ?? countRecentTemporaryBounces)(email);
   } catch {
     return;
   }
-  if (bounces >= TEMPORARY_BOUNCE_LIMIT)
-    throw new Error(INFORMATION_AGENT_TEMPORARY_BOUNCES_MESSAGE);
+  if (bounces >= TEMPORARY_BOUNCE_LIMIT) {
+    throw new PublicApiError(INFORMATION_AGENT_TEMPORARY_BOUNCES_MESSAGE, 409);
+  }
 }

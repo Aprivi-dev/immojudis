@@ -115,7 +115,7 @@ export function informationAgentQuestionTextFor(
   context?: InformationAgentQuestionContext,
 ): string {
   if (!isInformationAgentQuestionAllowed(audience, key)) {
-    throw new Error(`Question « ${key} » non admise pour ce destinataire.`);
+    throw new Error("Question key not allowed for this recipient audience");
   }
   if (audience === "notary" || audience === "state_service") {
     return LISTING_FIELD_QUESTION_TEXT[audience][key] ?? informationAgentQuestionText(key, context);
@@ -123,11 +123,6 @@ export function informationAgentQuestionTextFor(
   return informationAgentQuestionText(key, context);
 }
 
-/**
- * Affiché tel quel à l'administrateur : il doit passer `isPublicErrorMessage` (`api-errors.ts`), qui masque
- * tout message contenant un marqueur technique. « non reconnu » contenait « econn » et était remplacé par
- * « Erreur admin ».
- */
 export const INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE =
   "Destinataire du brouillon non identifié : régénérez le brouillon avec le bouton “Régénérer le brouillon”.";
 
@@ -146,7 +141,7 @@ export function assertInformationAgentQuestionsAllowed(
   // Valeur absente (brouillon antérieur à ce champ) ou inconnue : rien ne dit à qui ce brouillon s'adresse,
   // donc ni quelles questions ni quel envoi sont admis. Refus, jamais de valeur supposée.
   if (!isInformationAgentQuestionAudience(audience)) {
-    throw new Error(INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE, 409);
   }
   // Avocat et destinataire sans liste propre : inchangé, aucune question n'est écartée ici (les brouillons
   // antérieurs peuvent porter d'anciennes clés). Seule la liste courte est une restriction à rejouer.

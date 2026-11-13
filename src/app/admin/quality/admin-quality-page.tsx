@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { queryErrorMessage } from "@/components/admin/admin-format";
 import { saleDetailPath } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
@@ -62,9 +63,7 @@ export function AdminQualityPage() {
             role="alert"
             className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
           >
-            {qualityQuery.error instanceof Error
-              ? qualityQuery.error.message
-              : "Erreur de chargement"}
+            {queryErrorMessage(qualityQuery.error, "Erreur de chargement")}
           </div>
         )}
 

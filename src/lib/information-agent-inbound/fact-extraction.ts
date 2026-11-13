@@ -1,10 +1,10 @@
 import "server-only";
 import {
   excerptAround,
-  normalizeComparableText,
   normalizeWhitespace,
   replyTextForExtraction,
 } from "@/lib/information-agent-inbound/text";
+import { normalizeComparableText } from "@/lib/normalize-comparable-text";
 import { unicodeWordBoundaries } from "@/lib/information-agent-inbound/unicode-boundaries";
 import { reviewStatement } from "@/lib/information-agent-inbound/review-signals";
 import type { ReviewReason } from "@/lib/information-agent-review-reasons";

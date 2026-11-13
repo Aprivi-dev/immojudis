@@ -16,7 +16,7 @@ import { loadDepartmentCatalogue } from "@/lib/department-pages.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import { DepartmentView } from "../department-view";
 
 type PageProps = { params: Promise<{ departement: string }> };
@@ -91,7 +91,7 @@ export default async function Page({ params }: PageProps) {
       catalogue.departments[code]?.upcomingCount ?? 0,
     ]),
   );
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   const itemList = departmentItemListStructuredData(origin, stats?.sales ?? []);
 
   return (

@@ -3,7 +3,7 @@ import { HOME_TITLE, homeDescription } from "@/lib/home-seo";
 import { pageMetadata } from "@/lib/page-metadata";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { organizationStructuredData } from "@/lib/seo";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { HomeHero } from "@/components/home/HomeHero";
 import { HomeMotion } from "@/components/home/HomeMotion";
@@ -58,7 +58,7 @@ export default async function Page() {
   const trialOpen = launchOffer.degraded ? undefined : launchOffer.active;
   // Le terme du plafond des cartes d'offres suit l'interrupteur par régime (CEILING_FEE_REGIMES_OPEN).
   const openFeeRegimes = openFeeRegimesFromEnv();
-  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const origin = siteOrigin();
   const structuredData = organizationStructuredData(origin);
   const faqStructuredData = {
     "@context": "https://schema.org",

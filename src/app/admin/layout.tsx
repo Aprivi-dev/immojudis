@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AuthGate } from "@/components/AuthGate";
+
+// Héritée par toutes les pages /admin. Une page qui définirait `robots` la remplacerait en entier
+// (les métadonnées des segments sont fusionnées clé par clé, sans fusion des objets imbriqués).
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Une seule barrière d’accès (connexion, rôle administrateur, double authentification) pour toute

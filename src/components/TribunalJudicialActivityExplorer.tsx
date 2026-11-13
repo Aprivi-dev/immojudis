@@ -14,9 +14,9 @@ import { PageTitle } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
+import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useHasHydrated } from "@/hooks/use-has-hydrated";
-import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
   TribunalJudicialActivityHistoryMonths,
@@ -48,13 +48,7 @@ export function TribunalJudicialActivityExplorer({
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
-  const planQuery = useQuery({
-    queryKey: queryKeys.tribunalJudicialActivityPlan(session?.user.id),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(session) && !authLoading,
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
+  const planQuery = useAccessPlanQuery(session?.user.id);
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
     queryKey: queryKeys.tribunalJudicialActivityDirectory(historyMonths),

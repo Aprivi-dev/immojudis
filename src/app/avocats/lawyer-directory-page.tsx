@@ -18,9 +18,9 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { buttonClasses, Card, Notice, PageTitle } from "@/components/ui/primitives";
+import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchLawyerDirectory, fetchLawyerProsecutedSales } from "@/lib/client-api";
-import { fetchAccessPlan } from "@/lib/client-billing";
 import {
   LAWYER_CONTACT_HREF,
   SPONSORED_LABEL,
@@ -576,14 +576,8 @@ function useProsecutedSalesForPaidAccount(
 ): Record<string, LawyerUpcomingSales> {
   const { user, loading } = useAuth();
   const userKey = user?.id ?? "anonymous";
-  const planQuery = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userKey),
-    queryFn: fetchAccessPlan,
-    enabled: Boolean(user) && !loading,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(planQuery.data?.plan);
+  const plan = useAccessPlan(loading ? null : user?.id);
+  const paidAccount = Boolean(user) && hasStandingAnalysisAccess(plan);
   const lawyerIds = lawyers.filter((lawyer) => lawyer.source === "immojudis").map(({ id }) => id);
   const salesQuery = useQuery({
     queryKey: queryKeys.lawyerProsecutedSales(userKey, lawyerIds),

@@ -39,6 +39,15 @@ const PAGES: Array<
   ],
   ["/methode-pepites", "methode-pepites", () => import("./methode-pepites/page")],
   ["/annonce-exemple", "annonce-exemple", () => import("./annonce-exemple/page")],
+  ["/ressources", "ressources", () => import("./ressources/page")],
+  [
+    "/ventes-immobilieres-judiciaires",
+    "ventes-immobilieres-judiciaires",
+    () => import("./ventes-immobilieres-judiciaires/page"),
+  ],
+  ["/legal", "legal", () => import("./legal/page")],
+  ["/privacy", "privacy", () => import("./privacy/page")],
+  ["/conditions-generales", "conditions-generales", () => import("./conditions-generales/page")],
   [
     "/sales",
     "sales",
@@ -57,13 +66,14 @@ describe("share metadata of the public pages", () => {
       const metadata = module.generateMetadata ? await module.generateMetadata() : module.metadata!;
       expect(metadata.alternates?.canonical).toBe(path);
       expect(metadata.openGraph).toMatchObject({
-        url: path,
+        url: metadata.alternates?.canonical,
         siteName: "Immojudis",
         images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
       });
-      expect(String((metadata.openGraph as { title?: unknown }).title)).toBe(
-        String(metadata.title),
-      );
+      const title = metadata.title;
+      const pageTitle =
+        title && typeof title === "object" && "absolute" in title ? title.absolute : title;
+      expect(String((metadata.openGraph as { title?: unknown }).title)).toBe(String(pageTitle));
       expect(metadata.openGraph).toHaveProperty("description", metadata.description);
       expect(metadata.twitter).toMatchObject({ card: "summary_large_image" });
     },

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isNonProductionVercelDeployment, resolveSiteOrigin } from "@/lib/site-url";
+import {
+  isNonProductionVercelDeployment,
+  resolveSiteOrigin,
+  siteOrigin,
+  SITE_URL_ENV_NAMES,
+} from "@/lib/site-url";
 import { ConfigurationError } from "@/lib/api-errors";
 
 describe("canonical site URL", () => {
@@ -56,6 +61,21 @@ describe("canonical site URL", () => {
 
   it("returns the explicit local fallback when no URL is configured", () => {
     expect(resolveSiteOrigin({}, "http://localhost:3000/")).toBe("http://localhost:3000");
+  });
+});
+
+describe("siteOrigin (pages, sitemaps, robots.txt)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("reads the configured origin of the running process", () => {
+    for (const name of SITE_URL_ENV_NAMES) vi.stubEnv(name, "");
+    vi.stubEnv("SITE_URL", "https://immojudis.fr/");
+    expect(siteOrigin()).toBe("https://immojudis.fr");
+  });
+
+  it("falls back to the local development origin when none is configured", () => {
+    for (const name of SITE_URL_ENV_NAMES) vi.stubEnv(name, "");
+    expect(siteOrigin()).toBe("http://localhost:3000");
   });
 });
 

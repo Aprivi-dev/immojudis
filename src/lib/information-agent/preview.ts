@@ -1,5 +1,6 @@
 import "server-only";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { assertAdmin } from "@/lib/admin-auth.server";
 import { renderInformationRequestEmail } from "../../../emails/information-request";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
@@ -93,11 +94,19 @@ export async function previewAdminInformationAgentMission({
     throw new PublicApiError("Requête invalide : adresse email du destinataire invalide.", 400);
   }
   const blockers: string[] = [];
+  // Un refus ou un réglage manquant est écrit pour l'administrateur ; une panne n'est jamais recopiée.
   const collect = async (check: () => unknown) => {
     try {
       await check();
     } catch (error) {
-      blockers.push(error instanceof Error ? error.message : "Contrôle impossible.");
+      if (error instanceof PublicApiError || error instanceof ConfigurationError) {
+        blockers.push(error.message);
+      } else {
+        console.error(
+          JSON.stringify({ scope: "information_agent.preview", error: errorDetailForLog(error) }),
+        );
+        blockers.push("Contrôle impossible pour le moment : réessayez l’aperçu.");
+      }
     }
   };
 

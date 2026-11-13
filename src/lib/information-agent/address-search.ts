@@ -1,5 +1,6 @@
 import "server-only";
 import type { Json } from "@/integrations/supabase/types";
+import { PublicApiError } from "@/lib/api-errors";
 import { adminDeadlineSignal } from "@/lib/admin-route-deadline";
 import {
   findReusableInformationAgentAddress,
@@ -391,7 +392,7 @@ export function assertInformationAgentSearchedAddressAllowed(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   if (origin.automated && !isInformationAgentAddressSearchEnabled(env)) {
-    throw new Error(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE);
+    throw new PublicApiError(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE, 409);
   }
 }
 
@@ -428,7 +429,7 @@ export function assertAgentFoundOriginIntact(
   origin: { kind: string | null; origin: { automated: boolean } },
 ): void {
   if (agentFound && !(origin.origin.automated && origin.kind !== "admin_entry")) {
-    throw new Error(AGENT_FOUND_ORIGIN_MISSING_MESSAGE);
+    throw new PublicApiError(AGENT_FOUND_ORIGIN_MISSING_MESSAGE, 409);
   }
 }
 
@@ -482,15 +483,17 @@ export async function searchInformationAgentAddressForDraft({
   }
   const outcome = await searchInformationAgentAddress(input);
   if (outcome.status === "opposed") {
-    throw new Error(
+    throw new PublicApiError(
       outcome.scope === "identity"
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
         : "L’adresse retrouvée par la recherche automatique est opposée : aucune sollicitation n’est autorisée.",
+      409,
     );
   }
   if (outcome.status === "cooldown") {
-    throw new Error(
+    throw new PublicApiError(
       `L’adresse retrouvée par la recherche automatique a déjà été sollicitée au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : aucun nouveau message n’est préparé.`,
+      409,
     );
   }
   return {

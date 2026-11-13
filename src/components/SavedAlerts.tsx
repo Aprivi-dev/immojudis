@@ -3,13 +3,13 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { useAuth } from "@/hooks/use-auth";
 import { createAlert, getAlerts, updateAlert, deleteAlert } from "@/lib/queries";
 import {
   createWatchedZone,
   deleteWatchedZone,
   evaluateAlertMatches,
-  fetchAccessPlan,
   fetchWatchedZones,
 } from "@/lib/client-api";
 import {
@@ -76,14 +76,8 @@ function AccountAlerts({ userId }: { userId: string }) {
     queryKey: zonesKey,
     queryFn: () => fetchWatchedZones({ includeInactive: true }),
   });
-  const plan = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userId),
-    queryFn: fetchAccessPlan,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
   // Les alertes quotidiennes demandent l'offre Analyse (règle appliquée par la base).
-  const dailyAllowed = plan.data?.plan.hasAnalysisAccess === true;
+  const dailyAllowed = useHasAnalysisAccess(userId) === true;
 
   const refresh = () =>
     Promise.all([

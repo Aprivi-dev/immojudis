@@ -14,7 +14,7 @@ import {
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleCalendarFile } from "@/lib/sale-calendar";
-import { resolveSiteOrigin } from "@/lib/site-url";
+import { siteOrigin } from "@/lib/site-url";
 
 /**
  * « Mon planning » : le fichier `.ics` de toutes les audiences suivies, en un téléchargement.
@@ -51,7 +51,7 @@ export const POST = apiRoute(
     const input = favoriteCalendarInputSchema.parse(await request.json());
 
     // Jamais déduite de la requête : le fichier porte des adresses absolues vers les fiches.
-    const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+    const origin = siteOrigin();
     if ("deadlinesSnapshotId" in input) {
       // Échéancier indicatif d'une vente passée remportée : deux dates à confirmer avec l'avocat. Ni
       // mesure « calendar_exported » (réservée aux audiences), ni prix, ni adresse dans le fichier.
