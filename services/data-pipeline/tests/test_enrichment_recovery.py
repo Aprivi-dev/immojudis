@@ -10,6 +10,8 @@ import pytest
 from src import pdf_enrichment, pdf_ocr, pipeline_health, queued_runner
 from src.enrichment import extract_structured as extraction
 from src.models import AuctionSale
+from src.pdf_page_analysis import is_objectively_blank_page
+from src.sale_local_files import sale_storage_id
 
 
 @pytest.mark.parametrize('error_count,coverage', [(1, True), (0, False)])
@@ -105,14 +107,14 @@ def test_ocr_budget_checkpoint_is_distinct_and_continues_from_page_cache(tmp_pat
         },
     )
 
-    with pytest.raises(pdf_enrichment.PdfExtractionDeferred) as first_error:
+    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as first_error:
         pdf_enrichment.extract_pdf_pages(path)
     assert first_error.value.progress_made is True
     assert first_error.value.checkpointed_pages == 1
     assert first_error.value.total_pages == 3
     assert calls == [0]
 
-    with pytest.raises(pdf_enrichment.PdfExtractionDeferred) as second_error:
+    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as second_error:
         pdf_enrichment.extract_pdf_pages(path)
     assert second_error.value.progress_made is True
     assert second_error.value.checkpointed_pages == 2
@@ -151,7 +153,7 @@ def test_ocr_document_time_budget_resumes_from_valid_page_checkpoints(tmp_path, 
 
     monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', bounded_ocr)
 
-    with pytest.raises(pdf_enrichment.PdfDocumentOcrBudgetExceeded) as first_error:
+    with pytest.raises(pdf_ocr.PdfDocumentOcrBudgetExceeded) as first_error:
         pdf_enrichment.extract_pdf_pages(path)
     assert first_error.value.progress_made is True
     assert first_error.value.checkpointed_pages == 2
@@ -223,7 +225,7 @@ def _budget_overrun_pdf(tmp_path, monkeypatch, page_count):
 def test_ocr_document_budget_is_checked_after_each_page_but_the_last(tmp_path, monkeypatch):
     path = _budget_overrun_pdf(tmp_path, monkeypatch, page_count=2)
 
-    with pytest.raises(pdf_enrichment.PdfDocumentOcrBudgetExceeded) as error:
+    with pytest.raises(pdf_ocr.PdfDocumentOcrBudgetExceeded) as error:
         pdf_enrichment.extract_pdf_pages(path)
 
     assert error.value.checkpointed_pages == 1
@@ -250,7 +252,7 @@ def test_pdf_document_timing_log_omits_url_and_payload(caplog):
         'url': 'https://private.example/client-document.pdf',
     }
     with caplog.at_level('INFO', logger=pdf_enrichment.LOGGER.name):
-        pdf_enrichment._log_pdf_document_transition(
+        pdf_ocr.log_pdf_document_transition(
             document,
             status='deferred',
             started_at=time.monotonic() - 1.0,
@@ -281,7 +283,7 @@ def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
         lambda page, **kwargs: {'text': '', 'method': 'fallback_text', 'confidence': 0.0},
     )
 
-    with pytest.raises(pdf_enrichment.PdfExtractionDeferred) as error:
+    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as error:
         pdf_enrichment.extract_pdf_pages(path)
     assert error.value.progress_made is False
     assert error.value.new_progress_pages == 0
@@ -311,7 +313,7 @@ def test_deadline_checkpoint_is_reused_on_next_pdf_pass(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', checkpoint_then_expire)
 
-    with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as error:
+    with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as error:
         with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 5):
             pdf_enrichment.extract_pdf_pages(path)
     assert error.value.checkpointed_pages == 1
@@ -399,10 +401,10 @@ def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_
         },
     )
 
-    with pytest.raises(pdf_enrichment.PdfExtractionDeferred) as first_error:
+    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as first_error:
         pdf_enrichment.enrich_sale_from_pdfs(sale)
 
-    aggregate_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    aggregate_path = pdf_texts_dir / f"{sale_storage_id(sale)}.json"
     aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
     assert len(aggregate) == 1
     assert aggregate[0]["complete"] is False
@@ -424,7 +426,7 @@ def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_
     aggregate[0]["_persisted_pdf_proof"] = True
     aggregate_path.write_text(json.dumps(aggregate), encoding="utf-8")
     shutil.rmtree(page_cache_dir / "pages")
-    with pytest.raises(pdf_enrichment.PdfExtractionDeferred):
+    with pytest.raises(pdf_ocr.PdfExtractionDeferred):
         pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     assert ocr_pages == [0, 1]
@@ -453,8 +455,8 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
         document.save(pdf_path)
 
     with pymupdf.open(pdf_path) as document:
-        assert pdf_enrichment._is_objectively_blank_page(document[0], "") is True
-        assert pdf_enrichment._is_objectively_blank_page(document[1], "") is False
+        assert is_objectively_blank_page(document[0], "") is True
+        assert is_objectively_blank_page(document[1], "") is False
         assert document[1].get_text("text") == ""
         assert document[1].get_drawings()
 
@@ -529,7 +531,7 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
     monkeypatch.setattr(pdf_enrichment, "_ensure_pdf_deadline", expire_before_second_page)
 
     with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
-        with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as first_error:
+        with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as first_error:
             pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     file_sha = document["sha256"]
@@ -556,7 +558,7 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
     assert first_error.value.partial_pdf_texts == [partial_payload]
     assert ocr_pages == []
 
-    aggregate_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+    aggregate_path = pdf_texts_dir / f"{sale_storage_id(sale)}.json"
     aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
     assert aggregate[0]["sha256"] == file_sha
     assert aggregate[0]["text"] == ""
@@ -583,7 +585,7 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
     shutil.rmtree(page_cache_dir / "pages")
 
     with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
-        with pytest.raises(pdf_enrichment.PdfDeadlineExceeded) as recovered_error:
+        with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as recovered_error:
             pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     assert recovered_error.value.partial_payload["pages"][0]["status"] == "blank_excluded"
@@ -612,7 +614,7 @@ def test_partial_checkpoint_keeps_memory_evidence_when_local_cache_write_fails(
         source_url="https://example.test/memory-checkpoint-sale",
         documents=[{"label": "PV", "url": url, "document_type": "pv_huissier"}],
     )
-    error = pdf_enrichment.PdfExtractionDeferred(
+    error = pdf_ocr.PdfExtractionDeferred(
         "OCR pass budget reached; retry resumes",
         checkpointed_pages=1,
         total_pages=2,

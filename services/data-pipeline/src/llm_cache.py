@@ -8,20 +8,19 @@ persists the prompt that produced it.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 import httpx
 
 from src.config import load_settings
 from src.pipeline_usage import PipelineBudgetExhausted
+from src.sha256_digest import is_lowercase_sha256
 from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
 _CACHE_TABLE = "llm_analysis_cache"
 _CACHE_TIMEOUT_SECONDS = 30.0
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class LLMCacheUnavailable(PipelineBudgetExhausted):
@@ -142,7 +141,7 @@ def _cache_endpoint(supabase_url: str) -> str:
 
 
 def _validate_lookup_arguments(cache_key: str, stage: str) -> tuple[str, str]:
-    if not isinstance(cache_key, str) or not _SHA256_RE.fullmatch(cache_key):
+    if not is_lowercase_sha256(cache_key):
         raise ValueError("cache_key must be a lowercase SHA-256 hex digest")
     if not isinstance(stage, str) or not stage.strip() or len(stage) > 128:
         raise ValueError("stage must be a non-empty string of at most 128 characters")

@@ -17,36 +17,36 @@ from src.asset_normalization import normalize_asset_features
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import documents_are_current
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _document_candidate_rejection_reason
+from src.pdf_document_selection import (
+    _document_candidate_rejection_reason,
+    adaptive_docling_timeout,
+    select_documents_for_extraction,
+    store_document_analysis_status,
+)
 from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
-from src.pdf_document_transport import PublicDocumentTarget, _PinnedNetworkBackend
+from src.pdf_document_transport import PublicDocumentTarget, _PinnedNetworkBackend, resolve_public_document_target
 from src.pdf_document_types import classify_document_type
 from src.pdf_enrichment import (
-    PDF_TEXT_CACHE_VERSION,
-    PdfDeadlineExceeded,
-    PdfDocumentOcrBudgetExceeded,
     PdfEnrichmentStats,
-    _adaptive_docling_timeout,
     _bounded_document_content,
     _download_document_response,
     _extract_pdf_text_with_docling_subprocess,
     _read_document_stream,
-    _resolve_public_document_target,
-    _select_documents_for_extraction,
-    _store_document_analysis_status,
-    _write_pdf_text_cache,
     download_documents,
-    enrich_sale_from_pdf_text,
     extract_attached_document,
     extract_pdf_document,
     extract_pdf_pages,
     pdf_deadline_scope,
-    pdf_document_ocr_budget_scope,
 )
 from src.pdf_fact_extraction import (
     _extract_energy_diagnostics_from_documents,
     _extract_energy_diagnostics_with_evidence,
+    enrich_sale_from_pdf_text,
+    write_pdf_text_cache,
 )
+from src.pdf_ocr import PdfDeadlineExceeded, PdfDocumentOcrBudgetExceeded, pdf_document_ocr_budget_scope
+from src.pdf_page_analysis import page_requires_retry
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 
 
 def test_bounded_document_content_rejects_declared_and_actual_oversize_payloads() -> None:
@@ -257,19 +257,19 @@ def test_resolve_public_document_target_rejects_any_non_public_answer() -> None:
 
         return resolve
 
-    target = _resolve_public_document_target(
+    target = resolve_public_document_target(
         "https://documents.example/pv.pdf",
         resolver=resolver_for("93.184.216.34"),
     )
     assert target.addresses == ("93.184.216.34",)
 
     with pytest.raises(ValueError, match="outside the public network"):
-        _resolve_public_document_target(
+        resolve_public_document_target(
             "https://documents.example/pv.pdf",
             resolver=resolver_for("93.184.216.34", "127.0.0.1"),
         )
     with pytest.raises(ValueError, match="outside the public network"):
-        _resolve_public_document_target(
+        resolve_public_document_target(
             "https://documents.example/pv.pdf",
             resolver=resolver_for("10.0.0.5"),
         )
@@ -1166,7 +1166,7 @@ def test_select_documents_for_extraction_prioritizes_useful_documents(monkeypatc
         {"label": "Cahier.pdf", "document_type": "cahier_conditions_vente"},
     ]
 
-    selected = _select_documents_for_extraction(documents)
+    selected = select_documents_for_extraction(documents)
 
     assert [item["document_type"] for item in selected] == ["pv_huissier", "diagnostics_techniques"]
 
@@ -1186,7 +1186,7 @@ def test_select_documents_for_extraction_accepts_legacy_document_type_aliases(mo
         {"label": "Cahier.pdf", "document_type": "cahier_conditions"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["label"] for item in selected] == [
         "PV descriptif.pdf",
@@ -1210,7 +1210,7 @@ def test_select_documents_for_extraction_uses_legacy_type_when_label_is_vague(mo
         {"label": "Document 3.pdf", "url": "https://example.test/doc3.pdf", "type": "cahier_conditions"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["url"] for item in selected] == [
         "https://example.test/doc1.pdf",
@@ -1235,7 +1235,7 @@ def test_select_documents_for_extraction_uses_label_when_type_is_generic(monkeyp
         {"label": "Cahier des charges.pdf", "url": "https://example.test/ccv.pdf", "type": "document"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["url"] for item in selected] == [
         "https://example.test/pv.pdf",
@@ -1259,7 +1259,7 @@ def test_select_documents_for_extraction_prioritizes_non_pdf_download_labels(mon
         {"label": "Règlement de consultation", "url": "https://example.test/telechargement?id=ccv", "type": "document"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["url"] for item in selected] == [
         "https://example.test/download?id=pv",
@@ -1288,7 +1288,7 @@ def test_document_candidate_filter_excludes_social_and_media_urls_but_keeps_sign
 
 def test_select_documents_for_extraction_does_not_spend_budget_on_social_or_media_candidates(monkeypatch) -> None:
     monkeypatch.setenv("PDF_MAX_DOCUMENTS_PER_SALE", "1")
-    selected = _select_documents_for_extraction(
+    selected = select_documents_for_extraction(
         [
             {"label": "Facebook", "url": "https://www.facebook.com/auction/123", "type": "pdf"},
             {"label": "Photo", "url": "https://source.example/images/preview.jpg", "type": "pdf"},
@@ -1315,7 +1315,7 @@ def test_select_documents_for_extraction_classifies_avoventes_generic_pdf_labels
         {"label": "Dossier diag (1).pdf", "url": "https://example.test/diag.pdf", "type": "pdf"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["url"] for item in selected] == [
         "https://example.test/pv.pdf",
@@ -1340,7 +1340,7 @@ def test_select_documents_for_extraction_expands_when_surface_is_missing(monkeyp
         {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["document_type"] for item in selected] == [
         "pv_huissier",
@@ -1367,7 +1367,7 @@ def test_select_documents_for_extraction_includes_bail_when_occupancy_is_missing
         {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["document_type"] for item in selected] == [
         "pv_huissier",
@@ -1395,7 +1395,7 @@ def test_select_documents_for_extraction_includes_diagnostics_when_energy_missin
         {"label": "Cahier des conditions.pdf", "document_type": "cahier_conditions_vente"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["document_type"] for item in selected] == [
         "diagnostics_techniques",
@@ -1419,7 +1419,7 @@ def test_select_documents_for_extraction_does_not_force_diagnostics_when_dpe_exe
         {"label": "Diagnostics techniques.pdf", "document_type": "diagnostics_techniques"},
     ]
 
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
 
     assert [item["document_type"] for item in selected] == ["pv_huissier"]
 
@@ -1451,7 +1451,7 @@ def test_expanded_document_selection_allows_ccv_only_surface_extraction(monkeypa
         "https://example.test/diag.pdf": "Diagnostic de performance energetique : 210 kWhEP/m2/an.",
         "https://example.test/ccv.pdf": "Designation. Surface habitable : 72,4 m2. Occupation a verifier.",
     }
-    selected = _select_documents_for_extraction(documents, sale=sale)
+    selected = select_documents_for_extraction(documents, sale=sale)
     pdf_texts = [
         {
             **document,
@@ -1519,7 +1519,7 @@ def test_document_analysis_status_normalizes_legacy_extracted_document_types() -
         },
     ]
 
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
 
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["coverage_status"] == "rich"
@@ -1554,7 +1554,7 @@ def test_document_analysis_does_not_count_empty_pdf_payload_as_extracted() -> No
         }
     ]
 
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
 
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["coverage_status"] == "documents_not_extracted"
@@ -1571,7 +1571,7 @@ def test_document_analysis_fails_closed_for_malformed_cache_payload() -> None:
         }
     )
 
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}, "malformed"],
         [],
@@ -1597,7 +1597,7 @@ def test_complete_empty_pdf_is_terminal_but_never_a_fact_cache() -> None:
         "url": "https://example.test/pv.pdf",
         "document_type": "pv_huissier",
     }
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [document],
         [{
@@ -1893,7 +1893,7 @@ def test_mixed_pdf_with_failed_page_remains_incomplete_in_document_profile(tmp_p
         }
     )
     payload.update({"label": "PV", "url": "https://example.test/mixed.pdf", "document_type": "pv_huissier"})
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [{"label": "PV", "url": "https://example.test/mixed.pdf", "document_type": "pv_huissier"}],
         [payload],
@@ -1965,9 +1965,7 @@ def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path
     assert page["original_method"] == "fallback_text"
     assert page["visual_analysis"]["quasi_empty"] is True
     assert page["visual_analysis"]["ink_ratio"] <= 0.005
-    from src.pdf_enrichment import _page_requires_retry
-
-    assert _page_requires_retry(page, ocr_enabled=True) is False
+    assert page_requires_retry(page, ocr_enabled=True) is False
 
     sale = normalize_sale(
         {
@@ -1977,7 +1975,7 @@ def test_ocr_empty_near_blank_page_is_explicitly_excluded_and_preserved(tmp_path
         }
     )
     payload.update({"label": "PV", "url": "https://example.test/near-blank.pdf"})
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [{"label": "PV", "url": "https://example.test/near-blank.pdf"}],
         [payload],
@@ -2095,7 +2093,7 @@ def test_visual_blank_page_keeps_document_coverage_partial() -> None:
             "documents": [{"label": "PV", "url": "https://example.test/pv.pdf"}],
         }
     )
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [{"label": "PV", "url": "https://example.test/pv.pdf"}],
         [
@@ -2237,7 +2235,7 @@ def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, 
     assert stats.errors == 0
     assert stats.blocked_document_urls == [blocked_url]
 
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [],
         [],
@@ -2287,7 +2285,7 @@ def test_download_documents_skips_social_candidates_without_network_or_retry_err
     assert stats.errors == 0
     assert stats.permanent_document_failures == []
 
-    _store_document_analysis_status(sale, [], [], permanent_document_failures=[])
+    store_document_analysis_status(sale, [], [], permanent_document_failures=[])
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["failed_documents"] == 0
     assert analysis["skipped_documents"] == 2
@@ -2432,7 +2430,7 @@ def test_download_documents_retries_permanent_failure_after_http_ttl(tmp_path, m
 
     first_stats = PdfEnrichmentStats()
     assert download_documents(sale, output_root=tmp_path, stats=first_stats) == []
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [],
         [],
@@ -2496,7 +2494,7 @@ def test_document_analysis_keeps_retryable_failure_separate_from_robots_block(tm
         }
     )
 
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [],
         [],
@@ -2525,7 +2523,7 @@ def test_document_analysis_keeps_permanent_failure_separate_from_retryable_failu
         }
     )
 
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [],
         [],
@@ -3031,7 +3029,7 @@ def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatc
         "pdf_docling_threshold_chars": 1200,
     }
 
-    timeout = _adaptive_docling_timeout(
+    timeout = adaptive_docling_timeout(
         file_path,
         {
             "label": "CCV sign.pdf",
@@ -3119,7 +3117,7 @@ def test_pdf_text_cache_writer_preserves_complete_partial_and_legacy_markers(tmp
     complete_url = "https://example.test/complete.pdf"
     partial_url = "https://example.test/partial.pdf"
     legacy_url = "https://example.test/legacy.pdf"
-    path = _write_pdf_text_cache(
+    path = write_pdf_text_cache(
         sale,
         [
             item(
@@ -3179,7 +3177,7 @@ def test_pdf_text_cache_writer_preserves_previous_cache_on_failure(tmp_path, mon
         "file_path": str(tmp_path / "pv.pdf"),
         "text": "Ancienne extraction conservée",
     }
-    path = _write_pdf_text_cache(sale, [item])
+    path = write_pdf_text_cache(sale, [item])
     previous_bytes = path.read_bytes()
 
     def fail_write(*_args, **_kwargs):
@@ -3191,7 +3189,7 @@ def test_pdf_text_cache_writer_preserves_previous_cache_on_failure(tmp_path, mon
         monkeypatch.setattr(pdf_fact_extraction.Path, "replace", fail_write)
 
     with pytest.raises(OSError, match="cache write interrupted"):
-        _write_pdf_text_cache(sale, [{**item, "text": "Nouvelle extraction"}])
+        write_pdf_text_cache(sale, [{**item, "text": "Nouvelle extraction"}])
 
     assert path.read_bytes() == previous_bytes
     assert not list(tmp_path.glob(".*.tmp"))
@@ -3232,8 +3230,8 @@ def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp
         "extraction_status": "extracted",
     }
 
-    _store_document_analysis_status(sale, [document], [payload])
-    _write_pdf_text_cache(sale, [payload])
+    store_document_analysis_status(sale, [document], [payload])
+    write_pdf_text_cache(sale, [payload])
     assert documents_are_current(sale)
 
     partial_payload = {
@@ -3242,8 +3240,8 @@ def test_pdf_text_cache_writer_satisfies_freshness_only_for_complete_payload(tmp
         "extraction_status": "incomplete",
         "failed_pages": [1],
     }
-    _store_document_analysis_status(sale, [document], [partial_payload])
-    _write_pdf_text_cache(sale, [partial_payload])
+    store_document_analysis_status(sale, [document], [partial_payload])
+    write_pdf_text_cache(sale, [partial_payload])
     assert not documents_are_current(sale)
 
 
@@ -3279,7 +3277,7 @@ def test_store_document_analysis_status_marks_partial_document_coverage() -> Non
         }
     ]
 
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
 
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["coverage_status"] == "partial"
@@ -3543,7 +3541,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
 
     import pymupdf
 
-    from src.pdf_enrichment import _page_requires_retry, pdf_deadline_scope
+    from src.pdf_enrichment import pdf_deadline_scope
     from src.pdf_ocr import OCR_PICTURE_NO_TEXT_METHOD
 
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
@@ -3571,7 +3569,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
     assert "failure_reason" not in record
     assert "Photographie 1" in record["text"]
     assert record["confidence"] > 0.5
-    assert _page_requires_retry(record, ocr_enabled=True) is False
+    assert page_requires_retry(record, ocr_enabled=True) is False
     assert payload["visual_blank_pages"] == []
     assert payload["complete"] is True
     assert "Photographie 1" in payload["text"]

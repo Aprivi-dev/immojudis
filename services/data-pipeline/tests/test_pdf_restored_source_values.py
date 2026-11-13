@@ -27,7 +27,8 @@ import time_machine
 from src import main, pdf_fact_scope
 from src.models import AuctionSale
 from src.normalize import OCCUPANCY_ENUM, normalize_sale
-from src.pdf_enrichment import _invalidate_replaced_document_facts, enrich_sale_from_pdf_text
+from src.pdf_enrichment import _invalidate_replaced_document_facts
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 from src.pdf_fact_scope import _clear_pdf_fact_projections, _pdf_record_fact_projection
 from src.recompute_scoring import _recomputed_sale_from_storage_row
 from src.sources import licitor_lots

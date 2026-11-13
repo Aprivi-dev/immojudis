@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from src.admission import sale_date_has_passed
 from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN
 from src.normalize import clean_text, parse_french_datetime, source_sale_timezone
-from src.pdf_document_types import _canonical_document_type
+from src.pdf_document_types import canonical_document_type
 from src.text_folding import strip_accents
 
 _E = "[eéèêEÉÈÊ]"
@@ -185,7 +185,7 @@ def extract_offer_deadline_from_documents(
         url = clean_text(item.get("url")) or ""
         raw_type = item.get("document_type") or item.get("type")
         document_type = (
-            "source_page" if raw_type == "source_page" else _canonical_document_type(raw_type, label=label, url=url)
+            "source_page" if raw_type == "source_page" else canonical_document_type(raw_type, label=label, url=url)
         )
         if document_type in _FOREIGN_DOCUMENT_TYPES:
             continue

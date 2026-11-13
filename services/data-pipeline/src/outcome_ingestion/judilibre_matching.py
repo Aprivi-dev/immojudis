@@ -14,6 +14,7 @@ from src.outcome_ingestion.repository import (
     StoredJudilibreCourtResolution,
     StoredJudilibreDecisionRecord,
 )
+from src.sha256_digest import is_lowercase_sha256
 
 JUDILIBRE_MATCH_RULE_VERSION = "judilibre-review-match-v1"
 JUDILIBRE_MATCH_SIGNAL_SCHEMA = "judilibre_match_signals_v1"
@@ -25,7 +26,6 @@ JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX = 5_000
 JUDILIBRE_MATCH_DATE_DELTA_DAYS_DEFAULT = 7
 JUDILIBRE_MATCH_DATE_DELTA_DAYS_MAX = 30
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MONEY = re.compile(r"^(?:0|[1-9]\d{0,9})\.\d{2}$")
 _CLAIM_TYPES = frozenset(
     {"starting_price_eur", "hammer_price_eur", "procedural_event"}
@@ -394,10 +394,7 @@ def persisted_judilibre_matchable_decision(
     if data.get("text_available") is not True:
         raise JudilibreMatchingDataError("Judilibre raw text availability is unsafe")
     raw_representation_sha256 = data.get("raw_representation_sha256")
-    if (
-        not isinstance(raw_representation_sha256, str)
-        or _SHA256.fullmatch(raw_representation_sha256) is None
-    ):
+    if not is_lowercase_sha256(raw_representation_sha256):
         raise JudilibreMatchingDataError(
             "Judilibre raw representation is not hash anchored"
         )
@@ -458,9 +455,9 @@ def _validated_claim(claim: Mapping[str, Any]) -> dict[str, object]:
     claim_type = claim.get("claim_type")
     normalized_value = claim.get("normalized_value")
     confidence = claim.get("confidence")
-    if not isinstance(claim_id, str) or _SHA256.fullmatch(claim_id) is None:
+    if not is_lowercase_sha256(claim_id):
         raise JudilibreMatchingDataError("Judilibre claim id is not SHA-256")
-    if not isinstance(evidence_hash, str) or _SHA256.fullmatch(evidence_hash) is None:
+    if not is_lowercase_sha256(evidence_hash):
         raise JudilibreMatchingDataError("Judilibre evidence hash is not SHA-256")
     if claim_type not in _CLAIM_TYPES:
         raise JudilibreMatchingDataError("Judilibre claim type is unsupported")

@@ -10,9 +10,9 @@ from psycopg.types.json import Jsonb
 from test_autonomy_postgres import setup
 
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _store_document_analysis_status
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
-from src.pdf_fact_extraction import _write_pdf_text_cache
+from src.pdf_document_selection import store_document_analysis_status
+from src.pdf_fact_extraction import write_pdf_text_cache
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import supabase_client as storage
 from src.storage.pdf_persistence_rows import _fresh_complete_pdf_fingerprint
 from src.storage.supabase_client import _postgres_connect
@@ -243,8 +243,8 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
         "complete": True,
         "extraction_status": "empty",
     }
-    _store_document_analysis_status(sale, documents, [extracted_payload, empty_payload])
-    _write_pdf_text_cache(sale, [extracted_payload, empty_payload])
+    store_document_analysis_status(sale, documents, [extracted_payload, empty_payload])
+    write_pdf_text_cache(sale, [extracted_payload, empty_payload])
 
     assert storage.documents_are_current(sale)
     assert _fresh_complete_pdf_fingerprint(sale, documents_current=True)
@@ -492,8 +492,8 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
 
             # Use the production status writer and aggregate cache writer. The
             # file SHA remains exactly the same as the incomplete profile.
-            _store_document_analysis_status(sale, [document], [payload])
-            _write_pdf_text_cache(sale, [payload])
+            store_document_analysis_status(sale, [document], [payload])
+            write_pdf_text_cache(sale, [payload])
             db.execute(
                 """update auction_enrichment_jobs
                    set status='completed', attempt_count=1, completed_at=now()
@@ -521,8 +521,8 @@ def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
             # A cold/materialized replay can refresh operational timestamps,
             # including verified_at, but the same complete proof must keep the
             # same dependent hash.
-            _store_document_analysis_status(sale, [document], [payload])
-            _write_pdf_text_cache(sale, [payload])
+            store_document_analysis_status(sale, [document], [payload])
+            write_pdf_text_cache(sale, [payload])
             token = storage._PUBLICATION_CONNECTION.set(db)
             try:
                 storage._enqueue_due_enrichment([sale])

@@ -21,7 +21,6 @@ from src.models import INTERNAL_CONTACTS_KEY
 # normal freshness window, while ``_checkpoint_checked_at`` must continue to
 # describe when that detail was actually fetched.  The existing cleanup jobs
 # retain these rows for 24 hours, so keep the reader aligned with that policy.
-CHECKPOINT_RETENTION = "24 hours"
 MAX_CHECKPOINT_REUSE_AGE = timedelta(hours=24)
 CURSOR_PREFIX = "__source_cursor__:"
 CHECKPOINT_CONNECT_TIMEOUT = 5

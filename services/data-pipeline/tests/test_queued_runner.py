@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from src import pdf_enrichment
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
@@ -2438,7 +2439,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     progress_made,
     should_defer,
 ) -> None:
-    from src.pdf_enrichment import PdfDocumentOcrBudgetExceeded
+    from src.pdf_ocr import PdfDocumentOcrBudgetExceeded
 
     sale = normalize_sale(
         {
@@ -2504,7 +2505,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
 
 
 def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:
-    from src.pdf_enrichment import PdfExtractionDeferred
+    from src.pdf_ocr import PdfExtractionDeferred
     from src.pipeline_usage import QueueJobDeferred
 
     sale = normalize_sale(
@@ -2572,7 +2573,7 @@ def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) ->
 
 
 def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatch) -> None:
-    from src.pdf_enrichment import PdfDeadlineExceeded
+    from src.pdf_ocr import PdfDeadlineExceeded
 
     sale = normalize_sale(
         {
@@ -2719,7 +2720,7 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
     assert "private PDF text" not in message
 
 
-@pytest.mark.parametrize(("facts_version", "reads"), [(None, True), (pdf_enrichment.DOCUMENT_FACTS_VERSION, False)])
+@pytest.mark.parametrize(("facts_version", "reads"), [(None, True), (DOCUMENT_FACTS_VERSION, False)])
 def test_a_pdf_job_reads_again_documents_whose_facts_used_older_rules(monkeypatch, facts_version, reads) -> None:
     """Fresh documents are read again when their facts came from older rules (offer deadlines, 02/11/2026)."""
     from src.config import EncheresPubliquesAccessNotAuthorized

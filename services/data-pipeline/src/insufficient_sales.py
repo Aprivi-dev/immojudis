@@ -31,7 +31,6 @@ from src.information_sufficiency import ContactBlocklist, sufficient_information
 from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_MAX_DELETIONS = 100
 #: Plafond de ``p_limit`` de ``app_private.delete_empty_listings``.
 CLEANUP_FUNCTION_MAX = 5000
 

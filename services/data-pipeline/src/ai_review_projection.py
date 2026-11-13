@@ -57,7 +57,6 @@ AI_REVIEW_FIELD_KEYS: dict[str, str] = {
 }
 
 _PRESENT_OR_UNKNOWN = frozenset({"present", "unknown"})
-_VALID_MAPPING_STATES = frozenset({"exact", "unmapped", "ambiguous"})
 _SQL_OCCUPANCY_ALIASES = frozenset(
     {
         "libre",

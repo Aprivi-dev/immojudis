@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import subprocess
 import sys
@@ -58,11 +57,13 @@ from types import SimpleNamespace
 from typing import Any, Protocol
 
 from src import photo_mirror, source_withdrawal
-from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
-from src.encheres_publiques_guard import (
-    require_encheres_publiques_sale_access,
-    require_encheres_publiques_url_access,
+from src.config import (
+    EncheresPubliquesAccessNotAuthorized,
+    encheres_publiques_access_enabled,
+    env_flag_on_unless_false,
+    load_settings,
 )
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.pdf_document_types import classify_document_type
 from src.photo_mirror import (
     BUCKET,
@@ -80,6 +81,7 @@ from src.photo_mirror import (
     host_of,
     image_decoder_environment,
 )
+from src.sha256_digest import is_lowercase_sha256
 from src.source_withdrawal import is_withdrawn_source_url, sale_is_fully_withdrawn
 
 LOGGER = logging.getLogger(__name__)
@@ -111,8 +113,6 @@ CONSECUTIVE_ERROR_LIMIT = 5
 WITHDRAWAL_BATCH = 500
 STALE_BATCH = 300
 LOCK_NAME = "immojudis:pdf-photos:v1"
-
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -216,7 +216,7 @@ def parse_extraction(output: bytes, *, max_photos: int = MAX_PHOTOS_PER_SALE) ->
             if not isinstance(entry, dict):
                 raise ValueError("entry")
             sha256 = str(entry["sha256"])
-            if not _SHA256.match(sha256):
+            if not is_lowercase_sha256(sha256):
                 raise ValueError("sha256")
             single = entry["single"]
             if not isinstance(single, bool):
@@ -269,7 +269,7 @@ def parse_extraction(output: bytes, *, max_photos: int = MAX_PHOTOS_PER_SALE) ->
 def photo_paths(sale_id: str, sha256: str, *, single: bool) -> tuple[str, str]:
     """``documents/{sale_id}/{sha256[0:16]}-640.webp`` et ``-1600.webp`` (le même chemin quand ``single``)."""
     uuid.UUID(str(sale_id))
-    if not _SHA256.match(sha256):
+    if not is_lowercase_sha256(sha256):
         raise ValueError("invalid sha256")
     prefix = f"{PATH_PREFIX}/{sale_id}/{sha256[:16]}"
     path_640 = f"{prefix}-640.webp"
@@ -613,9 +613,8 @@ def limits_from_inputs(max_sales: object = None, budget_seconds: object = None) 
     )
 
 
-def pass_enabled(env: Mapping[str, str] | None = None) -> bool:
-    value = str((env if env is not None else os.environ).get(ENABLED_ENV, "true")).strip().lower()
-    return value not in {"0", "false", "no", "off"}
+def pass_enabled() -> bool:
+    return env_flag_on_unless_false(ENABLED_ENV)
 
 
 @dataclass
@@ -831,13 +830,12 @@ def run_pdf_photos(
     store: DocumentPhotoStore | None = None,
     storage: PhotoStorage | None = None,
     downloader: PhotoDownloader | None = None,
-    env: Mapping[str, str] | None = None,
     extract: Callable[[bytes], Extraction] = extract_photos,
     clock: Callable[[], float] = time.monotonic,
 ) -> PassSummary:
     """Un passage. Interrupteur éteint : retraits seulement (aucun téléchargement, aucune copie)."""
     summary = PassSummary()
-    enabled = pass_enabled(env)
+    enabled = pass_enabled()
     settings = settings if settings is not None else load_settings()
     started = clock()
     deadline = started + limits.budget_seconds
@@ -884,7 +882,7 @@ def run_pdf_photos(
             LOGGER.warning("PDF photos: stale photos step failed: %s", type(exc).__name__)
             summary.failures_by_reason[f"stale_{type(exc).__name__}"] += 1
 
-        ep_open = _encheres_publiques_open(settings)
+        ep_open = encheres_publiques_access_enabled(settings)
         candidates = store.select_candidates(limits.max_sales, include_encheres_publiques=ep_open)
         summary.documents_selected = len(candidates)
         summary.sales_selected = len({candidate.sale_id for candidate in candidates})
@@ -929,14 +927,6 @@ def run_pdf_photos(
         summary.elapsed_seconds = clock() - started
         if owns_store and store is not None:
             store.close()
-
-
-def _encheres_publiques_open(settings: Mapping[str, object]) -> bool:
-    try:
-        require_encheres_publiques_url_access("https://www.encheres-publiques.com/", settings)
-    except EncheresPubliquesAccessNotAuthorized:
-        return False
-    return True
 
 
 def _count(summary: PassSummary, result: ScanResult) -> None:

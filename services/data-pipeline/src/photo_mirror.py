@@ -70,7 +70,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from src import photo_image, source_withdrawal
-from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
+from src.config import EncheresPubliquesAccessNotAuthorized, encheres_publiques_access_enabled, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
     DocumentRobotsDisallowed,
@@ -1222,7 +1222,7 @@ def run_photo_mirror(
             LOGGER.warning("Photo mirror: stale copies step failed: %s", type(exc).__name__)
             summary.failures_by_reason[f"stale_{type(exc).__name__}"] += 1
 
-        ep_open = _encheres_publiques_open(settings)
+        ep_open = encheres_publiques_access_enabled(settings)
         candidates = store.select_candidates(limits.max_photos, include_encheres_publiques=ep_open)
         summary.selected = len(candidates)
         host_failures: Counter[str] = Counter()
@@ -1274,14 +1274,6 @@ def run_photo_mirror(
         summary.elapsed_seconds = clock() - started
         if owns_store and store is not None:
             store.close()
-
-
-def _encheres_publiques_open(settings: Mapping[str, object]) -> bool:
-    try:
-        require_encheres_publiques_url_access("https://www.encheres-publiques.com/", settings)
-    except EncheresPubliquesAccessNotAuthorized:
-        return False
-    return True
 
 
 def _count(summary: MirrorSummary, result: PhotoResult) -> None:

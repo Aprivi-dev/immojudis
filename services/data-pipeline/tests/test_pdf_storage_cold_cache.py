@@ -11,12 +11,12 @@ import pytest
 from fake_publication import inside_publication
 
 from src.models import AuctionSale
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import supabase_client as storage
 
 
 def _persisted_sale_fixture() -> tuple[AuctionSale, list[dict[str, object]]]:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     labels = (
         "PV descriptif",
@@ -56,7 +56,7 @@ def _persisted_sale_fixture() -> tuple[AuctionSale, list[dict[str, object]]]:
         starting_price_eur=Decimal("100000"),
         documents=documents,
     )
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
     return sale, pdf_texts
 
 
@@ -176,7 +176,7 @@ def test_failed_cold_restore_keeps_previous_cache_intact(monkeypatch, tmp_path: 
 
     old_payload = [dict(item) for item in pdf_texts]
     old_payload[0]["text"] = "ancienne preuve locale"
-    pdf_fact_extraction._write_pdf_text_cache(sale, old_payload)
+    pdf_fact_extraction.write_pdf_text_cache(sale, old_payload)
     cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
     previous_bytes = cache_path.read_bytes()
 

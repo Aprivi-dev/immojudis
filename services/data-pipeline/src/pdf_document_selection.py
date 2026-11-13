@@ -21,8 +21,8 @@ from src.pdf_document_types import (
     PDF_CONDITIONS_GROUP,
     PDF_DESCRIPTION_GROUP,
     PDF_DIAGNOSTICS_GROUP,
-    _canonical_document_type,
-    _normalize_document_classifier_text,
+    canonical_document_type,
+    normalize_document_classifier_text,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
 from src.pdf_page_analysis import profile_pdf_for_docling
@@ -96,7 +96,7 @@ NON_DOCUMENT_LABEL_RE = re.compile(
 )
 
 
-def _select_documents_for_extraction(
+def select_documents_for_extraction(
     documents: list[dict[str, str]],
     *,
     sale: AuctionSale | None = None,
@@ -142,7 +142,7 @@ def _select_documents_for_extraction(
         documents,
         key=lambda item: (
             priority.get(
-                _canonical_document_type(
+                canonical_document_type(
                     item.get("document_type") or item.get("type"),
                     label=item.get("label"),
                     url=item.get("url"),
@@ -160,7 +160,7 @@ def _select_documents_for_extraction(
             (
                 item
                 for item in sorted_documents
-                if _canonical_document_type(
+                if canonical_document_type(
                     item.get("document_type") or item.get("type"),
                     label=item.get("label"),
                     url=item.get("url"),
@@ -278,7 +278,7 @@ def _needs_energy_diagnostics(sale: AuctionSale) -> bool:
         return False
     if sale.raw_payload.get("source_energy_diagnostics") or sale.raw_payload.get("pdf_energy_diagnostics"):
         return False
-    risk_notes = _normalize_document_classifier_text(sale.risk_notes)
+    risk_notes = normalize_document_classifier_text(sale.risk_notes)
     if "dpe non soumis" in risk_notes:
         return False
     return sale.property_type in {"house", "apartment", "building", "commercial", "mixed"}
@@ -316,7 +316,7 @@ def _available_document_group_count(
     groups: tuple[frozenset[str], ...],
 ) -> int:
     available_types = {
-        _canonical_document_type(
+        canonical_document_type(
             document.get("document_type") or document.get("type"),
             label=document.get("label"),
             url=document.get("url"),
@@ -341,7 +341,7 @@ def _document_identity(document: dict[str, str]) -> str:
     return str(document.get("url") or document.get("file_path") or document.get("label") or id(document))
 
 
-def _store_document_analysis_status(
+def store_document_analysis_status(
     sale: AuctionSale,
     documents: list[dict[str, str]],
     pdf_texts: list[dict[str, object]],
@@ -446,7 +446,7 @@ def _store_document_analysis_status(
     ]
 
     candidate_rejections = _document_candidate_rejections(sale_documents)
-    selected_documents = _select_documents_for_extraction(sale_documents, sale=sale)
+    selected_documents = select_documents_for_extraction(sale_documents, sale=sale)
     selected_urls = {
         str(document.get("url"))
         for document in selected_documents
@@ -863,7 +863,7 @@ def _store_document_analysis_status(
 def _document_profile(document: dict[str, str]) -> dict[str, object]:
     label = str(document.get("label") or "")
     url = str(document.get("url") or "")
-    document_type = _canonical_document_type(
+    document_type = canonical_document_type(
         document.get("document_type") or document.get("type"), label=label, url=url
     )
     return {
@@ -895,7 +895,7 @@ def _extracted_document_profile(payload: dict[str, object]) -> dict[str, object]
             "blank_pages": [],
             "visual_blank_pages": [],
         }
-    document_type = _canonical_document_type(
+    document_type = canonical_document_type(
         payload.get("document_type") or payload.get("type"),
         label=payload.get("label"),
         url=payload.get("url"),
@@ -965,7 +965,7 @@ def _document_family(document_type: str) -> str:
     return "autre"
 
 
-def _adaptive_docling_timeout(
+def adaptive_docling_timeout(
     path: Path,
     document: dict[str, str] | None,
     settings: dict[str, object],
@@ -976,7 +976,7 @@ def _adaptive_docling_timeout(
         return default_timeout
 
     text = f"{document.get('label', '') if document else ''} {document.get('url', '') if document else ''}".lower()
-    document_type = _canonical_document_type(
+    document_type = canonical_document_type(
         (document.get("document_type") or document.get("type")) if document else None,
         label=document.get("label") if document else None,
         url=document.get("url") if document else None,

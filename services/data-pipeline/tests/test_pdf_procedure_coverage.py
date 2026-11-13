@@ -1,8 +1,8 @@
 """Procedure-specific documentary coverage must not require a judicial PV everywhere."""
 
 from src.models import AuctionSale
+from src.pdf_document_selection import store_document_analysis_status
 from src.pdf_document_types import classify_document_type
-from src.pdf_enrichment import _store_document_analysis_status
 
 
 def _coverage(*, venue: str, framework: str, property_type: str = "apartment") -> dict:
@@ -27,7 +27,7 @@ def _coverage(*, venue: str, framework: str, property_type: str = "apartment") -
             {"url": "https://example.test/diag.pdf", "label": "Diagnostics", "document_type": "diagnostics_techniques"}
         )
     payloads = [{**doc, "text": "Texte du dossier officiel.", "extraction_status": "extracted"} for doc in docs]
-    _store_document_analysis_status(sale, docs, payloads)
+    store_document_analysis_status(sale, docs, payloads)
     return sale.raw_payload["document_analysis"]
 
 

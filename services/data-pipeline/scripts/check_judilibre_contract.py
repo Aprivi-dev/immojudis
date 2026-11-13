@@ -35,6 +35,7 @@ from src.outcome_ingestion.judilibre_extraction import (  # noqa: E402
 from src.outcome_ingestion.judilibre_ingestion import (  # noqa: E402
     JUDILIBRE_SEARCH_PROFILES,
 )
+from src.sha256_digest import is_lowercase_sha256  # noqa: E402
 
 CANARY_PROFILE_ID = "adjudication_v2"
 CANARY_WINDOW_DAYS = 31
@@ -43,7 +44,6 @@ CANARY_PAGE_SIZE = 1
 CANARY_MAX_SEARCH_ATTEMPTS = 4
 
 _CANONICAL_EXTRACTOR = extract_judilibre_candidate_facts
-_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _MONEY_PATTERN = re.compile(r"(?:[1-9]\d{0,9}|0)\.\d{2}")
 _MAX_CLAIMS = 7
 _MAX_DISPOSITIF_FRAGMENTS = 128
@@ -499,7 +499,7 @@ def _validate_claim(value: object) -> dict[str, object]:
 
     claim_id = claim["claim_id"]
     evidence_hash = claim["evidence_hash"]
-    if not _is_sha256(claim_id) or not _is_sha256(evidence_hash):
+    if not is_lowercase_sha256(claim_id) or not is_lowercase_sha256(evidence_hash):
         raise ValueError("invalid Judilibre claim digest")
     confidence = claim["confidence"]
     if type(confidence) is not float:
@@ -540,9 +540,7 @@ def _validate_anchor(
         raise ValueError("unexpected Judilibre anchor hash version")
     if anchor["raw_artifact_sha256"] != raw_artifact_sha256:
         raise ValueError("Judilibre provenance does not match its raw artifact")
-    if not _is_sha256(anchor["raw_artifact_sha256"]) or not _is_sha256(
-        anchor["evidence_sha256"]
-    ):
+    if not is_lowercase_sha256(anchor["raw_artifact_sha256"]) or not is_lowercase_sha256(anchor["evidence_sha256"]):
         raise ValueError("invalid Judilibre provenance digest")
 
     start_utf8 = anchor["start_utf8"]
@@ -579,10 +577,6 @@ def _exact_dict(value: object, *, keys: frozenset[str] | set[str]) -> dict[str, 
     if set(value) != set(keys):
         raise ValueError("unexpected Judilibre extraction field")
     return value
-
-
-def _is_sha256(value: object) -> bool:
-    return type(value) is str and _SHA256_PATTERN.fullmatch(value) is not None
 
 
 def _bounded_settings(settings: dict[str, Any]) -> dict[str, Any]:

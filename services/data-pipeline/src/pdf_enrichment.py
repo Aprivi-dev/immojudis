@@ -43,13 +43,13 @@ from src.pdf_document_transport import (
     resolve_public_document_target as _resolve_public_document_target,
 )
 from src.pdf_document_selection import (
-    _adaptive_docling_timeout,
-    _select_documents_for_extraction,
-    _store_document_analysis_status,
+    adaptive_docling_timeout,
+    select_documents_for_extraction,
+    store_document_analysis_status,
 )
 from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
-from src.pdf_document_types import _canonical_document_type, refined_document_type, with_content_document_types
-from src.pdf_fact_extraction import _document_filename, _write_pdf_text_cache, enrich_sale_from_pdf_text
+from src.pdf_document_types import canonical_document_type, refined_document_type, with_content_document_types
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text, write_pdf_text_cache
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
@@ -70,16 +70,16 @@ from src.pdf_ocr import (
 )
 from src.pdf_page_analysis import (
     PICTURE_PAGE_STATUS,
-    _is_objectively_blank_page,
-    _page_has_substantial_image,
-    _page_requires_retry,
-    _page_text_confidence,
-    _visual_page_profile,
+    is_objectively_blank_page,
+    page_has_substantial_image,
     page_outcome_summary,
+    page_requires_retry,
+    page_text_confidence,
     profile_pdf_for_docling,
+    visual_page_profile,
 )
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
-from src.sale_local_files import sale_storage_id
+from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
@@ -192,7 +192,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
     failed_document_diagnostics: list[dict[str, object]] = []
-    for document in _select_documents_for_extraction(downloaded_documents, sale=sale, revalidate_urls={str(item.get("url") or "") for item in downloaded_documents}):
+    for document in select_documents_for_extraction(downloaded_documents, sale=sale, revalidate_urls={str(item.get("url") or "") for item in downloaded_documents}):
         _ensure_pdf_deadline(operation="starting document extraction")
         document_started_at = time.monotonic()
         file_path = Path(document["file_path"])
@@ -227,7 +227,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 pages=exc.checkpointed_pages,
                 error_type=type(exc).__name__,
             )
-            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=_write_pdf_text_cache, store_status=_store_document_analysis_status)
+            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=write_pdf_text_cache, store_status=store_document_analysis_status)
             raise
         except PermanentDocumentFailure as exc:
             # Unreadable for good (pages, weight, password, corruption): settled like a 404, the job succeeds.
@@ -252,7 +252,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 "label": document.get("label", ""),
                 "url": document.get("url", ""),
                 "type": document.get("type", "pdf"),
-                "document_type": _canonical_document_type(
+                "document_type": canonical_document_type(
                     document.get("document_type") or document.get("type"),
                     label=document.get("label"),
                     url=document.get("url"),
@@ -284,7 +284,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         )
     merged_pdf_texts = with_content_document_types(merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures))
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
-        _write_pdf_text_cache(sale, merged_pdf_texts)
+        write_pdf_text_cache(sale, merged_pdf_texts)
         terminal_urls = set(stats.blocked_document_urls) | {
             item.get("url") for item in stats.permanent_document_failures if item.get("url")
         }
@@ -314,7 +314,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
             stats.raw_text_enriched += 1
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         downloaded_documents,
         pdf_texts,
@@ -418,10 +418,10 @@ def download_documents(
     }
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
-    for document in _select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
+    for document in select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
         _ensure_pdf_deadline(operation="selecting document")
         url = document.get("url")
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             document.get("document_type") or document.get("type"),
             label=document.get("label"),
             url=url,
@@ -440,7 +440,7 @@ def download_documents(
                 stats.blocked_document_urls.append(url)
             continue
 
-        filename = _document_filename(document)
+        filename = document_filename(document)
         file_path = sale_dir / filename
         if (
             file_path.exists()
@@ -830,7 +830,7 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
     docling_text = ""
     if str(settings["pdf_extractor"]) == "docling":
         _ensure_pdf_deadline(operation="starting Docling extraction")
-        timeout = _adaptive_docling_timeout(path, document=document, settings=settings)
+        timeout = adaptive_docling_timeout(path, document=document, settings=settings)
         _ensure_pdf_deadline(operation="starting bounded Docling extraction")
         docling_text = extract_pdf_text_with_docling(path, timeout_seconds=timeout)
         if docling_text:
@@ -903,7 +903,7 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
     try:
         settings = load_settings()
         profile = profile_pdf_for_docling(path)
-        do_ocr = _should_docling_ocr(path, settings, profile=profile)
+        do_ocr = should_docling_ocr(path, settings, profile=profile)
         chunk_pages = _docling_chunk_pages(settings, do_ocr)
         if profile["page_count"] > chunk_pages:
             text = _extract_docling_pdf_in_chunks(path, do_ocr, profile, settings)
@@ -987,7 +987,7 @@ def _docling_chunk_pages(settings: dict[str, object], do_ocr: bool) -> int:
 def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str:
     _ensure_pdf_deadline(operation="preparing Docling subprocess")
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = _docling_cache_path(path).with_suffix(".tmp.txt")
+    output_path = docling_cache_path(path).with_suffix(".tmp.txt")
     command = [sys.executable, "-m", "src.pdf_enrichment", "--docling-extract", str(path), str(output_path)]
     timeout, deadline_bounded = _deadline_bounded_timeout(
         timeout,
@@ -1053,14 +1053,14 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     if (
                         cached.get("page") == index
                         and isinstance(cached.get("text"), str)
-                        and not _page_requires_retry(cached, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
+                        and not page_requires_retry(cached, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
                     ):
                         pages.append(cached)
                         continue
                 except (OSError, ValueError, AttributeError):
                     pass
             raw_text = page.get_text("text") or ""
-            if _is_objectively_blank_page(page, raw_text):
+            if is_objectively_blank_page(page, raw_text):
                 pages.append(
                     {
                         "page": index,
@@ -1080,7 +1080,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 new_progress_pages += 1
                 continue
             method = "pymupdf_text"
-            confidence = _page_text_confidence(raw_text, method=method)
+            confidence = page_text_confidence(raw_text, method=method)
             text = raw_text
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
@@ -1142,7 +1142,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 status = "failed"
                 failure_reason = failure_reason or "empty_page_not_proven_blank"
             if status == "failed" and not cleaned and method == "fallback_text":
-                visual_profile = _visual_page_profile(page)
+                visual_profile = visual_page_profile(page)
                 if visual_profile.get("quasi_empty") is True:
                     original_status = status
                     original_failure_reason = failure_reason
@@ -1223,7 +1223,7 @@ def _should_try_ocr(text: str, *, page: fitz.Page | None = None) -> bool:
     # Mixed PDFs often have a native header/footer over a scanned page. The
     # text-length gate alone would mark those pages complete and hide the
     # image-only body from fact extraction.
-    return page is not None and _page_has_substantial_image(page)
+    return page is not None and page_has_substantial_image(page)
 
 
 def _extract_page_text_with_ocr_result(
@@ -1240,7 +1240,7 @@ def _extract_page_text_with_ocr_result(
         settings=load_settings(),
         ensure_deadline=_ensure_pdf_ocr_deadline,
         deadline_bounded_timeout=_deadline_bounded_timeout,
-        page_text_confidence=_page_text_confidence,
+        page_text_confidence=page_text_confidence,
         deadline_exception=PdfDeadlineExceeded,
         deadline_exceptions=(PdfDocumentOcrBudgetExceeded,),
         deadline_exception_factory=_pdf_deadline_exception,
@@ -1250,7 +1250,7 @@ def _extract_page_text_with_ocr_result(
     )
 
 
-def _docling_cache_path(file: Path) -> Path:
+def docling_cache_path(file: Path) -> Path:
     try:
         digest = hashlib.sha256(file.read_bytes()).hexdigest()[:16]
     except OSError:
@@ -1259,7 +1259,7 @@ def _docling_cache_path(file: Path) -> Path:
 
 
 def _read_docling_cache(file: Path) -> str | None:
-    path = _docling_cache_path(file)
+    path = docling_cache_path(file)
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
@@ -1267,12 +1267,12 @@ def _read_docling_cache(file: Path) -> str | None:
 
 def _write_docling_cache(file: Path, text: str) -> Path:
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = _docling_cache_path(file)
+    path = docling_cache_path(file)
     path.write_text(text, encoding="utf-8")
     return path
 
 
-def _should_docling_ocr(
+def should_docling_ocr(
     path: Path,
     settings: dict[str, object],
     profile: dict[str, float | int] | None = None,

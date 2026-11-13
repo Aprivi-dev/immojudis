@@ -9,7 +9,6 @@ with a short HEAD request and only writes a usable URL to ``raw_image_url``.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 from collections.abc import Iterable
@@ -19,7 +18,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.config import load_settings
+from src.config import env_flag_on_unless_false, load_settings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ EXCLUDED_IMAGE_URL_PATTERNS = (
 
 
 def image_validation_enabled() -> bool:
-    return os.getenv("IMAGE_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+    return env_flag_on_unless_false("IMAGE_VALIDATION_ENABLED")
 
 
 def is_excluded_image_url(url: object) -> bool:

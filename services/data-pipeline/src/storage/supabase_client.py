@@ -2219,10 +2219,10 @@ def restore_persisted_pdf_progress_for_sale(
             break
     if not restored:
         return []
-    from src.pdf_fact_extraction import _write_pdf_text_cache
+    from src.pdf_fact_extraction import write_pdf_text_cache
 
     try:
-        _write_pdf_text_cache(sale, restored)
+        write_pdf_text_cache(sale, restored)
     except (KeyError, OSError, TypeError, ValueError) as exc:
         LOGGER.warning("Could not materialize cold PDF progress for %s: %s", source_url, exc)
         return []
@@ -2275,7 +2275,7 @@ def _restore_persisted_pdf_text_caches(
     """
     if not persisted_pdf_texts:
         return
-    from src.pdf_fact_extraction import _write_pdf_text_cache
+    from src.pdf_fact_extraction import write_pdf_text_cache
 
     for sale in sales:
         source_url = clean_text(sale.source_url)
@@ -2283,7 +2283,7 @@ def _restore_persisted_pdf_text_caches(
         if not payload:
             continue
         try:
-            _write_pdf_text_cache(sale, payload)
+            write_pdf_text_cache(sale, payload)
         except (KeyError, OSError, TypeError, ValueError) as exc:
             LOGGER.warning("Could not restore persisted PDF cache for %s: %s", source_url, exc)
 

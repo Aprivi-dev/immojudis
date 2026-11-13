@@ -806,12 +806,6 @@ def apply_plan(
     }
 
 
-# Explicit aliases make the operator-facing intent clear to callers that use
-# this module as a library rather than through the CLI.
-build_backfill_plan = build_plan
-apply_backfill_plan = apply_plan
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Backfill borné des attributs physiques extraits des sources.")
     parser.add_argument(
@@ -864,8 +858,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("--input est obligatoire avec --plan", file=sys.stderr)
             return 2
         output = output or "source-extraction-backfill-plan.json"
-        if not output:
-            output = "source-extraction-backfill-plan.json"
         plan = plan_backfill(
             load_rows(input_path),
             plan_path=output,
@@ -890,9 +882,7 @@ __all__ = [
     "PlanInputError",
     "PlanIntegrityError",
     "apply_plan",
-    "apply_backfill_plan",
     "build_plan",
-    "build_backfill_plan",
     "load_plan",
     "load_rows",
     "main",

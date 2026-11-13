@@ -27,7 +27,6 @@ import argparse
 import hashlib
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -35,7 +34,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.config import document_reading_limits, load_settings
+from src.config import document_reading_limits, env_flag_on_unless_false, load_settings
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
 from src.enrichment.display_evidence import PUBLIC_EMAIL, PUBLIC_LINK, PUBLIC_PHONE
 from src.enrichment.display_facts import PROPERTY_TYPE_LABELS
@@ -1161,7 +1160,7 @@ def revalidate_stored_readings(db_url: str, *, limit: int) -> dict[str, int]:
 
 
 def reading_enabled() -> bool:
-    return str(os.getenv("DOCUMENT_READING_ENABLED", "true")).strip().lower() not in {"0", "false", "no", "off"}
+    return env_flag_on_unless_false("DOCUMENT_READING_ENABLED")
 
 
 def main(argv: list[str] | None = None) -> int:

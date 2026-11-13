@@ -22,7 +22,8 @@ from src.freshness import (
     record_source_checks,
 )
 from src.normalize import normalize_sale
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, download_documents
+from src.pdf_enrichment import download_documents
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.sale_local_files import sale_storage_id
 from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage

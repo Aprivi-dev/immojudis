@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.config import DOCUMENTS_DIR, PROCESSED_DIR, load_settings
 from src.pdf_document_types import classify_document_type
-from src.pdf_enrichment import _docling_cache_path, _should_docling_ocr
+from src.pdf_enrichment import docling_cache_path, should_docling_ocr
 from src.pdf_page_analysis import profile_pdf_for_docling
 
 
@@ -24,8 +24,8 @@ def build_pdf_diagnostics(documents_dir: Path = DOCUMENTS_DIR) -> list[dict[str,
             "size_mb": round(profile["size_mb"], 2),
             "page_count": profile["page_count"],
             "first_pages_text_chars": profile["first_pages_text_chars"],
-            "docling_cached": _docling_cache_path(path).exists(),
-            "docling_ocr_auto": _should_docling_ocr(path, {**settings, "pdf_docling_ocr_mode": "auto"}, profile),
+            "docling_cached": docling_cache_path(path).exists(),
+            "docling_ocr_auto": should_docling_ocr(path, {**settings, "pdf_docling_ocr_mode": "auto"}, profile),
             "diagnostic_reason": _diagnostic_reason(profile, settings),
         }
         rows.append(row)
