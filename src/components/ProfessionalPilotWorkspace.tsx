@@ -23,6 +23,7 @@ import {
 } from "@/lib/professional-pilots";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import { downloadBlob } from "@/lib/download-blob";
 import { isUuid } from "@/lib/sale-workspace-shared";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
@@ -305,12 +306,7 @@ export function ProfessionalPilotWorkspace({
       })),
     });
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${definition.kind}-dossier-${sale.id}.md`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    downloadBlob(blob, `${definition.kind}-dossier-${sale.id}.md`);
   };
 
   return (

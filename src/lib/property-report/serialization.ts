@@ -1,4 +1,10 @@
-import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import {
+  formatDate,
+  formatPercent,
+  formatPrice,
+  formatPricePerM2,
+  propertyTypeLabel,
+} from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
 import type {
   AuctionSale,
@@ -126,8 +132,9 @@ export function opportunitySummary({
   const parts: string[] = [];
   if (score != null) parts.push(`score ${score}/100`);
   if (apparentDiscountPct != null)
-    parts.push(`décote apparente ${formatPercent(apparentDiscountPct)}`);
-  if (grossYieldPct != null) parts.push(`rendement brut estimé ${formatPercent(grossYieldPct)}`);
+    parts.push(`décote apparente ${formatReportPercent(apparentDiscountPct)}`);
+  if (grossYieldPct != null)
+    parts.push(`rendement brut estimé ${formatReportPercent(grossYieldPct)}`);
   if (!ceilingAvailable) parts.push("plafond à compléter");
   return parts.length ? parts.join(" · ") : "Données à compléter avant décision.";
 }
@@ -222,35 +229,8 @@ export function normalizeNearbyCategoryLabels(value: unknown): string[] {
     .slice(0, 8);
 }
 
-export function normalizeOccupancyEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const excerpt = stringOrNumberValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" | ");
-    })
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-export function normalizeDpeEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringOrNumberValue(record.label, "");
-      const source = stringOrNumberValue(record.source, "");
-      const excerpt = stringOrNumberValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" | ");
-    })
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-export function normalizeRenovationEvidence(value: unknown): string[] {
+/** Pièces justificatives d'une analyse (occupation, DPE, travaux) : « libellé | source | extrait ». */
+export function normalizeEvidence(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
@@ -470,10 +450,9 @@ export function clampScore(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-export function formatPercent(value: unknown): string {
-  const number = numberValue(value);
-  if (number == null) return "—";
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(number)} %`;
+/** Pourcentage d'un rapport (PDF et lien partagé), de 0 à 100, une décimale au plus ; « — » s'il manque. */
+export function formatReportPercent(value: unknown): string {
+  return formatPercent(numberValue(value), 1);
 }
 
 export function formatRenovationBudgetRange(range: Record<string, unknown>): string {

@@ -2,7 +2,7 @@
 // seule couleur). Module pur, partagé par le verdict du plafond, la synthèse de la fiche et le
 // panneau de décision.
 import type { CeilingPlan } from "@/lib/bid-ceiling-engine";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 
 /** Sous cette part de la mise à prix, l'écart au-dessus de la mise à prix est une marge étroite. */
 const NARROW_MARGIN_RATIO = 0.05;
@@ -53,7 +53,7 @@ export function describeCeilingStartGap(
     return {
       kind: "below",
       gap,
-      text: `Avec ces hypothèses, votre ${terms.ceilingTerm} (${ceiling}) est ${formatPrice(-gap)} (${formatPercent(-gap / startingPrice)}) sous ${start} : le bien ne tient pas à son prix de départ.`,
+      text: `Avec ces hypothèses, votre ${terms.ceilingTerm} (${ceiling}) est ${formatPrice(-gap)} (${formatShortfallShare(-gap / startingPrice)}) sous ${start} : le bien ne tient pas à son prix de départ.`,
     };
   }
   if (gap < startingPrice * NARROW_MARGIN_RATIO) {
@@ -76,9 +76,8 @@ export function describeCeilingStartGap(
  * « 12 % » à partir de 1 %, une décimale entre 0,1 % et 1 %, « moins de 0,1 % » en dessous : on
  * n'écrit jamais « 0 % » ni « −0 % » pour un écart qui existe.
  */
-function formatPercent(ratio: number): string {
+function formatShortfallShare(ratio: number): string {
   const pct = ratio * 100;
   if (pct < 0.1) return "moins de 0,1 %";
-  const value = pct >= 1 ? Math.round(pct) : Math.round(pct * 10) / 10;
-  return `${value.toLocaleString("fr-FR")} %`;
+  return formatPercent(pct, pct >= 1 ? 0 : 1);
 }

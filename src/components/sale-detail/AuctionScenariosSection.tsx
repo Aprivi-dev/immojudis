@@ -15,7 +15,6 @@ import {
   RELIABILITY_LABELS,
   formatDataAsOf,
   formatEuro,
-  formatPercent,
   formatRatio,
   largestRemainderPercentages,
   scenarioPropertyGroup,
@@ -25,6 +24,7 @@ import {
   type AuctionScenarioSet,
   type ScenariosUnavailableReason,
 } from "@/lib/auction-scenarios";
+import { formatPercent, formatShareAsPercent } from "@/lib/format/numbers";
 import styles from "./AuctionScenariosSection.module.css";
 
 const number = new Intl.NumberFormat("fr-FR");
@@ -228,7 +228,7 @@ export function AuctionScenariosSection({
                     />
                     {AUCTION_SCENARIO_LABELS[scenario.key]}
                   </span>
-                  <strong>{formatPercent(percentages[index] / 100)}</strong>
+                  <strong>{formatPercent(percentages[index])}</strong>
                 </div>
                 <small>{scenarioAmount(scenario, price)}</small>
               </li>
@@ -240,7 +240,7 @@ export function AuctionScenariosSection({
           </p>
           <p className={styles.chance}>
             Part estimée des ventes comparables adjugées à au moins 2 fois la mise à prix :{" "}
-            <strong>{formatPercent(atLeastDouble / 100)}</strong>
+            <strong>{formatPercent(atLeastDouble)}</strong>
           </p>
         </>
       ) : (
@@ -267,7 +267,7 @@ export function AuctionScenariosSection({
             </div>
             <div>
               <dt>Adjugées à au moins 2 fois la mise à prix</dt>
-              <dd>{formatPercent(licitor.atLeastDoubleRate)}</dd>
+              <dd>{formatShareAsPercent(licitor.atLeastDoubleRate)}</dd>
             </div>
           </dl>
           {licitor.byYear.length > 1 ? (

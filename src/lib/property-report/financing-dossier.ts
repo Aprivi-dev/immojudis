@@ -1,5 +1,5 @@
 import { CONSIGNATION_MINIMUM, CONSIGNATION_RATE } from "@/lib/bid-ceiling-engine";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, isQualifiedPropertyType } from "@/lib/format";
 import { numberValue, stringOrNumberValue } from "@/lib/guards";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { PDF_PAGE_BREAK } from "@/lib/simple-pdf";
@@ -75,9 +75,9 @@ function euros(value: unknown): string {
   return number == null ? FINANCING_NOT_PROVIDED : formatPrice(number);
 }
 
-function text(value: unknown, ignored: readonly string[] = []): string {
+function text(value: unknown): string {
   const clean = stringOrNumberValue(value, "").trim();
-  return clean && !ignored.includes(clean) ? clean : FINANCING_NOT_PROVIDED;
+  return clean || FINANCING_NOT_PROVIDED;
 }
 
 /** Garantie de l'article R. 322-41 : 10 % de la mise à prix, jamais moins de 3 000 €. */
@@ -123,6 +123,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
   const legalFramework = typeof sale.legalFramework === "string" ? sale.legalFramework : null;
   const insolvency = tribunalRules && legalFramework === "insolvency";
   const seizure = tribunalRules && legalFramework === "judicial_seizure";
+  const propertyType = text(sale.propertyType);
   return [
     PDF_PAGE_BREAK,
     FINANCING_DOSSIER_TITLE,
@@ -133,7 +134,7 @@ export function financingDossierLines(input: FinancingDossierInput): string[] {
     "Le bien et la vente",
     `Bien: ${text(input.title)}`,
     `Localisation: ${location}`,
-    `Type: ${text(sale.propertyType, ["Bien", "Bien à qualifier"])} ; surface: ${
+    `Type: ${isQualifiedPropertyType(propertyType) ? propertyType : FINANCING_NOT_PROVIDED} ; surface: ${
       positive(sale.surface) != null ? text(sale.surfaceLabel) : FINANCING_NOT_PROVIDED
     }`,
     `Type de vente: ${

@@ -21,5 +21,9 @@ export {
   formatDayMonth,
 } from "./format/dates";
 export { formatCompactAddress } from "./format/address";
-export { occupancyLabel, propertyTypeLabel } from "./format/property-labels";
+export {
+  isQualifiedPropertyType,
+  occupancyLabel,
+  propertyTypeLabel,
+} from "./format/property-labels";
 export { documentTypeLabel } from "./format/documents";

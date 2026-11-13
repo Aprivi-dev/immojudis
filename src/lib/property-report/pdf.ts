@@ -22,19 +22,17 @@ import {
 import type { SavedReportRow } from "../property-reports";
 import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import {
-  formatPercent as formatKnownPercent,
+  formatReportPercent,
   formatRenovationBudgetRange,
   normalizeActiveComparableItems,
   normalizeAudienceChecklistItems,
   normalizeCadastralReferences,
   normalizeDemographicSignals,
-  normalizeDpeEvidence,
+  normalizeEvidence,
   normalizeLegalAttentionItems,
   normalizeMarketComparableRows,
   normalizeNearbyCategoryLabels,
   normalizeNeighborhoodSignals,
-  normalizeOccupancyEvidence,
-  normalizeRenovationEvidence,
   normalizeSourceTrace,
   normalizeStringList,
   normalizeUrbanPlanningItems,
@@ -104,7 +102,7 @@ export const REPORT_PDF_HEADINGS = [
 const NOT_PROVIDED = FINANCING_NOT_PROVIDED;
 
 function formatPercent(value: unknown): string {
-  return numberValue(value) != null ? formatKnownPercent(value) : NOT_PROVIDED;
+  return numberValue(value) != null ? formatReportPercent(value) : NOT_PROVIDED;
 }
 
 /** Montant en euros, avec son unité (« / mois », « / an »), ou « non renseigné ». */
@@ -113,7 +111,7 @@ function formatAmount(value: unknown, unit = ""): string {
   return amount != null ? `${formatPrice(amount)}${unit}` : NOT_PROVIDED;
 }
 
-/** Nombre entier ou texte du rapport suivi d'un suffixe (« /100 », « % »), ou « non renseigné ». */
+/** Nombre entier ou texte du rapport suivi d'un suffixe (« /100 »), ou « non renseigné ». */
 function formatCount(value: unknown, suffix = ""): string {
   const text = stringOrNumberValue(value, "");
   return text ? `${text}${suffix}` : NOT_PROVIDED;
@@ -223,7 +221,7 @@ export function reportToPdfLines(
   const demographicActions = normalizeStringList(demographicAnalysis.nextActions);
   const demographicMissingData = normalizeStringList(demographicAnalysis.missingData);
   const occupancyAnalysis = asRecord(analysis.occupancyAnalysis);
-  const occupancyEvidence = normalizeOccupancyEvidence(occupancyAnalysis.evidence);
+  const occupancyEvidence = normalizeEvidence(occupancyAnalysis.evidence);
   const occupancyNextActions = normalizeStringList(occupancyAnalysis.nextActions);
   const auctionCostAnalysis = asRecord(analysis.auctionCostAnalysis);
   const auctionCostSignals = normalizeStringList(auctionCostAnalysis.sourceFeeSignals);
@@ -238,10 +236,10 @@ export function reportToPdfLines(
   const urbanPlanningMissingChecks = normalizeStringList(urbanPlanningAnalysis.missingChecks);
   const dpe = asRecord(analysis.dpe);
   const dpeDiagnostic = asRecord(dpe.diagnostic);
-  const dpeEvidence = normalizeDpeEvidence(dpe.evidence);
+  const dpeEvidence = normalizeEvidence(dpe.evidence);
   const dpeNextActions = normalizeStringList(dpe.nextActions);
   const renovationAnalysis = asRecord(analysis.renovationAnalysis);
-  const renovationEvidence = normalizeRenovationEvidence(renovationAnalysis.evidence);
+  const renovationEvidence = normalizeEvidence(renovationAnalysis.evidence);
   const renovationActions = normalizeStringList(renovationAnalysis.nextActions);
   const renovationBudgetRange = formatRenovationBudgetRange(
     asRecord(renovationAnalysis.budgetRange),
@@ -474,7 +472,7 @@ export function reportToPdfLines(
           ...lineIfProvided(
             "Marge de sécurité",
             numberValue(ceiling.safetyDiscountPct) != null
-              ? `${numberValue(ceiling.safetyDiscountPct)} %`
+              ? formatPercent(ceiling.safetyDiscountPct)
               : null,
           ),
           `Base retenue: ${stringOrNumberValue(ceiling.basisLabel, "à confirmer")}`,
@@ -519,7 +517,7 @@ export function reportToPdfLines(
     wording.audiencePreparation,
     `Synthèse: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
     `Statut: ${stringOrNumberValue(audienceReadinessAnalysis.label, "à vérifier")}`,
-    `Progression: ${formatCount(audienceReadinessAnalysis.progressPct, " %")}`,
+    `Progression: ${formatPercent(audienceReadinessAnalysis.progressPct)}`,
     `Points prioritaires ouverts: ${formatCount(audienceReadinessAnalysis.highPriorityOpenCount)}`,
     ...(audienceChecklistItems.length
       ? audienceChecklistItems.slice(0, 8).map((item) => `- ${item}`)

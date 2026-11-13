@@ -1,4 +1,4 @@
-import { propertyTypeLabel } from "@/lib/format";
+import { isQualifiedPropertyType, propertyTypeLabel } from "@/lib/format";
 import { COMPANY_DESCRIPTION, COMPANY_NAME } from "@/lib/company-description";
 import { departmentFromCode } from "@/lib/department-pages";
 import { propertyImages } from "@/lib/sale-media";
@@ -61,8 +61,9 @@ function lowerFirst(value: string): string {
 }
 
 export function seoPropertyLabel(propertyType: string | null | undefined): string {
-  const label = propertyTypeLabel(propertyType);
-  return label === "Bien" || label === "Bien à qualifier" ? "Bien immobilier" : label;
+  return isQualifiedPropertyType(propertyType)
+    ? propertyTypeLabel(propertyType)
+    : "Bien immobilier";
 }
 
 export function seoSurface(value: number | null | undefined): string | null {

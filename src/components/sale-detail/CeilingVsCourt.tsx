@@ -5,13 +5,12 @@ import { Card } from "@/components/ui/primitives";
 import {
   RELIABILITY_EXPLANATIONS,
   RELIABILITY_LABELS,
-  formatPercent,
   formatRatio,
   type AuctionScenariosResponse,
 } from "@/lib/auction-scenarios";
 import { ceilingPosition } from "@/lib/ceiling-vs-court";
 import { fetchAuctionScenarios } from "@/lib/client-api";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 
@@ -68,7 +67,7 @@ export function CeilingVsCourt({
             ) : (
               <>
                 {position.atLeast ? "Au moins " : "Environ "}
-                <strong>{formatPercent((share ?? 0) / 100)}</strong>
+                <strong>{formatPercent(share ?? 0)}</strong>
               </>
             )}{" "}
             des ventes comparables {ofCourt} ont été adjugées à un prix inférieur à votre plafond de{" "}

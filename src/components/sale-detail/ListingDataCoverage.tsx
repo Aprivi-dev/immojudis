@@ -36,7 +36,7 @@ import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
 import type { AuctionSale } from "@/lib/types";
 import { asRecordOrNull } from "@/lib/guards";
 import { formatShortDate } from "@/lib/format/dates";
-import { propertyTypeLabel } from "@/lib/format/property-labels";
+import { isQualifiedPropertyType } from "@/lib/format/property-labels";
 
 const MISSING_TEXT_MARKERS = new Set([
   "-",
@@ -48,9 +48,6 @@ const MISSING_TEXT_MARKERS = new Set([
   "non renseignee",
   "unknown",
 ]);
-
-/** Ce que `propertyTypeLabel` affiche pour un type absent (« Bien ») ou non qualifié. */
-const UNQUALIFIED_PROPERTY_TYPE_LABELS = new Set(["Bien", "Bien à qualifier"]);
 
 const CHECKLIST = [
   { key: "propertyType", label: "Type de bien" },
@@ -129,7 +126,7 @@ function hasMeaningfulText(value: unknown): value is string {
 /** Le type compte comme publié quand la règle commune lui donne un vrai libellé. */
 function hasPropertyType(sale: AuctionSale): boolean {
   if (!hasMeaningfulText(sale.property_type)) return false;
-  return !UNQUALIFIED_PROPERTY_TYPE_LABELS.has(propertyTypeLabel(sale.property_type));
+  return isQualifiedPropertyType(sale.property_type);
 }
 
 function hasDescription(sale: AuctionSale): boolean {

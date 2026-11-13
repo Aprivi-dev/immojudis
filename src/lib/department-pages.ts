@@ -1,11 +1,12 @@
 import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
 import { departmentCode } from "@/lib/department-code";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
+import { formatDate } from "@/lib/format/dates";
+import { formatPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import type { SaleVenueType } from "@/lib/types";
 import { parseTimestamp as timestamp } from "@/lib/timestamp";
-import { formatLongParisDate as longDate } from "@/lib/long-date";
 
 /**
  * Pages « Ventes aux enchères immobilières par département » : une page par département, qui
@@ -521,10 +522,6 @@ export function departmentPageTitle(department: Pick<DepartmentRef, "name">): st
   return `Enchères immobilières : ${department.name}`;
 }
 
-function priceLabel(value: number): string {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
 /**
  * Description d'une page de département, calculée sur les chiffres de la page. Elle tient en 158
  * caractères : si tout n'y rentre pas, la mention des types de vente, puis la médiane, puis la date
@@ -543,7 +540,7 @@ export function departmentPageDescription(
     return `Aucune vente aux enchères immobilière à venir référencée pour le moment (${place}). Consultez les ventes des autres départements.`;
   }
   const head = `${count} ${count > 1 ? "ventes aux enchères immobilières" : "vente aux enchères immobilière"} à venir (${place})`;
-  const next = longDate(stats.nextSaleDate);
+  const next = formatDate(stats.nextSaleDate, "");
   const nextWord =
     stats.nextSaleVenueType === "tribunal"
       ? "prochaine audience"
@@ -553,7 +550,7 @@ export function departmentPageDescription(
   const nextText = next ? `${nextWord} le ${next}` : null;
   const median =
     stats.medianStartingPriceEur != null
-      ? `mise à prix médiane au tribunal ${priceLabel(stats.medianStartingPriceEur)}`
+      ? `mise à prix médiane au tribunal ${formatPrice(stats.medianStartingPriceEur)}`
       : null;
   // Les chiffres passent avant la mention générique des types de vente.
   for (const details of [[nextText, median], [nextText], []]) {

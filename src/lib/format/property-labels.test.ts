@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { occupancyLabel, propertyTypeLabel } from "./property-labels";
+import { isQualifiedPropertyType, occupancyLabel, propertyTypeLabel } from "./property-labels";
 
 describe("occupancyLabel", () => {
   // Tous les statuts de la contrainte SQL de `occupancy_status` (vacant, occupied, rented,
@@ -65,5 +65,39 @@ describe("propertyTypeLabel", () => {
 
   it("keeps a human-written label untouched", () => {
     expect(propertyTypeLabel("Château")).toBe("Château");
+  });
+});
+
+describe("isQualifiedPropertyType", () => {
+  it.each(["apartment", "house", "building", "land", "parking", "commercial", "mixed", "Château"])(
+    "qualifie %s, qui a un vrai libellé",
+    (type) => {
+      expect(isQualifiedPropertyType(type)).toBe(true);
+    },
+  );
+
+  it.each([null, undefined, "", "other", "unknown", "OTHER", "agricultural_estate"])(
+    "ne qualifie pas %s (« Bien » ou « Bien à qualifier »)",
+    (type) => {
+      expect(isQualifiedPropertyType(type)).toBe(false);
+    },
+  );
+
+  it("donne la même réponse pour un code et pour le libellé qu'un rapport a enregistré", () => {
+    for (const code of [
+      "apartment",
+      "house",
+      "building",
+      "land",
+      "parking",
+      "commercial",
+      "mixed",
+    ]) {
+      const label = propertyTypeLabel(code);
+      expect(propertyTypeLabel(label), code).toBe(label);
+      expect(isQualifiedPropertyType(label), code).toBe(true);
+    }
+    expect(isQualifiedPropertyType("Bien")).toBe(false);
+    expect(isQualifiedPropertyType("Bien à qualifier")).toBe(false);
   });
 });

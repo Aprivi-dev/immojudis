@@ -26,7 +26,7 @@ import { reportIndicativeNotice, reportWording } from "@/lib/property-report/rep
 import { RentSourceNotice } from "@/components/RentSourceNotice";
 import { reportRentReference } from "@/lib/property-report/rent-notice";
 import {
-  formatPercent,
+  formatReportPercent,
   formatRenovationBudgetRange,
   normalizeCadastralReferences,
   normalizeNearbyCategoryLabels,
@@ -326,7 +326,7 @@ export default async function SharedReportPage({ params }: PageParams) {
               ))}
               <SharedMetric
                 label="Marge de sécurité"
-                value={formatPercent(ceiling.safetyDiscountPct)}
+                value={formatReportPercent(ceiling.safetyDiscountPct)}
               />
               <SharedMetric
                 label="Base retenue"
@@ -519,7 +519,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label="Décote apparente"
-            value={formatPercent(opportunity.apparentDiscountPct)}
+            value={formatReportPercent(opportunity.apparentDiscountPct)}
           />
           <SharedMetric
             label="Valeur médiane estimée"
@@ -531,7 +531,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 ? "Rendement brut potentiel, charges comprises"
                 : "Rendement brut potentiel"
             }
-            value={formatPercent(opportunity.grossYieldPct)}
+            value={formatReportPercent(opportunity.grossYieldPct)}
           />
           <SharedMetric
             label="Score rentabilité"
@@ -543,7 +543,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label={rentReference ? "Rendement estimé, charges comprises" : "Rendement net estimé"}
-            value={formatPercent(rentabilityScore.netYieldPct)}
+            value={formatReportPercent(rentabilityScore.netYieldPct)}
           />
           <SharedMetric
             label="Cashflow mensuel"
