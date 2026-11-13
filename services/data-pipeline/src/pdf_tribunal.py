@@ -24,7 +24,7 @@ from typing import Any
 from src.court_competence import OfficialCourt, resolve_court_by_label
 from src.models import add_quality_flag
 from src.normalize import clean_text
-from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.pdf_fact_scope import pdf_record_fact_projection
 from src.tribunal_labels import _fold
 
 PDF_TRIBUNAL_EXTRACTION_FIELD = "pdf_tribunal_extraction"
@@ -116,7 +116,7 @@ def apply_pdf_tribunal(sale: Any, pdf_texts: list[dict[str, object]] | list[str]
     sale.tribunal_code = court.court_code
     payload["tribunal_label_assignment"] = court.label_evidence(chosen["label"])
     add_quality_flag(sale.quality_flags, "tribunal_competence_unverified")
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         ["tribunal", "tribunal_code"],
         evidence=chosen["evidence"],

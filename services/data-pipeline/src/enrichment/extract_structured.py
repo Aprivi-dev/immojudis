@@ -53,6 +53,7 @@ from src.personal_data import redact_personal_data, redact_personal_text
 from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
 from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.sale_local_files import sale_storage_id
+from src.timestamps import assumed_utc_timestamp
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
@@ -1276,17 +1277,8 @@ def _load_fact_failure_retry_after(cache_key: str, stage: str = FACT_FAILURE_STA
     payload = _load_durable_cache(cache_key, stage=stage)
     if not isinstance(payload, dict) or payload.get("kind") != "deterministic_failure":
         return None
-    retry_after = payload.get("retry_after")
-    if not isinstance(retry_after, str) or not retry_after.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(retry_after)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    parsed = parsed.astimezone(UTC)
-    return parsed if parsed > datetime.now(UTC) else None
+    retry_after = assumed_utc_timestamp(payload.get("retry_after"))
+    return retry_after if retry_after is not None and retry_after > datetime.now(UTC) else None
 
 
 def _save_fact_failure_marker(

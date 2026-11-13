@@ -2,10 +2,13 @@
 
 Sans lecture des pièces ni modèle : description de la source, position, tribunal, échéance d'un appel d'offres
 lue sur la page, procédure, surfaces, caractéristiques et préparation au catalogue. Partagée par la collecte
-(``src.main``) et la relecture d'une fiche (``src.source_detail``).
+(``src.main``) et la relecture d'une fiche (``src.source_detail``) ; le recalcul d'une vente stockée
+(``src.recompute_scoring``) en reprend la partie commune, ``derive_sale_facts``.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from src.asset_normalization import normalize_asset_features
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -29,12 +32,22 @@ def finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
         sale.raw_payload.pop("source_description", None)
     (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
     filter_raw_image_url(sale.raw_payload)
-    fill_tribunal(sale)
     apply_page_offer_deadline(sale)  # appel d'offres : date limite publiée sur la page (AGRASC, notaires, Cessions)
+    derive_sale_facts(sale, surface_context=surface_reasoning_context)
+    apply_catalogue_readiness(sale)
+
+
+def derive_sale_facts(sale: AuctionSale, *, surface_context: Callable[[AuctionSale], str]) -> None:
+    """Tribunal, procédure, surfaces et caractéristiques : ce que la collecte et le recalcul refont tous deux.
+
+    L'ordre compte : la procédure lit le tribunal, et le contexte des surfaces se lit après la procédure, qui
+    ajoute son bloc à ``source_blocks``. ``surface_context`` est celui de l'appelant (voir
+    ``src.lot_scope.recompute_surface_reasoning_context``).
+    """
+    fill_tribunal(sale)
     classify_sale_procedure(sale)
-    surface_context = surface_reasoning_context(sale)
-    if surface_context:
-        extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
+    context = surface_context(sale)
+    if context:
+        extract_and_apply_deterministic_surface_reasoning(sale, context)
     normalize_asset_features(sale)
     attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
-    apply_catalogue_readiness(sale)

@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_SCHEMA_VERSION,
     DVF_OFFICIAL_DATASET_URL,
     AuctionLotMatchContext,
     DvfAdjudicationCandidate,
@@ -264,7 +265,7 @@ def persisted_dvf_candidate(
     record: StoredDvfAdjudicationRecord,
 ) -> DvfAdjudicationCandidate:
     data = record.normalized_data
-    if data.get("schema_version") != "dvf_adjudication_candidate_v1":
+    if data.get("schema_version") != DVF_ADJUDICATION_SCHEMA_VERSION:
         raise DvfMatchingDataError("unsupported persisted DVF candidate schema")
     if data.get("mutation_nature") != "Adjudication":
         raise DvfMatchingDataError("persisted DVF candidate is not an adjudication")

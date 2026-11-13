@@ -24,7 +24,7 @@ from typing import Any
 
 from src.geocode_query import has_street_or_place
 from src.normalize import clean_text
-from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.pdf_fact_scope import pdf_record_fact_projection
 from src.text_folding import ascii_alnum_words, to_ascii
 
 PDF_ADDRESS_EXTRACTION_KEY = "pdf_address_extraction"
@@ -88,7 +88,7 @@ def apply_pdf_address(sale: Any, pdf_texts: list[dict[str, object]] | list[str])
         "document_url": chosen["document_url"],
         "occurrences": len(candidates),
     }
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         ["address"],
         evidence=str(chosen["evidence"]),

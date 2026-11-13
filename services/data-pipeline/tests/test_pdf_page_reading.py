@@ -24,6 +24,7 @@ from types import SimpleNamespace
 import pymupdf
 import pytest
 
+import src.pdf_deadline as pdf_deadline
 import src.pdf_enrichment as pdf_enrichment
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
 from src.pdf_progress import (
@@ -61,7 +62,7 @@ def ocr_settings(tmp_path, monkeypatch):
 
 
 def _extract(path: Path) -> dict[str, object]:
-    with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 120):
+    with pdf_deadline.pdf_deadline_scope(time.monotonic() + 120):
         return pdf_enrichment.extract_pdf_document(path, document={"label": "PV", "url": "https://example.test/pv.pdf"})
 
 

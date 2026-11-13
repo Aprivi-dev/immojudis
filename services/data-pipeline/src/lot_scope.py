@@ -66,18 +66,31 @@ def sale_fact_text(sale: object) -> str | None:
     return clean_text(raw_text) if is_lot_scoped(getattr(sale, "raw_payload", None)) else raw_text
 
 
-def surface_reasoning_context(sale: Any) -> str:
-    """Texte lu par le raisonnement sur les surfaces d'une vente (collecte) : titre, description, texte, blocs."""
+def _surface_context_fields(sale: Any) -> list[object]:
+    """Champs où le raisonnement sur les surfaces cherche : titre, description, texte du lot, blocs de la fiche."""
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     raw_text, source_blocks = fact_sources(payload, sale.raw_text)
     block_values = [
         value for key, value in source_blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"}
     ]
-    values: list[object] = [sale.title, sale.description, raw_text, payload.get("source_description"), *block_values]
+    return [sale.title, sale.description, raw_text, payload.get("source_description"), *block_values]
+
+
+def surface_reasoning_context(sale: Any) -> str:
+    """Texte lu par le raisonnement sur les surfaces d'une vente (collecte) : chaque champ sur une ligne."""
     # Source descriptions are often copied into several payload fields. Keep
     # each distinct field once without truncating or deduplicating within it.
-    parts = dict.fromkeys(clean_text(str(value)) for value in values if value)
+    parts = dict.fromkeys(clean_text(str(value)) for value in _surface_context_fields(sale) if value)
     return "\n".join(part for part in parts if part)
+
+
+def recompute_surface_reasoning_context(sale: Any) -> str:
+    """Le même texte pour le recalcul d'une vente stockée (``src.recompute_scoring``), champs seulement rognés.
+
+    Écart non tranché avec ``surface_reasoning_context`` : ici les retours à la ligne d'un champ restent, et ils
+    arrêtent les motifs de surface. Les aligner pourrait changer des surfaces publiées : écart à trancher.
+    """
+    return "\n".join(dict.fromkeys(str(value).strip() for value in _surface_context_fields(sale) if value))
 
 
 def _commune_key(value: object) -> str:
@@ -100,6 +113,7 @@ __all__ = [
     "is_lot_scoped",
     "lot_selected",
     "other_commune",
+    "recompute_surface_reasoning_context",
     "sale_fact_text",
     "surface_reasoning_context",
 ]

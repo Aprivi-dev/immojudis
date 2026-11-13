@@ -25,6 +25,7 @@ from src.text_folding import ascii_alnum_words, strip_accents
 DVF_OFFICIAL_SOURCE_NAME = "dvf_dgfip"
 DVF_OFFICIAL_DATASET_URL = "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
 DVF_ADJUDICATION_RECORD_KIND = "auction_result_candidate"
+DVF_ADJUDICATION_SCHEMA_VERSION = "dvf_adjudication_candidate_v1"
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ class DvfAdjudicationCandidate:
     def normalized_data(self) -> dict[str, object]:
         """JSON-safe source projection; money stays decimal text, never float."""
         return {
-            "schema_version": "dvf_adjudication_candidate_v1",
+            "schema_version": DVF_ADJUDICATION_SCHEMA_VERSION,
             "mutation_nature": "Adjudication",
             "sale_date": self.sale_date.isoformat(),
             "total_price_eur": format(self.total_price_eur, "f"),

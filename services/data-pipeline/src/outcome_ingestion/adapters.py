@@ -12,22 +12,20 @@ from src.official_sources.encheres_publiques_open_data import (
 from src.official_sources.justice_open_data import (
     JUSTICE_COMPETENCES_DATASET_URL,
     JUSTICE_OPEN_DATA_SOURCE_NAME,
+    JUSTICE_RECORD_KINDS,
+    JUSTICE_SCHEMA_VERSIONS,
     JUSTICE_STRUCTURES_DATASET_URL,
 )
-from src.outcome_ingestion.dvf_adjudication import DVF_OFFICIAL_SOURCE_NAME, DvfAdjudicationCandidate
+from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_RECORD_KIND,
+    DVF_ADJUDICATION_SCHEMA_VERSION,
+    DVF_OFFICIAL_SOURCE_NAME,
+    DvfAdjudicationCandidate,
+)
 from src.outcome_ingestion.service import JsonSourceRecord
 
 DVF_CONNECTOR_VERSION = "dvf-adjudication/1"
-DVF_SCHEMA_VERSION = "dvf_adjudication_candidate_v1"
 JUSTICE_CONNECTOR_VERSION = "justice-open-data/1"
-JUSTICE_SCHEMA_VERSIONS = {
-    "court_competence": "justice_court_competence_v1",
-    "justice_court_structure": "justice_court_structure_v1",
-}
-JUSTICE_RECORD_KINDS = {
-    "court_competence": "territorial_jurisdiction",
-    "justice_court_structure": "court_reference_candidate",
-}
 ENCHERES_CONNECTOR_VERSION = "encheres-publiques-open-data/1"
 ENCHERES_SCHEMA_VERSIONS = {
     "auction_hearing_candidate": "encheres_publiques_hearing_candidate_v1",
@@ -56,13 +54,13 @@ def dvf_adjudication_to_json_record(candidate: DvfAdjudicationCandidate) -> Json
         external_record_id=candidate.external_record_id,
         requested_url=candidate.source_url,
         canonical_url=candidate.source_url,
-        record_kind="auction_result_candidate",
+        record_kind=DVF_ADJUDICATION_RECORD_KIND,
         raw_payload=raw_payload,
         normalized_data=normalized,
         connector_version=DVF_CONNECTOR_VERSION,
         extractor_name="dvf_adjudication_projection",
         extractor_version="1",
-        schema_version=DVF_SCHEMA_VERSION,
+        schema_version=DVF_ADJUDICATION_SCHEMA_VERSION,
         capture_transport="local_file",
         http_status=None,
         request_method=None,

@@ -17,6 +17,7 @@ from src.asset_normalization import normalize_asset_features
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import documents_are_current
 from src.normalize import normalize_sale
+from src.pdf_deadline import PdfDeadlineExceeded, pdf_deadline_scope
 from src.pdf_document_selection import (
     _document_candidate_rejection_reason,
     adaptive_docling_timeout,
@@ -36,7 +37,6 @@ from src.pdf_enrichment import (
     extract_attached_document,
     extract_pdf_document,
     extract_pdf_pages,
-    pdf_deadline_scope,
 )
 from src.pdf_fact_extraction import (
     _extract_energy_diagnostics_from_documents,
@@ -44,7 +44,7 @@ from src.pdf_fact_extraction import (
     enrich_sale_from_pdf_text,
     write_pdf_text_cache,
 )
-from src.pdf_ocr import PdfDeadlineExceeded, PdfDocumentOcrBudgetExceeded, pdf_document_ocr_budget_scope
+from src.pdf_ocr import PdfDocumentOcrBudgetExceeded, pdf_document_ocr_budget_scope
 from src.pdf_page_analysis import page_requires_retry
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 
@@ -125,9 +125,9 @@ def test_deadline_ocr_recomputes_timeout_after_render(monkeypatch) -> None:
         def get_pixmap(self, **_kwargs):
             # Rendering consumed almost all of the original five-second
             # allowance; the subprocess must receive only the remainder.
-            from src import pdf_enrichment
+            from src import pdf_deadline
 
-            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() + 0.2)
+            pdf_deadline._PDF_DEADLINE.set(time.monotonic() + 0.2)
             return Pixmap()
 
     monkeypatch.setattr(
@@ -220,9 +220,9 @@ def test_deadline_checks_between_continuous_document_stream_chunks() -> None:
             yield b"first"
             # Simulate a peer that keeps the read timeout alive with tiny
             # chunks until the worker cutoff is reached.
-            from src import pdf_enrichment
+            from src import pdf_deadline
 
-            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+            pdf_deadline._PDF_DEADLINE.set(time.monotonic() - 1)
             yield b"second"
 
     response = httpx.Response(200, stream=Stream())
@@ -3479,7 +3479,7 @@ def test_a_page_of_photographs_is_settled_as_a_picture_page_not_as_blank(tmp_pat
 
     import pymupdf
 
-    from src.pdf_enrichment import pdf_deadline_scope
+    from src.pdf_deadline import pdf_deadline_scope
 
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
@@ -3541,7 +3541,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
 
     import pymupdf
 
-    from src.pdf_enrichment import pdf_deadline_scope
+    from src.pdf_deadline import pdf_deadline_scope
     from src.pdf_ocr import OCR_PICTURE_NO_TEXT_METHOD
 
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")

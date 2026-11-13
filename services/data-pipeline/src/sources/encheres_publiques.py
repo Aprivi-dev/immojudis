@@ -28,6 +28,7 @@ from src.sources.common import (
     unique_dicts,
 )
 from src.sources.encheres_publiques_extraction import fill_text_schedule, refresh_encheres_publiques_raw_sale
+from src.timestamps import sale_window
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -402,15 +403,15 @@ def _coordinates(address: dict[str, Any]) -> tuple[str | None, str | None]:
     return (str(latitude) if latitude is not None else None, str(longitude) if longitude is not None else None)
 
 
-def _source_sale_schedule(lot: dict[str, Any], event: dict[str, Any]) -> dict[str, str] | None:
+def _source_sale_schedule(lot: dict[str, Any], event: dict[str, Any]) -> dict[str, Any] | None:
     # Never mix a lot opening with an event closing (different populations).
     has_lot_boundary = any(lot.get(key) is not None for key in ("ouverture_date", "fermeture_date"))
-    schedule = lot if has_lot_boundary else event
-    opens_at = _timestamp_to_iso(schedule.get("ouverture_date"))
-    closes_at = _timestamp_to_iso(schedule.get("fermeture_date"))
-    if not opens_at or not closes_at or datetime.fromisoformat(closes_at) <= datetime.fromisoformat(opens_at):
-        return None
-    return {"opens_at": opens_at, "closes_at": closes_at}
+    boundaries = lot if has_lot_boundary else event
+    schedule = {
+        "opens_at": _timestamp_to_iso(boundaries.get("ouverture_date")),
+        "closes_at": _timestamp_to_iso(boundaries.get("fermeture_date")),
+    }
+    return schedule if sale_window(schedule) else None
 
 
 def _timestamp_to_iso(value: object) -> str | None:

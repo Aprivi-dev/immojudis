@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pymupdf
 import pytest
 
-from src import pdf_enrichment, pdf_ocr, pipeline_health, queued_runner
+from src import pdf_deadline, pdf_enrichment, pdf_ocr, pipeline_health, queued_runner
 from src.enrichment import extract_structured as extraction
 from src.models import AuctionSale
 from src.pdf_page_analysis import is_objectively_blank_page
@@ -107,14 +107,14 @@ def test_ocr_budget_checkpoint_is_distinct_and_continues_from_page_cache(tmp_pat
         },
     )
 
-    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as first_error:
+    with pytest.raises(pdf_deadline.PdfExtractionDeferred) as first_error:
         pdf_enrichment.extract_pdf_pages(path)
     assert first_error.value.progress_made is True
     assert first_error.value.checkpointed_pages == 1
     assert first_error.value.total_pages == 3
     assert calls == [0]
 
-    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as second_error:
+    with pytest.raises(pdf_deadline.PdfExtractionDeferred) as second_error:
         pdf_enrichment.extract_pdf_pages(path)
     assert second_error.value.progress_made is True
     assert second_error.value.checkpointed_pages == 2
@@ -283,7 +283,7 @@ def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
         lambda page, **kwargs: {'text': '', 'method': 'fallback_text', 'confidence': 0.0},
     )
 
-    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as error:
+    with pytest.raises(pdf_deadline.PdfExtractionDeferred) as error:
         pdf_enrichment.extract_pdf_pages(path)
     assert error.value.progress_made is False
     assert error.value.new_progress_pages == 0
@@ -308,17 +308,17 @@ def test_deadline_checkpoint_is_reused_on_next_pdf_pass(tmp_path, monkeypatch):
         if len(calls) == 1:
             # The page is returned and atomically checkpointed before the
             # extraction loop notices that its bounded pass has expired.
-            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+            pdf_deadline._PDF_DEADLINE.set(time.monotonic() - 1)
         return {'text': f'OCR page {page.number + 1}', 'method': 'ocr_test', 'confidence': .8}
 
     monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', checkpoint_then_expire)
 
-    with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as error:
-        with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 5):
+    with pytest.raises(pdf_deadline.PdfDeadlineExceeded) as error:
+        with pdf_deadline.pdf_deadline_scope(time.monotonic() + 5):
             pdf_enrichment.extract_pdf_pages(path)
     assert error.value.checkpointed_pages == 1
     assert calls == [0]
-    assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert pdf_deadline.pdf_deadline_remaining() is None
 
     pages = pdf_enrichment.extract_pdf_pages(path)
     assert calls == [0, 1]
@@ -401,7 +401,7 @@ def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_
         },
     )
 
-    with pytest.raises(pdf_ocr.PdfExtractionDeferred) as first_error:
+    with pytest.raises(pdf_deadline.PdfExtractionDeferred) as first_error:
         pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     aggregate_path = pdf_texts_dir / f"{sale_storage_id(sale)}.json"
@@ -426,7 +426,7 @@ def test_enrich_sale_materializes_partial_manifest_before_deferred_ocr_and_cold_
     aggregate[0]["_persisted_pdf_proof"] = True
     aggregate_path.write_text(json.dumps(aggregate), encoding="utf-8")
     shutil.rmtree(page_cache_dir / "pages")
-    with pytest.raises(pdf_ocr.PdfExtractionDeferred):
+    with pytest.raises(pdf_deadline.PdfExtractionDeferred):
         pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     assert ocr_pages == [0, 1]
@@ -521,17 +521,17 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
         lambda page, **_kwargs: ocr_pages.append(page.number + 1)
         or {"text": "OCR page 2", "method": "ocr_test", "confidence": 0.8},
     )
-    original_ensure_deadline = pdf_enrichment._ensure_pdf_deadline
+    original_ensure_deadline = pdf_enrichment.ensure_pdf_deadline
 
     def expire_before_second_page(*, operation, **kwargs):
         if operation == "starting PDF page 2":
-            pdf_enrichment._PDF_DEADLINE.set(time.monotonic() - 1)
+            pdf_deadline._PDF_DEADLINE.set(time.monotonic() - 1)
         return original_ensure_deadline(operation=operation, **kwargs)
 
-    monkeypatch.setattr(pdf_enrichment, "_ensure_pdf_deadline", expire_before_second_page)
+    monkeypatch.setattr(pdf_enrichment, "ensure_pdf_deadline", expire_before_second_page)
 
-    with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
-        with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as first_error:
+    with pdf_deadline.pdf_deadline_scope(time.monotonic() + 30):
+        with pytest.raises(pdf_deadline.PdfDeadlineExceeded) as first_error:
             pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     file_sha = document["sha256"]
@@ -584,8 +584,8 @@ def test_blank_page_checkpoint_survives_modern_proof_recovery_without_completion
     aggregate_path.write_text(json.dumps(restored), encoding="utf-8")
     shutil.rmtree(page_cache_dir / "pages")
 
-    with pdf_enrichment.pdf_deadline_scope(time.monotonic() + 30):
-        with pytest.raises(pdf_ocr.PdfDeadlineExceeded) as recovered_error:
+    with pdf_deadline.pdf_deadline_scope(time.monotonic() + 30):
+        with pytest.raises(pdf_deadline.PdfDeadlineExceeded) as recovered_error:
             pdf_enrichment.enrich_sale_from_pdfs(sale)
 
     assert recovered_error.value.partial_payload["pages"][0]["status"] == "blank_excluded"
@@ -614,7 +614,7 @@ def test_partial_checkpoint_keeps_memory_evidence_when_local_cache_write_fails(
         source_url="https://example.test/memory-checkpoint-sale",
         documents=[{"label": "PV", "url": url, "document_type": "pv_huissier"}],
     )
-    error = pdf_ocr.PdfExtractionDeferred(
+    error = pdf_deadline.PdfExtractionDeferred(
         "OCR pass budget reached; retry resumes",
         checkpointed_pages=1,
         total_pages=2,

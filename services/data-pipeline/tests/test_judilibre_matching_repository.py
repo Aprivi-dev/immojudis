@@ -267,11 +267,12 @@ def test_tj_insee_resolution_requires_current_official_justice_structure_and_exa
     assert len(resolutions) == 1
     assert resolutions[0].resolution_method == "justice_structure_insee_exact_name"
     justice_statement, parameters = cursor.calls[1]
-    assert "source.name = 'justice_open_data'" in justice_statement
+    assert "source.name = %s" in justice_statement
     assert "source.official" in justice_statement
     assert "source.legal_review_status = 'approved'" in justice_statement
     assert "source.ingestion_policy = 'allowed_automated'" in justice_statement
-    assert "justice_court_structure_v1" in justice_statement
+    assert "record.record_kind = %s" in justice_statement
+    assert "record.normalized_data->>'schema_version' = %s" in justice_statement
     assert "record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')" in justice_statement
     assert "newer.record_version > record.record_version" in justice_statement
     assert "public.source_purge_events" in justice_statement
@@ -279,7 +280,8 @@ def test_tj_insee_resolution_requires_current_official_justice_structure_and_exa
     assert "extensions.unaccent(lower(court_row.name))" in justice_statement
     assert "jsonb_array_elements_text" in justice_statement
     assert "join public.outcome_courts" in justice_statement
-    assert parameters == ("33063",)
+    # Source, nature et schéma écrits par l'import Justice (src.official_sources.justice_open_data).
+    assert parameters == ("justice_open_data", "court_reference_candidate", "justice_court_structure_v1", "33063")
 
 
 def test_unrecognized_court_code_is_diagnostic_only_without_fuzzy_query() -> None:
@@ -394,7 +396,8 @@ def test_persist_revalidates_current_source_target_and_signals_in_one_transactio
     assert "public.source_purge_events" in source_statement
     assert "for share of record, source" in source_statement
     assert cursor.calls[3][1] == ("record-1", "a" * 64)
-    assert "source.name = 'justice_open_data'" in cursor.calls[5][0]
+    assert "current_justice_structures" in cursor.calls[5][0]
+    assert cursor.calls[5][1][:3] == ("justice_open_data", "court_reference_candidate", "justice_court_structure_v1")
     target_statement = cursor.calls[6][0]
     assert "case_row.id = %s" in target_statement
     assert "round_row.court_id = %s" in target_statement

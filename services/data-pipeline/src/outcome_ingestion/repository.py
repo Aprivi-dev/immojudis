@@ -16,7 +16,17 @@ except ModuleNotFoundError:  # pragma: no cover - parser-only installations.
     Jsonb = None
 
 from src.official_sources.base import canonical_sha256
+from src.official_sources.justice_open_data import (
+    JUSTICE_OPEN_DATA_SOURCE_NAME,
+    JUSTICE_RECORD_KINDS,
+    JUSTICE_SCHEMA_VERSIONS,
+)
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
+from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_RECORD_KIND,
+    DVF_ADJUDICATION_SCHEMA_VERSION,
+    DVF_OFFICIAL_SOURCE_NAME,
+)
 from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
@@ -1155,10 +1165,10 @@ class OutcomeIngestionRepository:
                         from public.judicial_source_records record
                         join public.data_sources source on source.id = record.source_id
                         where record.id = %s::uuid
-                          and source.name = 'dvf_dgfip'
+                          and source.name = %s
                         limit 1
                         """,
-                        (normalized_cursor,),
+                        (normalized_cursor, DVF_OFFICIAL_SOURCE_NAME),
                     )
                     cursor_row = cursor.fetchone()
                     if cursor_row is None:
@@ -1179,6 +1189,9 @@ class OutcomeIngestionRepository:
                     )
                 )
                 parameters: tuple[object, ...] = (
+                    DVF_OFFICIAL_SOURCE_NAME,
+                    DVF_ADJUDICATION_RECORD_KIND,
+                    DVF_ADJUDICATION_SCHEMA_VERSION,
                     *(cursor_position or ()),
                     *((limit,) if limit is not None else ()),
                 )
@@ -1187,14 +1200,13 @@ class OutcomeIngestionRepository:
                     select record.id, record.external_record_id, record.normalized_data
                     from public.judicial_source_records record
                     join public.data_sources source on source.id = record.source_id
-                    where source.name = 'dvf_dgfip'
+                    where source.name = %s
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'auction_result_candidate'
+                      and record.record_kind = %s
                       and not record.training_eligible
-                      and record.normalized_data->>'schema_version'
-                        = 'dvf_adjudication_candidate_v1'
+                      and record.normalized_data->>'schema_version' = %s
                       and record.normalized_data->>'mutation_nature' = 'Adjudication'
                       {cursor_clause}
                       and not exists (
@@ -1502,160 +1514,9 @@ class OutcomeIngestionRepository:
         catalogue. Ambiguity is returned to the service and never guessed.
         """
 
-        cleaned_location = location.strip()
-        if not cleaned_location or len(cleaned_location) > 128:
-            return []
         with self._connect(self._db_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select court_row.id, court_row.code
-                    from public.outcome_courts court_row
-                    where court_row.active
-                      and lower(btrim(court_row.code)) = lower(btrim(%s))
-                    order by court_row.id
-                    limit 2
-                    """,
-                    (cleaned_location,),
-                )
-                direct_rows = cursor.fetchall()
-                if direct_rows:
-                    return [
-                        StoredJudilibreCourtResolution(
-                            court_id=str(row[0]),
-                            court_code=str(row[1]),
-                            resolution_method="outcome_court_code_exact",
-                            reference_sha256=canonical_sha256(
-                                {
-                                    "schema_version": "judilibre_court_resolution_v1",
-                                    "method": "outcome_court_code_exact",
-                                    "court_code": str(row[1]),
-                                }
-                            ),
-                        )
-                        for row in direct_rows
-                    ]
-
-                match = re.fullmatch(
-                    r"tj(?P<insee>(?:\d{5}|2[ab]\d{3}))",
-                    cleaned_location,
-                    flags=re.IGNORECASE,
-                )
-                if match is None:
-                    return []
-                insee_code = match.group("insee").upper()
-                cursor.execute(
-                    """
-                    with current_justice_structures as (
-                      select record.normalized_data, record.content_hash
-                      from public.judicial_source_records record
-                      join public.data_sources source on source.id = record.source_id
-                      where source.name = 'justice_open_data'
-                        and source.official
-                        and source.active
-                        and source.legal_review_status = 'approved'
-                        and source.ingestion_policy = 'allowed_automated'
-                        and record.record_kind = 'court_reference_candidate'
-                        and not record.training_eligible
-                        and record.normalized_data->>'schema_version'
-                          = 'justice_court_structure_v1'
-                        and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
-                        and upper(record.normalized_data->>'insee_code') = %s
-                        and record.normalized_data @> '{
-                          "training_eligible": false,
-                          "review_status": "pending",
-                          "source_grade": "A"
-                        }'::jsonb
-                        and not exists (
-                          select 1
-                          from public.judicial_source_records newer
-                          where newer.source_id = record.source_id
-                            and newer.external_record_id = record.external_record_id
-                            and newer.record_version > record.record_version
-                        )
-                        and not exists (
-                          select 1
-                          from public.source_purge_events purge
-                          where purge.source_id = record.source_id
-                            and (
-                              purge.source_record_id = record.id
-                              or purge.external_record_id = record.external_record_id
-                            )
-                            and purge.event_type in (
-                              'deletion_requested', 'deletion_completed',
-                              'redaction_requested', 'redaction_completed',
-                              'retention_expired'
-                            )
-                        )
-                    ), resolved as (
-                      select distinct
-                        court_row.id,
-                        court_row.code,
-                        justice_record.content_hash
-                      from current_justice_structures justice_record
-                      join public.outcome_courts court_row on (
-                        court_row.active
-                        and btrim(regexp_replace(
-                          extensions.unaccent(lower(court_row.name)),
-                          '[^a-z0-9]+', ' ', 'g'
-                        )) = btrim(regexp_replace(
-                          extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                          '[^a-z0-9]+', ' ', 'g'
-                        ))
-                      )
-                      union
-                      select distinct
-                        court_row.id,
-                        court_row.code,
-                        justice_record.content_hash
-                      from current_justice_structures justice_record
-                      join public.tribunals tribunal_row on (
-                        btrim(regexp_replace(
-                          extensions.unaccent(lower(tribunal_row.canonical_name)),
-                          '[^a-z0-9]+', ' ', 'g'
-                        )) = btrim(regexp_replace(
-                          extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                          '[^a-z0-9]+', ' ', 'g'
-                        ))
-                        or exists (
-                          select 1
-                          from jsonb_array_elements_text(
-                            case
-                              when jsonb_typeof(tribunal_row.aliases) = 'array'
-                                then tribunal_row.aliases
-                              else '[]'::jsonb
-                            end
-                          ) alias(value)
-                          where btrim(regexp_replace(
-                            extensions.unaccent(lower(alias.value)),
-                            '[^a-z0-9]+', ' ', 'g'
-                          )) = btrim(regexp_replace(
-                            extensions.unaccent(lower(justice_record.normalized_data->>'name')),
-                            '[^a-z0-9]+', ' ', 'g'
-                          ))
-                        )
-                      )
-                      join public.outcome_courts court_row
-                        on court_row.code = tribunal_row.code
-                       and court_row.active
-                    )
-                    select id, code, content_hash
-                    from resolved
-                    order by id
-                    limit 2
-                    """,
-                    (insee_code,),
-                )
-                rows = cursor.fetchall()
-        return [
-            StoredJudilibreCourtResolution(
-                court_id=str(row[0]),
-                court_code=str(row[1]),
-                resolution_method="justice_structure_insee_exact_name",
-                reference_sha256=str(row[2]),
-            )
-            for row in rows
-        ]
+                return _load_current_judilibre_court_resolutions(cursor, location=location)
 
     def load_judilibre_auction_match_contexts(
         self,
@@ -2276,15 +2137,14 @@ def _load_current_judilibre_court_resolutions(
           select record.normalized_data, record.content_hash
           from public.judicial_source_records record
           join public.data_sources source on source.id = record.source_id
-          where source.name = 'justice_open_data'
+          where source.name = %s
             and source.official
             and source.active
             and source.legal_review_status = 'approved'
             and source.ingestion_policy = 'allowed_automated'
-            and record.record_kind = 'court_reference_candidate'
+            and record.record_kind = %s
             and not record.training_eligible
-            and record.normalized_data->>'schema_version'
-              = 'justice_court_structure_v1'
+            and record.normalized_data->>'schema_version' = %s
             and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
             and upper(record.normalized_data->>'insee_code') = %s
             and record.normalized_data @> '{
@@ -2370,7 +2230,12 @@ def _load_current_judilibre_court_resolutions(
         order by id
         limit 2
         """,
-        (match.group("insee").upper(),),
+        (
+            JUSTICE_OPEN_DATA_SOURCE_NAME,
+            JUSTICE_RECORD_KINDS["justice_court_structure"],
+            JUSTICE_SCHEMA_VERSIONS["justice_court_structure"],
+            match.group("insee").upper(),
+        ),
     )
     rows = cursor.fetchall()
     return [
