@@ -23,6 +23,8 @@ type ManagementState = {
   referralStatus: "manual_review" | "sent_to_lawyer";
   privacyStatus: "received" | "completed";
   publicationStatus: "pending" | "approved";
+  /** Offre Analyse (`/api/billing/offer`) : ouverte, fermée ou illisible (erreur 503). */
+  offer: "open" | "closed" | "error";
 };
 
 test.describe("admin management", () => {
@@ -181,7 +183,7 @@ test.describe("admin management", () => {
   });
 
   test("hides the waiting-list mailing until the Analyse subscription opens", async ({ page }) => {
-    const state = await prepareAdminManagementPage(page, { offerOpen: false });
+    const state = await prepareAdminManagementPage(page, { offer: "closed" });
 
     await page.goto("/admin/comptes?onglet=clients");
     await expect(
@@ -190,6 +192,21 @@ test.describe("admin management", () => {
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("heading", { name: "Prévenir la liste d’attente" })).toHaveCount(0);
     expect(state.adminGetPaths).not.toContain("/api/admin/offer-opening-notifier");
+  });
+
+  test("says why the waiting list is hidden when the offer cannot be read, and retries", async ({
+    page,
+  }) => {
+    const state = await prepareAdminManagementPage(page, { offer: "error" });
+
+    await page.goto("/admin/comptes?onglet=clients");
+    const alert = page.getByRole("alert").filter({ hasText: "L’état de l’offre Analyse" });
+    await expect(alert).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Prévenir la liste d’attente" })).toHaveCount(0);
+
+    state.offer = "open";
+    await alert.getByRole("button", { name: "Réessayer" }).click();
+    await expect(page.getByRole("heading", { name: "Prévenir la liste d’attente" })).toBeVisible();
   });
 
   test("shows the pepites as a Quality tab, emergency stop in view", async ({ page }) => {
@@ -243,7 +260,7 @@ test.describe("admin management", () => {
 
 async function prepareAdminManagementPage(
   page: Page,
-  { offerOpen = true }: { offerOpen?: boolean } = {},
+  { offer = "open" }: { offer?: ManagementState["offer"] } = {},
 ): Promise<ManagementState> {
   const state: ManagementState = {
     subscriptionPayloads: [],
@@ -257,6 +274,7 @@ async function prepareAdminManagementPage(
     referralStatus: "manual_review",
     privacyStatus: "received",
     publicationStatus: "pending",
+    offer,
   };
   const session = createSession();
 
@@ -304,9 +322,16 @@ async function prepareAdminManagementPage(
 
   // Offre Analyse ouverte (prix configuré) : condition d'affichage de « Prévenir la liste d'attente ».
   await page.route("**/api/billing/offer", (route) =>
-    route.fulfill({
-      json: { configured: offerOpen, trialDays: 7, trialAvailable: false, label: "59 € / mois" },
-    }),
+    state.offer === "error"
+      ? route.fulfill({ status: 503, json: { error: "Offre indisponible" } })
+      : route.fulfill({
+          json: {
+            configured: state.offer === "open",
+            trialDays: 7,
+            trialAvailable: false,
+            label: "59 € / mois",
+          },
+        }),
   );
 
   await page.route("**/api/admin/**", async (route) => {
