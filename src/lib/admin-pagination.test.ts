@@ -5,6 +5,7 @@ import { adminInformationAgentReviewQuerySchema } from "@/lib/admin-information-
 import {
   ADMIN_PAGE_SIZE,
   adminClampOffset,
+  adminKnownTotal,
   adminNextOffset,
   adminPageMeta,
   adminPageRange,
@@ -12,6 +13,15 @@ import {
 } from "@/lib/admin-pagination";
 
 describe("admin pagination helpers", () => {
+  it("garde le total reçu, ou s'en tient aux lignes reçues quand il manque", () => {
+    expect(adminKnownTotal({ offset: 50, shown: 10, total: 230 })).toBe(230);
+    expect(adminKnownTotal({ offset: 0, shown: 0, total: 0 })).toBe(0);
+    expect(adminKnownTotal({ offset: 50, shown: 10, total: undefined as unknown as number })).toBe(
+      60,
+    );
+    expect(adminKnownTotal({ offset: 0, shown: 3, total: Number.NaN })).toBe(3);
+  });
+
   it("uses 50 rows per page", () => {
     expect(ADMIN_PAGE_SIZE).toBe(50);
   });

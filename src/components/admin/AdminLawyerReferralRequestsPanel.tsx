@@ -23,6 +23,7 @@ import {
   formatStartingPrice,
 } from "@/lib/format";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { adminKnownTotal } from "@/lib/admin-pagination";
 import { AdminPill } from "@/components/admin/admin-pill";
 
 type ReferralStatus = AdminLawyerReferralSummary["status"];
@@ -106,7 +107,8 @@ export function AdminLawyerReferralRequestsPanel() {
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
           {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur{" "}
-          {requestsQuery.data.total}. Le compteur des demandes ouvertes couvre toute la file.
+          {adminKnownTotal({ offset, shown: requests.length, total: requestsQuery.data.total })}. Le
+          compteur des demandes ouvertes couvre toute la file.
         </p>
       ) : null}
 
