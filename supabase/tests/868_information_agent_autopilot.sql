@@ -168,15 +168,15 @@ select throws_ok(
   '22023', null, 'a settings change needs a reason'
 );
 select ok(
-  (select art14_max_age_days = 60 and cap_total_override = 5
-   from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 60, "cap_total_override": 5}', 'Réglages de départ')),
+  (select art14_max_age_days = 20 and cap_total_override = 5
+   from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 20, "cap_total_override": 5}', 'Réglages de départ')),
   'settings change with a reason (values applied)'
 );
 -- Le journal est lu dans une instruction distincte : l'écriture de la fonction n'est pas visible dans son instruction.
 select ok(
   exists (
     select 1 from public.information_agent_autopilot_events
-    where kind = 'settings_changed' and before_values ->> 'art14_max_age_days' = '30' and after_values ->> 'art14_max_age_days' = '60'
+    where kind = 'settings_changed' and before_values ->> 'art14_max_age_days' = '30' and after_values ->> 'art14_max_age_days' = '20'
   ),
   'the settings change is journalled with its before/after values'
 );
