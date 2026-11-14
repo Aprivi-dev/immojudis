@@ -44,6 +44,10 @@ type AgentMockState = {
   originUnknown: boolean;
   /** Taille simulée des listes longues (pagination 50 par page) ; null = une seule ligne. */
   longListTotal: number | null;
+  /** Taille simulée de la seule file d'enrichissement (les autres listes n'en dépendent pas). */
+  queueTotal: number | null;
+  /** File d'enrichissement lente : sa réponse attend que cette promesse soit tenue. */
+  queueReleased: Promise<void> | null;
   /** Décalages (offset) demandés à chaque liste paginée, dans l'ordre. */
   requestedOffsets: Record<"claims" | "missions" | "review" | "catalogue", number[]>;
 };
@@ -634,6 +638,41 @@ test.describe("admin information agent", () => {
     expect(state.unexpectedRequests).toEqual([]);
   });
 
+  // Suite de l'incident du 14/11/2026 : la file, arrivée après le défilement vers l'éditeur, le
+  // repoussait sous l'écran et mettait le bouton « Ouvrir le message » d'une autre vente à sa place.
+  test("keeps the autopilot draft on screen when a long queue loads after the opening", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.pilotMission = pilotMissionFixture();
+    state.queueTotal = 12;
+    let releaseQueue = () => {};
+    state.queueReleased = new Promise<void>((resolve) => {
+      releaseQueue = resolve;
+    });
+
+    await page.goto("/admin/agent-ia?onglet=pilote");
+    await page.getByRole("button", { name: "Maison prête à valider" }).click();
+    const heading = page.getByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` });
+    await expect(heading).toBeVisible();
+    await expect(page.getByText("Chargement de la file de maturité…")).toBeVisible();
+    await waitForScrollEnd(page);
+
+    releaseQueue();
+    const queueButtons = page.getByRole("button", { name: "Ouvrir le message" });
+    await expect(queueButtons).toHaveCount(12);
+    await waitForScrollEnd(page);
+
+    await expect(heading).toBeInViewport();
+    // Aucune vente de la file sous les yeux à la place de l'éditeur.
+    for (const button of await queueButtons.all()) await expect(button).not.toBeInViewport();
+    // L'éditeur est plus haut que l'écran : « Valider et envoyer » est plus bas, dans CETTE mission.
+    await expect(page.getByTestId("send-target")).toHaveText(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
   test("shows the address origin field right under the unknown-origin message", async ({
     page,
   }) => {
@@ -723,6 +762,24 @@ async function sendOpenedDraft(page: Page) {
   await expect(toastMessage(page, "Demande envoyée.", { exact: true })).toBeVisible();
 }
 
+/** Fin d'un défilement doux : la page n'a pas bougé pendant dix images de suite. */
+async function waitForScrollEnd(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let last = window.scrollY;
+        let still = 0;
+        const step = () => {
+          still = window.scrollY === last ? still + 1 : 0;
+          last = window.scrollY;
+          if (still >= 10) resolve();
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+}
+
 function sentPayloads(state: AgentMockState) {
   return state.events
     .filter(
@@ -751,6 +808,8 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     autopilotUnavailable: false,
     originUnknown: false,
     longListTotal: null,
+    queueTotal: null,
+    queueReleased: null,
     requestedOffsets: { claims: [], missions: [], review: [], catalogue: [] },
   };
 
@@ -813,9 +872,10 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     const offset = Number(url.searchParams.get("offset") ?? 0);
     if (path === "/api/admin/catalogue-readiness" && method === "GET") {
       state.requestedOffsets.catalogue.push(offset);
+      await state.queueReleased;
       await route.fulfill({
         status: 200,
-        json: catalogueReadinessFixture(state.longListTotal, offset),
+        json: catalogueReadinessFixture(state.queueTotal ?? state.longListTotal, offset),
       });
       return;
     }
