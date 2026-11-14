@@ -505,6 +505,73 @@ describe("information-agent offline inbound scenarios", () => {
     expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toContain("email.bounced");
   });
 
+  it.each([
+    [
+      "email.complained",
+      { opposition_status: "opposed" },
+      "complained",
+      undefined as string | undefined,
+    ],
+    ["email.bounced", { bounce_status: "permanent" }, "bounced", "Permanent"],
+  ])(
+    "%s about the agent's email: address marked in the registry, mission and case marked, send log written",
+    async (type, registry, delivery, bounceType) => {
+      const upsert = vi.fn().mockResolvedValue({ error: null });
+      const updates: Array<{ table: string; values: Record<string, unknown> }> = [];
+      mocks.from.mockImplementation((table: string) => {
+        if (table === "information_agent_contacts") return { upsert };
+        const query = {
+          select: () => query,
+          eq: () => query,
+          limit: async () => ({ data: [{ id: `${table}-row`, metadata: {} }], error: null }),
+          update: (values: Record<string, unknown>) => {
+            updates.push({ table, values });
+            return { eq: async () => ({ error: null }) };
+          },
+        };
+        return query;
+      });
+      mocks.verify.mockReturnValueOnce({
+        type,
+        created_at: "2026-11-14T10:00:00.000Z",
+        data: {
+          email_id: "re_FACTICE_AGENT_1",
+          from: "Assistant Immojudis <agent@immojudis.test>",
+          to: ["Contact@Example.test"],
+          ...(bounceType ? { bounce: { type: bounceType, subType: "General" } } : {}),
+        },
+      });
+      const recordDelivery = vi.fn().mockResolvedValue(undefined);
+
+      const result = await webhook(
+        vi.fn(),
+        "signed",
+        {},
+        false,
+        { INFORMATION_AGENT_EMAIL_FROM: "Assistant Immojudis <agent@immojudis.test>" },
+        recordDelivery,
+      );
+
+      expect(result).toEqual({ accepted: true });
+      // 1. Registre des contacts : l'adresse n'est plus jamais sollicitée.
+      expect(upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "contact@example.test", ...registry }),
+        { onConflict: "scope_sale_id,normalized_email" },
+      );
+      // 2. Dossier et mission du message : état de remise posé.
+      expect(updates.map((update) => update.table).sort()).toEqual([
+        "information_agent_cases",
+        "information_agent_missions",
+      ]);
+      for (const update of updates) {
+        expect(update.values).toMatchObject({ metadata: { delivery: { status: delivery } } });
+      }
+      // 3. Journal des envois (`email_send_log`) : la source des compteurs d'arrêt automatique du pilote.
+      expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
+      expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toContain(type);
+    },
+  );
+
   it("writes the contact registry BEFORE the send log, and a log failure comes back as an error to replay", async () => {
     const order: string[] = [];
     const upsert = vi.fn(async () => (order.push("registre"), { error: null }));

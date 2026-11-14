@@ -142,7 +142,10 @@ export function sanitizeAutopilotEventDetails(
   const clean = (value: string) => value.replaceAll("@", "(at)").slice(0, 200);
   return Object.fromEntries(
     Object.entries(details)
-      .filter(([key]) => EVENT_DETAIL_KEYS.has(key) || key.startsWith("skip_"))
+      .filter(
+        ([key]) =>
+          EVENT_DETAIL_KEYS.has(key) || key.startsWith("skip_") || key.startsWith("error_"),
+      )
       .map(([key, value]) => [
         key,
         typeof value === "string" ? clean(value) : Array.isArray(value) ? value.map(clean) : value,

@@ -24,15 +24,26 @@ export async function loadAutopilotRegistryFacts(
   email: string,
   saleId: string,
 ): Promise<AutopilotRegistryFacts> {
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_contacts")
-    .select("created_at,observed_at,scope_sale_id,source_kind,metadata")
-    .eq("normalized_email", email)
-    .order("created_at", { ascending: true })
-    .limit(50);
-  if (error) throw error;
-  const rows = data ?? [];
-  const forSale = rows.filter((row) => row.scope_sale_id === saleId);
+  // Deux lectures : le premier relevé de l'adresse, toutes ventes confondues (article 14), et les lignes de CETTE
+  // vente, filtrées dans la requête avant la limite : pour un avocat relevé sur de nombreuses ventes, la date de
+  // relevé de la vente courante n'est jamais coupée. Sans elle, `address_stale` refuse (aucun repli).
+  const [first, sale] = await Promise.all([
+    supabaseAdmin
+      .from("information_agent_contacts")
+      .select("created_at")
+      .eq("normalized_email", email)
+      .order("created_at", { ascending: true })
+      .limit(1),
+    supabaseAdmin
+      .from("information_agent_contacts")
+      .select("observed_at,source_kind,metadata")
+      .eq("normalized_email", email)
+      .eq("scope_sale_id", saleId)
+      .limit(50),
+  ]);
+  if (first.error) throw first.error;
+  if (sale.error) throw sale.error;
+  const forSale = sale.data ?? [];
   const observed = forSale
     .map((row) => row.observed_at)
     .filter(
@@ -40,7 +51,7 @@ export async function loadAutopilotRegistryFacts(
     )
     .sort();
   return {
-    firstRecordedAt: rows[0]?.created_at ?? null,
+    firstRecordedAt: first.data?.[0]?.created_at ?? null,
     observedAt: observed[observed.length - 1] ?? null,
     originKinds: [...new Set(forSale.flatMap((row) => (row.source_kind ? [row.source_kind] : [])))],
     licitorDecoded: forSale.some((row) => {

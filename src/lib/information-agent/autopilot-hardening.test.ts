@@ -106,6 +106,8 @@ describe("liste blanche du journal", () => {
       reason: "écrit à avocat@cabinet.test",
       failed: ["a@b.fr", "roundtrip"],
       skip_domain_cap: 2,
+      error_draft_error: 1,
+      message: "duplicate key avocat@cabinet.test",
     });
     expect(clean).toEqual({
       code: "policy_rejected",
@@ -113,6 +115,8 @@ describe("liste blanche du journal", () => {
       reason: "écrit à avocat(at)cabinet.test",
       failed: ["a(at)b.fr", "roundtrip"],
       skip_domain_cap: 2,
+      // Erreurs du passage : un compte par code, jamais le message de l'erreur.
+      error_draft_error: 1,
     });
     expect(JSON.stringify(clean)).not.toContain("@");
   });

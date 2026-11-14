@@ -8,6 +8,8 @@ const db = vi.hoisted(() => ({
   sale: null as Record<string, unknown> | null,
   /** Table dont la lecture échoue (panne de la base). */
   failing: null as string | null,
+  /** Validations du jour de l'administrateur (compte de `information_agent_missions`). */
+  approvedToday: 0,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -90,7 +92,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
             ? // Comme en base : seules les clés demandées sont rendues.
               db.identityOppositions.filter((row) => this.requested?.includes(row.identity_key))
             : [];
-      return Promise.resolve({ data, error: null }).then(onFulfilled);
+      const count = this.table === "information_agent_missions" ? db.approvedToday : null;
+      return Promise.resolve({ data, error: null, count }).then(onFulfilled);
     }
   }
   return {
@@ -109,6 +112,8 @@ import { runAdminInformationAgentAction } from "@/lib/information-agent";
 import { INFORMATION_AGENT_NO_QUESTION_MESSAGE } from "@/lib/information-agent/draft-checks";
 import { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
 import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
+import { adminDailyApprovalCapMessage } from "@/lib/information-agent/approval-cap";
+import { issueAutopilotTrigger } from "@/lib/information-agent/schemas";
 
 const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ADMIN = { isAdmin: true, userId: ADMIN_ID } as never;
@@ -127,6 +132,7 @@ beforeEach(() => {
   db.writes.length = 0;
   db.sale = null;
   db.failing = null;
+  db.approvedToday = 0;
   db.identityOppositions = [];
   db.contacts = [
     {
@@ -182,6 +188,19 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
     expect(result.blockers).toContain("Contrôle impossible pour le moment : réessayez l’aperçu.");
     expect(result.blockers.join(" ")).not.toMatch(/canceling statement|cabinet@/);
+  });
+
+  it("plafond de validations du jour : bloque l'aperçu d'un administrateur, pas celui du pilote", async () => {
+    db.approvedToday = 30;
+    const manual = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+    expect(manual.blockers).toContain(adminDailyApprovalCapMessage(30));
+    // Le pilote a ses propres plafonds : son envoi ignore déjà celui des administrateurs, son aperçu aussi.
+    const pilot = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: content,
+      trigger: issueAutopilotTrigger("run-1"),
+    });
+    expect(pilot.blockers).not.toContain(adminDailyApprovalCapMessage(30));
   });
 
   it("montre l'e-mail exact sans rien écrire ni envoyer", async () => {

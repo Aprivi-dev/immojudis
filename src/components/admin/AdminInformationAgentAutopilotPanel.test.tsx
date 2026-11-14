@@ -36,17 +36,20 @@ function view(overrides: Record<string, unknown> = {}) {
       ready: false,
       checks: [{ label: "AIPD attestée", ok: false, detail: "Aucune attestation d’AIPD." }],
     },
-    ready: { count: 1, items: ["Appartement E2E à Bordeaux"] },
+    ready: {
+      count: 1,
+      items: [{ missionId: "mission-1", saleId: "sale-1", label: "Appartement E2E à Bordeaux" }],
+    },
     events: [{ at: "03/11/2026 10:40", label: "Passage", detail: "5 examinées" }],
     ...overrides,
   };
 }
 
-function renderPanel() {
+function renderPanel(onOpenDraft?: (draft: unknown) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <AdminInformationAgentAutopilotPanel />
+      <AdminInformationAgentAutopilotPanel onOpenDraft={onOpenDraft} />
     </QueryClientProvider>,
   );
 }
@@ -60,6 +63,20 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     expect(screen.getByText("2 sur 5")).toBeTruthy();
     expect(screen.getByText(/Contrôle de préparation au mode réel : non satisfait/)).toBeTruthy();
     expect(screen.getByText("Appartement E2E à Bordeaux")).toBeTruthy();
+  });
+
+  it("une vente prête à valider ouvre son brouillon dans l'éditeur", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    const onOpenDraft = vi.fn();
+    renderPanel(onOpenDraft);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Appartement E2E à Bordeaux" }));
+
+    expect(onOpenDraft).toHaveBeenCalledExactlyOnceWith({
+      missionId: "mission-1",
+      saleId: "sale-1",
+      label: "Appartement E2E à Bordeaux",
+    });
   });
 
   it("exige un motif de 8 caractères pour changer de mode, puis journalise le changement", async () => {
