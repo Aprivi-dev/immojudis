@@ -75,7 +75,10 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   if (kind === "auto_stop" && reason) return AUTOPILOT_STOP_LABELS[reason] ?? reason;
   if (reason) return reason;
   if (kind === "run") {
-    return `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées`;
+    const errors = Object.entries(record)
+      .filter(([key, count]) => key.startsWith("error_") && typeof count === "number")
+      .reduce((total, [, count]) => total + (count as number), 0);
+    return `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées${errors ? `, ${errors} en erreur` : ""}`;
   }
   if (kind === "skip") return String(record.code ?? "");
   return "";

@@ -61,6 +61,7 @@ vi.mock("@/lib/information-agent/autopilot-candidates", () => ({
 import {
   blockersAfterSimulationTolerance,
   defaultAutopilotDeps,
+  AutopilotDraftCancelError,
   prepareAutopilotDraft,
   runInformationAgentAutopilot,
   type AutopilotDeps,
@@ -89,6 +90,8 @@ import {
   InformationAgentUnverifiedSendError,
 } from "@/lib/information-agent/send";
 import { isConsumerMailAddress } from "@/lib/information-agent/address-hygiene";
+import { PublicApiError } from "@/lib/api-errors";
+import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
 
 const MONDAY_10H = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris, plage d'envoi
 const NIGHT = new Date("2026-11-03T02:00:00Z");
@@ -336,11 +339,15 @@ describe("matrice du pilote : S01 à S32", () => {
   it("S12 délai de 30 jours (même professionnel, autre vente) : brouillon refusé, passage continue", async () => {
     const { deps, calls } = harness({
       prepareDraft: async () => {
-        throw new Error("Ce professionnel a déjà été sollicité dans les 30 derniers jours.");
+        throw new PublicApiError(
+          "Ce professionnel a déjà été sollicité dans les 30 derniers jours.",
+          409,
+        );
       },
     });
     const summary = await runInformationAgentAutopilot(deps);
     expect(summary.skipped).toEqual({ draft_refused: 1 });
+    expect(summary.errors).toEqual({});
     expect(calls.sends).toBe(0);
   });
 
@@ -695,6 +702,160 @@ describe("matrice du pilote : S01 à S32", () => {
       expect(calls.sends).toBe(0);
     }
   });
+});
+
+describe("erreurs du passage et refus au moment de l'envoi (relecture du 14/11/2026)", () => {
+  const consoleError = () => vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+  it("I4 erreur inattendue au brouillon (base, bogue) : erreur du passage par son code, jamais un candidat écarté", async () => {
+    const logged = consoleError();
+    const warnings: Array<[string, boolean]> = [];
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      findCandidates: async () => ({
+        candidates: [candidate({ saleId: "a" }), candidate({ saleId: "b", domain: "b.test" })],
+        skipped: {},
+        examined: 2,
+      }),
+      prepareDraft: async (item) => {
+        if (item.saleId === "a") {
+          // Erreur de la base telle que la rend le client (objet, pas une Error), message porteur de données.
+          throw { code: "57014", message: "timeout sur me.dupont@cabinet-dupont.test" };
+        }
+        return draft();
+      },
+      warning: async (code, active) => {
+        warnings.push([code, active]);
+      },
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary).toMatchObject({ status: "ran", code: "run_errors", wouldSend: 1 });
+    expect(summary.errors).toEqual({ draft_error: 1 });
+    expect(summary.skipped).toEqual({});
+    // Journal du passage : un compte par code ; l'alerte d'avertissement s'ouvre.
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      error_draft_error: 1,
+    });
+    expect(warnings).toContainEqual(["run_errors", true]);
+    // Journal de la plateforme : le code et la nature de l'erreur, jamais son message.
+    const line = String(logged.mock.calls[0]?.[0]);
+    expect(JSON.parse(line)).toMatchObject({
+      code: "draft_error",
+      saleId: "a",
+      error: { code: "57014" },
+    });
+    expect(line).not.toContain("@");
+    logged.mockRestore();
+  });
+
+  it("I4 un passage sans erreur referme l'alerte", async () => {
+    const warnings: Array<[string, boolean]> = [];
+    const { deps } = harness({
+      warning: async (code, active) => {
+        warnings.push([code, active]);
+      },
+    });
+    expect(await runInformationAgentAutopilot(deps)).toMatchObject({ code: null, errors: {} });
+    expect(warnings).toContainEqual(["run_errors", false]);
+  });
+
+  it.each([
+    ["404 d'une relecture", new PublicApiError("Enquête introuvable.", 404)],
+    ["503 d'un registre indisponible", new PublicApiError("Registre indisponible.", 503)],
+    ["bogue", new TypeError("Cannot read properties of undefined")],
+  ])("I4 %s : erreur du passage, pas un refus attendu", async (_name, error) => {
+    const logged = consoleError();
+    const { deps } = harness({
+      prepareDraft: async () => {
+        throw error;
+      },
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.errors).toEqual({ draft_error: 1 });
+    expect(summary.skipped).toEqual({});
+    logged.mockRestore();
+  });
+
+  it("I4 annulation d'un brouillon refusé à l'aperçu en échec : journalisée, le passage continue", async () => {
+    const logged = consoleError();
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      findCandidates: async () => ({
+        candidates: [candidate({ saleId: "a" }), candidate({ saleId: "b", domain: "b.test" })],
+        skipped: {},
+        examined: 2,
+      }),
+      preview: async (prepared) =>
+        prepared.missionId === "mission-a"
+          ? { blockers: ["Le contact est explicitement opposé."], fingerprint: "f".repeat(64) }
+          : { blockers: [], fingerprint: "f".repeat(64) },
+      prepareDraft: async (item) => draft({ missionId: `mission-${item.saleId}` }),
+      cancelDraft: async () => {
+        throw new AutopilotDraftCancelError(new Error("base"));
+      },
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.errors).toEqual({ cancel_failed: 1 });
+    expect(summary.skipped).toEqual({ policy_rejected: 1 });
+    expect(summary.wouldSend).toBe(1);
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      error_cancel_failed: 1,
+      skip_policy_rejected: 1,
+    });
+    logged.mockRestore();
+  });
+
+  it("I4 annulations du brouillon du pilote : un échec remonte (dépendance par défaut et régénération)", async () => {
+    mocks.cancel.mockRejectedValue(new Error("base indisponible"));
+    const deps = defaultAutopilotDeps({}, { VERCEL_ENV: "production" });
+    await expect(deps.cancelDraft("mission-1", settings())).rejects.toBeInstanceOf(
+      AutopilotDraftCancelError,
+    );
+    // Régénération après un changement de gabarit : l'ancien brouillon ne s'annule pas, rien n'est créé.
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 9 });
+    mocks.db.rows = [
+      {
+        id: "old-draft",
+        status: "draft",
+        recipient_email: "me.dupont@cabinet-dupont.test",
+        metadata: { trigger: "autopilot", email_content_template_revision: 8 },
+      },
+    ];
+    await expect(prepareAutopilotDraft(candidate(), settings(), "run-1")).rejects.toBeInstanceOf(
+      AutopilotDraftCancelError,
+    );
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+    // Le passage la compte comme une erreur d'annulation.
+    const logged = consoleError();
+    const { deps: run } = harness({
+      prepareDraft: async () => {
+        throw new AutopilotDraftCancelError(new Error("base"));
+      },
+    });
+    expect((await runInformationAgentAutopilot(run)).errors).toEqual({ cancel_failed: 1 });
+    logged.mockRestore();
+  });
+
+  it.each(["not_live", "identity_excluded"])(
+    "M3 refus du garde au moment de l'envoi (%s) : journalisé à part, jamais une erreur d'API",
+    async (refusal) => {
+      const { deps, calls } = harness({
+        send: async () => {
+          throw new AutopilotSendRefusedError(refusal);
+        },
+      });
+      const summary = await runInformationAgentAutopilot(deps);
+      expect(summary).toMatchObject({ status: "ran", sent: 0 });
+      expect(summary.skipped).toEqual({ send_refused: 1 });
+      expect(calls.records.map((record) => record.kind)).not.toContain("send_error");
+      expect(calls.records.find((record) => record.kind === "skip")?.details).toEqual({
+        code: "send_refused",
+        reason: refusal,
+        saleId: "sale-1",
+      });
+      expect(calls.autoStops).toEqual([]);
+    },
+  );
 });
 
 describe("cas juridiques du cahier des charges", () => {

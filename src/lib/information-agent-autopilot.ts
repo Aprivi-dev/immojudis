@@ -48,6 +48,8 @@ import {
 } from "@/lib/information-agent/send";
 import { ResendRejectedError } from "@/lib/email-alerts";
 import { issueAutopilotTrigger } from "@/lib/information-agent/schemas";
+import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
+import { PublicApiError } from "@/lib/api-errors";
 
 /**
  * Pilote automatique de l'agent d'information : UN passage (appelé par `pg_cron` toutes les 10 minutes, via la
@@ -75,6 +77,11 @@ export type AutopilotRunSummary = {
   wouldSend: number;
   sent: number;
   skipped: Record<string, number>;
+  /**
+   * Erreurs du passage, par code (`draft_error`, `cancel_failed`) : ni un candidat écarté, ni une erreur d'API.
+   * Journalisées dans l'évènement `run` (`error_<code>`) et signalées par l'alerte `run_errors`.
+   */
+  errors: Record<string, number>;
   warnings: string[];
 };
 
@@ -144,6 +151,46 @@ const KNOWN_WARNINGS = [
 ] as const;
 const SIMULATION_PER_RUN = 5;
 
+/**
+ * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
+ * `PublicApiError` 400 (aucune lacune, aucune adresse, question non admise) ou 409 (délai de 30 jours, vente déjà
+ * sollicitée, opposition, greffe ou adresse retrouvée). Tout le reste (base, bogue, 404 d'une relecture, 503) est
+ * une erreur du passage.
+ */
+const EXPECTED_DRAFT_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 409]);
+
+function isExpectedDraftRefusal(error: unknown): boolean {
+  return error instanceof PublicApiError && EXPECTED_DRAFT_REFUSAL_STATUSES.has(error.status);
+}
+
+/** Annulation d'un brouillon du pilote impossible : remonte marquée comme telle, jamais avalée. */
+export class AutopilotDraftCancelError extends Error {
+  constructor(cause: unknown) {
+    super("Autopilot draft cancellation failed", { cause });
+    this.name = "AutopilotDraftCancelError";
+  }
+}
+
+async function cancelAutopilotDraft(adminId: string, missionId: string): Promise<void> {
+  try {
+    await cancelMission({ adminId, missionId });
+  } catch (error) {
+    throw new AutopilotDraftCancelError(error);
+  }
+}
+
+/**
+ * Nature d'une erreur pour les journaux : nom et code (base, fournisseur), jamais le message (il peut porter une
+ * adresse).
+ */
+function errorKind(error: unknown): { name: string; code: string | null } {
+  const code = (error as { code?: unknown } | null)?.code;
+  return {
+    name: error instanceof Error ? error.name : typeof error,
+    code: typeof code === "string" ? code.slice(0, 20) : null,
+  };
+}
+
 function actingAuth(userId: string): SupabaseAuthContext {
   return {
     supabase: supabaseAdmin as unknown as SupabaseAuthContext["supabase"],
@@ -212,11 +259,8 @@ export function defaultAutopilotDeps(
       });
       return { blockers: response.blockers, fingerprint: response.fingerprint };
     },
-    cancelDraft: async (missionId, settings) => {
-      await cancelMission({ adminId: settings.actingAdminId ?? "", missionId }).catch(
-        () => undefined,
-      );
-    },
+    cancelDraft: (missionId, settings) =>
+      cancelAutopilotDraft(settings.actingAdminId ?? "", missionId),
     markSimulated: async (missionId) => {
       const { data } = await supabaseAdmin
         .from("information_agent_missions")
@@ -291,7 +335,7 @@ export async function prepareAutopilotDraft(
     };
   }
   // Révision changée (ou brouillon périmé) : régénération, jamais un texte hors gabarit publié.
-  for (const row of own) await cancelMission({ adminId, missionId: row.id }).catch(() => undefined);
+  for (const row of own) await cancelAutopilotDraft(adminId, row.id);
   const created = await createAdminInformationAgentDraft({
     auth: actingAuth(adminId),
     input: { saleId: candidate.saleId },
@@ -303,7 +347,7 @@ export async function prepareAutopilotDraft(
     mission.recipientKind !== "source_lawyer" ||
     mission.recipientOrigin
   ) {
-    await cancelMission({ adminId, missionId: mission.id }).catch(() => undefined);
+    await cancelAutopilotDraft(adminId, mission.id);
     return { skip: "draft_recipient_mismatch" };
   }
   return {
@@ -327,6 +371,7 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
     wouldSend: 0,
     sent: 0,
     skipped: {},
+    errors: {},
     warnings: [],
   };
 }
@@ -398,6 +443,20 @@ export async function runInformationAgentAutopilot(
     const skip = (code: string) => {
       summary.skipped[code] = (summary.skipped[code] ?? 0) + 1;
     };
+    // Erreur du passage : comptée et journalisée par son code, jamais rangée parmi les candidats écartés.
+    const runError = (code: string, error: unknown, saleId: string) => {
+      summary.errors[code] = (summary.errors[code] ?? 0) + 1;
+      console.error(
+        JSON.stringify({
+          scope: "information_agent.autopilot",
+          level: "error",
+          runId,
+          code,
+          saleId,
+          error: errorKind(error),
+        }),
+      );
+    };
 
     for (const candidate of search.candidates) {
       // Relecture de l'interrupteur et des compteurs avant CHAQUE envoi.
@@ -429,9 +488,13 @@ export async function runInformationAgentAutopilot(
       let draft: Awaited<ReturnType<AutopilotDeps["prepareDraft"]>>;
       try {
         draft = await deps.prepareDraft(candidate, settings, runId);
-      } catch {
+      } catch (error) {
         // Brouillon refusé par les garde-fous (délai de 30 jours, vente déjà sollicitée, opposition…) : on passe.
-        skip("draft_refused");
+        if (isExpectedDraftRefusal(error)) skip("draft_refused");
+        else {
+          const code = error instanceof AutopilotDraftCancelError ? "cancel_failed" : "draft_error";
+          runError(code, error, candidate.saleId);
+        }
         continue;
       }
       if ("skip" in draft) {
@@ -452,7 +515,11 @@ export async function runInformationAgentAutopilot(
           saleId: candidate.saleId,
           blockers: blockers.length,
         });
-        await deps.cancelDraft(draft.missionId, settings);
+        try {
+          await deps.cancelDraft(draft.missionId, settings);
+        } catch (error) {
+          runError("cancel_failed", error, candidate.saleId);
+        }
         continue;
       }
 
@@ -489,6 +556,16 @@ export async function runInformationAgentAutopilot(
             await deps.record("skip", runId, { code: "approval_cap", saleId: candidate.saleId });
             break;
           }
+          // Refus du garde ou pilote coupé au moment de l'envoi : une décision, jamais une erreur d'API.
+          if (error instanceof AutopilotSendRefusedError) {
+            skip("send_refused");
+            await deps.record("skip", runId, {
+              code: "send_refused",
+              reason: error.refusal,
+              saleId: candidate.saleId,
+            });
+            break;
+          }
           const rateLimited = error instanceof ResendRejectedError && error.status === 429;
           await deps.record("send_error", runId, {
             status: rateLimited ? 429 : 500,
@@ -514,8 +591,14 @@ export async function runInformationAgentAutopilot(
       ...Object.fromEntries(
         Object.entries(summary.skipped).map(([code, n]) => [`skip_${code}`, n]),
       ),
+      ...Object.fromEntries(
+        Object.entries(summary.errors).map(([code, n]) => [`error_${code}`, n]),
+      ),
     });
-    return finish("ran", null);
+    const hasErrors = Object.keys(summary.errors).length > 0;
+    // Alerte d'avertissement : ouverte par un passage en erreur, refermée par un passage sans erreur.
+    await deps.warning("run_errors", hasErrors);
+    return finish("ran", hasErrors ? "run_errors" : null);
   } catch (error) {
     // Jamais d'exception après un envoi : le résumé partiel suffit, le passage suivant reprend.
     if (summary.sent > 0) return finish("ran", "partial_after_send");

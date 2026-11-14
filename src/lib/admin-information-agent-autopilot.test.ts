@@ -154,6 +154,35 @@ describe("panneau du pilote (serveur)", () => {
     expect(view.readiness.ready).toBe(false);
   });
 
+  it("un passage en erreur se lit dans le journal du panneau", async () => {
+    mocks.events.mockResolvedValue([
+      {
+        id: "e1",
+        at: "2026-11-03T09:30:00Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { examined: 5, prepared: 2, would_send: 1, sent: 0, error_draft_error: 2 },
+      },
+      {
+        id: "e2",
+        at: "2026-11-03T09:20:00Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { examined: 3, prepared: 1, would_send: 1, sent: 0 },
+      },
+    ]);
+    const view = await getAdminAutopilotView("token", {
+      env: {},
+      now: new Date("2026-11-03T09:30:00Z"),
+    });
+    expect(view.events.map((event) => event.detail)).toEqual([
+      "5 examinées, 2 préparées, 1 simulées, 0 envoyées, 2 en erreur",
+      "3 examinées, 1 préparées, 1 simulées, 0 envoyées",
+    ]);
+  });
+
   it("compte par structure incomplet : l'écran le dit au lieu d'échouer", async () => {
     const at = { env: {}, now: new Date("2026-11-03T09:30:00Z") };
     mocks.stats.mockResolvedValue({
