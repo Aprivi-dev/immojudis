@@ -18,7 +18,10 @@ export const GET = adminRoute(
   async (_request, { authToken }) => getAdminAutopilotView(authToken),
 );
 
-/** Mode, réglages, arrêt d'urgence, attestation d'AIPD : toujours journalisés, motif obligatoire. */
+/**
+ * Mode, réglages, arrêt d'urgence, attestation d'AIPD, passage de simulation lancé à la main : toujours
+ * journalisés, motif obligatoire (sauf l'arrêt d'urgence).
+ */
 export const POST = adminRoute(
   {
     scope: "admin.information-agent.autopilot.write",

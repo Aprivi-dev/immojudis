@@ -155,6 +155,13 @@ test.describe("admin information agent", () => {
     // Changer de mode exige un motif : rien ne part sans.
     await expect(panel.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    await expect(
+      panel.getByText("Saisissez un motif de 8 caractères au moins", { exact: false }),
+    ).toBeVisible();
+    // Le passage lancé à la main n'existe qu'en mode Simulation.
+    await expect(
+      panel.getByRole("button", { name: "Lancer un passage de simulation" }),
+    ).toHaveCount(0);
     expect(
       state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
     ).toBe(false);

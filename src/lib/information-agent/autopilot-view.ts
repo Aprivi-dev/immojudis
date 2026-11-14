@@ -89,6 +89,16 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   return "";
 }
 
+/** Passage lancé à la main par un administrateur (`details.manual`, posé par l'exécuteur du pilote). */
+function isOnDemandRun(event: { kind: string; details: unknown }): boolean {
+  return (
+    event.kind === "run" &&
+    Boolean(event.details) &&
+    typeof event.details === "object" &&
+    (event.details as Record<string, unknown>).manual === true
+  );
+}
+
 const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
   "Compte des envois par office ou service incomplet (trop de demandes sur 8 jours) : le pilote n’écrit à aucune adresse en notaires.fr ou gouv.fr tant qu’il l’est. Les autres compteurs restent exacts.";
 
@@ -161,7 +171,9 @@ export function buildAutopilotView({
     ready: { count: prepared.length, items: prepared },
     events: events.map((event) => ({
       at: formatNumericDateTime(event.at),
-      label: EVENT_LABELS[event.kind] ?? event.kind,
+      label: isOnDemandRun(event)
+        ? "Passage à la demande"
+        : (EVENT_LABELS[event.kind] ?? event.kind),
       detail: eventDetail(event.kind, event.reason, event.details),
     })),
   };

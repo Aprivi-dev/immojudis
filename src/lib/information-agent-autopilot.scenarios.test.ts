@@ -65,6 +65,7 @@ import {
   AutopilotDraftCancelError,
   prepareAutopilotDraft,
   runInformationAgentAutopilot,
+  runInformationAgentAutopilotOnDemand,
   type AutopilotDeps,
 } from "@/lib/information-agent-autopilot";
 import {
@@ -143,6 +144,8 @@ type Calls = {
   prepares: number;
   cancels: string[];
   released: number;
+  leases: number;
+  cooldownSince: Date[];
 };
 
 function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
@@ -153,6 +156,8 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     prepares: 0,
     cancels: [],
     released: 0,
+    leases: 0,
+    cooldownSince: [],
   };
   const deps: AutopilotDeps = {
     now: () => now,
@@ -163,9 +168,16 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     loadStats: async () => stats(),
     readiness: async () => ({ ready: true, checks: [] }),
     isAdmin: async () => true,
-    claimLease: async () => ({ kind: "held", token: "lease" }),
+    claimLease: async () => {
+      calls.leases += 1;
+      return { kind: "held", token: "lease" };
+    },
     releaseLease: async () => {
       calls.released += 1;
+    },
+    hasOnDemandRunSince: async (since) => {
+      calls.cooldownSince.push(since);
+      return false;
     },
     findCandidates: async () => ({ candidates: [candidate()], skipped: {}, examined: 1 }),
     prepareDraft: async () => {
@@ -923,6 +935,135 @@ describe("relecture de la PR #501 : simulation juste dès lundi", () => {
     expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
       would_send: 1,
     });
+  });
+});
+
+describe("passage de simulation lancé à la main (demande du 14/11/2026)", () => {
+  const SATURDAY = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris, hors plage
+  const request = { adminId: "admin-2", reason: "Premier passage demandé" };
+  const simulation = { loadSettings: async () => settings({ mode: "simulation" }) };
+
+  it("accepté en simulation un samedi hors plage : même passage, aucun envoi, journalisé « à la main »", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    const summary = await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(summary).toMatchObject({ status: "ran", mode: "simulation", prepared: 1, wouldSend: 1 });
+    expect(summary.sent).toBe(0);
+    expect(calls.sends).toBe(0);
+    expect(mocks.runAction).not.toHaveBeenCalled();
+    expect(mocks.sendTrackedEmail).not.toHaveBeenCalled();
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+    expect(calls.leases).toBe(1);
+    expect(calls.released).toBe(1);
+    expect(calls.records.map((record) => record.kind)).toEqual(["would_send", "run"]);
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      mode: "simulation",
+      manual: true,
+      actorId: "admin-2",
+      reason: "Premier passage demandé",
+      examined: 1,
+      prepared: 1,
+      would_send: 1,
+    });
+  });
+
+  it("mêmes bornes que la tâche planifiée : 5 brouillons recherchés au plus", async () => {
+    const limits: number[] = [];
+    const { deps } = harness(
+      {
+        ...simulation,
+        findCandidates: async (_settings, _now, limit) => {
+          limits.push(limit);
+          return { candidates: [], skipped: {}, examined: 0 };
+        },
+      },
+      SATURDAY,
+    );
+    await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(limits).toEqual([5]);
+  });
+
+  it.each(["off", "live"] as const)(
+    "mode %s : refusé avant tout bail, toute lecture de candidat et tout envoi",
+    async (mode) => {
+      for (const now of [SATURDAY, MONDAY_10H]) {
+        const findCandidates = vi.fn();
+        const { deps, calls } = harness(
+          { loadSettings: async () => settings({ mode }), findCandidates },
+          now,
+        );
+        expect(await runInformationAgentAutopilotOnDemand(request, deps)).toMatchObject({
+          status: "skipped",
+          code: "not_simulation",
+          mode,
+        });
+        expect(calls.leases).toBe(0);
+        expect(findCandidates).not.toHaveBeenCalled();
+        expect(calls.sends).toBe(0);
+        expect(calls.records).toEqual([]);
+      }
+    },
+  );
+
+  it("un second passage à la demande dans les 10 minutes est refusé, sous le bail, sans rien préparer", async () => {
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        hasOnDemandRunSince: async (since) => {
+          calls.cooldownSince.push(since);
+          return true;
+        },
+      },
+      SATURDAY,
+    );
+    expect(await runInformationAgentAutopilotOnDemand(request, deps)).toMatchObject({
+      status: "skipped",
+      code: "on_demand_cooldown",
+    });
+    expect(calls.cooldownSince).toEqual([new Date(SATURDAY.getTime() - 10 * 60_000)]);
+    expect(calls.prepares).toBe(0);
+    expect(calls.records).toEqual([]);
+    expect(calls.released).toBe(1);
+  });
+
+  it("même verrou d'exécution unique : un passage en cours fait refuser le passage à la demande", async () => {
+    const { deps, calls } = harness(
+      { ...simulation, claimLease: async () => ({ kind: "busy" }) },
+      SATURDAY,
+    );
+    expect(await runInformationAgentAutopilotOnDemand(request, deps)).toMatchObject({
+      status: "skipped",
+      code: "busy",
+    });
+    expect(calls.prepares).toBe(0);
+  });
+
+  it("le mode passe en réel pendant le passage : interrompu, aucun envoi", async () => {
+    let reads = 0;
+    const { deps, calls } = harness(
+      {
+        loadSettings: async () => settings({ mode: reads++ === 0 ? "simulation" : "live" }),
+      },
+      SATURDAY,
+    );
+    const summary = await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(summary.skipped).toEqual({ interrupted: 1 });
+    expect(calls.sends).toBe(0);
+    expect(calls.prepares).toBe(0);
+  });
+
+  it("la tâche planifiée garde sa plage horaire et ne consulte pas le délai des passages à la demande", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    expect(await runInformationAgentAutopilot(deps)).toMatchObject({
+      status: "skipped",
+      code: "outside_window",
+    });
+    expect(calls.leases).toBe(0);
+    const weekday = harness(simulation, MONDAY_10H);
+    await runInformationAgentAutopilot(weekday.deps);
+    expect(weekday.calls.cooldownSince).toEqual([]);
+    expect(
+      weekday.calls.records.find((record) => record.kind === "run")?.details,
+    ).not.toHaveProperty("manual");
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminAutopilotEmergencyStop } from "@/components/admin/AdminAutopilotEmergencyStop";
 import { toast } from "@/lib/toast";
@@ -23,7 +23,8 @@ const MODES = [
  * Pilote automatique : interrupteur à trois états, compteurs, contrôle de préparation, brouillons prêts à
  * valider, derniers événements et arrêt d’urgence. Désactivé par défaut. Tout arrive mis en forme par le
  * serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est journalisé. Un brouillon prêt
- * à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`), là où il se valide.
+ * à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`), là où il se valide. En mode
+ * Simulation, un passage peut être lancé à la main (hors plage horaire) ; son résultat ou son refus s’affiche.
  */
 export function AdminInformationAgentAutopilotPanel({
   onOpenDraft,
@@ -31,22 +32,32 @@ export function AdminInformationAgentAutopilotPanel({
   onOpenDraft?: (draft: AutopilotPreparedDraft) => void;
 }) {
   const queryClient = useQueryClient();
+  const reasonHintId = useId();
   const [reason, setReason] = useState("");
+  const [runOutcome, setRunOutcome] = useState<{ refused: boolean; text: string } | null>(null);
   const [cap, setCap] = useState("");
   const [days, setDays] = useState("");
   const [aipd, setAipd] = useState("");
   const query = useQuery(autopilotQuery());
   const run = useMutation({
     mutationFn: runAdminInformationAgentAutopilotActionClient,
-    onSuccess: (view) => {
+    onSuccess: ({ onDemandRun, ...view }) => {
       queryClient.setQueryData(QUERY_KEY, view);
       setReason("");
-      toast.success("Pilote automatique mis à jour.");
+      if (onDemandRun) setRunOutcome({ refused: false, text: onDemandRun.text });
+      toast.success(
+        onDemandRun ? "Passage de simulation terminé." : "Pilote automatique mis à jour.",
+      );
     },
-    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
+    onError: (error, input) => {
+      const message = queryErrorMessage(error, "Action impossible");
+      if (input.action === "run_simulation_now") setRunOutcome({ refused: true, text: message });
+      toast.error(message);
+    },
   });
   const view = query.data;
-  const ready = reason.trim().length >= 8 && !run.isPending;
+  const reasonMissing = reason.trim().length < 8;
+  const ready = !reasonMissing && !run.isPending;
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">
@@ -77,6 +88,7 @@ export function AdminInformationAgentAutopilotPanel({
               <input
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
+                aria-describedby={reasonMissing ? reasonHintId : undefined}
                 className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
               />
             </label>
@@ -92,7 +104,38 @@ export function AdminInformationAgentAutopilotPanel({
               </button>
             ))}
             <AdminAutopilotEmergencyStop mode={view.mode} />
+            {reasonMissing ? (
+              <p id={reasonHintId} className="basis-full text-xs text-brand-navy/70">
+                Saisissez un motif de 8 caractères au moins pour activer les boutons (l’arrêt
+                d’urgence n’en demande pas).
+              </p>
+            ) : null}
           </div>
+          {view.mode === "simulation" || runOutcome ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {view.mode === "simulation" ? (
+                <button
+                  type="button"
+                  className={BTN}
+                  disabled={!ready}
+                  onClick={() => {
+                    setRunOutcome(null);
+                    run.mutate({ action: "run_simulation_now", reason });
+                  }}
+                >
+                  Lancer un passage de simulation
+                </button>
+              ) : null}
+              {runOutcome ? (
+                <p
+                  role={runOutcome.refused ? "alert" : "status"}
+                  className={runOutcome.refused ? "text-danger" : "text-brand-navy/80"}
+                >
+                  {runOutcome.text}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <dl className="grid gap-x-6 sm:grid-cols-2">
             {view.counters.map((counter) => (
               <div key={counter.label} className="flex justify-between gap-3 border-b py-1">

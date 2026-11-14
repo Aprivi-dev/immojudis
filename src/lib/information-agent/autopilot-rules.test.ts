@@ -109,6 +109,28 @@ describe("plage d'envoi (Europe/Paris)", () => {
     });
     expect(autopilotRunGate(settings(), NOW)).toEqual({ ok: true });
   });
+
+  it("passage à la demande : simulation seulement, sans plage horaire ; pause et arrêt tiennent", () => {
+    const saturday = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris
+    const onDemand = { onDemand: true };
+    // La tâche planifiée garde sa plage horaire.
+    expect(autopilotRunGate(settings(), saturday)).toEqual({ ok: false, code: "outside_window" });
+    expect(autopilotRunGate(settings(), saturday, onDemand)).toEqual({ ok: true });
+    for (const mode of ["off", "live"] as const) {
+      for (const when of [saturday, NOW]) {
+        expect(autopilotRunGate(settings({ mode }), when, onDemand)).toEqual({
+          ok: false,
+          code: "not_simulation",
+        });
+      }
+    }
+    expect(
+      autopilotRunGate(settings({ pausedUntil: "2026-11-15T09:00:00Z" }), saturday, onDemand),
+    ).toEqual({ ok: false, code: "paused" });
+    expect(
+      autopilotRunGate(settings({ autoStoppedAt: "2026-11-14T10:00:00Z" }), saturday, onDemand),
+    ).toEqual({ ok: false, code: "auto_stopped" });
+  });
 });
 
 describe("phases et plafonds", () => {

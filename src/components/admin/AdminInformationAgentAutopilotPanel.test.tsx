@@ -128,6 +128,75 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     ).toBe(true);
   });
 
+  it("dit à côté du motif pourquoi les boutons sont grisés tant qu'il manque", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    renderPanel();
+
+    const reason = await screen.findByLabelText(/Motif du changement/);
+    const hint = screen.getByText(/Saisissez un motif de 8 caractères au moins/);
+    expect(reason.getAttribute("aria-describedby")).toBe(hint.id);
+    fireEvent.change(reason, { target: { value: "Motif assez long" } });
+    expect(screen.queryByText(/Saisissez un motif de 8 caractères au moins/)).toBeNull();
+  });
+
+  it.each([
+    ["off", "Éteint"],
+    ["live", "Réel"],
+  ])("mode %s : aucun bouton de passage à la demande", async (mode, modeLabel) => {
+    mocks.fetch.mockResolvedValue(view({ mode, modeLabel }));
+    renderPanel();
+
+    expect(await screen.findByText(modeLabel, { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Lancer un passage de simulation" })).toBeNull();
+  });
+
+  it("mode Simulation : lance un passage avec le motif, puis affiche le résultat", async () => {
+    const simulation = { mode: "simulation", modeLabel: "Simulation (aucun envoi)" };
+    mocks.fetch.mockResolvedValue(view(simulation));
+    mocks.run.mockResolvedValue({
+      ...view(simulation),
+      onDemandRun: {
+        text: "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+      },
+    });
+    renderPanel();
+
+    const launch = await screen.findByRole("button", { name: "Lancer un passage de simulation" });
+    expect((launch as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Motif du changement/), {
+      target: { value: "Premier passage demandé" },
+    });
+    expect((launch as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(launch);
+
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toEqual({
+      action: "run_simulation_now",
+      reason: "Premier passage demandé",
+    });
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+    );
+    // Le motif se vide après l'action : le bouton redevient grisé, et l'écran dit pourquoi.
+    expect((launch as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Saisissez un motif de 8 caractères au moins/)).toBeTruthy();
+  });
+
+  it("un passage refusé affiche son motif à côté du bouton", async () => {
+    mocks.fetch.mockResolvedValue(view({ mode: "simulation", modeLabel: "Simulation" }));
+    mocks.run.mockRejectedValue(
+      new Error("Un passage à la demande a déjà été lancé il y a moins de 10 minutes."),
+    );
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText(/Motif du changement/), {
+      target: { value: "Deuxième passage demandé" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lancer un passage de simulation" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("il y a moins de 10 minutes");
+  });
+
   it("dit que le pilote est indisponible plutôt que d'afficher un état inventé", async () => {
     mocks.fetch.mockRejectedValue(new Error("boom"));
     renderPanel();
