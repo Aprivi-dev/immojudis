@@ -194,7 +194,7 @@ describe("vue des adresses", () => {
 
   it("date la vérification à l'heure de Paris et rappelle que la boîte de contact est hors Resend", () => {
     const view = buildAddressesView(report());
-    expect(view.footnote).toContain("Vérifié le 2 novembre 2026 à 11:00");
+    expect(view.footnote).toContain("Vérifié le 2 novembre 2026 à 11 h 00");
     expect(view.footnote).toContain("Google Workspace");
     expect(view.alerts).toEqual(["Aucun DMARC publié pour immojudis.com."]);
   });

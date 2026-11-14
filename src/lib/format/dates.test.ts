@@ -16,7 +16,7 @@ describe("dates affichées à l'heure de Paris", () => {
 
   it("donne chaque variante une fois", () => {
     expect(formatDate(instant)).toBe("5 novembre 2026");
-    expect(formatDateTime(instant)).toBe("5 novembre 2026 à 14:30");
+    expect(formatDateTime(instant)).toBe("5 novembre 2026 à 14 h 30");
     expect(formatShortDate(instant)).toBe("5 nov. 2026");
     expect(formatShortDateTime(instant)).toBe("5 nov. 2026, 14:30");
     expect(formatNumericDate(instant)).toBe("05/11/2026");
@@ -60,7 +60,7 @@ describe("dates affichées à l'heure de Paris", () => {
   it("écrit « 1er » le premier du mois quand le mois est en toutes lettres, « 1 » sinon", () => {
     const first = "2026-11-01T13:05:00.000Z";
     expect(formatDate(first)).toBe("1er novembre 2026");
-    expect(formatDateTime(first)).toBe("1er novembre 2026 à 14:05");
+    expect(formatDateTime(first)).toBe("1er novembre 2026 à 14 h 05");
     expect(formatWeekdayDate(first)).toBe("dimanche 1er novembre 2026");
     expect(formatShortDate(first)).toBe("1 nov. 2026");
     expect(formatDayMonth(first)).toBe("1 nov.");

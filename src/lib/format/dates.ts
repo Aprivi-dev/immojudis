@@ -8,6 +8,9 @@
  * mois « 1er » (« 1er novembre 2026 ») ; les formats abrégés et numériques gardent « 1 »
  * (« 1 nov. 2026 », « 01/11/2026 »).
  *
+ * L'heure des mêmes formats s'écrit à la française, « 9 h 30 » (décision du 14/11/2026) ; les formats
+ * abrégés et numériques, réservés aux tableaux de l'administration, gardent « 09:30 ».
+ *
  * Le fuseau est écrit en toutes lettres, comme `PARIS_TIME_ZONE` (`paris-time.ts`) : importer ce module
  * ici change le découpage de Turbopack et alourdit le JavaScript client total d'environ 127 ko (mesuré
  * le 13/11/2026), au-delà du plafond de `scripts/check-build-budgets.mjs`.
@@ -24,8 +27,21 @@ function formatParisDate<F extends string | null>(
   if (options.month !== "long") return format.format(date);
   return format
     .formatToParts(date)
-    .map(({ type, value: part }) => (type === "day" && part === "1" ? "1er" : part))
+    .map(({ type, value: part }) => frenchDatePart(type, part))
     .join("");
+}
+
+/** Une partie d'une date en toutes lettres : « 1er », et l'heure écrite « 9 h 30 ». */
+function frenchDatePart(type: Intl.DateTimeFormatPartTypes, part: string): string {
+  if (type === "day" && part === "1") return "1er";
+  if (type === "hour") return String(Number(part));
+  if (type === "literal" && part === ":") return " h ";
+  return part;
+}
+
+/** « 9 h 30 » : une heure lue dans un texte (heure et minutes déjà séparées). */
+export function formatClock(hour: string | number, minute: string | number): string {
+  return `${Number(hour)} h ${String(minute).padStart(2, "0")}`;
 }
 
 /** « 5 novembre 2026 ». */
@@ -44,7 +60,7 @@ export function formatDayLongMonth<F extends string | null = string>(
   return formatParisDate(value, { day: "numeric", month: "long" }, fallback);
 }
 
-/** « 5 novembre 2026 à 14:30 ». */
+/** « 5 novembre 2026 à 14 h 30 ». */
 export function formatDateTime<F extends string | null = string>(
   value: string | null | undefined,
   fallback: F = "—" as F,

@@ -76,7 +76,8 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  justify-content: space-between;
+  /* La valeur suit son libellé, même quand la case voisine est plus haute. */
+  justify-content: flex-start;
   gap: 6px;
   padding: 10px 0;
   border-bottom: 1px solid var(--line-soft);

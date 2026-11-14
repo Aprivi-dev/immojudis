@@ -117,7 +117,7 @@ describe("state professional pilot", () => {
     });
     expect(pilot.milestones[0]).toMatchObject({
       label: "Date publiée à qualifier dans l'avis",
-      date: "14 octobre 2026 à 12:00",
+      date: "14 octobre 2026 à 12 h 00",
     });
     expect(
       pilot.facts.find((fact) => fact.label === "Référence parcellaire publiée")?.value,
