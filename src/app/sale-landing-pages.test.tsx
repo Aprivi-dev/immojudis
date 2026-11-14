@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { Metadata } from "next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SaleLandingData, SaleLandingKey } from "@/lib/sale-landing-pages";
@@ -13,6 +13,7 @@ vi.mock("@/lib/sale-landing-pages.server", async () => {
   return { ...actual, loadSaleLandingForPage: mocks.load };
 });
 
+import { saleDetailPath } from "@/lib/navigation";
 import { SALE_LANDING_REVALIDATE_SECONDS } from "@/lib/sale-landing-pages.server";
 import * as housePage from "./maison-aux-encheres/page";
 import * as apartmentPage from "./appartement-aux-encheres/page";
@@ -34,6 +35,8 @@ const PAGES: ReadonlyArray<{
   /** Titre-phrase attendu pour 12 ventes, 1 vente, aucune vente et une lecture impossible. */
   headings: [string, string, string, string];
   search: string;
+  /** Articles de « Pour comprendre », après le guide des ventes judiciaires. */
+  articles: string[];
 }> = [
   {
     key: "house",
@@ -41,12 +44,18 @@ const PAGES: ReadonlyArray<{
     module: housePage,
     title: "Maison aux enchères : les ventes à venir",
     headings: [
-      "12 maisons aux enchères à venir.",
-      "1 maison aux enchères à venir.",
-      "Aucune maison aux enchères à venir pour le moment.",
-      "Maisons aux enchères",
+      "12 maisons en vente aux enchères ou sur offres, à venir.",
+      "1 maison en vente aux enchères ou sur offres, à venir.",
+      "Aucune maison en vente aux enchères ou sur offres à venir pour le moment.",
+      "Maisons en vente aux enchères ou sur offres",
     ],
     search: "/sales?homeTypes=house",
+    articles: [
+      "acheter-maison-aux-encheres-etapes-frais-risques",
+      "adjudication-immobiliere-vente-par-adjudication",
+      "acheter-bien-occupe-encheres",
+      "frais-vente-encheres-judiciaire",
+    ],
   },
   {
     key: "apartment",
@@ -54,12 +63,18 @@ const PAGES: ReadonlyArray<{
     module: apartmentPage,
     title: "Appartement aux enchères : les ventes à venir",
     headings: [
-      "12 appartements aux enchères à venir.",
-      "1 appartement aux enchères à venir.",
-      "Aucun appartement aux enchères à venir pour le moment.",
-      "Appartements aux enchères",
+      "12 appartements en vente aux enchères ou sur offres, à venir.",
+      "1 appartement en vente aux enchères ou sur offres, à venir.",
+      "Aucun appartement en vente aux enchères ou sur offres à venir pour le moment.",
+      "Appartements en vente aux enchères ou sur offres",
     ],
     search: "/sales?homeTypes=apartment",
+    articles: [
+      "copropriete-encheres-charges-assemblees",
+      "acheter-maison-aux-encheres-etapes-frais-risques",
+      "adjudication-immobiliere-vente-par-adjudication",
+      "acheter-bien-occupe-encheres",
+    ],
   },
   {
     key: "notary",
@@ -67,12 +82,18 @@ const PAGES: ReadonlyArray<{
     module: notaryPage,
     title: "Enchères notariales : biens immobiliers à venir",
     headings: [
-      "Enchères notariales : 12 ventes immobilières à venir.",
-      "Enchères notariales : 1 vente immobilière à venir.",
-      "Enchères notariales : aucune vente à venir pour le moment.",
-      "Enchères notariales",
+      "Enchères et ventes interactives des notaires : 12 ventes immobilières à venir.",
+      "Enchères et ventes interactives des notaires : 1 vente immobilière à venir.",
+      "Enchères et ventes interactives des notaires : aucune vente à venir pour le moment.",
+      "Enchères et ventes interactives des notaires",
     ],
     search: "/sales?saleType=notary",
+    articles: [
+      "immobilier-notaires-annonces-vente-interactive-encheres",
+      "ventes-notariales-domaniales-differences-tribunal",
+      "encheres-immobilieres-en-ligne-distance",
+      "frais-vente-encheres-judiciaire",
+    ],
   },
   {
     key: "state",
@@ -86,6 +107,10 @@ const PAGES: ReadonlyArray<{
       "Ventes immobilières de l’État",
     ],
     search: "/sales?saleType=state",
+    articles: [
+      "ventes-domaniales-etat-biens-immobiliers-mobiliers",
+      "ventes-notariales-domaniales-differences-tribunal",
+    ],
   },
 ];
 
@@ -121,9 +146,10 @@ afterEach(() => {
   vi.useRealTimers();
   cleanup();
   delete process.env.SITE_URL;
+  vi.unstubAllEnvs();
 });
 
-describe.each(PAGES)("page $path", ({ key, path, module, title, headings, search }) => {
+describe.each(PAGES)("page $path", ({ key, path, module, title, headings, search, articles }) => {
   it("est rendue à l'avance et rafraîchie toutes les heures, comme sa lecture", () => {
     expect(module.revalidate).toBe(3600);
     expect(module.revalidate).toBe(SALE_LANDING_REVALIDATE_SECONDS);
@@ -177,9 +203,14 @@ describe.each(PAGES)("page $path", ({ key, path, module, title, headings, search
     expect(rows).toHaveLength(30);
     expect(rows[0].textContent).toContain("Bordeaux (33)");
     expect(rows[1].textContent).toContain("Ajaccio (2A)");
-    expect(rows[0].querySelector("a")!.getAttribute("href")).toBe(
-      "/sales/00000000-0000-4000-8000-000000000000",
+    const first = rows[0].querySelector("a")!;
+    expect(first.getAttribute("href")).toBe("/sales/00000000-0000-4000-8000-000000000000");
+    // « Retour » de la fiche : la recherche filtrée de la page, ajoutée à l'approche du lien.
+    fireEvent.focus(first);
+    expect(first.getAttribute("href")).toBe(
+      saleDetailPath("00000000-0000-4000-8000-000000000000", search),
     );
+    expect(first.getAttribute("href")).toContain("?from=");
     expect(list.textContent).toContain("Les 30 prochaines ventes sont listées ici");
     expect(
       screen
@@ -219,6 +250,21 @@ describe.each(PAGES)("page $path", ({ key, path, module, title, headings, search
     ]) {
       expect(hrefs, href).toContain(href);
     }
+  });
+
+  it("propose dans « Pour comprendre » le guide, puis au plus 4 articles choisis pour la page", async () => {
+    mocks.load.mockResolvedValue(landing(3));
+    render(await module.default());
+    const understand = screen.getByRole("region", { name: "Pour comprendre" });
+    const hrefs = within(understand)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "/ventes-immobilieres-judiciaires",
+      ...articles.map((slug) => `/ressources/${slug}`),
+      "/ressources",
+    ]);
+    expect(articles.length).toBeLessThanOrEqual(4);
   });
 
   it("reste servie sans liste quand la base n'a pas pu être lue", async () => {
@@ -269,6 +315,15 @@ describe("contenu propre à chaque page", () => {
     );
     expect(main.textContent).toContain("AGRASC");
     expect(main.textContent).toContain("ne sont pas sur Immojudis");
+    // Avis juridique du 14/11 : pas de vente « en ligne » déduite de l'art. R. 3211-2, plateforme
+    // non nommée, sources de l'État sans le qualificatif « publiques ».
+    expect(main.textContent).toContain(
+      "Une annonce de l’État peut mener à une adjudication publique, à un appel d’offres ou à une vente de gré à gré. Certaines cessions passent par une plateforme d’enchères en ligne, où l’offre retenue n’est pas forcément la plus élevée.",
+    );
+    expect(main.textContent).not.toContain("peut donc mener");
+    expect(main.textContent).not.toContain("en salle ou en ligne");
+    expect(main.textContent).toContain("d’autres sources, comme les biens confisqués");
+    expect(main.textContent).not.toContain("sources publiques");
     const domaine = screen.getByRole("link", { name: "encheres-domaine.gouv.fr" });
     expect(domaine.getAttribute("href")).toBe("https://encheres-domaine.gouv.fr/");
     expect(
@@ -291,11 +346,61 @@ describe("contenu propre à chaque page", () => {
     const guide = screen.getByRole("region", { name: step });
     expect(within(guide).getAllByRole("listitem")).toHaveLength(5);
     expect(guide.textContent).toContain("avocat inscrit au barreau du tribunal compétent");
+    expect(guide.textContent).toContain(
+      "de la mise à prix, au moins 3\u202f000\u00a0€ (art. R. 322-41 du Code des procédures civiles d’exécution)",
+    );
+    expect(guide.textContent).toContain(
+      "l’État vend par adjudication publique ou cession amiable, le plus souvent sur appel d’offres, et de gré à gré dans des cas limités ; les biens confisqués sont vendus par l’AGRASC.",
+    );
     expect(
       within(guide)
         .getAllByRole("link")
         .map((link) => link.getAttribute("href")),
     ).toEqual(["/simulateur-frais-encheres", "/ventes-immobilieres-judiciaires", "/ressources"]);
     expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).toContain(other);
+  });
+
+  it.each([
+    [housePage, "La plupart sont vendues aux enchères ; certaines le sont sur offres"],
+    [apartmentPage, "La plupart sont vendus aux enchères ; certains le sont sur offres"],
+  ] as const)(
+    "maison et appartement : le total compte aussi les ventes sur offres, et l'introduction le dit (%#)",
+    async (page, sentence) => {
+      mocks.load.mockResolvedValue(landing(3));
+      render(await page.default());
+      expect(screen.getByRole("main").textContent).toContain(
+        `${sentence} (ventes notariales interactives, appels d’offres de l’État) : chaque fiche indique le type de vente.`,
+      );
+    },
+  );
+});
+
+describe("interrupteur des ventes notariales et de l'État coupé", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+  });
+
+  it.each([notaryPage, statePage])(
+    "les pages des notaires et de l'État restent consultables, en noindex, follow (%#)",
+    async (page) => {
+      mocks.load.mockResolvedValue(landing(40));
+      const metadata = await page.generateMetadata();
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+      render(await page.default());
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    },
+  );
+
+  it("les autres pages n'y renvoient plus", async () => {
+    mocks.load.mockResolvedValue(landing(40));
+    expect((await housePage.generateMetadata()).robots).toBeUndefined();
+    render(await housePage.default());
+    const others = screen.getByRole("region", { name: "Autres ventes" });
+    const hrefs = within(others)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs).toContain("/appartement-aux-encheres");
+    expect(hrefs).not.toContain("/encheres-notariales");
+    expect(hrefs).not.toContain("/ventes-immobilieres-etat");
   });
 });

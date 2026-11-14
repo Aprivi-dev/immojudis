@@ -1,13 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEPARTMENT_PAGE_LISTED_SALES, DEPARTMENT_PAGE_MIN_SALES } from "@/lib/department-pages";
 import {
   SALE_LANDING_KEYS,
   SALE_LANDING_LISTED_SALES,
   SALE_LANDING_PAGES,
   isSaleLandingIndexable,
+  isSaleLandingVisible,
   saleLandingMetadata,
   saleLandingSearchPath,
+  visibleSaleLandingKeys,
 } from "@/lib/sale-landing-pages";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("pages par type de bien ou de vente : définitions", () => {
   it("a une adresse par page, et chaque clé de l'ordre désigne une page", () => {
@@ -30,11 +36,37 @@ describe("pages par type de bien ou de vente : définitions", () => {
 
   it("suit le seuil et la longueur de liste des pages de département", () => {
     expect(SALE_LANDING_LISTED_SALES).toBe(DEPARTMENT_PAGE_LISTED_SALES);
-    expect(isSaleLandingIndexable(DEPARTMENT_PAGE_MIN_SALES)).toBe(true);
-    expect(isSaleLandingIndexable(DEPARTMENT_PAGE_MIN_SALES - 1)).toBe(false);
-    expect(isSaleLandingIndexable(3)).toBe(true);
-    expect(isSaleLandingIndexable(2)).toBe(false);
-    expect(isSaleLandingIndexable(0)).toBe(false);
+    const house = SALE_LANDING_PAGES.house;
+    expect(isSaleLandingIndexable(house, DEPARTMENT_PAGE_MIN_SALES)).toBe(true);
+    expect(isSaleLandingIndexable(house, DEPARTMENT_PAGE_MIN_SALES - 1)).toBe(false);
+    expect(isSaleLandingIndexable(house, 3)).toBe(true);
+    expect(isSaleLandingIndexable(house, 2)).toBe(false);
+    expect(isSaleLandingIndexable(house, 0)).toBe(false);
+  });
+});
+
+describe("interrupteur des ventes notariales et de l'État", () => {
+  it("propose les quatre pages par défaut", () => {
+    expect(visibleSaleLandingKeys()).toEqual(SALE_LANDING_KEYS);
+    for (const key of SALE_LANDING_KEYS) {
+      expect(isSaleLandingVisible(SALE_LANDING_PAGES[key]), key).toBe(true);
+    }
+  });
+
+  it("masque les pages des notaires et de l'État quand il est coupé, comme leurs filtres", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    expect(visibleSaleLandingKeys()).toEqual(["house", "apartment"]);
+    expect(isSaleLandingIndexable(SALE_LANDING_PAGES.notary, 40)).toBe(false);
+    expect(isSaleLandingIndexable(SALE_LANDING_PAGES.state, 40)).toBe(false);
+    expect(isSaleLandingIndexable(SALE_LANDING_PAGES.house, 40)).toBe(true);
+    // La page reste adressable, mais n'est pas indexée.
+    const metadata = saleLandingMetadata(
+      SALE_LANDING_PAGES.notary,
+      { title: "Titre", description: "Description." },
+      40,
+    );
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates?.canonical).toBe("/encheres-notariales");
   });
 });
 

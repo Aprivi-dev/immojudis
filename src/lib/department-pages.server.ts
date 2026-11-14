@@ -14,6 +14,7 @@ import {
   type PreviewRpcClient,
   type PreviewSearchRow,
 } from "@/lib/search/preview-search";
+import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { tryPublicLoad, type PublicLoadResult } from "@/lib/public-load-result";
 import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
@@ -43,10 +44,9 @@ type PublicSaleItems = Awaited<ReturnType<typeof runPreviewSearch>>["items"];
 
 /**
  * Lignes de la liste publique réduites à ce qu'une page de liste affiche, sans l'annonce de
- * démonstration : pages de département et pages par type de vente ou de bien
- * (`sale-landing-pages.server.ts`). `postponedIds` : les ventes reportées, que la ligne ne dit pas.
+ * démonstration. `postponedIds` : les ventes reportées, que la ligne ne dit pas.
  */
-export function saleRows(
+function saleRows(
   items: PublicSaleItems,
   postponedIds: ReadonlySet<string>,
 ): DepartmentSaleInput[] {
@@ -103,33 +103,48 @@ export async function readAllPublicSales(
   return rows;
 }
 
+/** Filtre d'une lecture complète : aucun (tout le catalogue) ou celui d'une page par type. */
+export type PublicSaleFilter = Pick<SalesSearchParams, "saleType" | "homeTypes">;
+
 /**
  * Identifiants des ventes reportées. La fonction publique ne renvoie pas le statut d'une vente : un
  * second appel, filtré sur `postponed` (même fonction, mêmes règles de visibilité), les repère. Une
  * vente reportée n'a plus de date valable : la page ne l'annonce pas comme prochaine audience.
  */
-async function readPostponedSaleIds(client: PreviewRpcClient): Promise<Set<string>> {
+async function readPostponedSaleIds(
+  client: PreviewRpcClient,
+  filter: PublicSaleFilter,
+  scope: string,
+): Promise<Set<string>> {
   const ids = new Set<string>();
   await readAllPublicSales(async (page) => {
     const { data, error } = await client.rpc("search_auction_sales_preview_v3", {
-      ...buildPreviewSearchArgs({ sort: "sale_date_asc", limit: PAGE_SIZE, page }),
+      ...buildPreviewSearchArgs({ ...filter, sort: "sale_date_asc", limit: PAGE_SIZE, page }),
       p_statuses: ["postponed"],
     });
     if (error) throw error;
     const rows = (data ?? []) as PreviewSearchRow[];
     for (const sale of mapPreviewRows(rows)) ids.add(sale.id);
     return { items: [], count: Number(rows[0]?.total_count ?? 0), fetched: rows.length };
-  }, "postponed");
+  }, `${scope}:postponed`);
   return ids;
 }
 
-async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
-  const client = createPublicSupabaseClient();
-  if (!client) throw publicSupabaseConfigurationError();
-  const rpcClient = client as unknown as PreviewRpcClient;
-  const postponedIds = await readPostponedSaleIds(rpcClient);
-  const rows = await readAllPublicSales(async (page) => {
-    const response = await runPreviewSearch(rpcClient, {
+/**
+ * Toutes les ventes publiques d'un filtre, reportées marquées, dans l'ordre de lecture : celui de
+ * la fonction publique, qui n'est pas l'ordre des dates (voir `compareSalesByDate`). Pages de
+ * département (tout le catalogue) et pages par type de vente ou de bien
+ * (`sale-landing-pages.server.ts`). `scope` nomme la lecture dans le journal d'une troncature.
+ */
+export async function readPublicSaleRows(
+  client: PreviewRpcClient,
+  filter: PublicSaleFilter,
+  scope: string,
+): Promise<DepartmentSaleInput[]> {
+  const postponedIds = await readPostponedSaleIds(client, filter, scope);
+  return readAllPublicSales(async (page) => {
+    const response = await runPreviewSearch(client, {
+      ...filter,
       sort: "sale_date_asc",
       limit: PAGE_SIZE,
       page,
@@ -139,8 +154,15 @@ async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
       count: response.count,
       fetched: response.items.length,
     };
-  });
-  return aggregateDepartments(rows);
+  }, scope);
+}
+
+async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
+  const client = createPublicSupabaseClient();
+  if (!client) throw publicSupabaseConfigurationError();
+  return aggregateDepartments(
+    await readPublicSaleRows(client as unknown as PreviewRpcClient, {}, "catalogue"),
+  );
 }
 
 // Partagé par l'index, les pages de département et le sitemap : une lecture par heure et par

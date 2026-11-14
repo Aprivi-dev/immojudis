@@ -44,6 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   delete process.env.SITE_URL;
+  vi.unstubAllEnvs();
 });
 
 describe("index des ventes par département", () => {
@@ -294,6 +295,18 @@ describe("index des ventes par département", () => {
       ["Enchères notariales", "/encheres-notariales"],
       ["Ventes immobilières de l’État", "/ventes-immobilieres-etat"],
     ]);
+  });
+
+  it("ne renvoie plus vers les pages des notaires et de l'État quand l'interrupteur est coupé", async () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    mocks.load.mockResolvedValue({ status: "ok", catalogue: CATALOGUE });
+    render(await Page());
+    const types = screen.getByRole("navigation", { name: "Ventes par type de bien ou de vente" });
+    expect(
+      within(types)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/maison-aux-encheres", "/appartement-aux-encheres"]);
   });
 
   it("reste disponible sans chiffres quand la base est indisponible", async () => {

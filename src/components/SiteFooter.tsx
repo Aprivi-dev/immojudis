@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
@@ -15,18 +16,6 @@ const MAIN_LINKS = [
   { href: "/comment-ca-marche", label: "Comment ça marche" },
   { href: "/offres", label: "Offres" },
   { href: "/contact", label: "Contact" },
-] as const;
-
-/**
- * Groupe « Ventes par type » : les pages par type de bien ou de vente. Adresses écrites ici (le module
- * `sale-landing-pages.ts` n'entre pas dans le JavaScript du navigateur) ; un test vérifie qu'elles
- * sont celles de `SALE_LANDING_PAGES`, dans le même ordre.
- */
-const SALE_TYPE_LINKS = [
-  { href: "/maison-aux-encheres", label: "Maisons aux enchères" },
-  { href: "/appartement-aux-encheres", label: "Appartements aux enchères" },
-  { href: "/encheres-notariales", label: "Enchères notariales" },
-  { href: "/ventes-immobilieres-etat", label: "Ventes immobilières de l’État" },
 ] as const;
 
 /** Groupe « Transparence » : qui nous sommes, le guide, le simulateur et les méthodes de calcul. */
@@ -53,7 +42,12 @@ export function showsSiteFooter(pathname: string | null): boolean {
   return !(pathname === "/admin" || pathname?.startsWith("/admin/"));
 }
 
-export function SiteFooter() {
+/**
+ * `saleTypes` : le groupe « Ventes par type » (`SiteFooterSaleTypes`), composant serveur que le
+ * layout passe ici déjà rendu. Écrit dans ce composant client, il pesait sur le JavaScript
+ * initial de chaque page (budgets de `scripts/check-build-budgets.mjs`).
+ */
+export function SiteFooter({ saleTypes }: { saleTypes: ReactNode }) {
   const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
@@ -97,22 +91,7 @@ export function SiteFooter() {
             </ul>
           </nav>
         </div>
-        <nav aria-label="Ventes par type" className="border-t border-border pt-5">
-          <p className="mb-2 font-semibold text-foreground">Ventes par type</p>
-          <ul className="flex flex-wrap gap-x-5">
-            {SALE_TYPE_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  prefetch={false}
-                  className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        {saleTypes}
         <nav aria-label="Transparence" className="border-t border-border pt-5">
           <p className="mb-2 font-semibold text-foreground">Transparence</p>
           <ul className="flex flex-wrap gap-x-5">

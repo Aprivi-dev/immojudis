@@ -6,7 +6,7 @@
   "category": "Les fondamentaux",
   "description": "Peut-on enchérir sur un bien immobilier depuis chez soi ? Au tribunal, non : un avocat enchérit à l’audience. Chez le notaire, la vente interactive se fait en ligne. Ce que chaque type de vente permet à distance.",
   "seoDescription": "Enchérir en ligne sur un bien immobilier : impossible au tribunal, où un avocat enchérit à l’audience ; possible en vente notariale interactive. Le point.",
-  "directAnswer": "Au tribunal, les enchères ne se font pas en ligne : l’adjudication a lieu aux enchères publiques à l’audience du juge, et ce sont des avocats inscrits au barreau du tribunal qui enchérissent (art. L. 322-5 et R. 322-40 du Code des procédures civiles d’exécution). Ces textes n’imposent pas votre présence dans la salle : l’avocat que vous mandatez porte vos enchères dans la limite que vous lui fixez. Chez le notaire, la vente interactive se déroule en ligne, par offres, et certaines ventes immobilières de l’AGRASC passent par une plateforme d’enchères en ligne.",
+  "directAnswer": "Au tribunal, les enchères ne se font pas en ligne : l’adjudication a lieu aux enchères publiques à l’audience du juge, et ce sont des avocats inscrits au barreau du tribunal qui enchérissent (art. L. 322-5 et R. 322-40 du Code des procédures civiles d’exécution). Ces textes n’imposent pas votre présence dans la salle : l’avocat que vous mandatez porte vos enchères dans la limite que vous lui fixez. Chez le notaire, la vente interactive se déroule en ligne, par offres, et certaines cessions de l’État et ventes immobilières de l’AGRASC passent par une plateforme privée d’enchères en ligne.",
   "intro": [
     "« En ligne » est un mot trompeur dans l’immobilier aux enchères. Une annonce peut être en ligne sans que la vente le soit, et une vente « en ligne » n’est pas toujours une vente aux enchères. Selon l’organisateur, on enchérit à l’audience par un avocat, en salle chez un notaire, ou en déposant des offres sur internet.",
     "Cet article fait le tri : ce qui se fait à distance, ce qui exige un déplacement ou un intermédiaire, et les questions à poser avant de vous inscrire sur un site."
@@ -15,7 +15,7 @@
     "Au tribunal, il n’y a pas d’enchères en ligne : l’adjudication a lieu à l’audience du juge, et seuls les avocats du barreau du tribunal enchérissent.",
     "Vous pouvez mandater un avocat sans assister à l’audience, mais vous ne pouvez pas enchérir vous-même.",
     "Chez le notaire, la vente à la bougie se tient en salle ; la vente interactive se fait en ligne, par offres, et aboutit à un avant-contrat.",
-    "L’État vend aussi par des procédures qui ne passent pas par une salle d’audience : appel d’offres, et enchères en ligne pour certains biens de l’AGRASC.",
+    "L’État vend aussi par des procédures qui ne passent pas par une salle d’audience : appel d’offres, et enchères en ligne pour certaines cessions de l’État et certains biens de l’AGRASC. Sur la plateforme utilisée par l’État, l’offre retenue n’est pas forcément la plus élevée (« au mieux-disant »).",
     "Avant de vous inscrire sur un site, vérifiez qui organise la vente, ce que vous signerez à la fin et quelles conditions s’appliquent."
   ],
   "sections": [
@@ -45,7 +45,7 @@
           ],
           [
             "Vente d’un immeuble de l’État",
-            "Consulter l’annonce et, en cas d’appel d’offres, remettre une offre selon les modalités de l’avis (art. R. 3211-4).",
+            "Consulter l’annonce et, en cas d’appel d’offres, remettre une offre selon les modalités de l’avis (art. R. 3211-4). Certaines cessions passent par une plateforme privée d’enchères en ligne, où l’offre retenue n’est pas forcément la plus élevée : prix, projet et capacité financière de l’acquéreur comptent (« au mieux-disant »).",
             "Visiter selon l’avis ; en adjudication publique, les conditions de participation figurent au cahier des charges."
           ],
           [
@@ -84,7 +84,7 @@
       ],
       "links": [
         {
-          "label": "Immobilier des notaires : les trois formules",
+          "label": "Vente par notaire : annonce, offres ou enchères",
           "href": "/ressources/immobilier-notaires-annonces-vente-interactive-encheres"
         },
         {
@@ -97,7 +97,7 @@
       "id": "etat",
       "title": "Les ventes de l’État et de l’AGRASC",
       "paragraphs": [
-        "Pour les immeubles du Domaine, la vente se fait par adjudication publique ou à l’amiable avec mise en concurrence ; dans ce second cas, un avis du préfet précise les modalités de présentation des offres et de visite (art. R. 3211-2 et R. 3211-4 du Code général de la propriété des personnes publiques). Lisez l’avis pour savoir comment et où remettre votre offre.",
+        "Pour les immeubles du Domaine, la vente se fait par adjudication publique ou à l’amiable avec mise en concurrence ; dans ce second cas, un avis du préfet précise les modalités de présentation des offres et de visite (art. R. 3211-2 et R. 3211-4 du Code général de la propriété des personnes publiques). Lisez l’avis pour savoir comment et où remettre votre offre. Selon Acteurs publics (19 mai 2026), la direction de l’immobilier de l’État confie aussi depuis 2022 certaines cessions à une plateforme privée d’enchères en ligne : la vente y dure 48 heures, un prix de réserve fixé par l’État s’applique, et l’offre retenue n’est pas forcément la plus élevée, car le projet et la capacité financière de l’acquéreur comptent aussi.",
         "Sur le site de l’AGRASC, les annonces d’immeubles confisqués indiquent le mode de vente : de gré à gré, par appel d’offres ou aux enchères. Certaines renvoient vers la plateforme d’enchères en ligne d’un prestataire privé : lisez ses conditions avant de vous inscrire.",
         "Le site encheres-domaine.gouv.fr est celui des ventes mobilières du Domaine (véhicules, matériel, objets), dont les ventes aux enchères peuvent se suivre en direct ou en ligne. Les immeubles de l’État sont annoncés ailleurs, sur le site des cessions immobilières de l’État."
       ],
@@ -193,6 +193,10 @@
     {
       "label": "AGRASC — Les ventes (ventes aux enchères et ventes immobilières, consulté le 14/11/2026)",
       "url": "https://agrasc.gouv.fr/ventes-aux-encheres"
+    },
+    {
+      "label": "Acteurs publics — Comment l’État tire parti de la vente aux enchères en ligne pour céder ses biens immobiliers non utilisés (19/05/2026)",
+      "url": "https://acteurspublics.fr/articles/comment-letat-tire-parti-de-la-vente-aux-encheres-en-ligne-pour-ceder-ses-biens-immobiliers-non-utilises-comment-letat-digitalise-la-cession-de-ses-biens-immobiliers-via-les-ventes-aux-encheres/"
     },
     {
       "label": "Collectivités locales — Les ventes de biens mobiliers (encheres-domaine.gouv.fr, ventes diffusées en direct ou en ligne)",

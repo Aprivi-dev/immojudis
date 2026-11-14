@@ -6,6 +6,7 @@ import {
 } from "@/lib/department-pages";
 import { pathWithSearch } from "@/lib/navigation";
 import { pageMetadata } from "@/lib/page-metadata";
+import { visibleSaleTypeOptions } from "@/lib/sale-types";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 
 /**
@@ -66,16 +67,36 @@ export const SALE_LANDING_KEYS: readonly SaleLandingKey[] = [
   "state",
 ];
 
+/**
+ * Vrai quand la page est proposée. Les pages d'un type de vente suivent l'interrupteur des ventes
+ * notariales et de l'État (`NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED`, `sale-types.ts`), comme les
+ * filtres de la recherche. Une page masquée reste consultable, puisque ses ventes restent au
+ * catalogue, mais aucun lien n'y mène, le sitemap ne la liste pas et elle est en `noindex, follow`.
+ */
+export function isSaleLandingVisible(page: Pick<SaleLandingPage, "search">): boolean {
+  const { saleType } = page.search;
+  return saleType == null || visibleSaleTypeOptions().some((option) => option.value === saleType);
+}
+
+/** Les pages proposées (liens et sitemap), dans l'ordre de `SALE_LANDING_KEYS`. */
+export function visibleSaleLandingKeys(): SaleLandingKey[] {
+  return SALE_LANDING_KEYS.filter((key) => isSaleLandingVisible(SALE_LANDING_PAGES[key]));
+}
+
 /** Ventes détaillées sur la page, comme sur une page de département ; la recherche liste le reste. */
 export const SALE_LANDING_LISTED_SALES = DEPARTMENT_PAGE_LISTED_SALES;
 
 /**
- * Vrai quand la page peut être indexée et figurer au sitemap. Même seuil que les pages de
- * département (`DEPARTMENT_PAGE_MIN_SALES`) : en dessous de trois ventes à venir, une page de liste
- * est mince ; elle reste consultable, en `noindex, follow`.
+ * Vrai quand la page peut être indexée et figurer au sitemap : une page proposée
+ * (`isSaleLandingVisible`), au même seuil que les pages de département
+ * (`DEPARTMENT_PAGE_MIN_SALES`). En dessous de trois ventes à venir, une page de liste est mince ;
+ * elle reste consultable, en `noindex, follow`.
  */
-export function isSaleLandingIndexable(upcomingCount: number): boolean {
-  return upcomingCount >= DEPARTMENT_PAGE_MIN_SALES;
+export function isSaleLandingIndexable(
+  page: Pick<SaleLandingPage, "search">,
+  upcomingCount: number,
+): boolean {
+  return isSaleLandingVisible(page) && upcomingCount >= DEPARTMENT_PAGE_MIN_SALES;
 }
 
 /** Lien vers la recherche des mêmes ventes (`/sales?homeTypes=house`, `/sales?saleType=notary`). */
@@ -87,25 +108,28 @@ export function saleLandingSearchPath(page: Pick<SaleLandingPage, "search">): st
 export type SaleLandingData = {
   /** Date de lecture (ISO), pour dire « au … ». */
   generatedAt: string;
-  /** Ventes à venir, reportées comprises : le total que `/sales` affiche pour le même filtre. */
+  /**
+   * Ventes à venir, reportées comprises, lues dans la liste publique du même filtre : le total que
+   * `/sales` affiche, à l'identifiant près (comme les pages de département).
+   */
   upcomingCount: number;
   /** Les prochaines ventes, par date croissante (au plus `SALE_LANDING_LISTED_SALES`). */
   sales: DepartmentSaleInput[];
 };
 
 /**
- * Métadonnées d'une page : canonique, partage, et `noindex, follow` sous le seuil. `upcomingCount`
- * vaut `null` quand la base n'a pas pu être lue pendant le build : la page, produite sans liste,
- * n'est pas indexée avant sa première régénération réussie.
+ * Métadonnées d'une page : canonique, partage, et `noindex, follow` sous le seuil ou quand la page
+ * n'est pas proposée. `upcomingCount` vaut `null` quand la base n'a pas pu être lue pendant le
+ * build : la page, produite sans liste, n'est pas indexée avant sa première régénération réussie.
  */
 export function saleLandingMetadata(
-  page: Pick<SaleLandingPage, "path">,
+  page: Pick<SaleLandingPage, "path" | "search">,
   text: { title: string; description: string },
   upcomingCount: number | null,
 ): Metadata {
   return {
     ...pageMetadata({ path: page.path, ...text }),
-    ...(isSaleLandingIndexable(upcomingCount ?? 0)
+    ...(isSaleLandingIndexable(page, upcomingCount ?? 0)
       ? {}
       : { robots: { index: false, follow: true } }),
   };

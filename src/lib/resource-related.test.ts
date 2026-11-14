@@ -25,6 +25,28 @@ describe("RESOURCE_TOPICS", () => {
     for (const slug of Object.keys(RESOURCE_TOPICS)) expect(slugs.has(slug), slug).toBe(true);
   });
 
+  it("donne des sujets aux guides du 14/11/2026, qui ne proposent plus tous les mêmes articles", () => {
+    const guides = [
+      "acheter-maison-aux-encheres-etapes-frais-risques",
+      "adjudication-immobiliere-vente-par-adjudication",
+      "immobilier-notaires-annonces-vente-interactive-encheres",
+      "ventes-domaniales-etat-biens-immobiliers-mobiliers",
+      "encheres-immobilieres-en-ligne-distance",
+    ];
+    for (const slug of guides) expect(RESOURCE_TOPICS[slug], slug).toBeDefined();
+    const trios = guides.map((slug) =>
+      relatedResources(slug)
+        .map((item) => item.slug)
+        .join(","),
+    );
+    expect(new Set(trios).size).toBeGreaterThanOrEqual(4);
+    // Ventes notariales et domaniales : le comparatif ; vente à distance : l'avocat.
+    expect(trios[2]).toContain("ventes-notariales-domaniales-differences-tribunal");
+    expect(trios[3]).toContain("ventes-notariales-domaniales-differences-tribunal");
+    expect(trios[4]).toContain("avocat-obligatoire-encherir-tribunal-choisir-mandat-cout");
+    expect(trios[1]).toContain("apres-adjudication-surenchere-paiement-titre-vente");
+  });
+
   it("donne au moins un sujet à chaque article qui en a une entrée", () => {
     for (const [slug, topics] of Object.entries(RESOURCE_TOPICS)) {
       expect(topics.length, slug).toBeGreaterThan(0);

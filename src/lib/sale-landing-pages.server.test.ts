@@ -47,28 +47,54 @@ const isPostponedCall = (args: Record<string, unknown>) =>
   args.p_statuses.length === 1 &&
   args.p_statuses[0] === "postponed";
 
+type Row = ReturnType<typeof row>;
+
+const coordinatesRank = (sale: Row) => (sale.latitude == null || sale.longitude == null ? 1 : 0);
+const dateRank = (sale: Row) => (sale.sale_date == null ? Infinity : Date.parse(sale.sale_date));
+
 /**
- * Une base simulée : `count` ventes à venir pour chaque filtre (par type de bien ou de vente), dont
- * celles de `postponed` sont reportées. Comme la fonction publique, `total_count` est porté par
- * chaque ligne et `p_limit` borne la page.
+ * Une base simulée : les ventes de chaque filtre (par type de bien ou de vente), dont celles de
+ * `postponedIds` sont reportées. Comme `search_auction_sales_preview_v3` triée par date
+ * (supabase/migrations/20261024100000_listing_completeness_ranking.sql) : les ventes géolocalisées
+ * d'abord (`coordinates_rank`), puis la date, puis l'identifiant ; `total_count` sur chaque ligne,
+ * `p_offset` et `p_limit` bornent la page.
  */
+function database(filters: Partial<Record<string, Row[]>>, postponedIds = new Set<string>()) {
+  mocks.rpc.mockImplementation(async (_name: string, args: Record<string, unknown>) => {
+    const filter =
+      (args.p_property_types as string[] | null)?.[0] ?? (args.p_sale_venue_type as string);
+    const matching = (filters[filter] ?? []).filter(
+      (sale) => !isPostponedCall(args) || postponedIds.has(sale.id),
+    );
+    const ordered = [...matching].sort(
+      (a, b) =>
+        coordinatesRank(a) - coordinatesRank(b) ||
+        dateRank(a) - dateRank(b) ||
+        a.id.localeCompare(b.id),
+    );
+    const offset = args.p_offset as number;
+    const rows = ordered
+      .slice(offset, offset + (args.p_limit as number))
+      .map((sale) => ({ ...sale, total_count: matching.length }));
+    return { data: rows, error: null };
+  });
+}
+
+/** `count` ventes à venir par filtre, même date, sans coordonnées ; `postponed` : leurs rangs. */
 function serve(
   counts: Partial<Record<string, number>>,
   postponed: readonly number[] = [],
   overrides: (index: number) => Record<string, unknown> = () => ({}),
 ) {
-  mocks.rpc.mockImplementation(async (_name: string, args: Record<string, unknown>) => {
-    const filter =
-      (args.p_property_types as string[] | null)?.[0] ?? (args.p_sale_venue_type as string);
-    const total = counts[filter] ?? 0;
-    const matching = Array.from({ length: total }, (_, index) => index).filter(
-      (index) => !isPostponedCall(args) || postponed.includes(index),
-    );
-    const rows = matching
-      .slice(0, args.p_limit as number)
-      .map((index) => row(index, { total_count: matching.length, ...overrides(index) }));
-    return { data: rows, error: null };
-  });
+  database(
+    Object.fromEntries(
+      Object.entries(counts).map(([filter, total]) => [
+        filter,
+        Array.from({ length: total ?? 0 }, (_, index) => row(index, overrides(index))),
+      ]),
+    ),
+    new Set(postponed.map((index) => row(index).id)),
+  );
 }
 
 const client = (): PreviewRpcClient => ({ rpc: mocks.rpc });
@@ -91,14 +117,14 @@ describe("readSaleLanding", () => {
     expect(data.upcomingCount).toBe(45);
     expect(data.sales).toHaveLength(30);
     expect(data.generatedAt).toBe("2026-11-14T00:00:00.000Z");
-    // La fonction publique de `/sales`, avec le filtre de la page, triée par date, 30 lignes.
+    // La fonction publique de `/sales`, avec le filtre de la page, lue par pages de 100.
     const [name, args] = mocks.rpc.mock.calls.find(([, call]) => !isPostponedCall(call))!;
     expect(name).toBe("search_auction_sales_preview_v3");
     expect(args).toMatchObject({
       p_property_types: ["house"],
       p_sale_venue_type: null,
       p_sort: "date_asc",
-      p_limit: 30,
+      p_limit: 100,
       p_offset: 0,
       // Les statuts ouverts de la recherche publique (reportées comprises).
       p_statuses: ["upcoming", "unknown", "postponed"],
@@ -111,6 +137,41 @@ describe("readSaleLanding", () => {
     expect((await readSaleLanding(client(), { saleType: "state" })).upcomingCount).toBe(5);
     const venueTypes = mocks.rpc.mock.calls.map(([, args]) => args.p_sale_venue_type);
     expect(new Set(venueTypes)).toEqual(new Set(["notary", "state"]));
+  });
+
+  it("garde les 30 prochaines ventes par date, quand la base place d'abord les ventes géolocalisées", async () => {
+    // 130 maisons : les 125 premières lignes de la base sont géolocalisées et en janvier ; les 5
+    // dernières, sans coordonnées, sont les plus proches (16 au 20 novembre), et la plus proche est
+    // reportée.
+    const sales = Array.from({ length: 130 }, (_, index) =>
+      index < 125
+        ? row(index, {
+            latitude: 44.84,
+            longitude: -0.58,
+            sale_date: `2027-01-${String(1 + (index % 28)).padStart(2, "0")}T13:00:00Z`,
+          })
+        : row(index, { sale_date: `2026-11-${16 + (129 - index)}T09:00:00Z` }),
+    );
+    database({ house: sales }, new Set([row(129).id]));
+    const data = await readSaleLanding(client(), { homeTypes: ["house"] });
+    expect(data.upcomingCount).toBe(130);
+    expect(data.sales).toHaveLength(30);
+    expect(data.sales.slice(0, 5).map((sale) => sale.id)).toEqual(
+      [129, 128, 127, 126, 125].map((index) => row(index).id),
+    );
+    expect(data.sales[0].status).toBe("postponed");
+    expect(data.sales[1].status).toBe("scheduled");
+    // Ordre des dates sur toute la liste, donc aussi à l'intérieur d'une semaine.
+    const dates = data.sales.map((sale) => Date.parse(sale.saleDate!));
+    expect(dates).toEqual([...dates].sort((a, b) => a - b));
+    // Tout le filtre est lu, ventes et ventes reportées, avec le filtre de la page.
+    const offsets = mocks.rpc.mock.calls
+      .filter(([, args]) => !isPostponedCall(args))
+      .map(([, args]) => args.p_offset);
+    expect(offsets).toEqual([0, 100]);
+    for (const [, args] of mocks.rpc.mock.calls) {
+      expect(args.p_property_types).toEqual(["house"]);
+    }
   });
 
   it("marque les ventes reportées par un second appel, même filtre et même ordre", async () => {
@@ -127,7 +188,7 @@ describe("readSaleLanding", () => {
     expect(postponedCall[1]).toMatchObject({
       p_property_types: ["apartment"],
       p_sort: "date_asc",
-      p_limit: 30,
+      p_limit: 100,
     });
   });
 
@@ -193,6 +254,16 @@ describe("lectures des pages et du sitemap", () => {
       "/maison-aux-encheres",
       "/appartement-aux-encheres",
     ]);
+  });
+
+  it("ne lit ni ne liste les pages des notaires et de l'État quand l'interrupteur est coupé", async () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    serve({ house: 40, apartment: 3, notary: 10, state: 10 });
+    expect(await loadIndexableSaleLandingPaths()).toEqual([
+      "/maison-aux-encheres",
+      "/appartement-aux-encheres",
+    ]);
+    expect(mocks.rpc.mock.calls.some(([, args]) => args.p_sale_venue_type != null)).toBe(false);
   });
 
   it("n'ajoute pas une page dont la lecture échoue, sans priver les autres", async () => {

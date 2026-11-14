@@ -17,8 +17,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Une vente à venir d'une liste publique. `department` n'est porté que par une liste qui couvre
- * plusieurs départements (pages par type de vente ou de bien) : la ligne écrit alors son numéro à
- * côté de la commune. La page d'un département ne le porte pas (c'est le sien).
+ * plusieurs départements (pages par type de vente ou de bien) ; la page d'un département ne le
+ * porte pas (c'est le sien). Son affichage dépend de `showDepartment`, pas de sa présence.
  */
 export type ListedSale = DepartmentSale & { department?: string | null };
 
@@ -37,17 +37,20 @@ function SaleRow({
   identical,
   now,
   returnTo,
+  showDepartment,
 }: {
   sale: ListedSale;
   identical: { rank: number; of: number } | undefined;
   now: Date;
   returnTo: string;
+  showDepartment: boolean;
 }) {
   const postponed = sale.status === "postponed";
   const block = postponed ? null : parisDateBlock(sale.saleDate);
   const today = !postponed && isParisToday(sale.saleDate, now);
   const venue = departmentVenueLabel(sale.venueType);
-  const departmentCode = sale.department ? departmentFromCode(sale.department)?.code : null;
+  const departmentCode =
+    showDepartment && sale.department ? departmentFromCode(sale.department)?.code : null;
   const place = sale.city || "Commune à confirmer";
   const details = [
     propertyTypeLabel(sale.propertyType),
@@ -121,11 +124,17 @@ export function UpcomingSaleWeeks({
   sales,
   now,
   returnTo,
+  showDepartment = false,
 }: {
   sales: readonly ListedSale[];
   now: Date;
   /** Adresse de la page qui liste les ventes (origine du lien « Retour » de la fiche). */
   returnTo: string;
+  /**
+   * Écrit le numéro du département à côté de la commune : pour une liste qui couvre plusieurs
+   * départements (pages par type de vente ou de bien), pas pour la page d'un département.
+   */
+  showDepartment?: boolean;
 }) {
   const identicalSales = identicalSaleRanks(sales);
   return groupDepartmentSalesByWeek(sales, now).map((week) => (
@@ -141,6 +150,7 @@ export function UpcomingSaleWeeks({
             identical={identicalSales.get(sale.id)}
             now={now}
             returnTo={returnTo}
+            showDepartment={showDepartment}
           />
         ))}
       </ul>

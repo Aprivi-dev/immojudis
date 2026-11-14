@@ -334,11 +334,16 @@ export function DepartmentView({
 
         <aside aria-label="En un coup d’œil" className="grid gap-3 lg:sticky lg:top-24">
           <div id="alerte" className="scroll-mt-24">
+            {/* Cadences citées dans `intro` : relecture des sources selon `INVENTORY_CADENCE`
+                (services/data-pipeline/src/autonomous_runner.py, 12 h), comparaison des alertes
+                par la tâche quotidienne `/api/cron/smart-alerts` (vercel.json). Si l'une change,
+                la phrase « relues au plus deux fois par jour selon la source… chaque jour » doit
+                suivre. */}
             <SectorAlertCta
               title={`Être prévenu des nouvelles ventes ${where}`}
               criteria={{ department: department.code }}
               className={NAVY_ALERT}
-              intro={`Les sources sont relues jusqu’à deux fois par jour et vos alertes sont comparées au catalogue chaque jour : recevez les nouvelles ventes référencées ${where} dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
+              intro={`Les sources sont relues au plus deux fois par jour selon la source et vos alertes sont comparées au catalogue chaque jour : recevez les nouvelles ventes référencées ${where} dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
             />
           </div>
 

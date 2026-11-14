@@ -29,12 +29,16 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 function Heading({ total }: { total: number | null }) {
-  if (total == null) return <>Maisons aux enchères</>;
-  if (total === 0) return <>Aucune maison aux enchères à venir pour le moment.</>;
+  if (total == null) return <>Maisons en vente aux enchères ou sur offres</>;
+  if (total === 0) {
+    return <>Aucune maison en vente aux enchères ou sur offres à venir pour le moment.</>;
+  }
   return (
     <>
       <HighlightedFigure>{count.format(total)}</HighlightedFigure>{" "}
-      {total > 1 ? "maisons aux enchères à venir." : "maison aux enchères à venir."}
+      {total > 1
+        ? "maisons en vente aux enchères ou sur offres, à venir."
+        : "maison en vente aux enchères ou sur offres, à venir."}
     </>
   );
 }
@@ -47,11 +51,11 @@ export default async function Page() {
       data={data}
       eyebrow="Ventes aux enchères · Maisons"
       heading={<Heading total={data?.upcomingCount ?? null} />}
-      intro="Les maisons mises en vente au tribunal, chez le notaire ou par l’État, et référencées par Immojudis."
+      intro="Les maisons mises en vente au tribunal, chez le notaire ou par l’État, et référencées par Immojudis. La plupart sont vendues aux enchères ; certaines le sont sur offres (ventes notariales interactives, appels d’offres de l’État) : chaque fiche indique le type de vente."
       articleSlugs={[
+        "acheter-maison-aux-encheres-etapes-frais-risques",
+        "adjudication-immobiliere-vente-par-adjudication",
         "acheter-bien-occupe-encheres",
-        "lire-plu-bien-vendu-encheres",
-        "risques-georisques-avant-encherir",
         "frais-vente-encheres-judiciaire",
       ]}
     >

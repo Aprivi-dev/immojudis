@@ -63,7 +63,7 @@ export default async function Page() {
       eyebrow="Ventes domaniales · Immobilier"
       heading={<Heading total={data?.upcomingCount ?? null} />}
       intro="Les biens immobiliers mis en vente par l’État et référencés par Immojudis. Toutes ces ventes ne sont pas des enchères : chaque fiche indique le mode de cession quand l’annonce le publie."
-      articleSlugs={[SALE_TYPES_ARTICLE_SLUG]}
+      articleSlugs={["ventes-domaniales-etat-biens-immobiliers-mobiliers", SALE_TYPES_ARTICLE_SLUG]}
     >
       <SaleLandingSection
         id="procedures"
@@ -77,9 +77,11 @@ export default async function Page() {
           une offre (art. R. 3211-2).
         </p>
         <p>
-          Une annonce de l’État peut donc mener à des enchères, en salle ou en ligne, à un appel
-          d’offres ou à une vente de gré à gré. Vérifiez le mode de cession avant de préparer une
-          offre : un appel d’offres ou une vente amiable n’est pas une vente aux enchères.
+          Une annonce de l’État peut mener à une adjudication publique, à un appel d’offres ou à une
+          vente de gré à gré. Certaines cessions passent par une plateforme d’enchères en ligne, où
+          l’offre retenue n’est pas forcément la plus élevée. Vérifiez le mode de cession avant de
+          préparer une offre : un appel d’offres ou une vente amiable n’est pas une vente aux
+          enchères.
         </p>
       </SaleLandingSection>
       <SaleLandingSection
@@ -88,7 +90,7 @@ export default async function Page() {
       >
         <p>
           Les ventes listées viennent du site officiel des cessions immobilières de l’État et,
-          lorsque l’annonce désigne une vente de l’État, d’autres sources publiques, comme les biens
+          lorsque l’annonce désigne une vente de l’État, d’autres sources, comme les biens
           confisqués vendus par l’AGRASC (Agence de gestion et de recouvrement des avoirs saisis et
           confisqués). Chaque fiche indique sa source.
         </p>

@@ -6,7 +6,7 @@
   "category": "Les fondamentaux",
   "description": "Où trouver une maison vendue aux enchères, comment se déroule l’achat au tribunal ou chez le notaire, quels frais s’ajoutent au prix et quels risques vérifier, avec une section sur l’appartement.",
   "seoDescription": "Acheter une maison aux enchères : où trouver les ventes, étapes au tribunal ou chez le notaire, frais en plus du prix, risques à vérifier. Et l’appartement.",
-  "directAnswer": "Une maison peut être vendue aux enchères au tribunal (après une saisie immobilière, une licitation ou une liquidation judiciaire), chez un notaire (à la bougie, ou par offres en vente interactive) ou par l’État. Au tribunal, vous enchérissez par un avocat après lui avoir remis une garantie de 10 % de la mise à prix (au moins 3 000 €), puis vous payez le prix et les frais dans les deux mois de l’adjudication définitive, sans condition suspensive de prêt. Les frais s’ajoutent au prix et la garantie des vices cachés ne joue pas dans une vente faite par autorité de justice : lisez le cahier des conditions de vente et visitez avant de fixer votre enchère plafond.",
+  "directAnswer": "Une maison peut être vendue aux enchères au tribunal (après une saisie immobilière, une licitation ou une liquidation judiciaire) ou chez un notaire (vente « à la bougie »). Elle peut aussi être vendue sur offres, en vente notariale interactive, ou par l’État, par adjudication ou appel d’offres. Au tribunal, vous enchérissez par un avocat après lui avoir remis une garantie de 10 % de la mise à prix (au moins 3 000 €), puis vous payez le prix et les frais dans les deux mois de l’adjudication définitive, sans condition suspensive de prêt ; les frais s’ajoutent au prix et la garantie des vices cachés ne joue pas dans une vente faite par autorité de justice : lisez le cahier des conditions de vente et visitez avant de fixer votre enchère plafond.",
   "intro": [
     "Acheter une maison aux enchères, c’est l’acheter selon une procédure particulière, pas forcément moins cher. Un prix de départ, appelé mise à prix, est fixé avant la vente ; la maison est ensuite attribuée au dernier enchérisseur. Cette attribution s’appelle l’adjudication, et celui qui remporte le bien est l’adjudicataire.",
     "Cet article suit l’achat étape par étape, surtout pour une vente au tribunal, la plus encadrée par les textes. Il présente les frais, les risques propres à une maison (terrain, assainissement, diagnostics, occupation) et, dans une section dédiée, ce qui change pour un appartement en copropriété. Il donne des repères généraux, pas un conseil juridique : le cahier de chaque vente et votre avocat font foi."
@@ -60,7 +60,7 @@
           [
             "Après la vente",
             "Surenchère possible pendant dix jours, puis paiement dans les deux mois de l’adjudication définitive (art. R. 322-51 et R. 322-56).",
-            "Selon le cahier des charges ; pour la bougie, Notaires de France décrit une clause de surenchère de 10 % pendant dix jours et un paiement sous 45 jours.",
+            "Selon le cahier des charges ; pour la bougie, Notaires de France décrit une surenchère de 10 % possible pendant dix jours et un paiement sous 45 jours.",
             "Selon le cahier des charges ; l’acquéreur qui ne paie pas peut être déchu de la vente (art. R. 3211-8)."
           ]
         ]
@@ -123,7 +123,7 @@
           ],
           [
             "9. Entrer dans les lieux",
-            "Si la maison est occupée, tout dépend des droits de l’occupant : le jugement vaut titre d’expulsion contre le saisi, pas contre un locataire dont le bail s’impose à vous.",
+            "Si la maison est occupée, tout dépend des droits de l’occupant : le jugement vaut titre d’expulsion contre le saisi, une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), pas contre un locataire dont le bail s’impose à vous.",
             "Art. L. 322-13 et R. 322-64"
           ]
         ]
@@ -171,8 +171,8 @@
         "Diagnostics : en cas de vente publique, le dossier de diagnostic technique est annexé au cahier des charges (art. L. 271-4 du Code de la construction et de l’habitation). Selon la situation du bien, il comprend notamment le contrôle de l’assainissement non collectif, l’état relatif aux termites, l’information sur le risque de mérule et l’état des risques.",
         "Terrain : le plan cadastral ne fixe pas les limites de propriété ; seul un bornage établi par un géomètre-expert les détermine. Comparez la désignation du cahier, le plan et ce que vous voyez sur place.",
         "Urbanisme : agrandir, diviser ou construire dépend du plan local d’urbanisme (PLU). Le certificat d’urbanisme, gratuit, indique les règles applicables au terrain.",
-        "Occupation : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), mais pas contre un locataire dont le bail s’impose à l’acheteur. Une libération des lieux peut prendre des mois.",
-        "Énergie : si vous comptez louer, le DPE compte. Les logements classés G sont exclus des baux signés, renouvelés ou reconduits depuis 2025, puis ce sera le cas des F en 2028 et des E en 2034."
+        "Occupation : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), mais pas contre un locataire dont le bail s’impose à l’acheteur. Une libération des lieux peut prendre des mois.",
+        "Énergie : si vous comptez louer, le DPE compte. En métropole, les logements classés G sont exclus des baux signés, renouvelés ou reconduits depuis 2025, puis ce sera le cas des F en 2028 et des E en 2034 ; le calendrier est différent outre-mer."
       ],
       "callout": {
         "title": "Une visite ne suffit pas toujours",
@@ -219,7 +219,7 @@
       "id": "decider-avec-immojudis",
       "title": "Préparer votre décision avec Immojudis",
       "paragraphs": [
-        "Sur chaque fiche, Immojudis indique l’organisateur et le type de vente, rapproche le bien de ventes comparables issues des données publiques DVF et propose, selon votre offre, une enchère plafond en simulation, que vous pouvez corriger. Ces repères aident à décider ; ils ne remplacent ni la lecture du cahier, ni la visite, ni l’avis de votre avocat.",
+        "Sur chaque fiche, Immojudis indique l’organisateur et le type de vente, rapproche le bien de ventes comparables issues des données publiques DVF et propose, selon votre formule (compte gratuit ou offre Analyse), une enchère plafond en simulation, que vous pouvez corriger. Ces repères aident à décider ; ils ne remplacent ni la lecture du cahier, ni la visite, ni l’avis de votre avocat.",
         "Si votre enchère plafond, frais et travaux compris, reste inférieure à la mise à prix, renoncer à cette vente est une décision cohérente."
       ],
       "links": [
@@ -288,6 +288,10 @@
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-13 (titre d’expulsion contre le saisi)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025991"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-64 (mise à exécution du titre d’expulsion après paiement du prix et des frais taxés)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
     },
     {
       "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",

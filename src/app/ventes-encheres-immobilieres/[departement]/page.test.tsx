@@ -359,7 +359,7 @@ describe("page d'un département : contenu", () => {
     // La cadence réelle (collecte au plus toutes les 12 heures, alertes évaluées chaque jour), pas
     // une promesse d'immédiateté.
     expect(panel.textContent).toContain(
-      "Les sources sont relues jusqu’à deux fois par jour et vos alertes sont comparées au catalogue chaque jour",
+      "Les sources sont relues au plus deux fois par jour selon la source et vos alertes sont comparées au catalogue chaque jour",
     );
     expect(panel.textContent).not.toContain("dès qu’elles sont publiées");
     // Sur la page d'un département, la ligne d'une vente ne répète pas le numéro du département.

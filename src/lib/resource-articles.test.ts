@@ -167,8 +167,8 @@ describe("trois nouveaux articles du 19/10/2026", () => {
 describe("article sur les ventes notariales", () => {
   const article = getResourceArticle("ventes-notariales-domaniales-differences-tribunal")!;
 
-  it("est daté de sa mise à jour du 31/10/2026 (réponse directe et FAQ)", () => {
-    expect(article.updatedAt).toBe("2026-10-31");
+  it("est daté de sa mise à jour du 14/11/2026 (titre de référencement, liens vers les nouveaux guides)", () => {
+    expect(article.updatedAt).toBe("2026-11-14");
   });
 
   it("répond en trois blocs courts : vente interactive, prix de réserve, frais compris ou en sus", () => {
@@ -241,7 +241,8 @@ describe("article sur les ventes notariales", () => {
 describe("article sur l'enchère plafond", () => {
   it("précise où s'affiche l'enchère plafond, sans date ni promesse de gratuité durable", () => {
     const article = getResourceArticle("prix-plafond-encheres-immobilieres")!;
-    expect(article.updatedAt).toBe("2026-10-28");
+    // Mise à jour du 14/11/2026 : réponse directe et FAQ.
+    expect(article.updatedAt).toBe("2026-11-14");
     const text = article.sections
       .find((section) => section.id === "assistant-immojudis")!
       .paragraphs.join(" ");

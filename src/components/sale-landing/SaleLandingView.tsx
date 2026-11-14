@@ -8,9 +8,9 @@ import { formatDate } from "@/lib/format";
 import { jsonLdString } from "@/lib/json-ld";
 import { EXISTING_GUIDE, getResourceArticle } from "@/lib/resource-articles";
 import {
-  SALE_LANDING_KEYS,
   SALE_LANDING_PAGES,
   saleLandingSearchPath,
+  visibleSaleLandingKeys,
   type SaleLandingData,
   type SaleLandingPage,
 } from "@/lib/sale-landing-pages";
@@ -72,9 +72,9 @@ export function SaleLandingView({
   const searchHref = saleLandingSearchPath(page);
   const updated = data ? formatDate(data.generatedAt, null) : null;
   const itemList = departmentItemListStructuredData(siteOrigin(), sales);
-  const others = SALE_LANDING_KEYS.filter((key) => key !== page.key).map(
-    (key) => SALE_LANDING_PAGES[key],
-  );
+  const others = visibleSaleLandingKeys()
+    .filter((key) => key !== page.key)
+    .map((key) => SALE_LANDING_PAGES[key]);
   const articles = articleSlugs.flatMap((slug) => {
     const article = getResourceArticle(slug);
     return article ? [article] : [];
@@ -133,9 +133,9 @@ export function SaleLandingView({
               </h2>
               {sales.length > 0 ? (
                 <>
-                  {/* « Retour » de la fiche mène au catalogue : ces pages ne sont pas une origine
-                      reconnue de `safeSalesReturnTo`. */}
-                  <UpcomingSaleWeeks sales={sales} now={now} returnTo="/sales" />
+                  {/* « Retour » de la fiche mène à la recherche filtrée de la page : ces pages ne
+                      sont pas une origine reconnue de `safeSalesReturnTo`, `/sales?…` l'est. */}
+                  <UpcomingSaleWeeks sales={sales} now={now} returnTo={searchHref} showDepartment />
                   {sales.length < total ? (
                     <p className="mt-4 text-sm text-ink-soft">
                       Les {count.format(sales.length)} prochaines ventes sont listées ici ; les
