@@ -14,7 +14,11 @@ import {
   loadAutopilotStats,
   loadRecentAutopilotEvents,
 } from "@/lib/information-agent/autopilot-settings";
-import { buildAutopilotView, type AutopilotView } from "@/lib/information-agent/autopilot-view";
+import {
+  buildAutopilotView,
+  type AutopilotPreparedDraft,
+  type AutopilotView,
+} from "@/lib/information-agent/autopilot-view";
 import { asObject } from "@/lib/information-agent/mission-store";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
@@ -77,21 +81,26 @@ async function readiness(now: Date, env: Readonly<Record<string, string | undefi
   return { settings, stats, report };
 }
 
-/** Brouillons préparés par le pilote en simulation (« prêts à valider »), titre de la vente seulement. */
-async function loadPreparedDrafts(): Promise<string[]> {
+/**
+ * Brouillons préparés par le pilote en simulation (« prêts à valider ») : identifiants de la mission et de la
+ * vente (pour l'ouvrir dans l'éditeur de l'onglet « À contacter ») et titre de la vente, jamais l'adresse.
+ */
+async function loadPreparedDrafts(): Promise<AutopilotPreparedDraft[]> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
-    .select("sale_id,metadata,created_at")
+    .select("id,sale_id,metadata,created_at")
     .eq("status", "draft")
     .eq("metadata->>trigger", "autopilot")
     .eq("metadata->>autopilot_simulated", "true")
     .order("created_at", { ascending: false })
     .limit(10);
   if (error) throw error;
-  const rows = (data ?? []).filter(
-    (row) => row.sale_id && asObject(row.metadata).trigger === "autopilot",
+  const rows = (data ?? []).flatMap((row) =>
+    row.sale_id && asObject(row.metadata).trigger === "autopilot"
+      ? [{ missionId: row.id, saleId: row.sale_id }]
+      : [],
   );
-  const ids = [...new Set(rows.map((row) => row.sale_id as string))];
+  const ids = [...new Set(rows.map((row) => row.saleId))];
   if (!ids.length) return [];
   const { data: sales, error: salesError } = await supabaseAdmin
     .from("auction_sales")
@@ -101,7 +110,7 @@ async function loadPreparedDrafts(): Promise<string[]> {
   const titles = new Map(
     (sales ?? []).map((sale) => [sale.id, sale.title || sale.city || sale.id]),
   );
-  return ids.map((id) => String(titles.get(id) ?? id));
+  return rows.map((row) => ({ ...row, label: String(titles.get(row.saleId) ?? row.saleId) }));
 }
 
 export async function getAdminAutopilotView(

@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
+import { AdminAutopilotEmergencyStop } from "@/components/admin/AdminAutopilotEmergencyStop";
 import type {
   InformationAgentSummaryData,
   SummaryValue,
 } from "@/components/admin/use-information-agent-summary";
 
-const PILOT_LABELS = { off: "Arrêté", simulation: "Simulation", live: "Réel" } as const;
+const PILOT_LABELS = { off: "Éteint", simulation: "Simulation", live: "Réel" } as const;
 const PILOT_TONES = {
   off: "text-brand-navy",
   simulation: "text-warning",
@@ -17,9 +18,10 @@ function display<T>(entry: SummaryValue<T>): string {
 }
 
 /**
- * Bandeau de synthèse, visible sous tous les onglets : état du pilote, envois du jour, réponses à
- * relire, messages non rattachés. Deux colonnes à 390 px, une ligne au-delà. Aucun contenu de message
- * ni adresse : seulement des nombres et l'état du pilote.
+ * Bandeau de synthèse, visible sous tous les onglets : état du pilote (Éteint, Simulation, Réel, ou Arrêté
+ * automatiquement avec son motif en clair), envois du jour, réponses à relire, messages non rattachés, et
+ * l'arrêt d'urgence du pilote. Deux colonnes à 390 px, une ligne au-delà. Aucun contenu de message ni
+ * adresse : seulement des nombres et l'état du pilote.
  */
 export function AdminInformationAgentSummary({
   summary,
@@ -31,26 +33,35 @@ export function AdminInformationAgentSummary({
     <section aria-label="Synthèse de l’agent" className="rounded-xl border bg-white p-3 sm:p-4">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         <Item label="Pilote automatique">
-          <span className={mode ? PILOT_TONES[mode] : ""}>
-            {mode ? PILOT_LABELS[mode] : display(summary.pilotMode)}
-          </span>
+          {summary.pilotAutoStopped ? (
+            <span className="text-danger">Arrêté automatiquement</span>
+          ) : (
+            <span className={mode ? PILOT_TONES[mode] : ""}>
+              {mode ? PILOT_LABELS[mode] : display(summary.pilotMode)}
+            </span>
+          )}
         </Item>
         <Item label="Envois du jour">{display(summary.sentToday)}</Item>
         <Item label="Réponses à relire">{display(summary.toReview)}</Item>
         <Item label="Messages non rattachés">{display(summary.unrouted)}</Item>
       </dl>
-      {summary.pilotNotice ? (
-        <p
-          role="alert"
-          className={`mt-3 rounded-lg border p-2 text-xs leading-5 ${
-            summary.pilotNotice.tone === "alert"
-              ? "border-danger/30 bg-danger-tint text-danger"
-              : "border-warning/30 bg-warning-tint text-warning"
-          }`}
-        >
-          {summary.pilotNotice.text}
-        </p>
-      ) : null}
+      <div className="mt-3 flex flex-wrap items-start gap-3">
+        {summary.pilotNotice ? (
+          <p
+            role="alert"
+            className={`min-w-0 flex-1 basis-64 rounded-lg border p-2 text-xs leading-5 ${
+              summary.pilotNotice.tone === "alert"
+                ? "border-danger/30 bg-danger-tint text-danger"
+                : "border-warning/30 bg-warning-tint text-warning"
+            }`}
+          >
+            {summary.pilotNotice.text}
+          </p>
+        ) : null}
+        <div className="ml-auto">
+          <AdminAutopilotEmergencyStop mode={mode} />
+        </div>
+      </div>
     </section>
   );
 }

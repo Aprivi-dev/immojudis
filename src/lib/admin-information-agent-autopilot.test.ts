@@ -154,6 +154,46 @@ describe("panneau du pilote (serveur)", () => {
     expect(view.readiness.ready).toBe(false);
   });
 
+  it("rend chaque brouillon prêt à valider avec sa mission et sa vente, pour l'ouvrir", async () => {
+    const rows: Record<string, unknown[]> = {
+      information_agent_missions: [
+        {
+          id: "m-2",
+          sale_id: "s-1",
+          metadata: { trigger: "autopilot", autopilot_simulated: true },
+        },
+        {
+          id: "m-1",
+          sale_id: "s-2",
+          metadata: { trigger: "autopilot", autopilot_simulated: true },
+        },
+      ],
+      auction_sales: [
+        { id: "s-1", title: "Appartement Bordeaux", city: "Bordeaux" },
+        { id: "s-2", title: null, city: "Lyon" },
+      ],
+    };
+    mocks.from.mockImplementation((table: string) => {
+      const query: Record<string, unknown> = {};
+      for (const name of ["select", "eq", "order", "limit", "in"]) query[name] = () => query;
+      query.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: rows[table] ?? [], error: null }).then(resolve);
+      return query;
+    });
+    const view = await getAdminAutopilotView("token", {
+      env: {},
+      now: new Date("2026-11-03T09:30:00Z"),
+    });
+    expect(view.ready).toEqual({
+      count: 2,
+      items: [
+        { missionId: "m-2", saleId: "s-1", label: "Appartement Bordeaux" },
+        { missionId: "m-1", saleId: "s-2", label: "Lyon" },
+      ],
+    });
+    expect(JSON.stringify(view.ready)).not.toContain("@");
+  });
+
   it("un passage en erreur se lit dans le journal du panneau", async () => {
     mocks.events.mockResolvedValue([
       {
