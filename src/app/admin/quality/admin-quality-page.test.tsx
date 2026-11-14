@@ -12,9 +12,19 @@ vi.mock("@/lib/client-api", () => ({
   fetchValuationAdminOverview: mocks.valuation,
 }));
 vi.mock("@/lib/queries", () => ({ getSales: mocks.sales }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { email: "admin@example.test" } }) }));
 vi.mock("@/components/admin/AdminShell", () => ({
-  AdminShell: ({ children, onRefresh }: { children: ReactNode; onRefresh: () => void }) => (
+  AdminShell: ({
+    children,
+    onRefresh,
+    adminEmail,
+  }: {
+    children: ReactNode;
+    onRefresh: () => void;
+    adminEmail?: string;
+  }) => (
     <main>
+      <p>Adresse : {adminEmail}</p>
       <button onClick={onRefresh}>Actualiser</button>
       {children}
     </main>
@@ -56,6 +66,8 @@ describe("AdminQualityPage onglets", () => {
     renderPage();
 
     expect(await screen.findByText("Panneau des pépites")).toBeTruthy();
+    // L'adresse de l'administrateur reste affichée, comme sur l'ancienne page des pépites.
+    expect(screen.getByText("Adresse : admin@example.test")).toBeTruthy();
     const tabs = screen.getByRole("tablist", { name: "Rubriques de la qualité" });
     expect(tabs).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Pépites" }).getAttribute("aria-selected")).toBe("true");
@@ -103,7 +115,7 @@ describe("AdminQualityPage libellés", () => {
     renderPage();
 
     expect(await screen.findByText("Fonctionnement normal")).toBeTruthy();
-    expect(screen.getByText("Avec le modèle statistique")).toBeTruthy();
+    expect(screen.getByText("Avec le modèle appris")).toBeTruthy();
     expect(screen.getByText("Estimations exploitables")).toBeTruthy();
     expect(screen.getByText(/occupation et score de confiance/)).toBeTruthy();
     const text = document.body.textContent ?? "";

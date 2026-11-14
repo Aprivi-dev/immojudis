@@ -23,6 +23,7 @@ import { AdminTabPanel, AdminTabs } from "@/components/admin/AdminTabs";
 import { useAdminTabParam } from "@/components/admin/use-admin-tab-param";
 import { AdminPill } from "@/components/admin/admin-pill";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
+import { useAuth } from "@/hooks/use-auth";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
 import type {
@@ -44,6 +45,7 @@ const TABS = [
  * règle des pépites (l'ancienne adresse /admin/pepites redirige vers cet onglet).
  */
 export function AdminQualityPage() {
+  const { user } = useAuth();
   const [tab, select] = useAdminTabParam(TABS, "indicateurs");
   const { isRefreshing, refresh } = useAdminRefresh([
     QUALITY_REPORT_QUERY_KEY[0],
@@ -57,6 +59,7 @@ export function AdminQualityPage() {
       activeSection="quality"
       title="Qualité des données"
       description="Repérez les dossiers qui fragilisent la confiance produit et contrôlez la règle des pépites."
+      adminEmail={user?.email}
       onRefresh={() => void refresh()}
       isRefreshing={isRefreshing}
     >
@@ -256,7 +259,7 @@ function QualityIndicators() {
           />
           <QualityMetric
             icon={<Sparkles />}
-            label="Avec le modèle statistique"
+            label="Avec le modèle appris"
             value={formatPercent(valuationOverview?.runtime.hybridSharePct, 1)}
           />
           <QualityMetric
