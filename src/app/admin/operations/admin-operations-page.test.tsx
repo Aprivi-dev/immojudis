@@ -86,6 +86,7 @@ const RUNS: AdminDashboardRunsData = {
       errors: {},
     },
   ],
+  secondFactorExposures: [],
 };
 
 // Nom d'alerte rangé dans une constante : un champ `key: "…"` littéral ressemble à un secret

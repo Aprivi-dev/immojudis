@@ -2,12 +2,14 @@
  * Launch guards shared by the production build (`verify-required-env.mjs`).
  *
  * A production deployment must not go out with the legal notice left on its
- * "À renseigner" fallback, with the admin second factor optional, or with a
- * canonical origin that is only the throw-away `VERCEL_URL`.
+ * "À renseigner" fallback, with the admin second factor optional, with a
+ * canonical origin that is only the throw-away `VERCEL_URL`, or with a Stripe
+ * key that is not a live one.
  *
  * `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` turns the legal and MFA errors into loud
  * warnings, so a deployment is not blocked before the owner has the values. A
- * missing or unusable canonical origin always blocks (see `blockingLaunchProblems`).
+ * missing or unusable canonical origin (see `blockingLaunchProblems`) and a Stripe
+ * key that is not a live one (see `stripeKeyModeProblems`) always block.
  */
 
 /** Keep in sync with REQUIRED_PUBLISHER_FIELDS in src/lib/legal-documents.ts (tested). */
@@ -95,6 +97,34 @@ export function productionLaunchProblems(env) {
   }
 
   return problems;
+}
+
+/**
+ * Mode of a Stripe secret key from its prefix (`sk_`/`rk_` then `live_` or `test_`), or null.
+ * Same rule as `stripeKeyMode` in src/lib/analysis-checkout-readiness.ts (tested).
+ */
+export function stripeKeyMode(key) {
+  const match = /^[sr]k_(live|test)_/.exec(String(key ?? "").trim());
+  return match ? match[1] : null;
+}
+
+/**
+ * The production build requires a live key (C3, 14/11), as the checkout guard does at run time. A
+ * test key would let Analyse be obtained with Stripe's test card, without paying; a key whose mode
+ * cannot be read (neither `sk_` nor `rk_` followed by `live_` or `test_`) is refused as well. Not
+ * covered by the launch escape hatch: it is a wrong value, not a missing one. An absent key is not a
+ * problem here (the checkout then stays closed on its own).
+ */
+export function stripeKeyModeProblems(env) {
+  const key = String(env.STRIPE_SECRET_KEY ?? "").trim();
+  if (!key) return [];
+  const mode = stripeKeyMode(key);
+  if (mode === "live") return [];
+  return [
+    mode === "test"
+      ? "STRIPE_SECRET_KEY est une clé de test (sk_test_… ou rk_test_…) : en production, l'offre Analyse s'obtiendrait avec la carte de test de Stripe, sans payer. Poser la clé du mode réel (sk_live_…)."
+      : "STRIPE_SECRET_KEY n'a pas la forme d'une clé Stripe du mode réel (sk_live_… ou rk_live_…) : son mode ne se lit pas. Poser la clé du mode réel.",
+  ];
 }
 
 /** Billed price of the Analyse subscription. Keep in sync with src/lib/analysis-offer.ts (tested). */
@@ -209,7 +239,9 @@ export function saleRemindersModeAdvisories(env) {
 export function evaluateProductionLaunchConfig(env) {
   if (!isProductionBuild(env)) return { exitCode: 0, errors: [], warnings: [] };
   const advisories = saleRemindersModeAdvisories(env);
-  const blocking = blockingLaunchProblems(env);
+  const originProblems = blockingLaunchProblems(env);
+  const stripeProblems = stripeKeyModeProblems(env);
+  const blocking = [...originProblems, ...stripeProblems];
   const problems = [...productionLaunchProblems(env), ...blocking];
   if (!problems.length) return { exitCode: 0, errors: [], warnings: advisories };
 
@@ -234,9 +266,21 @@ export function evaluateProductionLaunchConfig(env) {
     errors: [
       "[env] Configuration de lancement incomplète : le build de production est bloqué.",
       ...problems.map((problem) => `[env]   - ${problem}`),
-      blocking.length
-        ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL (https, domaine public) dans Vercel.`
-        : `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
+      ...(originProblems.length
+        ? [
+            `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL (https, domaine public) dans Vercel.`,
+          ]
+        : []),
+      ...(stripeProblems.length
+        ? [
+            `[env] Une clé Stripe qui n'est pas du mode réel ne peut pas être contournée par ${ESCAPE_HATCH} : poser la clé du mode réel dans Vercel (cible Production).`,
+          ]
+        : []),
+      ...(blocking.length
+        ? []
+        : [
+            `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
+          ]),
     ],
     warnings: advisories,
   };

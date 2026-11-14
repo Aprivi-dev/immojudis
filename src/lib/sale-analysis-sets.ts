@@ -625,9 +625,11 @@ async function requireAnalysisSet(
     .select("*")
     .eq("id", setId)
     .eq("user_id", auth.userId)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  // Ensemble absent ou d'un autre compte : même réponse, sans dire lequel des deux.
+  if (!data) throw new NotFoundError("Analyse multi-biens introuvable.");
   return {
     id: data.id,
     name: data.name,

@@ -111,6 +111,7 @@ const SERVER_KEYS = [
   "STRIPE_WEBHOOK_SECRET",
   "STRIPE_ANALYSIS_PRICE_ID",
   "STRIPE_ANALYSIS_LEGACY_PRICE_IDS",
+  "STRIPE_ANALYSIS_SALES_OPEN",
   "REPLICATE_API_TOKEN",
   "LLM_PROMPT_VERSION",
   "RESEND_API_KEY",
@@ -291,6 +292,8 @@ export function serverEnv(source?: EnvSource) {
       analysisPriceId: env.STRIPE_ANALYSIS_PRICE_ID,
       /** Anciens Price encore facturés à des abonnés, séparés par des virgules. */
       legacyAnalysisPriceIds: env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS,
+      /** Interrupteur de vente, tel quel : `analysisSalesOpen` (absent : vente ouverte). */
+      analysisSalesOpen: env.STRIPE_ANALYSIS_SALES_OPEN,
     },
     replicateApiToken: env.REPLICATE_API_TOKEN,
     llmPromptVersion: env.LLM_PROMPT_VERSION,

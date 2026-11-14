@@ -10,6 +10,7 @@ import {
   analysisOfferLabelAmountsCents,
   DEFAULT_ANALYSIS_OFFER_LABEL,
 } from "../src/lib/analysis-offer";
+import { stripeKeyMode as tsStripeKeyMode } from "../src/lib/analysis-checkout-readiness";
 import { legalConfigurationStatus } from "../src/lib/legal-documents";
 import { SITE_URL_ENV_NAMES } from "../src/lib/env";
 import { resolveSiteOrigin } from "../src/lib/site-url";
@@ -23,6 +24,8 @@ import {
   LEGAL_ENV_NAMES,
   evaluateProductionLaunchConfig,
   productionLaunchProblems,
+  stripeKeyMode as scriptStripeKeyMode,
+  stripeKeyModeProblems,
 } from "./lib/launch-config.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -185,6 +188,77 @@ describe("garde-fous de lancement (build de production)", () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/origine canonique/);
+  });
+
+  it("lit le mode d'une clé Stripe comme src/lib/analysis-checkout-readiness.ts", () => {
+    for (const key of [
+      "sk_live_abc",
+      "rk_live_abc",
+      " sk_live_abc ",
+      "sk_test_abc",
+      "rk_test_abc",
+      "pk_test_abc",
+      "stripe-secret-test",
+      "",
+      undefined,
+    ]) {
+      expect(scriptStripeKeyMode(key), String(key)).toBe(tsStripeKeyMode(key));
+    }
+  });
+
+  it("refuse une clé Stripe de test au build de production, même avec l'échappatoire (C3)", () => {
+    for (const STRIPE_SECRET_KEY of ["sk_test_abc", "rk_test_abc"]) {
+      const result = runBuildCheck({
+        ...completeLaunch,
+        VERCEL_ENV: "production",
+        STRIPE_SECRET_KEY,
+      });
+      expect(result.status, STRIPE_SECRET_KEY).toBe(1);
+      expect(result.stderr).toContain("clé de test");
+
+      const outcome = evaluateProductionLaunchConfig({
+        ...completeLaunch,
+        VERCEL_ENV: "production",
+        STRIPE_SECRET_KEY,
+        ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+      });
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.errors.join("\n")).toContain(
+        "Une clé Stripe qui n'est pas du mode réel ne peut pas être contournée par ALLOW_INCOMPLETE_LAUNCH_CONFIG",
+      );
+    }
+  });
+
+  it("exige au build de production une clé dont le mode réel se lit : une forme inconnue est refusée", () => {
+    for (const STRIPE_SECRET_KEY of ["stripe-secret", "sk_abc", "pk_live_abc", "live_abc"]) {
+      const outcome = evaluateProductionLaunchConfig({
+        ...completeLaunch,
+        VERCEL_ENV: "production",
+        STRIPE_SECRET_KEY,
+        ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+      });
+      expect(outcome.exitCode, STRIPE_SECRET_KEY).toBe(1);
+      expect(outcome.errors.join("\n")).toContain("son mode ne se lit pas");
+    }
+    expect(stripeKeyModeProblems({ STRIPE_SECRET_KEY: "  " })).toEqual([]);
+  });
+
+  it("accepte au build de production une clé réelle ou l'absence de clé, et une clé de test hors production", () => {
+    for (const STRIPE_SECRET_KEY of ["sk_live_abc", "rk_live_abc", undefined]) {
+      expect(
+        evaluateProductionLaunchConfig({
+          ...completeLaunch,
+          VERCEL_ENV: "production",
+          STRIPE_SECRET_KEY,
+        }),
+        String(STRIPE_SECRET_KEY),
+      ).toEqual({ exitCode: 0, errors: [], warnings: [] });
+    }
+    expect(stripeKeyModeProblems({ STRIPE_SECRET_KEY: "sk_live_abc" })).toEqual([]);
+    expect(
+      runBuildCheck({ ...supabase, VERCEL_ENV: "preview", STRIPE_SECRET_KEY: "sk_test_abc" })
+        .status,
+    ).toBe(0);
   });
 
   it("lit le prix facturé et le libellé comme src/lib/analysis-offer.ts", () => {

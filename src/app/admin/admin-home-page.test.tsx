@@ -81,6 +81,7 @@ const RUNS: AdminDashboardRunsData = {
       errors: {},
     },
   ],
+  secondFactorExposures: [],
 };
 
 type Alert = AdminOperationalReadinessResponse["operations"]["alerts"][number];
@@ -387,6 +388,35 @@ describe("AdminHomePage", () => {
 
     expect(await screen.findByText("Chargement des annonces…")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Annonces de professionnels" })).toBeTruthy();
+  });
+
+  it("says nothing about the second factor when nothing is exposed", async () => {
+    renderHome();
+    await screen.findByRole("heading", { name: "Aucune alerte ni échec récent" });
+
+    expect(screen.queryByRole("heading", { name: "Second facteur non exigé" })).toBeNull();
+  });
+
+  it("warns, without blocking, that the second factor is not required while payment and outbound are open (T3)", async () => {
+    mocks.fetchRuns.mockResolvedValue({
+      ...RUNS,
+      secondFactorExposures: ["payment", "information_agent_outbound"],
+    });
+
+    renderHome();
+
+    const heading = await screen.findByRole("heading", { name: "Second facteur non exigé" });
+    const warning = heading.parentElement as HTMLElement;
+    expect(warning.textContent).toContain("ADMIN_MFA_REQUIRED");
+    expect(warning.textContent).toContain(
+      "alors que le paiement de l’offre Analyse est ouvert et que l’envoi de l’agent d’information est ouvert",
+    );
+    expect(warning.querySelector("a")?.getAttribute("href")).toBe("/admin/securite");
+    // Rien n'est bloqué : le reste de l'accueil s'affiche, santé comprise.
+    expect(
+      await screen.findByRole("heading", { name: "Aucune alerte ni échec récent" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Retours de la semaine" })).toBeTruthy();
   });
 
   it("asks for an intervention when a recent run failed", async () => {

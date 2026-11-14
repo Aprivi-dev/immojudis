@@ -57,6 +57,20 @@ describe("POST /api/stripe/webhook", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("answers 400 when the event mode differs from the secret key mode (C3)", async () => {
+    mocks.handle.mockRejectedValue(
+      new PublicApiError(
+        "Mode de l’événement Stripe différent de celui de la clé secrète : événement refusé.",
+        400,
+      ),
+    );
+
+    const response = await post();
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
   it("answers 500 on an internal failure so that Stripe retries", async () => {
     mocks.handle.mockRejectedValue(new Error("connection terminated unexpectedly"));
 

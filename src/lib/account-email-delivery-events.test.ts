@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   revokeReminder: vi.fn(),
   revokeDigest: vi.fn(),
   revokeResults: vi.fn(),
+  revokeTrialEnd: vi.fn(),
+  revokeOpening: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -15,6 +17,8 @@ vi.mock("@/lib/email-alerts", () => ({
   revokeSaleReminderConsent: mocks.revokeReminder,
   revokeWeeklyDigestConsent: mocks.revokeDigest,
   revokeSaleResultsConsent: mocks.revokeResults,
+  revokeLaunchOfferEndNotice: mocks.revokeTrialEnd,
+  revokeOfferOpeningRequest: mocks.revokeOpening,
 }));
 
 import {
@@ -389,6 +393,8 @@ describe("revokeAllEmailConsents", () => {
       mocks.revokeReminder,
       mocks.revokeDigest,
       mocks.revokeResults,
+      mocks.revokeTrialEnd,
+      mocks.revokeOpening,
     ]) {
       mock.mockResolvedValue({});
     }
@@ -410,7 +416,17 @@ describe("revokeAllEmailConsents", () => {
     }
   });
 
-  it("tente les quatre retraits même si l'un échoue, puis signale l'échec", async () => {
+  it("arrête aussi l'avis de fin d'essai (J+5) et l'email d'ouverture de l'offre Analyse (C8)", async () => {
+    await revokeAllEmailConsents("user-1", new Date("2026-10-31T10:00:00.000Z"));
+
+    expect(mocks.revokeTrialEnd).toHaveBeenCalledWith({ userId: "user-1" });
+    expect(mocks.revokeOpening).toHaveBeenCalledWith({
+      userId: "user-1",
+      now: new Date("2026-10-31T10:00:00.000Z"),
+    });
+  });
+
+  it("tente tous les retraits même si l'un échoue, puis signale l'échec", async () => {
     mocks.revokeReminder.mockRejectedValue(new Error("boom"));
 
     await expect(revokeAllEmailConsents("user-1")).rejects.toThrow("boom");
@@ -418,5 +434,7 @@ describe("revokeAllEmailConsents", () => {
     expect(mocks.revokeAlert).toHaveBeenCalled();
     expect(mocks.revokeDigest).toHaveBeenCalled();
     expect(mocks.revokeResults).toHaveBeenCalled();
+    expect(mocks.revokeTrialEnd).toHaveBeenCalled();
+    expect(mocks.revokeOpening).toHaveBeenCalled();
   });
 });
