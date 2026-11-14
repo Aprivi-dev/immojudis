@@ -14,13 +14,41 @@ const mocks = vi.hoisted(() => ({
   registry: vi.fn(),
   history: vi.fn(),
   excluded: vi.fn(),
+  firstRecorded: vi.fn(),
+  informed: vi.fn(),
+  /** Missions en base (brouillons) et lectures faites, par table. */
+  missions: [] as Array<Record<string, unknown>>,
+  reads: [] as Array<{ table: string; filters: Array<[string, unknown]> }>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
-  const query: Record<string, unknown> = {};
-  for (const name of ["select", "eq", "in"]) query[name] = () => query;
-  query.limit = async () => ({ data: [], error: null });
-  return { supabaseAdmin: { rpc: mocks.rpc, from: () => query } };
+  // Filtres d'égalité et d'appartenance appliqués aux missions en mémoire ; toute autre table est vide.
+  const from = (table: string) => {
+    const filters: Array<[string, unknown]> = [];
+    const query = {
+      select: () => query,
+      eq: (column: string, value: unknown) => {
+        filters.push([column, [value]]);
+        return query;
+      },
+      in: (column: string, values: unknown[]) => {
+        filters.push([column, values]);
+        return query;
+      },
+      limit: async () => {
+        mocks.reads.push({ table, filters });
+        const rows = table === "information_agent_missions" ? mocks.missions : [];
+        return {
+          data: rows.filter((row) =>
+            filters.every(([column, values]) => (values as unknown[]).includes(row[column])),
+          ),
+          error: null,
+        };
+      },
+    };
+    return query;
+  };
+  return { supabaseAdmin: { rpc: mocks.rpc, from } };
 });
 vi.mock("@/lib/admin-information-agent-sale", () => ({
   loadInformationAgentContactSales: mocks.contactSales,
@@ -36,6 +64,8 @@ vi.mock("@/lib/information-agent/address-deliverability", () => ({
 vi.mock("@/lib/information-agent/autopilot-facts", () => ({
   loadAutopilotRegistryFacts: mocks.registry,
   loadAutopilotHistoryFacts: mocks.history,
+  loadAutopilotFirstRecordedAt: mocks.firstRecorded,
+  loadAutopilotAlreadyInformed: mocks.informed,
 }));
 vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   loadExcludedIdentityKeys: mocks.excluded,
@@ -101,29 +131,29 @@ beforeEach(() => {
     silentSendsInSixMonths: 0,
     lastSendAt: null,
   });
+  // Lectures groupées du tri de la file : adresses enregistrées récemment, personne déjà informé.
+  mocks.firstRecorded.mockImplementation(
+    async (emails: string[]) => new Map(emails.map((email) => [email, "2026-11-01T10:00:00Z"])),
+  );
+  mocks.informed.mockImplementation(async (recipients: unknown[]) => recipients.map(() => false));
+  mocks.missions = [];
+  mocks.reads = [];
 });
 
 const search = () => findAutopilotCandidates({ settings, now: NOW, limit: 3, env: {} });
 
 describe("sélection du pilote : identité du professionnel et clé de structure", () => {
-  it("adresse générique d'un cabinet sans nom de personne : identité incomplète, écartée", async () => {
+  it("adresse générique d'un cabinet sans nom de personne : identité incomplète, écartée par la file", async () => {
     mocks.sale.mockResolvedValue(
       sale({ lawyer_name: "Cabinet", lawyer_contact: "contact@cabinet-durand.example.test" }),
     );
     const result = await search();
     expect(result.candidates).toEqual([]);
     expect(result.skipped).toEqual({ identity_incomplete: 1 });
-    // L'opposition de la structure reste contrôlée, avec sa clé.
-    expect(mocks.allowed).toHaveBeenCalledExactlyOnceWith({
-      saleId: SALE_ID,
-      email: "contact@cabinet-durand.example.test",
-      identityKeys: ["structure|domain|cabinet-durand.example.test"],
-      // Le domaine et son domaine parent (un cabinet opposé l'est aussi pour ses sous-domaines).
-      checkKeys: ["structure|domain|cabinet-durand.example.test", "structure|domain|example.test"],
-    });
-    // Ni l'historique ni les exclusions ne sont lus avec une clé de structure.
-    expect(mocks.history).toHaveBeenCalledWith("contact@cabinet-durand.example.test", [], NOW);
-    expect(mocks.excluded).toHaveBeenCalledWith([]);
+    // La clé de structure ne suffit pas : refus décidé sur l'annonce, sans examen.
+    expect(result.examined).toBe(0);
+    expect(mocks.allowed).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
   });
 
   it("adresse générique d'un avocat nommé : retenue, avec les seules clés de la personne", async () => {
@@ -328,6 +358,157 @@ describe("file du pilote : les ventes refusées d'avance ne consomment pas les 2
       expect(result.skipped).toEqual({});
       expect(result.candidates.map((candidate) => candidate.email)).toEqual([
         "me.durand@cabinet-durand.example.test",
+      ]);
+    });
+  });
+
+  describe("article 14 et brouillon d'administrateur : décidés par lectures groupées, sans examen", () => {
+    const DAY_MS = 86_400_000;
+    const daysAgo = (days: number) => new Date(NOW.getTime() - days * DAY_MS).toISOString();
+    const emailOf = (n: number) => `me.dupont${n}@cabinet-dupont-${n}.example.test`;
+    /** Premier enregistrement de chaque adresse au registre ; absente : inconnue du registre. */
+    function firstRecorded(dates: Map<string, string>) {
+      mocks.firstRecorded.mockImplementation(
+        async (emails: string[]) =>
+          new Map(
+            emails.flatMap((email) => (dates.has(email) ? [[email, dates.get(email)!]] : [])),
+          ),
+      );
+    }
+
+    it("30 ventes hors délai de l'article 14 en tête de file : des candidats au-delà, sans examen de ces 30", async () => {
+      queue([
+        ...Array.from({ length: 30 }, (_, n) => eligible(500 + n)),
+        ...Array.from({ length: 10 }, (_, n) => eligible(600 + n)),
+      ]);
+      firstRecorded(
+        new Map([
+          ...Array.from({ length: 30 }, (_, n) => [emailOf(500 + n), daysAgo(60)] as const),
+          ...Array.from({ length: 10 }, (_, n) => [emailOf(600 + n), daysAgo(5)] as const),
+        ]),
+      );
+      const result = await search();
+      expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([
+        id(600),
+        id(601),
+        id(602),
+      ]);
+      expect(result.skipped).toEqual({ art14_window_expired: 30 });
+      expect(result.examined).toBe(3);
+      expect(mocks.persist).toHaveBeenCalledTimes(3);
+      expect(mocks.registry).toHaveBeenCalledTimes(3);
+      // Envois précédents lus pour les seules adresses hors délai, en une fois.
+      expect(mocks.informed).toHaveBeenCalledOnce();
+      expect(mocks.informed.mock.calls[0][0]).toHaveLength(30);
+    });
+
+    it("adresse vue il y a 29 jours : retenue ; 31 jours : écartée par la file", async () => {
+      queue([eligible(510), eligible(511)]);
+      firstRecorded(
+        new Map([
+          [emailOf(510), daysAgo(31)],
+          [emailOf(511), daysAgo(29)],
+        ]),
+      );
+      const result = await search();
+      expect(result.skipped).toEqual({ art14_window_expired: 1 });
+      expect(result.examined).toBe(1);
+      expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([id(511)]);
+    });
+
+    it("règle de l'article 14 désactivée : rien n'est écarté à ce titre, et rien n'est lu pour elle", async () => {
+      queue(Array.from({ length: 5 }, (_, n) => eligible(520 + n)));
+      firstRecorded(
+        new Map(Array.from({ length: 5 }, (_, n) => [emailOf(520 + n), daysAgo(60)] as const)),
+      );
+      const result = await findAutopilotCandidates({
+        settings: { ...settings, art14RuleEnabled: false },
+        now: NOW,
+        limit: 3,
+        env: {},
+      });
+      expect(result.skipped).toEqual({});
+      expect(result.candidates).toHaveLength(3);
+      expect(mocks.firstRecorded).not.toHaveBeenCalled();
+      expect(mocks.informed).not.toHaveBeenCalled();
+    });
+
+    it("une seule lecture groupée par page de 100 ventes (premier enregistrement, brouillons)", async () => {
+      queue(Array.from({ length: 150 }, (_, n) => eligible(1000 + n)));
+      firstRecorded(
+        new Map(Array.from({ length: 150 }, (_, n) => [emailOf(1000 + n), daysAgo(60)] as const)),
+      );
+      const result = await search();
+      expect(result.examined).toBe(0);
+      expect(result.skipped).toEqual({ art14_window_expired: 150 });
+      expect(mocks.firstRecorded).toHaveBeenCalledTimes(2);
+      expect(mocks.firstRecorded.mock.calls.map(([emails]) => emails.length)).toEqual([100, 50]);
+      expect(mocks.informed).toHaveBeenCalledTimes(2);
+      const draftReads = mocks.reads.filter((read) => read.table === "information_agent_missions");
+      expect(draftReads).toHaveLength(2);
+    });
+
+    it("adresse hors délai déjà informée : laissée à l'examen, qui l'admet (même règle)", async () => {
+      queue([eligible(530)]);
+      firstRecorded(new Map([[emailOf(530), daysAgo(60)]]));
+      mocks.informed.mockResolvedValue([true]);
+      mocks.registry.mockResolvedValue({
+        firstRecordedAt: daysAgo(60),
+        observedAt: daysAgo(1),
+        originKinds: ["sale_listing"],
+        licitorDecoded: false,
+      });
+      mocks.history.mockResolvedValue({
+        alreadyInformed: true,
+        lastReplyAt: null,
+        silentSendsInSixMonths: 0,
+        lastSendAt: null,
+      });
+      const result = await search();
+      expect(result.skipped).toEqual({});
+      expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([id(530)]);
+    });
+
+    it("envois précédents illisibles en entier : rien n'est écarté pour l'article 14, l'examen décide", async () => {
+      queue([eligible(540)]);
+      firstRecorded(new Map([[emailOf(540), daysAgo(60)]]));
+      mocks.informed.mockResolvedValue(null);
+      mocks.registry.mockResolvedValue({
+        firstRecordedAt: daysAgo(60),
+        observedAt: daysAgo(1),
+        originKinds: ["sale_listing"],
+        licitorDecoded: false,
+      });
+      const result = await search();
+      expect(result.examined).toBe(1);
+      // La vérification complète reste la garde finale.
+      expect(result.skipped).toEqual({ art14_window_expired: 1 });
+    });
+
+    it("adresse inconnue du registre : laissée à l'examen, qui l'enregistre d'abord", async () => {
+      queue([eligible(550)]);
+      firstRecorded(new Map());
+      const result = await search();
+      expect(result.examined).toBe(1);
+      expect(mocks.informed).not.toHaveBeenCalled();
+      expect(mocks.persist).toHaveBeenCalledOnce();
+      expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([id(550)]);
+    });
+
+    it("brouillon d'un administrateur sur la vente : écartée par la file ; brouillon du pilote : non", async () => {
+      queue([eligible(560), eligible(561), eligible(562), eligible(563)]);
+      mocks.missions = [
+        { sale_id: id(560), status: "draft", metadata: { trigger: "manual" } },
+        { sale_id: id(561), status: "draft", metadata: { trigger: "autopilot" } },
+        { sale_id: id(562), status: "sent", metadata: {} },
+      ];
+      const result = await search();
+      expect(result.skipped).toEqual({ admin_draft_exists: 1 });
+      expect(result.examined).toBe(3);
+      expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([
+        id(561),
+        id(562),
+        id(563),
       ]);
     });
   });
