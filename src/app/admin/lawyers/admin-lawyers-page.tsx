@@ -1,24 +1,38 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import {
   AdminLawyerReferralRequestsPanel,
   LAWYER_REFERRAL_REQUESTS_QUERY_KEY,
 } from "@/components/admin/AdminLawyerReferralRequestsPanel";
-import {
-  AdminLawyerStatementPanel,
-  LAWYER_STATEMENT_QUERY_KEY,
-} from "@/components/admin/AdminLawyerStatementPanel";
-import {
-  AdminReferencedLawyersPanel,
-  REFERENCED_LAWYERS_QUERY_KEY,
-} from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminTabs } from "@/components/admin/AdminTabs";
-import { useAdminRefresh } from "@/components/admin/admin-ui";
+import {
+  LAWYER_STATEMENT_QUERY_KEY,
+  REFERENCED_LAWYERS_QUERY_KEY,
+} from "@/components/admin/admin-lawyers-query-keys";
+import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchAdminReferencedLawyers } from "@/lib/client-api";
+
+// « Réseau référencé » et « Relevé mensuel » sont repliés tant qu'aucun avocat n'est référencé :
+// chargés à la demande, ils sortent du JavaScript initial de la vue (budget de build).
+const AdminReferencedLawyersPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminReferencedLawyersPanel").then(
+      (module) => module.AdminReferencedLawyersPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="l’onglet" /> },
+);
+const AdminLawyerStatementPanel = dynamic(
+  () =>
+    import("@/components/admin/AdminLawyerStatementPanel").then(
+      (module) => module.AdminLawyerStatementPanel,
+    ),
+  { loading: () => <AdminPanelLoading label="l’onglet" /> },
+);
 
 const TABS = [
   { id: "referrals", label: "Mises en relation" },
@@ -33,7 +47,7 @@ export function AdminLawyersPage() {
   const { isRefreshing, refresh } = useAdminRefresh([
     LAWYER_REFERRAL_REQUESTS_QUERY_KEY[0],
     REFERENCED_LAWYERS_QUERY_KEY[0],
-    LAWYER_STATEMENT_QUERY_KEY,
+    LAWYER_STATEMENT_QUERY_KEY[0],
   ]);
   // Même requête (et même cache) que le panneau « Réseau référencé » : enregistrer le premier avocat
   // la relit, et les deux onglets réapparaissent d'eux-mêmes.
