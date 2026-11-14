@@ -1,6 +1,12 @@
 "use client";
 
-import { adminNextOffset, adminPageRange, adminPreviousOffset } from "@/lib/admin-pagination";
+import {
+  ADMIN_PAGE_SIZE,
+  adminKnownTotal,
+  adminNextOffset,
+  adminPageRange,
+  adminPreviousOffset,
+} from "@/lib/admin-pagination";
 
 /**
  * Barre de pagination des listes admin (50 lignes par page, offset / limit côté serveur).
@@ -8,8 +14,8 @@ import { adminNextOffset, adminPageRange, adminPreviousOffset } from "@/lib/admi
  */
 export function AdminPagination({
   label,
-  offset,
-  limit,
+  offset: rawOffset,
+  limit: rawLimit,
   total,
   shown,
   busy = false,
@@ -27,9 +33,10 @@ export function AdminPagination({
   onOffsetChange: (offset: number) => void;
   className?: string;
 }) {
-  // Réponse sans total (serveur ancien, réponse tronquée) : on s'en tient aux lignes reçues plutôt
-  // que d'afficher « page NaN sur NaN ».
-  const known = Number.isFinite(total) ? total : offset + shown;
+  // Réponse incomplète (sans offset ni limit, en plus du total) : jamais « page NaN sur NaN ».
+  const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
+  const limit = rawLimit > 0 ? rawLimit : ADMIN_PAGE_SIZE;
+  const known = adminKnownTotal({ offset, shown, total });
   if (known <= limit && offset === 0) return null;
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.max(1, Math.ceil(known / limit));

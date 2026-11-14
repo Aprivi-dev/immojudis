@@ -6,12 +6,12 @@ import { AdminPagination } from "./AdminPagination";
 
 afterEach(cleanup);
 
-function renderBar(props: { offset: number; total: unknown; shown: number }) {
+function renderBar(props: { offset: unknown; total: unknown; shown: number; limit?: unknown }) {
   return render(
     <AdminPagination
       label="demandes"
-      offset={props.offset}
-      limit={50}
+      offset={props.offset as number}
+      limit={(props.limit ?? 50) as number}
       // Réponse mal formée simulée : le type promet un nombre, le serveur peut ne rien envoyer.
       total={props.total as number}
       shown={props.shown}
@@ -28,6 +28,16 @@ describe("AdminPagination", () => {
 
   it("n'affiche ni « NaN » ni « undefined » quand le total manque", () => {
     const { container } = renderBar({ offset: 0, total: undefined, shown: 0 });
+    expect(container.textContent).not.toMatch(/NaN|undefined/);
+  });
+
+  it("n'affiche ni « NaN » ni « undefined » quand offset, limit et total manquent", () => {
+    const { container } = renderBar({
+      offset: undefined,
+      limit: undefined,
+      total: undefined,
+      shown: 0,
+    });
     expect(container.textContent).not.toMatch(/NaN|undefined/);
   });
 

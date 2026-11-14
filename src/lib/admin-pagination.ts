@@ -26,6 +26,22 @@ export function adminPageMeta({
   return { offset, limit, total, hasMore: offset + limit < total };
 }
 
+/**
+ * Total à afficher. Une réponse sans total (serveur ancien, réponse tronquée) ne doit pas écrire
+ * « page NaN sur NaN » ni « sur undefined » : on s'en tient alors aux lignes reçues.
+ */
+export function adminKnownTotal({
+  offset,
+  shown,
+  total,
+}: {
+  offset: number;
+  shown: number;
+  total: number;
+}): number {
+  return Number.isFinite(total) ? total : offset + shown;
+}
+
 /** « 51–100 sur 230 », ou « 0 sur 0 » pour une liste vide. */
 export function adminPageRange({
   offset,
