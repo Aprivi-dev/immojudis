@@ -54,6 +54,11 @@ export type InformationAgentMissionRecipient = {
    * l'aperçu et l'envoi refusent (`assertInformationAgentQuestionsAllowed`) : il doit être régénéré.
    */
   questionAudience: Json | undefined;
+  /**
+   * `metadata.sale_audience` (`informationAgentSaleAudience`) : ce que la vente désigne, quel que soit le rôle du
+   * destinataire. Lu par la fermeture des envois sur une vente notariale ; `undefined` pour un brouillon antérieur.
+   */
+  saleAudience: Json | undefined;
 };
 
 export function missionRecipient(
@@ -105,6 +110,7 @@ export function missionRecipient(
     structureAddress: addressKind === "generic" && !name?.trim() ? structure : null,
     structureOpposition: keys.identityKeys.some(isInformationAgentStructureKey) ? structure : null,
     questionAudience: metadata.question_audience,
+    saleAudience: metadata.sale_audience,
   };
 }
 
