@@ -193,7 +193,14 @@ describe("article 14 dans la vue", () => {
 
   it("une valeur antérieure à la contrainte de la base est signalée, et le délai affiché est celui appliqué", () => {
     expect(view([], { art14RuleEnabled: false, art14MaxAgeDays: 90 }).settings.art14Label).toBe(
-      "désactivé dans les réglages enregistrés (le pilote l’applique quand même) : à rétablir · délai d’information : 30 jours (réglable de 1 à 30)",
+      "désactivé dans les réglages enregistrés (le pilote l’applique quand même) : à rétablir · délai d’information : enregistré : 90 jours, appliqué : 30 : à rétablir (réglable de 1 à 30)",
+    );
+    expect(view([], { art14MaxAgeDays: 60 }).settings.art14Label).toBe(
+      "appliqué à chaque candidat, non désactivable · délai d’information : enregistré : 60 jours, appliqué : 30 : à rétablir (réglable de 1 à 30)",
+    );
+    // Un délai plus court, dans les bornes, est montré tel quel.
+    expect(view([], { art14MaxAgeDays: 20 }).settings.art14Label).toBe(
+      "appliqué à chaque candidat, non désactivable · délai d’information : 20 jours (réglable de 1 à 30)",
     );
   });
 });

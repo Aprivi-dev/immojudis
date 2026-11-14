@@ -90,6 +90,11 @@ export type AutopilotStats = {
   manualComplaints: number;
   manualPermanentBounces: number;
   wouldSendDays: number;
+  /**
+   * Jours (Paris) depuis le début de la simulation avec au moins un envoi simulé ET aucun passage en erreur
+   * (`error_<code>` dans le journal d'un passage) : les seuls qui comptent pour la porte du mode réel.
+   */
+  cleanSimulationDays: number;
   anomaliesSinceSimulation: number;
 };
 
@@ -146,6 +151,8 @@ export function parseAutopilotStats(raw: unknown): AutopilotStats {
     manualComplaints: num(r.manual_complaints),
     manualPermanentBounces: num(r.manual_permanent_bounces),
     wouldSendDays: num(r.would_send_days),
+    // Absent avant 20261119100820 : 0, la porte reste fermée.
+    cleanSimulationDays: num(r.clean_simulation_days),
     anomaliesSinceSimulation: num(r.anomalies_since_simulation),
   };
 }
@@ -405,6 +412,13 @@ const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
  * `information_agent_autopilot_settings` (migration 20261119100810).
  */
 export const AUTOPILOT_ART14_MAX_DAYS = 30;
+
+/** Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 30 jours (une valeur plus ancienne peut dépasser). */
+export function effectiveArt14MaxAgeDays(
+  settings: Pick<AutopilotSettings, "art14MaxAgeDays">,
+): number {
+  return Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS);
+}
 const AUTOPILOT_ADDRESS_MAX_AGE_DAYS = 183;
 const AUTOPILOT_REPLY_PAUSE_DAYS = 90;
 const AUTOPILOT_SILENCE_PAUSE_DAYS = 183;
@@ -506,8 +520,7 @@ export function evaluateAutopilotCandidate(
   if (!facts.alreadyInformed) {
     // Sans date de premier relevé, la règle ne peut pas être vérifiée : refus.
     if (!facts.contactFirstRecordedAt) return no("art14_unknown");
-    const art14MaxAgeDays = Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS);
-    if (daysSince(facts.contactFirstRecordedAt) > art14MaxAgeDays) {
+    if (daysSince(facts.contactFirstRecordedAt) > effectiveArt14MaxAgeDays(settings)) {
       return no("art14_window_expired");
     }
   }

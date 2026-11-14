@@ -73,6 +73,29 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
 
+/**
+ * État du compte d'exécution pour l'écran : une lecture impossible (panne passagère de l'API Auth) s'affiche
+ * « lecture impossible » au lieu de rendre tout le panneau indisponible. Le passage, lui, lève l'erreur (T7).
+ */
+async function actingAdminState(userId: string | null): Promise<boolean | null> {
+  try {
+    return await isActiveAdmin(userId);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    console.error(
+      JSON.stringify({
+        scope: "admin.autopilot",
+        code: "acting_admin_unreadable",
+        error: {
+          name: error instanceof Error ? error.name : typeof error,
+          code: typeof code === "string" ? code.slice(0, 20) : null,
+        },
+      }),
+    );
+    return null;
+  }
+}
+
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
   const [settings, stats] = await Promise.all([loadAutopilotSettings(), loadAutopilotStats(now)]);
   const report = evaluateAutopilotReadiness({
@@ -81,7 +104,7 @@ async function readiness(now: Date, env: Readonly<Record<string, string | undefi
     env,
     now,
     roundtripVerifiedAt: await loadRoundtripVerifiedAt(),
-    actingAdminIsAdmin: await isActiveAdmin(settings.actingAdminId),
+    actingAdminIsAdmin: await actingAdminState(settings.actingAdminId),
     privacyVersion: currentPrivacyVersion(),
     verifiedResendDomains: await loadVerifiedResendDomains(env.RESEND_API_KEY?.trim()),
   });

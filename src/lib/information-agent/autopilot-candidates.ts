@@ -184,6 +184,39 @@ async function recipientCooldownActive(
   }
 }
 
+/**
+ * Motif d'un refus du contrôle d'opposition : `opposed` (409 : opposition ou rebond définitif), `address_excluded`
+ * (400 : adresse exclue ou structure inconnue). Toute autre erreur (base, registre indisponible) écarte aussi le
+ * candidat, sous `opposition_check_failed`, et se journalise : le pilote reste fermé sans la confondre avec une
+ * opposition.
+ */
+async function oppositionCheckRefusal(
+  saleId: string,
+  check: () => Promise<unknown>,
+): Promise<string | null> {
+  try {
+    await check();
+    return null;
+  } catch (error) {
+    if (error instanceof PublicApiError && error.status === 409) return "opposed";
+    if (error instanceof PublicApiError && error.status === 400) return "address_excluded";
+    const code = (error as { code?: unknown } | null)?.code;
+    console.error(
+      JSON.stringify({
+        scope: "information_agent.autopilot",
+        level: "error",
+        code: "opposition_check_failed",
+        saleId,
+        error: {
+          name: error instanceof Error ? error.name : typeof error,
+          code: typeof code === "string" ? code.slice(0, 20) : null,
+        },
+      }),
+    );
+    return "opposition_check_failed";
+  }
+}
+
 /** Brouillon d'un administrateur (ou échec à reprendre) sur cette vente : le pilote ne le touche jamais. */
 async function humanDraftExists(saleId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin
@@ -294,16 +327,15 @@ async function examineAutopilotSale(
   // Identité du professionnel seule : une clé de structure ne dit pas qui il est (règle « identité complète »).
   const identityKeys = personIdentityKeys(oppositionKeys.identityKeys);
   // Opposition (adresse et identité) vérifiée dès la sélection.
-  try {
-    await assertInformationAgentContactAllowed({
+  const oppositionRefusal = await oppositionCheckRefusal(saleId, () =>
+    assertInformationAgentContactAllowed({
       saleId,
       email,
       identityKeys: oppositionKeys.identityKeys,
       checkKeys: oppositionKeys.checkKeys,
-    });
-  } catch {
-    return { skip: "opposed" };
-  }
+    }),
+  );
+  if (oppositionRefusal) return { skip: oppositionRefusal };
   // Relevé de l'adresse lue dans l'annonce : enregistré maintenant (comme à la création d'un brouillon), pour que
   // la date de relevé et celle du premier enregistrement (art. 14) viennent du contact, jamais de la vente.
   await persistInformationAgentContactObservations({ saleId, candidates: [selected] });

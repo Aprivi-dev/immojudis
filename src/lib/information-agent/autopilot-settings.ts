@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import {
   parseAutopilotStats,
   sharedStructureCounts,
@@ -201,7 +202,7 @@ export async function loadExcludedIdentityKeys(keys: readonly string[]): Promise
 
 export type PendingSimulatedDrafts = {
   /** Brouillons lus (au plus `limit`), du plus récent au plus ancien. */
-  rows: Array<{ id: string; sale_id: string | null; created_at: string }>;
+  rows: Array<{ id: string; sale_id: string | null; created_at: string; sale_snapshot: Json }>;
   /** Nombre total de brouillons simulés en attente (dans les ventes demandées, si `saleIds` est donné). */
   total: number;
 };
@@ -221,7 +222,7 @@ export async function loadPendingSimulatedDrafts({
 }): Promise<PendingSimulatedDrafts> {
   let query = supabaseAdmin
     .from("information_agent_missions")
-    .select("id,sale_id,created_at", { count: "exact" })
+    .select("id,sale_id,created_at,sale_snapshot", { count: "exact" })
     .eq("status", "draft")
     .eq("metadata->>trigger", "autopilot")
     .eq("metadata->>autopilot_simulated", "true");

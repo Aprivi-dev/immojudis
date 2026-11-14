@@ -182,7 +182,8 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
       calls.cancels.push(missionId);
     },
     markSimulated: async () => undefined,
-    countPendingSimulatedDrafts: async () => 0,
+    listPendingSimulatedDrafts: async () => ({ total: 0, drafts: [] }),
+    draftIsStale: async () => false,
     send: async () => {
       calls.sends += 1;
     },
@@ -428,7 +429,7 @@ describe("matrice du pilote : S01 à S32", () => {
         prepareDraft: async () => draft(),
         preview: async () => ({ blockers: [], fingerprint: "f".repeat(64) }),
         markSimulated: async () => undefined,
-        countPendingSimulatedDrafts: async () => 0,
+        listPendingSimulatedDrafts: async () => ({ total: 0, drafts: [] }),
         record: async () => undefined,
         warning: async () => undefined,
       },
@@ -1063,18 +1064,36 @@ describe("cas juridiques du cahier des charges", () => {
       ["manual_sends", { stats: stats({ manualRealSends: 29 }) }],
       ["manual_sends", { stats: stats({ manualRealSends: 40, manualComplaints: 1 }) }],
       ["simulation", { settings: settings({ simulationStartedAt: "2026-10-30T00:00:00Z" }) }],
-      ["simulation", { stats: stats({ manualRealSends: 40, anomaliesSinceSimulation: 1 }) }],
+      [
+        "simulation",
+        {
+          stats: stats({
+            manualRealSends: 40,
+            cleanSimulationDays: 5,
+            anomaliesSinceSimulation: 1,
+          }),
+        },
+      ],
+      // 7 jours écoulés ne suffisent plus : 5 jours effectifs (envoi simulé, aucun passage en erreur).
+      ["simulation", { stats: stats({ manualRealSends: 40, cleanSimulationDays: 4 }) }],
       ["live_allowed", { settings: settings({ liveAllowed: false }) }],
       ["aipd", { settings: settings({ aipdAttestedAt: null, aipdVersion: null }) }],
       ["roundtrip", { roundtripVerifiedAt: "2026-09-01T00:00:00Z" }],
       ["roundtrip", { roundtripVerifiedAt: null }],
       ["no_blocked_mission", { stats: stats({ manualRealSends: 40, stuckSending: 1 }) }],
       ["acting_admin", { actingAdminIsAdmin: false }],
+      ["acting_admin", { actingAdminIsAdmin: null }],
     ];
     for (const [key, override] of cases) {
       const report = evaluateAutopilotReadiness(readinessInput(override));
       expect(report.checks.find((check) => check.key === key)?.ok, key).toBe(false);
     }
+    // État du compte illisible (panne passagère) : dit tel quel, jamais « n'est plus administrateur ».
+    expect(
+      evaluateAutopilotReadiness(readinessInput({ actingAdminIsAdmin: null })).checks.find(
+        (check) => check.key === "acting_admin",
+      )?.detail,
+    ).toBe("Lecture impossible pour le moment (panne passagère) : réessayer.");
   });
 });
 
@@ -1113,7 +1132,7 @@ function readinessInput(
 ): Parameters<typeof evaluateAutopilotReadiness>[0] {
   return {
     settings: settings({ simulationStartedAt: "2026-10-01T00:00:00Z" }),
-    stats: stats({ manualRealSends: 40 }),
+    stats: stats({ manualRealSends: 40, cleanSimulationDays: 5 }),
     env: {
       INFORMATION_AGENT_OUTBOUND_ENABLED: "true",
       INFORMATION_AGENT_OUTBOUND_CANARY_ONLY: "false",
@@ -1229,34 +1248,122 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
     expect(calls.cancels).toEqual([]);
   });
 
-  it("plafond des brouillons simulés en attente : plus aucune recherche ni brouillon une fois atteint", async () => {
+  /** `n` brouillons simulés en attente, sur les ventes `s-0`, `s-1`… */
+  const pending = (n: number) => async () => ({
+    total: n,
+    drafts: Array.from({ length: n }, (_, index) => ({
+      missionId: `pending-${index}`,
+      saleId: `s-${index}`,
+      saleSnapshot: {},
+    })),
+  });
+
+  it("plafond des brouillons simulés en attente : plus aucune recherche ni brouillon, code simulated_backlog", async () => {
     const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
     const full = harness({
       loadSettings: async () => settings({ mode: "simulation" }),
-      countPendingSimulatedDrafts: async () => 10,
+      listPendingSimulatedDrafts: pending(10),
       findCandidates,
     });
     const summary = await runInformationAgentAutopilot(full.deps);
-    expect(summary).toMatchObject({ status: "ran", code: null, skipped: { simulated_backlog: 1 } });
+    expect(summary).toMatchObject({
+      status: "ran",
+      code: "simulated_backlog",
+      skipped: { simulated_backlog: 1 },
+    });
     expect(findCandidates).not.toHaveBeenCalled();
     expect(full.calls.records.map((record) => record.kind)).toEqual(["run"]);
     expect(full.calls.records[0].details).toMatchObject({ skip_simulated_backlog: 1 });
 
-    // 8 en attente : 2 brouillons au plus ce passage-ci.
+    // 8 en attente : 2 brouillons au plus ce passage-ci, et pas de code de plafond.
     const almost = harness({
       loadSettings: async () => settings({ mode: "simulation" }),
-      countPendingSimulatedDrafts: async () => 8,
+      listPendingSimulatedDrafts: pending(8),
       findCandidates,
     });
-    await runInformationAgentAutopilot(almost.deps);
+    expect((await runInformationAgentAutopilot(almost.deps)).code).toBeNull();
     expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 2);
 
     // Le mode réel ne crée aucun brouillon simulé : le plafond ne le concerne pas.
-    const countPendingSimulatedDrafts = vi.fn(async () => 10);
-    const live = harness({ countPendingSimulatedDrafts, findCandidates });
+    const listPendingSimulatedDrafts = vi.fn(pending(10));
+    const live = harness({ listPendingSimulatedDrafts, findCandidates });
     await runInformationAgentAutopilot(live.deps);
-    expect(countPendingSimulatedDrafts).not.toHaveBeenCalled();
+    expect(listPendingSimulatedDrafts).not.toHaveBeenCalled();
     expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 3);
+  });
+
+  it("plafond atteint mais brouillons caducs : annulés en tête de passage (draft_stale), la simulation reprend", async () => {
+    const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      listPendingSimulatedDrafts: pending(10),
+      // Ventes s-0 à s-2 renvoyées à une autre date depuis leur brouillon.
+      draftIsStale: async (item) => ["s-0", "s-1", "s-2"].includes(item.saleId ?? ""),
+      findCandidates,
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(calls.cancels).toEqual(["pending-0", "pending-1", "pending-2"]);
+    expect(summary).toMatchObject({ status: "ran", code: null, skipped: { draft_stale: 3 } });
+    // 7 restent en attente : 3 places, mais jamais plus de 5 par passage.
+    expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 3);
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      skip_draft_stale: 3,
+    });
+    // Aucun rejet de politique, aucun arrêt.
+    expect(calls.records.map((record) => record.kind)).toEqual(["run"]);
+    expect(calls.autoStops).toEqual([]);
+  });
+
+  it("relecture ou annulation d'un brouillon en attente impossible : erreur du passage, le brouillon reste compté", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+    const { deps } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      listPendingSimulatedDrafts: pending(10),
+      draftIsStale: async (item) => {
+        if (item.saleId === "s-0") throw new Error("base indisponible");
+        return item.saleId === "s-1";
+      },
+      cancelDraft: async () => {
+        throw new AutopilotDraftCancelError(new Error("base"));
+      },
+      findCandidates,
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.errors).toEqual({ stale_check_failed: 1, cancel_failed: 1 });
+    expect(summary).toMatchObject({ code: "run_errors", skipped: { simulated_backlog: 1 } });
+    expect(findCandidates).not.toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("brouillon en attente relu comme à l'aperçu : vente changée, caduc ; vente inchangée, gardé", async () => {
+    const deps = defaultAutopilotDeps({}, { VERCEL_ENV: "production" });
+    const snapshot = { sale_date: "2026-12-01T10:00:00Z", starting_price_eur: 120000 };
+    mocks.db.sale = {
+      status: "upcoming",
+      sale_date: "2026-12-15T10:00:00Z",
+      starting_price_eur: 120000,
+    };
+    expect(
+      await deps.draftIsStale({ missionId: "m", saleId: "sale-1", saleSnapshot: snapshot }),
+    ).toBe(true);
+    mocks.db.sale = { status: "upcoming", ...snapshot };
+    expect(
+      await deps.draftIsStale({ missionId: "m", saleId: "sale-1", saleSnapshot: snapshot }),
+    ).toBe(false);
+  });
+
+  it("administrateur d'exécution illisible (panne de l'API Auth) : le passage échoue, sans arrêt, bail libéré (T7)", async () => {
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      isAdmin: async () => {
+        throw Object.assign(new Error("Gateway Timeout"), { status: 504 });
+      },
+    });
+    await expect(runInformationAgentAutopilot(deps)).rejects.toThrow("Gateway Timeout");
+    expect(calls.autoStops).toEqual([]);
+    expect(calls.prepares).toBe(0);
+    expect(calls.released).toBe(1);
   });
 
   it("marque « simulé » impossible (T8) : erreur du passage, aucun « aurait envoyé », le passage continue", async () => {
