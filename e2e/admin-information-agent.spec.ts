@@ -575,6 +575,10 @@ test.describe("admin information agent", () => {
     // La file (première vente : une autre) est chargée sans rien remplacer.
     await expect(page.getByRole("button", { name: "Ouvrir le message" })).toBeVisible();
     await expect(page.getByText(`annonce ${PILOT_SALE_ID}`, { exact: false })).toBeVisible();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    await expect(page.getByTestId("send-target")).toHaveText(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
     await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveValue(
       PILOT_EMAIL,
     );
@@ -612,6 +616,10 @@ test.describe("admin information agent", () => {
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: /contact@example\.test/ })).toHaveCount(0);
     await expect(page.getByText(`annonce ${PILOT_SALE_ID}`, { exact: false })).toBeVisible();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    await expect(page.getByTestId("send-target")).toHaveText(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
     await sendOpenedDraft(page);
 
     expect(sentPayloads(state)).toEqual([
@@ -639,11 +647,16 @@ test.describe("admin information agent", () => {
     await expect(alert).toContainText("Origine de l’adresse inconnue");
     const origin = preview.getByRole("textbox", { name: /Page publique où figure l’adresse/ });
     await expect(origin).toBeVisible();
-    // Juste sous le message : le champ est le suivant dans le bloc, et il prend le focus.
-    const alertBox = await alert.boundingBox();
-    const originBox = await origin.boundingBox();
-    expect(originBox!.y).toBeGreaterThan(alertBox!.y + alertBox!.height - 1);
-    expect(originBox!.y - (alertBox!.y + alertBox!.height)).toBeLessThan(120);
+    // Juste sous le message : le champ est le suivant dans le bloc, et il prend le focus. Les deux
+    // positions sont lues dans le même instant : l'ouverture fait défiler la page (défilement doux),
+    // deux lectures successives pourraient tomber de part et d'autre d'un pas de défilement.
+    const gap = await alert.evaluate(
+      (message, field) =>
+        field.getBoundingClientRect().top - message.getBoundingClientRect().bottom,
+      await origin.elementHandle(),
+    );
+    expect(gap).toBeGreaterThan(-1);
+    expect(gap).toBeLessThan(120);
     await origin.focus();
     await expect(origin).toBeFocused();
     await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeDisabled();
