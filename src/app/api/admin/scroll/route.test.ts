@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({ start: vi.fn() }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
+  requireSupabaseAuthContext: async () => ({ userId: "admin-user", isAdmin: true }),
 }));
 vi.mock("@/lib/admin.server", () => ({
   startAdminScroll: mocks.start,

@@ -3,6 +3,7 @@ import {
   type EmailDeliveryLabel,
   type EmailDeliveryState,
 } from "@/lib/email-delivery-status";
+import type { InformationAgentMission } from "@/lib/information-agent/schemas";
 
 /** Libellés et règles partagés par l'éditeur de message (À contacter) et la liste des envois. */
 
@@ -26,6 +27,15 @@ export function missionStatusLabel(status: string): string {
       cancelled: "Annulée",
     }[status] ?? status
   );
+}
+
+/**
+ * Origine d'une mission : « Pilote » si le pilote automatique l'a marquée (`metadata.trigger = autopilot`, dès
+ * son brouillon), sinon « Manuel ». Repli quand la marque manque : seul le pilote marque ses brouillons, une
+ * mission sans marque est donc un brouillon d'administrateur pas encore validé ou un envoi antérieur au pilote.
+ */
+export function missionTriggerLabel(trigger: InformationAgentMission["trigger"]): string {
+  return trigger === "autopilot" ? "Pilote" : "Manuel";
 }
 
 /** État de remise d'une mission envoyée (« Remis », « Rebond passager »…), ou `null` sans information. */

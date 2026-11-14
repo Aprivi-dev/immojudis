@@ -92,7 +92,13 @@ export function missionFromRow(row: MissionRow): InformationAgentMission {
     updatedAt: row.updated_at,
     recipientOrigin: courtRegistryRecipientOrigin(row.metadata),
     recipientProfile: informationAgentRecipientProfile(row.metadata, row.recipient_email),
+    trigger: missionTrigger(row.metadata),
   };
+}
+
+function missionTrigger(metadata: Json): InformationAgentMission["trigger"] {
+  const trigger = asObject(metadata).trigger;
+  return trigger === "autopilot" || trigger === "manual" ? trigger : null;
 }
 
 const INVENTORY_STATUSES = new Set(["present", "to_confirm", "missing", "not_applicable"]);

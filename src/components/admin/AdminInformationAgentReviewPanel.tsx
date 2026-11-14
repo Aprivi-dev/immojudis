@@ -168,8 +168,10 @@ export function AdminInformationAgentReviewPanel() {
         </div>
         <h2 className="mt-2 font-semibold">Informations à contrôler</h2>
         <p className="mt-1 text-sm text-brand-navy/60">
-          Rien n’est intégré à une annonce sans validation. Les pièces doivent aussi disposer de
-          droits de diffusion.
+          Rien n’est intégré à une annonce sans validation. Accepter une pièce (document ou photo)
+          la publie pour l’annonce, une fois ses droits de diffusion autorisés. Accepter une autre
+          information met à jour la fiche : la valeur proposée remplace celle de la fiche, sauf si
+          le champ est déjà tenu par une pièce du registre.
         </p>
         {autoPublication?.mode === "unavailable" ? (
           <p role="alert" className="mt-1 text-sm text-warning">
@@ -630,7 +632,14 @@ export function AdminInformationAgentReviewPanel() {
                         })
                       }
                     >
-                      <CheckCircle className="size-4" /> Accepter
+                      <CheckCircle className="size-4" />{" "}
+                      {/* Une pièce acceptée est publiée (`stageApprovedEvidencePublication`). Une
+                          autre information est écrite dans la fiche par
+                          `app_private.apply_information_agent_fact`, sauf si le registre des
+                          pièces tient déjà ce champ (valeur gardée, sans erreur). */}
+                      {requiresRights
+                        ? "Accepter et publier la pièce"
+                        : "Accepter et mettre à jour la fiche"}
                     </button>
                     <button
                       type="button"

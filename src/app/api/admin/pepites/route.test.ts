@@ -9,6 +9,11 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
     if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
+  // Garde de la route (`adminRoute({ guard: "admin" })`) : « user-token » est un compte ordinaire.
+  requireSupabaseAuthContext: async (token: string) => ({
+    userId: "admin-user",
+    isAdmin: token !== "user-token",
+  }),
 }));
 vi.mock("@/lib/admin-pepites", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-pepites")>()),
@@ -47,7 +52,7 @@ describe("GET /api/admin/pepites", () => {
       "list",
       "independence",
     ]);
-    expect(JSON.stringify(body)).toContain("Mode : shadow");
+    expect(JSON.stringify(body)).toContain("Mode : Observation");
     expect(mocks.get).toHaveBeenCalledWith("admin-token");
   });
 
@@ -85,10 +90,10 @@ describe("GET /api/admin/pepites", () => {
       headers: Record<string, string> = { authorization: "Bearer admin-token" },
     ) => POST(new Request(url, { method: "POST", headers, body: JSON.stringify(body) }));
 
-    it("passe en shadow par défaut, avec le jeton de l'administrateur", async () => {
+    it("passe en shadow sur demande explicite, avec le jeton de l'administrateur", async () => {
       mocks.suspend.mockResolvedValue({ mode: "shadow" });
 
-      const response = await post({});
+      const response = await post({ mode: "shadow" });
 
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -96,12 +101,11 @@ describe("GET /api/admin/pepites", () => {
       expect(mocks.suspend).toHaveBeenCalledWith("admin-token", { mode: "shadow" });
     });
 
-    it("accepte un corps vide (mode par défaut) et refuse un JSON mal formé", async () => {
-      mocks.suspend.mockResolvedValue({ mode: "shadow" });
+    // Audit du 14/11/2026 (D4) : un POST sans mode ne déclenche plus l'arrêt d'urgence.
+    it("refuse en 400 un corps vide, un corps sans mode et un JSON mal formé", async () => {
       const headers = { authorization: "Bearer admin-token" };
-      expect((await POST(new Request(url, { method: "POST", headers }))).status).toBe(200);
-      expect(mocks.suspend).toHaveBeenCalledWith("admin-token", { mode: "shadow" });
-      mocks.suspend.mockClear();
+      expect((await POST(new Request(url, { method: "POST", headers }))).status).toBe(400);
+      expect((await post({})).status).toBe(400);
       const malformed = await POST(new Request(url, { method: "POST", headers, body: "{" }));
       expect(malformed.status).toBe(400);
       expect(mocks.suspend).not.toHaveBeenCalled();
@@ -128,9 +132,9 @@ describe("GET /api/admin/pepites", () => {
     });
 
     it("refuse sans jeton et un compte non administrateur", async () => {
-      expect((await post({}, {})).status).toBe(401);
+      expect((await post({ mode: "shadow" }, {})).status).toBe(401);
       mocks.suspend.mockRejectedValue(new AdminRequiredError());
-      expect((await post({})).status).toBe(403);
+      expect((await post({ mode: "shadow" })).status).toBe(403);
     });
   });
 

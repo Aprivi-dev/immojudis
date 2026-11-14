@@ -6,63 +6,21 @@ import dynamic from "next/dynamic";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
-import Link from "next/link";
 import { DASHBOARD_QUERY_KEY, PIPELINE_QUERY_KEY } from "@/lib/admin-query-keys";
 import { fetchPipelineStatus, updatePipelineControl } from "@/lib/client-api";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
-const AdminPipelinePanel = dynamic(
-  () => import("./AdminPipelinePanel").then((module) => module.AdminPipelinePanel),
-  { loading: () => <LoadingPanel /> },
-);
+// Le diagnostic des services n'est affiché qu'ici : il vérifie Stripe, le webhook, les tâches
+// planifiées et les migrations, des réglages de déploiement. La supervision des sources est dans
+// Opérations.
 const AdminReadinessPanel = dynamic(
   () => import("./AdminReadinessPanel").then((module) => module.AdminReadinessPanel),
   { loading: () => <LoadingPanel /> },
 );
 const tabs = [
   { id: "automation", label: "Collecte & IA" },
-  { id: "sources", label: "Sources de données" },
   { id: "services", label: "Services & diagnostics" },
 ] as const;
-
-const shortcuts = [
-  {
-    href: "/admin/agent-ia",
-    title: "Emails de l’agent IA",
-    text: "Modifier les textes, prévisualiser et publier le modèle de prise de contact.",
-    action: "Configurer les emails",
-  },
-  {
-    href: "/admin/clients",
-    title: "Accès & abonnements",
-    text: "Consulter les abonnements et attribuer les plans disponibles aux clients.",
-    action: "Gérer les accès",
-  },
-  {
-    href: "/admin/lawyers",
-    title: "Réseau d’avocats",
-    text: "Gérer l’annuaire référencé et suivre les demandes de mise en relation.",
-    action: "Gérer les avocats",
-  },
-  {
-    href: "/admin/quality",
-    title: "Qualité & estimations",
-    text: "Contrôler les données et consulter les modèles d’estimation disponibles.",
-    action: "Contrôler la qualité",
-  },
-  {
-    href: "/admin/publications",
-    title: "Modération des annonces",
-    text: "Examiner les demandes de publication et décider de leur mise en ligne.",
-    action: "Voir les publications",
-  },
-  {
-    href: "/admin/compliance",
-    title: "Confidentialité & conformité",
-    text: "Traiter les demandes d’accès et de suppression, et suivre leurs échéances.",
-    action: "Ouvrir la conformité",
-  },
-];
 
 export function AdminSettingsPage() {
   const { user } = useAuth();
@@ -101,7 +59,7 @@ export function AdminSettingsPage() {
     <AdminShell
       activeSection="settings"
       title="Configuration"
-      description="Réglez les automatismes et retrouvez tous les outils de gestion."
+      description="Réglez les automatismes et vérifiez les services connectés."
       adminEmail={user?.email}
     >
       <div className="space-y-6">
@@ -161,7 +119,6 @@ export function AdminSettingsPage() {
         </AdminPanel>
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === "automation" ? <PipelineControls onDirtyChange={setDirty} /> : null}
-          {tab === "sources" ? <AdminPipelinePanel /> : null}
           {tab === "services" ? (
             <>
               <AdminPanel className="p-5">
@@ -176,25 +133,6 @@ export function AdminSettingsPage() {
             </>
           ) : null}
         </div>
-        <section aria-labelledby="business-settings-title">
-          <h2 id="business-settings-title" className="text-xl font-semibold">
-            Gestion du site
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Accédez directement à chaque espace de configuration et de suivi.
-          </p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {shortcuts.map((item) => (
-              <AdminPanel key={item.href} className="flex flex-col p-5">
-                <h3 className="font-semibold">{item.title}</h3>
-                <p className="mb-5 mt-2 flex-1 text-sm leading-6 text-slate-600">{item.text}</p>
-                <Link href={item.href} className="admin-button-secondary justify-center">
-                  {item.action}
-                </Link>
-              </AdminPanel>
-            ))}
-          </div>
-        </section>
       </div>
     </AdminShell>
   );

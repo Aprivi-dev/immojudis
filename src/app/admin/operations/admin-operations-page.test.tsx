@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   fetchCounts: vi.fn(),
   startScroll: vi.fn(),
   fetchReadiness: vi.fn(),
+  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock("@/components/admin/AdminPipelinePanel", () => ({
@@ -64,7 +65,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminReadiness: mocks.fetchReadiness,
 }));
 
-vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 const RUNS: AdminDashboardRunsData = {
   checkedAt: "2026-09-19T08:00:00.000Z",
@@ -217,7 +218,53 @@ describe("AdminOperationsPage", () => {
     renderOperations();
     await screen.findByRole("button", { name: "Relancer" });
     fireEvent.click(screen.getByRole("button", { name: "Lancer" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lancer la collecte" }));
     await waitFor(() => expect(mocks.fetchRuns).toHaveBeenCalledTimes(2));
+  });
+
+  it("asks for confirmation before launching, and sends nothing when cancelled", async () => {
+    renderOperations();
+    await screen.findByRole("button", { name: "Relancer" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Lancer" }));
+    const dialog = await screen.findByRole("dialog", { name: "Lancer une collecte ?" });
+    expect(dialog.textContent).toContain("Toutes les sources");
+    expect(mocks.startScroll).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.startScroll).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lancer" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lancer la collecte" }));
+    await waitFor(() =>
+      expect(mocks.startScroll).toHaveBeenCalledWith({
+        data: { source: "all", mode: "collect", confirm: true },
+      }),
+    );
+    expect(mocks.startScroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the same confirmation before a restart", async () => {
+    renderOperations();
+    fireEvent.click(await screen.findByRole("button", { name: "Relancer" }));
+    expect(mocks.startScroll).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Lancer la collecte" }));
+    await waitFor(() =>
+      expect(mocks.startScroll).toHaveBeenCalledWith({
+        data: { source: "all", mode: "collect", confirm: true },
+      }),
+    );
+  });
+
+  it("shows the refusal of a second collection as the server words it", async () => {
+    const refusal =
+      "Une collecte de cette source est déjà en file ou en cours. Suivez-la dans l'historique des runs et attendez sa fin avant d'en lancer une autre.";
+    mocks.startScroll.mockRejectedValue(Object.assign(new Error(refusal), { status: 409 }));
+    renderOperations();
+    await screen.findByRole("button", { name: "Relancer" });
+    fireEvent.click(screen.getByRole("button", { name: "Lancer" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lancer la collecte" }));
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(refusal));
   });
 
   it.each([

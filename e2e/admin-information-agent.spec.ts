@@ -33,6 +33,8 @@ type AgentMockState = {
   template: Record<string, unknown>;
   /** Messages non rattachés simulés (nombre) ; leur texte ne contient jamais d'adresse du bandeau. */
   unroutedTotal: number;
+  /** L'état du pilote automatique ne se lit pas (panne de la route) : le bandeau le dit. */
+  autopilotUnavailable: boolean;
   /** Aperçu qui signale « Origine de l'adresse inconnue » (aucune page publique citée). */
   originUnknown: boolean;
   /** Taille simulée des listes longues (pagination 50 par page) ; null = une seule ligne. */
@@ -141,16 +143,37 @@ test.describe("admin information agent", () => {
     const state = await prepareAdminInformationAgentPage(page);
 
     await page.goto("/admin/agent-ia?onglet=pilote");
-    await expect(page.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
-    await expect(page.getByText("Éteint", { exact: true }).first()).toBeVisible();
+    const panel = page.getByRole("region", { name: "Pilote automatique" });
+    await expect(panel.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
+    await expect(panel.getByText("Éteint", { exact: true }).first()).toBeVisible();
     // Le bandeau de synthèse dit la même chose, en un mot.
-    await expect(
-      page.getByRole("region", { name: "Synthèse de l’agent" }).getByText("Arrêté"),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
+    await expect(banner.getByText("Éteint", { exact: true })).toBeVisible();
+    // Un arrêt d'urgence dans le bandeau et un dans le panneau : le pilote est connu éteint, rien à arrêter.
+    await expect(banner.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
     // Changer de mode exige un motif : rien ne part sans.
-    await expect(page.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    expect(
+      state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
+    ).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("keeps the emergency stop of the summary banner active when the autopilot state cannot be read", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.autopilotUnavailable = true;
+
+    await page.goto("/admin/agent-ia?onglet=pilote");
+    await expect(page.getByText("Pilote indisponible.")).toBeVisible();
+    const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
+    await expect(banner.getByText("indisponible").first()).toBeVisible();
+    // État inconnu : l'arrêt d'urgence reste possible, en un clic.
+    await expect(banner.getByRole("button", { name: "Arrêt d’urgence" })).toBeEnabled();
+    expect(await banner.innerText()).not.toContain("@");
     expect(
       state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
     ).toBe(false);
@@ -188,10 +211,16 @@ test.describe("admin information agent", () => {
     const state = await prepareAdminInformationAgentPage(page);
 
     await page.goto("/admin/agent-ia?onglet=reponses");
-    const panel = page.getByRole("region", { name: "Observations à décider" });
+    const panel = page.getByRole("region", {
+      name: "Observations à décider, qui peuvent modifier la fiche",
+    });
     await expect(panel.getByText("À décider", { exact: true })).toBeVisible();
     await expect(panel.getByText("Libre", { exact: true })).toBeVisible();
     await expect(panel.getByText("Occupé", { exact: true })).toBeVisible();
+    // Le registre peut remplacer la valeur de la fiche : son bouton le dit.
+    await expect(
+      panel.getByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
+    ).toBeVisible();
 
     await panel.getByRole("button", { name: "Enregistrer une opposition" }).click();
     await expect(panel.getByText(/Une opposition est définitive\./)).toBeVisible();
@@ -226,25 +255,42 @@ test.describe("admin information agent", () => {
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Informations à contrôler" }) });
     await expect(reviewPanel.getByText(/Droits de diffusion : restreints/i)).toBeVisible();
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
 
     await reviewPanel.getByRole("button", { name: "Autoriser la diffusion" }).click();
     await expect(reviewPanel.getByText(/Droits de diffusion : autorisés/i)).toBeVisible();
     // Les droits ne suffisent pas : le caviardage doit aussi être vérifié par une personne nommée.
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
     await reviewPanel.getByRole("checkbox", { name: /J’ai contrôlé la pièce/ }).check();
     await reviewPanel
       .getByRole("textbox", { name: "Nom de la personne qui a contrôlé" })
       .fill("Contrôleur E2E");
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeEnabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeEnabled();
 
     await reviewPanel.getByRole("button", { name: "Prévisualiser la pièce" }).click();
     await expect(reviewPanel.getByTitle("Aperçu privé de dpe.pdf")).toBeVisible();
-    await reviewPanel.getByRole("button", { name: "Accepter", exact: true }).click();
+    await reviewPanel
+      .getByRole("button", { name: "Accepter et publier la pièce", exact: true })
+      .click();
     await expect(reviewPanel.getByText("dpe.pdf", { exact: true })).toHaveCount(0);
 
-    await expect(page.getByRole("heading", { name: "Faits à vérifier" })).toBeVisible();
-    const claimsPanel = page.getByRole("region", { name: "Faits à vérifier" });
+    await expect(
+      page.getByRole("heading", { name: "Faits à vérifier, valeur inchangée" }),
+    ).toBeVisible();
+    const claimsPanel = page.getByRole("region", {
+      name: "Faits à vérifier, valeur inchangée",
+    });
+    // Vérifier un fait ne touche pas la fiche : le bouton le dit, sans « Accepter » ambigu.
+    await expect(
+      claimsPanel.getByRole("button", { name: "Confirmer la valeur (inchangée)" }),
+    ).toBeVisible();
+    await expect(claimsPanel.getByRole("button", { name: "Accepter", exact: true })).toHaveCount(0);
     await claimsPanel.getByRole("button", { name: "Rejeter", exact: true }).click();
     await expect(claimsPanel.getByText("Motif du rejet", { exact: true })).toBeVisible();
     await claimsPanel
@@ -407,7 +453,7 @@ test.describe("admin information agent", () => {
     await expect(tabs.getByRole("tab", { name: "Réponses (3)" })).toBeVisible();
     await expect(tabs.getByRole("tab", { name: "À contacter (1)" })).toBeVisible();
     const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
-    await expect(banner).toContainText("Arrêté");
+    await expect(banner).toContainText("Éteint");
     await expect(banner).toContainText("0 sur 5");
     await expect(banner.locator("dd").nth(2)).toHaveText("1");
     await expect(banner.locator("dd").nth(3)).toHaveText("2");
@@ -420,7 +466,11 @@ test.describe("admin information agent", () => {
       headings.filter({
         hasText: /Informations à contrôler|Faits à vérifier|Messages non rattachés/,
       }),
-    ).toHaveText(["Informations à contrôler", "Faits à vérifier", "Messages non rattachés"]);
+    ).toHaveText([
+      "Informations à contrôler",
+      "Faits à vérifier, valeur inchangée",
+      "Messages non rattachés",
+    ]);
 
     await tabs.getByRole("tab", { name: /^Envois/ }).click();
     await expect(page).toHaveURL(/onglet=envois/);
@@ -580,6 +630,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     sourceRefresh: sourceRefreshFixture(null),
     template: templateFixture(),
     unroutedTotal: 0,
+    autopilotUnavailable: false,
     originUnknown: false,
     longListTotal: null,
     requestedOffsets: { claims: [], missions: [], review: [], catalogue: [] },
@@ -768,6 +819,13 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       path === "/api/admin/information-agent/autopilot" &&
       (method === "GET" || method === "POST")
     ) {
+      if (method === "GET" && state.autopilotUnavailable) {
+        await route.fulfill({
+          status: 503,
+          json: { ok: false, error: "Pilote automatique indisponible", code: "INTERNAL_ERROR" },
+        });
+        return;
+      }
       await route.fulfill({ status: 200, json: autopilotFixture() });
       return;
     }

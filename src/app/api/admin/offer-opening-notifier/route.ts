@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   getOfferOpeningAudience,
   offerOpeningNotifierActionSchema,
@@ -13,15 +12,22 @@ export const maxDuration = 30;
 
 /** Destinataires actifs, configuration d'envoi et aperçu du message. */
 export const GET = adminRoute(
-  { scope: "admin.offer-opening-notifier.read", fallbackMessage: "Liste d’attente indisponible" },
-  async (request) => getOfferOpeningAudience({ authToken: bearerTokenFromRequest(request) }),
+  {
+    scope: "admin.offer-opening-notifier.read",
+    fallbackMessage: "Liste d’attente indisponible",
+    guard: "admin",
+  },
+  async (_request, { authToken }) => getOfferOpeningAudience({ authToken }),
 );
 
 /** `{ action: "test" }` : envoi d'essai à l'administrateur ; `{ action: "send", confirm: true }` : un lot. */
 export const POST = adminRoute(
-  { scope: "admin.offer-opening-notifier.send", fallbackMessage: "Envoi non effectué" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.offer-opening-notifier.send",
+    fallbackMessage: "Envoi non effectué",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = offerOpeningNotifierActionSchema.parse(await request.json());
     if (input.action === "test") return sendOfferOpeningTest({ authToken });
     return sendOfferOpeningBatch({ authToken, limit: input.limit });

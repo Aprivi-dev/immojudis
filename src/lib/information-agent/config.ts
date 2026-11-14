@@ -24,23 +24,40 @@ export const INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE =
 /**
  * Les envois aux notaires sont FERMÉS par défaut (décision prudente du 11/11/2026, en attendant une
  * autorisation sur la réutilisation des annonces notariales). Sont concernés le destinataire de rôle notaire,
- * tout destinataire d'une vente notariale (`question_audience = notary`) et toute adresse en `notaires.fr`
- * (ou l'un de ses sous-domaines), quels que soient le rôle et la vente. Seule la valeur exacte `true`
- * de `INFORMATION_AGENT_NOTARY_SEND_ENABLED` ouvre l'approbation et l'envoi ; le brouillon, l'aperçu du
- * texte et la mesure à blanc restent possibles.
+ * tout destinataire d'une vente notariale (`question_audience = notary`, ou `sale_audience = notary` pour un
+ * avocat, qui reçoit le modèle de l'avocat) et toute adresse en `notaires.fr` (ou l'un de ses
+ * sous-domaines), quels que soient le rôle et la vente. Seule la valeur exacte `true` de
+ * `INFORMATION_AGENT_NOTARY_SEND_ENABLED` ouvre l'approbation et l'envoi ; le brouillon, l'aperçu du texte et
+ * la mesure à blanc restent possibles.
+ *
+ * SEULE définition de la règle : la garde ci-dessous (aperçu, envoi) et le tri préalable du pilote
+ * (`autopilot-candidates.ts`, qui écarte d'avance un candidat que la garde refusera) lisent ce prédicat.
  */
+export function informationAgentNotarySendClosed(
+  recipient: InformationAgentNotarySendRecipient,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const concerned =
+    recipient.role === "notary" ||
+    recipient.questionAudience === "notary" ||
+    recipient.saleAudience === "notary" ||
+    isNotaryMailDomain(recipient.email);
+  return concerned && env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true";
+}
+
+type InformationAgentNotarySendRecipient = {
+  role: string | null;
+  questionAudience: unknown;
+  /** `metadata.sale_audience` du brouillon (absent des brouillons antérieurs : `question_audience` suffit). */
+  saleAudience?: unknown;
+  email: string;
+};
+
 export function assertInformationAgentNotarySendAllowed(
-  recipient: { role: string | null; questionAudience: unknown; email: string },
+  recipient: InformationAgentNotarySendRecipient,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
-  if (
-    recipient.role !== "notary" &&
-    recipient.questionAudience !== "notary" &&
-    !isNotaryMailDomain(recipient.email)
-  ) {
-    return;
-  }
-  if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {
+  if (informationAgentNotarySendClosed(recipient, env)) {
     throw new PublicApiError(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE, 409);
   }
 }

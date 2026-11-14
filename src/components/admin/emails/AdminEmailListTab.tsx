@@ -24,7 +24,7 @@ export function AdminEmailListTab({
   const [rechecking, setRechecking] = useState(false);
   const query = useQuery({
     queryKey: [queryKey],
-    queryFn: () => fetchView(),
+    queryFn: () => completeView(fetchView()),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -35,7 +35,7 @@ export function AdminEmailListTab({
   async function recheck() {
     setRechecking(true);
     try {
-      queryClient.setQueryData([queryKey], await fetchView(true));
+      queryClient.setQueryData([queryKey], await completeView(fetchView(true)));
     } finally {
       setRechecking(false);
     }
@@ -105,4 +105,16 @@ export function AdminEmailListTab({
       ))}
     </div>
   );
+}
+
+/**
+ * Une réponse sans sections (serveur ancien, réponse tronquée) devient une erreur lisible de l'onglet,
+ * avec « Réessayer », au lieu de faire tomber toute la page. Sans alertes, il n'y a rien à corriger.
+ */
+async function completeView(pending: Promise<EmailListView>): Promise<EmailListView> {
+  const view = await pending;
+  if (!Array.isArray(view?.sections)) {
+    throw new Error("Réponse incomplète du serveur : rien à afficher. Réessayez dans un instant.");
+  }
+  return { ...view, alerts: Array.isArray(view.alerts) ? view.alerts : [] };
 }

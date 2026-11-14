@@ -39,7 +39,7 @@ const QUERY_KEY = ["admin-fact-claim-decisions"] as const;
 const UUID_IN_TEXT = new RegExp(UUID_SOURCE, "i");
 
 const ACTION_LABELS: Record<FactClaimDecisionAction, string> = {
-  accept: "Accepter l’observation",
+  accept: "Accepter (peut mettre à jour la fiche)",
   reject: "Rejeter l’observation",
   withdraw: "Retirer de la fiche",
   oppose: "Enregistrer une opposition",
@@ -146,11 +146,12 @@ export function AdminFactClaimDecisionPanel() {
               Registre des pièces
             </div>
             <h2 id="fact-decision-title" className="mt-2 font-semibold">
-              Observations à décider
+              Observations à décider, qui peuvent modifier la fiche
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
-              Une observation acceptée peut remplacer la valeur affichée sur la fiche. Une
-              opposition ou un retrait d’autorisation sont définitifs.
+              Une observation acceptée peut remplacer la valeur affichée sur la fiche, si elle
+              l’emporte et qu’elle est rattachée au lot ; le résultat s’affiche après
+              l’enregistrement. Une opposition ou un retrait d’autorisation sont définitifs.
             </p>
           </div>
           <button

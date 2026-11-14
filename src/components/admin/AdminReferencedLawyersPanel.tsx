@@ -15,6 +15,7 @@ import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-sub
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 import { AdminPill } from "@/components/admin/admin-pill";
+import { REFERENCED_LAWYERS_QUERY_KEY } from "@/components/admin/admin-lawyers-query-keys";
 
 type CoverageDraft = {
   tribunalCode: string;
@@ -47,8 +48,6 @@ type LawyerFormState = {
   acceptsRemoteContact: boolean;
   coverage: CoverageDraft[];
 };
-
-export const REFERENCED_LAWYERS_QUERY_KEY = ["admin-referenced-lawyers"] as const;
 
 export function AdminReferencedLawyersPanel() {
   const queryClient = useQueryClient();

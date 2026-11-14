@@ -788,15 +788,17 @@ describe("suspendAdminPepites", () => {
   it("refuse un compte qui n'est pas administrateur, sans rien appeler", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false, userId: "u" });
 
-    await expect(suspendAdminPepites("jeton")).rejects.toThrow(/administrateur/);
+    await expect(suspendAdminPepites("jeton", { mode: "shadow" })).rejects.toThrow(
+      /administrateur/,
+    );
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("repasse en shadow par défaut et consigne l'administrateur", async () => {
+  it("repasse en shadow sur demande et consigne l'administrateur", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
     mocks.rpc.mockResolvedValue({ data: "shadow", error: null });
 
-    expect(await suspendAdminPepites("jeton")).toEqual({ mode: "shadow" });
+    expect(await suspendAdminPepites("jeton", { mode: "shadow" })).toEqual({ mode: "shadow" });
     expect(mocks.rpc).toHaveBeenCalledWith("suspend_sale_pepites", {
       p_mode: "shadow",
       p_user_id: "admin-1",
@@ -809,13 +811,19 @@ describe("suspendAdminPepites", () => {
     expect(await suspendAdminPepites("jeton", { mode: "off" })).toEqual({ mode: "off" });
     // Un mode « on » ne peut pas être demandé.
     await expect(suspendAdminPepites("jeton", { mode: "on" } as never)).rejects.toThrow();
+    // Ni un appel sans mode (plus de « shadow » par défaut : audit du 14/11/2026, D4).
+    mocks.rpc.mockClear();
+    await expect(suspendAdminPepites("jeton", {} as never)).rejects.toThrow();
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("lève sur une erreur de la base", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
 
-    await expect(suspendAdminPepites("jeton")).rejects.toMatchObject({ message: "boom" });
+    await expect(suspendAdminPepites("jeton", { mode: "shadow" })).rejects.toMatchObject({
+      message: "boom",
+    });
   });
 
   describe("expiration des caches après l'arrêt d'urgence", () => {
@@ -828,7 +836,7 @@ describe("suspendAdminPepites", () => {
     it("expire la liste publique, les lectures de chaque fiche et les pages des fiches", async () => {
       mocks.rpc.mockResolvedValue({ data: "shadow", error: null });
 
-      await suspendAdminPepites("jeton");
+      await suspendAdminPepites("jeton", { mode: "shadow" });
 
       expect(mocks.revalidateTag).toHaveBeenCalledWith("public-catalogue", { expire: 0 });
       expect(mocks.revalidateTag).toHaveBeenCalledWith("public-sales", { expire: 0 });
@@ -837,9 +845,9 @@ describe("suspendAdminPepites", () => {
 
     it("n'expire rien quand l'arrêt échoue ou n'est pas permis", async () => {
       mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
-      await expect(suspendAdminPepites("jeton")).rejects.toBeDefined();
+      await expect(suspendAdminPepites("jeton", { mode: "shadow" })).rejects.toBeDefined();
       mocks.requireAuth.mockResolvedValue({ isAdmin: false, userId: "u" });
-      await expect(suspendAdminPepites("jeton")).rejects.toBeDefined();
+      await expect(suspendAdminPepites("jeton", { mode: "shadow" })).rejects.toBeDefined();
       expect(mocks.revalidateTag).not.toHaveBeenCalled();
       expect(mocks.revalidatePath).not.toHaveBeenCalled();
     });
@@ -851,7 +859,9 @@ describe("suspendAdminPepites", () => {
       });
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-      await expect(suspendAdminPepites("jeton")).resolves.toEqual({ mode: "shadow" });
+      await expect(suspendAdminPepites("jeton", { mode: "shadow" })).resolves.toEqual({
+        mode: "shadow",
+      });
     });
   });
 });

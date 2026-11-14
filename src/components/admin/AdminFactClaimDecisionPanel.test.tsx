@@ -96,6 +96,23 @@ describe("AdminFactClaimDecisionPanel : affichage", () => {
     expect(mocks.list).toHaveBeenCalledWith({ saleId: undefined, offset: 0, limit: 50 });
   });
 
+  it("dit dans le titre, le bouton et l'aide que l'acceptation peut mettre à jour la fiche", async () => {
+    renderPanel();
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Observations à décider, qui peuvent modifier la fiche",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/^Une observation acceptée peut remplacer la valeur affichée sur la fiche/),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+  });
+
   it("montre l'état vide", async () => {
     mocks.list.mockResolvedValue(page([]));
     renderPanel();
@@ -140,7 +157,11 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
       "à décider",
       null,
       "À décider",
-      ["Accepter l’observation", "Rejeter l’observation", "Enregistrer une opposition"],
+      [
+        "Accepter (peut mettre à jour la fiche)",
+        "Rejeter l’observation",
+        "Enregistrer une opposition",
+      ],
     ],
     [
       "acceptée",
@@ -152,13 +173,13 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
       "rejetée",
       { decision: "rejected", reasonCode: "other" },
       "Dernière décision : rejetée",
-      ["Accepter l’observation", "Enregistrer une opposition"],
+      ["Accepter (peut mettre à jour la fiche)", "Enregistrer une opposition"],
     ],
     [
       "retirée",
       { decision: "withdrawn", reasonCode: "entry_error" },
       "Dernière décision : retirée",
-      ["Accepter l’observation", "Enregistrer une opposition"],
+      ["Accepter (peut mettre à jour la fiche)", "Enregistrer une opposition"],
     ],
     [
       "autorisation retirée",
@@ -223,7 +244,9 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
     mocks.list.mockResolvedValue(page([item({ decision: "rejected", reasonCode: "other" })]));
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accepter l’observation" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
+    );
     const confirm = screen.getByRole("button", { name: "Confirmer l’acceptation" });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     expect(document.activeElement?.textContent).toBe("Accepter cette observation");
@@ -260,7 +283,9 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
     mocks.decide.mockResolvedValue({ ok: true, result: { state: null } });
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accepter l’observation" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
+    );
     fireEvent.change(screen.getByLabelText("Rattachement au lot (obligatoire)"), {
       target: { value: "unknown" },
     });

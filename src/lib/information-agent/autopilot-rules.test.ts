@@ -3,6 +3,7 @@ import {
   autopilotBudgetDecision,
   autopilotCaps,
   autopilotPhase,
+  autopilotQueueRefusal,
   autopilotRunGate,
   evaluateAutopilotCandidate,
   evaluateAutopilotSafety,
@@ -363,6 +364,48 @@ describe("candidat du pilote", () => {
       const old = { contactFirstRecordedAt: "2026-09-01T10:00:00Z" };
       expect(verdict(old, { art14MaxAgeDays: 90 })).toEqual({ ok: true });
       expect(verdict(old, { art14RuleEnabled: false })).toEqual({ ok: true });
+    });
+  });
+
+  describe("tri préalable de la file (sans examen coûteux)", () => {
+    const early = (facts: Partial<AutopilotCandidateFacts>, s: Partial<AutopilotSettings> = {}) =>
+      autopilotQueueRefusal({ ...ok, ...facts }, settings(s), NOW);
+
+    it.each([
+      ["rôle autre qu'avocat", { recipientRole: "notary" }, {}, "role_not_lawyer"],
+      ["messagerie grand public", { consumerDomain: true }, {}, "consumer_domain"],
+      [
+        "adresse Licitor décodée, réglage fermé",
+        { observationChannel: "licitor_cloudflare_decoded" },
+        {},
+        "licitor_decoded_refused",
+      ],
+      [
+        "audience dans moins de 10 jours",
+        { saleDate: "2026-11-10T10:00:00Z" },
+        {},
+        "sale_too_soon",
+      ],
+      ["date de vente inconnue", { saleDate: null }, {}, "sale_too_soon"],
+    ] as const)(
+      "%s : écarté par la file avec le motif de la vérification complète",
+      (_n, facts, s, code) => {
+        expect(early(facts, s)).toBe(code);
+        expect(verdict(facts, s)).toEqual({ ok: false, code });
+      },
+    );
+
+    it("n'écarte jamais ce que la vérification complète admet", () => {
+      expect(early({})).toBeNull();
+      expect(
+        early({ observationChannel: "licitor_cloudflare_decoded" }, { allowLicitorDecoded: true }),
+      ).toBeNull();
+      expect(
+        verdict(
+          { observationChannel: "licitor_cloudflare_decoded" },
+          { allowLicitorDecoded: true },
+        ),
+      ).toEqual({ ok: true });
     });
   });
 });

@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
-import {
   adminSourceRefreshRequestSchema,
   adminSourceRefreshStatusQuerySchema,
   getAdminSourceRefreshStatus,
@@ -18,9 +14,9 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.source-refresh.read",
     fallbackMessage: "Refresh source indisponible.",
+    guard: "admin",
   },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  async (request, { auth }) => {
     const input = adminSourceRefreshStatusQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
@@ -32,9 +28,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.source-refresh.request",
     fallbackMessage: "Refresh source indisponible.",
+    guard: "admin",
   },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  async (request, { auth }) => {
     const input = adminSourceRefreshRequestSchema.parse(await request.json());
     return NextResponse.json(await requestAdminSourceRefresh({ auth, input }), { status: 202 });
   },

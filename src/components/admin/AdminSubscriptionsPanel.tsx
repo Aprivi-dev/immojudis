@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
@@ -13,6 +12,7 @@ import type {
 import { PLAN_LABELS, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminQueryErrorNotice } from "@/components/admin/admin-ui";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 import { AdminPill } from "@/components/admin/admin-pill";
@@ -57,34 +57,27 @@ export function AdminSubscriptionsPanel() {
 
   return (
     <section className="admin-panel mt-6 rounded-lg p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
-            <CreditCard className="h-4 w-4" />
-            Accès payants
-          </div>
-          <h2 className="mt-3 font-display text-2xl">Attribution manuelle des plans</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Active un accès Analyse pour 30 jours ou replace un compte en Découverte, utile pour les
-            ventes assistées et les essais commerciaux.
-          </p>
+      <div>
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
+          <CreditCard className="h-4 w-4" />
+          Accès payants
         </div>
-        <button
-          type="button"
-          onClick={() => void subscriptionsQuery.refetch()}
-          className="admin-panel inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${subscriptionsQuery.isFetching ? "animate-spin" : ""}`}
-          />
-          Actualiser
-        </button>
+        <h2 className="mt-3 font-display text-2xl">Attribution manuelle des plans</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Active un accès Analyse pour 30 jours ou replace un compte en Découverte, utile pour les
+          ventes assistées et les essais commerciaux.
+        </p>
       </div>
 
       {subscriptionsQuery.error ? (
-        <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
-          {queryErrorMessage(subscriptionsQuery.error, "Chargement impossible")}
-        </div>
+        <AdminQueryErrorNotice
+          className="mt-4"
+          error={subscriptionsQuery.error}
+          fallback="Chargement impossible"
+          hasData={Boolean(subscriptionsQuery.data)}
+          isRetrying={subscriptionsQuery.isFetching}
+          onRetry={() => void subscriptionsQuery.refetch()}
+        />
       ) : null}
       {subscriptionsQuery.data ? (
         <p className="mt-4 text-xs text-muted-foreground">
@@ -178,11 +171,11 @@ export function AdminSubscriptionsPanel() {
               subscriptions.map((subscription) => (
                 <SubscriptionLine key={subscription.userId} subscription={subscription} />
               ))
-            ) : (
+            ) : subscriptionsQuery.data ? (
               <div className="p-4 text-sm text-muted-foreground">
                 Aucun accès payant attribué pour le moment
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

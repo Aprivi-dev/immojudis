@@ -4,7 +4,7 @@ import Link from "next/link";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { formatPercent, formatShareAsPercent } from "@/lib/format/numbers";
 import { saleDetailPath } from "@/lib/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
@@ -16,9 +16,14 @@ import {
   AdminCatalogueQualityPanel,
   CATALOGUE_QUALITY_QUERY_KEY,
 } from "@/components/admin/AdminCatalogueQualityPanel";
+import { AdminPepitesPanel, PEPITES_QUERY_KEY } from "@/components/admin/AdminPepitesPanel";
 import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminTabPanel, AdminTabs } from "@/components/admin/AdminTabs";
+import { useAdminTabParam } from "@/components/admin/use-admin-tab-param";
 import { AdminPill } from "@/components/admin/admin-pill";
+import { useAdminRefresh } from "@/components/admin/admin-ui";
+import { useAuth } from "@/hooks/use-auth";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
 import type {
@@ -30,8 +35,47 @@ import type {
 const QUALITY_REPORT_QUERY_KEY = ["admin-quality-report"] as const;
 const VALUATION_OVERVIEW_QUERY_KEY = ["admin-valuation-overview"] as const;
 
+const TABS = [
+  { id: "indicateurs", label: "Indicateurs" },
+  { id: "pepites", label: "Pépites" },
+] as const;
+
+/**
+ * Vue « Qualité des données » : les indicateurs du catalogue et, en second onglet, le contrôle de la
+ * règle des pépites (l'ancienne adresse /admin/pepites redirige vers cet onglet).
+ */
 export function AdminQualityPage() {
-  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [tab, select] = useAdminTabParam(TABS, "indicateurs");
+  const { isRefreshing, refresh } = useAdminRefresh([
+    QUALITY_REPORT_QUERY_KEY[0],
+    VALUATION_OVERVIEW_QUERY_KEY[0],
+    CATALOGUE_QUALITY_QUERY_KEY[0],
+    PEPITES_QUERY_KEY[0],
+  ]);
+
+  return (
+    <AdminShell
+      activeSection="quality"
+      title="Qualité des données"
+      description="Repérez les dossiers qui fragilisent la confiance produit et contrôlez la règle des pépites."
+      adminEmail={user?.email}
+      onRefresh={() => void refresh()}
+      isRefreshing={isRefreshing}
+    >
+      <div className="max-w-[92rem] space-y-6">
+        <AdminTabs label="Rubriques de la qualité" tabs={TABS} active={tab} onSelect={select} />
+        {tab ? (
+          <AdminTabPanel tab={tab}>
+            {tab === "indicateurs" ? <QualityIndicators /> : <AdminPepitesPanel />}
+          </AdminTabPanel>
+        ) : null}
+      </div>
+    </AdminShell>
+  );
+}
+
+function QualityIndicators() {
   const qualityQuery = useQuery({
     queryKey: QUALITY_REPORT_QUERY_KEY,
     queryFn: fetchAdminDataQuality,
@@ -41,8 +85,6 @@ export function AdminQualityPage() {
   const {
     data: valuationOverview,
     isLoading: valuationLoading,
-    refetch: refetchValuation,
-    isFetching: valuationFetching,
     error: valuationError,
   } = useQuery({
     queryKey: VALUATION_OVERVIEW_QUERY_KEY,
@@ -53,229 +95,213 @@ export function AdminQualityPage() {
   const weakSales = qualityReport?.prioritySales ?? [];
 
   return (
-    <AdminShell
-      activeSection="quality"
-      title="Qualité des données"
-      description="Repérez les dossiers qui fragilisent la confiance produit."
-      onRefresh={() => {
-        void qualityQuery.refetch();
-        void refetchValuation();
-        void queryClient.invalidateQueries({ queryKey: CATALOGUE_QUALITY_QUERY_KEY });
-      }}
-      isRefreshing={qualityQuery.isFetching || valuationFetching}
-    >
-      <div className="max-w-[92rem]">
-        {qualityQuery.error && (
-          <div
-            role="alert"
-            className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-          >
-            {queryErrorMessage(qualityQuery.error, "Erreur de chargement")}
+    <div>
+      {qualityQuery.error && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          {queryErrorMessage(qualityQuery.error, "Erreur de chargement")}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Les indicateurs et la ventilation par source couvrent {qualityReport?.sampleSize ?? "…"}{" "}
+        ventes du catalogue. La file ci-dessous affiche uniquement les dossiers prioritaires parmi
+        les 500 premières ventes classées par date pour garder l’écran réactif.
+      </p>
+
+      <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <QualityMetric
+          icon={<Database />}
+          label="Ventes"
+          value={qualityQuery.isLoading ? "…" : String(metrics.total)}
+        />
+        <QualityMetric
+          icon={<FileText />}
+          label="Avec documents"
+          value={qualityQuery.isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
+        />
+        <QualityMetric
+          icon={<Activity />}
+          label="Confiance moyenne"
+          value={qualityQuery.isLoading ? "…" : metrics.avgConfidence}
+        />
+        <QualityMetric
+          icon={<ShieldCheck />}
+          label="Risques sourcés"
+          value={qualityQuery.isLoading ? "…" : pct(metrics.sourcedRisks, metrics.riskSales)}
+        />
+      </div>
+
+      <AdminCatalogueQualityPanel />
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="admin-panel rounded-lg p-5">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <AlertTriangle className="h-4 w-4 text-gold-text" />
+            Points à surveiller
           </div>
-        )}
+          <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+            <QualityLine
+              label="Surface exploitable"
+              value={pct(metrics.withSurface, metrics.total)}
+            />
+            <QualityLine
+              label="Occupation renseignée"
+              value={pct(metrics.withOccupation, metrics.total)}
+            />
+            <QualityLine
+              label="Score confiance ≥ 70%"
+              value={pct(metrics.highConfidence, metrics.total)}
+            />
+            <QualityLine
+              label="Documents riches"
+              value={pct(metrics.withRichDocs, metrics.total)}
+            />
+            <QualityLine label="Ventes avec alerte" value={pct(metrics.riskSales, metrics.total)} />
+          </ul>
+        </section>
 
-        <p className="mt-6 text-xs text-muted-foreground">
-          Les indicateurs et la ventilation par source couvrent {qualityReport?.sampleSize ?? "…"}{" "}
-          ventes du catalogue. La file ci-dessous affiche uniquement les dossiers prioritaires parmi
-          les 500 premières ventes classées par date pour garder l’écran réactif.
-        </p>
+        <section className="admin-panel rounded-lg p-5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Dossiers à reprendre en priorité
+          </div>
+          <div className="mt-4 divide-y divide-brand-navy/10">
+            {qualityQuery.error && !qualityReport ? (
+              <p role="status" className="text-sm text-red-800">
+                Les dossiers prioritaires n’ont pas pu être vérifiés. Réessayez avec Actualiser.
+              </p>
+            ) : weakSales.length === 0 && !qualityQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">
+                Aucun dossier faible dans l'échantillon chargé.
+              </p>
+            ) : (
+              weakSales.map((sale) => <WeakSaleLine key={sale.id} sale={sale} />)
+            )}
+          </div>
+        </section>
+      </div>
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <QualityMetric
-            icon={<Database />}
-            label="Ventes"
-            value={qualityQuery.isLoading ? "…" : String(metrics.total)}
-          />
-          <QualityMetric
-            icon={<FileText />}
-            label="Avec documents"
-            value={qualityQuery.isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
-          />
+      <section className="admin-panel mt-6 rounded-lg p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Qualité par source
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Priorise les connecteurs qui créent le plus de dossiers incomplets ou peu fiables.
+            </p>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            GPS, surface, documents, occupation et score de confiance
+          </span>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-brand-navy/10">
+          <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 border-b border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>Source</span>
+            <span>Annonces</span>
+            <span>Surface</span>
+            <span>GPS</span>
+            <span>Docs</span>
+            <span>Occup.</span>
+            <span>Confiance</span>
+          </div>
+          <div className="divide-y divide-brand-navy/10">
+            {metrics.sources.map((source) => (
+              <SourceQualityLine key={source.name} source={source} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="admin-panel mt-6 rounded-lg p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Modèles, promotion & dérive
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Les seuils affichés sont identiques aux garde-fous du pipeline d’entraînement.
+            </p>
+          </div>
+          <span className="rounded-full border border-brand-navy/10 px-3 py-1 text-xs font-semibold text-foreground">
+            {valuationLoading
+              ? "Chargement…"
+              : valuationOverview?.runtime.status === "healthy"
+                ? "Fonctionnement normal"
+                : valuationOverview?.runtime.status === "degraded"
+                  ? "Dérive à examiner"
+                  : "Activité inconnue"}
+          </span>
+        </div>
+        {valuationError ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+          >
+            {valuationOverview
+              ? "Actualisation des estimations impossible. Les dernières données reçues restent affichées."
+              : "Le diagnostic des estimations est indisponible. Réessayez avec Actualiser."}
+          </p>
+        ) : null}
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <QualityMetric
             icon={<Activity />}
-            label="Confiance moyenne"
-            value={qualityQuery.isLoading ? "…" : metrics.avgConfidence}
+            label="Estimations 24 h"
+            value={
+              valuationLoading
+                ? "…"
+                : valuationOverview
+                  ? String(valuationOverview.runtime.estimates)
+                  : "—"
+            }
+          />
+          <QualityMetric
+            icon={<Sparkles />}
+            label="Avec le modèle appris"
+            value={formatPercent(valuationOverview?.runtime.hybridSharePct, 1)}
           />
           <QualityMetric
             icon={<ShieldCheck />}
-            label="Risques sourcés"
-            value={qualityQuery.isLoading ? "…" : pct(metrics.sourcedRisks, metrics.riskSales)}
+            label="Estimations exploitables"
+            value={formatPercent(valuationOverview?.runtime.actionableSharePct, 1)}
           />
         </div>
-
-        <AdminCatalogueQualityPanel />
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <section className="admin-panel rounded-lg p-5">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <AlertTriangle className="h-4 w-4 text-gold-text" />
-              Points à surveiller
-            </div>
-            <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-              <QualityLine
-                label="Surface exploitable"
-                value={pct(metrics.withSurface, metrics.total)}
-              />
-              <QualityLine
-                label="Occupation renseignée"
-                value={pct(metrics.withOccupation, metrics.total)}
-              />
-              <QualityLine
-                label="Score confiance ≥ 70%"
-                value={pct(metrics.highConfidence, metrics.total)}
-              />
-              <QualityLine
-                label="Documents riches"
-                value={pct(metrics.withRichDocs, metrics.total)}
-              />
-              <QualityLine
-                label="Ventes avec alerte"
-                value={pct(metrics.riskSales, metrics.total)}
-              />
-            </ul>
-          </section>
-
-          <section className="admin-panel rounded-lg p-5">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Dossiers à reprendre en priorité
-            </div>
-            <div className="mt-4 divide-y divide-brand-navy/10">
-              {qualityQuery.error && !qualityReport ? (
-                <p role="status" className="text-sm text-red-800">
-                  Les dossiers prioritaires n’ont pas pu être vérifiés. Réessayez avec Actualiser.
-                </p>
-              ) : weakSales.length === 0 && !qualityQuery.isLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Aucun dossier faible dans l'échantillon chargé.
-                </p>
-              ) : (
-                weakSales.map((sale) => <WeakSaleLine key={sale.id} sale={sale} />)
-              )}
-            </div>
-          </section>
-        </div>
-
-        <section className="admin-panel mt-6 rounded-lg p-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Qualité par source
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Priorise les connecteurs qui créent le plus de dossiers incomplets ou peu fiables.
-              </p>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              GPS, surface, documents, occupation et confiance score
-            </span>
-          </div>
-          <div className="mt-4 overflow-x-auto rounded-lg border border-brand-navy/10">
-            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 border-b border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <span>Source</span>
-              <span>Annonces</span>
-              <span>Surface</span>
-              <span>GPS</span>
-              <span>Docs</span>
-              <span>Occup.</span>
-              <span>Confiance</span>
-            </div>
-            <div className="divide-y divide-brand-navy/10">
-              {metrics.sources.map((source) => (
-                <SourceQualityLine key={source.name} source={source} />
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="admin-panel mt-6 rounded-lg p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Modèles, promotion & dérive
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Les seuils affichés sont identiques aux garde-fous du pipeline d’entraînement.
-              </p>
-            </div>
-            <span className="rounded-full border border-brand-navy/10 px-3 py-1 text-xs font-semibold text-foreground">
-              {valuationLoading
-                ? "Chargement…"
-                : valuationOverview?.runtime.status === "healthy"
-                  ? "Runtime sain"
-                  : valuationOverview?.runtime.status === "degraded"
-                    ? "Dérive à examiner"
-                    : "Activité inconnue"}
-            </span>
-          </div>
-          {valuationError ? (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-            >
-              {valuationOverview
-                ? "Actualisation des estimations impossible. Les dernières données reçues restent affichées."
-                : "Le diagnostic des estimations est indisponible. Réessayez avec Actualiser."}
-            </p>
-          ) : null}
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <QualityMetric
-              icon={<Activity />}
-              label="Estimations 24 h"
-              value={
-                valuationLoading
-                  ? "…"
-                  : valuationOverview
-                    ? String(valuationOverview.runtime.estimates)
-                    : "—"
-              }
-            />
-            <QualityMetric
-              icon={<Sparkles />}
-              label="Hybride LightGBM"
-              value={formatPercent(valuationOverview?.runtime.hybridSharePct, 1)}
-            />
-            <QualityMetric
-              icon={<ShieldCheck />}
-              label="Actionnables"
-              value={formatPercent(valuationOverview?.runtime.actionableSharePct, 1)}
-            />
-          </div>
-          {valuationOverview?.runtime.driftSignals.length ? (
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-warning">
-              {valuationOverview.runtime.driftSignals.map((signal) => (
-                <li key={signal}>{signal}</li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {(valuationOverview?.activeModels ?? []).map((model) => (
-              <article
-                key={model.id}
-                className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <strong className="text-sm text-foreground">{model.segment}</strong>
-                  <span className={model.promotionGate.passes ? "text-success" : "text-danger"}>
-                    {model.promotionGate.passes ? "Seuils validés" : "Seuils non validés"}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {model.version} · erreur médiane{" "}
-                  {formatPercent(model.metrics.testMedianApePct, 1)} · couverture{" "}
-                  {formatPercent(model.metrics.intervalCoveragePct, 1)}
-                </p>
-              </article>
+        {valuationOverview?.runtime.driftSignals.length ? (
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-warning">
+            {valuationOverview.runtime.driftSignals.map((signal) => (
+              <li key={signal}>{signal}</li>
             ))}
-          </div>
-        </section>
-        <div className="mt-6">
-          <AdminSaleFeedbackPanel
-            signals={["points_to_verify", "market_gap_band"]}
-            title="Retours « Pas pertinent » par vente : points à vérifier et écart au marché"
-          />
+          </ul>
+        ) : null}
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(valuationOverview?.activeModels ?? []).map((model) => (
+            <article
+              key={model.id}
+              className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <strong className="text-sm text-foreground">{model.segment}</strong>
+                <span className={model.promotionGate.passes ? "text-success" : "text-danger"}>
+                  {model.promotionGate.passes ? "Seuils validés" : "Seuils non validés"}
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {model.version} · erreur médiane {formatPercent(model.metrics.testMedianApePct, 1)}{" "}
+                · couverture {formatPercent(model.metrics.intervalCoveragePct, 1)}
+              </p>
+            </article>
+          ))}
         </div>
+      </section>
+      <div className="mt-6">
+        <AdminSaleFeedbackPanel
+          signals={["points_to_verify", "market_gap_band"]}
+          title="Retours « Pas pertinent » par vente : points à vérifier et écart au marché"
+        />
       </div>
-    </AdminShell>
+    </div>
   );
 }
 

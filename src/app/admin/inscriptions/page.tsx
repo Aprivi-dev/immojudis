@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import { AdminSignupsPage } from "./admin-signups-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Inscriptions admin",
-  description: "Comptes inscrits sur Immojudis et prolongation de l'essai gratuit.",
-};
-
+/** Ancienne adresse : « Inscriptions » est un onglet de la vue Comptes. */
 export default function Page() {
-  return <AdminSignupsPage />;
+  redirect("/admin/comptes?onglet=inscriptions");
 }

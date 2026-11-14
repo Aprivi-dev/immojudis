@@ -1,6 +1,12 @@
 "use client";
 
-import { adminNextOffset, adminPageRange, adminPreviousOffset } from "@/lib/admin-pagination";
+import {
+  ADMIN_PAGE_SIZE,
+  adminKnownTotal,
+  adminNextOffset,
+  adminPageRange,
+  adminPreviousOffset,
+} from "@/lib/admin-pagination";
 
 /**
  * Barre de pagination des listes admin (50 lignes par page, offset / limit côté serveur).
@@ -8,8 +14,8 @@ import { adminNextOffset, adminPageRange, adminPreviousOffset } from "@/lib/admi
  */
 export function AdminPagination({
   label,
-  offset,
-  limit,
+  offset: rawOffset,
+  limit: rawLimit,
   total,
   shown,
   busy = false,
@@ -27,16 +33,23 @@ export function AdminPagination({
   onOffsetChange: (offset: number) => void;
   className?: string;
 }) {
-  if (total <= limit && offset === 0) return null;
+  // Réponse incomplète (sans offset ni limit, en plus du total) : jamais « page NaN sur NaN ».
+  const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
+  const limit = rawLimit > 0 ? rawLimit : ADMIN_PAGE_SIZE;
+  const known = adminKnownTotal(total);
+  // Sans total, seule une page pleine laisse supposer une suite.
+  const hasNext = known == null ? shown >= limit : offset + limit < known;
+  if (!hasNext && offset === 0) return null;
   const page = Math.floor(offset / limit) + 1;
-  const pages = Math.max(1, Math.ceil(total / limit));
   return (
     <nav
       aria-label={`Pagination — ${label}`}
       className={`flex flex-wrap items-center justify-between gap-3 border-t border-brand-navy/10 px-5 py-3 text-sm ${className}`}
     >
       <span className="text-brand-navy/60" role="status">
-        {adminPageRange({ offset, shown, total })} · page {page} sur {pages}
+        {known == null
+          ? `${shown ? `${offset + 1}–${offset + shown}` : "0"} · page ${page}`
+          : `${adminPageRange({ offset, shown, total: known })} · page ${page} sur ${Math.max(1, Math.ceil(known / limit))}`}
       </span>
       <div className="flex gap-2">
         <button
@@ -52,8 +65,10 @@ export function AdminPagination({
           type="button"
           className="admin-button-secondary"
           aria-label={`Suivant — ${label}`}
-          disabled={offset + limit >= total || busy}
-          onClick={() => onOffsetChange(adminNextOffset(offset, limit, total))}
+          disabled={!hasNext || busy}
+          onClick={() =>
+            onOffsetChange(known == null ? offset + limit : adminNextOffset(offset, limit, known))
+          }
         >
           Suivant
         </button>
