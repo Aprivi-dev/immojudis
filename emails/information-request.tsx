@@ -25,7 +25,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v13";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v14";
 
 /** Aperçu de la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 export const INFORMATION_REQUEST_PREHEADER =
@@ -106,8 +106,8 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
 
 /** Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. */
 const NOTICE_LINES = [
-  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe vérifie les informations avant toute mise à jour de la fiche.",
-  "Merci de ne transmettre que des pièces que vous êtes autorisé à partager.",
+  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+  "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
 ] as const;
 
 const POLICY_LABEL = "Politique de confidentialité et vos droits";

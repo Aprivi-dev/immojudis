@@ -94,7 +94,7 @@ describe("modèle de message publié en base", () => {
     // Les révisions 8 à 10 ne changent que la rédaction : un modèle publié en révision 7 reste utilisable.
     // La révision 10 (lot C) fait régénérer les brouillons préparés sous la révision 9.
     expect(MIN_COMPLIANT_TEMPLATE_REVISION).toBe(7);
-    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(10);
+    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(11);
   });
 
   it("ignore un modèle publié antérieur à la mise en conformité et retombe sur le modèle du code", async () => {

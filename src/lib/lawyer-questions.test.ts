@@ -66,11 +66,11 @@ describe("buildLawyerQuestions", () => {
     expect(occupancy.question).toBe(INFORMATION_AGENT_QUESTIONS.occupancy.question);
   });
 
-  it("nomme les pièces absentes et ne parle jamais au nom d'Immojudis", () => {
+  it("demande où consulter le cahier et ne parle jamais au nom d'Immojudis", () => {
     const questions = buildLawyerQuestions(incompleteSale());
     const documents = questions.find((entry) => entry.key === "documents")!;
     expect(documents.question).toContain("le cahier des conditions de vente");
-    expect(documents.question).toContain("me transmettre");
+    expect(documents.question).toContain("peuvent-ils être consultés");
     for (const entry of questions) {
       expect(entry.question).not.toMatch(/\b(nous|nos|notre)\b/i);
     }

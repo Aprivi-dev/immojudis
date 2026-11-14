@@ -1,3 +1,5 @@
+import { factClaimDecisionsHref } from "@/lib/fact-claim-decisions";
+
 /**
  * Acceptation d'une réponse d'avocat par le registre des pièces (lot C du 14/11/2026, T4). Module sans
  * dépendance serveur : la route de relecture et le panneau « Informations à contrôler » le lisent.
@@ -37,7 +39,7 @@ export function informationAgentFactRegistryField(factKey: string): string | nul
 export const REGISTRY_OCCUPANCY_VALUES = ["vacant", "occupied", "rented"] as const;
 
 export const INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE =
-  "Occupation non affichable : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi. Rejetez cette information.";
+  "Occupation non affichable telle quelle : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi, ni une occupation inconnue. Rejetez cette information ; si la réponse dit clairement que le bien est occupé et que l’écran permet de corriger la valeur, consignez « occupé ».";
 
 /** Une occupation proposée que la fiche ne peut pas afficher (« occupé par le propriétaire », « squatté »…). */
 export function informationAgentOccupancyRefused(factKey: string, value: unknown): boolean {
@@ -58,28 +60,56 @@ export type InformationAgentRegistryAcceptance = {
 };
 
 /**
+ * Champs que le registre tient pour une réponse d'avocat (`auction_fact_fields.hold_enabled`, migration
+ * `20261116100000_fact_registry_tables.sql`) : la décision les écrit sur la fiche et les protège contre la collecte.
+ * La mise à prix, la date et le type de bien n'y sont pas : le noyau de publication les écrit dès l'acceptation, et
+ * la collecte peut les réécrire. Le test de concordance compare cette liste à la migration.
+ */
+export const INFORMATION_AGENT_REGISTRY_HELD_FIELDS: readonly string[] = [
+  "property.surface_m2",
+  "property.land_surface_m2",
+  "property.rooms_count",
+  "property.occupancy_status",
+];
+
+/** Le registre tient-il ce fait de l'agent (valeur écrite et protégée par la décision) ? */
+export function informationAgentFactHeldByRegistry(factKey: string): boolean {
+  const field = informationAgentFactRegistryField(factKey);
+  return field !== null && INFORMATION_AGENT_REGISTRY_HELD_FIELDS.includes(field);
+}
+
+/**
  * Message de l'écran après « Accepter et mettre à jour la fiche ». `tone: "warning"` quand la valeur n'est
- * pas affichée : la réponse est acceptée, mais il reste quelque chose à faire.
+ * pas affichée : la réponse est acceptée, mais il reste quelque chose à faire. `href` : « Observations à décider »,
+ * filtré sur la vente, quand une décision reste à prendre. Identifiants complets : ils se collent tels quels.
  */
 export function informationAgentAcceptanceMessage(
   registry: InformationAgentRegistryAcceptance | null,
 ): {
   tone: "success" | "warning";
   text: string;
+  href: string | null;
 } {
   if (!registry) {
     return {
       tone: "success",
       text: "Information contrôlée. La fiche sera réévaluée après enrichissement.",
+      href: null,
     };
   }
+  const href = registry.saleId ? factClaimDecisionsHref(registry.saleId) : null;
+  const identifiers = [
+    registry.saleId ? `vente ${registry.saleId}` : null,
+    registry.claimId ? `observation ${registry.claimId}` : null,
+  ].filter(Boolean);
   const queue = `Reprenez-la dans « Observations à décider »${
-    registry.saleId ? ` (vente ${registry.saleId.slice(0, 8)})` : ""
+    identifiers.length ? ` (${identifiers.join(", ")})` : ""
   }.`;
   if (registry.error) {
     return {
       tone: "warning",
       text: `Réponse acceptée, mais la valeur n’est pas encore sur la fiche : ${registry.error} ${queue}`,
+      href,
     };
   }
   switch (registry.state) {
@@ -88,26 +118,31 @@ export function informationAgentAcceptanceMessage(
       return {
         tone: "success",
         text: "Valeur acceptée : affichée sur la fiche et protégée contre la collecte.",
+        href: null,
       };
     case null:
       return {
         tone: "success",
         text: "Information acceptée et inscrite au registre. Ce champ n’est pas protégé par le registre : la collecte peut le réécrire.",
+        href: null,
       };
     case "conflicted":
       return {
         tone: "warning",
         text: `Décision enregistrée, mais une autre pièce dit autre chose : la fiche n’a pas changé. ${queue}`,
+        href,
       };
     case "blocked":
       return {
         tone: "warning",
         text: `Décision enregistrée, mais la fiche refuse cette valeur (vente de terrain, ou moins de pièces que de chambres). ${queue}`,
+        href,
       };
     default:
       return {
         tone: "warning",
         text: `Décision enregistrée, mais la valeur n’est pas affichée (lot non identifié, ou valeur délogée). ${queue}`,
+        href,
       };
   }
 }

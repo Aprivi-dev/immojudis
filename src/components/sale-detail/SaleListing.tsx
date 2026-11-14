@@ -59,6 +59,7 @@ import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
+import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 import { SALE_DETAIL_PIECES_HREF as PIECES_SECTION_HREF } from "./sale-detail-anchors";
 import {
   LAWYER_DAY_LABEL,
@@ -421,6 +422,7 @@ export function ListingOverview({
           </dd>
         </div>
       </dl>
+      <p className={styles.dataReliability}>{SALE_DATA_RELIABILITY_NOTE}</p>
       <div className={styles.summaryActions} data-hero-actions="">
         {actions}
         {actions ? null : preparation ? (

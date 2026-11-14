@@ -132,7 +132,7 @@ describe("accepter une réponse d'avocat passe par le registre des pièces", () 
       ).rejects.toMatchObject({
         status: 409,
         message:
-          "Occupation non affichable : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi. Rejetez cette information.",
+          "Occupation non affichable telle quelle : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi, ni une occupation inconnue. Rejetez cette information ; si la réponse dit clairement que le bien est occupé et que l’écran permet de corriger la valeur, consignez « occupé ».",
       });
       expect(mocks.adminRpc).not.toHaveBeenCalled();
       expect(mocks.sessionRpc).not.toHaveBeenCalled();

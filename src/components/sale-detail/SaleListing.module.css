@@ -617,6 +617,14 @@
   border-radius: 8px;
 }
 
+/* Ligne fixe sous les données clés : d'où viennent les données, ce qui seul fait foi. */
+.dataReliability {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 .heroFact {
   display: grid;
   align-content: start;

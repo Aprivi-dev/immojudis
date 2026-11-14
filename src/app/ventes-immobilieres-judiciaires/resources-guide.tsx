@@ -9,6 +9,7 @@ import {
   type DepartmentRef,
 } from "@/lib/department-pages";
 import { formatNumericDate } from "@/lib/format/dates";
+import { SEIZURE_CAHIER_CONSULTATION_PLACE } from "@/lib/sale-procedure";
 import { jsonLdString } from "@/lib/json-ld";
 import { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
@@ -65,7 +66,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Où consulter le cahier des conditions de vente ?",
-    a: "Il peut être consulté au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-11). Immojudis aide à identifier les informations clés à extraire de ce document : voir l’article « Lire le cahier des conditions de vente et préparer la visite ».",
+    a: `Il peut être consulté ${SEIZURE_CAHIER_CONSULTATION_PLACE} (art. R. 322-11). Immojudis aide à identifier les informations clés à extraire de ce document : voir l’article « Lire le cahier des conditions de vente et préparer la visite ».`,
   },
   {
     q: "Une mise à prix basse signifie-t-elle une bonne affaire ?",

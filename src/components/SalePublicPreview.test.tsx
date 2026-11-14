@@ -1547,15 +1547,46 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     expect(docs.textContent).not.toContain("Cahier des conditions de vente");
   });
 
-  it("dit, pour une vente au tribunal, où consulter le cahier sans compte", () => {
-    renderFull({ sale_venue_type: "tribunal", document_count: 3 });
-    const docs = within(screen.getByRole("region", { name: "Pièces et vérifications" })).getByRole(
-      "list",
-      { name: "Pièces et sources" },
-    );
-    expect(docs.textContent).toContain(
+  it("dit, selon le type de vente, où consulter le cahier sans compte", () => {
+    const cahierLine = () =>
+      within(
+        within(screen.getByRole("region", { name: "Pièces et vérifications" })).getByRole("list", {
+          name: "Pièces et sources",
+        }),
+      )
+        .getAllByRole("listitem")
+        .find((item) => item.textContent?.startsWith("Cahier des conditions de vente"))
+        ?.textContent ?? null;
+    // Saisie immobilière confirmée : le greffe du juge de l'exécution ou l'avocat du créancier poursuivant.
+    renderFull({
+      sale_venue_type: "tribunal",
+      sale_legal_framework: "judicial_seizure",
+      document_count: 3,
+    });
+    expect(cahierLine()).toBe(
       "Cahier des conditions de vente" +
         "Consultable au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de l’avocat du créancier poursuivant",
+    );
+    cleanup();
+    // Autre vente au tribunal confirmée.
+    renderFull({ sale_venue_type: "tribunal", sale_legal_framework: "judicial_partition" });
+    expect(cahierLine()).toBe(
+      "Cahier des conditions de vente" +
+        "Consultable au greffe du tribunal judiciaire ou auprès de l’avocat poursuivant ; l’avis de vente indique où.",
+    );
+    cleanup();
+    // Type de vente non confirmé.
+    renderFull({ sale_venue_type: "tribunal", sale_verification_status: "pending" });
+    expect(cahierLine()).toBe(
+      "Cahier des conditions de vente" + "Le lieu de consultation figure dans l’avis de vente.",
+    );
+  });
+
+  it("dit, près des données clés, d'où viennent les données et ce qui seul fait foi", () => {
+    renderFull();
+    const synthesis = screen.getByRole("complementary", { name: "Synthèse de la vente" });
+    expect(synthesis.textContent).toContain(
+      "Les données de cette fiche viennent de l’annonce, des pièces ou de réponses de professionnels. Comme toute donnée de la fiche, elles sont à confirmer dans le cahier des conditions de vente (ou le cahier des charges d’une vente notariale) et les pièces officielles, qui seuls font foi.",
     );
   });
 

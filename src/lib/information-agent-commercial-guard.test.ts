@@ -14,6 +14,7 @@ import {
 } from "@/lib/information-agent-questions";
 import { INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT } from "@/lib/information-agent-compliance";
 import { buildInformationRequestDraft } from "@/lib/information-agent/draft";
+import { COURT_REGISTRY_QUESTION } from "@/lib/information-agent/court-registry-template";
 import {
   NOTARY_EMAIL_TEMPLATE,
   STATE_SERVICE_EMAIL_TEMPLATE,
@@ -97,7 +98,7 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
           "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/1), consultée le 14/10/2026.",
         addressOriginUrl: "https://www.licitor.com/annonce/1",
         automatedSearch: true,
-        lawyerReplyDisplay: true,
+        replyDisplay: "source_lawyer",
         aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
         privacyUrl: `${APP_URL}/privacy`,
         optOutUrl: `${APP_URL}/api/information-agent/opt-out?e=abc&t=def`,
@@ -115,6 +116,12 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       expect(output).toContain("Une fiche exacte évite aux candidats");
       expect(output).toContain("Rien n’est publié sans relecture par notre équipe.");
       expect(output).toContain("Les informations que vous nous transmettez peuvent être affichées");
+      // Relecture juridique-rgpd du 14/11/2026.
+      expect(output).toContain("cette mention vous rend identifiable");
+      expect(output).toContain("Inutile de joindre des pièces.");
+      expect(output).toContain(
+        "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
+      );
     }
     // Plus de présentation du service ni de lien vers le site : l'identité tient au pied du message.
     for (const output of [email.html, email.text]) {
@@ -134,7 +141,14 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find((block) => block.id === "closing")!
         .content,
       INFORMATION_AGENT_QUESTIONS.sale_terms.question,
+      INFORMATION_AGENT_QUESTIONS.documents.question,
+      INFORMATION_AGENT_QUESTIONS.photos.question,
+      INFORMATION_AGENT_QUESTIONS.occupancy.question,
+      COURT_REGISTRY_QUESTION,
       INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT,
+      "les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
+      "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite.",
+      "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
       "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.example. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
     ];
     for (const text of lotC) {

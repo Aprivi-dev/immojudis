@@ -728,7 +728,10 @@ runbook R2c).
   occupation que le registre ne tient pas. Restent : un seul chemin en base (aucune fonction ne peut appeler la
   décision, l'acceptation se fait donc en deux temps, et une décision qui échoue laisse le fait accepté sans valeur
   affichée), et la provenance (fait, destinataire, réception) que la décision ne reprend pas encore.
-- La mention publique lit le registre ; fonction séparée pour les origines autres que l'avocat poursuivant.
+- La mention publique lit le registre ; fonction séparée pour les origines autres que l'avocat poursuivant. **Lot C
+  (relecture du 14/11/2026)** : la mention exige déjà que l'observation du pont soit acceptée au journal et, pour un
+  champ tenu, tenue par la fiche (une opposition ou un retrait l'efface) ; la date et le destinataire viennent encore
+  de `raw_payload.information_agent_verified_facts`.
 - Refus d'un bloc d'annonce marqué `information_agent_verified` à la première prise (reprise de l'existant).
 - Écran de décision : fait côté application (voir « Écran de décision »). Restent la valeur d'annonce et l'état du
   champ lus dans le registre (fonction de lecture `get_admin_sale_field_registry`, qui n'existe pas encore), et la

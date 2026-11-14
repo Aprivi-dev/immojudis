@@ -157,12 +157,6 @@ where fact_id = '87800000-9000-4000-8000-000000000001';
 -- Le pont vers auction_fact_claims est un déclencheur différé (il passe après l'écriture de la fiche, avant
 -- la validation de la transaction). Le test le déclenche avec « set constraints all immediate » après les
 -- publications, puis revient au mode différé.
---
--- Depuis 20261119100900 (lot C), le noyau n'écrit pas la fiche pour un champ que le registre des pièces tient :
--- la décision de l'administrateur et la projection le font (test 895). Ce fichier essaie l'écriture du noyau
--- elle-même : la retenue des quatre champs du registre est coupée le temps de la transaction, comme un réglage
--- `hold_enabled` à faux le ferait.
-update public.auction_fact_fields set hold_enabled = false where hold_enabled;
 
 insert into public.information_agent_cases (
   id, sale_id, created_by, status, recipient_kind, recipient_email, normalized_recipient_email, subject,

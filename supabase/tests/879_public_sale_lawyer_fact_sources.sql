@@ -41,11 +41,6 @@ select ok(
 );
 
 -- Jeu d'essai ----------------------------------------------------------------------------------------------------
--- Depuis 20261119100900 (lot C), une valeur que le registre des pièces tient n'est écrite qu'après la décision de
--- l'administrateur (test 895, qui essaie aussi la mention d'une surface tenue). Ce fichier essaie la mention des
--- valeurs écrites par le noyau lui-même : la retenue des champs du registre est coupée le temps de la transaction.
-update public.auction_fact_fields set hold_enabled = false where hold_enabled;
-
 insert into auth.users (id) values ('87900000-0000-4000-8000-0000000000a1');
 insert into public.user_profiles (user_id, email, user_role) values
   ('87900000-0000-4000-8000-0000000000a1', 'source-admin-879@example.test', 'admin')

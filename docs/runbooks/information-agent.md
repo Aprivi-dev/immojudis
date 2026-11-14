@@ -16,7 +16,7 @@ Mise à jour : 23 octobre 2026 (renvois et variables). Écran : **Admin › Agen
 
    Une valeur publiée par une source compte comme disponible : elle se vérifie dans la revue des faits, pas auprès du contact. Sont demandées les informations **absentes, contradictoires ou estimées**. Les éléments sans objet ne sont pas demandés (PV descriptif hors vente judiciaire ; surface, pièces et diagnostics d’un parking ; diagnostics d’un terrain). Si le cahier des conditions de vente est consultable, les modalités (garantie exigée pour enchérir, frais, délais) ne sont pas redemandées.
 
-2. **Brouillon.** Le serveur choisit le contact référencé de la fiche (avocat, notaire, gestionnaire) s’il est unique et fiable ; sinon l’administrateur saisit l’adresse. Ne sont jamais proposées ni acceptées, quelle que soit leur origine : les adresses de juridiction (`@justice.fr`, `@*.justice.gouv.fr`), la messagerie RPVA des avocats (`@avocat-conseil.fr`), les adresses de l'Ordre, du barreau, du bâtonnier et des CARPA, et les adresses techniques (`noreply`, `dpo`, `rgpd`, `abuse`, `postmaster`…) (`src/lib/information-agent/excluded-addresses.ts`, miroir Python `information_sufficiency.py`, cas partagés `information_agent_contact_cases.json`). L'opposition est contrôlée avant de retenir une adresse : un professionnel opposé sous une autre adresse n'est ni proposé ni enregistré. Au plus quatre questions, par priorité ; les pièces manquantes sont regroupées en une question qui les nomme (« le cahier des conditions de vente, le procès-verbal descriptif et le dossier de diagnostics techniques »). L’inventaire est enregistré dans la mission (`metadata.inventory`) et affiché dans le panneau : « À obtenir » et « Déjà disponible ».
+2. **Brouillon.** Le serveur choisit le contact référencé de la fiche (avocat, notaire, gestionnaire) s’il est unique et fiable ; sinon l’administrateur saisit l’adresse. Ne sont jamais proposées ni acceptées, quelle que soit leur origine : les adresses de juridiction (`@justice.fr`, `@*.justice.gouv.fr`), la messagerie RPVA des avocats (`@avocat-conseil.fr`), les adresses de l'Ordre, du barreau, du bâtonnier et des CARPA, et les adresses techniques (`noreply`, `dpo`, `rgpd`, `abuse`, `postmaster`…) (`src/lib/information-agent/excluded-addresses.ts`, miroir Python `information_sufficiency.py`, cas partagés `information_agent_contact_cases.json`). L'opposition est contrôlée avant de retenir une adresse : un professionnel opposé sous une autre adresse n'est ni proposé ni enregistré. Au plus quatre questions, par priorité ; les pièces manquantes donnent une seule question, qui demande où et comment consulter le cahier des conditions de vente et ses annexes, dont les diagnostics, sans demander de transmission ni nommer le procès-verbal descriptif (relecture juridique-rgpd du 14/11/2026). L’inventaire est enregistré dans la mission (`metadata.inventory`) et affiché dans le panneau : « À obtenir » et « Déjà disponible ».
 
 3. **Aperçu (obligatoire).** Le bouton « Afficher l’aperçu » (`POST /api/admin/information-agent/missions/preview`) rend l’e-mail exact (HTML et texte) sans rien écrire ni envoyer, et liste les motifs qui bloqueraient l’envoi :
    - contact opposé ou en rebond permanent ;
@@ -523,7 +523,7 @@ pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de b
 - **Conservation de ces adresses** : Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Concrètement, une vente sans date d’audience, dont l’audience est passée, ou retirée, annulée ou reportée sans nouvelle date, n’est ni écrite ni rafraîchie ; `observed_at` est rafraîchi à chaque recollecte du détail de la fiche, y compris quand le contenu de la fiche est inchangé (le registre est alors réécrit à partir des adresses décodées de la relecture, comme pour une fiche modifiée ; seul un conflit d’identité n’y touche pas), `created_at` garde la date du premier relevé et n’est jamais réécrit. Une fiche dont le détail n’est pas retéléchargé n’est pas rafraîchie : son adresse est alors purgée après 21 jours au plus. La purge teste la présence d’une demande par adresse, toutes ventes confondues : une adresse déjà utilisée pour un envoi garde ses lignes d’autres ventes tant que la demande est conservée.
 - **Décodage** : interrupteur propre `LICITOR_DECODE_PROTECTED_EMAILS` (pipeline). **État au 11/11/2026 : actif en production par défaut** (décision du propriétaire du 11/11/2026, accord de Licitor déclaré par le propriétaire ; pièce à verser au dossier) : `.github/workflows/data-pipeline.yml` transmet la variable de dépôt GitHub `LICITOR_DECODE_PROTECTED_EMAILS` (Settings → Secrets and variables → Actions → Variables) et, si elle est absente, la valeur `true`. **La variable de dépôt garde la main : pour couper le décodage sans commit, la poser à `false` ; si elle vaut déjà `false` (consigne des 18, 20 et 23/10/2026), le décodage reste coupé tant qu'elle n'est pas supprimée ou passée à `true`.** Le code, lui, reste explicite : variable absente, vide ou `false`, aucun décodage (c'est le cas en local, `services/data-pipeline/.env`) ; seules `true`, `1`, `on`, `yes`, `oui` et `enabled` l'activent. Toute autre valeur laisse le décodage désactivé ; une valeur non reconnue est signalée par un avertissement dans le journal, sans la valeur. Coupé, les éléments masqués sont toujours retirés de la page (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre ; la collecte et l'affichage de Licitor continuent. Aucune migration, et la suspension ne supprime rien. Pour retirer toute la source, voir `public.set_catalogue_source_withdrawal('licitor', true, '<raison>')` (service_role : arrête la collecte et retire Licitor du catalogue).
 - **Supprimer les adresses déjà relevées** (non exécuté par cette PR) : par la purge, 28 jours au plus après la dernière consultation de l'annonce (rien n'est rafraîchi une fois le décodage coupé) ; ou, en urgence, par une requête manuelle en `service_role`, à valider avant toute exécution. **Couper d'abord l'interrupteur** (sinon la collecte suivante réécrit les adresses), puis compter : `select count(*) from public.information_agent_contacts where source_kind = 'sale_listing' and metadata->>'observation_channel' = 'licitor_cloudflare_decoded' and opposition_status <> 'opposed' and not exists (select 1 from public.information_agent_missions m where lower(btrim(m.recipient_email)) = normalized_email);` Si le nombre est celui attendu, remplacer `select count(*)` par `delete` dans la même requête. La condition `not exists` protège les adresses déjà utilisées pour un envoi, qui suivent la durée de leur demande ; `opposition_status <> 'opposed'` laisse intactes les lignes d'opposition.
-- **Accès et effacement pour un professionnel sans compte** : la page de confirmation de l’opposition (`/api/information-agent/opt-out`) renvoie, avec le même lien signé, vers `/api/information-agent/rights`, où le professionnel choisit « copie de mes données » ou « effacement ». La demande est enregistrée dans `data_subject_requests` (sans `user_id`, `metadata.source = information_agent_professional_link`, identité vérifiée par le lien signé) et apparaît dans l’écran admin des demandes RGPD. **Accès** : bouton « Télécharger les données du professionnel (JSON) » (messages, dossiers, demandes, pièces en métadonnées, informations extraites, fiche du registre) ; envoyer le fichier à l’adresse du demandeur, pas ailleurs, dans le délai d’un mois. **Effacement** : « Exécuter l’effacement » (l’administrateur retape l’adresse) met les fichiers dans la file de suppression Storage, inscrit l’adresse à la liste d’opposition (elle seule reste, normalisée, pour ne plus être recontactée), puis supprime les dossiers et demandes dont elle est destinataire (messages, pièces et informations extraites en cascade). Les documents déjà publiés après validation humaine ne sont pas retirés par cette action : à traiter à part si le demandeur le demande.
+- **Accès et effacement pour un professionnel sans compte** : la page de confirmation de l’opposition (`/api/information-agent/opt-out`) renvoie, avec le même lien signé, vers `/api/information-agent/rights`, où le professionnel choisit « copie de mes données » ou « effacement ». La demande est enregistrée dans `data_subject_requests` (sans `user_id`, `metadata.source = information_agent_professional_link`, identité vérifiée par le lien signé) et apparaît dans l’écran admin des demandes RGPD. **Accès** : bouton « Télécharger les données du professionnel (JSON) » (messages, dossiers, demandes, pièces en métadonnées, informations extraites, fiche du registre) ; envoyer le fichier à l’adresse du demandeur, pas ailleurs, dans le délai d’un mois. **Effacement** : « Exécuter l’effacement » (l’administrateur retape l’adresse) met les fichiers dans la file de suppression Storage, inscrit l’adresse à la liste d’opposition (elle seule reste, normalisée, pour ne plus être recontactée), retire des fiches les traces de ses réponses (`raw_payload.information_agent_verified_facts`, donc la mention « Source : avocat poursuivant »), puis supprime les dossiers et demandes dont elle est destinataire (messages, pièces et informations extraites en cascade). Les valeurs déjà tenues par le registre restent affichées : les retirer avant l’effacement (section du lot C, point 7). Les documents déjà publiés après validation humaine ne sont pas retirés par cette action : à traiter à part si le demandeur le demande.
 - **Envoi « à vérifier »** : si Resend ne répond pas dans les 15 secondes (ou si la connexion tombe), l’email a peut-être été accepté. La demande passe en `failed` avec `metadata.send_outcome = 'unverified'` et le motif « Envoi à vérifier » (libellé « À vérifier » dans l’écran admin, pas « Motif de l’échec »). Le délai de 30 jours reste tenu : une autre demande pour la même adresse ou le même professionnel est refusée. Vérifier dans Resend (clé d’idempotence `immojudis-information-agent-case-<id du dossier>`) : si l’email est parti, le renvoi depuis l’écran admin dans les 24 h retrouve le premier envoi (pas de doublon) et passe la demande en `sent`, ce qui lève le drapeau. Au-delà de 24 h le renvoi est refusé (un doublon serait possible) : vérifier, puis, en `service_role` et après validation, soit passer la demande et le dossier en `sent` avec `sent_at` et `provider_message_id`, soit retirer le drapeau (`update public.information_agent_missions set metadata = metadata - 'send_outcome' where id = '…'`) pour autoriser un nouvel envoi.
 - **Supervision de la progression** : `public.evaluate_information_agent_health` (appelée par la tâche `operational-health`, séparée d’`evaluate_operational_health`) ouvre `information_agent.mission.stuck` (demande en envoi depuis plus de 30 minutes), `information_agent.inbound.stuck` (réponse en file qui n’avance plus depuis 30 minutes), `information_agent.cron.blocked` (exécution `information-agent-*` restée `running` plus de 20 minutes, seuil placé sous les 30 minutes de la clôture automatique des exécutions orphelines) et `information_agent.send.unverified` (envoi à vérifier). Aucune adresse dans les détails des alertes.
 - **Objets Storage orphelins** : `enqueue_orphan_information_agent_portal_uploads` (cron `sale-retention`) met en file de suppression, 24 h après leur création, les objets du bucket `information-agent-evidence` sans ligne de pièce : dépôts du portail (`<dossier>/portal/…`) et emails entrants (`<dossier>/<message>/body/…` et `<dossier>/<message>/<pièce>/…`).
@@ -538,13 +538,22 @@ pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de b
 
 ## Lot C : acceptation par le registre, textes de l’e-mail, retraits après opposition (14/11/2026)
 
-Section propre au lot C (validé par le propriétaire le 14/11/2026). Migration `20261119100900`, gabarit du code en
-révision 10 (« version 11 »), gabarit HTML `information_request_v13`.
+Section propre au lot C (validé par le propriétaire le 14/11/2026), complétée le même jour par les relectures de
+juridique-rgpd et de code. Migration `20261119100900`, gabarit du code en révision 11 (« version 12 »), gabarit HTML
+`information_request_v14`.
 
-**Ordre d’application.** Appliquer d’abord la migration `20261119100900`, puis déployer le code. Dans l’autre ordre,
-une acceptation écrirait encore la fiche avant la décision du registre, et le bloc « annonce » mémorisé par le registre
-serait la valeur de l’avocat. Migration seule, sans le code : une valeur acceptée n’est pas affichée tant que sa
-décision n’est pas prise dans « Observations à décider » (échec fermé).
+**Ordre de déploiement.** Les migrations ne s’appliquent que depuis `main`, après la fusion :
+
+- appliquer la migration du lot C (`20261119100900`) juste après la fusion ;
+- n’accepter aucune réponse d’avocat entre la fusion et la fin de l’application, et n’exécuter aucun effacement de
+  professionnel : sans la migration, le code enregistrerait la décision du registre sur une fiche déjà écrite par
+  l’ancien noyau (le bloc « annonce » mémorisé serait la valeur de l’avocat), et l’effacement s’arrêterait sur la
+  fonction qui retire les traces des réponses (`forget_information_agent_verified_facts`), avant de supprimer les
+  dossiers.
+
+**Tant que la migration n’est pas appliquée en production** (palliatif de juridique-rgpd) : n’accepter aucune mise à
+prix, date ou type de bien venant d’un avocat, et vérifier la fiche publique en navigation privée avant de répondre à
+la personne.
 
 **« Accepter et mettre à jour la fiche » passe par le registre des pièces (T4).**
 
@@ -553,56 +562,108 @@ décision n’est pas prise dans « Observations à décider » (échec fermé).
   affichent la valeur.
 - L’acceptation enregistre le fait de l’agent, puis la décision au registre, à votre nom. Surface, terrain, pièces et
   occupation sont alors affichés et tenus : la collecte ne les écrase plus. Mise à prix, date et type de bien restent
-  écrits par le noyau, comme avant ; leur décision est inscrite au journal, sans protection.
+  écrits par le noyau, comme avant ; leur décision est inscrite au journal, sans protection (l’écran le dit sous le
+  rattachement au lot).
 - Si l’écran dit « Réponse acceptée, mais la valeur n’est pas encore sur la fiche », la décision n’a pas été
-  enregistrée (import en cours, contradiction…). Aller dans « Observations à décider », saisir la vente indiquée, et
-  accepter l’observation. Rien n’est affiché d’ici là.
-- Une occupation « occupé par le propriétaire », « squatté » ou « inconnue » ne s’accepte plus : la rejeter. La fiche
-  ne dit que « libre », « occupé » ou « loué ».
+  enregistrée (import en cours, contradiction…). Le message donne l’identifiant complet de la vente et de
+  l’observation, et le bouton « Ouvrir les observations de cette vente » ouvre « Observations à décider » déjà filtré.
+  La réponse reste listée dans le bloc durable « Réponses acceptées sans décision au registre » de l’onglet Réponses
+  tant qu’aucune décision n’est prise. Rien n’est affiché d’ici là.
+- Une occupation « occupé par le propriétaire », « squatté » ou « inconnue » ne s’accepte plus : la fiche ne dit que
+  « libre », « occupé » ou « loué ». Les lectures automatiques proposent désormais directement « occupé ».
+- Procès-verbal descriptif et bail ne sont jamais publiés (ils nomment les occupants ou le débiteur) : l’écran et la
+  base les refusent ; les rejeter.
+- Si la revue indique « expéditeur différent du contact », ou pour une réponse consignée à la main, n’accepter pour
+  affichage que si l’expéditeur appartient au cabinet de l’avocat poursuivant. Une réponse téléphonique n’est jamais
+  affichée avec la mention. (La base n’écrit la mention « avocat poursuivant », sur la fiche comme dans le libellé d’une
+  pièce, que si l’expéditeur de la réponse est le contact sollicité.)
 
-**Textes de l’e-mail (C12, C13, C14, J10, J15).**
+**Mention « Source : avocat poursuivant ».** Elle n’est affichée que si l’observation du registre créée pour cette
+réponse est encore acceptée (dernière décision au journal) et, pour surface, terrain, pièces et occupation, si la fiche
+tient cette observation. Une opposition ou un retrait l’efface, même quand la valeur affichée est restée la même
+(confirmation identique à l’annonce). Une réponse acceptée avant le lot C n’a aucune décision au journal : elle n’a
+plus de mention, sa valeur reste affichée.
 
-- Le modèle du code passe en révision 10. Dans Admin › Agent IA › Modèle de message, vérifier l’état du modèle publié :
+**Textes de l’e-mail (C12, C13, C14, J10, J15, relecture juridique-rgpd).**
+
+- Le modèle du code passe en révision 11. Dans Admin › Agent IA › Modèle de message, vérifier l’état du modèle publié :
   - modèle publié marqué « ignoré » (révision inférieure à 7, cas constaté le 23/10) : le modèle du code s’applique,
     rien à faire ;
   - modèle publié en révision 7 ou plus : il garde les anciens textes (invitation à joindre « documents ou photos »,
-    procès-verbal descriptif, ancienne signature). Le republier depuis l’éditeur, avec les blocs du modèle du code,
-    avant tout envoi. La publication contrôle l’absence de mention commerciale.
+    procès-verbal descriptif, ancienne signature, consignes de réponse). Le republier depuis l’éditeur, avec les blocs
+    du modèle du code, avant tout envoi. La publication contrôle l’absence de mention commerciale.
 - Brouillons préparés avant le déploiement : les régénérer avant tout envoi. La préparation (« Ouvrir le message ») et
   le pilote ne reprennent pas un brouillon d’une autre révision. Mais un brouillon déjà ouvert peut encore partir :
   avant le premier envoi, annuler (« Annuler la mission ») chaque brouillon dont la révision n’est pas la révision
   courante, puis rouvrir la fiche. Liste en lecture seule :
   `select id, sale_id, status, metadata->>'trigger' as declencheur, metadata->>'email_content_template_revision' as revision from public.information_agent_missions where status in ('draft', 'failed') order by created_at;`
-- Le pied du message à l’avocat poursuivant (dossier `source_lawyer`) dit désormais que ses informations peuvent être
-  affichées sur la fiche, avec la mention de source, et comment les faire retirer.
+- Aucune pièce n’est demandée : les questions demandent où consulter le cahier et ses annexes, et si des photos sont
+  consultables ; le message, le formulaire de dépôt et la question au greffe disent qu’il est inutile de joindre des
+  pièces.
+- Pied du message, « Affichage sur la fiche » : à l’avocat poursuivant, ses informations peuvent être affichées avec
+  la mention de source, qui le rend identifiable, et retirées au plus tard un mois après sa demande ; à un notaire, un
+  service de l’État ou un professionnel saisi à la main, elles complètent la fiche sans nom ni qualité ; à un greffe,
+  sa réponse sert à identifier l’avocat poursuivant.
+- Portée de l’opposition dans le pied : « toute la structure » seulement à l’adresse générique d’une structure dont la
+  clé vaut pour l’adresse ; à une adresse générique sans telle clé (gouv.fr par exemple), « cette adresse ; les autres
+  adresses … ne sont pas concernées » ; à une personne nommée, aucune phrase de portée.
 
-**Retrait après une opposition (J10) : un mois au plus.** Une opposition d’un avocat vaut aussi retrait des valeurs
-publiées depuis ses réponses. Le retrait n’est pas automatique : une décision du registre s’écrit avec le jeton d’un
-administrateur.
+**Retrait après une opposition (J10) : un mois au plus, 28 jours en interne.** Une opposition d’un avocat vaut aussi
+retrait des valeurs publiées depuis ses réponses. Le retrait n’est pas automatique : une décision du registre s’écrit
+avec le jeton d’un administrateur.
 
 1. **Déclencheur.** Chaque opposition (lien « Ne plus être contacté », réponse « STOP », bouton « Enregistrer
-   l’opposition ») et chaque demande de retrait reçue (réponse à l’e-mail, courrier, téléphone).
+   l’opposition ») et chaque demande de retrait reçue (réponse à l’e-mail, courrier, téléphone). Une réponse qui
+   demande de retirer quelque chose de la fiche arrive en relecture avec le motif « possible demande de ne plus être
+   contacté ou de retrait de la fiche ». La page de confirmation de l’opposition annonce la date limite du retrait
+   (opposition + 28 jours).
 2. **Contrôle quotidien.** Admin › Agent IA › Réponses, bloc « Retraits à faire après une opposition » : une ligne par
    valeur acceptée d’un dossier dont le destinataire s’est opposé (par son adresse, ou par son identité sous une autre
-   adresse), avec la date limite (opposition + 30 jours), en rouge une fois dépassée. Une demande de retrait sans
-   opposition n’y figure pas : la traiter de la même façon, à la main.
-3. **Décision, dans le mois.** « Observations à décider », saisir la vente de la ligne, puis :
-   - opposition : « Opposition » (motif par défaut, opposition du professionnel) ;
-   - simple demande de retrait : « Retirer », motif « Autorisation d’affichage retirée ».
-     Les deux sont définitives. La valeur de l’annonce revient sur la fiche pour la surface, le terrain, les pièces et
-     l’occupation, et la ligne quitte le bloc.
-4. **Trace.** La décision reste au journal du registre (auteur, date, motif) ; c’est la preuve du retrait.
-5. **Réponse à la personne**, à faire relire par juridique-rgpd : « Nous avons bien reçu votre demande. Les
-   informations transmises par votre cabinet ont été retirées de nos fiches le [date] ; nous ne vous solliciterons
-   plus. »
-6. **Hors de portée de ce bloc.** Mise à prix, date et type de bien : la décision s’inscrit au journal, mais la valeur
-   reste dans la colonne jusqu’à ce que l’annonce la réécrive, avec sa mention tant qu’elle est égale. Pièces et
-   photos publiées : aucune liste, à retirer à la main avec l’équipe technique.
+   adresse ; une clé de structure ne compte que si elle vaut pour l’adresse du dossier), avec la date limite
+   (opposition + 28 jours), en rouge une fois dépassée, et le lien « Ouvrir les observations de cette vente ». Une
+   demande de retrait sans opposition n’y figure pas : la traiter de la même façon, à la main.
+3. **Décision, dans le délai.** Dans « Observations à décider », choisir « Enregistrer une opposition » dans les deux
+   cas, opposition ou simple demande de retrait : l’affichage repose sur l’intérêt légitime, pas sur une autorisation.
+   « Retirer », motif « Autorisation d’affichage retirée », ne sert qu’aux pièces et photos dont la diffusion avait été
+   autorisée. Ces décisions sont définitives. La valeur de l’annonce revient sur la fiche pour la surface, le terrain,
+   les pièces et l’occupation ; la mention quitte la fiche pour toutes les valeurs, et la ligne quitte le bloc.
+4. **Trace.** La décision reste au journal du registre (auteur, date, motif) ; c’est la preuve du retrait. Le journal
+   ne porte qu’un motif : noter le canal et la date de la demande dans la demande RGPD du dossier. Une simple demande de
+   retrait, ou une demande qui vise une pièce ou une photo, s’ouvre dans l’écran des demandes RGPD (Admin ›
+   Conformité). Point ouvert : cet écran ne permet pas aujourd’hui de créer une demande à la main (seul le lien signé
+   du professionnel en crée une) ; en attendant, garder la réponse reçue dans le dossier de l’agent (date et canal) et
+   le signaler au propriétaire.
+5. **Réponse à la personne**, un des trois modèles ci-dessous (crochets à remplacer ou retirer).
+   - **A. Opposition, informations affichées :** « Bonjour, nous avons bien reçu le [JJ/MM/AAAA] votre demande de ne
+     plus être contacté. Depuis le [JJ/MM/AAAA], nos fiches n’affichent plus aucune information tirée de vos réponses,
+     ni la mention qui les attribuait à l’avocat poursuivant [; la (surface…) a repris la valeur de l’annonce]. Nous ne
+     vous écrirons plus, à cette adresse ni à aucune autre adresse rattachée à votre identité professionnelle [ni à
+     votre cabinet]. Nous conservons seulement votre adresse, votre identité professionnelle et la date de votre
+     opposition, pour la respecter, ainsi qu’une trace interne non publiée de ce retrait ; nos échanges seront
+     supprimés le [date]. Pour obtenir une copie de vos données ou demander leur effacement : [contact]. Vous pouvez
+     aussi saisir la CNIL (cnil.fr/plaintes). Bien cordialement, l’équipe Immojudis »
+   - **B. Opposition, rien d’affiché :** le modèle A, dont la deuxième phrase devient « Aucune information tirée de vos
+     réponses n’était affichée sur nos fiches ; aucune ne le sera. »
+   - **C. Retrait sans opposition :** le modèle A sans la phrase « Nous ne vous écrirons plus… », en ajoutant « Si vous
+     souhaitez aussi ne plus être contacté, répondez simplement à ce message. »
+6. **Ce qui reste à la main.**
+   - Mise à prix, date et type de bien : le registre ne tient pas ces champs. L’opposition efface la mention et ferme la
+     ligne, mais la valeur de l’avocat reste dans la colonne jusqu’à ce que la collecte de l’annonce la réécrive. Si
+     l’annonce n’est plus collectée (retirée, vente passée), demander à l’équipe technique de remettre la valeur
+     précédente (journal `information_agent_fact_publications.previous_values`), puis vérifier la fiche en navigation
+     privée avant de répondre (modèle A sans la mention « a repris la valeur de l’annonce » tant que ce n’est pas fait).
+   - Pièces et photos publiées : aucune liste ; les retirer à la main avec l’équipe technique.
+7. **Effacement d’un professionnel** (« Exécuter l’effacement »). L’effacement retire de chaque fiche les traces de ses
+   réponses (`raw_payload.information_agent_verified_facts`) : la mention disparaît. Les valeurs tenues par le registre
+   restent affichées, et les dossiers supprimés ne permettent plus au bloc de les lister. Avant d’exécuter
+   l’effacement : enregistrer l’opposition de l’adresse (bouton « Enregistrer l’opposition » d’une de ses réponses),
+   traiter les lignes du bloc « Retraits à faire » qui le concernent (point 3), puis seulement exécuter l’effacement.
 
 **Libellé des pièces publiées.** Une pièce acceptée est publiée sous « Pièce transmise par l’avocat poursuivant le
-JJ/MM/AAAA : <type> » (« Pièce transmise le … » pour un autre destinataire), jamais sous le nom du fichier d’origine.
-Les pièces publiées avant la migration gardent leur ancien libellé : aucune réparation dans une migration (règle
-T17). Mesure, en lecture seule :
+JJ/MM/AAAA » (« Pièce transmise le … » pour un autre destinataire ou un autre expéditeur, sans date quand la date de
+réception n’est pas connue), jamais sous le nom du fichier d’origine ; le type s’affiche à part, d’après
+`document_type`. Les pièces publiées avant la migration gardent leur ancien libellé : aucune réparation dans une
+migration (règle T17). Mesure, en lecture seule :
 
 ```sql
 select count(*) as pieces, count(distinct document.source_url) as ventes
@@ -614,8 +675,10 @@ where document.raw_payload->>'source' = 'information_agent'
 ```
 
 Reprise proposée, à faire valider puis passer par le propriétaire comme rattrapage séparé (`supabase/repairs/`, avec
-sa procédure), jamais dans une migration : réécrire `label` de ces lignes avec le même libellé neutre (expéditeur,
-jour de réception du message, type tiré de `information_agent_evidence_extractions.document_kind`).
+sa procédure), jamais dans une migration : réécrire `label` de ces lignes avec le même libellé neutre (« Pièce
+transmise », « par l’avocat poursuivant » seulement si le message d’origine vient du contact sollicité, et le jour de
+réception du message quand il est connu). Les pièces de type procès-verbal descriptif ou bail déjà publiées sont à
+lister à part (`document.document_type in ('pv_huissier', 'bail')`) et à retirer avec l’équipe technique.
 
 **Banc d’évaluation rejoué (14/11/2026, accord du propriétaire).** Les nouveaux textes changent la demande que 63 cas
 du jeu citent mot pour mot : la citation a été mise à jour dans ces 63 cas, sans toucher à aucune vérité de terrain,
@@ -624,3 +687,9 @@ puis le banc a été rejoué (section « Jeu d’évaluation »). Seul le cas F5
 dont 40 fausses (18 sur 90) ; `suiveur` reste à 58 dont 41 fausses (17 sur 90), F5-23 y restant non confirmé par la
 lecture sémantique ; `regles_seules` et l’état réel restent à 0. Les publications fausses sont les mêmes, toutes des
 défauts connus.
+
+Relecture juridique-rgpd du même jour : le second paragraphe des consignes de réponse change (« informations déjà
+destinées à tout candidat acquéreur… Inutile de joindre des pièces. »). La citation a été mise à jour dans les mêmes
+63 cas (aucune vérité de terrain touchée), avec la lecture « occupé » des extracteurs, le numéro écrit avant une
+surface (« lot n° 3 105 m² ») et la demande de retrait repérée en relecture, puis le banc a été rejoué : rapport
+identique (mêmes publications, mêmes publications fausses, même blocage de la configuration qui fait foi).

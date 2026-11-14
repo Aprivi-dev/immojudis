@@ -12,7 +12,10 @@ import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
-import { listInformationAgentWithdrawalTasks } from "@/lib/admin-information-agent-withdrawals";
+import {
+  listInformationAgentPendingRegistryDecisions,
+  listInformationAgentWithdrawalTasks,
+} from "@/lib/admin-information-agent-withdrawals";
 import { asRecord as recordOrEmpty } from "@/lib/guards";
 import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
@@ -160,11 +163,18 @@ export async function listAdminInformationAgentReview(
 
   // Simulation du moteur « publier ou relire » : rien en mode arrêt.
   const autoPublication = await loadAutoPublicationReviewAnnotations(facts);
-  // Valeurs publiées d'un avocat qui s'est opposé : à retirer au registre dans le mois (lot C).
-  const withdrawalTasks = await listInformationAgentWithdrawalTasks();
+  // Tâches du registre (lot C) : valeurs d'un avocat opposé à retirer dans le mois, réponses acceptées sans
+  // décision au registre. Une lecture en échec ne fait pas tomber l'écran : la liste dit qu'elle est indisponible.
+  const [withdrawalTasks, pendingRegistryDecisions] = await Promise.all([
+    registryTaskList("withdrawal_tasks", () => listInformationAgentWithdrawalTasks()),
+    registryTaskList("pending_registry_decisions", () =>
+      listInformationAgentPendingRegistryDecisions(),
+    ),
+  ]);
 
   return {
     withdrawalTasks,
+    pendingRegistryDecisions,
     cases: cases ?? [],
     facts,
     assets: assets ?? [],
@@ -176,6 +186,29 @@ export async function listAdminInformationAgentReview(
     messagesTotal,
     ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
   };
+}
+
+/** Une liste de tâches du registre, ou nul si sa lecture échoue (journalisé, sans rien relayer du message). */
+async function registryTaskList<T>(list: string, read: () => Promise<T[]>): Promise<T[] | null> {
+  try {
+    return await read();
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        scope: "admin.information-agent.review",
+        event: "registry_tasks_unavailable",
+        list,
+        code: databaseErrorCode(error),
+      }),
+    );
+    return null;
+  }
+}
+
+function databaseErrorCode(error: unknown): string | null {
+  return error && typeof error === "object" && "code" in error
+    ? String((error as { code: unknown }).code)
+    : null;
 }
 
 type FactSourceMessage = {
@@ -483,12 +516,33 @@ async function recordRegistryAcceptance(
   factId: string,
   lotAttachment: FactClaimLotAttachment,
 ): Promise<InformationAgentRegistryAcceptance> {
-  const { data: claim, error } = await supabaseAdmin
-    .from("auction_fact_claims")
-    .select("id,auction_sale_id")
-    .eq("evidence_locator->>information_agent_fact_id", factId)
-    .maybeSingle();
-  if (error) throw error;
+  // Le fait est déjà accepté : aucune erreur d'ici ne remonte en 500. Elle est rendue à l'écran, et la réponse
+  // apparaît dans « Réponses acceptées sans décision au registre ».
+  let claim: { id: string; auction_sale_id: string | null } | null;
+  try {
+    const lookup = await supabaseAdmin
+      .from("auction_fact_claims")
+      .select("id,auction_sale_id")
+      .eq("evidence_locator->>information_agent_fact_id", factId)
+      .maybeSingle();
+    if (lookup.error) throw lookup.error;
+    claim = lookup.data;
+  } catch (lookupError) {
+    console.warn(
+      JSON.stringify({
+        scope: "admin.information-agent.review",
+        event: "registry_claim_lookup_failed",
+        fact_id: factId,
+        code: databaseErrorCode(lookupError),
+      }),
+    );
+    return {
+      claimId: null,
+      saleId: null,
+      state: null,
+      error: "L’observation de cette réponse n’a pas pu être lue.",
+    };
+  }
   if (!claim) {
     return {
       claimId: null,
@@ -515,10 +569,7 @@ async function recordRegistryAcceptance(
         scope: "admin.information-agent.review",
         event: "registry_acceptance_failed",
         claim_id: claim.id,
-        code:
-          decisionError && typeof decisionError === "object" && "code" in decisionError
-            ? String((decisionError as { code: unknown }).code)
-            : null,
+        code: databaseErrorCode(decisionError),
       }),
     );
     return {
@@ -532,6 +583,14 @@ async function recordRegistryAcceptance(
     };
   }
 }
+
+/**
+ * Pièces jamais publiées (juridique-rgpd, 14/11/2026) : un procès-verbal descriptif ou un bail nomme les occupants
+ * ou le débiteur. Même liste que le noyau de publication (migration 20261119100900), qui reste juge.
+ */
+const UNPUBLISHABLE_DOCUMENT_KINDS = ["pv_huissier", "bail"] as const;
+const UNPUBLISHABLE_DOCUMENT_MESSAGE =
+  "Pièce non publiable : un procès-verbal descriptif ou un bail nomme les occupants ou le débiteur. Rejetez-la.";
 
 type StagedEvidencePublication = {
   factId: string;
@@ -589,11 +648,17 @@ async function stageApprovedEvidencePublication(
   }
   const { data: extraction, error: extractionError } = await supabaseAdmin
     .from("information_agent_evidence_extractions")
-    .select("status")
+    .select("status,document_kind")
     .eq("asset_id", asset.id)
     .single();
   if (extractionError || extraction?.status !== "completed") {
     throw new PublicApiError("L’analyse de la pièce doit être terminée avant sa publication.", 409);
+  }
+  if (
+    fact.fact_key === "document" &&
+    (UNPUBLISHABLE_DOCUMENT_KINDS as readonly unknown[]).includes(extraction.document_kind)
+  ) {
+    throw new PublicApiError(UNPUBLISHABLE_DOCUMENT_MESSAGE, 409);
   }
 
   // Mandatory human step: someone checked that personal data is redacted on the visible pages.

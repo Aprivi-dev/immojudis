@@ -142,17 +142,18 @@ const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autre
  * Révision du modèle du code. Un brouillon préparé sous une autre révision n'est pas repris : la
  * préparation et le pilote le régénèrent (`email_content_template_revision` de la mission).
  */
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 10;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 11;
 
 /**
  * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
  * révision (présentation commerciale d'Immojudis, invitation à créer un compte…) est ignoré au profit
  * du modèle du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
  * numérotation après cette révision (migration `information_agent_legal_safeguards`). Les révisions 8 à
- * 10 ne changent que la rédaction : le seuil de conformité reste la révision 7. La révision 10 (lot C du
+ * 11 ne changent que la rédaction : le seuil de conformité reste la révision 7. La révision 10 (lot C du
  * 14/11/2026) retire l'invitation à joindre des documents ou des photos et la mention du procès-verbal
- * descriptif : un modèle publié depuis l'éditeur avant elle les garde, il se republie (runbook de l'agent,
- * section du lot C).
+ * descriptif ; la révision 11 (relecture juridique-rgpd du même jour) dit qu'il est inutile de joindre des
+ * pièces. Un modèle publié depuis l'éditeur avant elles garde l'ancien texte : il se republie (runbook de
+ * l'agent, section du lot C).
  */
 export const MIN_COMPLIANT_TEMPLATE_REVISION = 7;
 
@@ -270,7 +271,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 11",
+  name: "Demande de précisions sur une vente — version 12",
   subjectTemplate: "{{sale_subject_title}}, {{subject_date}} : vérification de l’annonce",
   blocks: [
     {
@@ -312,7 +313,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       // Ni invitation à joindre des documents ou des photos, ni procès-verbal descriptif : ces pièces portent
       // l'identité des occupants (J15 du 14/11/2026).
       content:
-        "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
+        "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.\n\nNe communiquez que des informations déjà destinées à tout candidat acquéreur (celles du cahier des conditions de vente : mise à prix, garantie exigée pour enchérir, dates de visite, audience) : votre secret professionnel prime sur notre demande. Inutile de joindre des pièces. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
     },
     {
       id: "closing",
@@ -332,12 +333,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Transparence sur l’IA",
     description:
-      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche.",
+      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
   },
   {
     title: "Confidentialité et droits",
     description:
-      "Le message rappelle que seules les pièces autorisées peuvent être transmises et que la réponse doit suivre l’adresse liée au dossier.",
+      "Le message rappelle qu’il est inutile de transmettre des pièces (indiquer où les consulter suffit) et que la réponse doit suivre l’adresse liée au dossier.",
   },
   {
     title: "Informations RGPD et opposition",

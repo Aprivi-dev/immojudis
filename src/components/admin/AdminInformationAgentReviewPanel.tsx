@@ -32,12 +32,14 @@ import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
 import { AutoPublicationDecisionNote } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
 import {
   FACT_CLAIM_LOT_ATTACHMENTS,
+  factClaimDecisionsHref,
   factClaimLotAttachmentHolds,
   type FactClaimLotAttachment,
 } from "@/lib/fact-claim-decisions";
 import {
   INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE,
   informationAgentAcceptanceMessage,
+  informationAgentFactHeldByRegistry,
   informationAgentFactRegistryField,
   informationAgentOccupancyRefused,
 } from "@/lib/information-agent-registry-acceptance";
@@ -78,7 +80,20 @@ export function AdminInformationAgentReviewPanel() {
       // La décision du registre peut échouer après l'acceptation du fait : le message le dit.
       const message = informationAgentAcceptanceMessage(response.registry);
       if (message.tone === "success") toast.success(message.text);
-      else toast.warning(message.text);
+      else {
+        const href = message.href;
+        toast.warning(
+          message.text,
+          href
+            ? {
+                action: {
+                  label: "Ouvrir les observations de cette vente",
+                  onClick: () => window.location.assign(href),
+                },
+              }
+            : undefined,
+        );
+      }
     },
     onError: (error) => toast.error(queryErrorMessage(error, "Revue impossible")),
   });
@@ -177,8 +192,9 @@ export function AdminInformationAgentReviewPanel() {
   );
   // Moteur « publier ou relire » : annotations en simulation seulement (rien en mode arrêt).
   const autoPublication = page?.autoPublication;
-  // Valeurs d'un avocat opposé, à retirer au registre dans le mois (lot C).
-  const withdrawalTasks = page?.withdrawalTasks ?? [];
+  // Tâches du registre (lot C) : nul quand la lecture a échoué (le reste de l'écran s'affiche).
+  const withdrawalTasks = page?.withdrawalTasks;
+  const pendingRegistryDecisions = page?.pendingRegistryDecisions;
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -200,7 +216,12 @@ export function AdminInformationAgentReviewPanel() {
           </p>
         ) : null}
       </div>
-      {withdrawalTasks.length ? (
+      {withdrawalTasks === null ? (
+        <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
+          Retraits à faire après une opposition : liste indisponible. Rechargez la page avant de
+          répondre à une demande de retrait.
+        </p>
+      ) : withdrawalTasks?.length ? (
         <section
           aria-labelledby="withdrawal-tasks-title"
           className="border-b bg-amber-50/60 px-5 py-4"
@@ -210,9 +231,12 @@ export function AdminInformationAgentReviewPanel() {
           </h3>
           <p className="mt-1 text-xs text-brand-navy/70">
             Un avocat qui s’oppose voit retirer les valeurs publiées depuis ses réponses, dans un
-            délai d’un mois au plus. Dans « Observations à décider », cherchez la vente, puis
-            choisissez « Opposition » ; pour une simple demande de retrait, « Retirer », motif «
-            Autorisation d’affichage retirée ». La décision reste au journal du registre.
+            mois au plus (délai interne : 28 jours). Dans « Observations à décider », choisissez «
+            Enregistrer une opposition », y compris pour une simple demande de retrait : l’affichage
+            repose sur l’intérêt légitime, pas sur une autorisation. Le motif « Autorisation
+            d’affichage retirée » ne sert qu’aux pièces et photos dont la diffusion avait été
+            autorisée. Notez le canal et la date de la demande dans la demande RGPD ouverte pour ce
+            retrait.
           </p>
           <ul className="mt-2 space-y-1 text-xs">
             {withdrawalTasks.map((task) => (
@@ -223,7 +247,46 @@ export function AdminInformationAgentReviewPanel() {
                 </Link>{" "}
                 · opposition du {formatNumericDate(task.opposedAt)}, à retirer avant le{" "}
                 {formatNumericDate(task.dueAt)}
-                {task.overdue ? " (délai dépassé)" : ""}
+                {task.overdue ? " (délai dépassé)" : ""} ·{" "}
+                <a href={factClaimDecisionsHref(task.saleId)} className="underline">
+                  Ouvrir les observations de cette vente
+                </a>
+                {task.heldByRegistry
+                  ? null
+                  : " · le registre ne tient pas ce champ : l’opposition efface la mention, la valeur reste jusqu’à la prochaine collecte (voir le runbook)"}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {pendingRegistryDecisions === null ? (
+        <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
+          Réponses acceptées sans décision au registre : liste indisponible.
+        </p>
+      ) : pendingRegistryDecisions?.length ? (
+        <section
+          aria-labelledby="pending-registry-title"
+          className="border-b bg-amber-50/60 px-5 py-4"
+        >
+          <h3 id="pending-registry-title" className="text-sm font-semibold text-amber-950">
+            Réponses acceptées sans décision au registre ({pendingRegistryDecisions.length})
+          </h3>
+          <p className="mt-1 text-xs text-brand-navy/70">
+            La réponse est acceptée, mais la décision au registre n’a pas pu être enregistrée : la
+            fiche garde la valeur de l’annonce. Ouvrez les observations de la vente et acceptez-la
+            (ou rejetez-la) avec le rattachement au lot.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {pendingRegistryDecisions.map((pending) => (
+              <li key={pending.factId}>
+                {factLabel(pending.factKey)} : {pending.displayValue} · acceptée le{" "}
+                {formatNumericDate(pending.acceptedAt)} · vente {pending.saleId}
+                {pending.claimId
+                  ? ` · observation ${pending.claimId}`
+                  : " · aucune observation"} ·{" "}
+                <a href={factClaimDecisionsHref(pending.saleId)} className="underline">
+                  Ouvrir les observations de cette vente
+                </a>
               </li>
             ))}
           </ul>
@@ -701,7 +764,12 @@ export function AdminInformationAgentReviewPanel() {
                             </option>
                           ))}
                         </select>
-                        {lotAttachment ? (
+                        {!informationAgentFactHeldByRegistry(fact.fact_key) ? (
+                          <p className="mt-1 text-xs text-brand-navy/70">
+                            Le registre ne tient pas ce champ : la valeur est écrite sur la fiche
+                            dès l’acceptation, et la collecte peut la réécrire.
+                          </p>
+                        ) : lotAttachment ? (
                           <p className="mt-1 text-xs text-brand-navy/70">
                             {factClaimLotAttachmentHolds(lotAttachment)
                               ? "La valeur sera affichée sur la fiche et protégée contre la collecte, sauf si une autre pièce la contredit."
@@ -888,7 +956,7 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
     "mauvais destinataire signalé : exclu du pilote automatique, validation manuelle seulement",
   possible_wrong_recipient: "possible mauvais destinataire : à lire avant tout nouvel envoi",
   possible_opposition:
-    "possible demande de ne plus être contacté : à lire avant toute relance, aucune opposition enregistrée",
+    "possible demande de ne plus être contacté ou de retrait de la fiche : à lire avant toute relance, aucune opposition enregistrée ; un retrait se fait dans le mois (runbook)",
   unidentified_lot_review: "vente à plusieurs lots : lot non identifié dans la réponse",
   ambiguous_reply_review: "réponse ambiguë à relire",
   possible_prompt_injection:

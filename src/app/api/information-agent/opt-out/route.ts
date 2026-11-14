@@ -1,7 +1,11 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { RateLimitError } from "@/lib/api-errors";
-import { INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT } from "@/lib/information-agent-compliance";
+import { informationAgentWithdrawalDueAt } from "@/lib/admin-information-agent-withdrawals";
+import {
+  INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT,
+  formatInformationAgentOriginDate,
+} from "@/lib/information-agent-compliance";
 import { informationAgentOppositionCoversStructure } from "@/lib/information-agent/contacts";
 import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
@@ -64,22 +68,29 @@ export async function POST(request: Request) {
     if (!verified) return invalidLink();
     // Lu avant l'écriture : la page reste exacte même si la ligne du registre change avec l'opposition.
     const structure = await oppositionCoversStructure(verified.email, "POST");
+    const opposedAt = new Date();
     const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
       {
         sale_id: null,
         scope_sale_id: null,
         email: verified.email,
         opposition_status: "opposed",
-        opposed_at: new Date().toISOString(),
+        opposed_at: opposedAt.toISOString(),
       },
       { onConflict: "scope_sale_id,normalized_email" },
     );
     if (error) throw error;
+    // Même date que la tâche « Retraits à faire » de l'onglet Réponses (délai interne de 28 jours).
+    const withdrawnBy = formatInformationAgentOriginDate(
+      informationAgentWithdrawalDueAt(opposedAt),
+    );
     return informationAgentPage({
       title: "Opposition enregistrée",
-      message: structure
-        ? "Votre adresse, votre identité professionnelle et les autres adresses de votre étude, de votre cabinet ou de votre service ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité."
-        : "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
+      message: `${
+        structure
+          ? "Votre adresse, votre identité professionnelle et les autres adresses de votre étude, de votre cabinet ou de votre service ne seront plus contactées par Immojudis."
+          : "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis."
+      } Les informations que vous nous aviez transmises seront retirées de nos fiches au plus tard le ${withdrawnBy}. Vous pouvez exercer vos autres droits depuis la page Confidentialité.`,
       status: 200,
       links: [
         {

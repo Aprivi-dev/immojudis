@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/** Retraits à faire après une opposition (lot C) : lecture seule, une ligne par valeur encore affichée. */
+/**
+ * Tâches du registre de l'onglet « Réponses » (lot C) : retraits à faire après une opposition, et réponses acceptées
+ * sans décision au registre. Lecture seule.
+ */
 const db = vi.hoisted(() => ({
   tables: {} as Record<string, Array<Record<string, unknown>>>,
   calls: [] as Array<[string, string, unknown]>,
@@ -17,7 +20,14 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           rows = rows.filter((row) => row[column] === value);
           return query;
         },
-        not: () => query,
+        not: (column: string) => {
+          if (column === "new_values->fact_registry") {
+            rows = rows.filter(
+              (row) => (row.new_values as Record<string, unknown>).fact_registry != null,
+            );
+          }
+          return query;
+        },
         in: (column: string, values: unknown[]) => {
           db.calls.push([table, "in", [column, values]]);
           rows = rows.filter((row) =>
@@ -35,8 +45,12 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           );
           return query;
         },
-        order: () => {
-          rows.sort((left, right) => Number(right.seq) - Number(left.seq));
+        order: (column: string) => {
+          rows.sort((left, right) =>
+            column === "seq"
+              ? Number(right.seq) - Number(left.seq)
+              : String(right[column]).localeCompare(String(left[column])),
+          );
           return query;
         },
         limit: () => query,
@@ -50,6 +64,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   INFORMATION_AGENT_WITHDRAWAL_DELAY_DAYS,
+  listInformationAgentPendingRegistryDecisions,
   listInformationAgentWithdrawalTasks,
 } from "@/lib/admin-information-agent-withdrawals";
 
@@ -73,8 +88,16 @@ beforeEach(() => {
       { id: "case-b", normalized_recipient_email: "autre@cabinet.example" },
     ],
     information_agent_missions: [
-      { case_id: "case-c", recipient_identity_keys: ["lawyer|lyon|martin paul"] },
-      { case_id: "case-b", recipient_identity_keys: ["lawyer|paris|durand anne"] },
+      {
+        case_id: "case-c",
+        recipient_email: "martin@cabinet-martin.example",
+        recipient_identity_keys: ["lawyer|lyon|martin paul"],
+      },
+      {
+        case_id: "case-b",
+        recipient_email: "autre@cabinet.example",
+        recipient_identity_keys: ["lawyer|paris|durand anne"],
+      },
     ],
     information_agent_fact_candidates: [
       {
@@ -139,7 +162,8 @@ describe("retraits à faire après une opposition", () => {
   it("liste les valeurs acceptées d'un avocat opposé, par son adresse ou son identité, jusqu'à la décision définitive", async () => {
     const tasks = await listInformationAgentWithdrawalTasks(NOW);
 
-    expect(INFORMATION_AGENT_WITHDRAWAL_DELAY_DAYS).toBe(30);
+    // 28 jours : le mois annoncé est tenu quel que soit le mois.
+    expect(INFORMATION_AGENT_WITHDRAWAL_DELAY_DAYS).toBe(28);
     expect(tasks).toEqual([
       {
         factId: "fact-1",
@@ -148,8 +172,9 @@ describe("retraits à faire après une opposition", () => {
         saleId: "sale-1",
         claimId: "claim-1",
         latestDecision: "accepted",
+        heldByRegistry: true,
         opposedAt: "2026-11-15T10:00:00.000Z",
-        dueAt: "2026-12-15T10:00:00.000Z",
+        dueAt: "2026-12-13T10:00:00.000Z",
         overdue: true,
       },
       {
@@ -159,8 +184,9 @@ describe("retraits à faire après une opposition", () => {
         saleId: "sale-3",
         claimId: "claim-3",
         latestDecision: "accepted",
+        heldByRegistry: true,
         opposedAt: "2026-12-10T08:00:00.000Z",
-        dueAt: "2027-01-09T08:00:00.000Z",
+        dueAt: "2027-01-07T08:00:00.000Z",
         overdue: false,
       },
     ]);
@@ -173,6 +199,50 @@ describe("retraits à faire après une opposition", () => {
     expect(db.calls.some(([table]) => table === "information_agent_fact_candidates")).toBe(false);
   });
 
+  it("ne suit une clé de structure que si elle tient pour l'adresse du dossier (pas avocat.fr)", async () => {
+    db.tables.information_agent_identity_oppositions = [
+      { identity_key: "structure|domain|avocat.fr", opposed_at: "2026-12-10T08:00:00Z" },
+      {
+        identity_key: "structure|domain|cabinet-durand.example",
+        opposed_at: "2026-12-11T08:00:00Z",
+      },
+    ];
+    db.tables.information_agent_contacts = [];
+    db.tables.information_agent_missions = [
+      // Un autre avocat de la messagerie de la profession : la clé enregistrée ne vaut rien pour lui.
+      {
+        case_id: "case-c",
+        recipient_email: "martin@avocat.fr",
+        recipient_identity_keys: ["structure|domain|avocat.fr"],
+      },
+      // Le domaine propre du cabinet : la clé tient.
+      {
+        case_id: "case-a",
+        recipient_email: "accueil@cabinet-durand.example",
+        recipient_identity_keys: ["structure|domain|cabinet-durand.example"],
+      },
+    ];
+    const tasks = await listInformationAgentWithdrawalTasks(NOW);
+    expect(tasks.map((task) => task.claimId)).toEqual(["claim-1"]);
+  });
+
+  it("dit quand le registre ne tient pas la valeur (mise à prix, date, type de bien)", async () => {
+    db.tables.information_agent_fact_candidates!.push({
+      id: "fact-6",
+      case_id: "case-a",
+      sale_id: "sale-1",
+      fact_key: "starting_price_eur",
+      display_value: "95 000 €",
+      status: "accepted",
+    });
+    db.tables.auction_fact_claims!.push({
+      id: "claim-6",
+      evidence_locator: { information_agent_fact_id: "fact-6" },
+    });
+    const tasks = await listInformationAgentWithdrawalTasks(NOW);
+    expect(tasks.find((task) => task.claimId === "claim-6")?.heldByRegistry).toBe(false);
+  });
+
   it("un retrait pour autorisation retirée ferme aussi la tâche", async () => {
     db.tables.auction_fact_claim_decisions!.push({
       claim_id: "claim-1",
@@ -182,5 +252,71 @@ describe("retraits à faire après une opposition", () => {
     });
     const tasks = await listInformationAgentWithdrawalTasks(NOW);
     expect(tasks.map((task) => task.claimId)).toEqual(["claim-3"]);
+  });
+});
+
+describe("réponses acceptées sans décision au registre", () => {
+  beforeEach(() => {
+    db.tables.information_agent_fact_publications = [
+      // Valeur tenue, décision écrite : rien à faire.
+      {
+        fact_id: "fact-1",
+        sale_id: "sale-1",
+        fact_key: "surface_m2",
+        published_at: "2026-11-20T10:00:00Z",
+        new_values: { fact_registry: { field_key: "property.surface_m2", value: 54 } },
+      },
+      // Valeur tenue, décision manquée (échec après l'acceptation).
+      {
+        fact_id: "fact-7",
+        sale_id: "sale-7",
+        fact_key: "rooms_count",
+        published_at: "2026-11-21T10:00:00Z",
+        new_values: { fact_registry: { field_key: "property.rooms_count", value: 4 } },
+      },
+      // Mise à prix écrite par le noyau : hors de cette liste.
+      {
+        fact_id: "fact-8",
+        sale_id: "sale-8",
+        fact_key: "starting_price_eur",
+        published_at: "2026-11-22T10:00:00Z",
+        new_values: { starting_price_eur: 95000 },
+      },
+    ];
+    db.tables.information_agent_fact_candidates!.push({
+      id: "fact-7",
+      case_id: "case-z",
+      sale_id: "sale-7",
+      fact_key: "rooms_count",
+      display_value: "4 pièces",
+      status: "accepted",
+    });
+    db.tables.auction_fact_claims!.push({
+      id: "claim-7",
+      evidence_locator: { information_agent_fact_id: "fact-7" },
+    });
+  });
+
+  it("liste la valeur acceptée dont l'observation n'a aucune décision", async () => {
+    expect(await listInformationAgentPendingRegistryDecisions()).toEqual([
+      {
+        factId: "fact-7",
+        factKey: "rooms_count",
+        displayValue: "4 pièces",
+        saleId: "sale-7",
+        claimId: "claim-7",
+        acceptedAt: "2026-11-21T10:00:00Z",
+      },
+    ]);
+  });
+
+  it("sort de la liste dès qu'une décision est écrite, quelle qu'elle soit", async () => {
+    db.tables.auction_fact_claim_decisions!.push({
+      claim_id: "claim-7",
+      decision: "rejected",
+      reason_code: "other",
+      seq: 30,
+    });
+    expect(await listInformationAgentPendingRegistryDecisions()).toEqual([]);
   });
 });

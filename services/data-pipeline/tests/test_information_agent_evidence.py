@@ -465,6 +465,25 @@ def test_extracts_deterministic_text_facts_without_auto_approval() -> None:
     assert all(fact.source_page == 3 for fact in facts)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Le bien est occupé par le propriétaire.",
+        "Le logement sert de squat depuis deux ans.",
+        "Présence d'un occupant sans droit ni titre.",
+    ],
+)
+def test_occupancy_never_says_who_occupies_nor_why(text: str) -> None:
+    facts = [
+        fact
+        for fact in extract_evidence_facts([{"page": 1, "text": text}])
+        if fact.fact_key == "occupancy_status"
+    ]
+    assert facts
+    assert {fact.value for fact in facts} == {"occupied"}
+    assert {fact.display_value for fact in facts} == {"Occupé"}
+
+
 def test_conflicting_values_are_kept_for_audit_but_not_inserted_as_candidates() -> None:
     facts = extract_evidence_facts(
         [

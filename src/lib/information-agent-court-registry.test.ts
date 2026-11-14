@@ -546,7 +546,7 @@ describe("message au greffe", () => {
     questions: `- ${COURT_REGISTRY_QUESTION}`,
   };
 
-  it("demande l'avocat poursuivant ou les pièces publiques, sans nom de personne ni question d'avocat", () => {
+  it("demande l'avocat poursuivant ou où consulter le cahier, sans nom de personne ni question d'avocat", () => {
     const rendered = renderInformationAgentEmailContent({
       template: COURT_REGISTRY_EMAIL_TEMPLATE,
       values,
@@ -556,7 +556,11 @@ describe("message au greffe", () => {
     );
     expect(rendered.bodyText.startsWith("Madame, Monsieur,")).toBe(true);
     expect(rendered.bodyText).toContain("l’avocat poursuivant");
-    expect(rendered.bodyText).toContain("pièces publiques");
+    // Aucune pièce demandée (juridique-rgpd du 14/11/2026) : où et comment consulter le cahier.
+    expect(rendered.bodyText).toContain(
+      "où et selon quelles modalités un candidat acquéreur peut consulter le cahier des conditions de vente",
+    );
+    expect(rendered.bodyText).not.toContain("procès-verbal descriptif");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).not.toContain("85 000");
     expect(rendered.bodyText).not.toMatch(/Bonjour|Maître/);
