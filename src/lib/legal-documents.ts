@@ -97,6 +97,26 @@ export const PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE = "1er novembre 2026";
  */
 export const PRIVACY_EMAIL_LOG_EFFECTIVE_DATE = "1er novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-14.1 (état des lieux du 14/11/2026, points J3 et J11, rédaction validée par
+ * le propriétaire le 14/11/2026) : professionnels contactés (outil qui prépare les projets de messages, opposition
+ * par adresse, par identité et par structure rattachée avec certitude, identité « mauvais destinataire » gardée
+ * 24 mois, adresses jamais utilisées pour la mise en avant payante) ; valeurs transmises affichées sur la fiche sans
+ * nom, pièces sous un libellé neutre, retrait sous un mois sur demande et opposition valant retrait, durées des
+ * journaux de provenance ; coordonnées de l'organisateur lisibles par les comptes connectés ; photos tirées des
+ * pièces, procès-verbaux descriptifs compris, et leur retrait ; profil d'investisseur et prix final noté par le
+ * compte ; clauses contractuelles types de Resend ; Replicate, transfert sans garantie vérifiée à ce jour (J18). La version
+ * 2026-11-01.3 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée avec l'acceptation
+ * d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date d'effet portée au 16/11/2026
+ * (mise en ligne prévue au plus tôt le week-end des 14 et 15/11), la version garde la date de rédaction ; à décaler
+ * à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte du texte). Relue par
+ * `juridique-rgpd` le 14/11/2026 (« publiable après corrections bloquantes », corrections appliquées) ; relecture
+ * d'un avocat à faire. Elle reste inférieure à `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` : le mode réel du pilote reste
+ * verrouillé, et le texte (« à ce jour, chaque message est relu et validé par un membre de l'équipe ») ne vaut que
+ * tant qu'il l'est.
+ */
+export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "16 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -111,9 +131,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-01.3",
-    sha256: "7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824",
-    effectiveDate: PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
+    version: "2026-11-14.1",
+    sha256: "19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25",
+    effectiveDate: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
