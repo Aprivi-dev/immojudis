@@ -264,14 +264,24 @@ function AdminOperations({
             role="tab"
             id={`operations-tab-${item.id}`}
             aria-selected={activeTab === item.id}
-            aria-controls={`operations-panel-${item.id}`}
+            // Seul le panneau de l'onglet actif existe : les autres onglets ne pointent vers rien.
+            aria-controls={activeTab === item.id ? `operations-panel-${item.id}` : undefined}
             tabIndex={activeTab === item.id ? 0 : -1}
             onClick={() => onTabChange(item.id)}
             onKeyDown={(event) => {
-              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-              if (!step) return;
+              const target =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? TABS.length - 1
+                    : event.key === "ArrowRight"
+                      ? (index + 1) % TABS.length
+                      : event.key === "ArrowLeft"
+                        ? (index - 1 + TABS.length) % TABS.length
+                        : null;
+              if (target === null) return;
               event.preventDefault();
-              const next = TABS[(index + step + TABS.length) % TABS.length];
+              const next = TABS[target];
               onTabChange(next.id);
               document.getElementById(`operations-tab-${next.id}`)?.focus();
             }}
