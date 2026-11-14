@@ -396,3 +396,52 @@ describe("T1 (14/11/2026) : aucun brouillon caduc ne part en aperçu", () => {
     await expect(search()).rejects.toThrow("base indisponible");
   });
 });
+
+describe("contrôle d'opposition à la sélection : un motif par cause, fermé en cas de panne", () => {
+  beforeEach(() => {
+    mocks.sale.mockResolvedValue(
+      sale({
+        lawyer_name: "Maître Jean Dupont",
+        lawyer_contact: "me.dupont@cabinet-dupont.example.test",
+      }),
+    );
+  });
+
+  it.each([
+    [
+      "opposition ou rebond définitif (409)",
+      new PublicApiError("Le contact est opposé.", 409),
+      "opposed",
+    ],
+    [
+      "adresse exclue ou structure inconnue (400)",
+      new PublicApiError("Adresse exclue.", 400),
+      "address_excluded",
+    ],
+  ])("%s", async (_name, error, code) => {
+    mocks.allowed.mockRejectedValue(error);
+    const result = await search();
+    expect(result.candidates).toEqual([]);
+    expect(result.skipped).toEqual({ [code]: 1 });
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it("panne (base, registre) : candidat écarté sous son propre code, journalisé sans message", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.allowed.mockRejectedValue({
+      code: "57014",
+      message: "timeout me.dupont@cabinet-dupont.example.test",
+    });
+    const result = await search();
+    expect(result.candidates).toEqual([]);
+    expect(result.skipped).toEqual({ opposition_check_failed: 1 });
+    const line = String(logged.mock.calls[0]?.[0]);
+    expect(JSON.parse(line)).toMatchObject({
+      code: "opposition_check_failed",
+      saleId: SALE_ID,
+      error: { code: "57014" },
+    });
+    expect(line).not.toContain("@");
+    logged.mockRestore();
+  });
+});

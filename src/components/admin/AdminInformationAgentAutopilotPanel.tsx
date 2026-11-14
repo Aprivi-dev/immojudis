@@ -53,8 +53,8 @@ export function AdminInformationAgentAutopilotPanel({
   const view = query.data;
   const ready = reason.trim().length >= 8 && !run.isPending;
   const daysValue = Number(days);
-  // La borne haute (30 jours) est dite par le serveur (`art14Label`) et contrôlée par lui et par la base.
-  const daysValid = Number.isInteger(daysValue) && daysValue >= 1;
+  // RÈGLE LIÉE : 1 à 30 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
+  const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 30;
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">

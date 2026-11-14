@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   lastRun: vi.fn(),
   pending: vi.fn(),
   readiness: vi.fn(),
+  isAdmin: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -29,7 +30,7 @@ vi.mock("@/lib/information-agent/autopilot-settings", () => ({
 vi.mock("@/lib/information-agent/autopilot-readiness", () => ({
   currentPrivacyVersion: () => "2026-11-01.1",
   evaluateAutopilotReadiness: mocks.readiness,
-  isActiveAdmin: async () => true,
+  isActiveAdmin: mocks.isAdmin,
   loadRoundtripVerifiedAt: async () => null,
   loadVerifiedResendDomains: async () => null,
 }));
@@ -65,6 +66,7 @@ beforeEach(() => {
   mocks.events.mockResolvedValue([]);
   mocks.lastRun.mockResolvedValue(null);
   mocks.pending.mockResolvedValue({ rows: [], total: 0 });
+  mocks.isAdmin.mockResolvedValue(true);
   mocks.readiness.mockReturnValue({
     ready: false,
     checks: [{ key: "aipd", label: "AIPD attestée", ok: false, detail: "" }],
@@ -290,6 +292,21 @@ describe("panneau du pilote (serveur)", () => {
       sharedStructureCountsComplete: true,
     });
     expect((await getAdminAutopilotView("token", at)).notice).toBeNull();
+  });
+
+  it("compte d'exécution illisible (panne de l'API Auth) : l'écran reste lisible, le contrôle dit « lecture impossible »", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.isAdmin.mockRejectedValue(Object.assign(new Error("Gateway Timeout"), { status: 504 }));
+    const view = await getAdminAutopilotView("token", {
+      env: {},
+      now: new Date("2026-11-03T09:30:00Z"),
+    });
+    expect(view.modeLabel).toBe("Simulation (aucun envoi)");
+    expect(mocks.readiness).toHaveBeenCalledWith(
+      expect.objectContaining({ actingAdminIsAdmin: null }),
+    );
+    expect(String(logged.mock.calls[0]?.[0])).toContain("acting_admin_unreadable");
+    logged.mockRestore();
   });
 
   it("refuse un compte qui n'est pas administrateur", async () => {

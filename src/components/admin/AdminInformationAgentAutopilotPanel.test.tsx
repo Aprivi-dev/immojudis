@@ -202,8 +202,13 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     fireEvent.change(screen.getByLabelText(/Motif du changement/), {
       target: { value: "Délai réduit après avis" },
     });
-    fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "20" } });
     const change = screen.getByRole("button", { name: "Modifier le délai de l’article 14" });
+    // Hors de 1 à 30 jours : le bouton reste grisé.
+    for (const value of ["31", "0", "abc"]) {
+      fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value } });
+      expect((change as HTMLButtonElement).disabled, value).toBe(true);
+    }
+    fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "20" } });
     // Annulé : rien n'est envoyé.
     fireEvent.click(change);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("de 30 à 20 jours"));

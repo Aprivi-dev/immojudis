@@ -1,12 +1,12 @@
 -- Lot B du pilote automatique (état des lieux du 14/11/2026, validé le même jour) :
 --   * 20261119100800 : public.mark_information_agent_autopilot_simulated fusionne la marque « simulé » dans le
 --     metadata d'un brouillon du pilote, en une instruction, sans toucher aux autres clés ; refus contrôlés ;
---     service_role seul (T8) ;
+--     SECURITY INVOKER, exécutable par service_role seul (T8) ;
 --   * 20261119100810 : la règle de l'article 14 ne se désactive plus et son délai va de 1 à 30 jours (J9) ; l'arrêt
 --     d'urgence reste possible.
 begin;
 
-select plan(17);
+select plan(18);
 
 -- Fixtures ---------------------------------------------------------------------------------------------------------
 insert into auth.users (id) values ('89500000-0000-4000-8000-0000000000a1');
@@ -36,9 +36,9 @@ select has_function(
   'the function that marks a simulated draft exists'
 );
 select ok(
-  (select prosecdef and proconfig = array['search_path=""']
+  (select not prosecdef and proconfig = array['search_path=""']
    from pg_proc where oid = 'public.mark_information_agent_autopilot_simulated(uuid)'::regprocedure),
-  'it is SECURITY DEFINER with an empty search_path'
+  'it is SECURITY INVOKER with an empty search_path'
 );
 select ok(
   not has_function_privilege('anon', 'public.mark_information_agent_autopilot_simulated(uuid)', 'execute')
@@ -59,6 +59,13 @@ select lives_ok(
   $$select public.mark_information_agent_autopilot_simulated('89500000-3000-4000-8000-000000000001')$$,
   'marking twice is harmless'
 );
+-- Appel par l'exécuteur du pilote lui-même : SECURITY INVOKER, il lui faut ses propres droits sur la table.
+set local role service_role;
+select lives_ok(
+  $$select public.mark_information_agent_autopilot_simulated('89500000-3000-4000-8000-000000000001')$$,
+  'service_role (the autopilot executor) can mark a draft with its own rights'
+);
+reset role;
 select throws_ok(
   $$select public.mark_information_agent_autopilot_simulated('89500000-3000-4000-8000-000000000002')$$,
   'P0002', null, 'a draft prepared by an administrator is refused'

@@ -17,7 +17,9 @@ set local statement_timeout = '60s';
 --   * 22023 : identifiant absent ;
 --   * P0002 : la mission n'est pas (ou plus) un brouillon du pilote (absente, envoyée, annulée, ou préparée par un
 --     administrateur). Rien n'est écrit.
--- SECURITY DEFINER, search_path vide, exécutable par service_role seul (l'exécuteur du pilote).
+-- SECURITY INVOKER (relecture du lot B) : la fonction n'a besoin d'aucun droit que son seul appelant n'a pas déjà.
+-- service_role, l'exécuteur du pilote, garde SELECT et UPDATE sur public.information_agent_missions
+-- (20260824151027) et contourne la RLS. search_path vide ; exécutable par service_role seul.
 --
 -- Verrous : création d'une fonction (catalogue seulement) ; à l'appel, verrou de la seule ligne mise à jour.
 -- Aucune donnée existante n'est modifiée par cette migration.
@@ -29,7 +31,7 @@ set local statement_timeout = '60s';
 create or replace function public.mark_information_agent_autopilot_simulated(p_mission_id uuid)
 returns void
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 begin

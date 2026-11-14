@@ -7,6 +7,7 @@ import {
   AUTOPILOT_ART14_MAX_DAYS,
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
   autopilotCaps,
+  effectiveArt14MaxAgeDays,
   nextAutopilotRunAt,
   type AutopilotSettings,
   type AutopilotStats,
@@ -104,7 +105,9 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   simulated_draft_pending: "brouillon simulé déjà en attente de validation",
   contact_ambiguous: "contact ambigu",
   address_invalid: "adresse invalide",
-  opposed: "opposition enregistrée",
+  opposed: "opposition ou rebond définitif",
+  address_excluded: "adresse exclue ou structure inconnue",
+  opposition_check_failed: "contrôle d’opposition impossible (panne passagère)",
   court_registry_refused: "greffe, jamais sollicité par le pilote",
   source_not_sale_listing: "adresse absente de l’annonce",
   identity_incomplete: "identité incomplète (nom et barreau ou ville)",
@@ -148,6 +151,7 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   cancel_failed: "annulation d’un brouillon impossible",
   preview_error: "aperçu impossible (panne passagère)",
   mark_failed: "brouillon simulé non marqué",
+  stale_check_failed: "relecture d’un brouillon simulé impossible",
 };
 
 /** Lecture d'une table sans remonter au prototype (`constructor`, `toString`…). */
@@ -208,6 +212,22 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
     return record.status === 429 ? codeText("rate_limited") : codeText("send_error");
   }
   return "";
+}
+
+/**
+ * Règle de l'article 14 et délai appliqué. Une valeur enregistrée avant la contrainte de la base (règle coupée, délai
+ * de plus de 30 jours) est montrée avec ce que le pilote applique vraiment, et l'invitation à la rétablir.
+ */
+function art14Label(settings: Pick<AutopilotSettings, "art14RuleEnabled" | "art14MaxAgeDays">) {
+  const rule = settings.art14RuleEnabled
+    ? "appliqué à chaque candidat, non désactivable"
+    : "désactivé dans les réglages enregistrés (le pilote l’applique quand même) : à rétablir";
+  const applied = effectiveArt14MaxAgeDays(settings);
+  const delay =
+    applied === settings.art14MaxAgeDays
+      ? `${applied} jours`
+      : `enregistré : ${settings.art14MaxAgeDays} jours, appliqué : ${applied} : à rétablir`;
+  return `${rule} · délai d’information : ${delay} (réglable de 1 à ${AUTOPILOT_ART14_MAX_DAYS})`;
 }
 
 /** « Dernier passage : … · prochain passage : … » (P12). */
@@ -282,6 +302,10 @@ export function buildAutopilotView({
       { label: "Phase", value: caps.phase.label },
       { label: "Envois automatiques au total", value: String(stats.autopilotTotal) },
       { label: "Jours de simulation avec envois simulés", value: String(stats.wouldSendDays) },
+      {
+        label: "dont jours effectifs (sans passage en erreur)",
+        value: String(stats.cleanSimulationDays),
+      },
     ],
     settings: {
       actingAdminId: settings.actingAdminId,
@@ -289,11 +313,7 @@ export function buildAutopilotView({
       allowLicitorDecoded: settings.allowLicitorDecoded,
       art14RuleEnabled: settings.art14RuleEnabled,
       art14MaxAgeDays: settings.art14MaxAgeDays,
-      art14Label: `${
-        settings.art14RuleEnabled
-          ? "appliqué à chaque candidat, non désactivable"
-          : "désactivé dans les réglages enregistrés (le pilote l’applique quand même) : à rétablir"
-      } · délai d’information : ${Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS)} jours (réglable de 1 à ${AUTOPILOT_ART14_MAX_DAYS})`,
+      art14Label: art14Label(settings),
       aipdLabel: settings.aipdAttestedAt
         ? `Attestée le ${formatNumericDateTime(settings.aipdAttestedAt)} (version ${settings.aipdVersion})`
         : "Non attestée",
