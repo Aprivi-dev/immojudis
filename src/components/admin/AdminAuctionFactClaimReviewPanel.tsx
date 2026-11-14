@@ -88,11 +88,10 @@ export function AdminAuctionFactClaimReviewPanel() {
               Contrôle des faits sourcés
             </div>
             <h2 id="fact-review-title" className="mt-2 font-semibold">
-              Faits à vérifier, sans effet sur la fiche
+              Faits à vérifier, valeur inchangée
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
-              Marquer un fait vérifié confirme que la valeur extraite correspond à celle de la fiche
-              : la fiche ne change pas.
+              La valeur affichée ne change pas ; la fiche la signale comme vérifiée sur source.
             </p>
           </div>
           <button
@@ -262,7 +261,7 @@ function ClaimLine({
               onClick={() => onDecision("accepted")}
             >
               <CheckCircle className="size-3.5" />
-              Marquer vérifié (la fiche ne change pas)
+              Confirmer la valeur (inchangée)
             </button>
             <button
               type="button"
