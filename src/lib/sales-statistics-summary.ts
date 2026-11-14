@@ -21,7 +21,10 @@ export type SalesSampleSummary = {
 export function summarizeSalesSample(sales: AuctionSale[]): SalesSampleSummary {
   const prices = sales.map((sale) => sale.starting_price_eur).filter(isPositiveNumber);
   const pricePerM2Values = sales
-    .map((sale) => pricePerM2(sale.starting_price_eur, getSaleSurface(sale).value))
+    .map((sale) => {
+      const surface = getSaleSurface(sale);
+      return pricePerM2(sale.starting_price_eur, surface.value, surface.kind);
+    })
     .filter(isPositiveNumber);
   const scores = sales.map((sale) => sale.investment_score).filter(isFiniteNumber);
   const dpeCounts = emptyDpeCounts();

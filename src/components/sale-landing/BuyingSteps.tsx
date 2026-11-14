@@ -40,9 +40,9 @@ export function BuyingSteps() {
         <li>
           <strong>Enchérir.</strong> Au tribunal, les enchères sont portées par un avocat inscrit au
           barreau du tribunal compétent, après remise d’une garantie de {"10\u00a0%"} de la mise à
-          prix, au moins {"3\u202f000\u00a0€"} (art. R. 322-41 du Code des procédures civiles
-          d’exécution). Chez le notaire et pour l’État, les conditions de participation sont celles
-          du cahier des charges.
+          prix, avec un minimum de {"3\u202f000\u00a0€"} (art. R. 322-41 du Code des procédures
+          civiles d’exécution, appliqué aussi en licitation et en liquidation judiciaire). Chez le
+          notaire et pour l’État, les conditions de participation sont celles du cahier des charges.
         </li>
         <li>
           <strong>Après la vente.</strong> En saisie immobilière, toute personne peut former une

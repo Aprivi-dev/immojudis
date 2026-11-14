@@ -37,6 +37,7 @@ function reportOpportunity(startingPrice: number | null, occupancyStatus: string
   return buildOpportunityAnalysis({
     sale,
     surfaceM2: SURFACE,
+    surfaceKind: "recorded",
     marketEstimate: estimate(),
     ceilingSnapshot: buildCeilingSnapshot(sale, null, {}, DEFAULT_OPEN_FEE_REGIMES, null),
   });

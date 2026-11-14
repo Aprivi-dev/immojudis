@@ -1099,6 +1099,9 @@ export function buildAlertMatchSnapshot({
       saleDate: sale.sale_date,
       status: sale.status,
       surfaceM2: surface,
+      // Comme le flux de l'API (`sale-exports.ts`) : la surface, et le rendement calculé dessus, disent leur
+      // nature ; une surface présumée (« estimated ») ne passe pas pour une mesure, et n'a pas de prix au m².
+      surfaceKind: saleSurface.kind,
       pricePerM2: roundNumber(pricePerM2(sale.starting_price_eur, surface, saleSurface.kind)),
       investmentScore: sale.investment_score,
       documentCount: documents.count,

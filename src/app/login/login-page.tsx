@@ -45,6 +45,7 @@ import {
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
+import { forgetSaleForSignup, rememberedSaleForSignup } from "@/lib/signup-return-sale";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
@@ -224,14 +225,19 @@ export function LoginPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
+  const [rememberedSale] = useState(rememberedSaleForSignup);
   const {
     redirect,
     mode: requestedMode,
     reason,
-  } = useMemo(
-    () => parseLoginSearch(searchParamsToRecord(new URLSearchParams(queryString))),
-    [queryString],
-  );
+  } = useMemo(() => {
+    const search = searchParamsToRecord(new URLSearchParams(queryString));
+    // Sans paramètre `redirect` (« S'inscrire » ou « Connexion » de l'en-tête), la fiche consultée
+    // dans l'onglet, validée comme lui : une adresse extérieure est refusée.
+    return parseLoginSearch(
+      search.redirect == null ? { ...search, redirect: rememberedSale } : search,
+    );
+  }, [queryString, rememberedSale]);
   const mode: LoginMode = requestedMode ?? "login";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -405,6 +411,8 @@ export function LoginPage() {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // La fiche notée a servi (la page la garde pour la redirection) : l'onglet l'oublie.
+        forgetSaleForSignup();
         toast.success("Connecté");
         return;
       }
@@ -430,6 +438,8 @@ export function LoginPage() {
         },
       });
       if (error) throw error;
+      // La fiche notée est partie dans le lien de confirmation : l'onglet l'oublie.
+      forgetSaleForSignup();
       // Formulaire envoyé, pas encore compte confirmé : `signup_confirmed` part à la confirmation
       // (`signup-confirmation.ts`). Une adresse déjà inscrite reçoit la même réponse « réussie » :
       // elle n'est pas comptée.

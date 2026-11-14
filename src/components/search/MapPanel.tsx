@@ -1043,9 +1043,9 @@ function buildPopupHtml(
     : saleDisplayTitle(sale);
   const dpe = extractDpe(sale);
   const dpeTheme = dpeColor(dpe.class);
-  const surface = getSaleSurface(sale).value;
+  const surface = getSaleSurface(sale);
   const displaySurface = getDisplaySurface(sale);
-  const pricePerSquareMeter = pricePerM2(sale.starting_price_eur, surface);
+  const pricePerSquareMeter = pricePerM2(sale.starting_price_eur, surface.value, surface.kind);
   const score =
     sale.investment_score == null ? "non calculé" : `${Math.round(sale.investment_score)}`;
   const riskCount = sale.risks?.length ?? 0;

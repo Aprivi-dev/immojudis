@@ -7,6 +7,7 @@ import { SaleDetailPage } from "./sale-detail-page";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import * as queryKeys from "@/lib/query-keys";
+import { rememberedSaleForSignup } from "@/lib/signup-return-sale";
 
 const mocks = vi.hoisted(() => ({
   scroll: vi.fn(),
@@ -401,6 +402,21 @@ describe("listing access resolution", () => {
     await waitFor(() =>
       expect(screen.getByTestId("return-to").textContent).toBe("/sales?city=Pau"),
     );
+  });
+
+  it("note son adresse seule pour l'onglet : « S'inscrire » de l'en-tête ne perd pas la vente", async () => {
+    const id = "0f8c3b9e-6a1d-4c2e-9b7a-2d5e8f1a3c4b";
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", `/sales/${id}?from=%2Ffavoris#calculation`);
+    mocks.authenticated = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id={id} initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id } }} />
+      </QueryClientProvider>,
+    );
+    // L'adresse de la fiche seule : ni l'origine (`?from=`), ni l'ancre (minimisation, lien de confirmation).
+    await waitFor(() => expect(rememberedSaleForSignup()).toBe(`/sales/${id}`));
   });
 
   it("does not silently downgrade premium on an entitlement failure and retries", async () => {

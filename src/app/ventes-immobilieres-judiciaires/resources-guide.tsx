@@ -187,7 +187,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
   },
   {
     term: "Garantie pour enchérir",
-    def: "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€ en saisie immobilière (art. R. 322-41). Elle est restituée à l’enchérisseur qui ne gagne pas.",
+    def: "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€ (art. R. 322-41 du CPCE, applicable aussi, par renvoi, en licitation et en liquidation judiciaire). Elle est restituée à l’enchérisseur qui ne gagne pas.",
   },
   {
     term: "Jouissance",
@@ -342,7 +342,7 @@ const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
   },
   {
     title: "Remettre la garantie",
-    text: "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
+    text: "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
     href: "#garanties",
   },
   {

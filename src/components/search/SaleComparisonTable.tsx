@@ -8,6 +8,7 @@ import { saleDetailPath } from "@/lib/navigation";
 import { fetchUnderRangeSaleIds } from "@/lib/search/market-range-filter";
 import { fetchPepiteSaleIds } from "@/lib/search/pepite-filter";
 import {
+  comparedSaleSurface,
   comparedSaleTitle,
   comparisonSurfaceKind,
   type ComparedSale,
@@ -84,7 +85,8 @@ const ROWS: {
   {
     label: "Mise à prix / m²",
     value: (sale) => {
-      const perM2 = pricePerM2(sale.startingPriceEur, sale.surfaceM2);
+      const surface = comparedSaleSurface(sale);
+      const perM2 = pricePerM2(sale.startingPriceEur, surface.value, surface.kind);
       return perM2 == null ? "Non calculable" : formatPricePerM2(perM2);
     },
   },

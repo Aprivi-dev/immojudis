@@ -453,7 +453,7 @@ export const ListingCard = memo(function ListingCard({
   // celle d'un terrain (le prix d'un terrain au m² ne se compare pas à celui d'un logement).
   const startingPricePerM2 =
     !surfaceReviewField && !stateSaleWithoutPrice(sale) && displaySurface.kind === "recorded"
-      ? pricePerM2(sale.starting_price_eur, displaySurface.value)
+      ? pricePerM2(sale.starting_price_eur, displaySurface.value, displaySurface.kind)
       : null;
   const headingSale = {
     ...shown,
