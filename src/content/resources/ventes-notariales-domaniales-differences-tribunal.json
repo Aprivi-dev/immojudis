@@ -1,7 +1,7 @@
 {
   "slug": "ventes-notariales-domaniales-differences-tribunal",
   "publishedAt": "2026-10-13",
-  "updatedAt": "2026-10-31",
+  "updatedAt": "2026-11-14",
   "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
   "seoTitle": "Enchères des notaires : bougie et vente en ligne",
   "category": "Les fondamentaux",
@@ -116,7 +116,7 @@
       "paragraphs": [
         "La vente interactive est une autre formule, proposée sur internet. Ce n’est pas une séance d’enchères qui se termine par une adjudication : c’est une période, limitée dans le temps, pendant laquelle des acheteurs déposent des offres. Notaires de France indique que la vente en ligne dure 24 heures et qu’elle permet de connaître en temps réel les offres d’achat successives. À titre d’exemple, les conditions générales d’utilisation (CGU) de 36h immo, un opérateur privé (version du 23 mars 2026), parlent d’une période entre un début et une fin des offres, que l’organisateur peut décaler en prévenant les inscrits, et d’un report de deux minutes lorsqu’une offre est portée dans les deux dernières minutes (art. 2.5 et 5). Chaque opérateur fixe ses propres règles : la durée peut donc varier d’une vente à l’autre.",
         "Le choix de l’offre dépend de l’opérateur et du vendeur. À titre d’exemple, les CGU de 36h immo prévoient que le vendeur peut refuser l’offre la plus élevée si elle n’atteint pas la valeur qu’il souhaite (communiquée ou non à l’avance) ou si une offre moins élevée présente une meilleure couverture financière (art. 2.6). Sur ce service, le meilleur prix ne gagne donc pas automatiquement : la solidité du financement compte aussi. Vérifiez les conditions du service qui organise la vente visée.",
-        "L’offre retenue ne produit pas une adjudication, mais un avant-contrat. Notaires de France indique que l’acheteur signe un compromis de vente auprès du notaire à l’issue de la vente, et qu’il est possible d’y insérer des clauses suspensives (la phrase est tronquée sur la page consultée, sans liste précise). À titre d’exemple, les CGU de 36h immo décrivent leur service comme « totalement différent des ventes aux enchères notariales ou judiciaires qui aboutissent à des ventes définitives », et elles prévoient une exclusion des autres ventes du site pour l’acheteur retenu qui ne signe pas la promesse de vente, sauf motif de non-obtention de prêt (art. 2.3). Une condition suspensive, notamment d’obtention de prêt, peut donc figurer dans l’avant-contrat. Seul l’avant-contrat de la vente qui vous intéresse en donne la liste exacte.",
+        "L’offre retenue ne produit pas une adjudication, mais un avant-contrat. Notaires de France indique que l’acheteur signe un compromis de vente auprès du notaire à l’issue de la vente, et qu’il est possible d’y insérer des clauses suspensives (la phrase est tronquée sur la page consultée, sans liste précise). À titre d’exemple, le préambule des CGU de 36h immo (version du 23 mars 2026) décrit ce service comme « totalement différent des ventes aux enchères notariales ou judiciaires qui aboutissent à des ventes définitives », et leur article 2.3 prévoit une exclusion des autres ventes du site pour l’acheteur retenu qui ne signe pas la promesse de vente, sauf motif de non-obtention de prêt. Une condition suspensive, notamment d’obtention de prêt, peut donc figurer dans l’avant-contrat. Seul l’avant-contrat de la vente qui vous intéresse en donne la liste exacte.",
         "Pour participer, Notaires de France indique qu’il faut signer une demande d’agrément et les conditions de vente lors de la visite, puis s’inscrire sur le site. Les pages de Notaires de France ne mentionnent ni garantie ni dépôt pour la vente en ligne : demandez au notaire ce qui est exigé pour la vente visée."
       ],
       "table": {
@@ -151,7 +151,7 @@
       },
       "callout": {
         "title": "Pourquoi la différence compte",
-        "text": "Une adjudication au tribunal est une vente forcée qui transmet la propriété (art. L. 322-10 du CPCE)  et la procédure ne prévoit pas de condition suspensive de prêt. Une vente interactive, elle, aboutit à un avant-contrat qui peut contenir des conditions suspensives. Ne transposez donc pas à une vente interactive la garantie de 10 %, la surenchère ou les délais de paiement d’une vente au tribunal : lisez les conditions de la vente et l’avant-contrat."
+        "text": "Une adjudication au tribunal est une vente forcée qui transmet la propriété (art. L. 322-10 du CPCE). La procédure ne prévoit pas de condition suspensive de prêt. Une vente interactive, elle, aboutit à un avant-contrat qui peut contenir des conditions suspensives. Ne transposez donc pas à une vente interactive la garantie de 10 %, la surenchère ou les délais de paiement d’une vente au tribunal : lisez les conditions de la vente et l’avant-contrat."
       }
     },
     {
@@ -206,7 +206,7 @@
           "href": "/encheres-notariales"
         },
         {
-          "label": "Immobilier des notaires : annonces, ventes interactives, enchères",
+          "label": "Vente par notaire : annonce, offres ou enchères",
           "href": "/ressources/immobilier-notaires-annonces-vente-interactive-encheres"
         },
         {

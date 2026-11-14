@@ -29,12 +29,16 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 function Heading({ total }: { total: number | null }) {
-  if (total == null) return <>Appartements aux enchères</>;
-  if (total === 0) return <>Aucun appartement aux enchères à venir pour le moment.</>;
+  if (total == null) return <>Appartements en vente aux enchères ou sur offres</>;
+  if (total === 0) {
+    return <>Aucun appartement en vente aux enchères ou sur offres à venir pour le moment.</>;
+  }
   return (
     <>
       <HighlightedFigure>{count.format(total)}</HighlightedFigure>{" "}
-      {total > 1 ? "appartements aux enchères à venir." : "appartement aux enchères à venir."}
+      {total > 1
+        ? "appartements en vente aux enchères ou sur offres, à venir."
+        : "appartement en vente aux enchères ou sur offres, à venir."}
     </>
   );
 }
@@ -47,12 +51,12 @@ export default async function Page() {
       data={data}
       eyebrow="Ventes aux enchères · Appartements"
       heading={<Heading total={data?.upcomingCount ?? null} />}
-      intro="Les appartements mis en vente au tribunal, chez le notaire ou par l’État, et référencés par Immojudis."
+      intro="Les appartements mis en vente au tribunal, chez le notaire ou par l’État, et référencés par Immojudis. La plupart sont vendus aux enchères ; certains le sont sur offres (ventes notariales interactives, appels d’offres de l’État) : chaque fiche indique le type de vente."
       articleSlugs={[
         "copropriete-encheres-charges-assemblees",
+        "acheter-maison-aux-encheres-etapes-frais-risques",
+        "adjudication-immobiliere-vente-par-adjudication",
         "acheter-bien-occupe-encheres",
-        "dpe-diagnostics-travaux-bien-energivore-plafond",
-        "frais-vente-encheres-judiciaire",
       ]}
     >
       <SaleLandingSection id="acheter" title="Acheter un appartement aux enchères : les étapes">

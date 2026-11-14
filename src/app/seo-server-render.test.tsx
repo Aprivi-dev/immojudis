@@ -75,9 +75,13 @@ describe("pages that crawlers must read", () => {
   });
 
   it.each([
-    ["/maison-aux-encheres", HousePage, "maison aux enchères à venir"],
-    ["/appartement-aux-encheres", ApartmentPage, "appartement aux enchères à venir"],
-    ["/encheres-notariales", NotaryPage, "Enchères notariales : "],
+    ["/maison-aux-encheres", HousePage, "maison en vente aux enchères ou sur offres, à venir"],
+    [
+      "/appartement-aux-encheres",
+      ApartmentPage,
+      "appartement en vente aux enchères ou sur offres, à venir",
+    ],
+    ["/encheres-notariales", NotaryPage, "Enchères et ventes interactives des notaires :"],
     ["/ventes-immobilieres-etat", StatePage, "Ventes immobilières de l’État : "],
   ] as const)(
     "%s renders its heading, its sales and its guide on the server",

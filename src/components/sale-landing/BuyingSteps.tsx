@@ -14,8 +14,9 @@ export function BuyingSteps() {
       <p>
         La démarche dépend de l’organisateur de la vente, indiqué sur chaque fiche. Au tribunal et à
         la bougie chez le notaire, ce sont des enchères qui se terminent par une adjudication. Une
-        vente notariale interactive se fait par offres en ligne, et l’État vend par adjudication,
-        appel d’offres ou vente amiable.
+        vente notariale interactive se fait par offres en ligne, et l’État vend par adjudication
+        publique ou cession amiable, le plus souvent sur appel d’offres, et de gré à gré dans des
+        cas limités ; les biens confisqués sont vendus par l’AGRASC.
       </p>
       <ol className="list-decimal space-y-2 pl-5">
         <li>
@@ -39,8 +40,9 @@ export function BuyingSteps() {
         <li>
           <strong>Enchérir.</strong> Au tribunal, les enchères sont portées par un avocat inscrit au
           barreau du tribunal compétent, après remise d’une garantie de {"10\u00a0%"} de la mise à
-          prix ({"3\u202f000\u00a0€"} au minimum en saisie immobilière). Chez le notaire et pour
-          l’État, les conditions de participation sont celles du cahier des charges.
+          prix, au moins {"3\u202f000\u00a0€"} (art. R. 322-41 du Code des procédures civiles
+          d’exécution). Chez le notaire et pour l’État, les conditions de participation sont celles
+          du cahier des charges.
         </li>
         <li>
           <strong>Après la vente.</strong> En saisie immobilière, toute personne peut former une

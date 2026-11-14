@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { SiteFooter, showsSiteFooter } from "./SiteFooter";
+import { SiteFooterSaleTypes } from "./SiteFooterSaleTypes";
 import { SALE_LANDING_KEYS, SALE_LANDING_PAGES } from "@/lib/sale-landing-pages";
 
 const pathname = vi.hoisted(() => ({ current: "/sales" }));
@@ -27,10 +28,18 @@ vi.mock("next/link", () => ({
 beforeEach(() => {
   pathname.current = "/sales";
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllEnvs();
+});
+
+/** Le pied de page tel que le layout le compose : le groupe « Ventes par type » rendu à part. */
+function renderFooter() {
+  return render(<SiteFooter saleTypes={<SiteFooterSaleTypes />} />);
+}
 
 it("gives every public page access to the legal documents", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
   expect(legal.getByRole("link", { name: "Mentions légales" }).getAttribute("href")).toBe("/legal");
   expect(legal.getByRole("link", { name: "Conditions générales" }).getAttribute("href")).toBe(
@@ -43,7 +52,7 @@ it("gives every public page access to the legal documents", () => {
 });
 
 it("renvoie, depuis toutes les pages, vers la déclaration d'accessibilité (état non évalué)", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
   expect(legal.getByRole("link", { name: "Accessibilité : non évalué" }).getAttribute("href")).toBe(
     "/accessibilite",
@@ -51,7 +60,7 @@ it("renvoie, depuis toutes les pages, vers la déclaration d'accessibilité (ét
 });
 
 it("renvoie, depuis toutes les pages, vers l'explication du classement des annonces", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
   expect(legal.getByRole("link", { name: "Classement des annonces" }).getAttribute("href")).toBe(
     "/classement-des-annonces",
@@ -59,7 +68,7 @@ it("renvoie, depuis toutes les pages, vers l'explication du classement des annon
 });
 
 it("renvoie vers l'index des ventes par département, et non vers chaque département", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const main = within(screen.getByRole("navigation", { name: "Navigation pied de page" }));
   expect(main.getByRole("link", { name: "Par département" }).getAttribute("href")).toBe(
     "/ventes-encheres-immobilieres",
@@ -70,7 +79,7 @@ it("renvoie vers l'index des ventes par département, et non vers chaque départ
 });
 
 it("renvoie vers les audiences à venir", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const main = within(screen.getByRole("navigation", { name: "Navigation pied de page" }));
   expect(main.getByRole("link", { name: "Audiences à venir" }).getAttribute("href")).toBe(
     "/audiences-a-venir",
@@ -78,7 +87,7 @@ it("renvoie vers les audiences à venir", () => {
 });
 
 it("groupe les pages de transparence : à propos, guide, simulateur et méthodes", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const transparency = within(screen.getByRole("navigation", { name: "Transparence" }));
   expect(
     transparency.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]),
@@ -92,10 +101,8 @@ it("groupe les pages de transparence : à propos, guide, simulateur et méthodes
 });
 
 it("renvoie vers les pages par type de bien ou de vente, celles du registre, dans son ordre", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const types = within(screen.getByRole("navigation", { name: "Ventes par type" }));
-  // Les adresses sont écrites dans le pied de page (pour ne pas charger le registre dans le
-  // navigateur) : elles doivent rester celles de `SALE_LANDING_PAGES`.
   expect(
     types.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]),
   ).toEqual(
@@ -103,15 +110,48 @@ it("renvoie vers les pages par type de bien ou de vente, celles du registre, dan
   );
 });
 
+it("place le groupe « Ventes par type », rendu côté serveur, entre la navigation et la transparence", () => {
+  renderFooter();
+  const footer = within(screen.getByRole("contentinfo"));
+  expect(footer.getAllByRole("navigation").map((nav) => nav.getAttribute("aria-label"))).toEqual([
+    "Navigation pied de page",
+    "Ventes par type",
+    "Transparence",
+    "Informations légales",
+  ]);
+});
+
+it("présente le groupe « Ventes par type » comme le groupe « Transparence »", () => {
+  renderFooter();
+  const types = screen.getByRole("navigation", { name: "Ventes par type" });
+  const transparency = screen.getByRole("navigation", { name: "Transparence" });
+  expect(types.className).toBe(transparency.className);
+  for (const selector of ["p", "ul", "li", "a"]) {
+    expect(types.querySelector(selector)!.className, selector).toBe(
+      transparency.querySelector(selector)!.className,
+    );
+  }
+});
+
+it("masque les pages des notaires et de l'État quand l'interrupteur des pilotes est coupé", () => {
+  vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+  renderFooter();
+  const types = within(screen.getByRole("navigation", { name: "Ventes par type" }));
+  expect(types.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+    "/maison-aux-encheres",
+    "/appartement-aux-encheres",
+  ]);
+});
+
 it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
-  const { container } = render(<SiteFooter />);
+  const { container } = renderFooter();
   expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
   expect(container.querySelector("svg path.stroke-gold")).not.toBeNull();
   expect(container.querySelector(".lucide")).toBeNull();
 });
 
 it("ne précharge aucun de ses liens : présents sur chaque page, ils lanceraient une dizaine d'appels serveur par visite", () => {
-  const { container } = render(<SiteFooter />);
+  const { container } = renderFooter();
   const links = [...container.querySelectorAll("footer a")];
   expect(links.length).toBeGreaterThan(15);
   for (const link of links) {
@@ -120,7 +160,7 @@ it("ne précharge aucun de ses liens : présents sur chaque page, ils lanceraien
 });
 
 it("donne à chaque lien du pied de page une cible tactile d'au moins 44 px", () => {
-  render(<SiteFooter />);
+  renderFooter();
   const links = within(screen.getByRole("contentinfo")).getAllByRole("link");
   expect(links.length).toBeGreaterThan(15);
   for (const link of links) {
@@ -133,6 +173,6 @@ it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin/operations")).toBe(false);
   expect(showsSiteFooter("/administration-publique")).toBe(true);
   pathname.current = "/admin/quality";
-  const { container } = render(<SiteFooter />);
+  const { container } = renderFooter();
   expect(container.querySelector("footer")).toBeNull();
 });

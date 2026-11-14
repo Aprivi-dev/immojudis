@@ -395,6 +395,24 @@ function positivePrice(value: number | null): value is number {
 }
 
 /**
+ * Ordre des listes de ventes à venir : date de vente croissante, les ventes sans date à la fin,
+ * puis l'identifiant. La fonction publique de recherche ne rend pas cet ordre, même triée par
+ * date : elle place d'abord les ventes géolocalisées (`coordinates_rank`). Pages de département
+ * et pages par type de vente ou de bien (`sale-landing-pages.server.ts`).
+ */
+export function compareSalesByDate(
+  a: Pick<DepartmentSale, "id" | "saleDate">,
+  b: Pick<DepartmentSale, "id" | "saleDate">,
+): number {
+  const left = timestamp(a.saleDate);
+  const right = timestamp(b.saleDate);
+  if (left == null && right == null) return a.id.localeCompare(b.id);
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left - right || a.id.localeCompare(b.id);
+}
+
+/**
  * Regroupe les ventes publiques par département. Un identifiant de vente est compté une seule
  * fois (la pagination de la recherche ne peut donc pas gonfler un compte) ; une vente dont le
  * département n'est pas reconnu n'est dans aucune page, comme elle n'est dans aucun filtre
@@ -418,14 +436,7 @@ export function aggregateDepartments(
 
   const departments: Record<string, DepartmentStats> = {};
   for (const [code, sales] of byDepartment) {
-    const sorted = [...sales].sort((a, b) => {
-      const left = timestamp(a.saleDate);
-      const right = timestamp(b.saleDate);
-      if (left == null && right == null) return a.id.localeCompare(b.id);
-      if (left == null) return 1;
-      if (right == null) return -1;
-      return left - right || a.id.localeCompare(b.id);
-    });
+    const sorted = [...sales].sort(compareSalesByDate);
     const typeCounts = new Map<string, number>();
     for (const sale of sorted) {
       const label = propertyTypeLabel(sale.propertyType);

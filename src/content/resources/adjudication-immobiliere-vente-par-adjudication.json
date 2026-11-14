@@ -43,7 +43,7 @@
       "bullets": [
         "Avant l’audience : l’enchérisseur remet à son avocat une garantie de 10 % de la mise à prix, au moins 3 000 €, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41).",
         "Ouverture : les frais de poursuite taxés par le juge sont annoncés publiquement, puis le juge rappelle que les enchères partent de la mise à prix (art. R. 322-42 et R. 322-43).",
-        "Enchères : elles sont pures et simples, c’est-à-dire sans condition, et chacune doit couvrir la précédente (art. R. 322-44).",
+        "Enchères : elles sont pures et simples, c’est-à-dire sans condition (art. R. 322-44) : aucune condition suspensive de prêt ne peut y être attachée. Chacune doit couvrir la précédente.",
         "Fin des enchères : elles s’arrêtent quand quatre-vingt-dix secondes se sont écoulées depuis la dernière, un signal visuel ou sonore marquant chaque seconde ; le juge constate le montant de la dernière enchère, qui emporte adjudication (art. R. 322-45).",
         "Identité : avant la fin de l’audience, l’avocat du dernier enchérisseur déclare au greffier l’identité de son client (art. R. 322-46). Il n’est pas possible de désigner ensuite un autre acquéreur (art. L. 322-8).",
         "Sans enchère : le créancier poursuivant est déclaré adjudicataire d’office à la mise à prix (art. L. 322-6)."
@@ -60,8 +60,8 @@
       "title": "Ce que l’adjudication produit",
       "paragraphs": [
         "« L’adjudication emporte vente forcée du bien saisi et en transmet la propriété à l’adjudicataire. » Elle ne lui confère pas d’autres droits que ceux qui appartenaient au saisi (art. L. 322-10). Concrètement, si le saisi devait respecter un bail opposable, vous devrez le respecter aussi.",
-        "Le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13). La garantie des vices cachés n’a pas lieu dans les ventes faites par autorité de justice (art. 1649 du Code civil) : ce que vous n’avez pas vu ou fait vérifier, vous risquez de le découvrir après l’achat.",
-        "La procédure ne prévoit pas de condition suspensive de prêt. Si l’adjudicataire ne paie pas, la vente est résolue de plein droit, le bien est remis en vente et l’adjudicataire défaillant peut devoir la différence de prix (art. L. 322-12)."
+        "Le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), à mettre à exécution une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64). Le saisi reste tenu envers l’adjudicataire de la délivrance du bien et de la garantie d’éviction (art. L. 322-10) ; seule la garantie des vices cachés est écartée (art. 1649 du Code civil) : ce que vous n’avez pas vu ou fait vérifier, vous risquez de le découvrir après l’achat.",
+        "Les enchères sont pures et simples, c’est-à-dire sans condition (art. R. 322-44) : aucune condition suspensive de prêt ne peut y être attachée. Si l’adjudicataire ne paie pas, la vente est résolue de plein droit, le bien est remis en vente et l’adjudicataire défaillant peut devoir la différence de prix (art. L. 322-12)."
       ]
     },
     {
@@ -219,6 +219,10 @@
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (paiement du prix sous deux mois)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-64 (mise à exécution du titre d’expulsion après paiement du prix et des frais taxés)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
     },
     {
       "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",

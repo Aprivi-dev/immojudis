@@ -88,7 +88,7 @@
         "Fixer votre enchère plafond à partir du marché, des frais, des travaux et d’une marge de sécurité, et faire valider votre financement par écrit avant l’audience.",
         "Mandater un avocat du barreau du tribunal et lui remettre la garantie : chèque de banque ou caution bancaire irrévocable de 10 % de la mise à prix, au moins 3 000 € (art. R. 322-40 et R. 322-41).",
         "Après l’audience : dix jours de surenchère possible, puis deux mois pour payer le prix et les frais après l’adjudication définitive (art. R. 322-51 et R. 322-56).",
-        "Pour entrer dans les lieux : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), mais pas contre un locataire dont le bail s’impose à l’acheteur."
+        "Pour entrer dans les lieux : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), mais pas contre un locataire dont le bail s’impose à l’acheteur."
       ],
       "callout": {
         "title": "Bien saisi ne veut pas dire prix bas",
@@ -170,7 +170,7 @@
     },
     {
       "question": "Le propriétaire saisi peut-il rester dans le bien après la vente ?",
-      "answer": "Le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), sauf si le cahier prévoit son maintien dans les lieux (art. R. 322-64). L’expulsion suppose ensuite un commandement de quitter les lieux, et un délai de deux mois ou la trêve hivernale peuvent la différer. Un locataire dont le bail s’impose à l’acheteur reste en place."
+      "answer": "Le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13). L’adjudicataire ne peut le mettre à exécution qu’après avoir versé ou consigné le prix et payé les frais taxés, contre le saisi et les occupants de son chef sans droit opposable, et pas si le cahier prévoit le maintien du saisi dans les lieux (art. R. 322-64). L’expulsion d’un lieu habité suppose ensuite un commandement de quitter les lieux (art. L. 411-1) ; le délai de deux mois (art. L. 412-1) et la trêve hivernale (art. L. 412-6) peuvent la différer. Un locataire dont le bail s’impose à l’acheteur reste en place."
     },
     {
       "question": "Un bien saisi se vend-il forcément moins cher ?",
@@ -207,8 +207,16 @@
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
     },
     {
-      "label": "Légifrance — Code des procédures civiles d’exécution, articles L. 411-1, L. 412-1 et L. 412-6 (expulsion : commandement, délai de deux mois, trêve hivernale)",
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 411-1 (expulsion après commandement de libérer les locaux)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028808273"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 412-1 (délai de deux mois après le commandement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047900004"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 412-6 (trêve hivernale, du 1er novembre au 31 mars)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047900053"
     },
     {
       "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",

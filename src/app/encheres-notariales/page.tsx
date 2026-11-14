@@ -37,11 +37,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 function Heading({ total }: { total: number | null }) {
-  if (total == null) return <>Enchères notariales</>;
-  if (total === 0) return <>Enchères notariales : aucune vente à venir pour le moment.</>;
+  if (total == null) return <>Enchères et ventes interactives des notaires</>;
+  if (total === 0) {
+    return <>Enchères et ventes interactives des notaires : aucune vente à venir pour le moment.</>;
+  }
   return (
     <>
-      Enchères notariales : <HighlightedFigure>{count.format(total)}</HighlightedFigure>{" "}
+      Enchères et ventes interactives des notaires :{" "}
+      <HighlightedFigure>{count.format(total)}</HighlightedFigure>{" "}
       {total > 1 ? "ventes immobilières à venir." : "vente immobilière à venir."}
     </>
   );
@@ -57,7 +60,12 @@ export default async function Page() {
       eyebrow="Ventes chez le notaire"
       heading={<Heading total={data?.upcomingCount ?? null} />}
       intro="Les ventes immobilières organisées par des notaires et référencées par Immojudis : ventes aux enchères et ventes notariales interactives."
-      articleSlugs={[SALE_TYPES_ARTICLE_SLUG, "frais-vente-encheres-judiciaire"]}
+      articleSlugs={[
+        "immobilier-notaires-annonces-vente-interactive-encheres",
+        SALE_TYPES_ARTICLE_SLUG,
+        "encheres-immobilieres-en-ligne-distance",
+        "frais-vente-encheres-judiciaire",
+      ]}
     >
       <SaleLandingSection
         id="formules"
