@@ -1,4 +1,5 @@
 import { propertyTypeLabel } from "@/lib/format";
+import type { SaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { isUuid } from "@/lib/uuid";
 
@@ -64,6 +65,15 @@ function toComparedSale(sale: AuctionSale): ComparedSale {
     bedrooms: countOrNull(sale.bedrooms_count),
     bathrooms: countOrNull(sale.bathrooms_count),
   };
+}
+
+/**
+ * Surface d'une vente comparée et sa nature (`SaleSurface["kind"]`), pour `pricePerM2` : `toComparedSale` ne lit que
+ * la surface publiée (`app_surface_m2`) et n'en présume jamais, donc une surface comparée est mesurée quand elle
+ * existe. Une comparaison enregistrée ne garde que ce que cette fonction a produit.
+ */
+export function comparedSaleSurface(sale: ComparedSale): Pick<SaleSurface, "value" | "kind"> {
+  return { value: sale.surfaceM2, kind: sale.surfaceM2 == null ? "none" : "recorded" };
 }
 
 export function comparedSaleTitle(sale: ComparedSale): string {
