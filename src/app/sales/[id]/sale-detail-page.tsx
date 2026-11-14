@@ -17,6 +17,7 @@ import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
 import { fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
+import { rememberSaleForSignup } from "@/lib/signup-return-sale";
 import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
@@ -116,7 +117,10 @@ function SaleDetailContent({
   const [from, setFrom] = useState<string | null>(null);
   const [requestedHash, setRequestedHash] = useState("");
   useEffect(() => {
-    setFrom(new URLSearchParams(window.location.search).get("from"));
+    const origin = new URLSearchParams(window.location.search).get("from");
+    setFrom(origin);
+    // « S'inscrire » de l'en-tête ne porte pas la vente : `/login` la retrouve dans l'onglet.
+    rememberSaleForSignup(saleDetailPath(id, safeSalesReturnTo(origin)));
     const updateHash = () => setRequestedHash(window.location.hash);
     updateHash();
     window.addEventListener("hashchange", updateHash);
