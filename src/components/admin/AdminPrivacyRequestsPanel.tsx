@@ -25,6 +25,7 @@ import type {
 } from "@/lib/privacy-requests";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { adminOfTotal } from "@/lib/admin-pagination";
+import { PRIVACY_REQUESTS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "received", label: "Reçue" },
@@ -33,8 +34,6 @@ const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "completed", label: "Traitée" },
   { value: "rejected", label: "Rejetée / clôturée" },
 ];
-
-export const PRIVACY_REQUESTS_QUERY_KEY = ["admin-privacy-requests"] as const;
 
 export function AdminPrivacyRequestsPanel() {
   const queryClient = useQueryClient();

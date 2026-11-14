@@ -9,6 +9,7 @@ import { formatPercent } from "@/lib/format/numbers";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 type ReadinessArea =
@@ -38,7 +39,7 @@ type MigrationReadiness = {
   detail: string;
 };
 
-type OperationalAlertSummary = {
+type OperationalAlertRow = {
   key: string;
   category: string;
   severity: "warning" | "critical";
@@ -46,6 +47,12 @@ type OperationalAlertSummary = {
   deliveryStatus: "pending" | "processing" | "delivered" | "failed";
   lastSeenAt: string;
 };
+/** Une alerte et ses libellés, mis en forme ici : le navigateur ne charge pas la table des libellés. */
+type OperationalAlertSummary = OperationalAlertRow & ReturnType<typeof operationalAlertLabels>;
+
+export function operationalAlertSummary(alert: OperationalAlertRow): OperationalAlertSummary {
+  return { ...alert, ...operationalAlertLabels(alert) };
+}
 
 export type OperationalHealthReadiness = {
   status: ReadinessStatus;
@@ -62,6 +69,8 @@ export type OperationalHealthReadiness = {
   pendingDeliveryCount: number | null;
   failedDeliveryCount: number | null;
   lastHealthRunAt: string | null;
+  /** Dernière mesure de santé réussie de moins de 30 minutes (la surveillance tourne). */
+  lastHealthRunFresh: boolean;
   alerts: OperationalAlertSummary[];
   detail: string;
 };
@@ -305,10 +314,12 @@ async function readOperationalHealthReadiness(
           as failed_delivery_count
       from public.operational_alerts
     `;
+    // Dernière mesure RÉUSSIE : une surveillance qui tourne mais échoue à chaque passage n'est pas fraîche.
     const [latestRun] = await sql<{ latest_at: string | null }[]>`
-      select max(coalesce(finished_at, started_at))::text as latest_at
+      select max(finished_at)::text as latest_at
       from public.operational_job_runs
       where job_name = 'operational-health'
+        and status = 'success'
     `;
     const [slo] = await sql<
       Array<{
@@ -345,6 +356,7 @@ async function readOperationalHealthReadiness(
       from public.operational_alerts
       where status = 'open' or notification_status in ('pending', 'processing', 'failed')
       order by
+        case status when 'open' then 0 else 1 end,
         case severity when 'critical' then 0 else 1 end,
         last_seen_at desc
       limit 20
@@ -388,14 +400,17 @@ async function readOperationalHealthReadiness(
       pendingDeliveryCount,
       failedDeliveryCount,
       lastHealthRunAt,
-      alerts: alertRows.map((alert) => ({
-        key: alert.alert_key,
-        category: alert.category,
-        severity: alert.severity,
-        status: alert.status,
-        deliveryStatus: alert.notification_status,
-        lastSeenAt: alert.last_seen_at,
-      })),
+      lastHealthRunFresh: lastRunFresh,
+      alerts: alertRows.map((alert) =>
+        operationalAlertSummary({
+          key: alert.alert_key,
+          category: alert.category,
+          severity: alert.severity,
+          status: alert.status,
+          deliveryStatus: alert.notification_status,
+          lastSeenAt: alert.last_seen_at,
+        }),
+      ),
       detail: operationalHealthDetail({
         schedulerActive,
         openAlertCount,
@@ -471,6 +486,7 @@ function unavailableOperationalHealth(detail: string): OperationalHealthReadines
     pendingDeliveryCount: null,
     failedDeliveryCount: null,
     lastHealthRunAt: null,
+    lastHealthRunFresh: false,
     alerts: [],
     detail,
   };
