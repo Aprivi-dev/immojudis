@@ -97,6 +97,23 @@ export const PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE = "1er novembre 2026";
  */
 export const PRIVACY_EMAIL_LOG_EFFECTIVE_DATE = "1er novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-14.1 (état des lieux du 14/11/2026, points J3 et J11, rédaction validée par
+ * le propriétaire le 14/11/2026) : professionnels contactés (outil qui prépare les projets de messages, relevé des
+ * adresses Licitor avec l'accord de Licitor, opposition par adresse, par identité et par structure, identité
+ * « mauvais destinataire » gardée 24 mois, adresses jamais utilisées pour la mise en avant payante) ; informations
+ * transmises affichées sur la fiche sans nom, retrait sur demande et opposition valant retrait ; coordonnées de
+ * l'organisateur lisibles par les comptes connectés ; photos tirées des pièces, procès-verbaux descriptifs compris,
+ * et leur retrait ; profil d'investisseur et prix final noté par le compte ; garanties de transfert de Resend
+ * nommées ; Replicate et ce qui reste à confirmer sur l'exécution du modèle et sa garantie (J18). La version
+ * 2026-11-01.3 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée avec l'acceptation
+ * d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date à décaler à la date réelle de
+ * mise en ligne si elle diffère (elle n'entre pas dans l'empreinte du texte). Relecture `juridique-rgpd` et avocat à
+ * faire. Elle reste inférieure à `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` : le mode réel du pilote reste verrouillé, et
+ * le texte (« chaque message est validé par un administrateur ») ne vaut que tant qu'il l'est.
+ */
+export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "14 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -111,9 +128,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-01.3",
-    sha256: "7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824",
-    effectiveDate: PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
+    version: "2026-11-14.1",
+    sha256: "89c2bb5413bd8af6017379e21c1b15e05ddd0b380254268a83a87b7b7a25d747",
+    effectiveDate: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

@@ -33,6 +33,14 @@ const processingRows = [
       "Pendant le compte ; le journal d’usage (quotas et fonctions utilisées) est conservé 24 mois au plus ; il est distinct des événements de parcours par compte, conservés 90 jours (voir plus bas) ; les autres données d’usage expirées sont purgées selon la matrice de conservation",
   },
   {
+    purpose: "Profil d’investisseur (facultatif)",
+    data: "Apport personnel, marge cible, budget de travaux au m² et stratégie (revendre ou louer), chacun facultatif, saisis par vous dans « Mon compte ». Ce sont des données financières personnelles : elles ne sont visibles que de vous, jamais envoyées par email ni partagées",
+    basis:
+      "Exécution du contrat : préremplir, à votre demande, le calcul de l’enchère plafond de chaque vente (vous le modifiez ensuite vente par vente) et l’apport du simulateur de financement",
+    retention:
+      "Tant que le compte existe ; effacement immédiat par le bouton « Effacer mon profil » de « Mon compte » ; suppression avec le compte",
+  },
+  {
     purpose: "Commande et accès payant",
     data: "Références Stripe, offre, prix, état du paiement et preuve d’acceptation contractuelle",
     basis: "Exécution du contrat et obligations comptables/fiscales",
@@ -79,7 +87,7 @@ const processingRows = [
   },
   {
     purpose: "Ventes passées suivies",
-    data: "Résumé d’une vente suivie dont l’audience est passée : titre, commune (avec département et code postal), tribunal, type de bien, mise à prix, date d’audience, nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés",
+    data: "Résumé d’une vente suivie dont l’audience est passée : titre, commune (avec département et code postal), tribunal, type de bien, mise à prix, date d’audience, nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés. Si vous le notez, le prix final de l’adjudication (facultatif, seulement pour une vente marquée « Remporté » ou « Non remporté ») : c’est une donnée financière personnelle, visible de vous seul et jamais envoyée par email",
     basis:
       "Exécution du contrat : garder la trace d’une vente suivie après le retrait de sa fiche du catalogue",
     retention:
@@ -117,10 +125,18 @@ const processingRows = [
   },
   {
     purpose: "Annonces de ventes et pièces publiques",
-    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait)",
+    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait). Le nom et les coordonnées de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce, sont visibles des personnes connectées à un compte, offre Découverte comprise",
     basis: "Intérêt légitime à informer le public",
     retention:
       "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte",
+  },
+  {
+    purpose: "Photos du bien tirées des pièces des ventes",
+    data: "Photos trouvées dans les pièces jointes à l’annonce d’une vente (cahier des conditions de vente, procès-verbal descriptif dressé par un commissaire de justice, anciennement huissier de justice), ajoutées à la galerie de la vente : 12 au plus par vente, sans leurs métadonnées (ni position, ni appareil, ni date de prise de vue). Les photos d’un procès-verbal montrent l’intérieur du bien : des effets personnels, parfois une personne, peuvent y apparaître",
+    basis:
+      "Intérêt légitime à informer le public sur les ventes à partir des pièces publiées avec l’annonce. Si vous figurez sur une photo, ou si l’on y voit vos effets personnels, vous pouvez en demander le retrait par email, sans compte",
+    retention:
+      "Tant que la vente est consultable, puis suppression avec la vente ; suppression aussi quand la pièce n’est plus jointe à l’annonce ; retrait sur demande, au plus tard un mois après sa réception",
   },
   {
     purpose: "Cartographie et géocodage (Mapbox, IGN)",
@@ -133,11 +149,11 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; informations transmises et affichées sur la fiche de la vente, sans le nom de la personne qui les a transmises",
     basis:
-      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
+      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
   },
   {
     purpose: "Formulaire de contact",
@@ -283,20 +299,52 @@ export function PrivacyPage({
               cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque
               message. Base juridique : intérêt légitime à publier des informations exactes sur les
               ventes. Les messages ne contiennent aucune offre commerciale. Chaque message est
-              validé par un administrateur. Les adresses professionnelles figurant dans les annonces
-              publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées
-              automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne,
-              jamais publiées, et ne servent qu’à une demande d’information validée par un membre de
-              l’équipe. Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi
-              est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la
-              date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de
-              l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un échange sont
-              conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous
-              répondez. Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus
-              être contacté » de chaque message ou à {legalValue(publisher.contactEmail)}. Votre
-              opposition est enregistrée et vaut pour tous nos canaux. Vous pouvez aussi demander
-              l’accès, la rectification ou l’effacement, et saisir la CNIL. Pour exercer ces droits,
-              écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+              validé par un administrateur : un outil peut préparer à l’avance des projets de
+              messages aux avocats poursuivants, mais aucun ne part sans cette validation. Ces
+              adresses et nos échanges ne servent jamais à vous proposer la mise en avant payante
+              d’Immojudis.
+            </p>
+            <p className="mt-3">
+              Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont
+              l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la
+              collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne
+              servent qu’à une demande d’information validée par un membre de l’équipe. Ce relevé se
+              fait avec l’accord de Licitor. Une adresse relevée à la collecte de l’annonce et non
+              utilisée pour un envoi est conservée tant que le détail de l’annonce est relu, jamais
+              rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la
+              dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Les
+              données d’un échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le
+              dernier échange si vous répondez.
+            </p>
+            <p className="mt-3">
+              Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
+              de pièces, l’occupation, la mise à prix ou la date de la vente) peuvent compléter ou
+              corriger la fiche publique de la vente, après vérification par un membre de l’équipe.
+              Elles sont affichées sans le nom de la personne qui les a transmises. Pour une
+              information venue de l’avocat poursuivant, la fiche indique cette source et la date de
+              son message, et rappelle de la vérifier dans le cahier des conditions de vente. Une
+              photo ou une pièce transmise peut aussi être ajoutée à la fiche, après la même
+              vérification. Vous pouvez à tout moment, sans motif, demander le retrait de ce que
+              vous nous avez transmis, en répondant à notre message ou en écrivant à{" "}
+              {legalValue(publisher.contactEmail)} : nous le retirons alors de la fiche. Ce qui est
+              affiché disparaît aussi avec la fiche, en principe 24 heures après la vente. Nos
+              journaux internes gardent la trace de la valeur publiée et de sa date de réception,
+              sans votre nom ni votre adresse, pour pouvoir répondre de son origine ; la durée de
+              conservation de ces traces est en cours de validation et sera indiquée ici.
+            </p>
+            <p className="mt-3">
+              Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être
+              contacté » de chaque message ou à {legalValue(publisher.contactEmail)}. Votre
+              opposition est enregistrée et vaut pour tous nos canaux. Elle vaut pour votre adresse
+              et pour votre identité professionnelle : nous ne vous écrirons pas non plus à une
+              autre adresse. Faite depuis l’adresse de contact d’un cabinet, d’une étude ou d’un
+              service, elle vaut pour toutes les adresses de cette structure. Elle vaut aussi
+              demande de retrait des informations que vous nous avez transmises. Si vous nous
+              répondez que notre message ne vous concernait pas, votre identité professionnelle
+              (fonction, nom, barreau ou ville) est gardée 24 mois, pour qu’aucun message ne vous
+              soit plus préparé automatiquement. Vous pouvez aussi demander l’accès, la
+              rectification ou l’effacement, et saisir la CNIL. Pour exercer ces droits, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
             <p className="mt-3">
               Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après
@@ -321,7 +369,7 @@ export function PrivacyPage({
             </p>
           </PrivacySection>
 
-          <PrivacySection title="Personnes citées dans une annonce">
+          <PrivacySection title="Personnes citées dans une annonce ou visibles sur une photo">
             <p>
               Les annonces de vente et leurs pièces publiques concernent des biens, mais peuvent
               citer des personnes. Dans les textes affichés, les noms de particuliers sont remplacés
@@ -329,6 +377,14 @@ export function PrivacyPage({
               passer un nom. Si vous êtes cité dans une annonce, en cas d’oubli notamment, écrivez à{" "}
               {legalValue(publisher.contactEmail)} pour demander la rectification ou le retrait,
               sans créer de compte.
+            </p>
+            <p className="mt-3">
+              Les photos du bien tirées des pièces d’une vente, notamment du procès-verbal
+              descriptif dressé par un commissaire de justice, montrent souvent l’intérieur d’un
+              logement. Si vous y figurez, ou si l’on y voit vos effets personnels, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} en indiquant le lien de la vente : la photo est
+              retirée au plus tard un mois après votre demande, sans que vous ayez à créer de
+              compte.
             </p>
           </PrivacySection>
 
@@ -363,10 +419,25 @@ export function PrivacyPage({
             <p className="mt-3">
               Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les
               journaux de remise 30 jours, aux États-Unis, sous le cadre des clauses contractuelles
-              types et du cadre de protection des données UE–États-Unis. Seuls les administrateurs
-              habilités d’Immojudis consultent le journal et, pour résoudre un problème de remise ou
-              répondre à une demande, le contenu d’un message encore conservé par le prestataire.
-              Ces consultations sont tracées pendant 6 mois, sans le contenu ni l’adresse.
+              types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021),
+              qui figurent dans son accord de sous-traitance, et du cadre de protection des données
+              UE–États-Unis, auquel Resend se déclare certifié. Resend est exploité par la société
+              Plus Five Five, Inc., à San Francisco. Seuls les administrateurs habilités d’Immojudis
+              consultent le journal et, pour résoudre un problème de remise ou répondre à une
+              demande, le contenu d’un message encore conservé par le prestataire. Ces consultations
+              sont tracées pendant 6 mois, sans le contenu ni l’adresse.
+            </p>
+            <p className="mt-3">
+              Replicate (Replicate, LLC, à San Francisco, États-Unis) nous donne accès au modèle
+              d’IA qui lit les annonces, les pièces et les réponses des professionnels contactés. Le
+              modèle utilisé aujourd’hui (référence « qwen/qwen3-7-plus » chez Replicate) est conçu
+              par l’équipe Qwen du groupe Alibaba. Les textes, pièces et photos à lire lui sont
+              transmis : ils peuvent contenir des données personnelles, par exemple le nom d’un
+              professionnel ou d’une personne citée dans une pièce. Deux points restent à confirmer
+              : si ce modèle s’exécute chez Replicate ou chez un autre prestataire auquel Replicate
+              transmet les données, et quelle garantie encadre ce transfert. Nous compléterons cette
+              page dès qu’ils seront établis ; d’ici là, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} pour connaître leur état.
             </p>
             <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
@@ -387,10 +458,12 @@ export function PrivacyPage({
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
               Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
-              pays, notamment le prestataire d’IA (Replicate), GitHub et Google (Google Analytics,
-              uniquement avec votre accord ; Google est certifié au cadre de protection des données
-              UE–États-Unis). Pour savoir quelle garantie s’applique à chacun, ou en obtenir une
-              copie, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+              pays, notamment Resend, le prestataire d’IA (Replicate), GitHub et Google (Google
+              Analytics, uniquement avec votre accord ; Google est certifié au cadre de protection
+              des données UE–États-Unis). Les garanties qui encadrent Resend et ce qui reste à
+              confirmer pour Replicate sont décrits dans la section précédente. Pour savoir quelle
+              garantie s’applique à chacun, ou en obtenir une copie, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
           </PrivacySection>
 
@@ -441,13 +514,13 @@ export function PrivacyPage({
               Les scores, estimations et synthèses automatisées assistent la lecture d’un dossier,
               mais ne produisent aucune décision juridique ou financière opposable et n’empêchent
               pas l’accès à une vente. Ils doivent être vérifiés à partir des sources affichées et
-              des pièces officielles. Des outils d’IA peuvent détecter des informations manquantes
-              et préparer un projet d’email pour revue administrative. Tout contact externe et toute
-              intégration d’information sont déclenchés puis validés par un administrateur ; aucune
-              demande n’est lancée directement par un utilisateur Analyse. Le message précise qu’une
-              IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant
-              toute mise à jour de la fiche ; il reste purement informatif et ne contient aucune
-              sollicitation commerciale.
+              des pièces officielles. Des outils automatiques, dont certains utilisent l’IA, peuvent
+              détecter des informations manquantes et préparer un projet d’email pour revue
+              administrative. Tout envoi à un professionnel et toute intégration d’information sur
+              une fiche sont validés par un administrateur ; aucune demande n’est lancée directement
+              par un utilisateur Analyse. Le message précise qu’une IA aide à lire et classer les
+              réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche
+              ; il reste purement informatif et ne contient aucune sollicitation commerciale.
             </p>
           </PrivacySection>
 

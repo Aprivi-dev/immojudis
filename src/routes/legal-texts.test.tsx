@@ -207,14 +207,15 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-01.3 (journal des emails) ; les 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.3");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("1er novembre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.2");
+  it("la politique de confidentialité est en version 2026-11-14.1 (professionnels contactés, photos, profil d'investisseur) ; les 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("14 novembre 2026");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.3");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-01.2",
       "2026-11-01.1",
       "2026-10-31.1",
       "2026-10-26.1",
@@ -542,9 +543,44 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés",
     );
+    expect(text).toContain(
+      "Si vous le notez, le prix final de l’adjudication (facultatif, seulement pour une vente marquée « Remporté » ou « Non remporté ») : c’est une donnée financière personnelle, visible de vous seul et jamais envoyée par email",
+    );
     expect(text).toContain("Exécution du contrat");
     expect(text).toContain("6 mois après la constitution du résumé");
     expect(text).toContain("suppression à tout moment par la personne");
+  });
+
+  it("décrit le profil d'investisseur : données financières facultatives, base contractuelle, effacement par la personne", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Profil d’investisseur (facultatif)");
+    expect(text).toContain(
+      "Apport personnel, marge cible, budget de travaux au m² et stratégie (revendre ou louer)",
+    );
+    expect(text).toContain("Ce sont des données financières personnelles");
+    expect(text).toContain(
+      "Exécution du contrat : préremplir, à votre demande, le calcul de l’enchère plafond de chaque vente",
+    );
+    expect(text).toContain("« Effacer mon profil »");
+  });
+
+  it("décrit les photos tirées des pièces, procès-verbaux descriptifs compris, et leur retrait sur demande", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Photos du bien tirées des pièces des ventes");
+    expect(text).toContain(
+      "procès-verbal descriptif dressé par un commissaire de justice, anciennement huissier de justice",
+    );
+    expect(text).toContain("12 au plus par vente");
+    expect(text).toContain("retrait sur demande, au plus tard un mois après sa réception");
+    expect(text).toContain(
+      "la photo est retirée au plus tard un mois après votre demande, sans que vous ayez à créer de compte.",
+    );
+  });
+
+  it("dit que les coordonnées de l'organisateur publiées dans l'annonce sont visibles des comptes connectés", () => {
+    expect(pageText(<PrivacyPage />)).toContain(
+      "Le nom et les coordonnées de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce, sont visibles des personnes connectées à un compte, offre Découverte comprise",
+    );
   });
 
   it("déclare le contrôle du risque d'inondation : coordonnées d'une vente seulement, BRGM et IGN, supprimé avec la vente", () => {
@@ -688,8 +724,11 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
+    // Le mode réel du pilote reste verrouillé : aucun message ne part sans validation.
+    expect(text).toContain("mais aucun ne part sans cette validation");
+    expect(text).not.toContain("déclenchés puis validés");
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
     expect(text).not.toContain("consentement pour la communication de l’email de réponse");
     expect(text).not.toContain("service professionnel");
@@ -730,6 +769,37 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("adresses invalides (rebond permanent) : 12 mois");
   });
 
+  it("annonce la source des adresses Licitor, l'opposition par adresse, identité et structure, et l'exclusion de 24 mois", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Ce relevé se fait avec l’accord de Licitor.");
+    expect(text).toContain(
+      "Elle vaut pour votre adresse et pour votre identité professionnelle : nous ne vous écrirons pas non plus à une autre adresse.",
+    );
+    expect(text).toContain(
+      "Faite depuis l’adresse de contact d’un cabinet, d’une étude ou d’un service, elle vaut pour toutes les adresses de cette structure.",
+    );
+    expect(text).toContain("est gardée 24 mois, pour qu’aucun message ne vous soit plus préparé");
+    expect(text).toContain("identité signalée comme « mauvais destinataire » : 24 mois");
+    expect(text).toContain(
+      "Ces adresses et nos échanges ne servent jamais à vous proposer la mise en avant payante d’Immojudis.",
+    );
+  });
+
+  it("décrit l'affichage des informations transmises, sans nom, leur retrait et l'opposition qui vaut retrait", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Elles sont affichées sans le nom de la personne qui les a transmises.");
+    expect(text).toContain(
+      "Pour une information venue de l’avocat poursuivant, la fiche indique cette source et la date de son message, et rappelle de la vérifier dans le cahier des conditions de vente.",
+    );
+    expect(text).toContain(
+      "Vous pouvez à tout moment, sans motif, demander le retrait de ce que vous nous avez transmis, en répondant à notre message ou en écrivant à contact@immojudis.example : nous le retirons alors de la fiche.",
+    );
+    expect(text).toContain(
+      "Elle vaut aussi demande de retrait des informations que vous nous avez transmises.",
+    );
+    expect(text).toContain("information affichée sur une fiche : supprimée avec la fiche");
+  });
+
   it("ne publie pas l'outil de recherche automatisé tant qu'il n'existe pas", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).not.toContain("outil de recherche automatisé");
@@ -750,7 +820,23 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "journaux de remise 30 jours, aux États-Unis, sous le cadre des clauses contractuelles types",
     );
+    expect(text).toContain("décision (UE) 2021/914 du 4 juin 2021");
+    expect(text).toContain("Plus Five Five, Inc.");
     expect(text).not.toContain("décision d’adéquation");
+  });
+
+  it("nomme Replicate et le modèle, et dit ce qui reste à confirmer sans inventer de garantie (J18)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Replicate (Replicate, LLC, à San Francisco, États-Unis)");
+    expect(text).toContain("« qwen/qwen3-7-plus »");
+    expect(text).toContain(
+      "Deux points restent à confirmer : si ce modèle s’exécute chez Replicate ou chez un autre prestataire auquel Replicate transmet les données, et quelle garantie encadre ce transfert.",
+    );
+    // Aucune garantie n'est affirmée pour Replicate.
+    const replicate = text.slice(text.indexOf("Replicate (Replicate, LLC"));
+    expect(replicate.slice(0, replicate.indexOf("connaître leur état"))).not.toMatch(
+      /clauses contractuelles|cadre de protection des données|certifié/,
+    );
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
