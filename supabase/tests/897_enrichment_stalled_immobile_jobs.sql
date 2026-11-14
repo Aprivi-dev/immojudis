@@ -3,7 +3,7 @@
 -- regarder que les tâches source_detail : une lecture de pièces restée en running, bail expiré, ne sonnait pas.
 begin;
 
-select plan(9);
+select plan(13);
 
 select ok(
   position('immobile_24h' in pg_get_functiondef(
@@ -176,6 +176,73 @@ select ok(
      limit 1
   ),
   'the measure is kept in the enrichment-queue observation'
+);
+
+-- Second review (14/11/2026): case (b), a claimable job left untouched for 24 h. After the first budget refusal the
+-- worker only claims source_detail jobs, so under budget_limited the others wait on purpose: (b) counts source_detail
+-- jobs only. A display pass of sale 3, due and untouched for two days, nothing ahead of it.
+insert into public.auction_enrichment_jobs (
+  source_url, job_type, status, priority, input_hash, attempt_count, max_attempts,
+  next_attempt_at, locked_at, last_error, created_at, updated_at
+)
+values
+  ('https://example.test/pgtap/897/3', 'display_description', 'queued', 10, 'pgtap-897-untouched', 0, 4,
+   statement_timestamp() - interval '2 days', null, null,
+   statement_timestamp() - interval '2 days', statement_timestamp() - interval '2 days');
+
+insert into pgtap_897_context(case_name, p_now)
+values ('untouched-under-budget', statement_timestamp() + interval '2 minutes');
+
+select lives_ok(
+  $sql$
+    update pgtap_897_context
+       set payload = public.observe_autonomous_pipeline(p_now)
+     where case_name = 'untouched-under-budget';
+  $sql$,
+  'the observer runs on a budget-limited queue holding an untouched claimable job'
+);
+
+select ok(
+  (
+    select (payload->'queue'->>'budget_limited')::boolean
+       and (payload->'queue'->>'claimable_due')::integer = 1
+       and (payload->'queue'->>'immobile_24h')::integer = 0
+      from pgtap_897_context
+     where case_name = 'untouched-under-budget'
+  ),
+  'under the AI budget, a claimable job that waits for its turn is not immobile'
+);
+
+-- The budget deferral is now more than 24 hours old: the queue is no longer budget-limited.
+update public.auction_enrichment_jobs
+   set updated_at = statement_timestamp() - interval '25 hours'
+ where input_hash = 'pgtap-897-budget';
+
+insert into pgtap_897_context(case_name, p_now)
+values ('untouched', statement_timestamp() + interval '3 minutes');
+
+select lives_ok(
+  $sql$
+    update pgtap_897_context
+       set payload = public.observe_autonomous_pipeline(p_now)
+     where case_name = 'untouched';
+  $sql$,
+  'the observer runs once the budget deferral is over'
+);
+
+select ok(
+  (
+    select not (payload->'queue'->>'budget_limited')::boolean
+       and (payload->'queue'->>'immobile_24h')::integer = 1
+       and (
+         select alert.status = 'open' and alert.inactive_since is null
+           from public.operational_alerts alert
+          where alert.alert_key = 'pipeline.enrichment.stalled'
+       )
+      from pgtap_897_context
+     where case_name = 'untouched'
+  ),
+  'without the AI budget, a claimable job untouched for 24 hours is immobile and opens the alert'
 );
 
 select * from finish();

@@ -21,7 +21,9 @@ set local lock_timeout = '5s';
 --     Une tâche retenue volontairement (attente de la lecture des pièces, source désactivée ou suspendue, révision
 --     remplacée, vente expirée) n'est jamais immobile. Chaque écriture d'attempt_count (prise, fin, report) pose
 --     aussi updated_at : une tâche dont updated_at n'a pas bougé n'a pas changé d'attempt_count. L'échéance protège
---     un report voulu (budget jusqu'à minuit UTC, attente d'accès de 24 h, Retry-After) ;
+--     un report voulu (budget jusqu'à minuit UTC, attente d'accès de 24 h, Retry-After). Sous budget_limited, (b)
+--     ne compte que les tâches source_detail : après le premier refus du budget, le worker ne prend plus que
+--     celles-là, et les autres attendent sans être touchées (seconde relecture du 14/11/2026) ;
 --   * la condition de l'alerte : immobile_24h > 0 l'ouvre toujours ; sinon la règle de 20261029170100 s'applique
 --     (budget_limited : seules les tâches source_detail de plus de 24 h ; sinon toute tâche de plus de 24 h).
 -- Tout le reste est recopié tel quel : alertes des sources, pilote coupé, inventaire, tâches épuisées, droits.
@@ -47,7 +49,7 @@ declare
 begin
   if body_md5 not in (
     'fcab3b61c4a6841134d95e569fbfb05b',  -- 20261029170100 (point de départ)
-    '7c716e042eb481d63d99e7f2060c1d05'   -- cette migration, déjà appliquée
+    '0763c61fb793f2891eb842f48e50dd2e'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -79,6 +81,7 @@ declare
   immobile integer;
   immobile_running integer;
   immobile_claimable integer;
+  immobile_claimable_source_detail integer;
   alert_active boolean;
   enabled_at timestamptz;
   control_enabled boolean;
@@ -490,24 +493,27 @@ begin
                   and (pdf.status = 'running' or pdf.attempt_count < pdf.max_attempts)
              )
            ) as waits_for_pdf,
+           due.job_type,
            due.status,
            due.updated_at,
            due.next_attempt_at
       from due_candidates due
       join revision_ranked revision
         on revision.id = due.id
+  ), immobile_candidates as (
+    -- Immobile (b) : prenable par la revendication, ni écrite ni attendue depuis 24 h.
+    select classified.job_type
+      from classified
+     where classified.claimable
+       and not classified.waits_for_pdf
+       and classified.status <> 'running'
+       and greatest(classified.updated_at, classified.next_attempt_at) < p_now - interval '24 hours'
   )
-  select count(*) filter (where claimable),
-         count(*) filter (where not claimable),
-         -- Immobile (b) : prenable par la revendication, ni écrite ni attendue depuis 24 h.
-         count(*) filter (
-           where claimable
-             and not waits_for_pdf
-             and status <> 'running'
-             and greatest(updated_at, next_attempt_at) < p_now - interval '24 hours'
-         )
-    into claimable_due, excluded_due, immobile_claimable
-    from classified;
+  select (select count(*) from classified where claimable),
+         (select count(*) from classified where not claimable),
+         (select count(*) from immobile_candidates),
+         (select count(*) from immobile_candidates where job_type = 'source_detail')
+    into claimable_due, excluded_due, immobile_claimable, immobile_claimable_source_detail;
 
   select count(*),
          count(*) filter (
@@ -538,7 +544,12 @@ begin
     into backlog, delayed, exhausted, exhausted_recent, budget_deferred, delayed_source_detail, immobile_running
     from public.auction_enrichment_jobs
    where status in ('queued', 'running', 'failed');
-  immobile := immobile_running + immobile_claimable;
+  -- Après le premier refus du budget IA du jour, le worker ne prend plus que des tâches source_detail
+  -- (queued_runner._run_enrichment_queue_worker) : sous budget_limited, les autres attendent sans être touchées,
+  -- un report voulu. Le cas (b) ne compte alors que les tâches source_detail, comme la règle des retards ; le cas
+  -- (a) (bail expiré depuis 24 h) compte toujours.
+  immobile := immobile_running
+    + case when budget_deferred > 0 then immobile_claimable_source_detail else immobile_claimable end;
   evidence := jsonb_build_object(
     'backlog', backlog,
     'older_than_24h', delayed,

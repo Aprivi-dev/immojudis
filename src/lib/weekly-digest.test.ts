@@ -382,6 +382,33 @@ describe("buildDigestContent", () => {
     expect((await buildDigestContent({ store, userId: USER, now: TUESDAY })).changes).toEqual([]);
   });
 
+  it("ne reprend pas un changement de gravité « info », qui ne part jamais par email", async () => {
+    const { store } = makeStore({
+      events: {
+        [USER]: [
+          // Annonce sans date non revue depuis 14 jours (marqueur du pipeline) : visible dans « Mes favoris » seulement.
+          change({
+            id: "non-revue",
+            eventKind: "status_changed",
+            severity: "info",
+            fingerprint: "status_changed:status:upcoming:unknown",
+            summaryLabel: "Annonce non revue depuis 14 jours",
+            changeSummary: {
+              field: "status",
+              previousValue: "upcoming",
+              currentValue: "unknown",
+              reason: "unseen_undated",
+            },
+          }),
+          change({ id: "hausse", severity: "info", fingerprint: "price-up" }),
+          change({ id: "baisse", severity: "important", fingerprint: "price-down" }),
+        ],
+      },
+    });
+    const content = await buildDigestContent({ store, userId: USER, now: TUESDAY });
+    expect(content.changes.map((item) => item.label)).toEqual(["Mise à prix abaissée"]);
+  });
+
   it("limite chaque rubrique et compte le reste", async () => {
     const sales: FollowedSale[] = Array.from({ length: MAX_AUDIENCES + 3 }, (_, index) => ({
       id: `22222222-0000-4000-8000-${String(index).padStart(12, "0")}`,

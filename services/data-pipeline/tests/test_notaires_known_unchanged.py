@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from src.freshness import SOURCE_EXTRACTION_VERSION, detail_is_fresh
+from src.known_enrichment import preserve_known_enrichment_payloads
 from src.sources import notaires
 from src.sources.common import listing_signature
 from src.sources.notaires_extraction import card_sale_long_past
@@ -235,6 +236,21 @@ def test_a_contact_stored_before_the_rule_is_not_copied_back():
     }
 
     assert _hydrated(card, legacy) == (None, None)
+    # Ni dans les faits recopiés de la ligne stockée, que l'écriture emporte (l'agent d'information lit contact.email
+    # comme l'adresse du notaire) : même bloc vide qu'une fiche relue aujourd'hui. La ligne stockée n'est pas modifiée.
+    preserve_known_enrichment_payloads([card], {card["source_url"]: legacy})
+    assert card["source_property_features"]["contact"] == {"name": None, "phone": None, "email": None}
+    assert card["source_property_features"]["contact"] == _detail(card, NEGOTIATOR)["source_property_features"]["contact"]
+    assert legacy["raw_payload"]["source_property_features"]["contact"]["name"] == "Camille DURAND"
+
+
+def test_the_office_contact_of_the_stored_facts_is_kept():
+    card = _card_with_phone(_known_unchanged=True)
+    stored = _stored(card, _detail(card, OFFICE))
+    _hydrated(card, stored)
+    preserve_known_enrichment_payloads([card], {card["source_url"]: stored})
+
+    assert card["source_property_features"]["contact"] == {"name": "Office Exemple", "phone": PHONE, "email": ADDRESS}
 
 
 def test_a_failed_detail_read_takes_only_the_contact_the_last_detail_validated():

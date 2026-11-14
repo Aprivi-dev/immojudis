@@ -650,7 +650,6 @@ def parse_notaires_detail_json(
         contact,
         office=extra_features.get("office"),
         notary=_notary_from_text(description_text),
-        visit_name=visit.get("visiteNomContact"),
     )
     return {
         "source_conflicts": conflicts,

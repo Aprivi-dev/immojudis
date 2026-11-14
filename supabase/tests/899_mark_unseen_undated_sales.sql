@@ -3,7 +3,7 @@
 -- désactivée sans condition d'inventaire (décision du propriétaire du 14/11/2026) ; rien n'est supprimé.
 begin;
 
-select plan(8);
+select plan(12);
 
 select ok(
   (
@@ -108,6 +108,50 @@ select ok(
     select 1 from public.auction_sales where source_name = 'pgtap-899-active' and status = 'unknown'
   ),
   'catalogue.unseen_undated.<source> opens and no sale of the source became unknown'
+);
+
+-- Second review (14/11/2026): the alert closes once a sweep is under the cap again. The collection sees the dated
+-- sales again: only the first one is left unseen.
+update public.auction_sales
+   set last_seen_at = statement_timestamp()
+ where source_name = 'pgtap-899-active'
+   and source_url <> 'https://example.test/pgtap/899/pgtap-899-active/1';
+
+select is(
+  app_private.mark_unseen_undated_sales('pgtap-899-active', true)->>'marked',
+  '1',
+  'back under the cap, the sweep marks the sale left unseen'
+);
+
+select ok(
+  (
+    select inactive_since is not null
+      from public.operational_alerts
+     where alert_key = 'catalogue.unseen_undated.pgtap-899-active'
+  ),
+  'catalogue.unseen_undated.<source> is no longer active once a sweep is under the cap'
+);
+
+-- A sale whose last sighting is unknown (last_seen_at null) is never taken as unseen for 14 days.
+update public.auction_sales
+   set sale_date = null,
+       last_seen_at = null
+ where source_url = 'https://example.test/pgtap/899/pgtap-899-disabled/2';
+
+select is(
+  app_private.mark_unseen_undated_sales('pgtap-899-disabled', true)->>'candidates',
+  '0',
+  'an undated sale without last_seen_at is no candidate'
+);
+
+select is(
+  (
+    select status
+      from public.auction_sales
+     where source_url = 'https://example.test/pgtap/899/pgtap-899-disabled/2'
+  ),
+  'upcoming',
+  'it stays upcoming'
 );
 
 select * from finish();

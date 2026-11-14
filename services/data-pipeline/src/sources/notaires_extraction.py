@@ -91,20 +91,26 @@ def listing_contact(
     *,
     office: dict[str, Any] | None,
     notary: str | None = None,
-    visit_name: object = None,
 ) -> tuple[str | None, str | None]:
     """Who the contact of a notaires listing is (14/11/2026, D9): ``(lawyer_name, lawyer_contact)``.
 
     The only place that decides it, for a detail just read and for one read at an earlier collection
     (:func:`known_listing_contact`). The name has a professional mark (``PROFESSIONAL_PREFIX_RE``, as for Licitor and
-    Petites Affiches: the notary named in the text, the API contact, the visit contact), else it is the office named
-    by the operator page. The phone and address are those of the API contact, and only when it names the office or
-    one of its services (``office_contact``): never a negotiator's. The visit's contact text (``visiteContact``) and
-    the phone of the list card are not read: nothing says whose they are.
+    Petites Affiches: the notary named in the text, the API contact), else it is the office named by the operator
+    page. The phone and address are those of the API contact, and only when it names the office or one of its
+    services (``office_contact``): never a negotiator's. The visit's contact (``visiteNomContact``, ``visiteContact``)
+    and the phone of the list card are not read: nothing says whose they are, and the visit is not stored, so a
+    detail read again and a detail replayed from the stored row would not name the same contact.
     """
     desk = office_contact(contact)
-    name = notary or _professional_name(desk.get("nom")) or _professional_name(visit_name) or office_name(office)
+    name = notary or _professional_name(desk.get("nom")) or office_name(office)
     return name, contact_text(desk)
+
+
+def _stored_contact(features: dict[str, Any]) -> dict[str, Any]:
+    """The contact block stored with the facts (``source_property_features.contact``), as the API names its keys."""
+    stored = features.get("contact") if isinstance(features.get("contact"), dict) else {}
+    return {"nom": stored.get("name"), "telephone": stored.get("phone"), "mail": stored.get("email")}
 
 
 def known_listing_contact(sale: dict[str, Any], known: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -120,12 +126,22 @@ def known_listing_contact(sale: dict[str, Any], known: dict[str, Any]) -> tuple[
     payload = known.get("raw_payload") if isinstance(known.get("raw_payload"), dict) else {}
     features = payload.get("source_property_features") if isinstance(payload.get("source_property_features"), dict) else {}
     blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
-    stored = features.get("contact") if isinstance(features.get("contact"), dict) else {}
     return listing_contact(
-        {"nom": stored.get("name"), "telephone": stored.get("phone"), "mail": stored.get("email")},
+        _stored_contact(features),
         office=features.get("office") if isinstance(features.get("office"), dict) else None,
         notary=clean_text(blocks.get("notary_name")),
     )
+
+
+def known_facts_with_office_contact(features: dict[str, Any]) -> dict[str, Any]:
+    """A copy of the stored facts (``source_property_features``) whose contact block the office rule decides again.
+
+    The block a detail read today stores (``legacy_property_features`` over :func:`office_contact`): the office's
+    name, phone and address, or nothing. A negotiator's, stored under an older rule, is not carried to the next
+    write: the information agent reads ``contact.email`` as the notary's address (second review, 14/11/2026).
+    """
+    desk = office_contact(_stored_contact(features))
+    return {**features, "contact": {"name": desk.get("nom"), "phone": desk.get("telephone"), "email": desk.get("mail")}}
 
 
 def round_negotiation_fee_rate(rate: float) -> float:

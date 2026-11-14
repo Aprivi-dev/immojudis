@@ -97,7 +97,7 @@ describe("describeSaleChange", () => {
     expect(change).toMatchObject({
       topic: "status",
       label: "Annonce disparue de la source",
-      detail: "À vérifier auprès de l’avocat poursuivant.",
+      detail: "À vérifier auprès de l’organisateur de la vente.",
     });
     expect(`${change?.label} ${change?.detail}`).not.toMatch(/retir/i);
   });
@@ -118,7 +118,8 @@ describe("describeSaleChange", () => {
     expect(change).toMatchObject({
       topic: "status",
       label: "Annonce non revue depuis 14 jours",
-      detail: "Elle n’est plus présentée comme à venir. À vérifier auprès de l’avocat poursuivant.",
+      detail:
+        "Elle n’est plus présentée comme à venir. À vérifier auprès de l’organisateur de la vente.",
     });
   });
 
