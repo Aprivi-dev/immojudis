@@ -7,6 +7,7 @@ import {
   informationAgentAppOrigin,
 } from "@/lib/information-agent/config";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
+import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
 import {
   assertUnverifiedSendWithinIdempotencyWindow,
   InformationAgentSentButUnrecordedError,
@@ -187,6 +188,7 @@ describe("supervised information agent", () => {
     "record_fails",
     "already_sent",
     "approval_cap",
+    "autopilot_not_live",
     "timeout",
   ] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
@@ -360,6 +362,19 @@ describe("supervised information agent", () => {
           // Plafond atteint dans la fonction d'approbation (atomique) : son texte n'est jamais repris.
           return { data: null, error: { code: "53400", message: "Plafond de 30 validations" } };
         }
+        if (
+          name === "approve_information_agent_mission_admin" &&
+          scenario === "autopilot_not_live"
+        ) {
+          // Filet SQL de la garde des missions : pilote coupé entre sa relecture et l'approbation.
+          return {
+            data: null,
+            error: {
+              code: "23514",
+              message: "Autopilot send refused: the autopilot is not in live mode.",
+            },
+          };
+        }
         if (name === "approve_information_agent_mission_admin") {
           return {
             data: [
@@ -438,6 +453,12 @@ describe("supervised information agent", () => {
         } else if (scenario === "approval_cap") {
           await expect(operation).rejects.toBeInstanceOf(AdminDailyApprovalCapError);
           await expect(operation).rejects.toMatchObject({ status: 409 });
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          return;
+        } else if (scenario === "autopilot_not_live") {
+          // Un arrêt, pas une erreur d'API : l'exécuteur du pilote le journalise à part (M3).
+          await expect(operation).rejects.toBeInstanceOf(AutopilotSendRefusedError);
+          await expect(operation).rejects.toMatchObject({ refusal: "not_live", status: 409 });
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           return;
         } else if (scenario === "timeout") {
