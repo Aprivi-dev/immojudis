@@ -12,14 +12,19 @@ import {
 import {
   loadAutopilotSettings,
   loadAutopilotStats,
+  loadLastAutopilotRunAt,
+  loadPendingSimulatedDrafts,
   loadRecentAutopilotEvents,
 } from "@/lib/information-agent/autopilot-settings";
+import {
+  AUTOPILOT_ART14_MAX_DAYS,
+  AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
+} from "@/lib/information-agent/autopilot-rules";
 import {
   buildAutopilotView,
   type AutopilotPreparedDraft,
   type AutopilotView,
 } from "@/lib/information-agent/autopilot-view";
-import { asObject } from "@/lib/information-agent/mission-store";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
 
@@ -49,8 +54,10 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
       .object({
         capTotalOverride: z.number().int().min(1).max(60).nullable().optional(),
         allowLicitorDecoded: z.boolean().optional(),
-        art14RuleEnabled: z.boolean().optional(),
-        art14MaxAgeDays: z.number().int().min(1).max(365).optional(),
+        // Article 14 (J9, 14/11/2026) : la règle ne se désactive plus ; seul « vrai » est admis, pour rétablir une
+        // valeur fausse antérieure à la contrainte de la base. Délai de 1 à 30 jours.
+        art14RuleEnabled: z.literal(true).optional(),
+        art14MaxAgeDays: z.number().int().min(1).max(AUTOPILOT_ART14_MAX_DAYS).optional(),
         actingAdminId: z.string().guid().optional(),
       })
       .strict()
@@ -82,26 +89,19 @@ async function readiness(now: Date, env: Readonly<Record<string, string | undefi
 }
 
 /**
- * Brouillons préparés par le pilote en simulation (« prêts à valider ») : identifiants de la mission et de la
- * vente (pour l'ouvrir dans l'éditeur de l'onglet « À contacter ») et titre de la vente, jamais l'adresse.
+ * Brouillons préparés par le pilote en simulation (« prêts à valider ») : leur nombre, puis les plus récents (au
+ * plus le plafond de la simulation : tous, en temps normal) avec les identifiants de la mission et de la vente
+ * (pour l'ouvrir dans l'éditeur de l'onglet « À contacter ») et le titre de la vente, jamais l'adresse.
  */
-async function loadPreparedDrafts(): Promise<AutopilotPreparedDraft[]> {
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_missions")
-    .select("id,sale_id,metadata,created_at")
-    .eq("status", "draft")
-    .eq("metadata->>trigger", "autopilot")
-    .eq("metadata->>autopilot_simulated", "true")
-    .order("created_at", { ascending: false })
-    .limit(10);
-  if (error) throw error;
-  const rows = (data ?? []).flatMap((row) =>
-    row.sale_id && asObject(row.metadata).trigger === "autopilot"
-      ? [{ missionId: row.id, saleId: row.sale_id }]
-      : [],
+async function loadPreparedDrafts(): Promise<{ total: number; items: AutopilotPreparedDraft[] }> {
+  const { rows: pending, total } = await loadPendingSimulatedDrafts({
+    limit: AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
+  });
+  const rows = pending.flatMap((row) =>
+    row.sale_id ? [{ missionId: row.id, saleId: row.sale_id }] : [],
   );
   const ids = [...new Set(rows.map((row) => row.saleId))];
-  if (!ids.length) return [];
+  if (!ids.length) return { total, items: [] };
   const { data: sales, error: salesError } = await supabaseAdmin
     .from("auction_sales")
     .select("id,title,city")
@@ -110,7 +110,10 @@ async function loadPreparedDrafts(): Promise<AutopilotPreparedDraft[]> {
   const titles = new Map(
     (sales ?? []).map((sale) => [sale.id, sale.title || sale.city || sale.id]),
   );
-  return rows.map((row) => ({ ...row, label: String(titles.get(row.saleId) ?? row.saleId) }));
+  return {
+    total,
+    items: rows.map((row) => ({ ...row, label: String(titles.get(row.saleId) ?? row.saleId) })),
+  };
 }
 
 export async function getAdminAutopilotView(
@@ -121,12 +124,22 @@ export async function getAdminAutopilotView(
   }: { env?: Readonly<Record<string, string | undefined>>; now?: Date } = {},
 ): Promise<AutopilotView> {
   await assertAdminAuth(authToken);
-  const [{ settings, stats, report }, events, prepared] = await Promise.all([
+  const [{ settings, stats, report }, events, lastRunAt, prepared] = await Promise.all([
     readiness(now, env),
     loadRecentAutopilotEvents(20),
+    loadLastAutopilotRunAt(),
     loadPreparedDrafts(),
   ]);
-  return buildAutopilotView({ settings, stats, readiness: report, env, now, events, prepared });
+  return buildAutopilotView({
+    settings,
+    stats,
+    readiness: report,
+    env,
+    now,
+    events,
+    lastRunAt,
+    prepared,
+  });
 }
 
 export async function runAdminAutopilotAction({

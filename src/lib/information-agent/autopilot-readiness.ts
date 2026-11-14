@@ -274,10 +274,17 @@ export async function loadRoundtripVerifiedAt(): Promise<string | null> {
   return data?.inbound_roundtrip_verified_at ?? null;
 }
 
+/** Réponse de l'API Auth pour un compte qui n'existe pas (et non une panne). */
+function isAuthUserNotFound(error: unknown): boolean {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  return status === 404 || code === "user_not_found";
+}
+
 /**
  * Le compte est-il toujours un administrateur actif ? Rôle `admin` au profil ET compte ni supprimé ni suspendu
- * (`banned_until`). Une lecture impossible vaut « non » : le pilote s'arrête plutôt que d'agir sous une
- * identité dont l'état est inconnu.
+ * (`banned_until`). Un compte réellement introuvable vaut « non » (le pilote s'arrête). Une lecture impossible
+ * (base, panne passagère de l'API Auth) n'est pas une réponse : l'erreur remonte, le passage échoue sans rien
+ * faire ni s'arrêter, et le suivant relit l'état (T7, 14/11/2026).
  */
 export async function isActiveAdmin(userId: string | null): Promise<boolean> {
   if (!userId) return false;
@@ -289,8 +296,12 @@ export async function isActiveAdmin(userId: string | null): Promise<boolean> {
   if (error) throw error;
   if (data?.user_role !== "admin") return false;
   const account = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (account.error) {
+    if (isAuthUserNotFound(account.error)) return false;
+    throw account.error;
+  }
   const user = account.data?.user;
-  if (account.error || !user) return false;
+  if (!user) return false;
   const bannedUntil = (user as { banned_until?: string | null }).banned_until;
   const deletedAt = (user as { deleted_at?: string | null }).deleted_at;
   return !deletedAt && !(bannedUntil && Date.parse(bannedUntil) > Date.now());

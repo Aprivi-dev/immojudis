@@ -65,6 +65,12 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
     "Pilote de l’Agent IA arrêté automatiquement",
     "agentPilot",
   ],
+  // Même famille de clés que les avertissements à mi-seuil, mais sans seuil d'arrêt : un passage du pilote a
+  // rencontré une erreur (brouillon, annulation, aperçu, marque de simulation). Libellé propre, avant la famille.
+  "information_agent.autopilot.warning.run_errors": [
+    "Pilote de l’Agent IA : dernier passage en erreur",
+    "agentPilot",
+  ],
   "billing.reconciliation.mismatch": ["Écart entre Stripe et les abonnements", "clients"],
   "stripe.webhook.unhealthy": ["Notifications de paiement Stripe en échec", "clients"],
   "cron.stale": ["Tâches planifiées en retard", "settings"],

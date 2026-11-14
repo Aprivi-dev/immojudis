@@ -27,11 +27,16 @@ import {
   evaluateAutopilotCandidate,
   type AutopilotSettings,
 } from "@/lib/information-agent/autopilot-rules";
-import { loadExcludedIdentityKeys } from "@/lib/information-agent/autopilot-settings";
+import {
+  loadExcludedIdentityKeys,
+  loadPendingSimulatedDrafts,
+} from "@/lib/information-agent/autopilot-settings";
 import {
   assertInformationAgentContactAllowed,
   persistInformationAgentContactObservations,
 } from "@/lib/information-agent/contacts";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
@@ -60,6 +65,10 @@ import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
  * du passage : vérification candidat par candidat, `evaluateAutopilotCandidate` (règles pures) sur des faits lus
  * ici. Jamais de recherche réseau d'adresse, jamais de greffe : seulement l'avocat dont l'adresse figure dans
  * l'annonce de la vente.
+ *
+ * Deux refus de la sélection évitent qu'un brouillon devenu caduc soit refusé à l'aperçu, ce qui compterait comme
+ * un rejet de politique (deux en 7 jours arrêtent le pilote) : une vente qui a déjà un brouillon simulé en attente
+ * n'est pas reprise (T1, 14/11/2026), et le délai de 30 jours par destinataire est appliqué dès l'examen.
  */
 export type AutopilotCandidate = {
   saleId: string;
@@ -146,6 +155,35 @@ function notarySendWillBeRefused(
   );
 }
 
+/**
+ * Ventes du paquet qui ont déjà un brouillon simulé en attente : il attend la décision d'un administrateur
+ * (« Prêtes à valider »), le pilote ne le reprend pas. Une vente n'a qu'un brouillon du pilote à la fois (les autres
+ * sont annulés avant d'en créer un) : deux lignes par vente suffisent.
+ */
+async function salesWithPendingSimulatedDraft(saleIds: readonly string[]): Promise<Set<string>> {
+  const { rows } = await loadPendingSimulatedDrafts({ saleIds, limit: saleIds.length * 2 });
+  return new Set(rows.flatMap((row) => (row.sale_id ? [row.sale_id] : [])));
+}
+
+/**
+ * Délai de 30 jours par destinataire, toutes ventes confondues, dès la sélection : même règle et mêmes clés que la
+ * création du brouillon (`assertInformationAgentRecipientCooldown`, clés d'identité complètes). Seul son refus
+ * (409) écarte le candidat ; une lecture impossible est propagée.
+ */
+async function recipientCooldownActive(
+  email: string,
+  identityKeys: readonly string[],
+  now: Date,
+): Promise<boolean> {
+  try {
+    await assertInformationAgentRecipientCooldown({ email, identityKeys, now });
+    return false;
+  } catch (error) {
+    if (error instanceof PublicApiError && error.status === 409) return true;
+    throw error;
+  }
+}
+
 /** Brouillon d'un administrateur (ou échec à reprendre) sur cette vente : le pilote ne le touche jamais. */
 async function humanDraftExists(saleId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin
@@ -190,10 +228,10 @@ export async function findAutopilotCandidates({
     const queued = await readQueuePage(offset);
     for (let start = 0; start < queued.length && !done(); start += CONTACT_SALES_CHUNK) {
       const chunk = queued.slice(start, start + CONTACT_SALES_CHUNK);
-      const { sales } = await loadInformationAgentContactSales({
-        auth: { isAdmin: true },
-        saleIds: chunk,
-      });
+      const [{ sales }, simulated] = await Promise.all([
+        loadInformationAgentContactSales({ auth: { isAdmin: true }, saleIds: chunk }),
+        salesWithPendingSimulatedDraft(chunk),
+      ]);
       for (const saleId of chunk) {
         if (done()) break;
         const sale = sales.get(saleId);
@@ -215,7 +253,9 @@ export async function findAutopilotCandidates({
             },
             settings,
             now,
-          ) ?? (notarySendWillBeRefused(sale, selected, env) ? "notary_send_closed" : null);
+          ) ??
+          (notarySendWillBeRefused(sale, selected, env) ? "notary_send_closed" : null) ??
+          (simulated.has(saleId) ? "simulated_draft_pending" : null);
         if (refusal) {
           skip(refusal);
           continue;
@@ -302,6 +342,9 @@ async function examineAutopilotSale(
     now,
   );
   if (!verdict.ok) return { skip: verdict.code };
+  if (await recipientCooldownActive(email, oppositionKeys.identityKeys, now)) {
+    return { skip: "recipient_cooldown" };
+  }
   return {
     saleId,
     tribunalCode: sale.tribunal_code?.trim() || null,

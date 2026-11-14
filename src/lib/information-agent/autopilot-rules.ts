@@ -26,6 +26,10 @@ export type AutopilotSettings = {
   allowLicitorDecoded: boolean;
   /** Verrou du lot 3 : faux tant qu'une migration du lot 3 ne l'a pas levé. Le mode réel est alors impossible. */
   liveAllowed: boolean;
+  /**
+   * Lu pour l'écran seulement : la règle de l'article 14 s'applique toujours (J9, décision du 14/11/2026). La base
+   * refuse « faux » depuis 20261119100810 ; une valeur fausse plus ancienne n'a aucun effet sur le pilote.
+   */
   art14RuleEnabled: boolean;
   art14MaxAgeDays: number;
   aipdAttestedAt: string | null;
@@ -359,10 +363,48 @@ export function autopilotRunGate(settings: AutopilotSettings, now: Date): Autopi
   return { ok: true };
 }
 
+/**
+ * Cadence de la tâche pg_cron du pilote : toutes les 10 minutes, heure UTC. RÈGLE LIÉE : `cron.schedule` de
+ * `immojudis-information-agent-autopilot` (migration 20261110230000) ; les deux changent ensemble.
+ */
+export const AUTOPILOT_RUN_EVERY_MINUTES = 10;
+/** Au-delà de deux semaines sans passage possible (pause la plus longue : 7 jours), on ne cherche plus. */
+const NEXT_RUN_HORIZON_MS = 14 * 86_400_000;
+
+/**
+ * Prochain passage planifié que la garde de tête laisserait travailler : premier multiple de 10 minutes à partir de
+ * `now`, dans la plage d'envoi et hors pause. Nul quand le pilote est éteint ou arrêté automatiquement : aucun
+ * passage n'aura lieu avant une action d'un administrateur. Ne dit rien d'une panne de la planification elle-même.
+ */
+export function nextAutopilotRunAt(settings: AutopilotSettings, now: Date): Date | null {
+  const step = AUTOPILOT_RUN_EVERY_MINUTES * 60_000;
+  const end = now.getTime() + NEXT_RUN_HORIZON_MS;
+  for (let at = Math.ceil(now.getTime() / step) * step; at <= end; at += step) {
+    const gate = autopilotRunGate(settings, new Date(at));
+    if (gate.ok) return new Date(at);
+    if (gate.code === "disabled" || gate.code === "auto_stopped") return null;
+  }
+  return null;
+}
+
+/**
+ * Brouillons simulés en attente de validation (« Prêtes à valider ») au plus : à ce nombre, la simulation ne prépare
+ * plus de brouillon. Une vente déjà simulée n'est plus reprise par la sélection, sans plafond ils s'accumuleraient
+ * (jusqu'à 5 par passage, 27 passages par jour). 10 : l'écran les montre tous, c'est le plafond d'une journée de
+ * la phase 2 du mode réel, et plus de trois fois les 1 à 3 envois manuels prévus par jour.
+ */
+export const AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS = 10;
+
 // ---------------------------------------------------------------------------------------------------------
 // Candidat
 // ---------------------------------------------------------------------------------------------------------
 const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
+/**
+ * Délai d'information de l'article 14 (art. 14.3.a RGPD : « ne dépassant pas un mois »), réglable de 1 à ce nombre
+ * de jours (J9, décision du 14/11/2026). RÈGLE LIÉE : contrainte `art14_max_age_days between 1 and 30` de
+ * `information_agent_autopilot_settings` (migration 20261119100810).
+ */
+export const AUTOPILOT_ART14_MAX_DAYS = 30;
 const AUTOPILOT_ADDRESS_MAX_AGE_DAYS = 183;
 const AUTOPILOT_REPLY_PAUSE_DAYS = 90;
 const AUTOPILOT_SILENCE_PAUSE_DAYS = 183;
@@ -434,7 +476,7 @@ export function autopilotQueueRefusal(
 
 export function evaluateAutopilotCandidate(
   facts: AutopilotCandidateFacts,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14RuleEnabled" | "art14MaxAgeDays">,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14MaxAgeDays">,
   now: Date,
 ): AutopilotCandidateVerdict {
   const no = (code: string): AutopilotCandidateVerdict => ({ ok: false, code });
@@ -460,10 +502,12 @@ export function evaluateAutopilotCandidate(
   if (!facts.hasUnpublishedGap) return no("no_unpublished_gap");
   if (facts.humanDraftExists) return no("admin_draft_exists");
   if (facts.identityExcluded) return no("identity_excluded");
-  if (settings.art14RuleEnabled && !facts.alreadyInformed) {
+  // Article 14 : toujours appliqué, délai plafonné à 30 jours même si la base porte encore une valeur plus ancienne.
+  if (!facts.alreadyInformed) {
     // Sans date de premier relevé, la règle ne peut pas être vérifiée : refus.
     if (!facts.contactFirstRecordedAt) return no("art14_unknown");
-    if (daysSince(facts.contactFirstRecordedAt) > settings.art14MaxAgeDays) {
+    const art14MaxAgeDays = Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS);
+    if (daysSince(facts.contactFirstRecordedAt) > art14MaxAgeDays) {
       return no("art14_window_expired");
     }
   }
@@ -546,7 +590,7 @@ export function evaluateAutopilotSendTime(
     AutopilotCandidateFacts,
     "selectedUnambiguously" | "hasUnpublishedGap" | "humanDraftExists" | "mailDomain" | "saleDate"
   >,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14RuleEnabled" | "art14MaxAgeDays">,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14MaxAgeDays">,
   now: Date,
 ): AutopilotCandidateVerdict {
   return evaluateAutopilotCandidate(
