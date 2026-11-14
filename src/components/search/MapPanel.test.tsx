@@ -187,6 +187,27 @@ describe("public map resilience", () => {
     expect(html).not.toContain("85");
     expect(html).not.toContain("Private source title");
   });
+  it("n'invente pas de prix au m² sur la surface présumée d'un studio (D17)", async () => {
+    const studio = {
+      id: "studio",
+      title: "Studio",
+      city: "Bordeaux",
+      property_type: "studio",
+      latitude: 44.84,
+      longitude: -0.58,
+      starting_price_eur: 100_000,
+      app_surface_m2: null,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [studio], selectedSaleId: studio.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] ?? "";
+    // 20 m² présumés : affichés comme tels, sans les 5 000 €/m² qui en sortiraient.
+    expect(html).toMatch(/20\sm²\sestimés/);
+    expect(html).not.toMatch(/5\s?000\s€\/m²/);
+    expect(html).toContain("<span>—</span>");
+  });
+
   it("sends « Voir le détail » to the sale with the current search and map=true", async () => {
     window.history.pushState({}, "", "/sales?city=Lyon&page=2#sale-card-x");
     const sale = {

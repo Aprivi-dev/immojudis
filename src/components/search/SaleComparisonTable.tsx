@@ -84,7 +84,8 @@ const ROWS: {
   {
     label: "Mise à prix / m²",
     value: (sale) => {
-      const perM2 = pricePerM2(sale.startingPriceEur, sale.surfaceM2);
+      // Surface publiée seulement : la comparaison n'en présume jamais (`toComparedSale`).
+      const perM2 = pricePerM2(sale.startingPriceEur, sale.surfaceM2, "recorded");
       return perM2 == null ? "Non calculable" : formatPricePerM2(perM2);
     },
   },

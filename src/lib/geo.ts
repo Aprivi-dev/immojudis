@@ -194,15 +194,15 @@ export function estimateSaleGrossYieldRange(
 }
 
 /**
- * Prix au m², ou `null` sans prix ni surface. `kind` : la nature de la surface (`getSaleSurface(sale).kind`).
- * Une surface « estimated » (20 m² présumés d'un studio ou d'un T1 sans surface publiée) n'est pas une
- * mesure : le prix au m² qui en sortirait serait inventé (filtre, CSV, API, alertes), il est refusé.
- * Sans `kind`, la surface est prise telle quelle.
+ * Prix au m², ou `null` sans prix ni surface. `kind` : la nature de la surface (`getSaleSurface(sale).kind`),
+ * obligatoire pour que chaque appelant la dise. Une surface « estimated » (20 m² présumés d'un studio ou d'un T1
+ * sans surface publiée) n'est pas une mesure : le prix au m² qui en sortirait serait inventé (filtre, CSV, API,
+ * alertes, carte, comparaison, statistiques), il est refusé.
  */
 export function pricePerM2(
   price: number | null | undefined,
   surface: number | null | undefined,
-  kind?: SaleSurface["kind"] | null,
+  kind: SaleSurface["kind"],
 ): number | null {
   if (kind === "estimated") return null;
   if (!price || !surface || surface <= 0) return null;

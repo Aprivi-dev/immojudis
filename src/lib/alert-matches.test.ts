@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildAlertMatchSnapshot, buildAlertMatchSummary } from "@/lib/alert-matches";
 import { isDiscoveryAlertCompatible } from "@/lib/discovery-alerts";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import type { UserAlert } from "@/lib/types";
+import type { AuctionSale, UserAlert } from "@/lib/types";
 
 function makeAlert(overrides: Partial<UserAlert> = {}): UserAlert {
   return {
@@ -147,6 +147,38 @@ describe("alert match snapshots", () => {
       match: {
         marketDiscountPct: 25,
       },
+    });
+  });
+
+  it("dit la nature de la surface : une surface présumée n'a pas de prix au m² et ne passe pas pour une mesure", () => {
+    const alert = makeAlert();
+    const snapshotOf = (sale: AuctionSale) =>
+      buildAlertMatchSnapshot({
+        alert,
+        sale,
+        summary: buildAlertMatchSummary({
+          alert,
+          sale,
+          reasons: [],
+          marketDiscountPct: null,
+          matchedAt: "2026-11-14T10:00:00.000Z",
+        }),
+      });
+    const withoutSurface: AuctionSale = {
+      ...EXAMPLE_SALE,
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+      starting_price_eur: 60_000,
+    };
+    // Studio sans surface publiée : 20 m² présumés, comme le flux de l'API (`surfaceKind`).
+    expect(
+      snapshotOf({ ...withoutSurface, property_type: "studio", title: "Studio" }),
+    ).toMatchObject({
+      sale: { surfaceM2: 20, surfaceKind: "estimated", pricePerM2: null },
+    });
+    expect(snapshotOf({ ...withoutSurface, app_surface_m2: 30 })).toMatchObject({
+      sale: { surfaceM2: 30, surfaceKind: "recorded", pricePerM2: 2_000 },
     });
   });
 });
