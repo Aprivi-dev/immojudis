@@ -1,8 +1,5 @@
 import { getSupabase, hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
-import { NETWORK_ERROR_MESSAGE } from "@/lib/user-messages";
-
-/** Délai de `API_TIMEOUT_MS` (ou `timeoutMs`) dépassé : la réponse n'est pas arrivée à temps. */
-const TIMEOUT_ERROR_MESSAGE = "Le serveur met trop de temps à répondre. Réessayez dans un instant.";
+import { NETWORK_ERROR_MESSAGE, TIMEOUT_ERROR_MESSAGE } from "@/lib/fetch-error-messages";
 
 export async function authHeaders(): Promise<Record<string, string>> {
   // Sans session stockée (visiteur anonyme), la réponse est connue d'avance : on ne charge pas
