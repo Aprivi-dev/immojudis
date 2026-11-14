@@ -157,6 +157,8 @@ where fact_id = '87800000-9000-4000-8000-000000000001';
 -- Le pont vers auction_fact_claims est un déclencheur différé (il passe après l'écriture de la fiche, avant
 -- la validation de la transaction). Le test le déclenche avec « set constraints all immediate » après les
 -- publications, puis revient au mode différé.
+-- Lot C : retenue coupée, ce fichier éprouve la branche de repli du noyau ; le chemin réel est couvert par 900.
+update public.auction_fact_fields set hold_enabled = false where hold_enabled;
 
 insert into public.information_agent_cases (
   id, sale_id, created_by, status, recipient_kind, recipient_email, normalized_recipient_email, subject,

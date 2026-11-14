@@ -55,6 +55,11 @@ import { EMAIL_TEMPLATES } from "./registry";
  * « Affichage sur la fiche : » ; agent_court_registry reçoit la nouvelle question au greffe et la section
  * « Affichage sur la fiche : » de la variante greffe. Textes gardés mot pour mot par
  * emails/information-request.test.tsx.
+ *
+ * Mise à jour explicite du même jour (ronde 3 de juridique-rgpd, textes repris mot pour mot, transmise par le chef
+ * d'orchestre) : l'empreinte de agent_court_registry a changé, et SEULEMENT celle-là. Seuls l'objet (« … : avocat
+ * poursuivant et consultation du cahier ») et la phrase « Affichage sur la fiche » du greffe (« … ou à indiquer aux
+ * candidats où consulter le cahier. ») diffèrent.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -70,7 +75,7 @@ const BASELINE: Record<string, string> = {
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
   agent_request: "e6a88a766ccfe06536ba0ec59c813269c29242793ec72b0eaadade6ca8ccf2c0",
-  agent_court_registry: "b3e61cedd6acc3a22cb5547270f682126b76fac62d42de0d30586fab6e8b9ed8",
+  agent_court_registry: "47a885986cee939c9a26a948b021a3cc5f5301a01d7f466a0ec21bcdc9dfc498",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

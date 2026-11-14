@@ -346,25 +346,32 @@ function parseSurfaceNumber(raw: string): number {
 }
 
 /**
- * Numéro écrit juste avant le nombre, sans ponctuation : lot, n°, bâtiment, section cadastrale, parcelle, étage,
- * type de logement (« T3 »). Le premier groupe de chiffres est alors ce numéro, pas les milliers de la surface.
+ * Mot qui annonce un numéro, écrit juste avant le nombre, sans ponctuation : lot, bâtiment, parcelle, étage, section
+ * cadastrale (lettres en capitales, sensibles à la casse). Suivi d'un nombre groupé par milliers (« bâtiment 1 250 m² »,
+ * « parcelle 2 500 m² »), il ne permet pas de choisir entre le numéro et les milliers.
  */
-const NUMBER_MARKERS_BEFORE = [
-  /(?<![\p{L}\p{N}])(?:lots?|n°|num[ée]ro|b[âa]t(?:iment)?|parcelles?|[ée]tages?)\.?\p{Zs}*$/iu,
-  // Lettres de section en capitales, « T » du type de logement : sensibles à la casse.
-  /(?<![\p{L}\p{N}])(?:[Ss]ection\p{Zs}+[A-Z]{1,2}|T)\p{Zs}*$/u,
+const NUMBER_WORDS_BEFORE = [
+  /(?<![\p{L}\p{N}])(?:lots?|b[âa]t(?:iment)?s?|parcelles?|[ée]tages?)\.?\p{Zs}*$/iu,
+  /(?<![\p{L}\p{N}])[Ss]ection\p{Zs}+[A-Z]{1,2}\p{Zs}*$/u,
 ];
+/** « n° » ou « numéro » : le premier groupe est le numéro annoncé, la surface est la suite. */
+const NUMBER_SIGN_BEFORE = /(?<![\p{L}\p{N}])(?:n°|num[ée]ro)\.?\p{Zs}*$/iu;
 
 /**
- * Surface lue d'un nombre qui commence à `start` : « lot n° 3 105 m² » vaut 105, et non 3105 ; « section AB 12 450
- * m² » vaut 450.
+ * Surface lue d'un nombre qui commence à `start`, ou nulle quand la lecture est incertaine. Un nombre groupé par
+ * milliers (« 1 250 m² ») se lit en entier, sauf :
+ *  - premier groupe collé à une lettre (« T4 105 m² ») ou annoncé par « n° » (« lot n° 3 105 m² ») : ce groupe est un
+ *    numéro, la surface est la suite (105) ;
+ *  - nombre précédé d'un mot qui annonce un numéro (« bâtiment 1 250 m² ») : aucune lecture, plutôt que choisir.
  */
-function surfaceNumberAt(text: string, start: number, raw: string): number {
+function surfaceNumberAt(text: string, start: number, raw: string): number | null {
   const groups = raw.split(/\p{Zs}+/u);
+  if (groups.length === 1) return parseSurfaceNumber(raw);
   const before = text.slice(Math.max(0, start - 30), start);
-  return groups.length > 1 && NUMBER_MARKERS_BEFORE.some((marker) => marker.test(before))
-    ? parseSurfaceNumber(groups.slice(1).join(" "))
-    : parseSurfaceNumber(raw);
+  if (/\p{L}$/u.test(before) || NUMBER_SIGN_BEFORE.test(before)) {
+    return parseSurfaceNumber(groups.slice(1).join(" "));
+  }
+  return NUMBER_WORDS_BEFORE.some((marker) => marker.test(before)) ? null : parseSurfaceNumber(raw);
 }
 
 /** Début du nombre dans une correspondance dont l'étiquette ne contient aucun chiffre. */
@@ -399,7 +406,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
     )
       continue;
     const value = surfaceNumberAt(text, numberStart(match), rawValue);
-    if (Number.isFinite(value) && value > 0 && value <= 1_000_000) {
+    if (value !== null && Number.isFinite(value) && value > 0 && value <= 1_000_000) {
       labelled.push({
         value,
         index: matchIndex,
@@ -413,6 +420,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
     const index = match.index ?? 0;
     const value = surfaceNumberAt(text, index, match[1] ?? "");
     if (
+      value === null ||
       !Number.isFinite(value) ||
       value <= 0 ||
       value > 1_000_000 ||
@@ -462,7 +470,7 @@ function extractLandSurfaceObservation(text: string): { value: number; index: nu
   const observations: Array<{ value: number; index: number }> = [];
   for (const match of text.matchAll(pattern)) {
     const value = surfaceNumberAt(text, numberStart(match), match[1] ?? "");
-    if (Number.isFinite(value) && value > 0 && value <= 100_000_000) {
+    if (value !== null && Number.isFinite(value) && value > 0 && value <= 100_000_000) {
       observations.push({ value, index: match.index ?? 0 });
     }
   }

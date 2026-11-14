@@ -18,7 +18,7 @@ export const COURT_REGISTRY_QUESTION =
 export const COURT_REGISTRY_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
   name: "Demande à un greffe : avocat poursuivant ou pièces publiques — version 1",
   subjectTemplate:
-    "{{sale_subject_title}}, {{subject_date}} : avocat poursuivant ou pièces publiques",
+    "{{sale_subject_title}}, {{subject_date}} : avocat poursuivant et consultation du cahier",
   blocks: [
     {
       id: "greeting",

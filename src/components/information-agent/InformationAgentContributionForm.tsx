@@ -850,9 +850,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     de son intérêt légitime. Elles sont lues par l’équipe, avec l’aide d’un outil
                     d’IA (prestataire établi aux États-Unis), puis relues avant toute utilisation
                     sur une fiche ; celles qui sont retenues peuvent être affichées sur la fiche
-                    publique de la vente, sans votre nom. Conservation : 12 à 24 mois. Vous pouvez
-                    vous opposer, demander l’accès, la rectification ou l’effacement et saisir la
-                    CNIL :{" "}
+                    publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant,
+                    certaines portent la mention de source décrite dans notre message, qui vous rend
+                    identifiable. Conservation : 12 à 24 mois. Vous pouvez vous opposer, demander
+                    l’accès, la rectification ou l’effacement et saisir la CNIL :{" "}
                     <Link
                       href="/privacy"
                       target="_blank"

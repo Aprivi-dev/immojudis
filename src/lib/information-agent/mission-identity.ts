@@ -109,7 +109,6 @@ export function missionRecipient(
     }),
     addressKind,
   });
-  const genericStructureAddress = addressKind === "generic" && !name?.trim();
   // Structure du destinataire : celle que le brouillon a retenue pour SON adresse, sinon celle du rôle.
   const storedStructure = sameAddress ? metadataText(identity.structure_kind) : null;
   const structure: InformationAgentFooterStructure = isInformationAgentStructureKind(
@@ -123,14 +122,14 @@ export function missionRecipient(
     keys,
     role,
     addressKind,
-    structureAddress: genericStructureAddress ? structure : null,
-    // Promesse « toute la structure » du pied : seulement à l'adresse générique d'une structure, sans personne
-    // nommée, et avec une clé qui vaut pour cette adresse (relecture juridique-rgpd du 14/11/2026).
-    structureOpposition:
-      genericStructureAddress &&
-      keys.identityKeys.some((key) => informationAgentStructureKeyHolds(key, email))
-        ? structure
-        : null,
+    structureAddress: addressKind === "generic" && !name?.trim() ? structure : null,
+    // Promesse « toute la structure » du pied : seulement avec une clé qui vaut pour cette adresse, que la
+    // personne soit nommée ou non (relecture juridique-rgpd du 14/11/2026, ronde 3).
+    structureOpposition: keys.identityKeys.some((key) =>
+      informationAgentStructureKeyHolds(key, email),
+    )
+      ? structure
+      : null,
     questionAudience: metadata.question_audience,
     saleAudience: metadata.sale_audience,
   };
