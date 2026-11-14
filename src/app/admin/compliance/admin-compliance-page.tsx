@@ -4,10 +4,11 @@ import {
   AdminPrivacyRequestsPanel,
   PRIVACY_REQUESTS_QUERY_KEY,
 } from "@/components/admin/AdminPrivacyRequestsPanel";
-import { AdminReadinessPanel, READINESS_QUERY_KEY } from "@/components/admin/AdminReadinessPanel";
+import { AdminReadinessPanel } from "@/components/admin/AdminReadinessPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { READINESS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 export function AdminCompliancePage() {
   const { user } = useAuth();

@@ -9,5 +9,10 @@ export const DASHBOARD_QUERY_KEY = ["admin-dashboard"] as const;
 export const DASHBOARD_RUNS_QUERY_KEY = [...DASHBOARD_QUERY_KEY, "runs"] as const;
 /** Supervision du pipeline : vue Opérations et réglages. */
 export const PIPELINE_QUERY_KEY = ["admin-pipeline"] as const;
+/**
+ * Diagnostic opérationnel (alertes ouvertes comprises) : accueil, Opérations > Alertes, Conformité et
+ * Configuration > Services.
+ */
+export const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 /** Abonnements : vue Clients, rafraîchie aussi par la prolongation d'essais des inscriptions. */
 export const SUBSCRIPTIONS_QUERY_KEY = ["admin-subscriptions"] as const;
