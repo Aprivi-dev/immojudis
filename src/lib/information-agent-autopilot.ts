@@ -33,6 +33,7 @@ import {
 } from "@/lib/information-agent/autopilot-rules";
 import { informationAgentCapStructure } from "@/lib/information-agent/contact-structure";
 import {
+  hasOnDemandAutopilotRunSince,
   loadAutopilotSettings,
   loadAutopilotStats,
   recordAutopilotAutoStop,
@@ -56,7 +57,8 @@ import { PublicApiError } from "@/lib/api-errors";
 
 /**
  * Pilote automatique de l'agent d'information : UN passage (appelé par `pg_cron` toutes les 10 minutes, via la
- * route `/api/cron/information-agent-autopilot`, seulement si le mode n'est pas « off »).
+ * route `/api/cron/information-agent-autopilot`, seulement si le mode n'est pas « off » ; ou lancé à la main par
+ * un administrateur, en simulation seulement : `runInformationAgentAutopilotOnDemand`).
  *
  * C'est le SEUL expéditeur automatisé de l'agent, et il n'envoie rien lui-même : il prépare le brouillon, rend
  * l'aperçu, puis appelle `runAdminInformationAgentAction` avec l'action `approve_and_send` et `trigger:
@@ -115,6 +117,8 @@ export type AutopilotDeps = {
   isAdmin: (userId: string | null) => Promise<boolean>;
   claimLease: () => Promise<CronLease>;
   releaseLease: (token: string) => Promise<void>;
+  /** Un passage lancé à la main a-t-il été journalisé depuis `since` ? */
+  hasOnDemandRunSince: (since: Date) => Promise<boolean>;
   findCandidates: (
     settings: AutopilotSettings,
     now: Date,
@@ -154,6 +158,11 @@ const KNOWN_WARNINGS = [
   "delayed_24h",
 ] as const;
 const SIMULATION_PER_RUN = 5;
+/** Au plus un passage lancé à la main toutes les 10 minutes (journal : `run` avec `manual`). */
+const ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
+
+/** Passage lancé à la main : administrateur vérifié par le serveur (jamais une valeur du client) et motif. */
+export type AutopilotOnDemandRequest = { adminId: string; reason: string };
 
 /**
  * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
@@ -246,6 +255,7 @@ export function defaultAutopilotDeps(
     isAdmin: isActiveAdmin,
     claimLease: () => claimCronLease("information-agent-autopilot", 600),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
+    hasOnDemandRunSince: hasOnDemandAutopilotRunSince,
     findCandidates: (settings, now, limit) =>
       findAutopilotCandidates({ settings, now, limit, env }),
     prepareDraft: prepareAutopilotDraft,
@@ -382,10 +392,29 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
   };
 }
 
+/** Passage de la tâche planifiée (`pg_cron`), dans la plage horaire seulement. */
 export async function runInformationAgentAutopilot(
   overrides: Partial<AutopilotDeps> = {},
 ): Promise<AutopilotRunSummary> {
-  const deps = defaultAutopilotDeps(overrides);
+  return runAutopilotPass(defaultAutopilotDeps(overrides), null);
+}
+
+/**
+ * Passage de SIMULATION lancé à la main par un administrateur : le même passage que la tâche planifiée (bail,
+ * règles, bornes), sans exiger la plage horaire. Refusé (`not_simulation`) si le mode lu au début du passage n'est
+ * pas « simulation », et (`on_demand_cooldown`) si un autre a été lancé à la main il y a moins de 10 minutes.
+ */
+export async function runInformationAgentAutopilotOnDemand(
+  request: AutopilotOnDemandRequest,
+  overrides: Partial<AutopilotDeps> = {},
+): Promise<AutopilotRunSummary> {
+  return runAutopilotPass(defaultAutopilotDeps(overrides), request);
+}
+
+async function runAutopilotPass(
+  deps: AutopilotDeps,
+  onDemand: AutopilotOnDemandRequest | null,
+): Promise<AutopilotRunSummary> {
   const runId = deps.newRunId();
   const now = deps.now();
   let settings = await deps.loadSettings();
@@ -397,7 +426,7 @@ export async function runInformationAgentAutopilot(
   };
 
   // 1. Mode, arrêt, pause, plage horaire : aucune lecture de candidat tant qu'une de ces portes est fermée.
-  const gate = autopilotRunGate(settings, now);
+  const gate = autopilotRunGate(settings, now, { onDemand: onDemand !== null });
   if (!gate.ok) return finish("skipped", gate.code);
   // Production seulement : un environnement de prévisualisation ne travaille jamais sur les vraies fiches.
   if (deps.env.VERCEL_ENV !== "production") return finish("skipped", "not_production");
@@ -406,6 +435,13 @@ export async function runInformationAgentAutopilot(
   if (lease.kind === "busy") return finish("skipped", "busy");
 
   try {
+    // Lu sous le bail : deux demandes simultanées ne passent pas toutes les deux.
+    if (
+      onDemand &&
+      (await deps.hasOnDemandRunSince(new Date(now.getTime() - ON_DEMAND_COOLDOWN_MS)))
+    ) {
+      return finish("skipped", "on_demand_cooldown");
+    }
     let stats = await deps.loadStats(now);
 
     // 2. Arrêts automatiques et alertes à la moitié des seuils.
@@ -604,6 +640,7 @@ export async function runInformationAgentAutopilot(
 
     await deps.record("run", runId, {
       mode: settings.mode,
+      ...(onDemand ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason } : {}),
       examined: summary.examined,
       prepared: summary.prepared,
       would_send: summary.wouldSend,

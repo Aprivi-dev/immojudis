@@ -24,7 +24,10 @@ import type {
   AdminSourceRefreshRequestInput,
   AdminSourceRefreshResponse,
 } from "@/lib/admin-source-refresh";
-import type { AdminAutopilotAction } from "@/lib/admin-information-agent-autopilot";
+import type {
+  AdminAutopilotAction,
+  AdminAutopilotActionResult,
+} from "@/lib/admin-information-agent-autopilot";
 import type { AutopilotView } from "@/lib/information-agent/autopilot-view";
 import type { InformationAgentOperationsView } from "@/lib/information-agent/operations-view";
 import type {
@@ -324,11 +327,14 @@ export function fetchAdminInformationAgentAutopilot(): Promise<AutopilotView> {
   return apiRequest<AutopilotView>("/api/admin/information-agent/autopilot");
 }
 
-/** Mode, réglages, arrêt d'urgence ou attestation d'AIPD (motif obligatoire, sauf l'arrêt d'urgence). */
+/**
+ * Mode, réglages, arrêt d'urgence, attestation d'AIPD ou passage de simulation lancé à la main (motif
+ * obligatoire, sauf l'arrêt d'urgence).
+ */
 export function runAdminInformationAgentAutopilotActionClient(
   data: AdminAutopilotAction,
-): Promise<AutopilotView> {
-  return apiRequest<AutopilotView>("/api/admin/information-agent/autopilot", {
+): Promise<AdminAutopilotActionResult> {
+  return apiRequest<AdminAutopilotActionResult>("/api/admin/information-agent/autopilot", {
     method: "POST",
     body: data,
   });

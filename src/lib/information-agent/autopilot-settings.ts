@@ -133,6 +133,8 @@ const EVENT_DETAIL_KEYS = new Set([
   "prepared",
   "would_send",
   "sent",
+  // Passage lancé à la main (avec `actorId` et `reason`) : lu par `hasOnDemandAutopilotRunSince`.
+  "manual",
 ]);
 
 /** Filtre `details` : liste blanche de clés, « @ » neutralisé dans toute chaîne (aucune adresse dans une erreur de contrainte). */
@@ -207,6 +209,19 @@ export type AutopilotEventRow = {
   reason: string | null;
   details: unknown;
 };
+
+/** Un passage lancé à la main (`run` journalisé avec `manual`) depuis `since` ? Une lecture impossible est propagée. */
+export async function hasOnDemandAutopilotRunSince(since: Date): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("id")
+    .eq("kind", "run")
+    .eq("details->>manual", "true")
+    .gte("at", since.toISOString())
+    .limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
 
 export async function loadRecentAutopilotEvents(limit = 20): Promise<AutopilotEventRow[]> {
   const { data, error } = await supabaseAdmin

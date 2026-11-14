@@ -1,5 +1,5 @@
 import "server-only";
-import { PublicApiError } from "@/lib/api-errors";
+import { PublicApiError, RateLimitError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -22,12 +22,17 @@ import {
 import { asObject } from "@/lib/information-agent/mission-store";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
+import {
+  runInformationAgentAutopilotOnDemand,
+  type AutopilotRunSummary,
+} from "@/lib/information-agent-autopilot";
 
 /**
  * Panneau du pilote automatique (administrateurs). Lecture : modèle de vue déjà mis en forme. Écriture : les
  * quatre RPC d'administration (`is_admin`, motif obligatoire, journal en ajout seul), appelées avec le jeton de
  * l'administrateur ; le passage en mode réel exige en plus le contrôle de préparation (TypeScript) et la base
- * le revérifie (AIPD, aller-retour).
+ * le revérifie (AIPD, aller-retour). Enfin, le passage de simulation lancé à la main (motif obligatoire,
+ * journalisé par le passage lui-même).
  */
 /** Motif d'un changement : 8 caractères au moins, jamais d'adresse (le journal n'en contient pas). */
 const changeReason = z
@@ -63,8 +68,52 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
     version: z.string().trim().min(1).max(40),
     reason: changeReason,
   }),
+  z.object({ action: z.literal("run_simulation_now"), reason: changeReason }),
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
+
+/** Résultat d'un passage de simulation lancé à la main, déjà rédigé pour l'écran. */
+export type AutopilotOnDemandRun = { text: string };
+/** Réponse d'une action : la vue relue, et le résultat du passage lancé à la main s'il y en a un. */
+export type AdminAutopilotActionResult = AutopilotView & { onDemandRun?: AutopilotOnDemandRun };
+
+/** Passages non lancés : un refus (409) avec son motif ; le délai de 10 minutes est un 429. */
+const ON_DEMAND_REFUSALS: Record<string, string> = {
+  busy: "Un passage du pilote est déjà en cours : réessayez dans quelques minutes.",
+  paused: "Passage refusé : le pilote est en pause.",
+  auto_stopped: "Passage refusé : le pilote est arrêté automatiquement.",
+  not_production: "Passage refusé : seul l’environnement de production fait tourner le pilote.",
+};
+const ON_DEMAND_COOLDOWN_MESSAGE =
+  "Un passage à la demande a déjà été lancé il y a moins de 10 minutes : réessayez plus tard.";
+
+function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
+  if (summary.status === "skipped") {
+    if (summary.code === "on_demand_cooldown") {
+      throw new RateLimitError(ON_DEMAND_COOLDOWN_MESSAGE, 600, ON_DEMAND_COOLDOWN_MESSAGE);
+    }
+    if (summary.code === "not_simulation") {
+      const state = summary.mode === "live" ? "en mode réel" : "éteint";
+      throw new PublicApiError(
+        `Passage refusé : le pilote est ${state}. Le passage à la demande n’existe qu’en mode Simulation.`,
+        409,
+      );
+    }
+    throw new PublicApiError(
+      ON_DEMAND_REFUSALS[summary.code ?? ""] ?? `Passage non lancé (${summary.code}).`,
+      409,
+    );
+  }
+  if (summary.status === "stopped") {
+    return {
+      text: "Passage interrompu : le pilote s’est arrêté ou mis en pause automatiquement (voir son état).",
+    };
+  }
+  const errors = Object.values(summary.errors).reduce((total, count) => total + count, 0);
+  return {
+    text: `Passage de simulation terminé : ${summary.examined} examinées, ${summary.prepared} préparées, ${summary.wouldSend} simulées${errors ? `, ${errors} en erreur` : ""}. Aucun envoi.`,
+  };
+}
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
   const [settings, stats] = await Promise.all([loadAutopilotSettings(), loadAutopilotStats(now)]);
@@ -137,8 +186,22 @@ export async function runAdminAutopilotAction({
   authToken: string;
   input: AdminAutopilotAction;
   env?: Readonly<Record<string, string | undefined>>;
-}): Promise<AutopilotView> {
+}): Promise<AdminAutopilotActionResult> {
   const auth = await assertAdminAuth(authToken);
+  if (input.action === "run_simulation_now") {
+    const onDemandRun = onDemandRunResult(
+      await runInformationAgentAutopilotOnDemand({ adminId: auth.userId, reason: input.reason }),
+    );
+    try {
+      return { ...(await getAdminAutopilotView(authToken, { env })), onDemandRun };
+    } catch (error) {
+      // Le passage est fait et journalisé : une relecture en échec ne doit pas le faire passer pour refusé.
+      console.error(JSON.stringify({ scope: "admin.autopilot", code: "run_view_unread" }));
+      throw new PublicApiError(`${onDemandRun.text} État non relu : rechargez la page.`, 503, {
+        cause: error,
+      });
+    }
+  }
   if (input.action === "set_mode") {
     if (input.mode === "live") {
       const { report } = await readiness(new Date(), env);

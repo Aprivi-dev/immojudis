@@ -1,5 +1,6 @@
-import { AdminRequiredError, PublicApiError } from "@/lib/api-errors";
+import { AdminRequiredError, PublicApiError, RateLimitError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AutopilotDeps } from "@/lib/information-agent-autopilot";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -9,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   stats: vi.fn(),
   events: vi.fn(),
   readiness: vi.fn(),
+  provider: vi.fn(),
+  onDemand: vi.fn(),
+  pilotDeps: null as null | (() => Partial<AutopilotDeps>),
+  realPilot: null as null | typeof import("@/lib/information-agent-autopilot"),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -21,7 +26,22 @@ vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   loadAutopilotSettings: mocks.settings,
   loadAutopilotStats: mocks.stats,
   loadRecentAutopilotEvents: mocks.events,
+  // Dépendances par défaut du passage, toutes remplacées par celles en mémoire (`pilot()`).
+  hasOnDemandAutopilotRunSince: vi.fn(),
+  recordAutopilotEvent: vi.fn(),
+  recordAutopilotAutoStop: vi.fn(),
+  syncAutopilotWarning: vi.fn(),
 }));
+vi.mock("@/lib/send-tracked-email", () => ({ sendTrackedEmail: mocks.provider }));
+vi.mock("@/lib/email-alerts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/email-alerts")>()),
+  sendResendEmail: mocks.provider,
+}));
+// Le VRAI passage du pilote, avec des dépendances en mémoire (aucune base, aucun fournisseur).
+vi.mock("@/lib/information-agent-autopilot", async (importOriginal) => {
+  mocks.realPilot = await importOriginal<typeof import("@/lib/information-agent-autopilot")>();
+  return { runInformationAgentAutopilotOnDemand: mocks.onDemand };
+});
 vi.mock("@/lib/information-agent/autopilot-readiness", () => ({
   currentPrivacyVersion: () => "2026-11-01.1",
   evaluateAutopilotReadiness: mocks.readiness,
@@ -54,6 +74,10 @@ const settings = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.pilotDeps = null;
+  mocks.onDemand.mockImplementation((request) =>
+    mocks.realPilot!.runInformationAgentAutopilotOnDemand(request, mocks.pilotDeps?.() ?? {}),
+  );
   mocks.rpc.mockResolvedValue({ data: null, error: null });
   mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1", supabase: { rpc: mocks.rpc } });
   mocks.settings.mockResolvedValue(settings);
@@ -367,5 +391,201 @@ describe("panneau du pilote (serveur)", () => {
         env: {},
       }),
     ).rejects.toMatchObject({ message: "Attestation d'AIPD manquante", status: 409 });
+  });
+});
+
+describe("passage de simulation lancé à la main", () => {
+  const SATURDAY = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris, hors plage d'envoi
+  const input = { action: "run_simulation_now", reason: "Premier passage demandé" } as const;
+
+  /** Journal et passages du pilote en mémoire ; `at` avance à la demande. */
+  function pilot(at = SATURDAY) {
+    const state = {
+      now: at,
+      journal: [] as Array<{ at: Date; kind: string; details: Record<string, unknown> }>,
+      sends: 0,
+      runs: 0,
+    };
+    mocks.pilotDeps = () => ({
+      now: () => state.now,
+      env: { VERCEL_ENV: "production" },
+      loadSettings: () => mocks.settings(),
+      loadStats: async () => parseAutopilotStats({}),
+      isAdmin: async () => true,
+      claimLease: async () => {
+        state.runs += 1;
+        return { kind: "held", token: "bail" };
+      },
+      releaseLease: async () => undefined,
+      hasOnDemandRunSince: async (since) =>
+        state.journal.some(
+          (event) => event.kind === "run" && event.details.manual === true && event.at >= since,
+        ),
+      findCandidates: async () => ({
+        candidates: [
+          {
+            saleId: "sale-1",
+            tribunalCode: "T1",
+            email: "contact@cabinet-fictif.test",
+            domain: "cabinet-fictif.test",
+            identityKeys: ["lawyer|bordeaux|dupont jean"],
+          },
+        ],
+        skipped: { not_class_a: 2 },
+        examined: 3,
+      }),
+      prepareDraft: async () => ({
+        missionId: "mission-1",
+        recipientEmail: "contact@cabinet-fictif.test",
+        recipientName: null,
+        subject: "Demande",
+        bodyText: "Bonjour",
+        alreadySimulated: false,
+      }),
+      preview: async () => ({ blockers: [], fingerprint: "f".repeat(64) }),
+      cancelDraft: async () => undefined,
+      markSimulated: async () => undefined,
+      send: async () => {
+        state.sends += 1;
+      },
+      record: async (kind, _runId, details) => {
+        state.journal.push({ at: state.now, kind, details });
+      },
+      autoStop: async () => undefined,
+      warning: async () => undefined,
+    });
+    return state;
+  }
+
+  it("exige un motif de 8 caractères sans adresse, comme les autres actions", () => {
+    const parse = (reason: string) =>
+      adminAutopilotActionSchema.safeParse({ action: "run_simulation_now", reason }).success;
+    expect(parse("court")).toBe(false);
+    expect(parse("Motif avec avocat@cabinet.test")).toBe(false);
+    expect(parse("Premier passage demandé")).toBe(true);
+  });
+
+  it.each([
+    ["off", /Passage refusé : le pilote est éteint/],
+    ["live", /Passage refusé : le pilote est en mode réel/],
+  ] as const)("mode %s lu en base : refus 409, aucun passage", async (mode, message) => {
+    const state = pilot();
+    mocks.settings.mockResolvedValue({ ...settings, mode });
+    const refusal = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    await expect(refusal).rejects.toBeInstanceOf(PublicApiError);
+    await expect(refusal).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(message),
+    });
+    expect(state.runs).toBe(0);
+    expect(state.journal).toEqual([]);
+    expect(state.sends).toBe(0);
+  });
+
+  it("accepté en simulation un samedi hors plage : résultat rédigé, journal « à la main », aucun envoi", async () => {
+    const state = pilot();
+    const response = await runAdminAutopilotAction({
+      authToken: "token",
+      // Une identité envoyée par le client n'est jamais lue : seule la session vérifiée compte.
+      input: adminAutopilotActionSchema.parse({ ...input, actorId: "intrus", adminId: "intrus" }),
+      env: {},
+    });
+    expect(response.onDemandRun).toEqual({
+      text: "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+    });
+    expect(response.modeLabel).toBe("Simulation (aucun envoi)");
+    const run = state.journal.find((event) => event.kind === "run");
+    expect(run?.details).toMatchObject({
+      manual: true,
+      actorId: "admin-1",
+      reason: "Premier passage demandé",
+      examined: 3,
+      prepared: 1,
+      would_send: 1,
+      sent: 0,
+    });
+    expect(state.sends).toBe(0);
+    expect(mocks.provider).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("refuse un second passage dans les 10 minutes (429), l'accepte ensuite", async () => {
+    const state = pilot();
+    await runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    state.now = new Date(SATURDAY.getTime() + 9 * 60_000);
+    const second = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    await expect(second).rejects.toBeInstanceOf(RateLimitError);
+    await expect(second).rejects.toMatchObject({
+      publicMessage: expect.stringContaining("il y a moins de 10 minutes"),
+    });
+    expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(1);
+    state.now = new Date(SATURDAY.getTime() + 11 * 60_000);
+    await runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(2);
+    expect(state.sends).toBe(0);
+  });
+
+  it("garde administrateur : un compte ordinaire ne lance aucun passage", async () => {
+    const state = pilot();
+    mocks.auth.mockResolvedValue({ isAdmin: false, userId: "u" });
+    await expect(runAdminAutopilotAction({ authToken: "token", input, env: {} })).rejects.toThrow(
+      AdminRequiredError,
+    );
+    expect(mocks.onDemand).not.toHaveBeenCalled();
+    expect(state.runs).toBe(0);
+  });
+
+  it.each([
+    ["busy", /déjà en cours/],
+    ["paused", /en pause/],
+    ["auto_stopped", /arrêté automatiquement/],
+    ["not_production", /production/],
+  ])("passage non lancé (%s) : refus 409 avec son motif", async (code, message) => {
+    mocks.onDemand.mockResolvedValueOnce({
+      runId: "r",
+      status: "skipped",
+      code,
+      mode: "simulation",
+      examined: 0,
+      prepared: 0,
+      wouldSend: 0,
+      sent: 0,
+      skipped: {},
+      errors: {},
+      warnings: [],
+    });
+    await expect(
+      runAdminAutopilotAction({ authToken: "token", input, env: {} }),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringMatching(message) });
+  });
+
+  it("le passage fait, une relecture de l'état en échec le dit sans le faire passer pour refusé", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    pilot();
+    mocks.events.mockRejectedValue(new Error("lecture impossible"));
+    const failure = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    await expect(failure).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringContaining("Passage de simulation terminé : 3 examinées"),
+    });
+    logged.mockRestore();
+  });
+
+  it("le journal du panneau distingue un passage lancé à la main", async () => {
+    mocks.events.mockResolvedValue([
+      {
+        id: "e1",
+        at: "2026-11-14T13:00:00Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { manual: true, examined: 3, prepared: 1, would_send: 1, sent: 0 },
+      },
+    ]);
+    const view = await getAdminAutopilotView("token", { env: {}, now: SATURDAY });
+    expect(view.events[0]).toMatchObject({
+      label: "Passage à la demande",
+      detail: "3 examinées, 1 préparées, 1 simulées, 0 envoyées",
+    });
   });
 });
