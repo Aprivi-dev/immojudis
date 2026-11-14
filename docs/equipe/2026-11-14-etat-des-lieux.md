@@ -726,6 +726,124 @@ octets, pour un plafond de 186 000.
 
 ---
 
+## 11. Décisions du 14/11 et exécution des lots A à D
+
+### Décisions du propriétaire
+
+- **Paiement.** Le paiement Analyse est ouvert volontairement, et Stripe est en mode réel. Aucun abonnement
+  n'existait au 14/11.
+- **Lots.** A, B, C et D sont validés.
+- **Envois réels aux avocats.** Ils sont maintenus du 17 au 19/11, malgré les conditions J7 non remplies au
+  matin du 14/11 : risque accepté. Le lot C lève les points bloquants de juridique-rgpd avant ces envois.
+- **Mention de source.** C'est la « version UX ».
+- **T4.** Une réponse d'avocat est acceptée par le registre des pièces.
+- **Délai Article 14 du pilote.** Il passe de 30 à 90 jours, contre l'avis de juridique-rgpd (art. 14.3.a RGPD ;
+  WP260, points 27 et 28 : « un mois » au plus) : risque accepté par le propriétaire. Le plafond est de 90 jours
+  dans le code et dans la base. La valeur se règle depuis l'écran, et elle reste à 30 jours tant que le
+  propriétaire ne l'a pas changée.
+- **Tests.** Trois autorisations nominatives :
+  - `supabase/tests/868` : 60 → 20 jours ;
+  - les 63 citations du jeu d'évaluation ;
+  - 14 assertions de `supabase/tests/878` et `879`, réécrites pour le registre.
+    Aucune assertion n'a été supprimée.
+- **D13.** Les 13 ventes fantômes d'encheres_publiques passent au statut inconnu, par la règle générale des
+  annonces non revues depuis 14 jours. Aucune réparation de données n'est faite par migration.
+- **ALLOW_INCOMPLETE_LAUNCH_CONFIG** (Vercel). Retrait demandé, mais pas fait. Ce drapeau fait aussi passer
+  l'absence de second facteur pour un simple avertissement : le retirer maintenant bloquerait tous les builds de
+  production. L'ordre à suivre est dans `docs/runbooks/ouverture-paiements.md`, section 6 :
+  1. enrôler le second facteur ;
+  2. passer `ADMIN_MFA_REQUIRED=true` ;
+  3. retirer le drapeau ;
+  4. redéployer ;
+  5. activer les interrupteurs en base.
+
+### Search Console : point de départ
+
+Relevé avant la mise en ligne du lot SEO, du 15/10 au 12/11 :
+
+- 688 clics et 8 869 impressions, position moyenne 12,6 ;
+- les requêtes génériques visées en section 6 n'ont aucune impression ;
+- le trafic vient des pages département et tribunaux.
+
+À remesurer quatre à six semaines après la mise en ligne, sur les 14 requêtes de la section 6.
+
+### Exécution
+
+**Première vague** : PR #507, fusionnée le 14/11 à 19 h UTC (`a564d7a`).
+
+- **Lot SEO.** Voir la section 10.
+- **Lot A, paiement en réel.**
+  - **C2, C3 :** un interrupteur ferme la vente de l'offre Analyse sans couper les abonnés.
+  - **C6 :** pas de double remboursement en cas de rétractation (409).
+  - **C8 :** suivi des emails de compte.
+  - **T3 :** avertissement « second facteur non exigé » dans l'administration.
+  - **Clé Stripe :** le build de production refuse une clé qui n'est pas en mode réel, et
+    `ALLOW_INCOMPLETE_LAUNCH_CONFIG` ne permet pas de contourner ce contrôle.
+  - **D2, D3 :** valorisation et page méthode.
+- **Lot B, pilote de l'agent.**
+  - **T1 :** la marque « simulé » est posée par une RPC.
+  - Plafond de 10 brouillons simulés en attente.
+  - **J9 :** délai Article 14 borné de 1 à 90 jours et toujours appliqué.
+  - Jours de simulation effectifs : seuls les passages planifiés comptent, pas les passages lancés à la main.
+  - « Dernier passage planifié ».
+- **Intégration de main.** Trois PR d'une autre session ont été fusionnées dans la branche :
+  - #508 : passage à la demande ;
+  - #509 : tri préalable de la file ;
+  - #510 : rappel de la vente à côté de « Valider et envoyer ».
+    Il n'y a plus qu'une seule règle de l'Article 14, partagée entre la file et la vérification complète.
+- **Migrations du lot B :** 20261119100800, 100810 et 100820. Elles sont appliquées par le workflow « Apply Supabase
+  Migrations » dès que la CI de `main` est verte, avant la simulation du lundi 16/11 à 9 h 30.
+
+**Seconde vague** : lot C, politique de confidentialité et lot D, dans une seule PR. Les migrations 20261119100900
+(lot C), puis 101000, 101010 et 101020 (lot D), sont appliquées aussitôt après la fusion. Aucune réponse d'avocat ne
+doit être acceptée entre la fusion et l'application.
+
+- **Lot C.** Réponses d'avocats acceptées par le registre.
+  - Mention de source seulement si la dernière décision du registre est une acceptation. Une opposition ou un
+    retrait l'efface.
+  - Effacement des traces à l'effacement d'un professionnel.
+  - Textes de l'email repris mot pour mot de juridique-rgpd : aucune pièce demandée, portée de l'opposition,
+    pied en trois variantes.
+  - Délai de retrait de 28 jours.
+  - Extraction de la surface : un numéro de lot n'est plus lu comme une surface.
+- **Politique de confidentialité 2026-11-14.1.** Le registre des traitements et la matrice de conservation
+  sont alignés sur le lot C : on ne demande au greffe que l'avocat poursuivant et le lieu de consultation du
+  cahier.
+- **Lot D, pipeline et données.**
+  - **Alerte d'enrichissement bloqué :** elle compte les tâches immobiles, sans se rouvrir quand le budget IA
+    limite la file.
+  - **D7 :** la relecture payante des pièces s'arrête après 4 échecs sur le même texte.
+  - **D9 :** le contact d'un négociateur ne passe plus pour celui de l'office notarial, ni dans les colonnes,
+    ni dans les faits, ni dans l'affichage.
+  - **D13 :** marqueur « Annonce non revue depuis 14 jours », de gravité info, sans e-mail.
+  - **D5, D19, D20, D21 :** voir le runbook `pipeline-autonomy-progress.md`.
+
+### Relectures
+
+| Lot    | Relecteurs                    | Rondes | Bloquants trouvés puis corrigés                                                                                                        |
+| ------ | ----------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| A      | code-reviewer                 | 2      | corrections de la relecture dans f10fd51                                                                                               |
+| B      | code-reviewer                 | 2      | jours effectifs remplis par des clics (#508 et lot B), faux serveur e2e                                                                |
+| C      | code-reviewer, juridique-rgpd | 3      | mention qui survivait à une opposition, effacement, textes de l'email, tests 878 et 879                                                |
+| D      | code-reviewer                 | 4      | alerte rouverte sous budget, boucle payante, contact du négociateur restauré, libellé « avocat poursuivant » sur des ventes notariales |
+| Fusion | code-reviewer                 | 1      | aucun                                                                                                                                  |
+
+### Ce qui reste au propriétaire
+
+- Passer le délai Article 14 à 90 jours dans l'écran du pilote, s'il le souhaite toujours.
+- Traiter les 2 réponses non rattachées.
+- Second facteur : suivre l'ordre de `ouverture-paiements.md`, section 6.
+- Recette du paiement : un vrai paiement puis un remboursement. Faire relire les CGU par un avocat.
+- Valorisation : action B et requête `next_refresh_at` (`modeles-valorisation-retour-arriere.md`), après la
+  relecture d'expert-postgres.
+- Vérifier que Resend figure sur la liste du Data Privacy Framework. Régler la question du DPA et du transfert
+  avec Replicate.
+- D9 : après relecture, valider puis exécuter soi-même la réparation des ventes notaires qui ne sont plus
+  listées (`pipeline-autonomy-progress.md`).
+- À faire valider par un avocat : les points listés par juridique-rgpd (annexe et lot C).
+
+---
+
 ## Annexe : consolidation du département Technique (chef : architecte-logiciel)
 
 # Département Technique : consolidation au 14/11/2026
