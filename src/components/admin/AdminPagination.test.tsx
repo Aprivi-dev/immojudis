@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminPagination } from "./AdminPagination";
 
@@ -41,12 +41,31 @@ describe("AdminPagination", () => {
     expect(container.textContent).not.toMatch(/NaN|undefined/);
   });
 
-  it("sans total, s'en tient aux lignes reçues sur une page suivante", () => {
+  it("sans total, dit « page N » sans « sur » et s'arrête sur une page incomplète", () => {
     renderBar({ offset: 50, total: undefined, shown: 10 });
-    expect(screen.getByRole("status").textContent).toBe("51–60 sur 60 · page 2 sur 2");
+    expect(screen.getByRole("status").textContent).toBe("51–60 · page 2");
     expect(screen.getByRole("button", { name: "Suivant — demandes" })).toHaveProperty(
       "disabled",
       true,
     );
+  });
+
+  it("sans total, laisse « Suivant » actif quand la page est pleine", () => {
+    const onOffsetChange = vi.fn();
+    render(
+      <AdminPagination
+        label="demandes"
+        offset={0}
+        limit={50}
+        total={undefined as unknown as number}
+        shown={50}
+        onOffsetChange={onOffsetChange}
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("1–50 · page 1");
+    const next = screen.getByRole("button", { name: "Suivant — demandes" });
+    expect(next).toHaveProperty("disabled", false);
+    fireEvent.click(next);
+    expect(onOffsetChange).toHaveBeenCalledWith(50);
   });
 });
