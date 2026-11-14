@@ -6,7 +6,10 @@ import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-informati
 import { claimCronLease, releaseCronLease, type CronLease } from "@/lib/cron-lease.server";
 import { runAdminInformationAgentAction } from "@/lib/information-agent";
 import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
-import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
+import {
+  INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE,
+  previewAdminInformationAgentMission,
+} from "@/lib/information-agent/preview";
 import {
   findAutopilotCandidates,
   type AutopilotCandidate,
@@ -125,6 +128,7 @@ export type AutopilotDeps = {
   preview: (
     draft: PreparedAutopilotDraft,
     settings: AutopilotSettings,
+    runId: string,
   ) => Promise<AutopilotPreview>;
   cancelDraft: (missionId: string, settings: AutopilotSettings) => Promise<void>;
   markSimulated: (missionId: string) => Promise<void>;
@@ -183,7 +187,8 @@ async function cancelAutopilotDraft(adminId: string, missionId: string): Promise
  * Nature d'une erreur pour les journaux : nom et code (base, fournisseur), jamais le message (il peut porter une
  * adresse).
  */
-function errorKind(error: unknown): { name: string; code: string | null } {
+function errorKind(error: unknown): { name: string; code: string | null } | null {
+  if (error == null) return null;
   const code = (error as { code?: unknown } | null)?.code;
   return {
     name: error instanceof Error ? error.name : typeof error,
@@ -244,7 +249,7 @@ export function defaultAutopilotDeps(
     findCandidates: (settings, now, limit) =>
       findAutopilotCandidates({ settings, now, limit, env }),
     prepareDraft: prepareAutopilotDraft,
-    preview: async (draft, settings) => {
+    preview: async (draft, settings, runId) => {
       const response = await previewAdminInformationAgentMission({
         auth: actingAuth(settings.actingAdminId ?? ""),
         env: env as NodeJS.ProcessEnv,
@@ -256,6 +261,7 @@ export function defaultAutopilotDeps(
           bodyText: draft.bodyText,
           recipientOriginUrl: null,
         },
+        trigger: issueAutopilotTrigger(runId),
       });
       return { blockers: response.blockers, fingerprint: response.fingerprint };
     },
@@ -503,8 +509,20 @@ export async function runInformationAgentAutopilot(
       }
       summary.prepared += 1;
 
-      const preview = await deps.preview(draft, settings);
-      const blockers = live ? preview.blockers : blockersAfterSimulationTolerance(preview.blockers);
+      const preview = await deps.preview(draft, settings, runId);
+      const tolerated = live
+        ? preview.blockers
+        : blockersAfterSimulationTolerance(preview.blockers);
+      // Contrôle qui n'a pas pu s'exécuter (panne passagère) : rien n'est refusé. Erreur du passage, jamais un rejet
+      // de politique (arrêt automatique) ; le brouillon est gardé, le passage suivant refait l'aperçu.
+      const blockers = tolerated.filter(
+        (blocker) => blocker !== INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE,
+      );
+      const checkFailed = blockers.length < tolerated.length;
+      if (checkFailed && !blockers.length) {
+        runError("preview_error", null, candidate.saleId);
+        continue;
+      }
       if (blockers.length || !preview.fingerprint) {
         const code = blockers.some((blocker) => /mention commerciale/i.test(blocker))
           ? "content_rejected"
@@ -524,14 +542,16 @@ export async function runInformationAgentAutopilot(
       }
 
       if (!live) {
+        // Seuls les brouillons journalisés « aurait envoyé » pendant ce passage comptent : un brouillon déjà
+        // simulé par un passage précédent reste en attente sans être recompté.
         if (!draft.alreadySimulated) {
           await deps.markSimulated(draft.missionId);
           await deps.record("would_send", runId, {
             saleId: candidate.saleId,
             missionId: draft.missionId,
           });
+          summary.wouldSend += 1;
         }
-        summary.wouldSend += 1;
         continue;
       }
 
