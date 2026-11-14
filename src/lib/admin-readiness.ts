@@ -69,7 +69,7 @@ export type OperationalHealthReadiness = {
   pendingDeliveryCount: number | null;
   failedDeliveryCount: number | null;
   lastHealthRunAt: string | null;
-  /** Dernière mesure de santé de moins de 30 minutes (la surveillance tourne). */
+  /** Dernière mesure de santé réussie de moins de 30 minutes (la surveillance tourne). */
   lastHealthRunFresh: boolean;
   alerts: OperationalAlertSummary[];
   detail: string;
@@ -314,10 +314,12 @@ async function readOperationalHealthReadiness(
           as failed_delivery_count
       from public.operational_alerts
     `;
+    // Dernière mesure RÉUSSIE : une surveillance qui tourne mais échoue à chaque passage n'est pas fraîche.
     const [latestRun] = await sql<{ latest_at: string | null }[]>`
-      select max(coalesce(finished_at, started_at))::text as latest_at
+      select max(finished_at)::text as latest_at
       from public.operational_job_runs
       where job_name = 'operational-health'
+        and status = 'success'
     `;
     const [slo] = await sql<
       Array<{
