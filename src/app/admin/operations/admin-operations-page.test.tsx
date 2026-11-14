@@ -173,8 +173,15 @@ describe("AdminOperationsPage", () => {
     expect(collections.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tablist", { name: "Rubriques des opérations" })).toBeTruthy();
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(collections.id);
+    // Seul l'onglet actif pointe vers un panneau : les autres panneaux n'existent pas.
+    expect(collections.getAttribute("aria-controls")).toBe(screen.getByRole("tabpanel").id);
+    expect(screen.getByRole("tab", { name: "Documents" }).getAttribute("aria-controls")).toBeNull();
     expect(mocks.fetchReadiness).not.toHaveBeenCalled();
 
+    fireEvent.keyDown(collections, { key: "End" });
+    expect(screen.getByRole("tab", { name: "Alertes" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Alertes" }), { key: "Home" });
+    expect(collections.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(collections, { key: "ArrowLeft" });
     const alerts = screen.getByRole("tab", { name: "Alertes" });
     expect(alerts.getAttribute("aria-selected")).toBe("true");
