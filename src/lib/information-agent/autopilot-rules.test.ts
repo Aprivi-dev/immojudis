@@ -8,7 +8,7 @@ import {
   autopilotRunGate,
   evaluateAutopilotCandidate,
   evaluateAutopilotSafety,
-  isAutopilotSilent,
+  autopilotSilence,
   nextAutopilotRunAt,
   parseAutopilotStats,
   type AutopilotCandidateFacts,
@@ -159,30 +159,30 @@ describe("plage d'envoi (Europe/Paris)", () => {
 
 describe("pilote muet (alerte information_agent.autopilot.silent)", () => {
   // `lastScheduledRunAt` : dernier passage PLANIFIÉ, tel que `loadLastAutopilotRunAt` le lit.
-  const silent = (now: string, lastScheduledRunAt: string | null, over = {}) =>
-    isAutopilotSilent(settings(over), lastScheduledRunAt, new Date(now));
+  const state = (now: string, lastScheduledRunAt: string | null, over = {}) =>
+    autopilotSilence(settings(over), lastScheduledRunAt, new Date(now));
   const LONG_AGO = "2026-10-30T15:20:00Z"; // vendredi 30/10, 16 h 20 à Paris
 
-  it("plage ouverte et passage planifié récent : pas d'alerte", () => {
-    // Mardi 10 h 30 à Paris, passage à 10 h 20.
-    expect(silent("2026-11-03T09:30:00Z", "2026-11-03T09:20:00Z")).toBe(false);
-    // Le dernier passage a 40 minutes pile : il compte encore.
-    expect(silent("2026-11-03T09:30:00Z", "2026-11-03T08:50:00Z")).toBe(false);
+  it("plage ouverte et passage planifié récent : actif, l'alerte se referme", () => {
+    // Mardi 10 h 30 à Paris, passage de 10 h 20.
+    expect(state("2026-11-03T09:30:00Z", "2026-11-03T09:20:30Z")).toBe("active");
+    // 39 minutes de plage depuis le dernier passage.
+    expect(state("2026-11-03T09:30:00Z", "2026-11-03T08:51:00Z")).toBe("active");
   });
 
-  it("plage ouverte et aucun passage planifié depuis 40 minutes : alerte", () => {
-    expect(silent("2026-11-03T09:30:00Z", "2026-11-03T08:49:00Z")).toBe(true);
-    expect(silent("2026-11-03T09:30:00Z", null)).toBe(true);
+  it("plage ouverte et 40 minutes de plage sans passage planifié : muet", () => {
+    expect(state("2026-11-03T09:30:00Z", "2026-11-03T08:50:00Z")).toBe("silent");
+    expect(state("2026-11-03T09:30:00Z", null)).toBe("silent");
     // Mode réel : même règle.
-    expect(silent("2026-11-03T09:30:00Z", null, { mode: "live" })).toBe(true);
+    expect(state("2026-11-03T09:30:00Z", null, { mode: "live" })).toBe("silent");
   });
 
-  it("seul un passage lancé à la main : alerte (il n'entre pas dans le dernier passage planifié)", () => {
+  it("seul un passage lancé à la main : muet (il n'entre pas dans le dernier passage planifié)", () => {
     // Un passage à la main a eu lieu à 10 h 25 ; le dernier passage planifié date de la veille.
-    expect(silent("2026-11-03T09:30:00Z", "2026-11-02T15:20:00Z")).toBe(true);
+    expect(state("2026-11-03T09:30:00Z", "2026-11-02T15:20:00Z")).toBe("silent");
   });
 
-  it("plage fermée : pas d'alerte, même sans passage depuis longtemps", () => {
+  it("plage fermée : inconnu, rien n'est écrit, même sans passage depuis longtemps", () => {
     for (const now of [
       "2026-11-03T11:00:00Z", // mardi 12 h, pause de midi
       "2026-11-03T10:30:00Z", // mardi 11 h 30 : la borne de fin est exclue
@@ -190,51 +190,73 @@ describe("pilote muet (alerte information_agent.autopilot.silent)", () => {
       "2026-11-07T10:00:00Z", // samedi
       "2026-11-11T09:30:00Z", // 11 novembre, férié
     ]) {
-      expect(silent(now, LONG_AGO), now).toBe(false);
+      expect(state(now, LONG_AGO), now).toBe("unknown");
     }
   });
 
-  it("pilote éteint, arrêté automatiquement ou en pause : pas d'alerte", () => {
-    expect(silent("2026-11-03T09:30:00Z", null, { mode: "off" })).toBe(false);
-    expect(silent("2026-11-03T09:30:00Z", null, { autoStoppedAt: "2026-11-03T08:00:00Z" })).toBe(
-      false,
+  it("pilote éteint, arrêté automatiquement ou en pause : actif, l'alerte se referme", () => {
+    expect(state("2026-11-03T09:30:00Z", null, { mode: "off" })).toBe("active");
+    expect(state("2026-11-03T09:30:00Z", null, { autoStoppedAt: "2026-11-03T08:00:00Z" })).toBe(
+      "active",
     );
-    expect(silent("2026-11-03T09:30:00Z", null, { pausedUntil: "2026-11-04T09:00:00Z" })).toBe(
-      false,
+    expect(state("2026-11-03T09:30:00Z", null, { pausedUntil: "2026-11-04T09:00:00Z" })).toBe(
+      "active",
     );
+    // La nuit aussi : l'horaire ne compte pas quand le pilote est éteint.
+    expect(state("2026-11-03T20:00:00Z", null, { mode: "off" })).toBe("active");
   });
 
-  it("le délai part de l'ouverture de la plage : matin, après-midi, fin de pause", () => {
-    // Lundi 16/11 : la plage ouvre à 9 h 30 (8 h 30 UTC) ; dernier passage le vendredi 13 à 16 h 20.
-    const friday = "2026-11-13T15:20:00Z";
-    expect(silent("2026-11-16T08:35:00Z", friday)).toBe(false);
-    expect(silent("2026-11-16T09:05:00Z", friday)).toBe(false);
-    expect(silent("2026-11-16T09:10:00Z", friday)).toBe(true);
-    // Mardi : dernier passage à 11 h 20, réouverture à 14 h.
-    expect(silent("2026-11-03T13:30:00Z", "2026-11-03T10:20:00Z")).toBe(false);
-    expect(silent("2026-11-03T13:40:00Z", "2026-11-03T10:20:00Z")).toBe(true);
-    // Pause finie à 10 h 05 : le premier créneau est 10 h 10, l'alerte attend 10 h 50.
+  it("cumule la plage ouverte depuis le dernier passage : fin d'après-midi, puis lundi matin", () => {
+    // Dernier passage le vendredi 13/11 à 16 h 25 : 5 minutes de plage jusqu'à 16 h 30.
+    const friday = "2026-11-13T15:25:00Z";
+    expect(state("2026-11-16T09:00:00Z", friday)).toBe("active"); // 5 + 30 minutes
+    expect(state("2026-11-16T09:05:00Z", friday)).toBe("silent"); // 5 + 35 minutes
+  });
+
+  it("cumule de part et d'autre de la pause de midi, sans s'y refermer", () => {
+    // Dernier passage à 11 h : 29 minutes à 11 h 29, puis la plage ferme jusqu'à 14 h.
+    const late = "2026-11-03T10:00:00Z";
+    expect(state("2026-11-03T10:29:00Z", late)).toBe("active");
+    expect(state("2026-11-03T11:00:00Z", late)).toBe("unknown");
+    expect(state("2026-11-03T13:05:00Z", late)).toBe("active"); // 30 + 5 minutes
+    expect(state("2026-11-03T13:10:00Z", late)).toBe("silent"); // 30 + 10 minutes
+  });
+
+  it("une journée entière de tâche planifiée morte : jamais « actif », puis actif au premier passage", () => {
+    const friday = "2026-11-13T15:25:00Z";
+    const states: string[] = [];
+    // Santé opérationnelle toutes les 30 minutes, lundi 16/11 de 0 h à 23 h 30 (UTC).
+    for (let at = Date.parse("2026-11-16T00:00:00Z"); at < Date.parse("2026-11-17T00:00:00Z"); ) {
+      states.push(state(new Date(at).toISOString(), friday));
+      at += 30 * 60_000;
+    }
+    expect(states).toContain("silent");
+    expect(states.slice(states.indexOf("silent"))).not.toContain("active");
+    // Premier passage planifié revenu (fin à 10 h 40 et 30 s) : l'alerte se referme.
+    expect(state("2026-11-17T09:45:00Z", "2026-11-17T09:40:30Z")).toBe("active");
+  });
+
+  it("le compte repart de la fin d'une pause et de la mise en route de la simulation", () => {
+    // Pause finie à 10 h 05 : les créneaux de 10 h 10, 10 h 20 et 10 h 30, puis 10 h 40.
     const pause = { pausedUntil: "2026-11-03T09:05:00Z" };
-    expect(silent("2026-11-03T09:40:00Z", null, pause)).toBe(false);
-    expect(silent("2026-11-03T09:50:00Z", null, pause)).toBe(true);
-  });
-
-  it("une simulation mise en route depuis moins de 40 minutes n'est pas muette", () => {
+    expect(state("2026-11-03T09:40:00Z", null, pause)).toBe("active");
+    expect(state("2026-11-03T09:50:00Z", null, pause)).toBe("silent");
     const started = { simulationStartedAt: "2026-11-03T09:00:00Z" };
-    expect(silent("2026-11-03T09:30:00Z", null, started)).toBe(false);
-    expect(silent("2026-11-03T09:45:00Z", null, started)).toBe(true);
+    expect(state("2026-11-03T09:30:00Z", null, started)).toBe("active");
+    expect(state("2026-11-03T09:40:00Z", null, started)).toBe("silent");
   });
 
   it("plage à l'heure de Paris : changements d'heure d'octobre et de mars", () => {
-    // 8 h 10 UTC : 10 h 10 le vendredi 23/10 (heure d'été), 9 h 10 le lundi 26/10 (heure d'hiver).
-    expect(silent("2026-10-23T08:10:00Z", null)).toBe(true);
-    expect(silent("2026-10-26T08:10:00Z", null)).toBe(false);
-    expect(silent("2026-10-26T09:10:00Z", null)).toBe(true);
-    // 7 h 10 UTC : 9 h 10 le lundi 30/03 (heure d'été) ; 8 h 10 UTC : 9 h 10 le vendredi 27/03 (heure d'hiver).
-    expect(silent("2026-03-30T07:10:00Z", null)).toBe(false);
-    expect(silent("2026-03-30T08:10:00Z", null)).toBe(true);
-    expect(silent("2026-03-27T08:10:00Z", null)).toBe(false);
-    expect(silent("2026-03-27T09:10:00Z", null)).toBe(true);
+    // 8 h 20 UTC : 9 h 20 le lundi 26/10 (heure d'hiver) et le vendredi 27/03 (heure d'hiver), plage fermée.
+    expect(state("2026-10-26T08:20:00Z", null)).toBe("unknown");
+    expect(state("2026-03-27T08:20:00Z", null)).toBe("unknown");
+    // 7 h 20 UTC : 9 h 20 le lundi 30/03 (heure d'été), plage fermée.
+    expect(state("2026-03-30T07:20:00Z", null)).toBe("unknown");
+    // Dernier passage le vendredi 23/10 à 16 h 20 (heure d'été) : 10 minutes, puis la plage du lundi 26/10
+    // s'ouvre à 9 h 30 heure d'hiver (8 h 30 UTC).
+    const friday = "2026-10-23T14:20:00Z";
+    expect(state("2026-10-26T08:55:00Z", friday)).toBe("active"); // 10 + 25 minutes
+    expect(state("2026-10-26T09:00:00Z", friday)).toBe("silent"); // 10 + 30 minutes
   });
 });
 

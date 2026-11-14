@@ -11,8 +11,9 @@
 -- evaluateOperationalHealth), là où vivent déjà la plage d'envoi à l'heure de Paris (jours fériés et changements
 -- d'heure compris, src/lib/information-agent/paris-time.ts) et la marque des passages lancés à la main
 -- (AUTOPILOT_MANUAL_RUN_MARK, lue par loadLastAutopilotRunAt) : aucune des deux n'est recopiée ici. Règle :
--- isAutopilotSilent (src/lib/information-agent/autopilot-rules.ts), 40 minutes de plage ouverte sans passage
--- planifié.
+-- autopilotSilence (src/lib/information-agent/autopilot-rules.ts), 40 minutes de plage ouverte cumulées depuis le
+-- dernier passage planifié. Plage fermée, l'application n'appelle pas cette fonction : l'alerte garde son état et ne
+-- se referme qu'après un passage planifié, pilote éteint, arrêté automatiquement ou en pause.
 --
 -- Comme public.sync_billing_reconciliation_alert (20261110140100) : app_private.sync_operational_alert est fermée
 -- à tous les rôles, y compris service_role. Cette fonction publique, réservée à service_role, fixe la clé, la
