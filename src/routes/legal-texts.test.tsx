@@ -209,7 +209,8 @@ describe("conditions générales : classement, référencement et mise en avant"
 
   it("la politique de confidentialité est en version 2026-11-14.1 (professionnels contactés, photos, profil d'investisseur) ; les 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
     expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("14 novembre 2026");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne prévue.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("16 novembre 2026");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.3");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
@@ -578,8 +579,19 @@ describe("politique de confidentialité", () => {
   });
 
   it("dit que les coordonnées de l'organisateur publiées dans l'annonce sont visibles des comptes connectés", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Le nom et les coordonnées professionnelles (adresse, téléphone, adresse e-mail) de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce d’origine (pour une vente notariale, celle d’immobilier.notaires.fr), sont visibles des personnes connectées à un compte, offre Découverte comprise.",
+    );
+    // Vérifié dans la collecte : une adresse masquée n'est jamais remise dans un champ publié.
+    expect(text).toContain(
+      "Une adresse e-mail masquée par le site d’origine n’est jamais affichée",
+    );
+  });
+
+  it("décrit le profil d'investisseur comme stocké par l'hébergeur seul", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Le nom et les coordonnées de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce, sont visibles des personnes connectées à un compte, offre Découverte comprise",
+      "jamais envoyées par email ni communiquées à des tiers (seul notre hébergeur, Supabase, les stocke)",
     );
   });
 
@@ -724,11 +736,15 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
-    // Le mode réel du pilote reste verrouillé : aucun message ne part sans validation.
-    expect(text).toContain("mais aucun ne part sans cette validation");
+    // Le mode réel du pilote reste verrouillé : aucun message ne part sans validation, et la page
+    // annonce qu'elle changerait avant tout envoi automatique.
+    expect(text).toContain(
+      "À ce jour, chaque message est relu et validé par un membre de l’équipe avant son envoi : un outil peut préparer à l’avance des projets de messages, mais aucun ne part sans cette validation. Si nous décidions d’envoyer certains messages automatiquement, cette page serait modifiée avant, et ces messages le diraient.",
+    );
     expect(text).not.toContain("déclenchés puis validés");
+    expect(text).not.toContain("administrateur");
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
     expect(text).not.toContain("consentement pour la communication de l’email de réponse");
     expect(text).not.toContain("service professionnel");
@@ -769,35 +785,57 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("adresses invalides (rebond permanent) : 12 mois");
   });
 
-  it("annonce la source des adresses Licitor, l'opposition par adresse, identité et structure, et l'exclusion de 24 mois", () => {
+  it("décrit l'opposition par adresse, identité et structure rattachée avec certitude, et l'exclusion de 24 mois", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("Ce relevé se fait avec l’accord de Licitor.");
+    // Relecture du 14/11 : l'accord de Licitor n'est pas affirmé dans la page.
+    expect(text).not.toContain("accord de Licitor");
     expect(text).toContain(
       "Elle vaut pour votre adresse et pour votre identité professionnelle : nous ne vous écrirons pas non plus à une autre adresse.",
     );
+    // Portée réelle des clés de structure (contact-structure.ts) : domaine propre ou numéro d'office.
     expect(text).toContain(
-      "Faite depuis l’adresse de contact d’un cabinet, d’une étude ou d’un service, elle vaut pour toutes les adresses de cette structure.",
+      "Faite depuis l’adresse de contact d’un cabinet ou d’une étude, elle vaut pour toutes les adresses que nous pouvons rattacher avec certitude à cette structure : celles du même nom de domaine, propre au cabinet ou à l’étude, ou, pour une étude notariale, celles du même numéro d’office. Elle ne s’étend pas aux autres adresses d’une messagerie partagée (par exemple avocat.fr, ou notaires.fr sans numéro d’office). Pour un service de l’État, dont les adresses partagent le domaine gouv.fr, elle vaut pour l’adresse du service, mais pas pour les adresses nominatives de ses agents : chacun d’eux peut s’opposer de la même façon.",
     );
-    expect(text).toContain("est gardée 24 mois, pour qu’aucun message ne vous soit plus préparé");
+    expect(text).not.toContain("elle vaut pour toutes les adresses de cette structure");
+    expect(text).toContain(
+      "Les échanges déjà intervenus sont conservés jusqu’au terme indiqué plus haut (12 ou 24 mois), seulement pour pouvoir répondre d’une réclamation, puis supprimés. Seules votre adresse, votre identité professionnelle et la date de votre opposition sont gardées au-delà, pour ne plus vous solliciter.",
+    );
+    expect(text).toContain(
+      "est gardée 24 mois, pour qu’aucun message ne vous soit plus préparé automatiquement, et un membre de l’équipe vérifiera avant toute nouvelle prise de contact. Pour ne plus du tout être contacté, utilisez le lien « Ne plus être contacté ».",
+    );
     expect(text).toContain("identité signalée comme « mauvais destinataire » : 24 mois");
     expect(text).toContain(
-      "Ces adresses et nos échanges ne servent jamais à vous proposer la mise en avant payante d’Immojudis.",
+      "Ces adresses et nos échanges ne servent jamais à proposer ou vendre la mise en avant payante d’Immojudis, ni au classement des avocats, ni à la mise en relation.",
     );
   });
 
   it("décrit l'affichage des informations transmises, sans nom, leur retrait et l'opposition qui vaut retrait", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("Elles sont affichées sans le nom de la personne qui les a transmises.");
+    expect(text).toContain("Ces valeurs sont affichées sans votre nom.");
+    // La promesse « sans nom » ne couvre plus les pièces, dont seul le libellé est neutre.
+    expect(text).not.toContain("sans le nom de la personne qui les a transmises");
     expect(text).toContain(
-      "Pour une information venue de l’avocat poursuivant, la fiche indique cette source et la date de son message, et rappelle de la vérifier dans le cahier des conditions de vente.",
+      "une pièce transmise est publiée sous un libellé neutre (type de pièce et date) ; son contenu est publié tel qu’il a été transmis.",
+    );
+    expect(text).not.toMatch(/masqu\w+ (?:les|des) noms/);
+    expect(text).toContain(
+      "Pour une information venue de l’avocat poursuivant, la fiche indique cette qualité et la date de son message, et rappelle de la vérifier dans le cahier des conditions de vente : comme la fiche nomme par ailleurs l’organisateur de la vente, l’avocat reste identifiable.",
     );
     expect(text).toContain(
-      "Vous pouvez à tout moment, sans motif, demander le retrait de ce que vous nous avez transmis, en répondant à notre message ou en écrivant à contact@immojudis.example : nous le retirons alors de la fiche.",
+      "Vous pouvez à tout moment, sans motif, demander le retrait de ce que vous nous avez transmis, en répondant à notre message ou en écrivant à contact@immojudis.example : nous le retirons alors de la fiche, au plus tard un mois après réception de votre demande.",
     );
     expect(text).toContain(
-      "Elle vaut aussi demande de retrait des informations que vous nous avez transmises.",
+      "Elle vaut aussi demande de retrait des informations que vous nous avez transmises : nous les retirons de la fiche dans le même délai.",
     );
     expect(text).toContain("information affichée sur une fiche : supprimée avec la fiche");
+  });
+
+  it("donne les durées codées des journaux de provenance, sans en promettre d'autres", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Le journal des publications est supprimé avec la fiche ; l’historique des modifications de la fiche est conservé 12 mois après chaque modification ; le journal des décisions et la file de relecture n’ont pas encore de durée fixée : nous l’indiquerons ici dès qu’elle le sera.",
+    );
+    expect(text).not.toContain("en cours de validation");
   });
 
   it("ne publie pas l'outil de recherche automatisé tant qu'il n'existe pas", () => {
@@ -812,31 +850,38 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Resend (envoi et réception des courriels)");
     expect(text).toContain("GitHub (exécution des traitements automatisés)");
     expect(text).toContain(
-      "Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
+      "Pour obtenir une copie des garanties qui existent, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire. Pour Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).",
     );
-    // Seul le paragraphe sur Resend (avis juridique du 01/11/2026) cite les clauses contractuelles types ;
-    // aucun autre prestataire n'est présenté comme couvert par un mécanisme que nous n'avons pas vérifié.
+    expect(text).toContain(
+      "Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données d’usage).",
+    );
+    // Seul le paragraphe sur Resend cite les clauses contractuelles types, vérifiées dans son accord de
+    // sous-traitance ; sa certification au cadre UE–États-Unis, non vérifiée sur la liste officielle, n'est
+    // pas affirmée.
     expect(text.split("clauses contractuelles types")).toHaveLength(2);
     expect(text).toContain(
-      "journaux de remise 30 jours, aux États-Unis, sous le cadre des clauses contractuelles types",
+      "journaux de remise 30 jours, aux États-Unis. Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), intégrées à son accord de sous-traitance.",
     );
-    expect(text).toContain("décision (UE) 2021/914 du 4 juin 2021");
+    expect(text).toContain(
+      "Resend traite aussi, en tant que responsable de traitement distinct, certaines données d’usage (adresses d’expédition et de destination, journaux d’activité) pour la sécurité de son service et la prévention de la fraude, selon sa propre politique de confidentialité.",
+    );
     expect(text).toContain("Plus Five Five, Inc.");
-    expect(text).not.toContain("décision d’adéquation");
+    expect(text).not.toContain("se déclare certifié");
+    // « Décision d'adéquation » n'apparaît que pour dire qu'aucune ne s'applique à Replicate.
+    expect(text.split("décision d’adéquation")).toHaveLength(2);
+    expect(text).toContain("aucune décision d’adéquation ne s’applique donc");
   });
 
-  it("nomme Replicate et le modèle, et dit ce qui reste à confirmer sans inventer de garantie (J18)", () => {
+  it("nomme Replicate et le modèle, et dit qu'aucune garantie de transfert n'est vérifiée (J18)", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Replicate (Replicate, LLC, à San Francisco, États-Unis)");
-    expect(text).toContain("« qwen/qwen3-7-plus »");
     expect(text).toContain(
-      "Deux points restent à confirmer : si ce modèle s’exécute chez Replicate ou chez un autre prestataire auquel Replicate transmet les données, et quelle garantie encadre ce transfert.",
+      "À la date de cette version, le modèle utilisé (référence « qwen/qwen3-7-plus »",
     );
-    // Aucune garantie n'est affirmée pour Replicate.
-    const replicate = text.slice(text.indexOf("Replicate (Replicate, LLC"));
-    expect(replicate.slice(0, replicate.indexOf("connaître leur état"))).not.toMatch(
-      /clauses contractuelles|cadre de protection des données|certifié/,
+    expect(text).toContain(
+      "Ces données sont transférées aux États-Unis. À la date de cette version, ce transfert ne repose sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays. Nous mettrons cette page à jour dès que ces points seront établis. Pour toute question, ou pour vous opposer à ce traitement, écrivez à contact@immojudis.example.",
     );
+    expect(text).not.toContain("Deux points restent à confirmer");
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
