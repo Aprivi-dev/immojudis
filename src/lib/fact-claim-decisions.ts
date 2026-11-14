@@ -112,3 +112,16 @@ export function allowedFactClaimDecisionActions(
       return [];
   }
 }
+
+/** Ancre de « Observations à décider », dans l'onglet « Réponses » de l'agent d'information. */
+export const FACT_CLAIM_DECISIONS_SECTION_ID = "observations-a-decider";
+/** Paramètre d'adresse lu au chargement par « Observations à décider » : la vente à afficher. */
+export const FACT_CLAIM_DECISIONS_SALE_PARAM = "vente";
+
+/**
+ * Lien vers « Observations à décider », déjà filtré sur une vente (même page : onglet « Réponses » de l'espace de
+ * l'agent, `AGENT_TABS`). Un lien ordinaire : la page se recharge et le panneau lit la vente dans l'adresse.
+ */
+export function factClaimDecisionsHref(saleId: string): string {
+  return `?onglet=reponses&${FACT_CLAIM_DECISIONS_SALE_PARAM}=${encodeURIComponent(saleId)}#${FACT_CLAIM_DECISIONS_SECTION_ID}`;
+}

@@ -4479,7 +4479,22 @@
    ]
   },
   "F5-23": {
-   "candidates": [],
+   "candidates": [
+    {
+     "display_value": "Terrain : 1 250 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F5-23-fact-001",
+     "message_id": "F5-23-message",
+     "metadata": {},
+     "proposed_value": {
+      "unit": "m2",
+      "value": 1250
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
    "semantic": [
     {
      "asset": "corps",
@@ -4541,51 +4556,8 @@
    ]
   },
   "F6-01": {
-   "candidates": [
-    {
-     "display_value": "66 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-01-fact-001",
-     "message_id": "F6-01-message",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 66
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "house",
-     "evidence_asset_id": "F6-01-asset-body",
-     "fact_key": "property_type",
-     "id": "F6-01-py-001",
-     "message_id": "F6-01-message",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "house"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F6-02": {
    "candidates": [
@@ -7854,7 +7826,7 @@
  "essai": null,
  "format": "information_agent_evaluation_worker_stage_v2",
  "modele_reel": false,
- "rules_stage_sha256": "7eb8711c84c7a471fd896a5e0c1b26008e5b11675f7f122b8beedca0ec35b4e4",
+ "rules_stage_sha256": "708b2e76280148fd45a6467086c310a103990d58e5c15f21ca98dc755f7b537d",
  "semantic_processor_version": "semantic_evidence_v3",
  "source": null,
  "system_prompt_sha256": "0f02626b4449ccacc4981510773ad717382734d835843eed795d323a78b8eb82"

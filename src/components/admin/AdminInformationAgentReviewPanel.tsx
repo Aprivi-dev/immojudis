@@ -7,7 +7,7 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { queryErrorMessage } from "@/components/admin/admin-format";
-import { formatShortDateTime } from "@/lib/format/dates";
+import { formatNumericDate, formatShortDateTime } from "@/lib/format/dates";
 import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
@@ -30,6 +30,19 @@ import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
 import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
 import { AutoPublicationDecisionNote } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
+import {
+  FACT_CLAIM_LOT_ATTACHMENTS,
+  factClaimDecisionsHref,
+  factClaimLotAttachmentHolds,
+  type FactClaimLotAttachment,
+} from "@/lib/fact-claim-decisions";
+import {
+  INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE,
+  informationAgentAcceptanceMessage,
+  informationAgentFactHeldByRegistry,
+  informationAgentFactRegistryField,
+  informationAgentOccupancyRefused,
+} from "@/lib/information-agent-registry-acceptance";
 
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
 
@@ -45,6 +58,10 @@ export function AdminInformationAgentReviewPanel() {
   const [redaction, setRedaction] = useState<Record<string, { confirmed: boolean; by: string }>>(
     {},
   );
+  // Rattachement au lot de la décision du registre, par fait (obligatoire pour un fait du registre).
+  const [lotAttachments, setLotAttachments] = useState<Record<string, FactClaimLotAttachment | "">>(
+    {},
+  );
   const [offset, setOffset] = useState(0);
   const query = useQuery({ ...reviewQuery(offset), placeholderData: keepPreviousData });
   // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
@@ -56,11 +73,27 @@ export function AdminInformationAgentReviewPanel() {
   }, [query.data]);
   const review = useMutation({
     mutationFn: reviewAdminInformationAgentFactClient,
-    onSuccess: (_response, input) => {
+    onSuccess: (response, input) => {
       setRejectNotes((previous) => ({ ...previous, [input.factId]: "" }));
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: CATALOGUE_READINESS_QUERY_KEY });
-      toast.success("Information contrôlée. La fiche sera réévaluée après enrichissement.");
+      // La décision du registre peut échouer après l'acceptation du fait : le message le dit.
+      const message = informationAgentAcceptanceMessage(response.registry);
+      if (message.tone === "success") toast.success(message.text);
+      else {
+        const href = message.href;
+        toast.warning(
+          message.text,
+          href
+            ? {
+                action: {
+                  label: "Ouvrir les observations de cette vente",
+                  onClick: () => window.location.assign(href),
+                },
+              }
+            : undefined,
+        );
+      }
     },
     onError: (error) => toast.error(queryErrorMessage(error, "Revue impossible")),
   });
@@ -159,6 +192,9 @@ export function AdminInformationAgentReviewPanel() {
   );
   // Moteur « publier ou relire » : annotations en simulation seulement (rien en mode arrêt).
   const autoPublication = page?.autoPublication;
+  // Tâches du registre (lot C) : nul quand la lecture a échoué (le reste de l'écran s'affiche).
+  const withdrawalTasks = page?.withdrawalTasks;
+  const pendingRegistryDecisions = page?.pendingRegistryDecisions;
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -170,8 +206,9 @@ export function AdminInformationAgentReviewPanel() {
         <p className="mt-1 text-sm text-brand-navy/60">
           Rien n’est intégré à une annonce sans validation. Accepter une pièce (document ou photo)
           la publie pour l’annonce, une fois ses droits de diffusion autorisés. Accepter une autre
-          information met à jour la fiche : la valeur proposée remplace celle de la fiche, sauf si
-          le champ est déjà tenu par une pièce du registre.
+          information l’inscrit au registre des pièces, à votre nom : surface, terrain, pièces et
+          occupation s’affichent sur la fiche et sont protégés contre la collecte, si le lot est
+          identifié.
         </p>
         {autoPublication?.mode === "unavailable" ? (
           <p role="alert" className="mt-1 text-sm text-warning">
@@ -179,6 +216,82 @@ export function AdminInformationAgentReviewPanel() {
           </p>
         ) : null}
       </div>
+      {withdrawalTasks === null ? (
+        <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
+          Retraits à faire après une opposition : liste indisponible. Rechargez la page avant de
+          répondre à une demande de retrait.
+        </p>
+      ) : withdrawalTasks?.length ? (
+        <section
+          aria-labelledby="withdrawal-tasks-title"
+          className="border-b bg-amber-50/60 px-5 py-4"
+        >
+          <h3 id="withdrawal-tasks-title" className="text-sm font-semibold text-amber-950">
+            Retraits à faire après une opposition ({withdrawalTasks.length})
+          </h3>
+          <p className="mt-1 text-xs text-brand-navy/70">
+            Un avocat qui s’oppose voit retirer les valeurs publiées depuis ses réponses, dans un
+            mois au plus (délai interne : 28 jours). Dans « Observations à décider », choisissez «
+            Enregistrer une opposition », y compris pour une simple demande de retrait : l’affichage
+            repose sur l’intérêt légitime, pas sur une autorisation. Le motif « Autorisation
+            d’affichage retirée » ne sert qu’aux pièces et photos dont la diffusion avait été
+            autorisée. Notez le canal et la date de la demande dans la demande RGPD ouverte pour ce
+            retrait.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {withdrawalTasks.map((task) => (
+              <li key={task.claimId} className={task.overdue ? "font-medium text-red-700" : ""}>
+                {factLabel(task.factKey)} : {task.displayValue} · vente{" "}
+                <Link href={saleDetailPath(task.saleId)} className="underline">
+                  {shortId(task.saleId)}
+                </Link>{" "}
+                · opposition du {formatNumericDate(task.opposedAt)}, à retirer avant le{" "}
+                {formatNumericDate(task.dueAt)}
+                {task.overdue ? " (délai dépassé)" : ""} ·{" "}
+                <a href={factClaimDecisionsHref(task.saleId)} className="underline">
+                  Ouvrir les observations de cette vente
+                </a>
+                {task.heldByRegistry
+                  ? null
+                  : " · le registre ne tient pas ce champ : l’opposition efface la mention, la valeur reste jusqu’à la prochaine collecte (voir le runbook)"}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {pendingRegistryDecisions === null ? (
+        <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
+          Réponses acceptées sans décision au registre : liste indisponible.
+        </p>
+      ) : pendingRegistryDecisions?.length ? (
+        <section
+          aria-labelledby="pending-registry-title"
+          className="border-b bg-amber-50/60 px-5 py-4"
+        >
+          <h3 id="pending-registry-title" className="text-sm font-semibold text-amber-950">
+            Réponses acceptées sans décision au registre ({pendingRegistryDecisions.length})
+          </h3>
+          <p className="mt-1 text-xs text-brand-navy/70">
+            La réponse est acceptée, mais la décision au registre n’a pas pu être enregistrée : la
+            fiche garde la valeur de l’annonce. Ouvrez les observations de la vente et acceptez-la
+            (ou rejetez-la) avec le rattachement au lot.
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {pendingRegistryDecisions.map((pending) => (
+              <li key={pending.factId}>
+                {factLabel(pending.factKey)} : {pending.displayValue} · acceptée le{" "}
+                {formatNumericDate(pending.acceptedAt)} · vente {pending.saleId}
+                {pending.claimId
+                  ? ` · observation ${pending.claimId}`
+                  : " · aucune observation"} ·{" "}
+                <a href={factClaimDecisionsHref(pending.saleId)} className="underline">
+                  Ouvrir les observations de cette vente
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {query.isPending ? (
         <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
       ) : query.error ? (
@@ -364,8 +477,17 @@ export function AdminInformationAgentReviewPanel() {
               informationCase !== undefined && REVIEWABLE_CASE_STATUSES.has(informationCase.status);
             const redactionCheck = redaction[fact.id] ?? { confirmed: false, by: "" };
             const redactionOk = redactionCheck.confirmed && redactionCheck.by.trim().length >= 3;
+            // Fait qui devient une observation du registre : sa décision demande le rattachement au lot.
+            const registryFact = informationAgentFactRegistryField(fact.fact_key) !== null;
+            const lotAttachment = lotAttachments[fact.id] ?? "";
+            const occupancyRefused = informationAgentOccupancyRefused(
+              fact.fact_key,
+              recordValue(fact.proposed_value)?.value,
+            );
             const canAccept =
               caseCanAccept &&
+              !occupancyRefused &&
+              (!registryFact || lotAttachment !== "") &&
               (!requiresRights ||
                 (asset?.rights_status === "authorized" &&
                   extraction?.status === "completed" &&
@@ -612,6 +734,50 @@ export function AdminInformationAgentReviewPanel() {
                         désactivée.
                       </p>
                     ) : null}
+                    {occupancyRefused ? (
+                      <p className="mt-2 text-xs font-medium text-amber-900">
+                        {INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE}
+                      </p>
+                    ) : registryFact ? (
+                      <div className="mt-3">
+                        <label
+                          htmlFor={`lot-attachment-${fact.id}`}
+                          className="block text-xs font-medium"
+                        >
+                          Rattachement au lot (obligatoire pour accepter)
+                        </label>
+                        <select
+                          id={`lot-attachment-${fact.id}`}
+                          value={lotAttachment}
+                          onChange={(event) =>
+                            setLotAttachments((current) => ({
+                              ...current,
+                              [fact.id]: event.target.value as FactClaimLotAttachment | "",
+                            }))
+                          }
+                          className="mt-1 min-h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm sm:max-w-md"
+                        >
+                          <option value="">Choisir…</option>
+                          {Object.entries(FACT_CLAIM_LOT_ATTACHMENTS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        {!informationAgentFactHeldByRegistry(fact.fact_key) ? (
+                          <p className="mt-1 text-xs text-brand-navy/70">
+                            Le registre ne tient pas ce champ : la valeur est écrite sur la fiche
+                            dès l’acceptation, et la collecte peut la réécrire.
+                          </p>
+                        ) : lotAttachment ? (
+                          <p className="mt-1 text-xs text-brand-navy/70">
+                            {factClaimLotAttachmentHolds(lotAttachment)
+                              ? "La valeur sera affichée sur la fiche et protégée contre la collecte, sauf si une autre pièce la contredit."
+                              : "La décision sera enregistrée, mais la valeur ne sera pas affichée sur la fiche."}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2 lg:max-w-sm">
                     <button
@@ -629,14 +795,14 @@ export function AdminInformationAgentReviewPanel() {
                                 redactionVerifiedBy: redactionCheck.by.trim(),
                               }
                             : {}),
+                          ...(registryFact && lotAttachment ? { lotAttachment } : {}),
                         })
                       }
                     >
                       <CheckCircle className="size-4" />{" "}
                       {/* Une pièce acceptée est publiée (`stageApprovedEvidencePublication`). Une
-                          autre information est écrite dans la fiche par
-                          `app_private.apply_information_agent_fact`, sauf si le registre des
-                          pièces tient déjà ce champ (valeur gardée, sans erreur). */}
+                          autre information est acceptée puis décidée au registre des pièces, au
+                          nom de l'administrateur : la projection l'écrit et la tient. */}
                       {requiresRights
                         ? "Accepter et publier la pièce"
                         : "Accepter et mettre à jour la fiche"}
@@ -790,7 +956,7 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
     "mauvais destinataire signalé : exclu du pilote automatique, validation manuelle seulement",
   possible_wrong_recipient: "possible mauvais destinataire : à lire avant tout nouvel envoi",
   possible_opposition:
-    "possible demande de ne plus être contacté : à lire avant toute relance, aucune opposition enregistrée",
+    "possible demande de ne plus être contacté ou de retrait de la fiche : à lire avant toute relance, aucune opposition enregistrée ; un retrait se fait dans le mois (runbook)",
   unidentified_lot_review: "vente à plusieurs lots : lot non identifié dans la réponse",
   ambiguous_reply_review: "réponse ambiguë à relire",
   possible_prompt_injection:

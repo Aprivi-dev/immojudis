@@ -31,6 +31,9 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
   { id: "demarches", number: "06", label: "Démarches", shortLabel: "Démarches" },
 ];
 
+/** Section 05 « Pièces du dossier » : cible du lien « Où consulter le cahier » des mentions de l'avocat. */
+export const SALE_DETAIL_PIECES_HREF = `#${"pieces" satisfies SaleDetailSection}`;
+
 export type LegacyDetail =
   | "market"
   | "budget"

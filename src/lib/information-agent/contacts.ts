@@ -5,6 +5,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
+  informationAgentStructureKeyHolds,
   informationAgentStructureKeys,
   isInformationAgentStructureKey,
 } from "@/lib/information-agent/contact-structure";
@@ -212,10 +213,12 @@ export async function informationAgentOppositionCoversStructure(email: string): 
   ]);
   if (contacts.error) throw contacts.error;
   if (missions.error) throw missions.error;
+  // Seule une clé qui vaut encore pour cette adresse permet de promettre « toute la structure » : une clé
+  // enregistrée sous une règle plus ancienne (gouv.fr, notaires.fr sans office, avocat.fr) ne la porte pas.
   return [
     ...(contacts.data ?? []).flatMap((row) => row.identity_keys ?? []),
     ...(missions.data ?? []).flatMap((row) => row.recipient_identity_keys ?? []),
-  ].some(isInformationAgentStructureKey);
+  ].some((key) => informationAgentStructureKeyHolds(key, normalized));
 }
 
 /**

@@ -5,19 +5,20 @@ import type { InformationAgentEmailTemplateContent } from "@/lib/information-age
  * `court-registry-fallback.ts`). Un greffe ne connaît pas les détails d'une vente et oriente vers
  * l'avocat poursuivant : on ne lui pose donc PAS les questions adressées à un avocat (date, mise à
  * prix, occupation, visites, diagnostics…). La demande tient en une question : qui est l'avocat
- * poursuivant, ou, à défaut, quelles pièces publiques de la vente peut-il transmettre.
+ * poursuivant, ou, à défaut, où et comment consulter le cahier des conditions de vente (aucune pièce demandée,
+ * juridique-rgpd du 14/11/2026).
  *
  * Même structure de blocs que le modèle des professionnels (`DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE`),
  * donc même rendu, même pied RGPD et mêmes contrôles (aucune mention commerciale, au moins une
  * question). Aucun nom de personne : « Madame, Monsieur, ».
  */
 export const COURT_REGISTRY_QUESTION =
-  "Pouvez-vous nous indiquer l’avocat poursuivant de cette vente ou, à défaut, les pièces publiques du dossier (cahier des conditions de vente, procès-verbal descriptif) que vous pouvez communiquer à tout candidat acquéreur, et selon quelles modalités ?";
+  "Pouvez-vous nous indiquer l’avocat poursuivant de cette vente ou, à défaut, où et selon quelles modalités un candidat acquéreur peut consulter le cahier des conditions de vente ?";
 
 export const COURT_REGISTRY_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
   name: "Demande à un greffe : avocat poursuivant ou pièces publiques — version 1",
   subjectTemplate:
-    "{{sale_subject_title}}, {{subject_date}} : avocat poursuivant ou pièces publiques",
+    "{{sale_subject_title}}, {{subject_date}} : avocat poursuivant et consultation du cahier",
   blocks: [
     {
       id: "greeting",

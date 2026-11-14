@@ -185,6 +185,73 @@ describe("auction fact claim server contract", () => {
     );
   });
 
+  it("ignores an agent observation whose latest registry decision is not a holding acceptance", async () => {
+    const claims = [
+      // Acceptée au registre, lot unique : comptée.
+      {
+        claim_id: "claim-held",
+        field_key: "property.occupancy_status",
+        fact_status: "accepted",
+        value_jsonb: "vacant",
+        evidence_locator: { information_agent_fact_id: "fact-held" },
+      },
+      // Décision jamais écrite (échec après l'acceptation) : ignorée.
+      {
+        claim_id: "claim-undecided",
+        field_key: "property.surface_m2",
+        fact_status: "accepted",
+        value_jsonb: 54,
+        evidence_locator: { information_agent_fact_id: "fact-undecided" },
+      },
+      // Opposition après l'acceptation : ignorée.
+      {
+        claim_id: "claim-opposed",
+        field_key: "sale.starting_price_eur",
+        fact_status: "accepted",
+        value_jsonb: 95000,
+        evidence_locator: { information_agent_fact_id: "fact-opposed" },
+      },
+      // Lot inconnu : la valeur n'est pas affichée, ignorée.
+      {
+        claim_id: "claim-unknown-lot",
+        field_key: "property.surface_m2",
+        fact_status: "accepted",
+        value_jsonb: 56,
+        evidence_locator: { information_agent_fact_id: "fact-unknown-lot" },
+      },
+      // Observation de la collecte : jamais filtrée.
+      { claim_id: "claim-listing", field_key: "sale.sale_date", fact_status: "accepted" },
+    ];
+    const decisions = [
+      { claim_id: "claim-opposed", decision: "opposed", lot_attachment: "single_lot", seq: 9 },
+      { claim_id: "claim-opposed", decision: "accepted", lot_attachment: "single_lot", seq: 8 },
+      { claim_id: "claim-held", decision: "accepted", lot_attachment: "single_lot", seq: 7 },
+      { claim_id: "claim-unknown-lot", decision: "accepted", lot_attachment: "unknown", seq: 6 },
+    ];
+    const decisionQuery = { select: vi.fn(), in: vi.fn(), order: vi.fn() };
+    decisionQuery.select.mockReturnValue(decisionQuery);
+    decisionQuery.in.mockReturnValue(decisionQuery);
+    decisionQuery.order.mockResolvedValue({ data: decisions, error: null });
+    const claimQuery = setup(claims);
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_fact_claim_decisions" ? decisionQuery : claimQuery,
+    );
+
+    const result = await readSaleFactClaims(saleId);
+
+    expect(result.claims.map((claim) => claim.field_key)).toEqual([
+      "property.occupancy_status",
+      "sale.sale_date",
+    ]);
+    expect(decisionQuery.in).toHaveBeenCalledWith("claim_id", [
+      "claim-held",
+      "claim-undecided",
+      "claim-opposed",
+      "claim-unknown-lot",
+    ]);
+    expect(JSON.stringify(result)).not.toContain("fact-held");
+  });
+
   it("throws a failed read instead of reporting a sale without claims", async () => {
     const failure = { code: "PGRST205", message: "view missing" };
     setup(null, failure);

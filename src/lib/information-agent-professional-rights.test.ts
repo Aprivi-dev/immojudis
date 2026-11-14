@@ -96,7 +96,17 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
     return api;
   }
-  return { supabaseAdmin: { from: builder } };
+  // Effacement des traces de réponses dans les fiches (migration 20261119100900) : une vente réécrite par
+  // dossier transmis.
+  const rpc = (functionName: string, args: { p_case_ids?: string[] }) => {
+    state.log.push(`rpc:${functionName}:${(args.p_case_ids ?? []).join(",")}`);
+    return Promise.resolve(
+      state.failTable === "rpc"
+        ? { data: null, error: { message: "boom" } }
+        : { data: (args.p_case_ids ?? []).length, error: null },
+    );
+  };
+  return { supabaseAdmin: { from: builder, rpc } };
 });
 
 import {
@@ -263,6 +273,7 @@ describe("eraseProfessionalData", () => {
         information_agent_contacts: 1,
         information_agent_unrouted_messages: 1,
         email_send_log: 2,
+        "auction_sales.information_agent_verified_facts": 1,
         information_agent_cases: 1,
         information_agent_missions: 1,
       },
@@ -273,13 +284,15 @@ describe("eraseProfessionalData", () => {
     expect(queued?.rows).toEqual([
       { bucket: "information-agent-evidence", object_path: `${CASE_ID}/inbound/m1/pv.pdf` },
     ]);
-    // Ordre : fichiers, opposition, fiches par vente, puis dossiers et demandes.
+    // Ordre : fichiers, opposition, fiches par vente, traces des réponses dans les fiches (avant les dossiers,
+    // qui emportent les faits), puis dossiers et demandes.
     expect(state.log).toEqual([
       "upsert:sale_retention_storage_queue",
       "upsert:information_agent_contacts",
       "delete:information_agent_contacts:1",
       "delete:information_agent_unrouted_messages:1",
       "delete:email_send_log:2",
+      `rpc:forget_information_agent_verified_facts:${CASE_ID}`,
       "delete:information_agent_cases:1",
       "delete:information_agent_missions:1",
     ]);
@@ -341,6 +354,15 @@ describe("eraseProfessionalData", () => {
     expect(state.tables.information_agent_cases).toHaveLength(2);
   });
 
+  it("n'efface pas les dossiers si les traces des réponses ne peuvent pas être retirées des fiches", async () => {
+    state.failTable = "rpc";
+    const failure = await eraseProfessionalData(EMAIL).catch((error: unknown) => error);
+    expect((failure as Error).message).toBe(
+      "Professional erasure failed on auction_sales.raw_payload",
+    );
+    expect(state.tables.information_agent_cases).toHaveLength(2);
+  });
+
   it("est idempotent : une seconde exécution n'efface plus rien", async () => {
     await eraseProfessionalData(EMAIL);
     const second = await eraseProfessionalData(EMAIL);
@@ -348,6 +370,7 @@ describe("eraseProfessionalData", () => {
       information_agent_contacts: 0,
       information_agent_unrouted_messages: 0,
       email_send_log: 0,
+      "auction_sales.information_agent_verified_facts": 0,
       information_agent_cases: 0,
       information_agent_missions: 0,
     });

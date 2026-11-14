@@ -163,11 +163,13 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   }
 
   const occupancyText = withoutPastOccupancy(normalized);
+  // Qui occupe et pourquoi ne s'affichent jamais (la fiche dit libre, occupé ou loué) : « occupé par le
+  // propriétaire » et « squatté » se lisent « occupé ».
   const occupancyPatterns: Array<[RegExp, string, string]> = [
     [
       /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
-      "owner_occupied",
-      "Bien occupé par le propriétaire",
+      "occupied",
+      "Bien occupé",
     ],
     [/\b(?:libre\s+de\s+toute\s+occupation|vacant|inoccup[ée])\b/iu, "vacant", "Bien libre"],
     // « Il était loué mais il est désormais libre » : l'état actuel est celui d'après le changement.
@@ -202,20 +204,15 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       "occupied",
       "Bien occupé",
     ],
-    [/\bsquatt[ée]e?s?(?![\p{L}\p{N}])/iu, "squatted", "Bien squatté"],
+    [/\bsquatt[ée]e?s?(?![\p{L}\p{N}])/iu, "occupied", "Bien occupé"],
   ];
   const occupancyMatches = occupancyPatterns.flatMap(([source, value, label]) => {
     // `\b` de JavaScript ne voit pas les lettres accentuées : « inoccupé » finissait sans frontière.
     const pattern = unicodeWordBoundaries(source);
     return pattern.test(occupancyText) ? [{ pattern, value, label }] : [];
   });
-  const effectiveOccupancyMatches = occupancyMatches.some(
-    (match) => match.value === "owner_occupied",
-  )
-    ? occupancyMatches.filter((match) => match.value !== "occupied")
-    : occupancyMatches;
-  if (new Set(effectiveOccupancyMatches.map((match) => match.value)).size === 1) {
-    for (const { pattern, value, label } of effectiveOccupancyMatches) {
+  if (new Set(occupancyMatches.map((match) => match.value)).size === 1) {
+    for (const { pattern, value, label } of occupancyMatches) {
       const match = occupancyText.match(pattern);
       if (!match) continue;
       if (
@@ -337,10 +334,60 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
 
 type SurfaceObservation = { value: number; index: number; label: string | null };
 
+/**
+ * Nombre d'une surface, bâtie ou de terrain : groupé par milliers (« 1 250 », avec toute espace séparatrice
+ * `\p{Zs}` : ordinaire, fine, insécable) ou non, avec deux décimales au plus. Le groupement est essayé
+ * d'abord : sans lui, « 1 250 m² » était lu à partir de l'espace des milliers, soit 250.
+ */
+const SURFACE_NUMBER = String.raw`\d{1,3}(?:\p{Zs}\d{3})+(?:[.,]\d{1,2})?|\d{1,10}(?:[.,]\d{1,2})?`;
+
+function parseSurfaceNumber(raw: string): number {
+  return Number(raw.replace(/\p{Zs}/gu, "").replace(",", "."));
+}
+
+/**
+ * Mot qui annonce un numéro, écrit juste avant le nombre, sans ponctuation : lot, bâtiment, parcelle, étage, section
+ * cadastrale (lettres en capitales, sensibles à la casse). Suivi d'un nombre groupé par milliers (« bâtiment 1 250 m² »,
+ * « parcelle 2 500 m² »), il ne permet pas de choisir entre le numéro et les milliers.
+ */
+const NUMBER_WORDS_BEFORE = [
+  /(?<![\p{L}\p{N}])(?:lots?|b[âa]t(?:iment)?s?|parcelles?|[ée]tages?)\.?\p{Zs}*$/iu,
+  /(?<![\p{L}\p{N}])[Ss]ection\p{Zs}+[A-Z]{1,2}\p{Zs}*$/u,
+];
+/** « n° » ou « numéro » : le premier groupe est le numéro annoncé, la surface est la suite. */
+const NUMBER_SIGN_BEFORE = /(?<![\p{L}\p{N}])(?:n°|num[ée]ro)\.?\p{Zs}*$/iu;
+
+/**
+ * Surface lue d'un nombre qui commence à `start`, ou nulle quand la lecture est incertaine. Un nombre groupé par
+ * milliers (« 1 250 m² ») se lit en entier, sauf :
+ *  - premier groupe collé à une lettre (« T4 105 m² ») ou annoncé par « n° » (« lot n° 3 105 m² ») : ce groupe est un
+ *    numéro, la surface est la suite (105) ;
+ *  - nombre précédé d'un mot qui annonce un numéro (« bâtiment 1 250 m² ») : aucune lecture, plutôt que choisir.
+ */
+function surfaceNumberAt(text: string, start: number, raw: string): number | null {
+  const groups = raw.split(/\p{Zs}+/u);
+  if (groups.length === 1) return parseSurfaceNumber(raw);
+  const before = text.slice(Math.max(0, start - 30), start);
+  if (/\p{L}$/u.test(before) || NUMBER_SIGN_BEFORE.test(before)) {
+    return parseSurfaceNumber(groups.slice(1).join(" "));
+  }
+  return NUMBER_WORDS_BEFORE.some((marker) => marker.test(before)) ? null : parseSurfaceNumber(raw);
+}
+
+/** Début du nombre dans une correspondance dont l'étiquette ne contient aucun chiffre. */
+function numberStart(match: RegExpMatchArray): number {
+  return (match.index ?? 0) + Math.max(0, (match[0] ?? "").search(/\d/u));
+}
+
 function extractSurfaceObservation(text: string): SurfaceObservation | null {
-  const labelledPattern =
-    /\b(surface(?:\s+(?:habitable|carrez|privative|utile|totale|au\s+sol))?)[^\d]{0,45}(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
-  const genericPattern = /(?<![\d.,])(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const labelledPattern = new RegExp(
+    String.raw`\b(surface(?:\s+(?:habitable|carrez|privative|utile|totale|au\s+sol))?)[^\d]{0,45}(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
+  const genericPattern = new RegExp(
+    String.raw`(?<![\d.,])(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
   const labelled: SurfaceObservation[] = [];
   for (const match of text.matchAll(labelledPattern)) {
     const rawValue = match[2];
@@ -358,8 +405,8 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
       hasExplicitUncertainty(trailingClause)
     )
       continue;
-    const value = Number(rawValue.replace(",", "."));
-    if (Number.isFinite(value) && value > 0 && value <= 1_000_000) {
+    const value = surfaceNumberAt(text, numberStart(match), rawValue);
+    if (value !== null && Number.isFinite(value) && value > 0 && value <= 1_000_000) {
       labelled.push({
         value,
         index: matchIndex,
@@ -370,9 +417,10 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
 
   const generic: SurfaceObservation[] = [];
   for (const match of text.matchAll(genericPattern)) {
-    const value = Number((match[1] ?? "").replace(",", "."));
     const index = match.index ?? 0;
+    const value = surfaceNumberAt(text, index, match[1] ?? "");
     if (
+      value === null ||
       !Number.isFinite(value) ||
       value <= 0 ||
       value > 1_000_000 ||
@@ -415,12 +463,14 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
 }
 
 function extractLandSurfaceObservation(text: string): { value: number; index: number } | null {
-  const pattern =
-    /\b(?:surface\s+(?:du|de\s+la)\s+terrain|terrain|parcelle|contenance)[^\d]{0,60}(\d{1,10}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const pattern = new RegExp(
+    String.raw`\b(?:surface\s+(?:du|de\s+la)\s+terrain|terrain|parcelle|contenance)[^\d]{0,60}(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
   const observations: Array<{ value: number; index: number }> = [];
   for (const match of text.matchAll(pattern)) {
-    const value = Number((match[1] ?? "").replace(",", "."));
-    if (Number.isFinite(value) && value > 0 && value <= 100_000_000) {
+    const value = surfaceNumberAt(text, numberStart(match), match[1] ?? "");
+    if (value !== null && Number.isFinite(value) && value > 0 && value <= 100_000_000) {
       observations.push({ value, index: match.index ?? 0 });
     }
   }

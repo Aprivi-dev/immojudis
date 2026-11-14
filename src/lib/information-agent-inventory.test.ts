@@ -174,7 +174,7 @@ describe("inventaire de la fiche pour l'agent d'information", () => {
     expect(detectInformationGaps(conflicting).map((gap) => gap.key)).toContain("surface");
   });
 
-  it("nomme précisément les pièces manquantes et adapte la question de date", () => {
+  it("demande où consulter le cahier sans nommer les pièces, et adapte la question de date", () => {
     expect(
       informationAgentQuestionText("documents", {
         judicial: true,
@@ -182,7 +182,8 @@ describe("inventaire de la fiche pour l'agent d'information", () => {
         missingDocuments: ["pv_descriptif", "diagnostics"],
       }),
     ).toBe(
-      "Pourriez-vous nous transmettre le procès-verbal descriptif et le dossier de diagnostics techniques, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?",
+      // Juridique-rgpd du 14/11/2026 (J15) : ni transmission, ni procès-verbal descriptif nommé.
+      "Où et comment le cahier des conditions de vente et ses annexes, dont les diagnostics, peuvent-ils être consultés (lieu, horaires ou lien de consultation), et à quelle date ou dans quelle version ?",
     );
     expect(
       informationAgentQuestionText("sale_date", {

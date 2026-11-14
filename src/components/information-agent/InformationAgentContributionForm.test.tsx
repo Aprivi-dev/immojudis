@@ -149,7 +149,8 @@ describe("InformationAgentContributionForm", () => {
     });
     expect(mocks.storageFrom).not.toHaveBeenCalled();
     // Après une réponse volontaire : ce qui va se passer, puis l'invitation au dépôt direct.
-    expect(screen.getByText(/rien n’est publié sans cette vérification/)).toBeTruthy();
+    // C12 : « relecture », ce que l'équipe fait réellement.
+    expect(screen.getByText(/rien n’est publié sans cette relecture/)).toBeTruthy();
     const invitation = screen.getByRole("link", { name: "Créer un accès professionnel" });
     expect(invitation.getAttribute("href")).toBe("/login?mode=professional&redirect=%2Fpublish");
   });
@@ -762,11 +763,38 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
 
       const reminder = screen.getByText(/lues par l’équipe Immojudis, avec l’aide d’un outil d’IA/);
-      expect(reminder.textContent).toContain("Rien n’est publié sans cette vérification");
+      expect(reminder.textContent).toContain("puis relues avant toute utilisation");
+      expect(reminder.textContent).toContain("Rien n’est publié sans cette relecture");
       expect(
         reminder.compareDocumentPosition(screen.getByLabelText(/Nom ou cabinet/)) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+    });
+
+    it("dit qu'aucune pièce n'est demandée, avant le champ des fichiers (J15)", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      expect(
+        screen.getByText(
+          /Utilisez ce formulaire pour envoyer votre réponse et, si besoin, des liens/,
+        ),
+      ).toBeTruthy();
+      const warning = screen.getByText(/Inutile de joindre des pièces/);
+      expect(warning.textContent).toContain(
+        "N’envoyez ni procès-verbal descriptif, ni bail, ni document qui nomme les occupants ou le débiteur.",
+      );
+      const files = screen.getByLabelText(/Choisir des fichiers/);
+      expect(files.getAttribute("aria-describedby")).toContain("files-warning");
+      expect(
+        warning.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/celles qui sont retenues peuvent être affichées/).textContent,
+      ).toContain(
+        "sur la fiche publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant, certaines portent la mention de source décrite dans notre message, qui vous rend identifiable.",
+      );
     });
 
     it("garde des contrastes suffisants : bordure des champs, case cochée et survol des boutons", async () => {
