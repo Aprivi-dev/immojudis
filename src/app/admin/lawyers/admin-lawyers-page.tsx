@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   AdminLawyerReferralRequestsPanel,
@@ -14,10 +15,17 @@ import {
   REFERENCED_LAWYERS_QUERY_KEY,
 } from "@/components/admin/AdminReferencedLawyersPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminTabs } from "@/components/admin/AdminTabs";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { fetchAdminReferencedLawyers } from "@/lib/client-api";
 
-type LawyerTab = "referrals" | "directory" | "statement";
+const TABS = [
+  { id: "referrals", label: "Mises en relation" },
+  { id: "directory", label: "Réseau référencé" },
+  { id: "statement", label: "Relevé mensuel" },
+] as const;
+type LawyerTab = (typeof TABS)[number]["id"];
 
 export function AdminLawyersPage() {
   const { user } = useAuth();
@@ -27,6 +35,18 @@ export function AdminLawyersPage() {
     REFERENCED_LAWYERS_QUERY_KEY[0],
     LAWYER_STATEMENT_QUERY_KEY,
   ]);
+  // Même requête (et même cache) que le panneau « Réseau référencé » : enregistrer le premier avocat
+  // la relit, et les deux onglets réapparaissent d'eux-mêmes.
+  const lawyersQuery = useQuery({
+    queryKey: REFERENCED_LAWYERS_QUERY_KEY,
+    queryFn: fetchAdminReferencedLawyers,
+    staleTime: 30_000,
+  });
+  // Onglets montrés dès qu'un avocat est référencé, ou si la liste est illisible (rien n'est caché
+  // sur une erreur). « Référencer un avocat » les ouvre pour saisir le premier.
+  const [revealed, setRevealed] = useState(false);
+  const lawyers = lawyersQuery.data?.lawyers;
+  const showTabs = revealed || lawyersQuery.isError || (lawyers?.length ?? 0) > 0;
 
   return (
     <AdminShell
@@ -37,62 +57,45 @@ export function AdminLawyersPage() {
       onRefresh={() => void refresh()}
       isRefreshing={isRefreshing}
     >
-      <AdminLawyers activeTab={lawyerTab} onTabChange={setLawyerTab} />
-    </AdminShell>
-  );
-}
-
-function AdminLawyers({
-  activeTab,
-  onTabChange,
-}: {
-  activeTab: LawyerTab;
-  onTabChange: (tab: LawyerTab) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-4 flex gap-1 border-b border-brand-navy/14">
-        <button
-          type="button"
-          onClick={() => onTabChange("referrals")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium ${
-            activeTab === "referrals"
-              ? "border-gold-soft text-gold-text"
-              : "border-transparent text-brand-navy/58"
-          }`}
+      <div className="space-y-4">
+        {showTabs ? (
+          <AdminTabs
+            label="Rubriques des avocats"
+            tabs={TABS}
+            active={lawyerTab}
+            onSelect={setLawyerTab}
+          />
+        ) : lawyers ? (
+          <p className="text-sm text-brand-navy/70">
+            Aucun avocat référencé : le réseau et le relevé mensuel apparaîtront avec le premier.{" "}
+            <button
+              type="button"
+              className="font-semibold text-gold-text underline"
+              onClick={() => {
+                setRevealed(true);
+                setLawyerTab("directory");
+              }}
+            >
+              Référencer un avocat
+            </button>
+          </p>
+        ) : null}
+        {/* Même élément avec ou sans onglets : le panneau des mises en relation n'est pas remonté
+            (ni ses saisies perdues) quand les onglets apparaissent. */}
+        <div
+          role={showTabs ? "tabpanel" : undefined}
+          id={showTabs ? `panel-${lawyerTab}` : undefined}
+          aria-labelledby={showTabs ? `tab-${lawyerTab}` : undefined}
         >
-          Mises en relation
-        </button>
-        <button
-          type="button"
-          onClick={() => onTabChange("directory")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium ${
-            activeTab === "directory"
-              ? "border-gold-soft text-gold-text"
-              : "border-transparent text-brand-navy/58"
-          }`}
-        >
-          Réseau référencé
-        </button>
-        <button
-          type="button"
-          onClick={() => onTabChange("statement")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium ${
-            activeTab === "statement"
-              ? "border-gold-soft text-gold-text"
-              : "border-transparent text-brand-navy/58"
-          }`}
-        >
-          Relevé mensuel
-        </button>
+          {lawyerTab === "referrals" ? (
+            <AdminLawyerReferralRequestsPanel />
+          ) : lawyerTab === "directory" ? (
+            <AdminReferencedLawyersPanel />
+          ) : (
+            <AdminLawyerStatementPanel />
+          )}
+        </div>
       </div>
-      {activeTab === "referrals" ? (
-        <AdminLawyerReferralRequestsPanel />
-      ) : activeTab === "directory" ? (
-        <AdminReferencedLawyersPanel />
-      ) : (
-        <AdminLawyerStatementPanel />
-      )}
-    </div>
+    </AdminShell>
   );
 }
