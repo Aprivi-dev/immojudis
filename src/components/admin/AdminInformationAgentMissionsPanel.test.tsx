@@ -650,6 +650,68 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.queryByTestId("recipient-profile")).toBeNull();
   });
 
+  it("rappelle la vente et le rôle du destinataire à côté de « Valider et envoyer » (brouillon de la file)", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: { ...mission("draft"), recipientProfile: profile("Notaire") },
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    // La réponse de préparation ne porte pas le titre de la vente : celui de la ligne de la file.
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Appartement à Bordeaux · Destinataire : Notaire",
+    );
+
+    // Une autre adresse saisie : le rôle proposé ne la décrit plus.
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "autre.adresse@example.test" },
+    });
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Appartement à Bordeaux · Destinataire : rôle non précisé",
+    );
+  });
+
+  it("rappelle la vente et le rôle d'une mission ouverte depuis la liste, jamais ceux d'une autre vente", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    const pilot = {
+      ...mission("draft", "44444444-4444-4444-8444-444444444444", "avocat@example.test"),
+      saleTitle: "Maison à Lyon (Licitor)",
+      recipientProfile: profile("Avocat"),
+    };
+    const untitled = {
+      ...mission("draft", "77777777-7777-4777-8777-777777777777"),
+      id: "88888888-8888-4888-8888-888888888888",
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (openRequest: OpenMissionRequest) => (
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={null}
+          onClose={vi.fn()}
+          openRequest={openRequest}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view({ mission: pilot as never, nonce: 1 }));
+
+    await screen.findByRole("heading", { name: "Brouillon pour avocat@example.test" });
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
+
+    // Sans titre ni ligne de la file pour cette vente : l'identifiant de l'annonce, rien d'autre.
+    rerender(view({ mission: untitled as never, nonce: 2 }));
+    await screen.findByRole("heading", { name: "Brouillon pour cabinet@example.test" });
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : annonce 77777777-7777-4777-8777-777777777777 · Destinataire : rôle non précisé",
+    );
+  });
+
   it("shows the inventory of the fiche with what is missing and what is known", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({
@@ -1428,6 +1490,17 @@ function renderPanel(
       <AdminInformationAgentMissionsPanel selection={selection} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
+}
+
+function profile(roleLabel: string) {
+  return {
+    roleLabel,
+    addressKind: "generic",
+    addressKindLabel: "Adresse générique de la structure",
+    originLabel: "Adresse publiée dans l’annonce",
+    originSourceName: null,
+    originUrl: null,
+  };
 }
 
 function mission(
