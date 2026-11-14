@@ -86,9 +86,16 @@ describe("arborescence /admin", () => {
     } catch (error) {
       thrown = error;
     }
-    expect((thrown as { digest?: string } | undefined)?.digest).toMatch(
-      new RegExp(`^NEXT_REDIRECT;[a-z]+;${target.replace(/[?]/g, "\\?")};307;`),
-    );
+    // « NEXT_REDIRECT;<type>;<cible>;<statut>;… » : comparé champ par champ, sans expression
+    // régulière construite à partir de la cible.
+    const digest = (thrown as { digest?: unknown } | undefined)?.digest;
+    expect(typeof digest).toBe("string");
+    expect((digest as string).split(";").slice(0, 4)).toEqual([
+      "NEXT_REDIRECT",
+      "replace",
+      target,
+      "307",
+    ]);
   });
 
   it("ne charge dans chaque page que sa propre vue (plus de module admin unique)", () => {
