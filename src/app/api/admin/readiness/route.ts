@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminOperationalReadiness } from "@/lib/admin-readiness";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -6,6 +5,6 @@ import { adminRoute } from "@/lib/admin-route-deadline";
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "admin.readiness.read", fallbackMessage: "Diagnostic indisponible" },
-  async (request) => getAdminOperationalReadiness(bearerTokenFromRequest(request)),
+  { scope: "admin.readiness.read", fallbackMessage: "Diagnostic indisponible", guard: "admin" },
+  async (_request, { authToken }) => getAdminOperationalReadiness(authToken),
 );

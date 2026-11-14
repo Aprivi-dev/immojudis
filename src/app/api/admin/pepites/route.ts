@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminPepitesSuspendSchema,
   getAdminPepites,
@@ -12,9 +11,9 @@ export const maxDuration = 30;
 
 /** Pépites : mode, compteurs, liste et contrôle d'indépendance. Administrateur seulement, jamais mis en cache. */
 export const GET = adminRoute(
-  { scope: "admin.pepites.read", fallbackMessage: "Pépites indisponibles" },
-  async (request) => {
-    const data = await getAdminPepites(bearerTokenFromRequest(request));
+  { scope: "admin.pepites.read", fallbackMessage: "Pépites indisponibles", guard: "admin" },
+  async (_request, { authToken }) => {
+    const data = await getAdminPepites(authToken);
     // La mise en forme est faite ici : la page n'affiche que des sections prêtes (budget de JavaScript).
     return buildAdminPepitesView(data);
   },

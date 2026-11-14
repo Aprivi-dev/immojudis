@@ -1856,8 +1856,8 @@ function functionSignature(schema, name, argumentText) {
 //    aucun droit pour anon, authenticated ni public (accès par le rôle de service seulement) ;
 // 2. toute route `src/app/api/cron/*/route.ts` s'authentifie (`runMonitoredCron(` ou
 //    `cronRequestAuthorized(`) ;
-// 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton et appelle un garde administrateur,
-//    avant toute lecture du corps ou des paramètres ;
+// 2 bis. toute méthode d'une route `src/app/api/admin/**/route.ts` est un `adminRoute` qui déclare
+//    `guard: "admin"` : jeton et rôle vérifiés avant toute lecture ;
 // 3. `admin-signups.ts` appelle `assertAdminAuth` avant toute lecture ;
 // 4. `app_private.signup_trial_ends_at` ne lit jamais `user_metadata` (modifiable par la personne).
 {
@@ -1917,37 +1917,107 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
-  // 2 bis. chaque gestionnaire `adminRoute(` d'une route `src/app/api/admin/**/route.ts` :
-  //    - soit déclare `guard: "admin"` : l'aide vérifie le jeton puis le rôle avant le gestionnaire
-  //      (l'ordre de l'aide elle-même est contrôlé ci-dessous) ;
-  //    - soit lit le jeton (`bearerTokenFromRequest(`) et la route appelle un garde administrateur
-  //      (`requireAdmin(`, `assertAdmin…(` ou `!auth.isAdmin`) elle-même ou dans un module `@/lib/...`
-  //      qu'elle importe ; s'il lit le corps ou les paramètres, ce garde est écrit dans le gestionnaire
-  //      AVANT la première lecture (audit du 14/11/2026, D1 et D8).
-  //    Contrôle textuel, complété par `token-before-body.test.ts` qui l'exécute route par route.
+  // 2 bis. une seule règle pour `src/app/api/admin/**/route.ts` (audit du 14/11/2026, D1 et D8, puis
+  //    relecture de sécurité de la PR #502) : chaque méthode HTTP est exportée sous la forme
+  //    `export const <MÉTHODE> = adminRoute(<options>, …)`, `adminRoute` importé de
+  //    `@/lib/admin-route-deadline`, et ses options déclarent `guard: "admin"` à leur premier niveau.
+  //    Aucune autre forme d'export d'une méthode (fonction, `let`, ré-export, `export *`). Les
+  //    commentaires sont retirés avant la lecture. L'aide lit le jeton puis exige le rôle avant
+  //    d'appeler le gestionnaire (ordre contrôlé ci-dessous) : rien du gestionnaire, ni lecture du
+  //    corps, des paramètres ou de la base, ne passe avant la garde. `token-before-body.test.ts`
+  //    l'exécute sur chaque méthode de chaque route trouvée.
   {
-    const adminGuard =
-      /\b(?:requireAdmin|assertAdmin\w*|requireAdminContext)\(|!\s*[\w.]+\.isAdmin\b/;
-    const declaresGuard = /\bguard:\s*"admin"/;
-    const readsRequest =
-      /\brequest\.(?:json|text|formData|arrayBuffer|blob)\(|\brequest\.url\b|\bsearchParams\b/;
+    const METHODS = "GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS";
+    // Retire les commentaires `//` et `/* */` hors des chaînes (guillemets simples, doubles, gabarits).
+    const stripComments = (text) => {
+      let out = "";
+      let quote = null;
+      for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        if (quote) {
+          out += char;
+          if (char === "\\") {
+            out += text[i + 1] ?? "";
+            i += 1;
+          } else if (char === quote) {
+            quote = null;
+          }
+        } else if (text.startsWith("//", i)) {
+          const end = text.indexOf("\n", i);
+          i = (end < 0 ? text.length : end) - 1;
+        } else if (text.startsWith("/*", i)) {
+          const end = text.indexOf("*/", i + 2);
+          i = (end < 0 ? text.length : end + 2) - 1;
+          out += " ";
+        } else {
+          if (char === '"' || char === "'" || char === "`") quote = char;
+          out += char;
+        }
+      }
+      return out;
+    };
+    // Texte du premier niveau de l'objet qui commence à `text[open]` (« { »), sans ses objets,
+    // tableaux et appels imbriqués ; `null` s'il ne se ferme pas.
+    const topLevelOf = (text, open) => {
+      let depth = 0;
+      let quote = null;
+      let top = "";
+      for (let i = open; i < text.length; i += 1) {
+        const char = text[i];
+        if (quote) {
+          if (depth === 1) top += char;
+          if (char === "\\") {
+            if (depth === 1) top += text[i + 1] ?? "";
+            i += 1;
+          } else if (char === quote) {
+            quote = null;
+          }
+          continue;
+        }
+        if (char === '"' || char === "'" || char === "`") {
+          quote = char;
+          if (depth === 1) top += char;
+        } else if ("{[(".includes(char)) {
+          depth += 1;
+          if (depth === 2) top += " ";
+        } else if ("}])".includes(char)) {
+          depth -= 1;
+          if (depth === 0) return top;
+        } else if (depth === 1) {
+          top += char;
+        }
+      }
+      return null;
+    };
+
     const helperPath = "src/lib/admin-route-deadline.ts";
-    const helper = await readFile(new URL(`../${helperPath}`, import.meta.url), "utf8");
-    const guardedBranch = helper.slice(Math.max(0, helper.search(/\bif\s*\(\s*!guard\s*\)/)));
-    const tokenAt = guardedBranch.search(/\bbearerTokenFromRequest\(request\)/);
-    const roleAt = guardedBranch.search(/\bawait assertAdminAuth\(authToken\)/);
-    const handlerAt = guardedBranch.search(/\bhandler\(request,\s*\{\s*\.\.\.route,\s*auth\b/);
-    if (!(tokenAt >= 0 && roleAt > tokenAt && handlerAt > roleAt)) {
+    const helper = stripComments(
+      await readFile(new URL(`../${helperPath}`, import.meta.url), "utf8"),
+    );
+    // Corps de `adminRoute` : le gestionnaire n'y apparaît que deux fois (paramètre, puis appel après
+    // la garde) ; aucun autre chemin ne peut l'appeler sans elle.
+    const helperStart = helper.search(/\bexport\s+function\s+adminRoute\b/);
+    const helperBody = helperStart < 0 ? "" : helper.slice(helperStart);
+    const tokenAt = helperBody.search(/\bconst authToken = bearerTokenFromRequest\(request\);/);
+    const roleAt = helperBody.search(/\bconst auth = await assertAdminAuth\(authToken\);/);
+    const handlerAt = helperBody.search(/\bhandler\(request,\s*\{\s*\.\.\.route,\s*auth\b/);
+    const handlerMentions = helperBody.match(/\bhandler\b/g)?.length ?? 0;
+    if (
+      (helper.match(/\bexport\s+function\s+adminRoute\b/g)?.length ?? 0) !== 1 ||
+      !(tokenAt >= 0 && roleAt > tokenAt && handlerAt > roleAt) ||
+      handlerMentions !== 2
+    ) {
       failures.push(
-        `${helperPath}: adminRoute({ guard: "admin" }) must read the token, then await assertAdminAuth(authToken), before calling the handler`,
+        `${helperPath}: adminRoute must read the token, then await assertAdminAuth(authToken), before calling the handler, and call it nowhere else`,
       );
     }
+
     const adminRoutes = [];
     const walkAdmin = async (directory) => {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
         if (entry.isDirectory()) await walkAdmin(entryUrl);
-        else if (entry.name === "route.ts") adminRoutes.push(entryUrl);
+        else if (/^route\.[cm]?[jt]sx?$/.test(entry.name)) adminRoutes.push(entryUrl);
       }
     };
     await walkAdmin(new URL("../src/app/api/admin/", import.meta.url));
@@ -1956,53 +2026,55 @@ function functionSignature(schema, name, argumentText) {
       const routePath = routeUrl.pathname.slice(
         routeUrl.pathname.indexOf("/src/app/api/admin/") + 1,
       );
-      const source = await readFile(routeUrl, "utf8");
-      const starts = [...source.matchAll(/\badminRoute(?:<[^>]*>)?\(/g)].map(
-        (match) => match.index,
-      );
-      const handlers = starts.map((start, index) => source.slice(start, starts[index + 1]));
-      if (handlers.length === 0) {
-        failures.push(`${routePath} has no adminRoute( handler to check`);
-        continue;
+      const source = stripComments(await readFile(routeUrl, "utf8"));
+      const fail = (reason) => failures.push(`${routePath}: ${reason}`);
+      if (
+        !/import\s*\{[^}]*\badminRoute\b[^}]*\}\s*from\s*"@\/lib\/admin-route-deadline"/.test(
+          source,
+        )
+      ) {
+        fail('import adminRoute from "@/lib/admin-route-deadline"');
       }
-      const unguarded = handlers.filter((handler) => !declaresGuard.test(handler));
-      if (unguarded.length === 0) continue;
-      if (unguarded.some((handler) => !/\bbearerTokenFromRequest\(/.test(handler))) {
-        failures.push(
-          `${routePath} has a handler that neither declares guard: "admin" nor reads the bearer token (bearerTokenFromRequest)`,
-        );
-        continue;
+      if (/\b(?:const|let|var|function|class)\s+adminRoute\b/.test(source)) {
+        fail("adminRoute must not be redefined in the route");
       }
-      for (const handler of unguarded) {
-        const readAt = handler.search(readsRequest);
-        const guardAt = handler.search(adminGuard);
-        if (readAt >= 0 && !(guardAt >= 0 && guardAt < readAt)) {
-          failures.push(
-            `${routePath} reads the body or the query before the administrator guard: declare guard: "admin" in adminRoute options`,
+      if (/\bexport\s*\*/.test(source)) fail("no export * in an admin route");
+      for (const match of source.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
+        if (new RegExp(`\\b(?:${METHODS})\\b`).test(match[1])) {
+          fail("an HTTP method must not be exported through export { … }");
+        }
+      }
+      for (const match of source.matchAll(
+        new RegExp(`\\bexport\\s+(?:async\\s+)?function\\s*\\*?\\s*(${METHODS})\\b`, "g"),
+      )) {
+        fail(`${match[1]} is exported as a function: use export const ${match[1]} = adminRoute(…)`);
+      }
+      for (const match of source.matchAll(
+        new RegExp(`\\bexport\\s+(?:let|var)\\s+(${METHODS})\\b`, "g"),
+      )) {
+        fail(`${match[1]} is exported with let/var: use export const ${match[1]} = adminRoute(…)`);
+      }
+      const methods = [
+        ...source.matchAll(new RegExp(`\\bexport\\s+const\\s+(${METHODS})\\b`, "g")),
+      ];
+      if (methods.length === 0) fail("exports no HTTP method");
+      for (const match of methods) {
+        const rest = source.slice(match.index + match[0].length);
+        const call = /^\s*=\s*adminRoute\s*(?:<[^>]*>)?\s*\(\s*\{/.exec(rest);
+        if (!call) {
+          fail(
+            `${match[1]} must be export const ${match[1]} = adminRoute({ …, guard: "admin" }, …)`,
           );
-          break;
+          continue;
         }
-      }
-      let guarded = adminGuard.test(source);
-      for (const imported of guarded ? [] : source.matchAll(/from\s+"@\/lib\/([^"]+)"/g)) {
-        // L'aide `adminRoute` ne garde que les gestionnaires qui déclarent `guard: "admin"`.
-        if (imported[1] === "admin-route-deadline") continue;
-        for (const candidate of [`${imported[1]}.ts`, `${imported[1]}/index.ts`]) {
-          try {
-            const library = await readFile(
-              new URL(`../src/lib/${candidate}`, import.meta.url),
-              "utf8",
-            );
-            if (adminGuard.test(library)) guarded = true;
-          } catch {
-            // Module introuvable à cet emplacement : l'autre candidat ou l'import suivant.
-          }
+        const top = topLevelOf(rest, call[0].length - 1)?.trim() ?? "";
+        const guard = /(?:^|[\s,])guard\s*:\s*"admin"\s*(?:,|$)/.exec(top);
+        // Une décomposition (`...options`) placée après la garde pourrait la remplacer.
+        if (!guard || top.lastIndexOf("...") > guard.index) {
+          fail(
+            `${match[1]} must declare guard: "admin" in its adminRoute options, after any spread`,
+          );
         }
-      }
-      if (!guarded) {
-        failures.push(
-          `${routePath} calls no administrator guard: use requireAdmin( / assertAdmin…( / !auth.isAdmin in the route or in a @/lib module it imports`,
-        );
       }
     }
   }
@@ -2581,7 +2653,7 @@ console.log(
       "private-reference-tables-only-in-server-module",
       "new-public-tables-rls-and-no-client-grants",
       "cron-routes-authenticated",
-      "admin-routes-read-token-and-call-an-admin-guard",
+      "admin-routes-guarded-before-any-read",
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
       "email-send-log-service-role-only-and-no-body",

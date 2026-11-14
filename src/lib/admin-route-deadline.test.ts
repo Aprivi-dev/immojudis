@@ -173,11 +173,15 @@ describe('adminRoute({ guard: "admin" })', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("sans garde, laisse le contrôle au module appelé", async () => {
+  it("exige la garde : une route admin sans `guard` ne compile pas, et reste gardée", async () => {
+    // @ts-expect-error `guard: "admin"` est obligatoire (contrôlé par `tsc`).
     const GET = adminRoute({ scope: "t", fallbackMessage: "f" }, async () => ({ ok: true }));
 
-    expect((await GET(new Request(url))).status).toBe(200);
-    expect(sessions.requireAuth).not.toHaveBeenCalled();
+    expect((await GET(new Request(url))).status).toBe(401);
+    expect(
+      (await GET(new Request(url, { headers: { authorization: "Bearer jeton-utilisateur" } })))
+        .status,
+    ).toBe(403);
   });
 });
 
