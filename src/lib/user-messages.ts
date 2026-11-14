@@ -3,6 +3,8 @@ import type { ApiErrorCode } from "@/lib/api-errors";
 export const GENERIC_ERROR_MESSAGE = "Une erreur est survenue. Réessayez dans un instant.";
 /** Adresse déjà inscrite : erreur Supabase traduite, ou inscription sans erreur sans identité créée. */
 export const ACCOUNT_EXISTS_MESSAGE = "Un compte existe déjà avec cette adresse.";
+/** Requête qui n'a pas pu partir ou revenir (réseau coupé) : aussi levé par `apiFetch`. */
+export const NETWORK_ERROR_MESSAGE = "Connexion impossible. Vérifiez votre réseau puis réessayez.";
 
 type ErrorLike = {
   code?: unknown;
@@ -64,7 +66,7 @@ const KNOWN_MESSAGES: Array<[RegExp, string]> = [
   ],
   [
     /failed to fetch|networkerror|load failed|network request failed|fetch failed/i,
-    "Connexion impossible. Vérifiez votre réseau puis réessayez.",
+    NETWORK_ERROR_MESSAGE,
   ],
   [
     /rate limit|too many requests|\b429\b/i,

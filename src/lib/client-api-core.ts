@@ -1,4 +1,8 @@
 import { getSupabase, hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/user-messages";
+
+/** Délai de `API_TIMEOUT_MS` (ou `timeoutMs`) dépassé : la réponse n'est pas arrivée à temps. */
+const TIMEOUT_ERROR_MESSAGE = "Le serveur met trop de temps à répondre. Réessayez dans un instant.";
 
 export async function authHeaders(): Promise<Record<string, string>> {
   // Sans session stockée (visiteur anonyme), la réponse est connue d'avance : on ne charge pas
@@ -82,18 +86,31 @@ async function send(
     options.timeoutMs ??
     (path.startsWith("/api/admin/") || !(options.method || options.file) ? API_TIMEOUT_MS : 0);
   let { signal } = options;
+  let deadline: AbortSignal | undefined;
   if (ms) {
     const timeout = AbortSignal.timeout(ms);
     // `AbortSignal.any` manque aux plus anciens navigateurs pris en charge (Safari 16.4 à 17.3) :
     // l'abandon de l'appelant y reste, sans délai.
     signal = signal ? (AbortSignal.any?.([signal, timeout]) ?? signal) : timeout;
+    if (signal !== options.signal) deadline = timeout;
   }
-  return fetch(path, {
-    method: options.method,
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal,
-  });
+  try {
+    return await fetch(path, {
+      method: options.method,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal,
+    });
+  } catch (error) {
+    // Une annulation voulue (page quittée, lecture que React Query abandonne) reste ce qu'elle
+    // est : React Query l'ignore, aucun message n'est à montrer.
+    if (options.signal?.aborted) throw error;
+    // Le délai : `TimeoutError`, ou `AbortError` selon le navigateur. La coupure réseau : `TypeError`
+    // (« Failed to fetch », « NetworkError… », « Load failed »).
+    if (deadline?.aborted) throw new Error(TIMEOUT_ERROR_MESSAGE, { cause: error });
+    if (error instanceof TypeError) throw new Error(NETWORK_ERROR_MESSAGE, { cause: error });
+    throw error;
+  }
 }
 
 /** Appel JSON de l'API : le corps de la réponse, ou l'erreur de `readJson` (message, statut, code). */
