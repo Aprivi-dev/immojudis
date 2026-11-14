@@ -152,7 +152,7 @@ describe("faits du registre pour une vente : lus sur la vente, avant la limite",
           silentSendsInSixMonths: 0,
           lastSendAt: null,
         },
-        { allowLicitorDecoded: false, art14RuleEnabled: true, art14MaxAgeDays: 30 },
+        { allowLicitorDecoded: false, art14MaxAgeDays: 30 },
         new Date("2026-11-14T09:30:00Z"),
       ),
     ).toEqual({ ok: false, code: "address_stale" });

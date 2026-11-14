@@ -1,11 +1,13 @@
 {
   "slug": "saisie-immobiliere-etapes-vente-forcee-acheteur",
   "publishedAt": "2026-10-15",
-  "updatedAt": "2026-10-15",
+  "updatedAt": "2026-11-14",
   "title": "La saisie immobilière : de la dette à la vente aux enchères, les étapes vues par l’acheteur",
-  "seoTitle": "Saisie immobilière : les étapes pour l’acheteur",
+  "seoTitle": "Saisie immobilière : acheter un bien saisi",
   "category": "Les fondamentaux",
   "description": "Commandement de payer, cahier des conditions de vente, audience d’orientation, vente forcée : les grandes étapes d’une saisie immobilière, expliquées à celui qui veut acheter.",
+  "seoDescription": "Bien saisi vendu aux enchères : étapes de la saisie immobilière, cahier des conditions de vente, avocat, garantie, audience. Ce que l’acheteur doit savoir.",
+  "directAnswer": "Acheter un bien saisi, c’est l’acheter aux enchères au tribunal, quand une saisie immobilière aboutit à une vente forcée : le bien est alors attribué au dernier enchérisseur, aux enchères publiques, à l’audience du juge de l’exécution (art. L. 322-5 du Code des procédures civiles d’exécution). Vous enchérissez par un avocat du barreau du tribunal, après lui avoir remis une garantie de 10 % de la mise à prix (au moins 3 000 €), et la procédure ne prévoit pas de condition suspensive de prêt. Le cahier des conditions de vente, consultable au greffe ou chez l’avocat du créancier poursuivant, est le document à lire avant de décider.",
   "intro": [
     "La saisie immobilière est la procédure par laquelle un créancier (la personne à qui une somme est due) fait vendre le bien immobilier de son débiteur (celui qui doit l’argent) pour être payé. Quand la vente a lieu aux enchères au tribunal, on parle de vente forcée ou, dans le langage courant, de vente « à la barre ».",
     "Cet article suit la procédure du point de vue de l’acheteur potentiel : quelles étapes précèdent l’audience, quels documents deviennent disponibles et à quel moment, et pourquoi la date d’une vente n’est jamais acquise d’avance. Il n’aborde pas les moyens de défense du débiteur. Les délais cités sont ceux du Code des procédures civiles d’exécution (CPCE) ; votre avocat vérifie ceux de votre dossier."
@@ -74,6 +76,37 @@
       }
     },
     {
+      "id": "acheter-bien-saisi",
+      "title": "Acheter un bien saisi : la marche à suivre",
+      "paragraphs": [
+        "Une maison ou un appartement saisi n’est mis aux enchères qu’une fois la vente forcée ordonnée par le juge. À partir de là, l’achat suit un parcours fixé par le Code, sans négociation avec le propriétaire saisi. Voici ce que vous faites, dans l’ordre."
+      ],
+      "bullets": [
+        "Repérer la vente : l’avis de vente est déposé au greffe pour affichage et publié dans un journal d’annonces légales, un à deux mois avant l’audience. Il indique la mise à prix, la date, l’occupation éventuelle, le cas échéant les dates de visite, et où consulter le cahier (art. R. 322-31).",
+        "Lire le cahier des conditions de vente, au greffe ou chez l’avocat du créancier poursuivant : désignation du bien, baux, servitudes, procès-verbal de description, conditions de la vente (art. R. 322-10).",
+        "Visiter quand une visite est prévue. La garantie des vices cachés n’a pas lieu dans les ventes faites par autorité de justice (art. 1649 du Code civil) : ce que vous ne voyez pas reste un risque.",
+        "Fixer votre enchère plafond à partir du marché, des frais, des travaux et d’une marge de sécurité, et faire valider votre financement par écrit avant l’audience.",
+        "Mandater un avocat du barreau du tribunal et lui remettre la garantie : chèque de banque ou caution bancaire irrévocable de 10 % de la mise à prix, au moins 3 000 € (art. R. 322-40 et R. 322-41).",
+        "Après l’audience : dix jours de surenchère possible, puis deux mois pour payer le prix et les frais après l’adjudication définitive (art. R. 322-51 et R. 322-56).",
+        "Pour entrer dans les lieux : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), mais pas contre un locataire dont le bail s’impose à l’acheteur."
+      ],
+      "callout": {
+        "title": "Bien saisi ne veut pas dire prix bas",
+        "text": "La mise à prix est fixée par le créancier poursuivant ; ce n’est pas une estimation de la valeur du bien (art. L. 322-6). Le prix final dépend des enchères, et les frais s’ajoutent au prix. Raisonnez sur le coût complet, pas sur la mise à prix."
+      },
+      "links": [
+        { "label": "Voir les ventes au tribunal", "href": "/sales?saleType=tribunal" },
+        {
+          "label": "Acheter une maison aux enchères",
+          "href": "/ressources/acheter-maison-aux-encheres-etapes-frais-risques"
+        },
+        {
+          "label": "Acheter un bien occupé",
+          "href": "/ressources/acheter-bien-occupe-encheres"
+        }
+      ]
+    },
+    {
       "id": "cahier",
       "title": "Le cahier des conditions de vente : votre document de travail",
       "paragraphs": [
@@ -113,7 +146,35 @@
       "paragraphs": [
         "Le guide « Ventes immobilières judiciaires » présente le déroulement d’une vente (ancre #deroulement), les frais (ancre #frais) et un lexique (ancre #lexique) où figurent la saisie immobilière, la mise à prix, le cahier des conditions de vente et la vente à la barre.",
         "Les ventes qui ne relèvent pas d’une saisie, comme la licitation d’un bien en indivision, suivent d’autres règles : voir l’article « La licitation : un bien en indivision vendu aux enchères, ce que cela change pour l’acheteur »."
+      ],
+      "links": [
+        {
+          "label": "L’adjudication : définition et déroulé",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication"
+        },
+        {
+          "label": "Vente reportée, retirée ou annulée",
+          "href": "/ressources/vente-encheres-immobiliere-reportee-retiree-annulee"
+        }
       ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Où trouver les ventes aux enchères de biens saisis ?",
+      "answer": "Chaque vente est annoncée par un avis déposé au greffe pour affichage et publié dans un journal d’annonces légales, un à deux mois avant l’audience (art. R. 322-31) ; il indique la mise à prix, la date, le tribunal et où consulter le cahier. Immojudis rassemble des annonces de ventes au tribunal publiées par des tiers et renvoie vers l’annonce d’origine ; son catalogue n’est pas exhaustif."
+    },
+    {
+      "question": "Peut-on visiter une maison saisie avant la vente ?",
+      "answer": "Lorsque des visites sont prévues, leurs dates figurent dans l’avis de vente (art. R. 322-31) ; elles sont souvent collectives et encadrées par un commissaire de justice. Renseignez-vous auprès de l’avocat poursuivant ou du greffe. La garantie des vices cachés n’a pas lieu dans une vente faite par autorité de justice (art. 1649 du Code civil) : la visite compte d’autant plus."
+    },
+    {
+      "question": "Le propriétaire saisi peut-il rester dans le bien après la vente ?",
+      "answer": "Le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13). L’adjudicataire ne peut le mettre à exécution qu’après avoir versé ou consigné le prix et payé les frais taxés, contre le saisi et les occupants de son chef sans droit opposable, et pas si le cahier prévoit le maintien du saisi dans les lieux (art. R. 322-64). L’expulsion d’un lieu habité suppose ensuite un commandement de quitter les lieux (art. L. 411-1) ; le délai de deux mois (art. L. 412-1) et la trêve hivernale (art. L. 412-6) peuvent la différer. Un locataire dont le bail s’impose à l’acheteur reste en place."
+    },
+    {
+      "question": "Un bien saisi se vend-il forcément moins cher ?",
+      "answer": "Rien ne le garantit. La mise à prix est fixée par le créancier poursuivant et n’est pas une estimation de la valeur (art. L. 322-6) ; le prix final dépend des enchères. Les frais s’ajoutent au prix et les travaux restent à votre charge : c’est le coût complet qui compte."
     }
   ],
   "sources": [
@@ -130,8 +191,40 @@
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025948"
     },
     {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-5 (adjudication aux enchères publiques à l’audience du juge)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025975"
+    },
+    {
       "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-6 (mise à prix, adjudication d’office)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-13 (titre d’expulsion contre le saisi)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025991"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-64 (titre d’expulsion de l’adjudicataire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 411-1 (expulsion après commandement de libérer les locaux)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028808273"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 412-1 (délai de deux mois après le commandement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047900004"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 412-6 (trêve hivernale, du 1er novembre au 31 mars)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000047900053"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442022"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41 (garantie remise à l’avocat)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
     },
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-7 (garanties de paiement des enchérisseurs)",

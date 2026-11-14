@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   useSearchParams: vi.fn(() => {
     throw new Error("BAILOUT_TO_CLIENT_SIDE_RENDERING");
   }),
+  loadSaleLanding: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,9 +32,16 @@ vi.mock("@/lib/client-billing", () => ({
   fetchAccessPlan: vi.fn(() => new Promise(() => undefined)),
   fetchBillingOffer: vi.fn(),
 }));
+vi.mock("@/lib/sale-landing-pages.server", () => ({
+  loadSaleLandingForPage: mocks.loadSaleLanding,
+}));
 
 import { OffersPage } from "./offres/offers-page";
 import { LawyerDirectoryPage } from "./avocats/lawyer-directory-page";
+import HousePage from "./maison-aux-encheres/page";
+import ApartmentPage from "./appartement-aux-encheres/page";
+import NotaryPage from "./encheres-notariales/page";
+import StatePage from "./ventes-immobilieres-etat/page";
 
 function html(node: React.ReactNode) {
   return renderToString(
@@ -65,4 +73,46 @@ describe("pages that crawlers must read", () => {
     expect(mocks.useSearchParams).toHaveBeenCalled();
     expect(output).toContain("Chargement de l&#x27;annuaire");
   });
+
+  it.each([
+    ["/maison-aux-encheres", HousePage, "maison en vente aux enchères ou sur offres, à venir"],
+    [
+      "/appartement-aux-encheres",
+      ApartmentPage,
+      "appartement en vente aux enchères ou sur offres, à venir",
+    ],
+    ["/encheres-notariales", NotaryPage, "Enchères et ventes interactives des notaires :"],
+    ["/ventes-immobilieres-etat", StatePage, "Ventes immobilières de l’État : "],
+  ] as const)(
+    "%s renders its heading, its sales and its guide on the server",
+    async (_path, Page, heading) => {
+      mocks.useSearchParams.mockClear();
+      mocks.loadSaleLanding.mockResolvedValue({
+        generatedAt: "2026-11-14T08:00:00.000Z",
+        upcomingCount: 1,
+        sales: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            department: "33",
+            city: "Bordeaux",
+            propertyType: "house",
+            saleDate: "2099-11-20T13:00:00Z",
+            startingPriceEur: 80_000,
+            surfaceM2: 90,
+            venueType: "tribunal",
+            status: "scheduled",
+          },
+        ],
+      });
+      const output = html(await Page());
+      expect(output.match(/<h1/g)).toHaveLength(1);
+      expect(output).toContain(heading);
+      expect(output).toContain("Les prochaines ventes");
+      expect(output).toContain("Bordeaux (33)");
+      expect(output).toContain('href="/sales/00000000-0000-4000-8000-000000000001"');
+      expect(output).toContain("Pour comprendre");
+      // Une page serveur : rien n'attend l'adresse de la page.
+      expect(mocks.useSearchParams).not.toHaveBeenCalled();
+    },
+  );
 });

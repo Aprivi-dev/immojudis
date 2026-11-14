@@ -337,28 +337,28 @@ function parisWeekStart(time: number): Date {
   return date;
 }
 
-export type DepartmentSaleWeek = {
+export type DepartmentSaleWeek<T extends DepartmentSale = DepartmentSale> = {
   /** Lundi de la semaine (`AAAA-MM-JJ`), ou `later` pour les ventes sans date valable. */
   key: string;
   label: string;
-  sales: DepartmentSale[];
+  sales: T[];
 };
 
 /**
  * Regroupe des ventes (déjà triées par date) par semaine du lundi au dimanche, à Paris : « Semaine
  * en cours », puis « Semaine du 9 novembre » (l'année n'est écrite que si elle diffère de celle de
  * `now`). Une vente reportée, sans date, ou d'une semaine déjà passée va dans un dernier groupe
- * « Date à confirmer ».
+ * « Date à confirmer ». Les ventes gardent leurs autres champs (le département d'une liste nationale).
  */
-export function groupDepartmentSalesByWeek(
-  sales: readonly DepartmentSale[],
+export function groupDepartmentSalesByWeek<T extends DepartmentSale>(
+  sales: readonly T[],
   now: Date = new Date(),
-): DepartmentSaleWeek[] {
+): DepartmentSaleWeek<T>[] {
   const current = parisWeekStart(now.getTime());
   const currentKey = current.toISOString().slice(0, 10);
   const currentYear = Number(parisDateKey(now).slice(0, 4));
-  const weeks = new Map<string, DepartmentSaleWeek>();
-  const later: DepartmentSale[] = [];
+  const weeks = new Map<string, DepartmentSaleWeek<T>>();
+  const later: T[] = [];
   for (const sale of sales) {
     const time = timestamp(sale.saleDate);
     if (sale.status === "postponed" || time == null) {
@@ -395,6 +395,24 @@ function positivePrice(value: number | null): value is number {
 }
 
 /**
+ * Ordre des listes de ventes à venir : date de vente croissante, les ventes sans date à la fin,
+ * puis l'identifiant. La fonction publique de recherche ne rend pas cet ordre, même triée par
+ * date : elle place d'abord les ventes géolocalisées (`coordinates_rank`). Pages de département
+ * et pages par type de vente ou de bien (`sale-landing-pages.server.ts`).
+ */
+export function compareSalesByDate(
+  a: Pick<DepartmentSale, "id" | "saleDate">,
+  b: Pick<DepartmentSale, "id" | "saleDate">,
+): number {
+  const left = timestamp(a.saleDate);
+  const right = timestamp(b.saleDate);
+  if (left == null && right == null) return a.id.localeCompare(b.id);
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left - right || a.id.localeCompare(b.id);
+}
+
+/**
  * Regroupe les ventes publiques par département. Un identifiant de vente est compté une seule
  * fois (la pagination de la recherche ne peut donc pas gonfler un compte) ; une vente dont le
  * département n'est pas reconnu n'est dans aucune page, comme elle n'est dans aucun filtre
@@ -418,14 +436,7 @@ export function aggregateDepartments(
 
   const departments: Record<string, DepartmentStats> = {};
   for (const [code, sales] of byDepartment) {
-    const sorted = [...sales].sort((a, b) => {
-      const left = timestamp(a.saleDate);
-      const right = timestamp(b.saleDate);
-      if (left == null && right == null) return a.id.localeCompare(b.id);
-      if (left == null) return 1;
-      if (right == null) return -1;
-      return left - right || a.id.localeCompare(b.id);
-    });
+    const sorted = [...sales].sort(compareSalesByDate);
     const typeCounts = new Map<string, number>();
     for (const sale of sorted) {
       const label = propertyTypeLabel(sale.propertyType);

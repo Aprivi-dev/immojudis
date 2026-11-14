@@ -5,6 +5,7 @@ import {
   DEPARTMENT_PAGES_PATH,
   DEPARTMENTS,
   aggregateDepartments,
+  compareSalesByDate,
   departmentFromCode,
   departmentFromNumberSlug,
   departmentFromSlug,
@@ -131,6 +132,25 @@ describe("seuil d'indexation", () => {
     ]);
     expect(departmentSaleCount(catalogue, "75")).toBe(2);
     expect(departmentSaleCount(catalogue, "13")).toBe(0);
+  });
+});
+
+describe("compareSalesByDate", () => {
+  it("classe par date croissante, les ventes sans date à la fin, puis par identifiant", () => {
+    const sales = [
+      sale("d", { saleDate: null }),
+      sale("c", { saleDate: "2026-11-12T09:00:00Z" }),
+      sale("b", { saleDate: "2026-11-10T13:00:00Z" }),
+      sale("a", { saleDate: null }),
+      sale("e", { saleDate: "2026-11-10T13:00:00Z" }),
+    ];
+    expect([...sales].sort(compareSalesByDate).map((item) => item.id)).toEqual([
+      "b",
+      "e",
+      "c",
+      "a",
+      "d",
+    ]);
   });
 });
 

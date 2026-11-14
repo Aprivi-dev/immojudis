@@ -25,6 +25,7 @@ vi.mock("@/lib/toast", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
 });
 
@@ -32,6 +33,7 @@ function view(overrides: Record<string, unknown> = {}) {
   return {
     mode: "off",
     modeLabel: "Éteint",
+    runs: "Dernier passage planifié : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
     notice: null,
     counters: [{ label: "Envois aujourd’hui (manuels inclus)", value: "2 sur 5" }],
     settings: {
@@ -40,6 +42,8 @@ function view(overrides: Record<string, unknown> = {}) {
       allowLicitorDecoded: false,
       art14RuleEnabled: true,
       art14MaxAgeDays: 30,
+      art14Label:
+        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
     readiness: {
@@ -48,6 +52,8 @@ function view(overrides: Record<string, unknown> = {}) {
     },
     ready: {
       count: 1,
+      label: "Prêtes à valider (1 sur 10 au plus)",
+      notice: null,
       items: [{ missionId: "mission-1", saleId: "sale-1", label: "Appartement E2E à Bordeaux" }],
     },
     events: [{ at: "03/11/2026 10:40", label: "Passage", detail: "5 examinées" }],
@@ -251,5 +257,138 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     mocks.fetch.mockRejectedValue(new Error("boom"));
     renderPanel();
     expect((await screen.findByRole("alert")).textContent).toContain("indisponible");
+  });
+
+  it("dit le dernier passage et le prochain, et le plafond des brouillons prêts à valider", async () => {
+    mocks.fetch.mockResolvedValue(
+      view({
+        ready: {
+          count: 10,
+          label: "Prêtes à valider (10 sur 10 au plus)",
+          notice: "Plafond atteint : la simulation ne prépare plus de brouillon.",
+          items: [],
+        },
+      }),
+    );
+    renderPanel();
+    expect(
+      await screen.findByText(
+        "Dernier passage planifié : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Prêtes à valider (10 sur 10 au plus)")).toBeTruthy();
+    expect(screen.getByText(/^Plafond atteint/)).toBeTruthy();
+  });
+
+  it("réglages du pilote : un bouton qui dit l'action sur les adresses Licitor décodées (P3)", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    mocks.run.mockResolvedValue(view());
+    renderPanel();
+    await screen.findByText("Réglages du pilote");
+    expect(screen.getByText("fermées au pilote")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Motif du changement/), {
+      target: { value: "Accord écrit de Licitor reçu" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ouvrir les adresses Licitor décodées" }));
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toEqual({
+      action: "update_settings",
+      reason: "Accord écrit de Licitor reçu",
+      changes: { allowLicitorDecoded: true },
+    });
+    cleanup();
+
+    mocks.fetch.mockResolvedValue(
+      view({ settings: { ...view().settings, allowLicitorDecoded: true } }),
+    );
+    renderPanel();
+    expect(
+      await screen.findByRole("button", { name: "Fermer les adresses Licitor décodées" }),
+    ).toBeTruthy();
+    expect(screen.getByText("ouvertes au pilote")).toBeTruthy();
+  });
+
+  it("conformité : l'article 14 ne se désactive pas, son délai change après confirmation (J9)", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    mocks.run.mockResolvedValue(view());
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPanel();
+    await screen.findByText("Conformité (article 14, AIPD)");
+    expect(screen.getByText(/appliqué à chaque candidat, non désactivable/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Article 14 :/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Rétablir la règle/ })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Motif du changement/), {
+      target: { value: "Délai réduit après avis" },
+    });
+    const change = screen.getByRole("button", { name: "Modifier le délai de l’article 14" });
+    // Hors de 1 à 90 jours : le bouton reste grisé ; 90 est admis (décision du 14/11/2026).
+    for (const value of ["91", "0", "abc"]) {
+      fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value } });
+      expect((change as HTMLButtonElement).disabled, value).toBe(true);
+    }
+    fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "90" } });
+    expect((change as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "20" } });
+    // Annulé : rien n'est envoyé.
+    fireEvent.click(change);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("de 30 à 20 jours"));
+    expect(mocks.run).not.toHaveBeenCalled();
+    // Confirmé : le délai part avec le motif.
+    confirm.mockReturnValue(true);
+    fireEvent.click(change);
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toEqual({
+      action: "update_settings",
+      reason: "Délai réduit après avis",
+      changes: { art14MaxAgeDays: 20 },
+    });
+  });
+
+  it("conformité : une règle de l'article 14 coupée avant la contrainte se rétablit, après confirmation", async () => {
+    mocks.fetch.mockResolvedValue(
+      view({ settings: { ...view().settings, art14RuleEnabled: false } }),
+    );
+    mocks.run.mockResolvedValue(view());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPanel();
+    fireEvent.change(await screen.findByLabelText(/Motif du changement/), {
+      target: { value: "Rétablir la règle" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rétablir la règle de l’article 14" }));
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toMatchObject({ changes: { art14RuleEnabled: true } });
+  });
+
+  it("conformité : attester l'AIPD demande une confirmation explicite", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    mocks.run.mockResolvedValue(view());
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPanel();
+    fireEvent.change(await screen.findByLabelText(/Motif du changement/), {
+      target: { value: "AIPD signée et versée" },
+    });
+    fireEvent.change(screen.getByLabelText("Version de l’AIPD"), { target: { value: "AIPD-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Attester l’AIPD" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("« AIPD-1 »"));
+    expect(mocks.run).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Attester l’AIPD" }));
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toEqual({
+      action: "attest_aipd",
+      version: "AIPD-1",
+      reason: "AIPD signée et versée",
+    });
+  });
+
+  it("l'arrêt d'urgence a le style « danger », distinct de « Valider et envoyer » (P11)", async () => {
+    mocks.fetch.mockResolvedValue(
+      view({ mode: "simulation", modeLabel: "Simulation (aucun envoi)" }),
+    );
+    renderPanel();
+    const stop = await screen.findByRole("button", { name: "Arrêt d’urgence" });
+    expect(stop.className).toContain("admin-button-danger");
+    expect(stop.className).not.toContain("admin-button-primary");
   });
 });

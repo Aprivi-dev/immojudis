@@ -31,11 +31,16 @@ import {
   evaluateAutopilotCandidate,
   type AutopilotSettings,
 } from "@/lib/information-agent/autopilot-rules";
-import { loadExcludedIdentityKeys } from "@/lib/information-agent/autopilot-settings";
+import {
+  loadExcludedIdentityKeys,
+  loadPendingSimulatedDrafts,
+} from "@/lib/information-agent/autopilot-settings";
 import {
   assertInformationAgentContactAllowed,
   persistInformationAgentContactObservations,
 } from "@/lib/information-agent/contacts";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
@@ -62,11 +67,15 @@ import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
  * choisi seul par le résolveur (classe A), `autopilotQueueRefusal` (rôle, identité, messagerie, adresse Licitor
  * décodée selon le réglage, date de la vente) et la garde des envois aux notaires (vente notariale) ; puis, pour les
  * ventes restantes de la page, des lectures groupées (une par page, jamais une par vente) : brouillon d'un
- * administrateur, premier enregistrement de l'adresse et, pour les adresses hors délai, envois précédents
- * (article 14). Seules les ventes qui passent ce tri comptent parmi les `maxExamined` examens du passage :
- * vérification candidat par candidat, `evaluateAutopilotCandidate` (règles pures) sur des faits lus ici, qui reste la
- * garde finale. Jamais de recherche réseau d'adresse, jamais de greffe : seulement l'avocat dont l'adresse figure
- * dans l'annonce de la vente.
+ * administrateur, brouillon simulé en attente, premier enregistrement de l'adresse et, pour les adresses hors délai,
+ * envois précédents (article 14). Seules les ventes qui passent ce tri comptent parmi les `maxExamined` examens du
+ * passage : vérification candidat par candidat, `evaluateAutopilotCandidate` (règles pures) sur des faits lus ici,
+ * qui reste la garde finale. Jamais de recherche réseau d'adresse, jamais de greffe : seulement l'avocat dont
+ * l'adresse figure dans l'annonce de la vente.
+ *
+ * Deux refus de la sélection évitent qu'un brouillon devenu caduc soit refusé à l'aperçu, ce qui compterait comme
+ * un rejet de politique (deux en 7 jours arrêtent le pilote) : une vente qui a déjà un brouillon simulé en attente
+ * n'est pas reprise (T1, 14/11/2026), et le délai de 30 jours par destinataire est appliqué dès l'examen.
  */
 export type AutopilotCandidate = {
   saleId: string;
@@ -154,6 +163,68 @@ function notarySendWillBeRefused(
   );
 }
 
+/**
+ * Ventes de la page qui ont déjà un brouillon simulé en attente : il attend la décision d'un administrateur
+ * (« Prêtes à valider »), le pilote ne le reprend pas. Une vente n'a qu'un brouillon du pilote à la fois (les autres
+ * sont annulés avant d'en créer un) : deux lignes par vente suffisent.
+ */
+async function salesWithPendingSimulatedDraft(saleIds: readonly string[]): Promise<Set<string>> {
+  const { rows } = await loadPendingSimulatedDrafts({ saleIds, limit: saleIds.length * 2 });
+  return new Set(rows.flatMap((row) => (row.sale_id ? [row.sale_id] : [])));
+}
+
+/**
+ * Délai de 30 jours par destinataire, toutes ventes confondues, dès la sélection : même règle et mêmes clés que la
+ * création du brouillon (`assertInformationAgentRecipientCooldown`, clés d'identité complètes). Seul son refus
+ * (409) écarte le candidat ; une lecture impossible est propagée.
+ */
+async function recipientCooldownActive(
+  email: string,
+  identityKeys: readonly string[],
+  now: Date,
+): Promise<boolean> {
+  try {
+    await assertInformationAgentRecipientCooldown({ email, identityKeys, now });
+    return false;
+  } catch (error) {
+    if (error instanceof PublicApiError && error.status === 409) return true;
+    throw error;
+  }
+}
+
+/**
+ * Motif d'un refus du contrôle d'opposition : `opposed` (409 : opposition ou rebond définitif), `address_excluded`
+ * (400 : adresse exclue ou structure inconnue). Toute autre erreur (base, registre indisponible) écarte aussi le
+ * candidat, sous `opposition_check_failed`, et se journalise : le pilote reste fermé sans la confondre avec une
+ * opposition.
+ */
+async function oppositionCheckRefusal(
+  saleId: string,
+  check: () => Promise<unknown>,
+): Promise<string | null> {
+  try {
+    await check();
+    return null;
+  } catch (error) {
+    if (error instanceof PublicApiError && error.status === 409) return "opposed";
+    if (error instanceof PublicApiError && error.status === 400) return "address_excluded";
+    const code = (error as { code?: unknown } | null)?.code;
+    console.error(
+      JSON.stringify({
+        scope: "information_agent.autopilot",
+        level: "error",
+        code: "opposition_check_failed",
+        saleId,
+        error: {
+          name: error instanceof Error ? error.name : typeof error,
+          code: typeof code === "string" ? code.slice(0, 20) : null,
+        },
+      }),
+    );
+    return "opposition_check_failed";
+  }
+}
+
 /** Missions encore ouvertes sur une vente : brouillon, ou échec à reprendre. */
 const OPEN_DRAFT_STATUSES = ["draft", "failed"];
 /** Lignes lues au plus par la lecture groupée des brouillons d'une page de la file. */
@@ -227,9 +298,10 @@ type QueueSurvivor = {
 
 /**
  * Tri préalable d'une page de la file, sans examen : le motif de refus de chaque vente (nul : à examiner). Deux
- * lectures légères (paquets de 50), puis, pour les ventes restantes, une lecture groupée des brouillons et une du
- * premier enregistrement des adresses (règle de l'article 14 active), et une des envois précédents pour les seules
- * adresses hors délai. Une étape du passage au sens de la borne de temps.
+ * lectures légères (paquets de 50), puis, pour les ventes restantes, une lecture groupée des brouillons
+ * d'administrateur, une des brouillons simulés en attente et une du premier enregistrement des adresses (article 14,
+ * toujours appliqué), et une des envois précédents pour les seules adresses hors délai. Une étape du passage au sens
+ * de la borne de temps.
  */
 async function queuePageRefusals(
   queued: readonly string[],
@@ -275,11 +347,11 @@ async function queuePageRefusals(
     }
   }
   if (!survivors.length) return refusals;
-  const [humanDrafts, firstRecorded] = await Promise.all([
-    loadHumanDraftSaleIds(survivors.map((survivor) => survivor.saleId)),
-    settings.art14RuleEnabled
-      ? loadAutopilotFirstRecordedAt(survivors.map((survivor) => survivor.email))
-      : new Map<string, string>(),
+  const survivorSaleIds = survivors.map((survivor) => survivor.saleId);
+  const [humanDrafts, simulated, firstRecorded] = await Promise.all([
+    loadHumanDraftSaleIds(survivorSaleIds),
+    salesWithPendingSimulatedDraft(survivorSaleIds),
+    loadAutopilotFirstRecordedAt(survivors.map((survivor) => survivor.email)),
   ]);
   // Envois précédents lus pour les seules adresses que l'article 14 refuserait à une personne jamais informée.
   const late = survivors.filter((survivor) => {
@@ -306,7 +378,7 @@ async function queuePageRefusals(
         },
         settings,
         now,
-      ),
+      ) ?? (simulated.has(survivor.saleId) ? "simulated_draft_pending" : null),
     );
   }
   return refusals;
@@ -371,16 +443,15 @@ async function examineAutopilotSale(
   if (!email) return { skip: "address_invalid" };
   const { oppositionKeys, identityKeys } = contactKeys(sale, selected, email);
   // Opposition (adresse et identité) vérifiée dès la sélection.
-  try {
-    await assertInformationAgentContactAllowed({
+  const oppositionRefusal = await oppositionCheckRefusal(saleId, () =>
+    assertInformationAgentContactAllowed({
       saleId,
       email,
       identityKeys: oppositionKeys.identityKeys,
       checkKeys: oppositionKeys.checkKeys,
-    });
-  } catch {
-    return { skip: "opposed" };
-  }
+    }),
+  );
+  if (oppositionRefusal) return { skip: oppositionRefusal };
   // Relevé de l'adresse lue dans l'annonce : enregistré maintenant (comme à la création d'un brouillon), pour que
   // la date de relevé et celle du premier enregistrement (art. 14) viennent du contact, jamais de la vente.
   await persistInformationAgentContactObservations({ saleId, candidates: [selected] });
@@ -419,6 +490,9 @@ async function examineAutopilotSale(
     now,
   );
   if (!verdict.ok) return { skip: verdict.code };
+  if (await recipientCooldownActive(email, oppositionKeys.identityKeys, now)) {
+    return { skip: "recipient_cooldown" };
+  }
   return {
     saleId,
     tribunalCode: sale.tribunal_code?.trim() || null,

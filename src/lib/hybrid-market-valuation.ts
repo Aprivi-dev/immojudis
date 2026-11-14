@@ -1,5 +1,7 @@
+import { asRecord } from "@/lib/guards";
 import { predictLightGbmQuantiles } from "@/lib/lightgbm-inference";
 import { hasLocalMarketExport, localMarketFeaturesFromArtifact } from "@/lib/local-market-features";
+import { VALUATION_MODEL_MIN_COVERAGE_PCT } from "@/lib/market-comparable-minimums";
 import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 import { loadActiveValuationModel } from "@/lib/valuation-model-registry";
 import { round } from "@/lib/rounding";
@@ -48,6 +50,7 @@ export async function applyActiveHybridModel(
 ): Promise<HybridValuationResult | null> {
   const model = await loadActiveValuationModel(input.segment);
   if (!model || model.framework !== "lightgbm_quantile") return null;
+  if (!coverageMeasuredByGate(model.training_metrics)) return null;
   const features = valuationFeatures(input, model.artifact);
   if (!features) return null;
   const prediction = predictLightGbmQuantiles(model.artifact, features);
@@ -85,15 +88,28 @@ export async function applyActiveHybridModel(
 }
 
 /**
+ * D2 (14/11) : un modèle actif n'est utilisé que si la porte d'activation a mesuré la couverture de
+ * son intervalle sur les ventes les plus récentes, mises de côté pendant son entraînement
+ * (`training_metrics.comparison`, écrit par `published_training_metrics` de
+ * `valuation_training.py`), et qu'elle atteint le plancher de mise
+ * en service (`VALUATION_MODEL_MIN_COVERAGE_PCT`, recopié de `valuation_activation_gate.py`). Un
+ * modèle activé sans cette mesure (comme les deux `lgbm-cqr-20260713` activés le 27/07/2026, avant
+ * la porte) ou remis en service à la main sous le plancher n'est pas utilisé : l'estimation est
+ * celle des comparables seuls. C'est ce que dit la page méthode.
+ */
+function coverageMeasuredByGate(trainingMetrics: unknown): boolean {
+  const comparison = asRecord(asRecord(trainingMetrics).comparison);
+  const coverage = finiteNumber(comparison.served_interval_coverage_pct);
+  return coverage !== null && coverage >= VALUATION_MODEL_MIN_COVERAGE_PCT;
+}
+
+/**
  * Variables du modèle. Les trois variables de marché local viennent de l'export `localMarket` de
  * l'artefact (`local-market-features.ts`), c'est-à-dire du même calcul qu'à l'entraînement : un
  * modèle n'est jamais alimenté avec des variables locales construites autrement que celles sur
- * lesquelles il a appris. Un export d'un format inconnu ou mal formé fait renoncer au modèle
- * (`null`), l'estimation reste alors celle des comparables.
- *
- * Transition : un artefact antérieur à l'export (sans `localMarket`) a été entraîné avec une
- * définition qu'on ne peut plus reproduire ; on lui garde l'ancienne approximation tirée des
- * comparables du moteur jusqu'à son remplacement par un modèle réentraîné.
+ * lesquelles il a appris. Un artefact sans cet export (antérieur à la porte d'activation, D2 du
+ * 14/11), ou avec un export d'un format inconnu ou mal formé, fait renoncer au modèle (`null`) :
+ * l'estimation reste alors celle des comparables.
  */
 function valuationFeatures(
   input: HybridValuationInput,
@@ -101,9 +117,8 @@ function valuationFeatures(
 ): Record<string, number | null> | null {
   const now = input.now ?? new Date();
   const monthAngle = (2 * Math.PI * now.getUTCMonth()) / 12;
-  const local = hasLocalMarketExport(artifact)
-    ? localMarketFeaturesFromArtifact(artifact, input.latitude, input.longitude)
-    : legacyLocalFeatures(input);
+  if (!hasLocalMarketExport(artifact)) return null;
+  const local = localMarketFeaturesFromArtifact(artifact, input.latitude, input.longitude);
   if (!local) return null;
   return {
     surface_m2: input.surfaceM2,
@@ -121,14 +136,6 @@ function valuationFeatures(
     local_quality_score: input.comparableQualityScore,
     annual_market_trend_pct: input.annualMarketTrendPct,
     radius_m: input.radiusM,
-  };
-}
-
-function legacyLocalFeatures(input: HybridValuationInput) {
-  return {
-    local_median_log: Math.log(input.comparableMedianPricePerM2),
-    local_spread_log: Math.log(input.comparableP90PricePerM2 / input.comparableP10PricePerM2),
-    local_sample_size_log: Math.log1p(input.comparableSampleSize),
   };
 }
 

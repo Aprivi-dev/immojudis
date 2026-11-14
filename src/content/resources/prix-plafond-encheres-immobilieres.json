@@ -1,11 +1,12 @@
 {
   "slug": "prix-plafond-encheres-immobilieres",
   "publishedAt": "2026-10-05",
-  "updatedAt": "2026-10-28",
+  "updatedAt": "2026-11-14",
   "title": "Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir",
   "seoTitle": "Enchère plafond : raisonner par le coût complet",
   "category": "Budget",
   "description": "Une méthode simple pour passer de la mise à prix à une enchère plafond défendable, en intégrant marché local, frais, travaux et marge de sécurité.",
+  "directAnswer": "L’enchère plafond est le montant maximal que vous vous interdisez de dépasser à l’audience. Elle se calcule à l’envers : partir d’une valeur de marché comparable, retirer une marge de sécurité, puis déduire les frais (environ 13 % du prix dans l’exemple de cet article), les travaux et le financement. La mise à prix n’est que le point de départ des enchères : elle n’entre pas dans le calcul.",
   "intro": [
     "Une mise à prix basse attire l’attention, mais elle ne dit pas jusqu’où il est raisonnable d’aller. La mise à prix est le montant à partir duquel les enchères démarrent à l’audience. Le chiffre utile se construit à l’envers : partir d’une valeur comparable, retirer une marge de sécurité, puis déduire tout ce qui sera engagé autour de l’enchère.",
     "Ce montant maximal, que nous appelons l’enchère plafond, est la limite que vous vous interdisez de dépasser. Cette méthode ne promet ni décote ni résultat. Elle rend votre décision lisible avant l’audience. Immojudis reprend cette logique dans son assistant, à partir des références et des hypothèses que vous pouvez corriger. Dans une vente notariale interactive, qui fonctionne par offres et non par enchères, on parle d’offre plafond : c’est le montant d’offre maximal que vous vous interdisez de dépasser, calculé de la même façon."
@@ -89,7 +90,7 @@
       "paragraphs": [
         "Sur une fiche, l’assistant rapproche la surface et les références disponibles, puis affiche une enchère plafond selon un profil de sécurité. Vous pouvez comparer une variante sans travaux, choisir un rafraîchissement, saisir un prix au m² si les comparables manquent et ajuster les frais ou travaux.",
         "Le rapport détaille marché, marge de sécurité, frais estimés, travaux et, lorsque le dossier le prévoit, portage. Si la surface ou le marché sont fragiles, le produit le signale et laisse l’enchère plafond à compléter.",
-        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal et chez le notaire : enchère plafond pour une vente au tribunal ou à la bougie, offre plafond pour une vente notariale interactive. Elle n’est pas proposée pour les ventes domaniales. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes les ventes concernées. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email, elle est aussi disponible pour toutes ces ventes : la page Offres indique ce qui s’applique au moment où vous la consultez. Pour une vente chez un notaire ou de l’État, l’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent."
+        "L’enchère plafond (simulation) s’affiche pour les ventes au tribunal et chez le notaire : enchère plafond pour une vente au tribunal ou à la bougie, offre plafond pour une vente notariale interactive. Elle n’est pas proposée pour les ventes domaniales. Avec le compte gratuit, vous la débloquez pour 3 ventes par mois ; avec l’offre Analyse, elle est disponible pour toutes les ventes concernées. Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email (un essai par personne), elle est aussi disponible pour toutes ces ventes : la page Offres indique ce qui s’applique au moment où vous la consultez. Pour une vente chez un notaire ou de l’État, l’article « Ventes notariales et ventes domaniales » explique pourquoi les règles diffèrent."
       ],
       "bullets": [
         "Comparez deux profils et modifiez une hypothèse à la fois.",
@@ -112,6 +113,24 @@
         "title": "À garder en tête",
         "text": "Immojudis aide à décider avec les données disponibles. Il ne remplace ni la lecture des actes, ni une consultation juridique, ni une validation de financement."
       }
+    }
+  ],
+  "faq": [
+    {
+      "question": "Quelle différence entre la mise à prix et l’enchère plafond ?",
+      "answer": "La mise à prix est le montant à partir duquel les enchères démarrent ; elle ne mesure ni la valeur du bien ni son coût total. L’enchère plafond est votre limite personnelle, calculée à partir du marché, des frais, des travaux et d’une marge de sécurité. Si votre plafond est inférieur à la mise à prix, le dossier sort de votre scénario."
+    },
+    {
+      "question": "Quels frais déduire avant d’enchérir ?",
+      "answer": "En saisie immobilière : les frais de poursuite taxés, annoncés avant les enchères (art. R. 322-42 du Code des procédures civiles d’exécution), les émoluments des avocats, les droits de mutation, les honoraires de votre avocat et les débours. Dans l’exemple de cet article, ils atteignent environ 19 600 € pour une enchère d’environ 147 900 €, soit environ 13 % : un ordre de grandeur à vérifier sur le cahier et auprès de l’avocat."
+    },
+    {
+      "question": "Quelle marge de sécurité retenir ?",
+      "answer": "Aucun taux n’est imposé. La marge absorbe une partie des écarts d’état, de délai ou de revente ; ce n’est pas un rendement attendu. L’exemple de cet article retient 10 % de la valeur de marché ; plus le dossier compte d’inconnues (surface, occupation, état du bien), plus une marge large se justifie."
+    },
+    {
+      "question": "Et pour une vente notariale interactive ?",
+      "answer": "Elle fonctionne par offres et non par enchères : on parle alors d’offre plafond, le montant d’offre maximal que vous vous interdisez de dépasser, calculé de la même façon. Pour une vente domaniale, l’assistant d’Immojudis ne propose pas ce calcul."
     }
   ],
   "sources": [

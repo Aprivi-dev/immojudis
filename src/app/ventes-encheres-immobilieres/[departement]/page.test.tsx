@@ -356,6 +356,16 @@ describe("page d'un département : contenu", () => {
     });
     expect(panel.className).toContain("bg-brand-navy");
     expect(panel.closest("#alerte")).not.toBeNull();
+    // La cadence réelle (collecte au plus toutes les 12 heures, alertes évaluées chaque jour), pas
+    // une promesse d'immédiateté.
+    expect(panel.textContent).toContain(
+      "Les sources sont relues au plus deux fois par jour selon la source et vos alertes sont comparées au catalogue chaque jour",
+    );
+    expect(panel.textContent).not.toContain("dès qu’elles sont publiées");
+    // Sur la page d'un département, la ligne d'une vente ne répète pas le numéro du département.
+    expect(screen.getByRole("region", { name: "Les prochaines ventes" }).textContent).not.toContain(
+      "(33)",
+    );
     expect(
       screen.getByRole("link", { name: "Être prévenu des nouvelles ventes" }).getAttribute("href"),
     ).toBe("#alerte");

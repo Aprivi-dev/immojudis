@@ -6,10 +6,11 @@ import type {
 } from "@/components/admin/use-information-agent-summary";
 
 const PILOT_LABELS = { off: "Éteint", simulation: "Simulation", live: "Réel" } as const;
+// « Réel » : des messages partent vers des tiers, couleur d'alerte et non de réussite (P11, 14/11/2026).
 const PILOT_TONES = {
   off: "text-brand-navy",
   simulation: "text-warning",
-  live: "text-success",
+  live: "text-danger",
 } as const;
 
 function display<T>(entry: SummaryValue<T>): string {

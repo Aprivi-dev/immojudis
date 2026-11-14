@@ -1,5 +1,6 @@
 import "server-only";
 import { assertAdmin } from "@/lib/admin-auth.server";
+import type Stripe from "stripe";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -70,6 +71,73 @@ export function computeWithdrawalRefundCents({
 /** Metadata key that ties a Stripe refund to the withdrawal request that issued it. */
 const WITHDRAWAL_REQUEST_METADATA_KEY = "withdrawal_request_id";
 
+/**
+ * Paiements du client lus en une page. Au-delà, la recherche d'un remboursement déjà émis ne
+ * couvrirait plus tous ses paiements : la rétractation est refusée plutôt que de risquer un second
+ * remboursement (plus de huit ans de mensualités : à traiter dans Stripe).
+ */
+const CUSTOMER_CHARGES_LIMIT = 100;
+
+function stripeId(value: string | { id: string } | null | undefined): string | null {
+  if (!value) return null;
+  return typeof value === "string" ? value : value.id;
+}
+
+/**
+ * La charge payée de la dernière facture de l'abonnement, parmi les charges du client. Avec la
+ * version d'API du code, une facture ne porte plus sa charge : son paiement réglé (`payments`, lu
+ * avec elle) désigne un PaymentIntent, ou la charge elle-même pour un paiement sans PaymentIntent.
+ * `null` quand cette facture n'a rien encaissé (essai, facture impayée). Une facture qui a encaissé
+ * sans charge retrouvée lève une erreur : la demande ne doit pas être close sans remboursement.
+ */
+function latestInvoiceCharge(
+  subscription: Stripe.Subscription,
+  charges: readonly Stripe.Charge[],
+): Stripe.Charge | null {
+  const invoice = subscription.latest_invoice;
+  if (!invoice) return null;
+  if (typeof invoice === "string") {
+    throw new PublicApiError(
+      "Dernière facture de l'abonnement illisible : rétractation à reprendre.",
+      409,
+    );
+  }
+  const payment = invoice.payments?.data.find((candidate) => candidate.status === "paid")?.payment;
+  const chargeId = stripeId(payment?.charge);
+  const paymentIntentId = stripeId(payment?.payment_intent);
+  const charge =
+    charges.find(
+      (candidate) =>
+        candidate.paid &&
+        ((chargeId !== null && candidate.id === chargeId) ||
+          (paymentIntentId !== null && stripeId(candidate.payment_intent) === paymentIntentId)),
+    ) ?? null;
+  if (!charge && invoice.amount_paid > 0) {
+    throw new PublicApiError(
+      `Paiement de la facture ${invoice.id} introuvable parmi ceux du client : vérifier dans Stripe avant de relancer.`,
+      409,
+    );
+  }
+  return charge;
+}
+
+/** Le remboursement déjà émis pour cette demande, sur n'importe quelle charge du client. */
+function findWithdrawalRefund(
+  charges: readonly Stripe.Charge[],
+  requestId: string,
+): Stripe.Refund | undefined {
+  for (const charge of charges) {
+    const refund = charge.refunds?.data.find(
+      (candidate) =>
+        candidate.status !== "failed" &&
+        candidate.status !== "canceled" &&
+        candidate.metadata?.[WITHDRAWAL_REQUEST_METADATA_KEY] === requestId,
+    );
+    if (refund) return refund;
+  }
+  return undefined;
+}
+
 export type ContractWithdrawalResult = {
   request: PrivacyRequestAdminSummary;
   subscriptionCancelled: boolean;
@@ -126,35 +194,43 @@ export async function executeContractWithdrawal({
 
   if (subscription?.stripe_subscription_id && subscription.stripe_customer_id) {
     const stripe = getStripe();
+    // Tout est lu avant d'agir : la dernière facture de l'abonnement avec ses paiements, et les
+    // paiements du client avec leurs remboursements.
     const stripeSubscription = await stripe.subscriptions.retrieve(
       subscription.stripe_subscription_id,
+      { expand: ["latest_invoice.payments"] },
     );
+    const charges = await stripe.charges.list({
+      customer: subscription.stripe_customer_id,
+      limit: CUSTOMER_CHARGES_LIMIT,
+      expand: ["data.refunds"],
+    });
+    if (charges.has_more) {
+      throw new PublicApiError(
+        `Plus de ${CUSTOMER_CHARGES_LIMIT} paiements pour ce client : rétractation à traiter dans Stripe, après lecture de ses remboursements.`,
+        409,
+      );
+    }
     const item = stripeSubscription.items.data[0];
     const periodStart = item?.current_period_start
       ? new Date(item.current_period_start * 1000)
       : null;
     const periodEnd = item?.current_period_end ? new Date(item.current_period_end * 1000) : null;
+    // C6 (14/11) : la charge visée est celle de la dernière facture de l'abonnement, et non « la
+    // première charge payée et pas entièrement remboursée » : en mode `full`, la charge déjà
+    // remboursée sortait de cette recherche, et une relance remboursait une autre charge du client.
+    const charge = latestInvoiceCharge(stripeSubscription, charges.data);
 
     if (stripeSubscription.status !== "canceled") {
       await stripe.subscriptions.cancel(stripeSubscription.id);
       subscriptionCancelled = true;
     }
 
-    const charges = await stripe.charges.list({
-      customer: subscription.stripe_customer_id,
-      limit: 5,
-    });
-    const charge = charges.data.find((candidate) => candidate.paid && !candidate.refunded);
-    // C9 : une rétractation relancée (clôture de la demande en échec, double clic, nouvel essai le
-    // lendemain quand la clé d'idempotence Stripe a expiré) ne rembourse pas une seconde fois.
-    const previousRefund = charge
-      ? (await stripe.refunds.list({ charge: charge.id, limit: 100 })).data.find(
-          (refund) =>
-            refund.status !== "failed" &&
-            refund.status !== "canceled" &&
-            refund.metadata?.[WITHDRAWAL_REQUEST_METADATA_KEY] === request.id,
-        )
-      : undefined;
+    // C9 puis C6 : une rétractation relancée (clôture de la demande en échec, double clic, nouvel
+    // essai le lendemain quand la clé d'idempotence Stripe a expiré) ne rembourse pas une seconde
+    // fois. Le remboursement déjà émis est cherché sur toutes les charges du client, pas seulement
+    // sur la charge visée.
+    const previousRefund = findWithdrawalRefund(charges.data, request.id);
     if (previousRefund) {
       notes.push(
         `Remboursement ${previousRefund.id} déjà émis pour cette rétractation (${previousRefund.amount} centimes) : aucun nouveau remboursement.`,
@@ -184,7 +260,7 @@ export async function executeContractWithdrawal({
       }
       notes.push(`Charge ${charge.id} : ${charge.amount} centimes, remboursé ${amount}.`);
     } else {
-      notes.push("Aucun paiement remboursable (essai en cours ou déjà remboursé).");
+      notes.push("Aucun paiement remboursable (essai en cours ou dernière facture non réglée).");
     }
   } else {
     notes.push("Aucun abonnement Stripe associé au compte.");

@@ -82,4 +82,26 @@ describe("operational alert labels stay in step with the migrations", () => {
       );
     }
   });
+
+  it("names the other alerts the autopilot syncs by name, never as close to a stop threshold", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/information-agent-autopilot.ts"),
+      "utf8",
+    );
+    // Appels écrits en toutes lettres (`deps.warning("run_errors", …)`), hors de la liste des avertissements.
+    const codes = [...source.matchAll(/\bdeps\.warning\(\s*"([a-z0-9_]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(codes).toEqual(expect.arrayContaining(["auto_stop", "run_errors"]));
+    for (const code of codes) {
+      // `auto_stop` : sync_information_agent_autopilot_warning l'écrit sous la clé de l'arrêt automatique.
+      const key =
+        code === "auto_stop"
+          ? "information_agent.autopilot.auto_stop"
+          : `information_agent.autopilot.warning.${code}`;
+      const { label } = describeOperationalAlert(key);
+      expect(label, key).not.toMatch(FALLBACK);
+      expect(label, key).not.toMatch(/proche d’un seuil d’arrêt/);
+    }
+  });
 });

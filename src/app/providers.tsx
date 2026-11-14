@@ -8,7 +8,6 @@ import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { PendingAlertRunner } from "@/components/PendingAlertRunner";
-import { SiteFooter } from "@/components/SiteFooter";
 import { LazyToaster } from "@/components/LazyToaster";
 import { retryUnlessRefused } from "@/lib/query-retry";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
@@ -55,7 +54,14 @@ export function useDeferredWithdrawnSources(queryClient: QueryClient) {
   }, [queryClient]);
 }
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+export function AppProviders({
+  children,
+  footer,
+}: {
+  children: React.ReactNode;
+  /** Le pied de page public, composé par le layout : une partie y est rendue côté serveur. */
+  footer: React.ReactNode;
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -75,7 +81,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
               <Navbar />
             </Suspense>
             {children}
-            <SiteFooter />
+            {footer}
             <PendingAlertRunner />
             <LazyToaster />
           </div>

@@ -124,7 +124,7 @@
         {
           "term": "Adjudication",
           "definition": "Attribution du bien au dernier enchérisseur à l’audience, qui emporte vente forcée.",
-          "href": "/ressources/jour-audience-encheres-role-avocat",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication",
           "source": "CPCE, art. L. 322-5 et L. 322-10"
         },
         {
@@ -232,7 +232,7 @@
         },
         {
           "term": "Titre d’expulsion",
-          "definition": "Titre qui permet de faire quitter les lieux à un occupant ; le jugement d’adjudication en tient lieu contre le saisi et les occupants sans droit opposable.",
+          "definition": "Titre qui permet de faire quitter les lieux à un occupant ; le jugement d’adjudication en tient lieu contre le saisi et les occupants de son chef sans droit opposable, une fois le prix versé ou consigné et les frais taxés payés.",
           "href": "/ressources/acheter-bien-occupe-encheres",
           "source": "CPCE, art. L. 322-13 et R. 322-64"
         },
@@ -411,9 +411,9 @@
         },
         {
           "term": "Vente domaniale",
-          "definition": "Vente d’un immeuble du domaine privé de l’État, par adjudication publique ou à l’amiable avec mise en concurrence.",
-          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
-          "source": "Code général de la propriété des personnes publiques, art. L. 3211-1 et R. 3211-2"
+          "definition": "Vente conduite par le Domaine, rattaché à la DGFiP : le plus souvent celle d’un bien de l’État dont il n’a plus l’usage, mais aussi, pour les meubles, de biens confisqués, abandonnés ou confiés par d’autres organismes publics.",
+          "href": "/ressources/ventes-domaniales-etat-biens-immobiliers-mobiliers",
+          "source": "Code général de la propriété des personnes publiques, art. L. 3211-1 et R. 3211-2 ; DGFiP, ventes mobilières du Domaine"
         },
         {
           "term": "Repère « Pépite »",

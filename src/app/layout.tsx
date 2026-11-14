@@ -5,6 +5,8 @@ import "./../styles.css";
 import { AppProviders } from "./providers";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
 import { DeferredGoogleAnalytics } from "@/components/DeferredGoogleAnalytics";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooterSaleTypes } from "@/components/SiteFooterSaleTypes";
 import { SkipLink } from "@/components/SkipLink";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
@@ -79,7 +81,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="fr" className={manrope.variable}>
       <body>
         <SkipLink />
-        <AppProviders>{children}</AppProviders>
+        <AppProviders footer={<SiteFooter saleTypes={<SiteFooterSaleTypes />} />}>
+          {children}
+        </AppProviders>
         <AudienceMeasurement />
         <DeferredGoogleAnalytics />
       </body>

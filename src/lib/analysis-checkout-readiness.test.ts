@@ -3,7 +3,12 @@ import {
   analysisCheckoutReadiness,
   analysisPriceId,
   assertAnalysisCheckoutOpen,
+  stripeKeyMode,
 } from "@/lib/analysis-checkout-readiness";
+import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
+import { PublicApiError } from "@/lib/api-errors";
+import { analysisSubscriptionPriceIds, isRecognisedAnalysisPrice } from "@/lib/billing";
+import { billingReconciliationConfigured } from "@/lib/billing-reconciliation";
 
 const COMPLETE_ENV = {
   STRIPE_SECRET_KEY: "sk_test_ready",
@@ -26,7 +31,12 @@ const COMPLETE_ENV = {
 
 describe("analysisCheckoutReadiness", () => {
   it("est ouvert quand tout est configuré", () => {
-    expect(analysisCheckoutReadiness(COMPLETE_ENV)).toEqual({ open: true, missing: [] });
+    expect(analysisCheckoutReadiness(COMPLETE_ENV)).toEqual({
+      open: true,
+      missing: [],
+      keyModeMismatch: false,
+      salesClosed: false,
+    });
     expect(() => assertAnalysisCheckoutOpen(COMPLETE_ENV)).not.toThrow();
   });
 
@@ -79,5 +89,131 @@ describe("analysisPriceId", () => {
     for (const value of [undefined, "", "  ", "prod_1Analysis", "price_with-dash"]) {
       expect(analysisPriceId({ STRIPE_ANALYSIS_PRICE_ID: value }), String(value)).toBeUndefined();
     }
+  });
+});
+
+describe("interrupteur de vente STRIPE_ANALYSIS_SALES_OPEN (C2)", () => {
+  /** Configuration réelle d'un déploiement de production, vente ouverte. */
+  const LIVE_ENV = {
+    ...COMPLETE_ENV,
+    STRIPE_SECRET_KEY: "sk_live_ready",
+    VERCEL_ENV: "production",
+  };
+
+  it("absente ou vide, laisse la vente ouverte : le déploiement ne ferme pas la production", () => {
+    expect(analysisCheckoutReadiness(LIVE_ENV).open).toBe(true);
+    for (const value of ["", "  ", "true", "TRUE", " true "]) {
+      expect(
+        analysisCheckoutReadiness({ ...LIVE_ENV, STRIPE_ANALYSIS_SALES_OPEN: value }).open,
+        JSON.stringify(value),
+      ).toBe(true);
+    }
+  });
+
+  it("posée à autre chose que true, ferme le checkout même si la configuration est complète", () => {
+    for (const value of ["false", "FALSE", "0", "non", "off", "fasle"]) {
+      const readiness = analysisCheckoutReadiness({
+        ...LIVE_ENV,
+        STRIPE_ANALYSIS_SALES_OPEN: value,
+      });
+      expect(readiness, value).toEqual({
+        open: false,
+        missing: [],
+        keyModeMismatch: false,
+        salesClosed: true,
+      });
+    }
+    let refusal: unknown;
+    try {
+      assertAnalysisCheckoutOpen({ ...LIVE_ENV, STRIPE_ANALYSIS_SALES_OPEN: "false" });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(PublicApiError);
+    expect(refusal).toMatchObject({ status: 503 });
+  });
+
+  it("vente fermée : le Price reste reconnu et le rapprochement reste actif", () => {
+    const closed = { ...LIVE_ENV, STRIPE_ANALYSIS_SALES_OPEN: "false" };
+
+    expect(analysisCheckoutReadiness(closed).open).toBe(false);
+    // Un abonné prélevé sur ce Price garde son accès (pas de passage en « decouverte »)...
+    expect(analysisSubscriptionPriceIds(closed)).toEqual(["price_1AnalysisTest"]);
+    expect(
+      isRecognisedAnalysisPrice(
+        { id: "price_1AnalysisTest", unit_amount: ANALYSIS_RECURRING_PRICE_CENTS },
+        closed,
+      ),
+    ).toBe(true);
+    // ... et le rapprochement quotidien avec Stripe continue de tourner.
+    expect(billingReconciliationConfigured(closed)).toBe(true);
+  });
+});
+
+describe("mode de la clé Stripe et du déploiement (C3)", () => {
+  it("lit le mode d'une clé secrète ou restreinte d'après son préfixe", () => {
+    expect(stripeKeyMode("sk_live_abc")).toBe("live");
+    expect(stripeKeyMode(" rk_live_abc ")).toBe("live");
+    expect(stripeKeyMode("sk_test_abc")).toBe("test");
+    expect(stripeKeyMode("rk_test_abc")).toBe("test");
+    for (const key of [undefined, null, "", "pk_live_abc", "stripe-secret-test", "sk_abc"]) {
+      expect(stripeKeyMode(key), String(key)).toBeNull();
+    }
+  });
+
+  it("ferme la garde avec une clé de test en production", () => {
+    const readiness = analysisCheckoutReadiness({ ...COMPLETE_ENV, VERCEL_ENV: "production" });
+    expect(readiness).toMatchObject({ open: false, missing: [], keyModeMismatch: true });
+    expect(() => assertAnalysisCheckoutOpen({ ...COMPLETE_ENV, VERCEL_ENV: "production" })).toThrow(
+      /STRIPE_SECRET_KEY \(mode de la clé inconnu ou différent.*checkout est suspendu/,
+    );
+  });
+
+  it("exige le mode réel en production : une clé dont le mode ne se lit pas ferme la garde", () => {
+    for (const STRIPE_SECRET_KEY of ["stripe-secret", "sk_abc", "pk_live_abc", "live_abc"]) {
+      expect(
+        analysisCheckoutReadiness({ ...COMPLETE_ENV, STRIPE_SECRET_KEY, VERCEL_ENV: "production" }),
+        STRIPE_SECRET_KEY,
+      ).toMatchObject({ open: false, missing: [], keyModeMismatch: true });
+    }
+    // Sur un preview aussi : seule une clé de test l'ouvre.
+    expect(
+      analysisCheckoutReadiness({
+        ...COMPLETE_ENV,
+        STRIPE_SECRET_KEY: "stripe-secret",
+        VERCEL_ENV: "preview",
+      }).open,
+    ).toBe(false);
+    // Clé absente : elle manque, ce n'est pas une question de mode.
+    expect(
+      analysisCheckoutReadiness({
+        ...COMPLETE_ENV,
+        STRIPE_SECRET_KEY: "",
+        VERCEL_ENV: "production",
+      }),
+    ).toMatchObject({ missing: ["STRIPE_SECRET_KEY"], keyModeMismatch: false });
+  });
+
+  it("ferme la garde avec une clé réelle sur un preview ou en développement", () => {
+    for (const VERCEL_ENV of ["preview", "development"]) {
+      expect(
+        analysisCheckoutReadiness({ ...COMPLETE_ENV, STRIPE_SECRET_KEY: "sk_live_x", VERCEL_ENV }),
+        VERCEL_ENV,
+      ).toMatchObject({ open: false, keyModeMismatch: true });
+    }
+  });
+
+  it("reste ouverte quand les modes concordent, ou hors Vercel où rien n'est à comparer", () => {
+    expect(
+      analysisCheckoutReadiness({
+        ...COMPLETE_ENV,
+        STRIPE_SECRET_KEY: "sk_live_x",
+        VERCEL_ENV: "production",
+      }).open,
+    ).toBe(true);
+    expect(analysisCheckoutReadiness({ ...COMPLETE_ENV, VERCEL_ENV: "preview" }).open).toBe(true);
+    expect(
+      analysisCheckoutReadiness({ ...COMPLETE_ENV, STRIPE_SECRET_KEY: "sk_live_x" }).open,
+    ).toBe(true);
   });
 });

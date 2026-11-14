@@ -49,6 +49,11 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
     "budget",
     "investissement",
   ],
+  "acheter-maison-aux-encheres-etapes-frais-risques": ["procedure", "budget", "documents"],
+  "adjudication-immobiliere-vente-par-adjudication": ["procedure", "audience", "apres-vente"],
+  "immobilier-notaires-annonces-vente-interactive-encheres": ["types-de-vente"],
+  "ventes-domaniales-etat-biens-immobiliers-mobiliers": ["types-de-vente"],
+  "encheres-immobilieres-en-ligne-distance": ["types-de-vente", "audience", "avocat"],
 };
 
 const TOPIC_WEIGHT = 3;

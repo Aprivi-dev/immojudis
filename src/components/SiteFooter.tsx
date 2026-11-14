@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
@@ -41,7 +42,12 @@ export function showsSiteFooter(pathname: string | null): boolean {
   return !(pathname === "/admin" || pathname?.startsWith("/admin/"));
 }
 
-export function SiteFooter() {
+/**
+ * `saleTypes` : le groupe « Ventes par type » (`SiteFooterSaleTypes`), composant serveur que le
+ * layout passe ici déjà rendu. Écrit dans ce composant client, il pesait sur le JavaScript
+ * initial de chaque page (budgets de `scripts/check-build-budgets.mjs`).
+ */
+export function SiteFooter({ saleTypes }: { saleTypes: ReactNode }) {
   const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
@@ -85,6 +91,7 @@ export function SiteFooter() {
             </ul>
           </nav>
         </div>
+        {saleTypes}
         <nav aria-label="Transparence" className="border-t border-border pt-5">
           <p className="mb-2 font-semibold text-foreground">Transparence</p>
           <ul className="flex flex-wrap gap-x-5">

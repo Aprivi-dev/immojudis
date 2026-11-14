@@ -11,6 +11,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
   const query = {
     select: (...args: unknown[]) => (mocks.calls.push({ method: "select", args }), query),
     eq: (...args: unknown[]) => (mocks.calls.push({ method: "eq", args }), query),
+    contains: (...args: unknown[]) => (mocks.calls.push({ method: "contains", args }), query),
+    not: (...args: unknown[]) => (mocks.calls.push({ method: "not", args }), query),
     order: (...args: unknown[]) => (mocks.calls.push({ method: "order", args }), query),
     gte: (...args: unknown[]) => (mocks.calls.push({ method: "gte", args }), query),
     in: (...args: unknown[]) => (mocks.calls.push({ method: "in", args }), query),
@@ -31,6 +33,7 @@ import { autopilotBudgetDecision, autopilotPhase } from "@/lib/information-agent
 import {
   lastOnDemandAutopilotRunAt,
   loadAutopilotStats,
+  loadLastAutopilotRunAt,
   sanitizeAutopilotEventDetails,
 } from "@/lib/information-agent/autopilot-settings";
 
@@ -139,7 +142,7 @@ describe("passages lancés à la main : journal", () => {
       { method: "from", args: ["information_agent_autopilot_events"] },
       { method: "select", args: ["at"] },
       { method: "eq", args: ["kind", "run"] },
-      { method: "eq", args: ["details->>manual", "true"] },
+      { method: "contains", args: ["details", { manual: true }] },
       { method: "gte", args: ["at", "2026-11-14T12:50:00.000Z"] },
       { method: "order", args: ["at", { ascending: false }] },
       { method: "limit", args: [1] },
@@ -151,6 +154,21 @@ describe("passages lancés à la main : journal", () => {
   it("une lecture impossible du journal est propagée (jamais un passage de plus)", async () => {
     mocks.error = new Error("base indisponible");
     await expect(lastOnDemandAutopilotRunAt(NOW)).rejects.toThrow("base indisponible");
+  });
+
+  it("« Dernier passage planifié » : écarte les passages `run` marqués « à la main », même marque", async () => {
+    mocks.rows = [{ at: "2026-11-14T12:40:00+00:00" }];
+    expect(await loadLastAutopilotRunAt()).toBe("2026-11-14T12:40:00+00:00");
+    expect(mocks.calls).toEqual([
+      { method: "from", args: ["information_agent_autopilot_events"] },
+      { method: "select", args: ["at"] },
+      { method: "eq", args: ["kind", "run"] },
+      { method: "not", args: ["details", "cs", '{"manual":true}'] },
+      { method: "order", args: ["at", { ascending: false }] },
+      { method: "limit", args: [1] },
+    ]);
+    mocks.rows = [];
+    expect(await loadLastAutopilotRunAt()).toBeNull();
   });
 
   it("garde dans le journal la marque « à la main », l'administrateur et le motif", () => {
