@@ -552,6 +552,21 @@ export function AdminInformationAgentMissionsPanel({
     });
   };
 
+  // Profil du destinataire proposé par le brouillon : il ne décrit plus l'adresse dès qu'elle change.
+  const shownProfile =
+    activeMission?.recipientProfile &&
+    normalizeEmail(recipientEmail) === normalizeEmail(activeMission.recipientEmail)
+      ? activeMission.recipientProfile
+      : null;
+  // Vente visée par l'envoi, rappelée à côté de « Valider et envoyer » pour qu'un écart se voie avant
+  // l'envoi. La liste des missions porte son titre ; un brouillon préparé depuis la file ne le porte
+  // pas, le titre de la ligne de la file le donne alors.
+  const sendSaleLabel = activeMission
+    ? activeMission.saleTitle ||
+      (selection && selection.saleId === activeMission.saleId ? selection.title : null) ||
+      `annonce ${activeMission.saleId ?? "inconnue"}`
+    : null;
+
   const sourceRefreshCycle = sourceRefreshCycleId
     ? (sourceRefreshQuery.data?.history.find((item) => item.id === sourceRefreshCycleId) ??
       (sourceRefreshQuery.data?.request?.id === sourceRefreshCycleId
@@ -696,20 +711,17 @@ export function AdminInformationAgentMissionsPanel({
               type="email"
               readOnly={!isMissionEditable(activeMission.status)}
             />
-            {activeMission.recipientProfile &&
-            normalizeEmail(recipientEmail) === normalizeEmail(activeMission.recipientEmail) ? (
+            {shownProfile ? (
               <p className="text-xs leading-5 text-brand-navy/70" data-testid="recipient-profile">
-                <span className="font-semibold">{activeMission.recipientProfile.roleLabel}</span>
+                <span className="font-semibold">{shownProfile.roleLabel}</span>
                 {" · "}
-                {activeMission.recipientProfile.originLabel}
-                {activeMission.recipientProfile.originSourceName
-                  ? ` (${activeMission.recipientProfile.originSourceName})`
-                  : ""}
-                {activeMission.recipientProfile.originUrl ? (
+                {shownProfile.originLabel}
+                {shownProfile.originSourceName ? ` (${shownProfile.originSourceName})` : ""}
+                {shownProfile.originUrl ? (
                   <>
                     {" "}
                     <a
-                      href={activeMission.recipientProfile.originUrl}
+                      href={shownProfile.originUrl}
                       target="_blank"
                       rel="noreferrer noopener"
                       className="underline underline-offset-2"
@@ -719,7 +731,7 @@ export function AdminInformationAgentMissionsPanel({
                   </>
                 ) : null}
                 {" · "}
-                {activeMission.recipientProfile.addressKindLabel}
+                {shownProfile.addressKindLabel}
               </p>
             ) : null}
             <Field
@@ -862,6 +874,10 @@ export function AdminInformationAgentMissionsPanel({
                       : "Régénérer depuis la source actualisée"}
                   </button>
                 ) : null}
+                <p className="w-full text-sm" data-testid="send-target">
+                  Vente : <strong>{sendSaleLabel}</strong> · Destinataire :{" "}
+                  <strong>{shownProfile?.roleLabel ?? "rôle non précisé"}</strong>
+                </p>
                 <label className="flex w-full items-start gap-2 rounded-lg border bg-warning-tint p-3 text-sm">
                   <input
                     type="checkbox"
