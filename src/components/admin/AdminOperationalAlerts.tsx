@@ -7,14 +7,10 @@ import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import { adminReadinessQuery } from "@/components/admin/admin-readiness-query";
 import { formatCompactDateTime } from "@/components/admin/admin-format";
 import { AdminPill } from "@/components/admin/admin-pill";
-import {
-  describeOperationalAlert,
-  operationalAlertSeverityLabel,
-} from "@/lib/operational-alert-labels";
 
 /**
- * Alertes d'exploitation ouvertes, en libellés français, avec leur gravité et un lien vers l'endroit
- * où agir. Le diagnostic liste aussi des alertes refermées dont la notification reste à livrer : seules
+ * Alertes d'exploitation ouvertes, en libellés français (mis en forme par le serveur), avec leur gravité
+ * et un lien vers l'endroit où agir. Le diagnostic liste aussi des alertes refermées dont la notification reste à livrer : seules
  * les ouvertes sont montrées ici.
  */
 export function AdminOperationalAlerts() {
@@ -54,7 +50,7 @@ export function AdminOperationalAlerts() {
         <>
           <ul className="mt-3 divide-y divide-brand-navy/10">
             {alerts.map((alert) => {
-              const { label, place } = describeOperationalAlert(alert.key);
+              const { label, place } = alert;
               return (
                 <li
                   key={alert.key}
@@ -63,7 +59,7 @@ export function AdminOperationalAlerts() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <AdminPill tone={alert.severity === "critical" ? "danger" : "warning"}>
-                        {operationalAlertSeverityLabel(alert.severity)}
+                        {alert.severityLabel}
                       </AdminPill>
                       <span className="font-medium text-brand-navy">{label}</span>
                     </div>

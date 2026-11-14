@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { toastMessage } from "./support/toast";
 
 const SUPABASE_URL = "https://ci.supabase.co";
@@ -761,14 +762,16 @@ const PRODUCTION_OPEN_ALERTS = [
   ["information_agent.unrouted.pending", "warning"],
   ["pipeline.source.encheres_immobilieres.stale_listings", "warning"],
   ["pipeline.source.notaires.stale_listings", "warning"],
-].map(([key, severity]) => ({
-  key,
-  category: "import",
-  severity,
-  status: "open",
-  deliveryStatus: "delivered",
-  lastSeenAt: "2026-09-19T09:45:00.000Z",
-}));
+].map(([key, severity]) => {
+  // Réponse du serveur : la ligne de la base et ses libellés déjà mis en forme.
+  const row = { key, severity, status: "open", deliveryStatus: "delivered" };
+  return {
+    ...row,
+    ...operationalAlertLabels(row),
+    category: "import",
+    lastSeenAt: "2026-09-19T09:45:00.000Z",
+  };
+});
 
 function readinessPayload(openAlerts = false) {
   return {

@@ -11,12 +11,6 @@ import type {
   ReadinessItem,
   ReadinessStatus,
 } from "@/lib/admin-readiness";
-import {
-  describeOperationalAlert,
-  operationalAlertNotificationLabel,
-  operationalAlertSeverityLabel,
-  operationalAlertStateLabel,
-} from "@/lib/operational-alert-labels";
 import { adminReadinessQuery } from "@/components/admin/admin-readiness-query";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPill } from "@/components/admin/admin-pill";
@@ -151,18 +145,13 @@ export function AdminReadinessPanel() {
                 className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 px-3 py-3 text-xs"
               >
                 <div className="min-w-0">
-                  <div className="text-foreground">{describeOperationalAlert(alert.key).label}</div>
+                  <div className="text-foreground">{alert.label}</div>
                   <div className="mt-1 text-muted-foreground">
-                    {operationalAlertStateLabel(alert.status)} · dernier signal le{" "}
-                    {formatCompactDateTime(alert.lastSeenAt)}
+                    {alert.stateLabel} · dernier signal le {formatCompactDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
-                <span className="text-foreground">
-                  {operationalAlertSeverityLabel(alert.severity)}
-                </span>
-                <span className="text-foreground">
-                  {operationalAlertNotificationLabel(alert.deliveryStatus)}
-                </span>
+                <span className="text-foreground">{alert.severityLabel}</span>
+                <span className="text-foreground">{alert.notificationLabel}</span>
               </div>
             ))}
           </div>

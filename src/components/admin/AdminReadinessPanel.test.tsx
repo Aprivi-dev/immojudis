@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminOperationalReadinessResponse } from "@/lib/admin-readiness";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { AdminReadinessPanel } from "./AdminReadinessPanel";
 
 const mocks = vi.hoisted(() => ({ fetchReadiness: vi.fn() }));
@@ -16,6 +17,12 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const EXHAUSTED = "pipeline.enrichment.exhausted";
 const LAND_ROOMS = "catalogue.quality.land_with_rooms";
 const POSTAL = "catalogue.quality.missing_postal_code_ratio";
+
+type Alert = AdminOperationalReadinessResponse["operations"]["alerts"][number];
+const withLabels = (row: Omit<Alert, keyof ReturnType<typeof operationalAlertLabels>>): Alert => ({
+  ...row,
+  ...operationalAlertLabels(row),
+});
 
 const READINESS: AdminOperationalReadinessResponse = {
   checkedAt: "2026-11-14T08:00:00.000Z",
@@ -45,30 +52,30 @@ const READINESS: AdminOperationalReadinessResponse = {
     lastHealthRunAt: "2026-11-14T07:45:00.000Z",
     lastHealthRunFresh: true,
     alerts: [
-      {
+      withLabels({
         key: EXHAUSTED,
         category: "import",
         severity: "warning",
         status: "open",
         deliveryStatus: "pending",
         lastSeenAt: "2026-11-14T07:45:00.000Z",
-      },
-      {
+      }),
+      withLabels({
         key: LAND_ROOMS,
         category: "import",
         severity: "warning",
         status: "open",
         deliveryStatus: "delivered",
         lastSeenAt: "2026-11-14T07:30:00.000Z",
-      },
-      {
+      }),
+      withLabels({
         key: POSTAL,
         category: "import",
         severity: "warning",
         status: "resolved",
         deliveryStatus: "failed",
         lastSeenAt: "2026-11-14T06:00:00.000Z",
-      },
+      }),
     ],
     detail: "",
   },

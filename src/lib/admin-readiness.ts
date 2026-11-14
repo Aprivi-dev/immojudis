@@ -9,6 +9,7 @@ import { formatPercent } from "@/lib/format/numbers";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 type ReadinessArea =
@@ -38,7 +39,7 @@ type MigrationReadiness = {
   detail: string;
 };
 
-type OperationalAlertSummary = {
+type OperationalAlertRow = {
   key: string;
   category: string;
   severity: "warning" | "critical";
@@ -46,6 +47,12 @@ type OperationalAlertSummary = {
   deliveryStatus: "pending" | "processing" | "delivered" | "failed";
   lastSeenAt: string;
 };
+/** Une alerte et ses libellés, mis en forme ici : le navigateur ne charge pas la table des libellés. */
+type OperationalAlertSummary = OperationalAlertRow & ReturnType<typeof operationalAlertLabels>;
+
+export function operationalAlertSummary(alert: OperationalAlertRow): OperationalAlertSummary {
+  return { ...alert, ...operationalAlertLabels(alert) };
+}
 
 export type OperationalHealthReadiness = {
   status: ReadinessStatus;
@@ -392,14 +399,16 @@ async function readOperationalHealthReadiness(
       failedDeliveryCount,
       lastHealthRunAt,
       lastHealthRunFresh: lastRunFresh,
-      alerts: alertRows.map((alert) => ({
-        key: alert.alert_key,
-        category: alert.category,
-        severity: alert.severity,
-        status: alert.status,
-        deliveryStatus: alert.notification_status,
-        lastSeenAt: alert.last_seen_at,
-      })),
+      alerts: alertRows.map((alert) =>
+        operationalAlertSummary({
+          key: alert.alert_key,
+          category: alert.category,
+          severity: alert.severity,
+          status: alert.status,
+          deliveryStatus: alert.notification_status,
+          lastSeenAt: alert.last_seen_at,
+        }),
+      ),
       detail: operationalHealthDetail({
         schedulerActive,
         openAlertCount,

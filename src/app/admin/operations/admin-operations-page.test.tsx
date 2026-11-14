@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminDashboardCountsData, AdminDashboardRunsData } from "@/lib/admin.server";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { AdminOperationsPage } from "./admin-operations-page";
 
 const mocks = vi.hoisted(() => ({
@@ -117,6 +118,12 @@ beforeEach(() => {
           status: "open",
           deliveryStatus: "delivered",
           lastSeenAt: "2026-09-19T07:30:00.000Z",
+          ...operationalAlertLabels({
+            key: NOTAIRES_STALE,
+            severity: "warning",
+            status: "open",
+            deliveryStatus: "delivered",
+          }),
         },
       ],
     },

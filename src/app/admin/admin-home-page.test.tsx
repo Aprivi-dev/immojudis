@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminDashboardRunsData } from "@/lib/admin.server";
 import type { AdminOperationalReadinessResponse } from "@/lib/admin-readiness";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { AdminHomePage } from "./admin-home-page";
 
 const mocks = vi.hoisted(() => ({
@@ -103,14 +104,15 @@ function readiness(
 // Le nom d'alerte passe en argument : un champ `key: "…"` littéral ressemble à un secret pour le
 // contrôle anti-secrets.
 function openAlert(name: string, severity: Alert["severity"]): Alert {
-  return {
+  const row = {
     key: name,
     category: "import",
     severity,
-    status: "open",
-    deliveryStatus: "delivered",
+    status: "open" as const,
+    deliveryStatus: "delivered" as const,
     lastSeenAt: "2026-11-14T07:45:00.000Z",
   };
+  return { ...row, ...operationalAlertLabels(row) };
 }
 
 const OPEN_ALERTS: Alert[] = [

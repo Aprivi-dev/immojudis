@@ -5,10 +5,6 @@ import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { PIPELINE_QUERY_KEY } from "@/lib/admin-query-keys";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
-import {
-  describeOperationalAlert,
-  operationalAlertNotificationLabel,
-} from "@/lib/operational-alert-labels";
 import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {
   return formatNumericDateTime(value, "Non établie");
@@ -63,6 +59,7 @@ export function AdminPipelinePanel() {
       </div>
     );
   const data = query.data;
+  const openAlerts = data.alerts.filter((alert) => alert.status === "open").length;
   return (
     <section
       className="mb-4 rounded-xl border bg-white p-5 space-y-4"
@@ -239,16 +236,13 @@ export function AdminPipelinePanel() {
         pourcentages mesurent la fraîcheur des fiches ; ils ne constituent pas une preuve de
         couverture de la source.
       </p>
-      <ul className="text-sm">
-        {data.alerts
-          .filter((alert) => alert.status === "open")
-          .map((alert) => (
-            <li key={alert.alert_key}>
-              {describeOperationalAlert(alert.alert_key).label} · notification :{" "}
-              {operationalAlertNotificationLabel(alert.notification_status).toLowerCase()}
-            </li>
-          ))}
-      </ul>
+      {openAlerts ? (
+        // Le détail (libellé, gravité, endroit où agir) est dans l'onglet Alertes : pas de seconde liste.
+        <p className="text-sm">
+          {openAlerts} alerte{openAlerts > 1 ? "s" : ""} de collecte ouverte
+          {openAlerts > 1 ? "s" : ""} : détail dans l’onglet Alertes d’Opérations.
+        </p>
+      ) : null}
     </section>
   );
 }

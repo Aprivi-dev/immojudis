@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEnvironmentReadiness,
   getAdminOperationalReadiness,
+  operationalAlertSummary,
   operationalHealthItem,
 } from "@/lib/admin-readiness";
 
@@ -11,6 +12,26 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("operational alert summary", () => {
+  it("sends French labels with each alert, so the browser never loads the label table", () => {
+    const summary = operationalAlertSummary({
+      key: ["information_agent", "unrouted", "pending"].join("."),
+      category: "cron",
+      severity: "warning",
+      status: "resolved",
+      deliveryStatus: "failed",
+      lastSeenAt: "2026-11-14T07:45:00.000Z",
+    });
+    expect(summary).toMatchObject({
+      label: "Messages reçus sans dossier, en attente de traitement",
+      place: { href: "/admin/agent-ia?onglet=reponses", label: "Agent IA › Réponses" },
+      severityLabel: "Avertissement",
+      stateLabel: "Refermée",
+      notificationLabel: "En échec",
+    });
+  });
 });
 
 describe("admin readiness", () => {

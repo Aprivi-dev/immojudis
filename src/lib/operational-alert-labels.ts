@@ -2,9 +2,10 @@ import { CATALOGUE_QUALITY_LABELS } from "@/lib/catalogue-quality-labels";
 import { sourceDisplayName } from "@/lib/source-names";
 
 /**
- * Libellés des alertes d'exploitation (`public.operational_alerts`) : seule table de l'administration,
- * partagée par l'accueil, Opérations > Alertes, la supervision des sources et le diagnostic des services.
- * Aucune clé technique n'arrive à l'écran : une clé absente de la table reçoit un libellé de repli lisible.
+ * Libellés des alertes d'exploitation (`public.operational_alerts`) : seule table de l'administration.
+ * Le diagnostic opérationnel (`admin-readiness.ts`) les applique côté serveur : l'accueil, Opérations >
+ * Alertes et le diagnostic des services reçoivent des chaînes, sans charger ces tables (budget de
+ * JavaScript). Aucune clé technique n'arrive à l'écran : une clé absente reçoit un libellé de repli lisible.
  *
  * Les clés viennent des migrations de `supabase/` : `app_private.sync_operational_alert` (santé
  * d'exploitation, observateur du pipeline, Agent IA, catalogue) et les fonctions `sync_*_alert(s)`. Une
@@ -222,4 +223,19 @@ const NOTIFICATION_LABELS: Record<string, string> = {
 
 export function operationalAlertNotificationLabel(status: string): string {
   return own(NOTIFICATION_LABELS, status) ?? "État inconnu";
+}
+
+/** Tout ce que l'écran affiche d'une alerte, mis en forme côté serveur. */
+export function operationalAlertLabels(alert: {
+  key: string;
+  severity: string;
+  status: string;
+  deliveryStatus: string;
+}) {
+  return {
+    ...describeOperationalAlert(alert.key),
+    severityLabel: operationalAlertSeverityLabel(alert.severity),
+    stateLabel: operationalAlertStateLabel(alert.status),
+    notificationLabel: operationalAlertNotificationLabel(alert.deliveryStatus),
+  };
 }
