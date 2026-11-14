@@ -46,7 +46,7 @@ export function OperationsRunTable({
     <div className="overflow-x-auto">
       <div className="min-w-[58rem]">
         <div className="grid grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 border-b border-brand-navy/10 px-5 py-3 text-xs font-semibold text-brand-navy/55">
-          <span>Run</span>
+          <span>Collecte</span>
           <span>Source</span>
           <span>Statut</span>
           <span>Début</span>

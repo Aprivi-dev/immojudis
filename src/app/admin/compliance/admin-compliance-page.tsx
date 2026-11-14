@@ -1,12 +1,10 @@
 "use client";
 
-import {
-  AdminPrivacyRequestsPanel,
-  PRIVACY_REQUESTS_QUERY_KEY,
-} from "@/components/admin/AdminPrivacyRequestsPanel";
+import { AdminPrivacyRequestsPanel } from "@/components/admin/AdminPrivacyRequestsPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { PRIVACY_REQUESTS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 /**
  * Vue « Conformité » : les demandes RGPD et les rétractations. Le diagnostic « Activation

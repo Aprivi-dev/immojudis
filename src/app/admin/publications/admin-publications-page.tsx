@@ -12,6 +12,7 @@ import { formatShortDateTime } from "@/lib/format/dates";
 import { formatPrice } from "@/lib/format/numbers";
 import { EmptyState, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { PUBLICATION_REQUESTS_QUERY_KEY } from "@/lib/admin-query-keys";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
 import { fetchAdminPublicationRequests, reviewAdminPublicationRequest } from "@/lib/client-api";
@@ -41,10 +42,10 @@ export function AdminPublicationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [publicationStatus, setPublicationStatus] = useState<PublicationFilter>("all");
   const publicationSearch = searchQuery.trim();
-  const { isRefreshing, refresh } = useAdminRefresh(["admin-publication-requests"]);
+  const { isRefreshing, refresh } = useAdminRefresh([PUBLICATION_REQUESTS_QUERY_KEY[0]]);
 
   const publicationRequestsQuery = useInfiniteQuery({
-    queryKey: ["admin-publication-requests", publicationStatus, publicationSearch],
+    queryKey: [...PUBLICATION_REQUESTS_QUERY_KEY, publicationStatus, publicationSearch],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       fetchAdminPublicationRequests({
@@ -78,7 +79,7 @@ export function AdminPublicationsPage() {
             : "Demande validée."
           : "Demande refusée.",
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin-publication-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PUBLICATION_REQUESTS_QUERY_KEY });
     },
     onError: (err) => {
       toast.error(queryErrorMessage(err, "Impossible de mettre à jour la demande"));

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { toastMessage } from "./support/toast";
 
 const SUPABASE_URL = "https://ci.supabase.co";
@@ -17,6 +18,8 @@ type MockOptions = {
   runStatus?: string;
   /** Réponse 504 du délai de 30 s sur la section `runs` du tableau de bord. */
   dashboardTimeout?: boolean;
+  /** Les cinq alertes ouvertes en production le 14/11/2026, une réponse et deux messages non rattachés. */
+  openAlerts?: boolean;
 };
 
 type MockState = {
@@ -68,11 +71,11 @@ test.describe("admin configuration", () => {
     await page.clock.install();
     const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "running" });
     await page.goto("/admin/operations");
-    await expect(page.getByText("running", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("En cours", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeDisabled();
     state.runStatus = "succeeded";
     await page.clock.fastForward(10_100);
-    await expect(page.getByText("succeeded", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Réussie", { exact: true }).first()).toBeVisible();
     expect(state.dashboardCalls).toBeGreaterThan(1);
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
   });
@@ -291,35 +294,78 @@ test.describe("admin configuration", () => {
     await page.goto("/admin");
 
     await expect(page.getByRole("heading", { name: "Vue d’ensemble", exact: true })).toBeVisible();
-    await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toHaveCount(0);
-    expect(await page.locator("body").innerText()).not.toContain("Vérifié à l’instant");
+    await expect(page.getByText("Aucune alerte ni échec récent", { exact: true })).toHaveCount(0);
+    expect(await page.locator("body").innerText()).not.toContain("Exécutions vérifiées");
 
     state.releaseDashboard();
-    await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toBeVisible();
+    await expect(page.getByText("Aucune alerte ni échec récent", { exact: true })).toBeVisible();
   });
 
-  test("keeps the overview light: one fast request and a link to every view", async ({ page }) => {
+  test("says in one line per section that nothing is left to handle", async ({ page }) => {
     test.skip(test.info().project.name.includes("mobile"), "Desktop-only overview check");
     const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
     await page.goto("/admin");
 
-    await expect(page.getByRole("heading", { name: "Aucun échec récent détecté" })).toBeVisible();
-    const views = page.getByRole("navigation", { name: "Vues de l’administration" });
-    for (const [label, href] of [
-      ["Opérations", "/admin/operations"],
-      ["Agent IA", "/admin/agent-ia"],
-      ["Qualité des données", "/admin/quality"],
-      ["Publications", "/admin/publications"],
-      ["Clients & abonnements", "/admin/clients"],
-      ["Avocats", "/admin/lawyers"],
-      ["Conformité", "/admin/compliance"],
-      ["Configuration", "/admin/settings"],
-    ]) {
-      await expect(views.getByRole("link", { name: label })).toHaveAttribute("href", href);
-    }
-    await page.waitForLoadState("networkidle");
+    await expect(
+      page.getByRole("heading", { name: "Aucune alerte ni échec récent" }),
+    ).toBeVisible();
+    await expect(page.getByText("Aucune alerte ouverte", { exact: true })).toBeVisible();
+    await expect(page.getByText("Aucune réponse à traiter", { exact: true })).toBeVisible();
+    await expect(page.getByText("Aucune demande RGPD ouverte", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pilote automatique : Éteint")).toBeVisible();
+    // Sans annonce en attente, pas de section Publications ; les cartes qui répétaient le menu sont parties.
+    await expect(page.getByRole("heading", { name: "Annonces de professionnels" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Vues de l’administration" })).toHaveCount(0);
+    // Les liens de l'accueil sont préchargés par Next : attendre les requêtes d'API, pas le réseau
+    // entier. Une liste et non un ensemble : une requête envoyée deux fois fait échouer le test.
+    await expect.poll(() => state.adminRequests.length).toBeGreaterThanOrEqual(7);
     expect(state.dashboardSections).toEqual(["runs"]);
-    expect([...new Set(state.adminRequests)]).toEqual(["/api/admin/dashboard"]);
+    expect([...state.adminRequests].sort()).toEqual([
+      "/api/admin/dashboard",
+      "/api/admin/information-agent",
+      "/api/admin/information-agent/autopilot",
+      "/api/admin/information-agent/unrouted",
+      "/api/admin/privacy-requests",
+      "/api/admin/publications",
+      "/api/admin/readiness",
+    ]);
+  });
+
+  test("lists the open alerts on the overview in French, with where to act", async ({ page }) => {
+    await prepareAdminPage(page, {
+      runSource: "avoventes",
+      runStatus: "succeeded",
+      openAlerts: true,
+    });
+    await page.goto("/admin");
+
+    await expect(page.getByRole("heading", { name: "Une intervention est requise" })).toBeVisible();
+    const alerts = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "Alertes ouvertes" }),
+    });
+    await expect(alerts.getByRole("listitem")).toHaveCount(5);
+    const unrouted = alerts
+      .getByRole("listitem")
+      .filter({ hasText: "Messages reçus sans dossier, en attente de traitement" });
+    await expect(unrouted).toContainText("Avertissement");
+    await expect(unrouted.getByRole("link")).toHaveAttribute(
+      "href",
+      "/admin/agent-ia?onglet=reponses",
+    );
+    await expect(
+      alerts.getByText("Source Enchères Immobilières : fiches non revérifiées à temps"),
+    ).toBeVisible();
+    await expect(page.getByText("2 messages non rattachés en attente")).toBeVisible();
+    await expect(page.getByText("1 réponse reçue à traiter")).toBeVisible();
+    // Ligne des collectes : état et source en clair.
+    const collections = page.getByText("Collectes :").locator("..");
+    await expect(collections).toContainText("Réussie");
+    await expect(collections).toContainText("Avoventes");
+    await expect(collections).not.toContainText(/succeeded|avoventes/);
+    expect(await page.locator("body").innerText()).not.toMatch(/pipeline\.|information_agent\./);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
   });
 
   test("loads the runs, and the table counts only on the Documents tab", async ({ page }) => {
@@ -331,13 +377,66 @@ test.describe("admin configuration", () => {
     expect(state.dashboardSections).not.toContain("ai");
     expect(state.dashboardSections).not.toContain("counts");
 
-    await page.getByRole("button", { name: "Documents", exact: true }).click();
+    await page.getByRole("tab", { name: "Documents", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await expect(page.getByText("Documents indexés")).toBeVisible();
     await expect.poll(() => state.dashboardSections.includes("counts")).toBe(true);
     await expect(page.getByText("4", { exact: true })).toBeVisible();
     expect(state.adminRequests).not.toContain("/api/admin/publications");
     expect(state.adminRequests).not.toContain("/api/admin/subscriptions");
     expect(state.adminRequests).not.toContain("/api/admin/readiness");
+  });
+
+  test("shows the open alerts in the Alertes tab instead of run counters", async ({ page }) => {
+    const state = await prepareAdminPage(page, { openAlerts: true });
+    await page.goto("/admin/operations");
+
+    await expect(page.getByRole("tab", { name: "Collectes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await page.getByRole("tab", { name: "Alertes" }).click();
+    const panel = page.getByRole("tabpanel");
+    await expect(panel.getByRole("heading", { name: "Alertes ouvertes" })).toBeVisible();
+    await expect(panel.getByRole("listitem")).toHaveCount(5);
+    await expect(panel.getByText("Enrichissement des fiches à l’arrêt")).toBeVisible();
+    await expect(panel.getByText("Runs en file")).toHaveCount(0);
+    expect(state.adminRequests).toContain("/api/admin/readiness");
+    // Le tableau des sources tient dans l'écran, au bureau comme à 390 px.
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
+
+  test("captures the overview and the Alertes tab when CAPTURE_DIR is set", async ({
+    page,
+  }, testInfo) => {
+    const dir = process.env.CAPTURE_DIR;
+    test.skip(!dir || testInfo.project.name !== "desktop-chromium", "captures à la demande");
+    await prepareAdminPage(page, {
+      runSource: "avoventes",
+      runStatus: "succeeded",
+      openAlerts: true,
+    });
+    for (const [label, size] of [
+      ["1440", { width: 1440, height: 900 }],
+      ["390", { width: 390, height: 844 }],
+    ] as const) {
+      await page.setViewportSize(size);
+      await page.goto("/admin");
+      await expect(page.getByText("2 messages non rattachés en attente")).toBeVisible();
+      await expect(page.getByText("Aucune demande RGPD ouverte")).toBeVisible();
+      await page.screenshot({ path: `${dir}/accueil-${label}.png`, fullPage: true });
+      await page.goto("/admin/operations");
+      await expect(page.getByRole("row", { name: /test-source/ })).toBeVisible();
+      await page.screenshot({ path: `${dir}/operations-collectes-${label}.png`, fullPage: true });
+      await page.getByRole("tab", { name: "Alertes" }).click();
+      await expect(page.getByRole("tabpanel").getByRole("listitem")).toHaveCount(5);
+      await page.screenshot({ path: `${dir}/operations-alertes-${label}.png`, fullPage: true });
+    }
   });
 
   test("tells the administrator when a request exceeded the 30 s limit", async ({ page }) => {
@@ -351,7 +450,7 @@ test.describe("admin configuration", () => {
       timeout: 15_000,
     });
     await expect(page.getByRole("heading", { name: "État de santé indisponible" })).toBeVisible();
-    await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Aucune alerte ni échec récent", { exact: true })).toHaveCount(0);
   });
 
   test("denies the settings route to a signed-in non-admin", async ({ page }) => {
@@ -547,7 +646,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     }
 
     if (path === "/api/admin/readiness") {
-      await route.fulfill({ status: 200, json: readinessPayload() });
+      await route.fulfill({ status: 200, json: readinessPayload(options.openAlerts) });
       return;
     }
     if (path === "/api/admin/subscriptions") {
@@ -559,7 +658,31 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
       return;
     }
     if (path === "/api/admin/privacy-requests") {
-      await route.fulfill({ status: 200, json: { requests: [] } });
+      await route.fulfill({
+        status: 200,
+        json: { requests: [], total: 0, openCount: 0, overdueCount: 0, hasMore: false },
+      });
+      return;
+    }
+    if (path === "/api/admin/information-agent/autopilot") {
+      await route.fulfill({
+        status: 200,
+        json: { mode: "off", modeLabel: "Éteint", notice: null },
+      });
+      return;
+    }
+    if (path === "/api/admin/information-agent") {
+      await route.fulfill({
+        status: 200,
+        json: { messages: [], facts: [], messagesTotal: options.openAlerts ? 1 : 0, total: 0 },
+      });
+      return;
+    }
+    if (path === "/api/admin/information-agent/unrouted") {
+      await route.fulfill({
+        status: 200,
+        json: { messages: [], total: options.openAlerts ? 2 : 0, hasMore: false },
+      });
       return;
     }
 
@@ -664,7 +787,25 @@ function dashboardCountsPayload() {
   };
 }
 
-function readinessPayload() {
+/** Les cinq alertes ouvertes en production le 14/11/2026. */
+const PRODUCTION_OPEN_ALERTS = [
+  ["pipeline.enrichment.stalled", "critical"],
+  ["pipeline.enrichment.exhausted", "warning"],
+  ["information_agent.unrouted.pending", "warning"],
+  ["pipeline.source.encheres_immobilieres.stale_listings", "warning"],
+  ["pipeline.source.notaires.stale_listings", "warning"],
+].map(([key, severity]) => {
+  // Réponse du serveur : la ligne de la base et ses libellés déjà mis en forme.
+  const row = { key, severity, status: "open", deliveryStatus: "delivered" };
+  return {
+    ...row,
+    ...operationalAlertLabels(row),
+    category: "import",
+    lastSeenAt: "2026-09-19T09:45:00.000Z",
+  };
+});
+
+function readinessPayload(openAlerts = false) {
   return {
     checkedAt: "2026-09-19T10:00:00.000Z",
     status: "ready",
@@ -686,12 +827,13 @@ function readinessPayload() {
       failedRunCount: 0,
       totalRunCount: 1,
       successRatePercent: 100,
-      openAlertCount: 0,
-      criticalOpenAlertCount: 0,
+      openAlertCount: openAlerts ? PRODUCTION_OPEN_ALERTS.length : 0,
+      criticalOpenAlertCount: openAlerts ? 1 : 0,
       pendingDeliveryCount: 0,
       failedDeliveryCount: 0,
       lastHealthRunAt: "2026-09-19T09:00:00.000Z",
-      alerts: [],
+      lastHealthRunFresh: true,
+      alerts: openAlerts ? PRODUCTION_OPEN_ALERTS : [],
       detail: "CI",
     },
     webhookUrl: null,
