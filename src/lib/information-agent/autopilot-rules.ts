@@ -348,6 +348,9 @@ export function sharedStructureCounts(
 // ---------------------------------------------------------------------------------------------------------
 export type AutopilotRunGate = { ok: true } | { ok: false; code: string };
 
+/** Au plus un passage lancé à la main toutes les 10 minutes (journal : événement `run` avec `manual`). */
+export const AUTOPILOT_ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
+
 /**
  * Garde de tête de passage : mode, arrêt, pause, plage horaire. Un passage lancé à la main par un administrateur
  * (`onDemand`) n'existe qu'en simulation (`not_simulation` sinon, réel compris) et seule la plage horaire ne

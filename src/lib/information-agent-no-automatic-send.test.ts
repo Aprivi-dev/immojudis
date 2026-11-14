@@ -11,8 +11,9 @@ import { describe, expect, it } from "vitest";
  *   T2  `src/lib/information-agent-autopilot.ts` appelle `runAdminInformationAgentAction` (avec `trigger`) ;
  *   T3  `src/app/api/cron/information-agent-autopilot/route.ts` importe ce seul module d'envoi ;
  *   T3 bis (14/11/2026) `src/lib/admin-information-agent-autopilot.ts` n'en importe que le passage de SIMULATION
- *       lancé à la main par un administrateur (`runInformationAgentAutopilotOnDemand`), refusé hors du mode
- *       simulation et qui n'envoie jamais (`information-agent-autopilot.scenarios.test.ts`) ;
+ *       lancé à la main par un administrateur (`runInformationAgentAutopilotOnDemand`, une seule mention du
+ *       module, un seul appel), refusé hors du mode simulation et qui n'envoie jamais
+ *       (`information-agent-autopilot.scenarios.test.ts`) ;
  *   T5  la tâche pg_cron `immojudis-information-agent-autopilot`, qui n'appelle l'application que si le mode
  *       n'est pas « off ».
  * T1 (un seul appel au fournisseur, dans `approveAndSendMission`), T4 (aucune relance), T6 (ni Vercel Cron, ni
@@ -243,32 +244,44 @@ describe("agent d'information : aucun envoi automatique", () => {
     expect(executor.match(/runAdminInformationAgentAction\(/g)).toHaveLength(1);
 
     // Aucun autre fichier de l'application n'importe le pilote, hors sa route, ses tests et l'exception T3 bis.
-    const importers = sourceFiles.filter((file) =>
-      /from "@\/lib\/information-agent-autopilot"/.test(read(file)),
-    );
+    // Tout chemin vers le module compte (alias ou relatif) : import, ré-export, import dynamique ou `require`.
+    const executorPath =
+      /["'](?:@\/lib\/|(?:\.{1,2}\/)+(?:[\w.-]+\/)*)information-agent-autopilot["']/;
+    const importers = sourceFiles.filter((file) => executorPath.test(read(file)));
     expect(importers.sort()).toEqual([AUTOPILOT_ADMIN, AUTOPILOT_ROUTE].sort());
-    // T3 bis : le module d'administration n'importe que le passage à la demande (et le type de son résumé).
+    // T3 bis : une seule mention du module dans le module d'administration, l'import nommé exact du passage à la
+    // demande (et du type de son résumé) ; ni l'exécuteur planifié, ni ses dépendances, ni import global, ni
+    // ré-export ; un seul appel, avec l'administrateur de la session et le motif validé.
     const admin = read(AUTOPILOT_ADMIN);
-    const adminImports = [
-      ...admin.matchAll(/import \{([^}]*)\} from "@\/lib\/information-agent-autopilot"/g),
-    ].flatMap((match) =>
-      match[1]
-        .split(",")
-        .map((name) => name.trim())
-        .filter(Boolean),
+    expect(admin.match(/(?<![\w-])information-agent-autopilot(?![\w-])/g)).toHaveLength(1);
+    expect(admin).toMatch(
+      /import \{\s*runInformationAgentAutopilotOnDemand,\s*type AutopilotRunSummary,?\s*\} from "@\/lib\/information-agent-autopilot";/,
     );
-    expect(adminImports.sort()).toEqual(
-      ["runInformationAgentAutopilotOnDemand", "type AutopilotRunSummary"].sort(),
+    expect(admin).not.toMatch(/\brunInformationAgentAutopilot\b(?!OnDemand)/);
+    expect(admin).not.toMatch(/\bdefaultAutopilotDeps\b|\brunAutopilotPass\b/);
+    expect(admin).not.toMatch(
+      /\bimport\s*\*|\bexport\s*\*|\bexport\s*(?:type\s*)?\{[^}]*\}\s*from\b/,
     );
-    // Le passage à la demande passe par la garde de tête de passage en mode « à la demande » : simulation seule.
+    expect(admin).not.toMatch(/\bimport\s*\(|\brequire\s*\(/);
+    expect(admin.match(/\brunInformationAgentAutopilotOnDemand\b/g)).toHaveLength(2);
+    expect(admin).toMatch(
+      /= await runInformationAgentAutopilotOnDemand\(\{\s*adminId: auth\.userId,\s*reason: input\.reason,\s*finishBy: new Date\(startedAt \+ ON_DEMAND_FINISH_BY_MS\),\s*\}\);/,
+    );
+    // Le passage à la demande passe par la garde de tête en mode « à la demande » (simulation seule), n'expose
+    // pas ses dépendances, et n'envoie jamais, quel que soit le mode relu ensuite.
     const onDemand = functionBody(
       executor,
       "export async function runInformationAgentAutopilotOnDemand(",
     );
-    expect(onDemand).toMatch(/runAutopilotPass\(defaultAutopilotDeps\(overrides\), request\)/);
+    expect(onDemand).toMatch(
+      /\(\s*request: AutopilotOnDemandRequest,?\s*\): Promise<AutopilotRunSummary>/,
+    );
+    expect(onDemand).toMatch(/runAutopilotPass\(defaultAutopilotDeps\(\), request\)/);
     expect(executor).toMatch(
       /autopilotRunGate\(settings, now, \{ onDemand: onDemand !== null \}\)/,
     );
+    expect(executor.match(/const live = /g)).toHaveLength(1);
+    expect(executor).toContain('const live = !onDemand && settings.mode === "live";');
   });
 
   it("l'envoi du pilote revérifie ses règles avant l'approbation et juste avant le fournisseur, sans le plafond des administrateurs", () => {

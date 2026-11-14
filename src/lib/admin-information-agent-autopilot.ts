@@ -10,10 +10,12 @@ import {
   loadVerifiedResendDomains,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
+  AUTOPILOT_EVENT_TEXT_MAX,
   loadAutopilotSettings,
   loadAutopilotStats,
   loadRecentAutopilotEvents,
 } from "@/lib/information-agent/autopilot-settings";
+import { AUTOPILOT_ON_DEMAND_COOLDOWN_MS } from "@/lib/information-agent/autopilot-rules";
 import {
   buildAutopilotView,
   type AutopilotPreparedDraft,
@@ -33,15 +35,18 @@ import {
  * quatre RPC d'administration (`is_admin`, motif obligatoire, journal en ajout seul), appelées avec le jeton de
  * l'administrateur ; le passage en mode réel exige en plus le contrôle de préparation (TypeScript) et la base
  * le revérifie (AIPD, aller-retour). Enfin, le passage de simulation lancé à la main (motif obligatoire,
- * journalisé par le passage lui-même).
+ * journalisé par le passage lui-même) ; l'écran relit ensuite l'état par la lecture habituelle.
  */
-/** Motif d'un changement : 8 caractères au moins, jamais d'adresse (le journal n'en contient pas). */
-const changeReason = z
-  .string()
-  .trim()
-  .min(8)
-  .max(500)
-  .refine((value) => !value.includes("@"), "Le motif ne doit contenir aucune adresse email.");
+/** Motif : 8 caractères au moins, `max` au plus, jamais d'adresse (le journal n'en contient pas). */
+const reasonSchema = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(8)
+    .max(max)
+    .refine((value) => !value.includes("@"), "Le motif ne doit contenir aucune adresse email.");
+/** Motif d'un changement (colonne `reason` du journal, 500 caractères). */
+const changeReason = reasonSchema(500);
 
 export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -69,14 +74,23 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
     version: z.string().trim().min(1).max(40),
     reason: changeReason,
   }),
-  z.object({ action: z.literal("run_simulation_now"), reason: changeReason }),
+  // Motif rangé dans les `details` du journal : refusé au-delà de leur longueur, jamais tronqué.
+  z.object({
+    action: z.literal("run_simulation_now"),
+    reason: reasonSchema(AUTOPILOT_EVENT_TEXT_MAX),
+  }),
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
+/** Actions qui rendent la vue du pilote (toutes, sauf le passage lancé à la main). */
+export type AdminAutopilotChange = Exclude<AdminAutopilotAction, { action: "run_simulation_now" }>;
 
 /** Résultat d'un passage de simulation lancé à la main, déjà rédigé pour l'écran. */
-export type AutopilotOnDemandRun = { text: string };
-/** Réponse d'une action : la vue relue, et le résultat du passage lancé à la main s'il y en a un. */
-export type AdminAutopilotActionResult = AutopilotView & { onDemandRun?: AutopilotOnDemandRun };
+export type AutopilotOnDemandRun = {
+  outcome: "finished" | "time_budget" | "interrupted";
+  text: string;
+};
+/** Réponse du passage lancé à la main : son résultat seul, l'écran relit l'état du pilote ensuite. */
+export type AdminAutopilotSimulationResult = { onDemandRun: AutopilotOnDemandRun };
 
 /** Passages non lancés : un refus (409) avec son motif ; le délai de 10 minutes est un 429. */
 const ON_DEMAND_REFUSALS: Record<string, string> = {
@@ -85,18 +99,27 @@ const ON_DEMAND_REFUSALS: Record<string, string> = {
   auto_stopped: "Passage refusé : le pilote est arrêté automatiquement.",
   not_production: "Passage refusé : seul l’environnement de production fait tourner le pilote.",
 };
-const ON_DEMAND_COOLDOWN_MESSAGE =
-  "Un passage à la demande a déjà été lancé il y a moins de 10 minutes : réessayez plus tard.";
 /**
- * Borne de temps du passage à la demande, comptée depuis le début de la requête : 20 s, soit 8 s de marge sous le
- * délai des routes admin pour finir le candidat en cours, journaliser, rendre le bail et relire la vue.
+ * Heure à laquelle le travail du passage à la demande doit être fini, comptée depuis le début de la requête : 3 s
+ * avant le délai des routes admin, pour l'événement de fin, l'alerte des erreurs et le bail. Le passage n'entame
+ * aucune étape qui risque de la dépasser.
  */
-const ON_DEMAND_RUN_BUDGET_MS = ADMIN_ROUTE_TIMEOUT_MS - 8_000;
+const ON_DEMAND_FINISH_BY_MS = ADMIN_ROUTE_TIMEOUT_MS - 3_000;
+
+/** « 1 préparée », « 2 préparées » (0 au singulier, comme en français). */
+function counted(count: number, word: string): string {
+  return `${count} ${word}${count > 1 ? "s" : ""}`;
+}
 
 function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
   if (summary.status === "skipped") {
     if (summary.code === "on_demand_cooldown") {
-      throw new RateLimitError(ON_DEMAND_COOLDOWN_MESSAGE, 600, ON_DEMAND_COOLDOWN_MESSAGE);
+      const seconds = Math.max(
+        1,
+        Math.ceil((summary.retryAfterMs ?? AUTOPILOT_ON_DEMAND_COOLDOWN_MS) / 1000),
+      );
+      const message = `Un passage à la demande a déjà été lancé il y a moins de ${AUTOPILOT_ON_DEMAND_COOLDOWN_MS / 60_000} minutes : réessayez dans ${Math.ceil(seconds / 60)} min.`;
+      throw new RateLimitError(message, seconds, message);
     }
     if (summary.code === "not_simulation") {
       const state = summary.mode === "live" ? "en mode réel" : "éteint";
@@ -110,18 +133,22 @@ function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
       409,
     );
   }
-  if (summary.status === "stopped") {
+  const errors = Object.values(summary.errors).reduce((total, count) => total + count, 0);
+  const counts = `${counted(summary.examined, "examinée")}, ${counted(summary.prepared, "préparée")}, ${counted(summary.wouldSend, "simulée")}${errors ? `, ${errors} en erreur` : ""}`;
+  // Arrêt ou pause automatique, ou mode changé pendant le passage.
+  if (summary.status === "stopped" || summary.skipped.interrupted) {
     return {
-      text: "Passage interrompu : le pilote s’est arrêté ou mis en pause automatiquement (voir son état).",
+      outcome: "interrupted",
+      text: `Passage de simulation interrompu (arrêt ou pause automatique, ou mode changé ; voir l’état du pilote) : ${counts}. Aucun envoi.`,
     };
   }
-  const errors = Object.values(summary.errors).reduce((total, count) => total + count, 0);
-  const stopped = summary.stoppedByTimeBudget
-    ? `, arrêté au bout de ${ON_DEMAND_RUN_BUDGET_MS / 1000} s`
-    : "";
-  return {
-    text: `Passage de simulation terminé : ${summary.examined} examinées, ${summary.prepared} préparées, ${summary.wouldSend} simulées${errors ? `, ${errors} en erreur` : ""}${stopped}. Aucun envoi.`,
-  };
+  if (summary.stoppedByTimeBudget) {
+    return {
+      outcome: "time_budget",
+      text: `Passage de simulation arrêté par la borne de temps : ${counts}. Aucun envoi.`,
+    };
+  }
+  return { outcome: "finished", text: `Passage de simulation terminé : ${counts}. Aucun envoi.` };
 }
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
@@ -198,25 +225,17 @@ export async function runAdminAutopilotAction({
   env?: Readonly<Record<string, string | undefined>>;
   /** Début de la requête (ms) : la borne de temps du passage à la demande en part. */
   startedAt?: number;
-}): Promise<AdminAutopilotActionResult> {
+}): Promise<AutopilotView | AdminAutopilotSimulationResult> {
   const auth = await assertAdminAuth(authToken);
   if (input.action === "run_simulation_now") {
-    const onDemandRun = onDemandRunResult(
-      await runInformationAgentAutopilotOnDemand({
-        adminId: auth.userId,
-        reason: input.reason,
-        deadline: new Date(startedAt + ON_DEMAND_RUN_BUDGET_MS),
-      }),
-    );
-    try {
-      return { ...(await getAdminAutopilotView(authToken, { env })), onDemandRun };
-    } catch (error) {
-      // Le passage est fait et journalisé : une relecture en échec ne doit pas le faire passer pour refusé.
-      console.error(JSON.stringify({ scope: "admin.autopilot", code: "run_view_unread" }));
-      throw new PublicApiError(`${onDemandRun.text} État non relu : rechargez la page.`, 503, {
-        cause: error,
-      });
-    }
+    // Administrateur de la session vérifiée, jamais une valeur du client. La vue n'est pas relue ici (l'écran
+    // la relit) : tout le temps de la requête reste au passage.
+    const summary = await runInformationAgentAutopilotOnDemand({
+      adminId: auth.userId,
+      reason: input.reason,
+      finishBy: new Date(startedAt + ON_DEMAND_FINISH_BY_MS),
+    });
+    return { onDemandRun: onDemandRunResult(summary) };
   }
   if (input.action === "set_mode") {
     if (input.mode === "live") {

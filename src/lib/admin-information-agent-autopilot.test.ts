@@ -26,8 +26,9 @@ vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   loadAutopilotSettings: mocks.settings,
   loadAutopilotStats: mocks.stats,
   loadRecentAutopilotEvents: mocks.events,
+  AUTOPILOT_EVENT_TEXT_MAX: 200,
   // Dépendances par défaut du passage, toutes remplacées par celles en mémoire (`pilot()`).
-  hasOnDemandAutopilotRunSince: vi.fn(),
+  lastOnDemandAutopilotRunAt: vi.fn(),
   recordAutopilotEvent: vi.fn(),
   recordAutopilotAutoStop: vi.fn(),
   syncAutopilotWarning: vi.fn(),
@@ -76,7 +77,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.pilotDeps = null;
   mocks.onDemand.mockImplementation((request) =>
-    mocks.realPilot!.runInformationAgentAutopilotOnDemand(request, mocks.pilotDeps?.() ?? {}),
+    mocks.realPilot!.runAutopilotPass(
+      mocks.realPilot!.defaultAutopilotDeps(mocks.pilotDeps?.() ?? {}),
+      request,
+    ),
   );
   mocks.rpc.mockResolvedValue({ data: null, error: null });
   mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1", supabase: { rpc: mocks.rpc } });
@@ -398,7 +402,7 @@ describe("passage de simulation lancé à la main", () => {
   const SATURDAY = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris, hors plage d'envoi
   const input = { action: "run_simulation_now", reason: "Premier passage demandé" } as const;
 
-  /** Journal et passages du pilote en mémoire ; `at` avance à la demande. */
+  /** Journal et passages du pilote en mémoire ; `now` avance à la demande. */
   function pilot(at = SATURDAY) {
     const state = {
       now: at,
@@ -422,10 +426,13 @@ describe("passage de simulation lancé à la main", () => {
       releaseLease: async () => {
         state.released += 1;
       },
-      hasOnDemandRunSince: async (since) =>
-        state.journal.some(
-          (event) => event.kind === "run" && event.details.manual === true && event.at >= since,
-        ),
+      lastOnDemandRunAt: async (since) =>
+        state.journal
+          .filter(
+            (event) => event.kind === "run" && event.details.manual === true && event.at >= since,
+          )
+          .map((event) => event.at)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
       findCandidates: async (_settings, _now, _limit, shouldStop) => {
         let examined = 0;
         while (examined < 3 && !shouldStop()) {
@@ -469,12 +476,39 @@ describe("passage de simulation lancé à la main", () => {
     return state;
   }
 
-  it("exige un motif de 8 caractères sans adresse, comme les autres actions", () => {
+  /** Lance l'action ; la réponse d'un passage à la demande ne porte que son résultat. */
+  async function simulate(args: Partial<Parameters<typeof runAdminAutopilotAction>[0]> = {}) {
+    const response = await runAdminAutopilotAction({
+      authToken: "token",
+      input,
+      env: {},
+      ...args,
+    });
+    if (!("onDemandRun" in response)) throw new Error("la vue du pilote a été rendue");
+    return response;
+  }
+
+  const finalRuns = (state: ReturnType<typeof pilot>) =>
+    state.journal.filter(
+      (event) => event.kind === "run" && event.details.code !== "on_demand_started",
+    );
+
+  it("exige un motif de 8 à 200 caractères sans adresse, refusé au-delà (jamais tronqué)", () => {
     const parse = (reason: string) =>
       adminAutopilotActionSchema.safeParse({ action: "run_simulation_now", reason }).success;
     expect(parse("court")).toBe(false);
     expect(parse("Motif avec avocat@cabinet.test")).toBe(false);
     expect(parse("Premier passage demandé")).toBe(true);
+    expect(parse("m".repeat(200))).toBe(true);
+    expect(parse("m".repeat(201))).toBe(false);
+    // Les autres actions gardent leur limite de 500 (colonne `reason` du journal).
+    expect(
+      adminAutopilotActionSchema.safeParse({
+        action: "set_mode",
+        mode: "off",
+        reason: "m".repeat(300),
+      }).success,
+    ).toBe(true);
   });
 
   it.each([
@@ -483,7 +517,7 @@ describe("passage de simulation lancé à la main", () => {
   ] as const)("mode %s lu en base : refus 409, aucun passage", async (mode, message) => {
     const state = pilot();
     mocks.settings.mockResolvedValue({ ...settings, mode });
-    const refusal = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    const refusal = simulate({ startedAt: +state.now });
     await expect(refusal).rejects.toBeInstanceOf(PublicApiError);
     await expect(refusal).rejects.toMatchObject({
       status: 409,
@@ -494,21 +528,29 @@ describe("passage de simulation lancé à la main", () => {
     expect(state.sends).toBe(0);
   });
 
-  it("accepté en simulation un samedi hors plage : résultat rédigé, journal « à la main », aucun envoi", async () => {
+  it("accepté en simulation un samedi hors plage : résultat rédigé seul, journal « à la main », aucun envoi", async () => {
     const state = pilot();
-    const response = await runAdminAutopilotAction({
-      authToken: "token",
+    const response = await simulate({
       // Une identité envoyée par le client n'est jamais lue : seule la session vérifiée compte.
       input: adminAutopilotActionSchema.parse({ ...input, actorId: "intrus", adminId: "intrus" }),
       startedAt: +state.now,
-      env: {},
     });
-    expect(response.onDemandRun).toEqual({
-      text: "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+    // Le résultat seul : l'écran relit l'état par la lecture habituelle, rien n'est relu dans la requête.
+    expect(response).toEqual({
+      onDemandRun: {
+        outcome: "finished",
+        text: "Passage de simulation terminé : 3 examinées, 1 préparée, 1 simulée. Aucun envoi.",
+      },
     });
-    expect(response.modeLabel).toBe("Simulation (aucun envoi)");
-    const run = state.journal.find((event) => event.kind === "run");
-    expect(run?.details).toMatchObject({
+    expect(mocks.events).not.toHaveBeenCalled();
+    expect(state.journal.map((event) => event.kind)).toEqual(["run", "would_send", "run"]);
+    expect(state.journal[0].details).toMatchObject({
+      code: "on_demand_started",
+      manual: true,
+      actorId: "admin-1",
+      reason: "Premier passage demandé",
+    });
+    expect(finalRuns(state)[0].details).toMatchObject({
       manual: true,
       actorId: "admin-1",
       reason: "Premier passage demandé",
@@ -518,46 +560,41 @@ describe("passage de simulation lancé à la main", () => {
       sent: 0,
     });
     expect(state.sends).toBe(0);
+    expect(state.released).toBe(1);
     expect(mocks.provider).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("refuse un second passage dans les 10 minutes (429), l'accepte ensuite", async () => {
+  it("refuse un second passage dans les 10 minutes (429, Retry-After = temps restant), l'accepte ensuite", async () => {
     const state = pilot();
-    await runAdminAutopilotAction({ authToken: "token", input, env: {}, startedAt: +state.now });
+    await simulate({ startedAt: +state.now });
     state.now = new Date(SATURDAY.getTime() + 9 * 60_000);
-    const second = runAdminAutopilotAction({
-      authToken: "token",
-      input,
-      env: {},
-      startedAt: +state.now,
-    });
+    const second = simulate({ startedAt: +state.now });
     await expect(second).rejects.toBeInstanceOf(RateLimitError);
     await expect(second).rejects.toMatchObject({
-      publicMessage: expect.stringContaining("il y a moins de 10 minutes"),
+      retryAfterSeconds: 60,
+      publicMessage:
+        "Un passage à la demande a déjà été lancé il y a moins de 10 minutes : réessayez dans 1 min.",
     });
-    expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(1);
+    expect(finalRuns(state)).toHaveLength(1);
     state.now = new Date(SATURDAY.getTime() + 11 * 60_000);
-    await runAdminAutopilotAction({ authToken: "token", input, env: {}, startedAt: +state.now });
-    expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(2);
+    await simulate({ startedAt: +state.now });
+    expect(finalRuns(state)).toHaveLength(2);
     expect(state.sends).toBe(0);
   });
 
-  it("examens lents : arrêté par la borne de 20 s comptée depuis le début de la requête, bail rendu", async () => {
+  it("examens lents : arrêté par la borne comptée depuis le début de la requête, fini à temps, bail rendu", async () => {
     const state = pilot();
     state.examMs = 7_000;
-    const response = await runAdminAutopilotAction({
-      authToken: "token",
-      input,
-      env: {},
-      // La requête a commencé 2 s avant le passage : la borne tombe 18 s après son début.
-      startedAt: SATURDAY.getTime() - 2_000,
-    });
-    // Examens entamés à 0 s, 7 s et 14 s ; à 21 s, le candidat trouvé n'est pas entamé.
+    // La requête a commencé 2 s avant le passage : le travail doit être fini 23 s après le début du passage.
+    const response = await simulate({ startedAt: SATURDAY.getTime() - 2_000 });
+    // Examens à 0, 7 et 14 s (14 + 7 ≤ 23) ; à 21 s, le candidat trouvé n'est pas entamé.
     expect(response.onDemandRun).toEqual({
-      text: "Passage de simulation terminé : 3 examinées, 0 préparées, 0 simulées, arrêté au bout de 20 s. Aucun envoi.",
+      outcome: "time_budget",
+      text: "Passage de simulation arrêté par la borne de temps : 3 examinées, 0 préparée, 0 simulée. Aucun envoi.",
     });
-    expect(state.journal.find((event) => event.kind === "run")?.details).toMatchObject({
+    expect(state.now.getTime()).toBeLessThanOrEqual(SATURDAY.getTime() + 23_000);
+    expect(finalRuns(state)[0].details).toMatchObject({
       manual: true,
       examined: 3,
       stopped_by_time_budget: true,
@@ -569,11 +606,26 @@ describe("passage de simulation lancé à la main", () => {
   it("garde administrateur : un compte ordinaire ne lance aucun passage", async () => {
     const state = pilot();
     mocks.auth.mockResolvedValue({ isAdmin: false, userId: "u" });
-    await expect(runAdminAutopilotAction({ authToken: "token", input, env: {} })).rejects.toThrow(
-      AdminRequiredError,
-    );
+    await expect(simulate()).rejects.toThrow(AdminRequiredError);
     expect(mocks.onDemand).not.toHaveBeenCalled();
     expect(state.runs).toBe(0);
+  });
+
+  const summary = (overrides: Record<string, unknown>) => ({
+    runId: "r",
+    status: "skipped",
+    code: null,
+    mode: "simulation",
+    examined: 0,
+    prepared: 0,
+    wouldSend: 0,
+    sent: 0,
+    skipped: {},
+    errors: {},
+    warnings: [],
+    stoppedByTimeBudget: false,
+    retryAfterMs: null,
+    ...overrides,
   });
 
   it.each([
@@ -582,56 +634,49 @@ describe("passage de simulation lancé à la main", () => {
     ["auto_stopped", /arrêté automatiquement/],
     ["not_production", /production/],
   ])("passage non lancé (%s) : refus 409 avec son motif", async (code, message) => {
-    mocks.onDemand.mockResolvedValueOnce({
-      runId: "r",
-      status: "skipped",
-      code,
-      mode: "simulation",
-      examined: 0,
-      prepared: 0,
-      wouldSend: 0,
-      sent: 0,
-      skipped: {},
-      errors: {},
-      warnings: [],
+    mocks.onDemand.mockResolvedValueOnce(summary({ code }));
+    await expect(simulate()).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(message),
     });
-    await expect(
-      runAdminAutopilotAction({ authToken: "token", input, env: {} }),
-    ).rejects.toMatchObject({ status: 409, message: expect.stringMatching(message) });
   });
 
-  it("le passage fait, une relecture de l'état en échec le dit sans le faire passer pour refusé", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const state = pilot();
-    mocks.events.mockRejectedValue(new Error("lecture impossible"));
-    const failure = runAdminAutopilotAction({
-      authToken: "token",
-      input,
-      env: {},
-      startedAt: +state.now,
-    });
-    await expect(failure).rejects.toMatchObject({
-      status: 503,
-      message: expect.stringContaining("Passage de simulation terminé : 3 examinées"),
-    });
-    logged.mockRestore();
-  });
+  it.each([
+    ["arrêt automatique", { status: "stopped", code: "unverified_send" }],
+    ["mode changé", { status: "ran", examined: 2, skipped: { interrupted: 1 } }],
+  ])(
+    "passage interrompu (%s) : résultat « interrompu », jamais « terminé »",
+    async (_name, run) => {
+      mocks.onDemand.mockResolvedValueOnce(summary(run));
+      const { onDemandRun } = await simulate();
+      expect(onDemandRun.outcome).toBe("interrupted");
+      expect(onDemandRun.text).toMatch(/^Passage de simulation interrompu/);
+    },
+  );
 
-  it("le journal du panneau distingue un passage lancé à la main", async () => {
+  it("le journal du panneau distingue le début et la fin d'un passage lancé à la main", async () => {
     mocks.events.mockResolvedValue([
+      {
+        id: "e2",
+        at: "2026-11-14T13:00:05Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { manual: true, examined: 3, prepared: 1, would_send: 1, sent: 0 },
+      },
       {
         id: "e1",
         at: "2026-11-14T13:00:00Z",
         kind: "run",
         action: "run",
         reason: null,
-        details: { manual: true, examined: 3, prepared: 1, would_send: 1, sent: 0 },
+        details: { manual: true, code: "on_demand_started", reason: "Premier passage demandé" },
       },
     ]);
     const view = await getAdminAutopilotView("token", { env: {}, now: SATURDAY });
-    expect(view.events[0]).toMatchObject({
-      label: "Passage à la demande",
-      detail: "3 examinées, 1 préparées, 1 simulées, 0 envoyées",
-    });
+    expect(view.events.map(({ label, detail }) => ({ label, detail }))).toEqual([
+      { label: "Passage à la demande", detail: "3 examinées, 1 préparées, 1 simulées, 0 envoyées" },
+      { label: "Passage à la demande lancé", detail: "" },
+    ]);
   });
 });

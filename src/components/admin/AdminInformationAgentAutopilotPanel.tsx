@@ -9,7 +9,11 @@ import {
   AUTOPILOT_QUERY_KEY as QUERY_KEY,
   autopilotQuery,
 } from "@/components/admin/information-agent-queries";
-import { runAdminInformationAgentAutopilotActionClient } from "@/lib/client-api";
+import {
+  runAdminInformationAgentAutopilotActionClient,
+  runAdminInformationAgentAutopilotSimulationClient,
+} from "@/lib/client-api";
+import type { AutopilotOnDemandRun } from "@/lib/admin-information-agent-autopilot";
 import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-view";
 
 const BTN = "admin-button-secondary";
@@ -18,6 +22,11 @@ const MODES = [
   ["simulation", "Simulation"],
   ["live", "Réel"],
 ] as const;
+const SIMULATION_TOASTS: Record<AutopilotOnDemandRun["outcome"], string> = {
+  finished: "Passage de simulation terminé.",
+  time_budget: "Passage de simulation arrêté par la borne de temps.",
+  interrupted: "Passage de simulation interrompu.",
+};
 
 /**
  * Pilote automatique : interrupteur à trois états, compteurs, contrôle de préparation, brouillons prêts à
@@ -41,23 +50,38 @@ export function AdminInformationAgentAutopilotPanel({
   const query = useQuery(autopilotQuery());
   const run = useMutation({
     mutationFn: runAdminInformationAgentAutopilotActionClient,
-    onSuccess: ({ onDemandRun, ...view }) => {
+    onSuccess: (view) => {
       queryClient.setQueryData(QUERY_KEY, view);
       setReason("");
-      if (onDemandRun) setRunOutcome({ refused: false, text: onDemandRun.text });
-      toast.success(
-        onDemandRun ? "Passage de simulation terminé." : "Pilote automatique mis à jour.",
-      );
+      toast.success("Pilote automatique mis à jour.");
     },
-    onError: (error, input) => {
-      const message = queryErrorMessage(error, "Action impossible");
-      if (input.action === "run_simulation_now") setRunOutcome({ refused: true, text: message });
-      toast.error(message);
+    onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
+  });
+  // Passage lancé à la main : la réponse ne porte que son résultat ; l'état du pilote est relu ensuite.
+  const simulate = useMutation({
+    mutationFn: (motif: string) => runAdminInformationAgentAutopilotSimulationClient(motif),
+    onMutate: () => setRunOutcome(null),
+    onSuccess: ({ onDemandRun }) => {
+      setReason("");
+      setRunOutcome({ refused: false, text: onDemandRun.text });
+      toast.success(SIMULATION_TOASTS[onDemandRun.outcome]);
     },
+    onError: (error) => {
+      const text = queryErrorMessage(error, "Passage impossible");
+      // 504 : le délai des routes admin est dépassé et le passage a pu aboutir : une information, pas un refus.
+      if ((error as { status?: unknown }).status === 504) {
+        setRunOutcome({ refused: false, text });
+        toast.info(text);
+        return;
+      }
+      setRunOutcome({ refused: true, text });
+      toast.error(text);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
   });
   const view = query.data;
   const reasonMissing = reason.trim().length < 8;
-  const ready = !reasonMissing && !run.isPending;
+  const ready = !reasonMissing && !run.isPending && !simulate.isPending;
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">
@@ -118,10 +142,7 @@ export function AdminInformationAgentAutopilotPanel({
                   type="button"
                   className={BTN}
                   disabled={!ready}
-                  onClick={() => {
-                    setRunOutcome(null);
-                    run.mutate({ action: "run_simulation_now", reason });
-                  }}
+                  onClick={() => simulate.mutate(reason)}
                 >
                   Lancer un passage de simulation
                 </button>

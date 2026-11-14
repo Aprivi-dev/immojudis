@@ -35,7 +35,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const UNKNOWN_TTL_MS = 60 * 1000;
 const CACHE_MAX_ENTRIES = 1000;
 /** Budget total pour MX, A et AAAA d'un domaine : le domaine vient d'une annonce, donc d'une source non fiable. */
-const TOTAL_BUDGET_MS = 4_000;
+export const MAIL_DOMAIN_CHECK_BUDGET_MS = 4_000;
 const TEMPORARY_BOUNCE_LIMIT = 2;
 const TEMPORARY_BOUNCE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const cache = new Map<string, { status: MailDomainStatus; at: number }>();
@@ -112,7 +112,7 @@ export async function checkMailDomain(
   const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const budgetMs = deps.budgetMs ?? TOTAL_BUDGET_MS;
+  const budgetMs = deps.budgetMs ?? MAIL_DOMAIN_CHECK_BUDGET_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const resolution = Promise.race([
     resolveMailDomain(key, deps.resolver ?? defaultResolver),

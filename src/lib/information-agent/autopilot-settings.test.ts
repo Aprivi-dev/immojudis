@@ -11,6 +11,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   const query = {
     select: (...args: unknown[]) => (mocks.calls.push({ method: "select", args }), query),
     eq: (...args: unknown[]) => (mocks.calls.push({ method: "eq", args }), query),
+    order: (...args: unknown[]) => (mocks.calls.push({ method: "order", args }), query),
     gte: (...args: unknown[]) => (mocks.calls.push({ method: "gte", args }), query),
     in: (...args: unknown[]) => (mocks.calls.push({ method: "in", args }), query),
     limit: (...args: unknown[]) => {
@@ -28,7 +29,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
 
 import { autopilotBudgetDecision, autopilotPhase } from "@/lib/information-agent/autopilot-rules";
 import {
-  hasOnDemandAutopilotRunSince,
+  lastOnDemandAutopilotRunAt,
   loadAutopilotStats,
   sanitizeAutopilotEventDetails,
 } from "@/lib/information-agent/autopilot-settings";
@@ -130,25 +131,26 @@ describe("compteurs du pilote : envois par structure sur un domaine partagé", (
 });
 
 describe("passages lancés à la main : journal", () => {
-  it("cherche dans le journal un passage `run` marqué « à la main » depuis la date donnée", async () => {
+  it("lit dans le journal le dernier passage `run` marqué « à la main » depuis la date donnée", async () => {
     const since = new Date("2026-11-14T12:50:00Z");
     mocks.rows = [];
-    expect(await hasOnDemandAutopilotRunSince(since)).toBe(false);
+    expect(await lastOnDemandAutopilotRunAt(since)).toBeNull();
     expect(mocks.calls).toEqual([
       { method: "from", args: ["information_agent_autopilot_events"] },
-      { method: "select", args: ["id"] },
+      { method: "select", args: ["at"] },
       { method: "eq", args: ["kind", "run"] },
       { method: "eq", args: ["details->>manual", "true"] },
       { method: "gte", args: ["at", "2026-11-14T12:50:00.000Z"] },
+      { method: "order", args: ["at", { ascending: false }] },
       { method: "limit", args: [1] },
     ]);
-    mocks.rows = [{ id: "e1" }];
-    expect(await hasOnDemandAutopilotRunSince(since)).toBe(true);
+    mocks.rows = [{ at: "2026-11-14T12:56:00+00:00" }];
+    expect(await lastOnDemandAutopilotRunAt(since)).toEqual(new Date("2026-11-14T12:56:00Z"));
   });
 
   it("une lecture impossible du journal est propagée (jamais un passage de plus)", async () => {
     mocks.error = new Error("base indisponible");
-    await expect(hasOnDemandAutopilotRunSince(NOW)).rejects.toThrow("base indisponible");
+    await expect(lastOnDemandAutopilotRunAt(NOW)).rejects.toThrow("base indisponible");
   });
 
   it("garde dans le journal la marque « à la main », l'administrateur et le motif", () => {
