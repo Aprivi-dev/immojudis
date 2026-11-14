@@ -47,7 +47,8 @@ vi.mock("@/lib/information-agent", () => ({
 vi.mock("@/lib/information-agent/draft", () => ({
   createAdminInformationAgentDraft: mocks.createDraft,
 }));
-vi.mock("@/lib/information-agent/preview", () => ({
+vi.mock("@/lib/information-agent/preview", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/information-agent/preview")>()),
   previewAdminInformationAgentMission: mocks.preview,
 }));
 vi.mock("@/lib/information-agent/mission-store", () => ({
@@ -92,6 +93,7 @@ import {
 import { isConsumerMailAddress } from "@/lib/information-agent/address-hygiene";
 import { PublicApiError } from "@/lib/api-errors";
 import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
+import { INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE } from "@/lib/information-agent/preview";
 
 const MONDAY_10H = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris, plage d'envoi
 const NIGHT = new Date("2026-11-03T02:00:00Z");
@@ -856,6 +858,72 @@ describe("erreurs du passage et refus au moment de l'envoi (relecture du 14/11/2
       expect(calls.autoStops).toEqual([]);
     },
   );
+});
+
+describe("relecture de la PR #501 : simulation juste dès lundi", () => {
+  it("aperçu « Contrôle impossible » (panne passagère) : erreur du passage, jamais un rejet de politique", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      preview: async () => ({
+        blockers: [INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE],
+        fingerprint: "f".repeat(64),
+      }),
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.errors).toEqual({ preview_error: 1 });
+    expect(summary.skipped).toEqual({});
+    expect(summary.wouldSend).toBe(0);
+    // Ni évènement « skip policy_rejected » (arrêt automatique), ni annulation : le passage suivant réessaie.
+    expect(calls.records.map((record) => record.kind)).toEqual(["run"]);
+    expect(calls.cancels).toEqual([]);
+    logged.mockRestore();
+  });
+
+  it("un vrai motif de blocage à côté d'un contrôle impossible reste un rejet de politique", async () => {
+    const { deps } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      preview: async () => ({
+        blockers: [
+          INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE,
+          "Le contact est explicitement opposé.",
+        ],
+        fingerprint: "f".repeat(64),
+      }),
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.skipped).toEqual({ policy_rejected: 1 });
+    expect(summary.errors).toEqual({});
+  });
+
+  it("l'aperçu du pilote est demandé avec son déclencheur : le plafond des administrateurs ne s'y applique pas", async () => {
+    mocks.preview.mockResolvedValue({ blockers: [], fingerprint: "f".repeat(64) });
+    const deps = defaultAutopilotDeps({}, { VERCEL_ENV: "production" });
+    await deps.preview(draft(), settings(), "run-7");
+    expect(mocks.preview.mock.calls[0][0]).toMatchObject({
+      trigger: { kind: "autopilot", runId: "run-7" },
+    });
+  });
+
+  it("would_send ne compte que les brouillons nouvellement journalisés « aurait envoyé » pendant ce passage", async () => {
+    const { deps, calls } = harness({
+      loadSettings: async () => settings({ mode: "simulation" }),
+      findCandidates: async () => ({
+        candidates: [candidate({ saleId: "a" }), candidate({ saleId: "b", domain: "b.test" })],
+        skipped: {},
+        examined: 2,
+      }),
+      // « a » a déjà été journalisé par un passage précédent ; « b » est nouveau.
+      prepareDraft: async (item) =>
+        draft({ missionId: `mission-${item.saleId}`, alreadySimulated: item.saleId === "a" }),
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary).toMatchObject({ prepared: 2, wouldSend: 1 });
+    expect(calls.records.filter((record) => record.kind === "would_send")).toHaveLength(1);
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      would_send: 1,
+    });
+  });
 });
 
 describe("cas juridiques du cahier des charges", () => {
