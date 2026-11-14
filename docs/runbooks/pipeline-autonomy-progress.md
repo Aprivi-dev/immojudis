@@ -249,10 +249,99 @@ PR 136 intégrée à 10:24:03 UTC, merge e997725aeaab53da8c934f15bba57d1bb2e03c9
 
 La migration `supabase/migrations/20261020120021_document_readings_attempt_count.sql` (colonne `auction_document_readings.attempt_count`) doit être **appliquée avant** le déploiement du code Python correspondant (`services/data-pipeline/src/document_reading.py`, repli 12 h / 24 h / 72 h et abandon à la quatrième tentative). Le code lit et écrit cette colonne ; déployé en premier, chaque requête de lecture documentaire échouerait sur une colonne inexistante.
 
-De même, `supabase/migrations/20261119101010_document_readings_failed_rereading.sql` (colonnes `failed_*` et `last_failed_at`, 14/11/2026) doit être **appliquée avant** le code qui trace l'échec d'une relecture d'une lecture terminée et la fait attendre (même repli 12 h / 24 h / 72 h, abandon à la quatrième tentative).
-
 Ordre à suivre :
 
 1. Appliquer la migration par le workflow de migration habituel (elle est idempotente : `add column if not exists`) et vérifier qu'elle figure au registre.
 2. Seulement ensuite, fusionner et déployer le code Python (workers et workflows GitHub).
 3. Un worker déjà démarré avec l'ancien code reste compatible avec la colonne ajoutée : elle a une valeur par défaut à 0.
+
+Pour `supabase/migrations/20261119101010_document_readings_failed_rereading.sql` (colonnes `failed_*`, `last_failed_at` et `failed_text_at`, 14/11/2026), l'ordre ci-dessus ne peut pas être suivi : le workflow de migration exige la branche `main`. **Fusionner, puis lancer aussitôt l'application des migrations.** Entre les deux, la requête des candidates de la lecture des pièces échoue avant tout appel au modèle : la lecture des pièces s'arrête (erreur rapportée par la passe optionnelle, statut du run inchangé) jusqu'à l'application, sans autre effet.
+
+## Contacts des fiches notaires : négociateurs déjà en base (D9, 14/11/2026)
+
+Jusqu'au lot D, une fiche notaires dont l'API nommait une personne (souvent un négociateur salarié, « Prénom NOM ») stockait son nom, son téléphone et son adresse dans `lawyer_name`, `lawyer_contact` et `raw_payload.source_property_features.contact`. L'agent d'information lit `contact.email` comme l'adresse du notaire (`src/lib/information-agent/listing-contacts.ts`).
+
+Pour une vente que la source liste encore, le cycle normal suffit, sans commande particulière : chaque collecte re-décide `lawyer_name`, `lawyer_contact` et le bloc `contact` des faits stockés par la règle de l'office (`notaires_extraction.listing_contact`, `known_facts_with_office_contact`), et relit chaque fiche en 72 h au plus (fraîcheur des fiches notaires, dans la limite du temps de collecte).
+
+Une vente que la source ne liste plus n'est plus collectée : ses colonnes et son bloc `contact` restent tels quels. Elle est comptée ici comme « non revue depuis 3 jours » : la collecte notaires passe toutes les 12 h et voit chaque vente listée. La règle « personne » ci-dessous est celle de `office_contact` : un contact retenu porte en tête une marque de `PROFESSIONAL_PREFIX_RE` (`src/sources/professional_contact.py`) ou « service » ; un contact sans nom mais avec des coordonnées est traité comme une personne.
+
+Comptage (lecture seule) :
+
+```sql
+with notaires as (
+  select id, last_seen_at, lawyer_name, lawyer_contact,
+         raw_payload -> 'source_property_features' -> 'contact' as contact,
+         raw_payload #>> '{source_blocks,caracteristiques_bien,manager,service}' as display_service
+    from public.auction_sales
+   where source_name = 'notaires'
+), person as (
+  select *
+    from notaires
+   where jsonb_typeof(contact) = 'object'
+     and coalesce(contact ->> 'name', contact ->> 'phone', contact ->> 'email') is not null
+     and coalesce(btrim(contact ->> 'name'), '') !~* '^(ma[îiÎI]tre|me|scp|selarl|selas|selurl|selafa|aarpi|a\.a\.r\.p\.i\.?|cabinet|[éeÉE]tude|office|sas|sarl|eurl|service)\y'
+)
+select count(*) filter (where last_seen_at is null or last_seen_at < now() - interval '3 days') as plus_listees,
+       count(*) filter (
+         where (last_seen_at is null or last_seen_at < now() - interval '3 days')
+           and (lawyer_contact is not null or lawyer_name = btrim(contact ->> 'name'))
+       ) as plus_listees_avec_colonnes_a_revoir,
+       count(*) filter (
+         where (last_seen_at is null or last_seen_at < now() - interval '3 days')
+           and display_service = btrim(contact ->> 'name')
+       ) as plus_listees_avec_nom_affiche,
+       count(*) as toutes_y_compris_listees
+  from person;
+```
+
+**Réparation : à faire valider par le propriétaire, puis exécuter par lui.** Elle n'est ni une migration (règle T17), ni lancée par le pipeline. Elle applique aux ventes comptées `plus_listees` ce que `known_listing_contact` et `known_facts_with_office_contact` décident pour une vente encore listée :
+
+- le bloc `contact` devient vide ;
+- `lawyer_contact` devient vide, car l'office ne donne pas de coordonnées ;
+- `lawyer_name` devient le notaire nommé dans le texte (`source_blocks.notary_name`), sinon l'office de la page opérateur ;
+- la ligne « Office notarial » du bloc d'affichage (`source_blocks.caracteristiques_bien.manager`) disparaît quand elle porte le nom de cette personne : avant le lot D, elle le prenait quand l'office était inconnu.
+
+Les valeurs retirées ne sont pas sauvegardées : ce sont les données personnelles que la réparation retire. La rejouer d'abord sur une copie de la base.
+
+```sql
+begin;
+
+with person as (
+  select id
+    from public.auction_sales
+   where source_name = 'notaires'
+     and (last_seen_at is null or last_seen_at < now() - interval '3 days')
+     and jsonb_typeof(raw_payload -> 'source_property_features' -> 'contact') = 'object'
+     and coalesce(
+           raw_payload #>> '{source_property_features,contact,name}',
+           raw_payload #>> '{source_property_features,contact,phone}',
+           raw_payload #>> '{source_property_features,contact,email}'
+         ) is not null
+     and coalesce(btrim(raw_payload #>> '{source_property_features,contact,name}'), '')
+         !~* '^(ma[îiÎI]tre|me|scp|selarl|selas|selurl|selafa|aarpi|a\.a\.r\.p\.i\.?|cabinet|[éeÉE]tude|office|sas|sarl|eurl|service)\y'
+)
+update public.auction_sales sale
+   set raw_payload = jsonb_set(
+         case
+           when sale.raw_payload #>> '{source_blocks,caracteristiques_bien,manager,service}'
+                = btrim(sale.raw_payload #>> '{source_property_features,contact,name}')
+             then sale.raw_payload #- '{source_blocks,caracteristiques_bien,manager}'
+           else sale.raw_payload
+         end,
+         '{source_property_features,contact}',
+         '{"name": null, "phone": null, "email": null}'::jsonb
+       ),
+       lawyer_contact = null,
+       lawyer_name = coalesce(
+         nullif(btrim(sale.raw_payload #>> '{source_blocks,notary_name}'), ''),
+         nullif(btrim(sale.raw_payload #>> '{source_property_features,office,title}'), ''),
+         nullif(btrim(sale.raw_payload #>> '{source_property_features,office,name}'), '')
+       )
+  from person
+ where sale.id = person.id;
+
+-- Le nombre de lignes mises à jour doit être égal à plus_listees du comptage. Sinon : rollback.
+commit;
+```
+
+Hors de cette réparation : le `raw_text` de ces ventes, écrit avant le lot D, contient encore le téléphone et l'adresse du contact. Le traiter demande une décision à part.

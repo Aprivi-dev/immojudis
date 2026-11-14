@@ -687,9 +687,10 @@ def _figures_proven(text: str, page_text: str, figures: set[str]) -> bool:
     """Every figure of ``text`` is written in the page (``figures``: :func:`page_figures` of ``page_text``).
 
     A date counts as written when the page writes the same day in any form (« 12/03/2025 » over « 12 mars 2025 »,
-    ``display_evidence.written_dates``): its figures are not compared one by one.
+    ``display_evidence.written_dates``): its figures are not compared one by one. A day that does not exist
+    (« 31/02/2024 ») proves nothing.
     """
-    page_dates = {iso for _, iso in written_dates(page_text)}
+    page_dates = {iso for _, iso in written_dates(page_text) if iso != "invalid"}
     for written, iso in written_dates(text):
         if iso in page_dates:
             text = text.replace(written, " ")
@@ -721,11 +722,22 @@ _TITLE_FORBIDDEN = (
 )
 
 
+def _quoted_with_word_before(title: str, match: re.Match[str], quote: str) -> bool:
+    """The verified quote writes the word of ``title`` matched by ``match`` after the same word as the title."""
+    before = re.search(r"(\w+)\s+$", title[: match.start()])
+    if before is None:
+        return False
+    return re.search(rf"\b{re.escape(before.group(1))}\s+{re.escape(match.group())}\b", quote, re.I) is not None
+
+
 def _promotes(title: str, quote: str) -> bool:
     """Promotional wording in the title. « Exceptionnel » is the document's own word when the verified quote writes
-    it (« appel de fonds exceptionnel » of a co-ownership minute); every other promotional phrase is refused."""
-    quoted = bool(EXCEPTIONAL.search(quote))
-    return any(not (quoted and EXCEPTIONAL.fullmatch(match.group())) for match in PROMOTIONAL.finditer(title))
+    it after the same word as the title (« appel de fonds exceptionnel » of a co-ownership minute). « Bien
+    exceptionnel » over that quote is refused, like every other promotional phrase."""
+    return any(
+        not (EXCEPTIONAL.fullmatch(match.group()) and _quoted_with_word_before(title, match, quote))
+        for match in PROMOTIONAL.finditer(title)
+    )
 
 
 def title_rejection(title: str, page_text: str, quote: str) -> str | None:
@@ -1043,14 +1055,19 @@ _LATEST_TEXT_AT_SQL = """(
 # A completed reading whose re-reading failed (14/11/2026, D7) stays served and keeps its points, fingerprint and
 # updated_at: without a trace of the failure, the sale came back at every run and the model was paid again each
 # time. The failure is recorded apart (``failed_*`` columns) and the re-reading waits like a failed reading: same
-# delays (12 h, 24 h, 72 h) and the same cap of four attempts, as long as neither the page text nor the reading
-# version changed since the last failure.
+# delays (12 h, 24 h, 72 h) and the same cap of four attempts.
+_FAILED_RETRY_DUE_SQL = (
+    f"(reading.failed_attempts < {MAX_FAILED_ATTEMPTS}"
+    f" and reading.last_failed_at <= now() - {_backoff_sql('reading.failed_attempts')})"
+)
+# The sale leaves the candidates while it waits, as long as no page text was written after the one the last failure
+# (or the last skip, FAILED_TEXT_SEEN_SQL) looked at, under the same reading version. A text written again, even
+# unchanged, brings the sale back once: run_document_readings compares its fingerprint before any model call.
 _RETRY_WAITING_SQL = (
     "(reading.status = 'completed' and reading.failed_attempts > 0"
     " and reading.failed_prompt_version = %s"
-    f" and reading.last_failed_at >= coalesce({_LATEST_TEXT_AT_SQL}, '-infinity'::timestamptz)"
-    f" and (reading.failed_attempts >= {MAX_FAILED_ATTEMPTS}"
-    f" or reading.last_failed_at > now() - {_backoff_sql('reading.failed_attempts')}))"
+    " and reading.failed_text_at >= latest.text_at"
+    f" and not {_FAILED_RETRY_DUE_SQL})"
 )
 
 
@@ -1058,10 +1075,11 @@ CANDIDATES_SQL = f"""
 select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
        reading.status, coalesce(reading.attempt_count, 0), coalesce({_RETRY_DUE_SQL}, false),
        sale.property_type, sale.city, sale.raw_payload -> 'source_lot_selection', reading.prompt_version,
-       reading.failed_input_fingerprint, coalesce(reading.failed_attempts, 0)
+       reading.failed_input_fingerprint, coalesce(reading.failed_attempts, 0), latest.text_at,
+       coalesce({_FAILED_RETRY_DUE_SQL}, false)
   from public.auction_sales sale
   join lateral (
-    select extraction.result
+    select extraction.result, extraction.updated_at as text_at
       from public.auction_extractions extraction
      where extraction.source_url = sale.source_url
        and extraction.provider = 'pdf_text'
@@ -1111,6 +1129,7 @@ on conflict (sale_id) do update set
   failed_prompt_version = null,
   failed_attempts = 0,
   last_failed_at = null,
+  failed_text_at = null,
   failed_error_code = null
 """
 
@@ -1124,8 +1143,15 @@ update public.auction_document_readings
        failed_prompt_version = %s,
        failed_attempts = %s,
        last_failed_at = now(),
+       failed_text_at = %s,
        failed_error_code = %s
  where sale_id = %s and status = 'completed'
+"""
+# The text of the last failed re-reading met again while it waits: no model call, only the date of the text seen, so
+# that the sale stays out of the candidates (and of their limit) until a newer text comes in.
+FAILED_TEXT_SEEN_SQL = """
+update public.auction_document_readings set failed_text_at = %s
+ where sale_id = %s and status = 'completed' and failed_input_fingerprint = %s
 """
 
 # Stored readings replayed through the current checks (revalidate_stored_readings): completed, with
@@ -1211,6 +1237,7 @@ def run_document_readings(
     started = time.monotonic()
     counts = {
         "candidates": 0, "completed": 0, "unchanged": 0, "failed": 0, "abandoned": 0, "no_text": 0, "injected_pages": 0,
+        "failure_waiting": 0,
     }
     with _connect(db_url) as connection:
         rows = connection.execute(
@@ -1220,7 +1247,8 @@ def run_document_readings(
     generate_json, model = generator if generator is not None else _llm_generator()
     for row in rows:
         (sale_id, source_url, manifest, previous_fingerprint, previous_status, previous_attempts, retry_due,
-         property_type, city, lot_selection, _previous_version, failed_fingerprint, previous_failures) = row
+         property_type, city, lot_selection, _previous_version, failed_fingerprint, previous_failures, text_at,
+         failed_retry_due) = row
         if time.monotonic() - started >= budget_seconds:
             break
         sold_lot = sold_lot_from_sale(property_type, city, lot_selection)
@@ -1232,6 +1260,13 @@ def run_document_readings(
             with _connect(db_url) as connection:
                 connection.execute(TOUCH_SQL, (sale_id,))
             counts["unchanged"] += 1
+            continue
+        # D7: the text of the last failed re-reading, written again unchanged, is not paid for before its delay nor
+        # after the last attempt (the fingerprint holds the reading version). The date of the text seen is recorded.
+        if previous_status == "completed" and fingerprint == failed_fingerprint and not failed_retry_due:
+            with _connect(db_url) as connection:
+                connection.execute(FAILED_TEXT_SEEN_SQL, (text_at, sale_id, fingerprint))
+            counts["failure_waiting"] += 1
             continue
         documents = documents_from_manifest(manifest)
         result = read_sale_documents(documents, generate_json=generate_json, model=model, sold_lot=sold_lot)
@@ -1262,7 +1297,7 @@ def run_document_readings(
                 with _connect(db_url) as connection:
                     connection.execute(
                         FAILED_REREADING_SQL,
-                        (fingerprint, DOCUMENT_READING_VERSION, failures, result.error_code, sale_id),
+                        (fingerprint, DOCUMENT_READING_VERSION, failures, text_at, result.error_code, sale_id),
                     )
             if budget_refused:
                 LOGGER.info("Document reading stopped: LLM budget exhausted")
@@ -1315,10 +1350,12 @@ def revalidate_stored_readings(db_url: str, *, dry_run: bool = False, allow_empt
     Readings are read page by page, by ``sale_id`` (:data:`REVALIDATION_PAGE_SIZE`). A reading whose page texts
     changed since it was written is left alone: the next reading redoes it. A reading that would lose every point is
     left whole unless ``allow_empty`` (``left_whole``): emptying the reading of a sale is a decision of its own. With
-    ``dry_run`` nothing is written. ``removed`` lists each point dropped (sale, title, reason), written or not.
+    ``dry_run`` nothing is written and the readings to rewrite are counted under ``would_update`` (``updated``
+    otherwise). ``removed`` lists each point dropped (sale, title, reason), written or not.
     """
+    rewritten = "would_update" if dry_run else "updated"
     counts = {
-        "selected": 0, "unchanged": 0, "updated": 0, "points_removed": 0, "stale_text": 0, "left_whole": 0,
+        "selected": 0, "unchanged": 0, rewritten: 0, "points_removed": 0, "stale_text": 0, "left_whole": 0,
     }
     removed: list[dict[str, object]] = []
     after = _FIRST_SALE_ID
@@ -1354,7 +1391,7 @@ def revalidate_stored_readings(db_url: str, *, dry_run: bool = False, allow_empt
                     connection.execute(
                         REVALIDATED_POINTS_SQL, (json.dumps(kept, ensure_ascii=False), sale_id, fingerprint)
                     )
-            counts["updated"] += 1
+            counts[rewritten] += 1
             counts["points_removed"] += len(stored) - len(kept)
         if len(rows) < REVALIDATION_PAGE_SIZE:
             break
@@ -1387,6 +1424,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if (args.dry_run or args.allow_empty) and not args.revalidate_stored:
         parser.error("--dry-run and --allow-empty go with --revalidate-stored")
+    if args.revalidate_stored and args.max_sales is not None:
+        parser.error("--max-sales does not go with --revalidate-stored, which replays every stored reading")
     # The switch spares the model and the run time; the revalidation calls no model and is started by hand.
     if not args.revalidate_stored and not reading_enabled():
         print(json.dumps({"skipped": f"{READING_ENABLED_ENV} is off"}))

@@ -283,13 +283,27 @@ export async function monitorUserSaleChanges({
   const leftCatalogue = await loadGraveSalesOutsideCatalogue(
     saleIds.filter((saleId) => !salesById.has(saleId)),
   );
-  const unseenUndated = await loadUnseenUndatedSaleIds(
-    sales
-      .filter((sale) => cleanString(sale.status)?.toLowerCase() === "unknown")
-      .map((sale) => sale.id),
-  );
   const snapshotsByWatch = new Map(
     existingSnapshots.map((row) => [snapshotKey(row), normalizeSnapshot(row.snapshot)]),
+  );
+  // Le marqueur du pipeline n'explique qu'un PASSAGE en statut inconnu : il n'est lu que pour une vente
+  // inconnue dont un instantané précédent avait un autre statut. Une vente inconnue de longue date (une
+  // cession de l'État, inconnue par défaut) ne coûte aucune lecture.
+  const becameUnknown = new Set(
+    watches
+      .filter((watch) => {
+        const previous = snapshotsByWatch.get(watchKey(watch)) ?? watch.baselineSnapshot;
+        return previous != null && cleanString(previous.status)?.toLowerCase() !== "unknown";
+      })
+      .map((watch) => watch.saleId),
+  );
+  const unseenUndated = await loadUnseenUndatedSaleIds(
+    sales
+      .filter(
+        (sale) =>
+          cleanString(sale.status)?.toLowerCase() === "unknown" && becameUnknown.has(sale.id),
+      )
+      .map((sale) => sale.id),
   );
   const snapshotRows: SaleWatchSnapshotInsert[] = [];
   const eventRows: SaleChangeEventInsert[] = [];

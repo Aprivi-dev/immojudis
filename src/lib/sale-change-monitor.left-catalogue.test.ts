@@ -266,6 +266,42 @@ describe("suivi des ventes sorties du catalogue", () => {
       });
       expect(response.events[0].changeSummary).not.toHaveProperty("reason");
     });
+
+    it("ne lit pas le marqueur d'une vente déjà inconnue au relevé précédent (cession de l'État)", async () => {
+      // Colonnes demandées à la base : le marqueur se lit par `raw_payload->unseen_undated`.
+      const selected: string[] = [];
+      const from = supabaseAdmin.from.bind(supabaseAdmin);
+      const spy = vi.spyOn(supabaseAdmin, "from").mockImplementation(((table: string) => {
+        const query = from(table as never) as unknown as { select: (columns?: string) => unknown };
+        const select = query.select;
+        query.select = (columns?: string) => {
+          selected.push(`${table} ${columns ?? ""}`);
+          return select(columns);
+        };
+        return query;
+      }) as never);
+      const readsMarker = () => selected.some((columns) => columns.includes("unseen_undated"));
+      try {
+        // Témoin : passage de « upcoming » à « unknown », le marqueur est lu.
+        followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+        await monitorUserSaleChanges({ auth: auth(), now: NOW });
+        expect(readsMarker()).toBe(true);
+
+        selected.length = 0;
+        followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+        mocks.tables.user_sale_watch_snapshots[0].snapshot = {
+          ...previousSnapshot,
+          saleDate: null,
+          status: "unknown",
+        };
+        const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+        expect(response.events).toEqual([]);
+        expect(readsMarker()).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   it("ne signale que le statut : la date et les autres champs gardent leur valeur précédente", async () => {

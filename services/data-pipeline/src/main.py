@@ -86,7 +86,7 @@ from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
 from src.sources.listing_characteristics import restore_known_detail_blocks
 from src.sources.notaires import scrape_notaires_aquitaine_result
-from src.sources.notaires_extraction import known_listing_contact
+from src.sources.notaires_extraction import known_facts_with_office_contact, known_listing_contact
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
 from src.sources.vench import scrape_vench_aquitaine_result
 from src.stage_watchdog import arm_from_env, track_stage
@@ -1108,8 +1108,11 @@ def _hydrate_known_unchanged_sales(
             continue
         _backfill_raw_sale_from_known_detail(sale, known)
         if sale.get("source_name") == "notaires":
-            # Never the stored contact as is: the notaires rule decides it again (D9, 14/11/2026).
+            # Never the stored contact as is: the notaires rule decides it again (D9, 14/11/2026), for the columns
+            # and for the contact block of the stored facts that the backfill just copied.
             sale["lawyer_name"], sale["lawyer_contact"] = known_listing_contact(sale, known)
+            if isinstance(features := sale.get("source_property_features"), dict) and "contact" in features:
+                sale["source_property_features"] = known_facts_with_office_contact(features)
         restore_known_detail_blocks(sale, known_details)  # every source keeps the blocks of its stored detail
         _restore_known_detail_gallery(sale, known)
         # A list card carries the short text: the stored detail keeps its full description (notaires, 30/10/2026).

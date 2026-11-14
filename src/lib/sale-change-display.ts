@@ -46,7 +46,7 @@ function finiteNumber(value: unknown): number | null {
  */
 export const SALE_CHANGE_REASON_SOURCE_ABSENCE = "source_absence";
 export const SOURCE_ABSENCE_LABEL = "Annonce disparue de la source";
-export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’avocat poursuivant.";
+export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’organisateur de la vente.";
 
 /**
  * Motif d'un passage en statut inconnu décidé par le pipeline (14/11/2026) : l'annonce, sans date d'audience,
@@ -57,7 +57,7 @@ export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’avocat poursui
 export const SALE_CHANGE_REASON_UNSEEN_UNDATED = "unseen_undated";
 export const UNSEEN_UNDATED_LABEL = "Annonce non revue depuis 14 jours";
 export const UNSEEN_UNDATED_DETAIL =
-  "Elle n’est plus présentée comme à venir. À vérifier auprès de l’avocat poursuivant.";
+  "Elle n’est plus présentée comme à venir. À vérifier auprès de l’organisateur de la vente.";
 
 /** Motif connu d'un changement de statut qui ne vient pas de la source elle-même. */
 export type SaleChangeReason =

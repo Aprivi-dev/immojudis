@@ -205,21 +205,29 @@ def test_upsert_stores_and_resets_the_attempt_count():
                 "updated_at = '2026-01-01T00:00:00Z' where sale_id = %s",
                 (sale_id,),
             )
-            db.execute(reading.FAILED_REREADING_SQL, ("g", "v", 1, "READING_OUTPUT_INVALID", sale_id))
+            text_at = "2026-11-14T08:00:00+00:00"
+            db.execute(reading.FAILED_REREADING_SQL, ("g", "v", 1, text_at, "READING_OUTPUT_INVALID", sale_id))
 
             def failure():
                 return db.execute(
                     """select status, input_fingerprint, points, updated_at::text, failed_input_fingerprint,
-                              failed_prompt_version, failed_attempts, failed_error_code, last_failed_at is not null
+                              failed_prompt_version, failed_attempts, failed_error_code, last_failed_at is not null,
+                              failed_text_at = %s::timestamptz
                          from auction_document_readings where sale_id = %s""",
-                    (sale_id,),
+                    (text_at, sale_id),
                 ).fetchone()
 
             served = failure()
             assert served[:3] == ("completed", "f", [{"title": "x"}]) and served[3].startswith("2026-01-01")
-            assert served[4:] == ("g", "v", 1, "READING_OUTPUT_INVALID", True)
+            assert served[4:] == ("g", "v", 1, "READING_OUTPUT_INVALID", True, True)
+            # D7, seconde relecture : le même texte revu pendant l'attente ne note que sa date.
+            later = "2026-11-14T09:00:00+00:00"
+            db.execute(reading.FAILED_TEXT_SEEN_SQL, (later, sale_id, "another-fingerprint"))
+            assert failure()[9] is True  # pas la même empreinte : rien n'est noté
+            db.execute(reading.FAILED_TEXT_SEEN_SQL, (later, sale_id, "g"))
+            assert failure()[4:9] == ("g", "v", 1, "READING_OUTPUT_INVALID", True) and failure()[9] is False
             upsert("completed", None, 0)
-            assert failure()[4:] == (None, None, 0, None, False)
+            assert failure()[4:] == (None, None, 0, None, False, None)
             with pytest.raises(Exception, match="attempt_count"):
                 upsert("failed", "x", -1)
         finally:

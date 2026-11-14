@@ -1368,12 +1368,13 @@ SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored
 
 - aucun appel au modèle : les points enregistrés (citation, pièce, page) repassent par les contrôles actuels
   (`revalidate_stored_readings`) ; un point qui n'y résiste plus est retiré, rien n'est ajouté ;
-- toutes les lectures terminées des ventes à venir sont repassées, par pages de 200 dans l'ordre de `sale_id` ;
+- toutes les lectures terminées des ventes à venir sont repassées, par pages de 200 dans l'ordre de `sale_id` :
+  `--max-sales` est refusé avec cette option ;
 - une lecture qui perdrait tous ses points est laissée entière (`left_whole`) : `--allow-empty` l'écrit vide ;
 - une lecture dont le texte des pièces a changé depuis est laissée telle quelle : la prochaine lecture la refait ;
 - `updated_at` de la lecture ne bouge pas, et `DOCUMENT_READING_ENABLED` ne s'applique pas (il épargne le modèle) ;
-- sortie : un JSON (`selected`, `unchanged`, `updated`, `points_removed`, `stale_text`, `left_whole`, `dry_run`, et
-  `removed` : chaque point retiré avec sa vente, son titre, sa raison et `applied`).
+- sortie : un JSON (`selected`, `unchanged`, `updated` ou, à blanc, `would_update`, `points_removed`, `stale_text`,
+  `left_whole`, `dry_run`, et `removed` : chaque point retiré avec sa vente, son titre, sa raison et `applied`).
 
 Commande à lancer à la main ; elle n'est dans aucun workflow.
 
