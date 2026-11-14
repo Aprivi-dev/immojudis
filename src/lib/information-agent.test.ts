@@ -8,6 +8,7 @@ import {
 } from "@/lib/information-agent/config";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
 import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
+import { missionFromRow } from "@/lib/information-agent/mission-store";
 import {
   assertUnverifiedSendWithinIdempotencyWindow,
   InformationAgentSentButUnrecordedError,
@@ -897,6 +898,37 @@ describe("supervised information agent", () => {
         input: { saleId: "11111111-1111-4111-8111-111111111111" },
       }),
     ).rejects.toThrow(AdminRequiredError);
+  });
+});
+
+describe("origine d'une mission rendue à la liste des envois", () => {
+  it.each([
+    [{ trigger: "autopilot" }, "autopilot"],
+    [{ trigger: "manual" }, "manual"],
+    [{}, null],
+    [{ trigger: "inconnu" }, null],
+  ] as const)("metadata %j : trigger %s", (metadata, trigger) => {
+    const row = {
+      id: "22222222-2222-4222-8222-222222222222",
+      case_id: null,
+      sale_id: null,
+      status: "sent",
+      recipient_kind: "source_lawyer",
+      recipient_name: null,
+      recipient_email: "cabinet@example.test",
+      subject: "Objet",
+      body_text: "Corps",
+      question_keys: [],
+      missing_information: [],
+      failure_reason: null,
+      approved_at: null,
+      sent_at: null,
+      replied_at: null,
+      created_at: "2026-11-14T08:00:00Z",
+      updated_at: "2026-11-14T08:00:00Z",
+      metadata,
+    };
+    expect(missionFromRow(row as never).trigger).toBe(trigger);
   });
 });
 

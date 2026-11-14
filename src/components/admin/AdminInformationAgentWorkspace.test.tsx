@@ -13,6 +13,7 @@ import { AdminInformationAgentWorkspace } from "./AdminInformationAgentWorkspace
 const mocks = vi.hoisted(() => ({
   readiness: vi.fn(),
   autopilot: vi.fn(),
+  autopilotAction: vi.fn(),
   review: vi.fn(),
   unrouted: vi.fn(),
   claims: vi.fn(),
@@ -40,7 +41,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminSourceRefreshStatus: mocks.sourceStatus,
   // Actions : jamais appelées ici, mais lues par les panneaux au montage.
   runAdminCatalogueReadinessActionClient: vi.fn(),
-  runAdminInformationAgentAutopilotActionClient: vi.fn(),
+  runAdminInformationAgentAutopilotActionClient: mocks.autopilotAction,
   runAdminInformationAgentMissionAction: vi.fn(),
   previewAdminInformationAgentMission: vi.fn(),
   requestAdminSourceRefresh: vi.fn(),
@@ -320,7 +321,7 @@ describe("AdminInformationAgentWorkspace : bandeau de synthèse", () => {
     );
   });
 
-  it("affiche « Arrêté » et « Réel » et reste visible sous chaque onglet", async () => {
+  it("affiche « Réel » et reste visible sous chaque onglet", async () => {
     mocks.autopilot.mockResolvedValue(autopilot({ mode: "live" }));
     renderWorkspace();
     const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
@@ -365,6 +366,101 @@ describe("AdminInformationAgentWorkspace : bandeau de synthèse", () => {
     // Les listes contiennent des adresses (message non rattaché, destinataire) : pas le bandeau.
     expect(banner.textContent).not.toContain("@");
     expect(banner.textContent).not.toContain("la vente est reportée");
+  });
+});
+
+describe("AdminInformationAgentWorkspace : état du pilote et arrêt d'urgence dans le bandeau", () => {
+  it("état du pilote : Éteint, ou Arrêté automatiquement avec son motif en clair", async () => {
+    renderWorkspace();
+    const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
+    await waitFor(() => expect(within(banner).getByText("Éteint")).toBeTruthy());
+    cleanup();
+
+    mocks.autopilot.mockResolvedValue(
+      autopilot({
+        autoStopped: true,
+        notice: {
+          tone: "alert",
+          text: "Arrêt automatique le 14/11/2026 10:00 : trois erreurs consécutives du fournisseur d’envoi. La réactivation est manuelle et journalisée.",
+        },
+      }),
+    );
+    renderWorkspace();
+    const stopped = await screen.findByRole("region", { name: "Synthèse de l’agent" });
+    expect(await within(stopped).findByText("Arrêté automatiquement")).toBeTruthy();
+    expect(within(stopped).getByRole("alert").textContent).toContain(
+      "trois erreurs consécutives du fournisseur d’envoi",
+    );
+    expect(
+      (within(stopped).getByRole("button", { name: "Arrêt d’urgence" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("l'arrêt d'urgence du bandeau réutilise l'action existante, sous tous les onglets", async () => {
+    mocks.autopilot.mockResolvedValue(autopilot({ mode: "simulation" }));
+    mocks.autopilotAction.mockResolvedValue(autopilot({ mode: "off" }));
+    renderWorkspace();
+    const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
+    await waitFor(() => expect(within(banner).getByText("Simulation")).toBeTruthy());
+
+    fireEvent.click(within(banner).getByRole("button", { name: "Arrêt d’urgence" }));
+
+    await waitFor(() => expect(mocks.autopilotAction).toHaveBeenCalledTimes(1));
+    expect(mocks.autopilotAction.mock.calls[0][0]).toEqual({ action: "emergency_stop" });
+    // La vue rendue par l'action remplace celle du pilote : le bandeau suit sans nouvelle requête.
+    expect(await within(banner).findByText("Éteint")).toBeTruthy();
+    expect(mocks.autopilot).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AdminInformationAgentWorkspace : brouillons préparés par le pilote", () => {
+  const ready = {
+    count: 1,
+    items: [
+      {
+        missionId: "22222222-2222-4222-8222-222222222222",
+        saleId: SALE_ID,
+        label: "Appartement prêt à valider",
+      },
+    ],
+  };
+
+  it("ouvre depuis « Pilote » une vente prête à valider dans l'éditeur de « À contacter »", async () => {
+    mocks.autopilot.mockResolvedValue(autopilot({ mode: "simulation", ready }));
+    mocks.missions.mockResolvedValue({
+      ok: true,
+      missions: [mission("draft", "pilote@cabinet.example.test")],
+      facts: [],
+    });
+    window.history.replaceState(null, "", "/admin/agent-ia?onglet=pilote");
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Appartement prêt à valider" }));
+
+    expect(await screen.findByRole("tab", { name: /À contacter/, selected: true })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Brouillon pour pilote@cabinet.example.test" }),
+    ).toBeTruthy();
+    expect(mocks.missions).toHaveBeenCalledWith(expect.objectContaining({ saleId: SALE_ID }));
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("dit pourquoi un brouillon absent des missions de l'administrateur ne s'ouvre pas", async () => {
+    const { toast } = await import("@/lib/toast");
+    mocks.autopilot.mockResolvedValue(autopilot({ mode: "simulation", ready }));
+    mocks.missions.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    window.history.replaceState(null, "", "/admin/agent-ia?onglet=pilote");
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Appartement prêt à valider" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("Brouillon introuvable dans vos missions"),
+      ),
+    );
+    expect(tab(/Pilote/).getAttribute("aria-selected")).toBe("true");
   });
 });
 
