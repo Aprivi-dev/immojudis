@@ -95,7 +95,7 @@ describe("information agent inbound parsing", () => {
       unit: "m2",
     });
     expect(facts.find((fact) => fact.factKey === "occupancy_status")?.proposedValue).toEqual({
-      value: "owner_occupied",
+      value: "occupied",
     });
     expect(facts.find((fact) => fact.factKey === "energy_diagnostics")?.proposedValue).toEqual({
       value: "DPE C · GES A",
@@ -291,6 +291,14 @@ describe("information agent inbound parsing", () => {
     expect(surface("Appartement T3 95 m².")).toEqual({ value: 95, unit: "m2" });
     // Même lecture pour le terrain.
     expect(land("Terrain : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+    // Un numéro écrit juste avant (lot, section cadastrale, type de logement) n'est pas un millier.
+    expect(surface("Lot n° 3 105 m².")).toEqual({ value: 105, unit: "m2" });
+    expect(surface("Surface du lot 2 125 m².")).toEqual({ value: 125, unit: "m2" });
+    expect(surface("Appartement T3 105 m².")).toEqual({ value: 105, unit: "m2" });
+    expect(land("Terrain cadastré section AB 12 450 m².")).toEqual({ value: 450, unit: "m2" });
+    expect(land("Parcelle 12 450 m².")).toEqual({ value: 450, unit: "m2" });
+    // Après une ponctuation, le nombre est bien groupé par milliers.
+    expect(surface("Surface du lot : 2 125 m².")).toEqual({ value: 2125, unit: "m2" });
   });
 
   it("rejects implausible numeric candidates", () => {
@@ -380,7 +388,11 @@ describe("information agent inbound parsing", () => {
       { factKey: "occupancy_status", proposedValue: { value: "occupied" } },
     ]);
     expect(extractInformationAgentFacts("Le logement est squatté.")).toMatchObject([
-      { factKey: "occupancy_status", proposedValue: { value: "squatted" } },
+      {
+        factKey: "occupancy_status",
+        proposedValue: { value: "occupied" },
+        displayValue: "Bien occupé",
+      },
     ]);
   });
 

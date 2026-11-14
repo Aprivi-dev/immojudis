@@ -3,7 +3,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { allowedFactClaimDecisionActions } from "@/lib/fact-claim-decisions";
+import {
+  FACT_CLAIM_DECISIONS_SECTION_ID,
+  allowedFactClaimDecisionActions,
+  factClaimDecisionsHref,
+} from "@/lib/fact-claim-decisions";
 import { AdminFactClaimDecisionPanel } from "./AdminFactClaimDecisionPanel";
 
 const mocks = vi.hoisted(() => ({
@@ -148,6 +152,24 @@ describe("AdminFactClaimDecisionPanel : affichage", () => {
     await waitFor(() =>
       expect(mocks.list).toHaveBeenLastCalledWith({ saleId, offset: 0, limit: 50 }),
     );
+  });
+
+  it("s'ouvre sur la vente du lien « Observations à décider » (factClaimDecisionsHref)", async () => {
+    const before = window.location.href;
+    window.history.replaceState(null, "", factClaimDecisionsHref(saleId));
+    try {
+      renderPanel();
+      await waitFor(() =>
+        expect(mocks.list).toHaveBeenLastCalledWith({ saleId, offset: 0, limit: 50 }),
+      );
+      expect(
+        (screen.getByLabelText("Vente (identifiant ou adresse de la fiche)") as HTMLInputElement)
+          .value,
+      ).toBe(saleId);
+      expect(document.getElementById(FACT_CLAIM_DECISIONS_SECTION_ID)).not.toBeNull();
+    } finally {
+      window.history.replaceState(null, "", before);
+    }
   });
 });
 

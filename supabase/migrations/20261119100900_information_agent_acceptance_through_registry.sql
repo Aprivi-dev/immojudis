@@ -21,31 +21,42 @@ set local statement_timeout = '60s';
 -- décision.
 --
 -- 1. app_private.information_agent_fact_registry_field(clé) : la clé du fait de l'agent et le champ d'observation
---    du registre (seule copie de cette correspondance, lue par le pont et par la fonction suivante).
+--    du registre, lue par le noyau, par la fonction suivante et par la mention. Le pont garde sa propre copie (son
+--    texte est vérifié par le test 374) ; le test de concordance de l'application compare les deux copies.
 -- 2. app_private.information_agent_fact_held_by_registry(clé) : le registre tient-il ce champ pour une réponse
 --    d'avocat ? Lu dans ses données (auction_fact_fields.hold_enabled, droit de tenir de l'origine « email
 --    d'avocat », celle que le classement des observations donne au pont). Un champ que le registre ne tient pas
 --    (mise à prix, date de vente, type de bien, ou champ dont la retenue est coupée) garde l'écriture d'avant.
--- 3. app_private.apply_information_agent_fact : redéfinition complète (20261114100000), avec deux changements :
+-- 3. app_private.apply_information_agent_fact : redéfinition complète (20261114100000), avec ces changements :
 --      * champ tenu par le registre : aucune colonne de la fiche n'est écrite ; new_values du journal porte
 --        {"fact_registry": {"field_key": …, "value": …}} ;
 --      * occupation : seules les valeurs que le registre peut tenir sont acceptées (vacant, occupied, rented :
 --        jamais qui occupe ni pourquoi, plan du 11/11/2026, section 6, choix 5). « owner_occupied », « squatted »
 --        et « unknown » sont refusés (22023), avec un message qui le dit ;
 --      * pièce publiée : son libellé public (auction_documents.label) n'est plus le nom du fichier d'origine, qui
---        peut nommer des personnes, mais « Pièce transmise par l'avocat poursuivant le JJ/MM/AAAA : <type> »
---        (« Pièce transmise le … » pour un autre destinataire), demande de juridique-rgpd du 14/11/2026. Les
---        pièces déjà publiées gardent leur libellé : aucune réparation ici (règle T17), voir le runbook de
---        l'agent, section du lot C, pour la mesure et la reprise.
+--        peut nommer des personnes, mais « Pièce transmise par l'avocat poursuivant le JJ/MM/AAAA » (« Pièce
+--        transmise le … » pour un autre destinataire ou un autre expéditeur, sans date si la réception n'est pas
+--        connue ; le type reste dans document_type), demande de juridique-rgpd du 14/11/2026. Procès-verbal
+--        descriptif et bail sont refusés (22023) : ils nomment les occupants ou le débiteur. Les pièces déjà
+--        publiées gardent leur libellé : aucune réparation ici (règle T17), voir le runbook de l'agent, section du
+--        lot C, pour la mesure et la reprise ;
+--      * attribution : raw_payload ne porte « source_lawyer » que si l'expéditeur de la réponse est le contact
+--        sollicité (metadata.sender_matches_recipient) ; sinon « unverified_sender », jamais de mention. Le journal
+--        de l'agent garde le destinataire du dossier.
 -- 4. app_private.bridge_accepted_information_agent_fact_claim : redéfinition complète (20261114100000). Pour un
 --    champ tenu, l'observation est créée sans comparer la fiche (la projection l'écrira) ; sa valeur doit être
 --    une valeur que le registre peut tenir. Les autres champs gardent le contrôle « la fiche porte la valeur ».
 -- 5. app_private.get_public_sale_lawyer_fact_sources : redéfinition complète (20261114100000). Une surface tenue par
 --    le registre porte le libellé neutre « fact_registry » : elle garde sa mention, comme une surface écrite par
---    l'ancien noyau. Les autres clés gardent leur règle (valeur affichée égale à la valeur transmise).
+--    l'ancien noyau. Toute mention exige désormais que l'observation du pont pour ce fait soit encore acceptée au
+--    journal du registre et, pour un champ tenu, que la fiche tienne cette observation : une opposition ou un
+--    retrait efface la mention, même si la valeur affichée est restée la même. Un fait accepté avant ce lot, sans
+--    décision au journal, n'a plus de mention (sa valeur reste affichée).
+-- 6. public.forget_information_agent_verified_facts(dossiers) : l'effacement RGPD d'un professionnel retire de
+--    raw_payload les entrées des faits de ses dossiers, avant de supprimer ces dossiers (service_role seulement).
 --
--- Aucune donnée n'est réécrite. Aucun droit ne change : les deux nouvelles fonctions ne sont exécutables par aucun
--- rôle de l'API ; les fonctions redéfinies gardent leurs droits.
+-- Aucune donnée n'est réécrite. Les deux fonctions de la correspondance ne sont exécutables par aucun rôle de
+-- l'API ; celle de l'effacement par service_role seul ; les fonctions redéfinies gardent leurs droits.
 --
 -- Verrous : remplacement et création de fonctions seulement. Aucun verrou de table. Possible pendant un import.
 --
@@ -53,6 +64,7 @@ set local statement_timeout = '60s';
 -- déployer d'abord le code de l'application qui n'enregistre plus la décision après l'acceptation, puis, dans une
 -- transaction, recréer app_private.apply_information_agent_fact, app_private.bridge_accepted_information_agent_fact_claim
 -- et app_private.get_public_sale_lawyer_fact_sources dans leur définition de 20261114100000, puis supprimer
+-- public.forget_information_agent_verified_facts(uuid[]) (et son appel dans l'effacement),
 -- app_private.information_agent_fact_held_by_registry(text) et app_private.information_agent_fact_registry_field(text).
 
 -- 1. Correspondance clé du fait → champ d'observation ----------------------------------------------------------------
@@ -76,7 +88,7 @@ as $$
 $$;
 
 comment on function app_private.information_agent_fact_registry_field(text) is
-  'Agent d''information : champ d''observation du registre des pièces d''un fait de l''agent (nul sans colonne comparable). Seule copie de la correspondance, lue par le pont et par information_agent_fact_held_by_registry.';
+  'Agent d''information : champ d''observation du registre des pièces d''un fait de l''agent (nul sans colonne comparable). Même correspondance que le pont (copie comparée par le test de concordance de l''application).';
 
 revoke all on function app_private.information_agent_fact_registry_field(text)
   from public, anon, authenticated, service_role;
@@ -136,6 +148,8 @@ declare
   v_policy_version text := nullif(btrim(p_policy_version), '');
   v_received_at timestamptz;
   v_recipient_kind text;
+  v_sender_matches boolean;
+  v_attributed_kind text;
   v_previous_fact jsonb;
   v_previous_values jsonb := '{}'::jsonb;
   v_previous_provenance jsonb := '{}'::jsonb;
@@ -205,12 +219,14 @@ begin
     end if;
   end if;
 
-  -- Date de réception de la réponse, quand elle est connue (jamais l'expéditeur ni l'objet).
+  -- Date de réception de la réponse, quand elle est connue (jamais l'expéditeur ni l'objet), et accord de
+  -- l'expéditeur avec le contact sollicité (lecture de la réponse ; déclaré sur le portail).
   select coalesce(
     message.received_at,
     case when message.direction = 'inbound' then message.created_at end
-  )
-  into v_received_at
+  ),
+  coalesce(message.metadata->>'sender_matches_recipient' = 'true', false)
+  into v_received_at, v_sender_matches
   from public.information_agent_messages message
   where message.id = v_fact.message_id;
 
@@ -221,6 +237,14 @@ begin
   if v_recipient_kind is null then
     raise exception using errcode = 'P0002', message = 'Information agent case not found.';
   end if;
+  -- Une réponse n'est attribuée à l'avocat poursuivant (mention de la fiche, libellé d'une pièce) que si son
+  -- expéditeur est le contact sollicité. Expéditeur différent, réponse consignée à la main (téléphone,
+  -- courrier) : « unverified_sender » dans raw_payload, jamais de mention. Le journal garde le destinataire du
+  -- dossier.
+  v_attributed_kind := case
+    when v_recipient_kind = 'source_lawyer' and not coalesce(v_sender_matches, false) then 'unverified_sender'
+    else v_recipient_kind
+  end;
 
   select * into v_sale
   from public.auction_sales sale where sale.id = v_fact.sale_id
@@ -400,25 +424,22 @@ begin
     select extraction.document_kind into v_document_kind
     from public.information_agent_evidence_extractions extraction
     where extraction.asset_id = v_fact.evidence_asset_id;
-    -- Libellé public neutre : qui l'a transmise, quand, et son type. Jamais le nom du fichier d'origine, qui
-    -- peut nommer des personnes (« PV_Me_X_saisie_Y.pdf »). Types : mêmes libellés que
-    -- information_agent_evidence._document_kind_label (pipeline), « pièce jointe » sinon.
-    v_document_label := case when v_recipient_kind = 'source_lawyer'
-        then 'Pièce transmise par l''avocat poursuivant le '
-        else 'Pièce transmise le '
+    -- Procès-verbal descriptif, bail : ils nomment les occupants ou le débiteur. Jamais publiés (juridique-rgpd,
+    -- 14/11/2026).
+    if v_document_kind in ('pv_huissier', 'bail') then
+      raise exception using errcode = '22023',
+        message = 'This document cannot be published: a descriptive report or a lease names the occupants or the debtor.';
+    end if;
+    -- Libellé public neutre : qui l'a transmise et quand, sans date si la réception n'est pas connue. Jamais le nom
+    -- du fichier d'origine, qui peut nommer des personnes (« PV_Me_X_saisie_Y.pdf »), ni le type : la fiche lit
+    -- document_type et l'affiche avec son propre libellé. « Par l'avocat poursuivant » seulement quand la réponse
+    -- lui est attribuée (expéditeur égal au contact sollicité).
+    v_document_label := case when v_attributed_kind = 'source_lawyer'
+        then 'Pièce transmise par l''avocat poursuivant'
+        else 'Pièce transmise'
       end
-      || to_char(coalesce(v_received_at, v_now) at time zone 'Europe/Paris', 'DD/MM/YYYY')
-      || ' : '
-      || case v_document_kind
-        when 'diagnostics_techniques' then 'diagnostics techniques'
-        when 'cahier_conditions_vente' then 'cahier des conditions de vente'
-        when 'conditions_vente' then 'conditions de vente'
-        when 'pv_huissier' then 'procès-verbal descriptif'
-        when 'pv_notaire' then 'procès-verbal notarié'
-        when 'annonce_vente' then 'annonce de vente'
-        when 'bail' then 'bail ou document locatif'
-        when 'cadastre' then 'document cadastral'
-        else 'pièce jointe'
+      || case when v_received_at is null then ''
+        else ' le ' || to_char(v_received_at at time zone 'Europe/Paris', 'DD/MM/YYYY')
       end;
     -- Pièce remplacée, s'il y en avait une à la même adresse : son type et son chemin seulement (ni nom
     -- de fichier d'origine, ni contenu brut).
@@ -489,7 +510,7 @@ begin
                 'source', 'professional_email',
                 'publication_mode', v_publication_mode,
                 'received_at', v_received_at,
-                'recipient_kind', v_recipient_kind
+                'recipient_kind', v_attributed_kind
               )
             )
         )
@@ -586,7 +607,18 @@ begin
   -- the existing workflow but do not have a comparable canonical scalar in
   -- auction_sales. They remain represented by the reviewed candidate and its
   -- evidence trail; they must not be mislabelled as a fiche fact claim.
-  v_field_key := app_private.information_agent_fact_registry_field(new.fact_key);
+  -- Même correspondance que app_private.information_agent_fact_registry_field (le test de concordance de
+  -- l'application compare les deux copies à la sienne).
+  v_field_key := case new.fact_key
+    when 'surface_m2' then 'property.surface_m2'
+    when 'land_surface_m2' then 'property.land_surface_m2'
+    when 'rooms_count' then 'property.rooms_count'
+    when 'occupancy_status' then 'property.occupancy_status'
+    when 'starting_price_eur' then 'sale.starting_price_eur'
+    when 'sale_date' then 'sale.sale_date'
+    when 'property_type' then 'property.property_type'
+    else null
+  end;
   if v_field_key is null then
     return new;
   end if;
@@ -804,6 +836,11 @@ from public, anon, authenticated;
 -- celle de la réception de la réponse (raw_payload pour les publications de cette étape, sinon le
 -- message s'il est encore conservé) ; sans date connue, pas de ligne. Les conversions sont gardées par
 -- des CASE : une valeur mal formée dans raw_payload ne fait jamais échouer la lecture.
+-- Lot C (juridique-rgpd et relecture du 14/11/2026) : la valeur n'est attribuée à l'avocat que si l'observation
+-- créée par le pont pour ce fait est encore acceptée (dernière décision au journal du registre) et, pour un champ
+-- que le registre tient, si la fiche tient cette observation-là. Opposition, retrait, décision jamais écrite, autre
+-- pièce retenue : plus de mention, même quand la valeur affichée n'a pas changé (confirmation identique à
+-- l'annonce, mise à prix, date ou type de bien que le registre ne rétablit pas).
 create or replace function app_private.get_public_sale_lawyer_fact_sources(p_sale_id uuid)
 returns table (fact_key text, received_on date, publication_mode text)
 language sql
@@ -822,6 +859,7 @@ as $function$
       s.starting_price_eur,
       s.sale_date,
       s.property_type,
+      s.held_fields -> app_private.information_agent_fact_registry_field(entry.key) as held_entry,
       entry.key as fact_key,
       nullif(btrim(entry.value #>> '{value,value}'), '') as value_text,
       coalesce(entry.value->>'publication_mode', 'manual') as publication_mode,
@@ -866,53 +904,139 @@ as $function$
       and fact.status = 'accepted'
     left join public.information_agent_messages message on message.id = fact.message_id
     left join public.information_agent_cases case_row on case_row.id = fact.case_id
+  ),
+  -- L'observation du pont pour ce fait, si sa dernière décision est une acceptation.
+  decided as (
+    select dated.*, claim.id as claim_id
+    from dated
+    join public.auction_fact_claims claim
+      on claim.evidence_locator ? 'information_agent_fact_id'
+      and claim.evidence_locator->>'information_agent_fact_id' = dated.fact_id::text
+      and claim.auction_sale_id = dated.sale_id
+    cross join lateral (
+      select decision.decision
+      from public.auction_fact_claim_decisions decision
+      where decision.claim_id = claim.id
+      order by decision.seq desc
+      limit 1
+    ) last
+    where last.decision = 'accepted'
   )
   select
-    dated.fact_key,
-    (dated.received_at at time zone 'Europe/Paris')::date as received_on,
-    dated.publication_mode
-  from dated
-  where dated.received_at is not null
-    -- Seule une réponse à un dossier adressé à l'avocat poursuivant lui est attribuée ; sans cette
-    -- information (dossier purgé d'un fait antérieur à la migration), aucune mention.
-    and dated.recipient_kind = 'source_lawyer'
-    and dated.publication_mode in ('manual', 'auto')
-    and dated.value_text is not null
-    and case dated.fact_key
+    decided.fact_key,
+    (decided.received_at at time zone 'Europe/Paris')::date as received_on,
+    decided.publication_mode
+  from decided
+  where decided.received_at is not null
+    -- Seule une réponse à un dossier adressé à l'avocat poursuivant, dont l'expéditeur est le contact sollicité,
+    -- lui est attribuée ; sans cette information (dossier purgé d'un fait antérieur à la migration), aucune mention.
+    and decided.recipient_kind = 'source_lawyer'
+    and decided.publication_mode in ('manual', 'auto')
+    and decided.value_text is not null
+    -- Champ tenu par le registre : la fiche tient cette observation-là.
+    and (
+      not app_private.information_agent_fact_held_by_registry(decided.fact_key)
+      or (
+        decided.held_entry->>'state' = 'held'
+        and decided.held_entry->>'claim_id' = decided.claim_id::text
+      )
+    )
+    and case decided.fact_key
       when 'surface_m2' then
         -- La même valeur réécrite depuis l'annonce change la provenance : plus de mention. Une surface tenue
         -- par le registre des pièces porte le libellé neutre « fact_registry » (lot C du 14/11/2026).
-        dated.surface_source in ('information_agent_verified', 'fact_registry')
-        and dated.app_surface_m2 = case
-          when dated.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then dated.value_text::numeric
+        decided.surface_source in ('information_agent_verified', 'fact_registry')
+        and decided.app_surface_m2 = case
+          when decided.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then decided.value_text::numeric
         end
       when 'land_surface_m2' then
-        dated.land_surface_m2 = case
-          when dated.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then dated.value_text::numeric
+        decided.land_surface_m2 = case
+          when decided.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then decided.value_text::numeric
         end
       when 'rooms_count' then
-        dated.rooms_count = case
-          when dated.value_text ~ '^[0-9]{1,3}$' then dated.value_text::integer
+        decided.rooms_count = case
+          when decided.value_text ~ '^[0-9]{1,3}$' then decided.value_text::integer
         end
-      when 'occupancy_status' then dated.occupancy_status = dated.value_text
+      when 'occupancy_status' then decided.occupancy_status = decided.value_text
       when 'starting_price_eur' then
-        dated.starting_price_eur = case
-          when dated.value_text ~ '^[0-9]{1,10}([.][0-9]{1,2})?$' then dated.value_text::numeric
+        decided.starting_price_eur = case
+          when decided.value_text ~ '^[0-9]{1,10}([.][0-9]{1,2})?$' then decided.value_text::numeric
         end
       when 'sale_date' then
-        dated.sale_date::date = case
-          when dated.value_text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then dated.value_text::date
+        decided.sale_date::date = case
+          when decided.value_text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then decided.value_text::date
         end
-      when 'property_type' then dated.property_type = dated.value_text
+      when 'property_type' then decided.property_type = decided.value_text
       else false
     end
-  order by dated.fact_key;
+  order by decided.fact_key;
 $function$;
 
 revoke all on function app_private.get_public_sale_lawyer_fact_sources(uuid)
   from public, anon, authenticated;
 grant execute on function app_private.get_public_sale_lawyer_fact_sources(uuid)
   to anon, authenticated, service_role;
+
+-- 6. Effacement RGPD d'un professionnel ----------------------------------------------------------------------------
+-- Retire de raw_payload.information_agent_verified_facts les entrées des faits de ses dossiers (date de réception,
+-- destinataire, valeur transmise) : la mention publique disparaît avec elles. Appelée par le code de l'effacement
+-- (src/lib/information-agent-professional-rights.ts) avant la suppression des dossiers, qui emporte les faits.
+-- Rend le nombre de ventes réécrites. Les valeurs affichées ne changent pas : leur retrait passe par le registre
+-- (runbook de l'agent, section du lot C).
+create or replace function public.forget_information_agent_verified_facts(p_case_ids uuid[])
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_count integer;
+begin
+  if p_case_ids is null or cardinality(p_case_ids) = 0 then
+    return 0;
+  end if;
+
+  with facts as (
+    select fact.id::text as fact_id, fact.sale_id
+    from public.information_agent_fact_candidates fact
+    where fact.case_id = any(p_case_ids)
+  )
+  update public.auction_sales sale
+  set raw_payload = jsonb_set(
+        sale.raw_payload,
+        '{information_agent_verified_facts}',
+        coalesce((
+          select jsonb_object_agg(entry.key, entry.value)
+          from jsonb_each(sale.raw_payload->'information_agent_verified_facts') entry
+          where not exists (
+            select 1 from facts where facts.fact_id = entry.value->>'fact_id'
+          )
+        ), '{}'::jsonb)
+      ),
+      updated_at = statement_timestamp()
+  where sale.id in (select facts.sale_id from facts)
+    and exists (
+      select 1
+      from jsonb_each(
+        case
+          when jsonb_typeof(sale.raw_payload->'information_agent_verified_facts') = 'object'
+            then sale.raw_payload->'information_agent_verified_facts'
+          else '{}'::jsonb
+        end
+      ) entry
+      where exists (select 1 from facts where facts.fact_id = entry.value->>'fact_id')
+    );
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$function$;
+
+comment on function public.forget_information_agent_verified_facts(uuid[]) is
+  'Effacement RGPD d''un professionnel : retire de raw_payload.information_agent_verified_facts les entrées des faits de ses dossiers (la mention publique disparaît). Serveur seulement, appelée avant la suppression des dossiers.';
+
+revoke all on function public.forget_information_agent_verified_facts(uuid[])
+  from public, anon, authenticated;
+grant execute on function public.forget_information_agent_verified_facts(uuid[]) to service_role;
 
 notify pgrst, 'reload schema';
 

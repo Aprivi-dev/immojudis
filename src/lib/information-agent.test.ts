@@ -784,8 +784,8 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.bodyText).toContain("12 rue du Palais, lot 7");
-    expect(draft.bodyText).toContain("transmettre des photos complémentaires");
-    expect(draft.bodyText).toContain("autorisé à partager");
+    expect(draft.bodyText).toContain("Des photos du bien sont-elles consultables, et où ?");
+    expect(draft.bodyText).not.toContain("transmettre des photos");
     expect(draft.bodyText).not.toContain("confirmer la surface");
   });
 

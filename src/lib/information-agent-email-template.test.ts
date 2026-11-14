@@ -38,9 +38,9 @@ describe("information agent email content template", () => {
     expect(question).not.toContain("consignation");
   });
 
-  it("nomme le gabarit par défaut en version 11", () => {
+  it("nomme le gabarit par défaut en version 12", () => {
     expect(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.name).toBe(
-      "Demande de précisions sur une vente — version 11",
+      "Demande de précisions sur une vente — version 12",
     );
   });
 

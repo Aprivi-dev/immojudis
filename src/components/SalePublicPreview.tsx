@@ -24,6 +24,7 @@ import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { LawyerFactSourceNote } from "@/components/sale-detail/LawyerFactSourceNote";
+import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 import {
   LAWYER_DAY_LABEL,
   LAWYER_PROPERTY_TYPE_LABEL,
@@ -790,6 +791,7 @@ export function SalePublicPreview({
               {saleDateRow ? <dl className={styles.saleFacts}>{saleDateRow}</dl> : null}
               {signupBlock}
               <dl className={styles.saleFacts}>{saleFactRows}</dl>
+              <p className={styles.dataReliability}>{SALE_DATA_RELIABILITY_NOTE}</p>
             </div>
             <Link href="/simulateur-frais-encheres" className={styles.sideLink}>
               <span>

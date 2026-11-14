@@ -209,7 +209,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     expect(result.blockers).toEqual([]);
     expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     // `cabinet@…` est générique, mais le message nomme « Maître Jean Dupont » : origine et catégories
-    // ordinaires, plus la portée de l'opposition avec le mot « cabinet ».
+    // ordinaires, et aucune phrase de portée de l'opposition (juridique-rgpd du 14/11/2026).
     expect(result.addressOrigin).toEqual({
       text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/109972.html), consultée le 12/10/2026.",
       url: "https://www.licitor.com/annonce/109972.html",
@@ -230,9 +230,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("Ce message ne contient aucune offre commerciale.");
       expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
       expect(output).not.toContain("si vous répondez, le nom, la fonction");
-      expect(output).toContain(
-        "Si vous vous opposez depuis l’adresse de contact de votre cabinet, nous n’écrirons plus à aucune adresse de ce cabinet.",
-      );
+      expect(output).not.toContain("Si vous vous opposez depuis l’adresse de contact");
       expect(output).not.toMatch(/votre étude|votre service/);
       expect(output).toContain("Replicate (États-Unis)");
       expect(output).toContain("12 mois si vous ne répondez pas");
@@ -244,7 +242,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).not.toContain("retrouvée automatiquement");
       // J10 : l'avocat poursuivant apprend que sa réponse peut être affichée, et comment la retirer.
       expect(output).toContain(
-        "Les informations que vous nous transmettez peuvent être affichées sur la fiche, sans votre nom",
+        "Les informations que vous nous transmettez peuvent être affichées sur la fiche publique de cette vente, sans votre nom ;",
       );
     }
     expect(db.writes).toEqual([]);
@@ -252,13 +250,17 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("n'annonce l'affichage des réponses qu'à l'avocat poursuivant, pas à une adresse remplacée", async () => {
+  it("n'annonce la mention de l'avocat poursuivant qu'à lui, pas à une adresse remplacée", async () => {
     const replaced = await previewAdminInformationAgentMission({
       auth: ADMIN,
       input: { ...content, recipientEmail: "autre-cabinet@example.test" },
     });
-    // L'adresse remplacée sera enregistrée « manual_professional » à l'envoi : la fiche ne lui attribuera rien.
-    expect(replaced.preview.text).not.toContain("Affichage sur la fiche");
+    // L'adresse remplacée sera enregistrée « manual_professional » à l'envoi : la fiche ne lui attribuera rien,
+    // et le pied le dit (sans nom ni qualité).
+    expect(replaced.preview.text).toContain(
+      "Affichage sur la fiche : les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
+    );
+    expect(replaced.preview.text).not.toContain("Source : avocat poursuivant");
   });
 
   it("signale un contact opposé et l'absence d'origine connue comme bloquants", async () => {
@@ -1136,7 +1138,7 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
     });
   });
 
-  it("adresse générique portant un nom de personne : pied ordinaire, plus la portée de l'opposition", async () => {
+  it("adresse générique portant un nom de personne : pied ordinaire, sans phrase de portée", async () => {
     vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
     const input = genericNotary("etude@example.test", { office_code: "33001" });
     const named = await preview({ ...input, recipientName: "Me Jean Martin" });
@@ -1146,9 +1148,8 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
     );
     expect(named.preview.text).toContain("Votre adresse professionnelle figure dans l’annonce");
     expect(named.preview.text).not.toContain("si vous répondez, le nom, la fonction");
-    expect(named.preview.text).toContain(
-      "Si vous vous opposez depuis l’adresse de contact de votre étude, nous n’écrirons plus à aucune adresse de cette étude.",
-    );
+    // Personne nommée : aucune phrase de portée (juridique-rgpd du 14/11/2026).
+    expect(named.preview.text).not.toContain("Si vous vous opposez depuis l’adresse de contact");
   });
 
   it("brouillon sans destinataire enregistré (antérieur à ce lot) : aperçu et envoi refusés, à régénérer", async () => {

@@ -134,6 +134,24 @@ describe("GET /api/information-agent/opt-out", () => {
 });
 
 describe("POST /api/information-agent/opt-out", () => {
+  it("annonce la date à laquelle les informations transmises seront retirées des fiches (28 jours)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T10:00:00Z"));
+    try {
+      const response = await POST(new Request(signedUrl(), { method: "POST" }));
+      const html = await response.text();
+      expect(html).toContain(
+        "Les informations que vous nous aviez transmises seront retirées de nos fiches au plus tard le 18/12/2026.",
+      );
+      expect(mocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ opposed_at: "2026-11-20T10:00:00.000Z" }),
+        { onConflict: "scope_sale_id,normalized_email" },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("enregistre l'opposition globale de l'adresse normalisée et propose l'accès aux données", async () => {
     const response = await POST(new Request(signedUrl(), { method: "POST" }));
     const html = await response.text();

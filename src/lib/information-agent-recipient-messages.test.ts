@@ -147,7 +147,10 @@ describe("questions admises", () => {
     expect(informationAgentQuestionTextFor("state_service", "occupancy")).toBe(
       "Le bien est-il actuellement libre, occupé ou loué ?",
     );
-    expect(informationAgentQuestionTextFor("lawyer", "occupancy")).toContain("loyer");
+    // Avocat poursuivant : selon le cahier, sans loyer ni occupant (juridique-rgpd du 14/11/2026).
+    expect(informationAgentQuestionTextFor("lawyer", "occupancy")).toBe(
+      "Selon le cahier des conditions de vente, le bien est-il libre, occupé ou loué ?",
+    );
   });
 
   it("relecture à l'aperçu et à l'envoi : liste courte rejouée, valeur inconnue refusée", () => {
@@ -362,13 +365,18 @@ describe("pied du message, variante « structure »", () => {
       expect(lines).toContain(
         `Vos données : l’adresse de contact ${yours} et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges. Origine : L’adresse de contact ${yours} figure`,
       );
-      // Un service de l'État n'a pas de clé de service (gouv.fr est partagé) : l'adresse seule est promise.
+      // Une clé de structure tient (quel que soit le type) : toute la structure est promise.
       expect(lines).toContain(
-        kind === "state_service"
-          ? `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} Si vous vous opposez depuis l’adresse de contact ${yours}, nous n’écrirons plus à cette adresse.`
-          : `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} Si vous vous opposez depuis l’adresse de contact ${yours}, nous n’écrirons plus à aucune adresse ${that}.`,
+        `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} Si vous vous opposez depuis l’adresse de contact ${yours}, nous n’écrirons plus à aucune adresse ${that}.`,
       );
-      if (kind === "state_service") expect(lines).not.toContain(`aucune adresse ${that}`);
+      // Sans clé qui tienne : cette adresse seule, et la phrase le dit.
+      expect(
+        informationAgentLegalFooterLines(
+          footer({ addressOrigin: origin.text, structureAddress: kind, structureOpposition: null }),
+        ).join("\n"),
+      ).toContain(
+        `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} Si vous vous opposez depuis l’adresse de contact ${yours}, nous n’écrirons plus à cette adresse ; les autres adresses ${that} ne sont pas concernées.`,
+      );
       // Un cabinet d'avocat n'est jamais appelé « étude » ou « service », et inversement.
       for (const [other, otherYours] of WORDS) {
         if (other !== kind) expect(lines).not.toContain(otherYours);
@@ -405,10 +413,56 @@ describe("pied du message, variante « structure »", () => {
     expect(
       recipient("cabinet.dupont@avocat.fr", "lawyer", "law_firm").structureOpposition,
     ).toBeNull();
+    // gouv.fr générique : l'adresse seule, dite comme telle dans le pied.
+    const gouv = recipient("ddfip33@dgfip.finances.gouv.fr", "organizer", "state_service");
+    expect(gouv.structureAddress).toBe("state_service");
+    expect(
+      informationAgentLegalFooterLines(
+        footer({
+          structureAddress: gouv.structureAddress,
+          structureOpposition: gouv.structureOpposition,
+        }),
+      ).join("\n"),
+    ).toContain(
+      "Si vous vous opposez depuis l’adresse de contact de votre service, nous n’écrirons plus à cette adresse ; les autres adresses de ce service ne sont pas concernées.",
+    );
     // Avec une clé qui vaut pour l'adresse : domaine propre d'un cabinet, numéro d'office d'une étude.
     expect(recipient("contact@cabinet-dupont.fr", "lawyer", "law_firm").structureOpposition).toBe(
       "law_firm",
     );
+    const ownDomain = recipient("contact@cabinet-dupont.fr", "lawyer", "law_firm");
+    expect(
+      informationAgentLegalFooterLines(
+        footer({
+          structureAddress: ownDomain.structureAddress,
+          structureOpposition: ownDomain.structureOpposition,
+        }),
+      ).join("\n"),
+    ).toContain(
+      "Si vous vous opposez depuis l’adresse de contact de votre cabinet, nous n’écrirons plus à aucune adresse de ce cabinet.",
+    );
+    // Personne nommée, même au domaine propre du cabinet : aucune phrase de portée.
+    const named = missionRecipient(
+      {
+        recipient_kind: "source_contact",
+        recipient_name: "Maître Anne Dupont",
+        metadata: {
+          contact_identity: { role: "lawyer", structure_kind: "law_firm", address_kind: "generic" },
+          contact_discovery: { selected_email: "contact@cabinet-dupont.fr" },
+        },
+      } as never,
+      null,
+      "contact@cabinet-dupont.fr",
+    );
+    expect(named.structureAddress).toBeNull();
+    expect(named.structureOpposition).toBeNull();
+    const namedLines = informationAgentLegalFooterLines(
+      footer({
+        structureAddress: named.structureAddress,
+        structureOpposition: named.structureOpposition,
+      }),
+    ).join("\n");
+    expect(namedLines).not.toContain("Si vous vous opposez depuis l’adresse de contact");
     expect(
       recipient("etude.martin@notaires.fr", "notary", "notary_office", "33001").structureOpposition,
     ).toBe("notary_office");
@@ -441,7 +495,7 @@ describe("pied du message, variante « structure »", () => {
     expect(
       informationAgentLegalFooterLines(footer({ structureOpposition: "unknown" })).join("\n"),
     ).toContain(
-      "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
+      "Si vous vous opposez depuis l’adresse de contact de votre étude, de votre cabinet ou de votre service, nous n’écrirons plus à aucune adresse de cette structure.",
     );
     expect(INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT).toBe(
       "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
@@ -465,19 +519,20 @@ describe("pied du message, variante « structure »", () => {
     expect(court.structureAddress).toBeUndefined();
   });
 
-  it("personne nommée à une adresse générique : catégories ordinaires et portée de l'opposition, sans contradiction", () => {
+  it("personne nommée à une adresse générique : catégories ordinaires, sans phrase de portée", () => {
+    // `missionRecipient` ne donne ni adresse de structure ni promesse de structure à une personne nommée.
     const lines = informationAgentLegalFooterLines(
       footer({
         addressOrigin: informationAgentAddressOrigin(listing).text,
         structureAddress: null,
-        structureOpposition: "law_firm",
+        structureOpposition: null,
       }),
     ).join("\n");
     expect(lines).toContain(
       "Vos données : votre nom, votre fonction, votre adresse professionnelle et nos échanges. Origine : Votre adresse professionnelle figure",
     );
     expect(lines).not.toContain("si vous répondez, le nom, la fonction");
-    expect(lines).toContain("nous n’écrirons plus à aucune adresse de ce cabinet.");
+    expect(lines).not.toContain("Si vous vous opposez depuis l’adresse de contact");
   });
 });
 

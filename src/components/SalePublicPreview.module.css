@@ -411,6 +411,14 @@
   border-top: 1px solid var(--line-soft);
 }
 
+/* Ligne fixe sous les données clés : d'où viennent les données, ce qui seul fait foi. */
+.dataReliability {
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 .saleFact {
   display: grid;
   /* Libellé au-dessus de la valeur : la colonne de 108 px coupait « Date de l'audience » et le

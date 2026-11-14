@@ -3723,29 +3723,14 @@
      "role": "corps",
      "message_id": "F6-01-message",
      "reception": {
-      "statut": "extraction",
-      "motif": null
+      "statut": "relecture",
+      "motif": "possible_opposition"
      },
-     "body_evidence_text": "Bonjour Mesdames et Messieurs,\n\nPour votre information : La maison développe 66 m² habitables. Merci de ne pas publier ces éléments.\n\nCdlt,",
+     "body_evidence_text": null,
      "lot_unidentified": false
     }
    ],
-   "candidates": [
-    {
-     "id": "F6-01-fact-001",
-     "message_id": "F6-01-message",
-     "fact_key": "surface_m2",
-     "proposed_value": {
-      "value": 66,
-      "unit": "m2"
-     },
-     "display_value": "66 m²",
-     "status": "pending",
-     "evidence_asset_id": null,
-     "source_page": null,
-     "metadata": {}
-    }
-   ]
+   "candidates": []
   },
   "F6-02": {
    "messages": [

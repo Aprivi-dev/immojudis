@@ -45,6 +45,16 @@ import { EMAIL_TEMPLATES } from "./registry";
  * « documents ou photos » ni procès-verbal descriptif, « Merci par avance. », question des modalités sans
  * rappel de procédure) et la section « Affichage sur la fiche : » du pied de l'avocat poursuivant. Textes
  * gardés mot pour mot par emails/information-request.test.tsx.
+ *
+ * Mise à jour explicite du même jour (relecture juridique-rgpd du lot C, textes repris mot pour mot, transmise
+ * par le chef d'orchestre) : les empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT
+ * celles-là. Les deux rendus changent les deux lignes sous la signature (« notre équipe relit chaque réponse
+ * avant toute mise à jour de la fiche », « Inutile de nous transmettre des pièces : nous indiquer où les
+ * consulter suffit. ») ; agent_request reçoit en plus le second paragraphe des consignes (« informations déjà
+ * destinées à tout candidat acquéreur… Inutile de joindre des pièces. ») et le nouveau texte de la section
+ * « Affichage sur la fiche : » ; agent_court_registry reçoit la nouvelle question au greffe et la section
+ * « Affichage sur la fiche : » de la variante greffe. Textes gardés mot pour mot par
+ * emails/information-request.test.tsx.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -59,8 +69,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "3e7d82d37de5f1285ffc615b4dab73364e7504722715396dd3dd0113558f3333",
-  agent_court_registry: "967f2a21b682217555fcf63009c1104d4dc93981ad91ece3eaa63962980ab641",
+  agent_request: "e6a88a766ccfe06536ba0ec59c813269c29242793ec72b0eaadade6ca8ccf2c0",
+  agent_court_registry: "b3e61cedd6acc3a22cb5547270f682126b76fac62d42de0d30586fab6e8b9ed8",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

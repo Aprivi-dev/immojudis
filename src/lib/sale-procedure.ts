@@ -255,6 +255,31 @@ export function saleProcedureIsConfirmed(procedure: SaleProcedurePresentation): 
   );
 }
 
+/**
+ * Où se consulte le cahier des conditions de vente d'une saisie immobilière (art. R. 322-11 CPCE). Seule copie :
+ * guide des ventes judiciaires, section « Pièces et vérifications » de la fiche publique, section « Pièces du
+ * dossier » de la fiche des comptes.
+ */
+export const SEIZURE_CAHIER_CONSULTATION_PLACE =
+  "au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de l’avocat du créancier poursuivant";
+
+/**
+ * Ligne « Cahier des conditions de vente » des fiches (relecture juridique-rgpd du 14/11/2026) : saisie
+ * immobilière confirmée, autre vente au tribunal confirmée, type de vente non confirmé. Nulle pour une vente
+ * confirmée hors tribunal (notaire, État : le cahier des charges est demandé à l'organisateur).
+ */
+export function cahierConsultationLine(
+  procedure: Pick<SaleProcedurePresentation, "venueType" | "legalFramework" | "verificationStatus">,
+): string | null {
+  const confirmed =
+    procedure.verificationStatus === "verified" || procedure.verificationStatus === "cross_checked";
+  if (!confirmed) return "Le lieu de consultation figure dans l’avis de vente.";
+  if (procedure.venueType !== "tribunal") return null;
+  return procedure.legalFramework === "judicial_seizure"
+    ? `Consultable ${SEIZURE_CAHIER_CONSULTATION_PLACE}`
+    : "Consultable au greffe du tribunal judiciaire ou auprès de l’avocat poursuivant ; l’avis de vente indique où.";
+}
+
 export function saleIsTribunalVenue(sale: AuctionSale): boolean {
   return getSaleProcedure(sale).venueType === "tribunal";
 }

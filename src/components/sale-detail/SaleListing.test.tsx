@@ -14,6 +14,7 @@ import {
   SaleDetailHeading,
 } from "./SaleListing";
 import { ListingBudget } from "./ListingBudget";
+import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -181,6 +182,10 @@ describe("readable listing sections", () => {
     expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
       "#rendez-vous",
     );
+    // Ligne fixe sous les données clés (juridique-rgpd du 14/11/2026), comme sur la fiche publique.
+    expect(screen.getByRole("region", { name: "Synthèse de la vente" }).textContent).toContain(
+      "Les données de cette fiche viennent de l’annonce, des pièces ou de réponses de professionnels. Comme toute donnée de la fiche, elles sont à confirmer dans le cahier des conditions de vente (ou le cahier des charges d’une vente notariale) et les pièces officielles, qui seuls font foi.",
+    );
   });
   it("keeps the bid ceiling, the price scenario and the surface out of the hero", () => {
     const { container } = render(<ListingOverview sale={item()} />);
@@ -338,7 +343,13 @@ describe("readable listing sections", () => {
     expect(screen.getByText("Non renseignée")).toBeTruthy();
     expect(screen.getByText("Non renseigné")).toBeTruthy();
     expect(screen.getByText("Date non renseignée")).toBeTruthy();
-    expect(screen.queryByText(/en cours de vérification|à confirmer/i)).toBeNull();
+    // La ligne fixe sous les données clés (« à confirmer dans le cahier ») vaut pour toute la fiche : ce n'est
+    // pas une valeur présentée comme en cours de relecture.
+    expect(
+      screen
+        .queryAllByText(/en cours de vérification|à confirmer/i)
+        .filter((element) => element.textContent !== SALE_DATA_RELIABILITY_NOTE),
+    ).toEqual([]);
   });
   it("offers the preparation first, then the appointments, from the summary", () => {
     render(

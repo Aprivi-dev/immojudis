@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminInformationAgentReviewPanel } from "./AdminInformationAgentReviewPanel";
 
@@ -817,7 +817,7 @@ describe("AdminInformationAgentReviewPanel", () => {
 
     expect(
       await screen.findByText(
-        "Occupation non affichable : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi. Rejetez cette information.",
+        "Occupation non affichable telle quelle : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi, ni une occupation inconnue. Rejetez cette information ; si la réponse dit clairement que le bien est occupé et que l’écran permet de corriger la valeur, consignez « occupé ».",
       ),
     ).toBeTruthy();
     expect(
@@ -828,6 +828,42 @@ describe("AdminInformationAgentReviewPanel", () => {
       ).disabled,
     ).toBe(true);
     expect(screen.queryByLabelText("Rattachement au lot (obligatoire pour accepter)")).toBeNull();
+  });
+
+  it("ne promet pas la protection contre la collecte pour la mise à prix, que le registre ne tient pas", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-price",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "starting_price_eur",
+          proposed_value: { value: "95000" },
+          display_value: "95 000 €",
+          confidence: 0.9,
+          evidence_asset_id: null,
+          evidence_excerpt: null,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "replied" }],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(
+      await screen.findByLabelText("Rattachement au lot (obligatoire pour accepter)"),
+      { target: { value: "single_lot" } },
+    );
+    expect(screen.getByText(/Le registre ne tient pas ce champ/)).toBeTruthy();
+    expect(screen.queryByText(/protégée contre la collecte/)).toBeNull();
   });
 
   it("montre les retraits à faire après une opposition, avec leur date limite", async () => {
@@ -845,8 +881,21 @@ describe("AdminInformationAgentReviewPanel", () => {
           saleId: "11111111-1111-4111-8111-111111111111",
           claimId: "claim-1",
           latestDecision: "accepted",
+          heldByRegistry: true,
           opposedAt: "2026-11-15T10:00:00Z",
-          dueAt: "2026-12-15T10:00:00Z",
+          dueAt: "2026-12-13T10:00:00Z",
+          overdue: true,
+        },
+        {
+          factId: "fact-2",
+          factKey: "starting_price_eur",
+          displayValue: "95 000 €",
+          saleId: "11111111-1111-4111-8111-111111111111",
+          claimId: "claim-2",
+          latestDecision: "accepted",
+          heldByRegistry: false,
+          opposedAt: "2026-11-15T10:00:00Z",
+          dueAt: "2026-12-13T10:00:00Z",
           overdue: true,
         },
       ],
@@ -860,13 +909,98 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
 
     const section = await screen.findByRole("region", {
-      name: "Retraits à faire après une opposition (1)",
+      name: "Retraits à faire après une opposition (2)",
     });
     expect(section.textContent).toContain("Surface : 54 m²");
     expect(section.textContent).toContain(
-      "opposition du 15/11/2026, à retirer avant le 15/12/2026 (délai dépassé)",
+      "opposition du 15/11/2026, à retirer avant le 13/12/2026 (délai dépassé)",
     );
-    expect(section.textContent).toContain("« Opposition »");
+    // Juridique-rgpd du 14/11 : opposition dans les deux cas ; « autorisation retirée » pour les pièces seules.
+    expect(section.textContent).toContain(
+      "« Enregistrer une opposition », y compris pour une simple",
+    );
+    expect(section.textContent).toContain("ne sert qu’aux pièces et photos");
+    expect(section.textContent).toContain("Notez le canal et la date de la demande");
+    const links = within(section).getAllByRole("link", {
+      name: "Ouvrir les observations de cette vente",
+    });
+    expect(links[0]?.getAttribute("href")).toBe(
+      "?onglet=reponses&vente=11111111-1111-4111-8111-111111111111#observations-a-decider",
+    );
+    // Mise à prix : le registre ne la tient pas, la valeur reste jusqu'à la prochaine collecte.
+    const items = within(section).getAllByRole("listitem");
+    expect(items[0]?.textContent).not.toContain("le registre ne tient pas ce champ");
+    expect(items[1]?.textContent).toContain("le registre ne tient pas ce champ");
+  });
+
+  it("montre les réponses acceptées sans décision au registre, avec un lien vers la vente", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      messages: [],
+      withdrawalTasks: [],
+      pendingRegistryDecisions: [
+        {
+          factId: "fact-7",
+          factKey: "rooms_count",
+          displayValue: "4 pièces",
+          saleId: "11111111-1111-4111-8111-111111111111",
+          claimId: "22222222-2222-4222-8222-222222222222",
+          acceptedAt: "2026-11-21T10:00:00Z",
+        },
+      ],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const section = await screen.findByRole("region", {
+      name: "Réponses acceptées sans décision au registre (1)",
+    });
+    // Identifiants complets : ils se collent tels quels dans « Observations à décider ».
+    expect(section.textContent).toContain("vente 11111111-1111-4111-8111-111111111111");
+    expect(section.textContent).toContain("observation 22222222-2222-4222-8222-222222222222");
+    expect(
+      within(section)
+        .getByRole("link", { name: "Ouvrir les observations de cette vente" })
+        .getAttribute("href"),
+    ).toBe("?onglet=reponses&vente=11111111-1111-4111-8111-111111111111#observations-a-decider");
+  });
+
+  it("dit qu'une liste du registre est indisponible sans faire tomber l'écran", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      messages: [],
+      withdrawalTasks: null,
+      pendingRegistryDecisions: null,
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.map((alert) => alert.textContent)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Retraits à faire après une opposition : liste indisponible"),
+        expect.stringContaining(
+          "Réponses acceptées sans décision au registre : liste indisponible",
+        ),
+      ]),
+    );
+    expect(screen.getByText("Informations à contrôler")).toBeTruthy();
   });
 
   it("disables acceptance when the case is already completed", async () => {

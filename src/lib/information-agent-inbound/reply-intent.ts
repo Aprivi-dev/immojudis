@@ -79,6 +79,22 @@ const LOOSE_OPT_OUT_PATTERNS: RegExp[] = [
   /\b(?:comment|pourquoi|o[ùu])\s+(?:avez|avons)[-\s]?(?:vous|nous)\s+(?:obtenu|eu|trouv[ée])\s+(?:mon|notre|mes|nos)\b/iu,
 ].map(unicodeWordBoundaries);
 
+/**
+ * Demande de retrait de ce qui est affiché, sans demande de ne plus être contacté (« merci de retirer de votre
+ * fiche les informations… », « ne publiez plus ma réponse ») : rien n'est enregistré, la réponse va en relecture
+ * avec le motif `possible_opposition`. Un retrait se fait au registre dans le mois (runbook de l'agent, lot C).
+ */
+const WITHDRAWAL_REQUEST_PATTERNS: RegExp[] = [
+  /\b(?:retir|supprim|effa[cç]|enlev|ôt)(?:ez|er)\b[^.!?\n]{0,80}\b(?:fiches?|site|annonces?|pages?|publications?|mentions?)\b/iu,
+  /\b(?:retrait|suppression)\s+(?:de\s+|des\s+)?(?:(?:mes|nos|ces|les|vos)\s+)?(?:informations?|donn[ée]es|r[ée]ponses?|mentions?|publications?)\b/iu,
+  /\bne\s+(?:plus\s+|pas\s+)?(?:publi|affich|diffus|mentionn)(?:ez|er)\b|\bne\s+(?:publiez|affichez|diffusez|mentionnez)\s+(?:plus|pas|rien|jamais)\b/iu,
+].map(unicodeWordBoundaries);
+
+export function detectInformationAgentWithdrawalRequest(bodyText: string): boolean {
+  const text = replyBodyForOptOut(bodyText);
+  return Boolean(text) && WITHDRAWAL_REQUEST_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function replyBodyForOptOut(bodyText: string): string {
   return replyTextForExtraction(bodyText)
     .replace(/\u00a0/g, " ")
@@ -98,12 +114,16 @@ export function detectInformationAgentContactOptOut(bodyText: string): boolean {
 
 /**
  * Reply that does not ask in so many words to stop contact but uses the vocabulary of a complaint or
- * of an objection. No opposition is recorded; a human reads it first (`possible_opposition`).
+ * of an objection, or asks to withdraw what is displayed. No opposition is recorded; a human reads it
+ * first (`possible_opposition`).
  */
 export function detectPossibleInformationAgentContactOptOut(bodyText: string): boolean {
   const text = replyBodyForOptOut(bodyText);
   if (!text || detectInformationAgentContactOptOut(bodyText)) return false;
-  return LOOSE_OPT_OUT_PATTERNS.some((pattern) => pattern.test(text));
+  return (
+    LOOSE_OPT_OUT_PATTERNS.some((pattern) => pattern.test(text)) ||
+    detectInformationAgentWithdrawalRequest(bodyText)
+  );
 }
 
 export type InformationAgentReplyIntent = "opposition" | "agreement" | "ambiguous";

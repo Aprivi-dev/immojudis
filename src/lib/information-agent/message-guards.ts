@@ -73,8 +73,9 @@ export function buildInformationAgentLegalFooter({
   structureOpposition?: InformationAgentFooterStructure | null;
   saleReference?: string | null;
   /**
-   * Nature du destinataire du dossier (`sentRecipientKind`) : seule une réponse de l'avocat poursuivant
-   * (`source_lawyer`) est affichée sur la fiche avec la mention de source, et le pied l'annonce.
+   * Nature du destinataire du dossier (`sentRecipientKind`) : elle choisit ce que le pied annonce de l'affichage
+   * des réponses (avocat poursuivant avec la mention de source, autre professionnel sans nom ni qualité, greffe).
+   * Nulle : aucune section.
    */
   recipientKind?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
@@ -108,7 +109,13 @@ export function buildInformationAgentLegalFooter({
     automatedSearchSource: addressOrigin.searchSource,
     structureAddress: addressOrigin.structureAddress ?? null,
     structureOpposition: addressOrigin.courtRegistry ? null : structureOpposition,
-    lawyerReplyDisplay: recipientKind === "source_lawyer" && !addressOrigin.courtRegistry,
+    replyDisplay: addressOrigin.courtRegistry
+      ? "court_registry"
+      : recipientKind === "source_lawyer"
+        ? "source_lawyer"
+        : recipientKind
+          ? "professional"
+          : null,
     aiProvider,
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: optOut,
