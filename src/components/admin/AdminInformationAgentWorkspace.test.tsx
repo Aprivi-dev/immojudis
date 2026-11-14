@@ -735,6 +735,77 @@ describe("AdminInformationAgentWorkspace : brouillons conservés d'un onglet à 
   });
 });
 
+describe("AdminInformationAgentWorkspace : place de l'éditeur dans « À contacter »", () => {
+  // Suite de l'incident du 14/11/2026 : sous la file, l'éditeur d'une mission ouverte depuis un autre
+  // onglet était repoussé hors de l'écran par la file arrivée après le défilement.
+  const editorHeading = () => screen.getByRole("heading", { name: "Demandes d’informations" });
+  const queueHeading = () => screen.getByRole("heading", { name: "File d’enrichissement" });
+  const comesBefore = (first: HTMLElement, second: HTMLElement) =>
+    Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("mission ouverte depuis « Envois » : l'éditeur passe au-dessus de la file, sans être remonté", async () => {
+    mocks.missions.mockResolvedValue({
+      ok: true,
+      missions: [mission("draft", "reprise@example.test")],
+      facts: [],
+    });
+    renderWorkspace();
+    await screen.findByRole("button", { name: "Ouvrir le message" });
+    const editor = editorHeading();
+    expect(comesBefore(queueHeading(), editor)).toBe(true);
+
+    fireEvent.click(tab("Envois"));
+    fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+
+    await screen.findByRole("heading", { name: "Brouillon pour reprise@example.test" });
+    expect(comesBefore(editorHeading(), queueHeading())).toBe(true);
+    expect(editorHeading()).toBe(editor);
+
+    // Fermer le remet sous la file.
+    fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+    expect(comesBefore(queueHeading(), editorHeading())).toBe(true);
+    expect(editorHeading()).toBe(editor);
+  });
+
+  it("un clic volontaire dans la file remet l'éditeur sous la file", async () => {
+    // Mission d'une autre vente que la première ligne de la file.
+    mocks.missions.mockResolvedValue({
+      ok: true,
+      missions: [
+        {
+          ...mission("draft", "reprise@example.test"),
+          saleId: "77777777-7777-4777-8777-777777777777",
+        },
+      ],
+      facts: [],
+    });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft", "file@example.test"),
+        id: "66666666-6666-4666-8666-666666666666",
+      },
+      gaps: [],
+      facts: [],
+    });
+    window.history.replaceState(null, "", "/admin/agent-ia?onglet=envois");
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+    await screen.findByRole("heading", { name: "Brouillon pour reprise@example.test" });
+    const queueLine = await screen.findByRole("button", { name: "Ouvrir le message" });
+    expect(comesBefore(editorHeading(), queueHeading())).toBe(true);
+    const editor = editorHeading();
+
+    fireEvent.click(queueLine);
+
+    expect(
+      await screen.findByRole("heading", { name: "Brouillon pour file@example.test" }),
+    ).toBeTruthy();
+    expect(comesBefore(queueHeading(), editorHeading())).toBe(true);
+    expect(editorHeading()).toBe(editor);
+  });
+});
+
 function renderWorkspace() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(

@@ -457,16 +457,23 @@ export function AdminInformationAgentMissionsPanel({
   // Ouverture demandée depuis la liste des envois (autre onglet). Une préparation automatique de la
   // file encore en cours ne doit jamais écraser la mission choisie dans l'historique.
   const handledOpenNonceRef = useRef<number | null>(null);
+  const [revealNonce, setRevealNonce] = useState<number | null>(null);
   useEffect(() => {
     if (!openRequest || handledOpenNonceRef.current === openRequest.nonce) return;
     handledOpenNonceRef.current = openRequest.nonce;
     selectionRef.current = null;
     setDraftError(null);
     hydrateMission(openRequest.mission);
-    // Le formulaire était masqué ou hors écran : sans ce déplacement, l'ouverture ne se voit pas.
+    setRevealNonce(openRequest.nonce);
+  }, [openRequest, hydrateMission]);
+  // Le formulaire était masqué ou hors écran : sans ce déplacement, l'ouverture ne se voit pas. Il suit
+  // le rendu du brouillon : avant, la page peut être trop courte pour amener l'éditeur en haut de
+  // l'écran, et le brouillon s'affichait ensuite sous le bas de l'écran.
+  useEffect(() => {
+    if (revealNonce === null) return;
     composerSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     composerHeadingRef.current?.focus({ preventScroll: true });
-  }, [openRequest, hydrateMission]);
+  }, [revealNonce]);
   const closeComposer = () => {
     selectionRef.current = null;
     activeMissionRef.current = null;
