@@ -188,5 +188,15 @@ export async function runAdminAutopilotAction({
     });
     if (error) throw adminInformationAgentRpcFailure("admin.autopilot", error);
   }
-  return getAdminAutopilotView(authToken, { env });
+  try {
+    return await getAdminAutopilotView(authToken, { env });
+  } catch (error) {
+    // L'action est faite : une relecture en échec ne doit pas la faire passer pour refusée (arrêt d'urgence).
+    if (input.action !== "emergency_stop") throw error;
+    console.error(JSON.stringify({ scope: "admin.autopilot", code: "stop_view_unread" }));
+    throw new PublicApiError(AUTOPILOT_STOP_RECORDED_UNREAD_MESSAGE, 503, { cause: error });
+  }
 }
+
+const AUTOPILOT_STOP_RECORDED_UNREAD_MESSAGE =
+  "Arrêt enregistré, état non relu : rechargez la page pour vérifier l’état du pilote.";

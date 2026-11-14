@@ -291,6 +291,34 @@ describe("panneau du pilote (serveur)", () => {
     expect(mocks.readiness).toHaveBeenCalledTimes(1); // seulement pour recomposer la vue
   });
 
+  it("arrêt d'urgence enregistré mais état non relu : le dit, jamais « Arrêt impossible »", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // L'arrêt passe ; la relecture de l'état qui suit échoue (base momentanément indisponible).
+    mocks.settings.mockRejectedValue(new Error("lecture impossible"));
+    const stop = runAdminAutopilotAction({
+      authToken: "token",
+      input: { action: "emergency_stop" },
+      env: {},
+    });
+    await expect(stop).rejects.toBeInstanceOf(PublicApiError);
+    await expect(stop).rejects.toMatchObject({
+      message: expect.stringContaining("Arrêt enregistré, état non relu"),
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("stop_information_agent_autopilot", {
+      p_reason: undefined,
+    });
+    logged.mockRestore();
+  });
+
+  it("un arrêt d'urgence refusé par la base reste une erreur de l'arrêt", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "panne" } });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(
+      runAdminAutopilotAction({ authToken: "token", input: { action: "emergency_stop" }, env: {} }),
+    ).rejects.not.toMatchObject({ message: expect.stringContaining("Arrêt enregistré") });
+    logged.mockRestore();
+  });
+
   it("traduit les réglages en colonnes et les journalise avec leur motif", async () => {
     await runAdminAutopilotAction({
       authToken: "token",

@@ -412,6 +412,41 @@ describe("AdminInformationAgentWorkspace : état du pilote et arrêt d'urgence d
     expect(await within(banner).findByText("Éteint")).toBeTruthy();
     expect(mocks.autopilot).toHaveBeenCalledTimes(1);
   });
+
+  it("reste actif, en un clic, quand l'état du pilote n'a pas pu être lu", async () => {
+    mocks.autopilot.mockRejectedValue(new Error("Pilote automatique indisponible"));
+    mocks.autopilotAction.mockResolvedValue(autopilot({ mode: "off" }));
+    renderWorkspace();
+    const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
+    expect((await within(banner).findAllByText("indisponible")).length).toBeGreaterThan(0);
+    const stop = within(banner).getByRole("button", { name: "Arrêt d’urgence" });
+    expect((stop as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(stop);
+
+    await waitFor(() => expect(mocks.autopilotAction).toHaveBeenCalledTimes(1));
+    expect(mocks.autopilotAction.mock.calls[0][0]).toEqual({ action: "emergency_stop" });
+  });
+
+  it("arrêt enregistré mais état non relu : le message du serveur, puis une nouvelle lecture", async () => {
+    const { toast } = await import("@/lib/toast");
+    mocks.autopilot.mockResolvedValue(autopilot({ mode: "simulation" }));
+    mocks.autopilotAction.mockRejectedValue(
+      new Error("Arrêt enregistré, état non relu : rechargez la page."),
+    );
+    renderWorkspace();
+    const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
+    await waitFor(() => expect(within(banner).getByText("Simulation")).toBeTruthy());
+
+    fireEvent.click(within(banner).getByRole("button", { name: "Arrêt d’urgence" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Arrêt enregistré, état non relu : rechargez la page.",
+      ),
+    );
+    await waitFor(() => expect(mocks.autopilot).toHaveBeenCalledTimes(2));
+  });
 });
 
 describe("AdminInformationAgentWorkspace : brouillons préparés par le pilote", () => {
