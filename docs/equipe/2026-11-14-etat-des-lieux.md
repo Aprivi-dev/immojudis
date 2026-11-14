@@ -615,6 +615,117 @@ qui portent [vérifié par leur auteur].
 
 ---
 
+## 10. Exécution du lot SEO (validé le 14/11)
+
+**Validation.** Le propriétaire a demandé, le 14/11, de « remonter en SEO sur ces mots-clés stratégiques, même si
+ce n'est pas exactement le business d'Immojudis ».
+
+Règle posée par le chef d'orchestre et appliquée :
+
+- chaque page ou guide répond vraiment à la requête ;
+- aucune page ne promet des annonces de gré à gré ni des ventes mobilières qu'Immojudis n'a pas ;
+- aucune marque de concurrent ne figure dans un titre.
+
+Les autres numéros du tableau restent en attente de validation.
+
+**Ce qui a été fait.** Commits `c89b31a` et `d9336ec`, PR #507 en brouillon.
+
+**Titres, par `developpeur`**
+
+- S1 : titre de l'accueil « Enchères immobilières : tribunal et notaire - Immojudis ».
+- S6 : guide des ventes judiciaires orienté « vente judiciaire immobilière » et « enchères judiciaires ».
+- Phrase des pages département : « dès qu'elles sont publiées » est remplacé par « au plus deux fois par jour selon
+  la source ». Un commentaire renvoie à `INVENTORY_CADENCE` et à la tâche `smart-alerts`.
+
+**Quatre pages d'atterrissage, par `developpeur`**
+
+- Les pages : `/maison-aux-encheres`, `/appartement-aux-encheres`, `/encheres-notariales` et
+  `/ventes-immobilieres-etat` (S3, S4, S7).
+- **Données.** Elles sont rendues côté serveur. Elles lisent la même fonction publique que `/sales` et trient
+  par date avec le comparateur des pages département.
+- **Indexation.** `noindex, follow` sous 3 ventes à venir, entrée au sitemap au-delà. Données structurées :
+  fil d'Ariane et liste de ventes.
+- **Titres.** Les titres affichés sur la page disent « aux enchères ou sur offres » (demande de
+  juridique-rgpd).
+- **Renvois honnêtes.** Elles renvoient vers immobilier.notaires.fr pour les annonces classiques et vers le site
+  officiel des ventes mobilières du Domaine.
+- **Liens.** Elles sont liées depuis l'index des départements et depuis un groupe « Ventes par type » du pied de
+  page. Ce groupe est rendu côté serveur, pour respecter le budget JavaScript sans relever le plafond.
+- **Interrupteur notaire et État.** Quand il est coupé, ces deux pages passent en `noindex` et disparaissent de
+  la navigation et du sitemap.
+
+**Guides, par `redacteur-contenu`**
+
+- **Cinq nouveaux articles :**
+  - « Maison aux enchères : étapes, frais, risques » ;
+  - « Vente par adjudication » ;
+  - « Vente par notaire : annonce, offres ou enchères » (famille « immobilier notaire ») ;
+  - « Vente domaniale : comment l'État vend ses biens » ;
+  - « Enchères immobilières en ligne ».
+- **Six articles repris**, avec réponse directe, FAQ et sources :
+  - l'article notarial (S2) ;
+  - la saisie (S5) ;
+  - l'audience ;
+  - le financement ;
+  - le prix plafond ;
+  - le cahier des conditions de vente.
+- **Glossaire et articles liés** mis à jour.
+
+**Relectures**
+
+- **`code-reviewer`, première passe.** Un point Haute, corrigé : les « prochaines ventes » suivaient l'ordre de la
+  base, qui place les ventes géolocalisées d'abord. Six points Bas, corrigés.
+- **`juridique-rgpd`.** Une correction bloquante, faite : le titre « N maisons aux enchères » comptait des ventes
+  sur offres. Onze corrections et douze suggestions, faites, sauf la date d'un décret de 2025, introuvable à la
+  source primaire. Parmi elles :
+  - R. 322-64 pour l'expulsion ;
+  - la surenchère en vente notariale ;
+  - la rétractation après une vente interactive ;
+  - un catalogue non présenté comme exhaustif ;
+  - le titre sans la marque immobilier.notaires.
+- **`code-reviewer`, seconde passe.** Verdict : livrable, sans point bloquant.
+
+**Vérifications (chef d'orchestre, état final, Node 24)**
+
+| Contrôle                  | Résultat                             |
+| ------------------------- | ------------------------------------ |
+| tsc                       | OK                                   |
+| lint                      | OK                                   |
+| Prettier, fichiers du lot | OK                                   |
+| Vitest                    | 1 074 fichiers et 15 380 tests verts |
+| Invariants de sécurité    | OK                                   |
+
+Le budget JavaScript est mesuré en local par `developpeur` (`build:budgets`) : la page `example` pèse 185 938
+octets, pour un plafond de 186 000.
+
+**Points restants (non faits, à valider)**
+
+- **Marge du budget JavaScript.** Environ 44 octets estimés en CI : le prochain ajout de code client sur la page
+  d'exemple refera échouer le contrôle (lien avec T19).
+- **Petites suites de la seconde relecture :**
+  - une page par type peut lire deux fois son filtre après une purge du cache (partage de la lecture en cours,
+    `maxDuration`) ;
+  - le commentaire « aucun lien n'y mène » de `sale-landing-pages.ts` est faux : trois articles y renvoient ;
+  - le commentaire de `readAllPublicSales` est périmé ;
+  - la mention « 3 000 € minimum » de `BuyingSteps` n'est plus alignée sur le guide judiciaire.
+- **Défaut préexistant :** l'interrupteur `NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED` n'est pas lu dans le
+  navigateur (`sale-types.ts:64-67`). Quand il est coupé, les filtres « Chez le notaire » et « Domaniales »
+  restent visibles sur `/sales`.
+- **Données, signalé par juridique-rgpd :** une vente de l'AGRASC non désignée comme vente de l'État peut être
+  classée « tribunal (à confirmer) » par le pipeline (`sale_procedure.py`, `tribunal.py`). C'est à corriger côté
+  pipeline.
+- **Juridique, à faire valider par un avocat :**
+  - la rétractation après une vente interactive ;
+  - la surenchère en vente notariale volontaire ;
+  - le risque d'un titre chiffré « aux enchères » ;
+  - l'usage descriptif de « immobilier notaire » ;
+  - le droit des producteurs de bases de données, plus exposé par des pages indexables qui reprennent des ventes
+    de sites privés (décision du 13/10, aucune licence).
+- **Mesure.** Relever la position de départ dans Search Console avant la mise en ligne, sur les 14 requêtes de la
+  section 6.
+
+---
+
 ## Annexe : consolidation du département Technique (chef : architecte-logiciel)
 
 # Département Technique : consolidation au 14/11/2026
