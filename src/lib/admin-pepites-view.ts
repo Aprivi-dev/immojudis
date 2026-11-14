@@ -43,12 +43,18 @@ export type AdminPepitesView = {
   canSuspend: boolean;
 };
 
-const MODE_TEXT: Record<AdminPepitesResponse["mode"], string> = {
-  off: "Arrêté : le calcul ne tourne pas.",
-  shadow:
-    "Observation (shadow) : les résultats sont calculés et stockés, rien n’est visible du public.",
-  on: "Ouvert (on) : les pépites sont publiques.",
-  unknown: "Inconnu : la migration n’est pas appliquée ou le mode est illisible.",
+/** Le mode en clair (titre de la section) et ce qu'il veut dire, sans le nom technique du réglage. */
+const MODE_TEXT: Record<AdminPepitesResponse["mode"], { label: string; text: string }> = {
+  off: { label: "Arrêté", text: "Le calcul ne tourne pas." },
+  shadow: {
+    label: "Observation",
+    text: "Les résultats sont calculés et stockés, rien n’est visible du public.",
+  },
+  on: { label: "Ouvert", text: "Les pépites sont publiques." },
+  unknown: {
+    label: "Inconnu",
+    text: "La migration n’est pas appliquée ou le mode est illisible.",
+  },
 };
 
 const CATEGORY_TEXT: Record<AdminPepiteRow["category"], string> = {
@@ -125,9 +131,9 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
   const sections: PepitesViewSection[] = [
     {
       id: "mode",
-      title: `Mode : ${data.mode}`,
+      title: `Mode : ${MODE_TEXT[data.mode].label}`,
       paragraphs: [
-        `${MODE_TEXT[data.mode]} Règle ${data.ruleVersion}${data.generatedAt ? `, lue le ${formatShortDateTime(data.generatedAt)}` : ""}. Le passage en « on » se décide après contrôle de cette liste ; il n’y a pas de bouton ici.`,
+        `${MODE_TEXT[data.mode].text} Règle ${data.ruleVersion}${data.generatedAt ? `, lue le ${formatShortDateTime(data.generatedAt)}` : ""}. L’ouverture au public se décide après contrôle de cette liste ; il n’y a pas de bouton ici.`,
       ],
       alert: null,
       table: null,
@@ -136,7 +142,7 @@ export function buildAdminPepitesView(data: AdminPepitesResponse): AdminPepitesV
       id: "counters",
       title: "Ventes évaluées par type de vente",
       paragraphs: [
-        "« À confirmer » : une évaluation favorable de plus avant la publication. « Écart aberrant seul » : pas pépites arrêtées uniquement par le garde-fou sur la mise à prix (sous 10 % de la valeur, ou au-dessus de 150 %) : à regarder avant le passage en « on ».",
+        "« À confirmer » : une évaluation favorable de plus avant la publication. « Écart aberrant seul » : pas pépites arrêtées uniquement par le garde-fou sur la mise à prix (sous 10 % de la valeur, ou au-dessus de 150 %) : à regarder avant l’ouverture au public.",
       ],
       alert: null,
       table: {

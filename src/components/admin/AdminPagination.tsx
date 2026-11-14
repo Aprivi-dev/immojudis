@@ -27,16 +27,19 @@ export function AdminPagination({
   onOffsetChange: (offset: number) => void;
   className?: string;
 }) {
-  if (total <= limit && offset === 0) return null;
+  // Réponse sans total (serveur ancien, réponse tronquée) : on s'en tient aux lignes reçues plutôt
+  // que d'afficher « page NaN sur NaN ».
+  const known = Number.isFinite(total) ? total : offset + shown;
+  if (known <= limit && offset === 0) return null;
   const page = Math.floor(offset / limit) + 1;
-  const pages = Math.max(1, Math.ceil(total / limit));
+  const pages = Math.max(1, Math.ceil(known / limit));
   return (
     <nav
       aria-label={`Pagination — ${label}`}
       className={`flex flex-wrap items-center justify-between gap-3 border-t border-brand-navy/10 px-5 py-3 text-sm ${className}`}
     >
       <span className="text-brand-navy/60" role="status">
-        {adminPageRange({ offset, shown, total })} · page {page} sur {pages}
+        {adminPageRange({ offset, shown, total: known })} · page {page} sur {pages}
       </span>
       <div className="flex gap-2">
         <button
@@ -52,8 +55,8 @@ export function AdminPagination({
           type="button"
           className="admin-button-secondary"
           aria-label={`Suivant — ${label}`}
-          disabled={offset + limit >= total || busy}
-          onClick={() => onOffsetChange(adminNextOffset(offset, limit, total))}
+          disabled={offset + limit >= known || busy}
+          onClick={() => onOffsetChange(adminNextOffset(offset, limit, known))}
         >
           Suivant
         </button>
