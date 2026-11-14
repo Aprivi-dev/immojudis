@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   rows: [] as Array<Record<string, unknown>> | null,
   error: null as Error | null,
+  /** Ligne des réglages (`maybeSingle`). */
+  settingsRow: null as Record<string, unknown> | null,
   calls: [] as Array<{ method: string; args: unknown[] }>,
 }));
 
@@ -20,6 +22,10 @@ vi.mock("@/integrations/supabase/client.server", () => {
       mocks.calls.push({ method: "limit", args });
       return Promise.resolve({ data: mocks.rows, error: mocks.error });
     },
+    maybeSingle: () => {
+      mocks.calls.push({ method: "maybeSingle", args: [] });
+      return Promise.resolve({ data: mocks.settingsRow, error: null });
+    },
   };
   return {
     supabaseAdmin: {
@@ -31,6 +37,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
 
 import { autopilotBudgetDecision, autopilotPhase } from "@/lib/information-agent/autopilot-rules";
 import {
+  evaluateAutopilotSilence,
   lastOnDemandAutopilotRunAt,
   loadAutopilotStats,
   loadLastAutopilotRunAt,
@@ -58,6 +65,7 @@ beforeEach(() => {
   });
   mocks.rows = [];
   mocks.error = null;
+  mocks.settingsRow = null;
   mocks.calls.length = 0;
 });
 
@@ -180,5 +188,71 @@ describe("passages lancés à la main : journal", () => {
         examined: 3,
       }),
     ).toEqual({ manual: true, actorId: "admin-2", reason: "Premier passage demandé", examined: 3 });
+  });
+});
+
+describe("pilote muet : alerte évaluée par la santé opérationnelle", () => {
+  const silenceCall = () =>
+    mocks.rpc.mock.calls.find(([name]) => name === "sync_information_agent_autopilot_silent_alert");
+
+  it("simulation, plage ouverte, aucun passage planifié depuis 40 minutes : l'alerte s'ouvre", async () => {
+    mocks.settingsRow = { mode: "simulation", simulation_started_at: "2026-11-02T08:00:00Z" };
+    mocks.rows = [{ at: "2026-11-03T08:40:00+00:00" }];
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await expect(evaluateAutopilotSilence(NOW)).resolves.toEqual({
+      silent: true,
+      lastScheduledRunAt: "2026-11-03T08:40:00+00:00",
+    });
+    expect(silenceCall()).toEqual([
+      "sync_information_agent_autopilot_silent_alert",
+      {
+        p_active: true,
+        p_details: {
+          mode: "simulation",
+          last_scheduled_run_at: "2026-11-03T08:40:00+00:00",
+          silent_after_minutes: 40,
+          runbook: "docs/runbooks/information-agent.md, section « Si aucun passage n’a lieu »",
+        },
+      },
+    ]);
+  });
+
+  it("seul un passage lancé à la main : le dernier passage planifié l'écarte, l'alerte s'ouvre", async () => {
+    mocks.settingsRow = { mode: "simulation" };
+    // La base ne rend aucun passage planifié : le seul passage récent porte la marque « à la main ».
+    mocks.rows = [];
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await expect(evaluateAutopilotSilence(NOW)).resolves.toEqual({
+      silent: true,
+      lastScheduledRunAt: null,
+    });
+    expect(mocks.calls).toContainEqual({
+      method: "not",
+      args: ["details", "cs", '{"manual":true}'],
+    });
+    expect(silenceCall()?.[1]).toMatchObject({ p_active: true });
+  });
+
+  it("passage planifié récent, plage fermée ou pilote éteint : l'alerte se referme", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    mocks.settingsRow = { mode: "simulation" };
+    mocks.rows = [{ at: "2026-11-03T09:20:00+00:00" }];
+    expect((await evaluateAutopilotSilence(NOW)).silent).toBe(false);
+    mocks.rows = [];
+    expect((await evaluateAutopilotSilence(new Date("2026-11-07T10:00:00Z"))).silent).toBe(false);
+    mocks.settingsRow = { mode: "off" };
+    expect((await evaluateAutopilotSilence(NOW)).silent).toBe(false);
+    const states = mocks.rpc.mock.calls
+      .filter(([name]) => name === "sync_information_agent_autopilot_silent_alert")
+      .map(([, args]) => (args as { p_active: boolean }).p_active);
+    expect(states).toEqual([false, false, false]);
+  });
+
+  it("une écriture impossible de l'alerte est propagée", async () => {
+    mocks.settingsRow = { mode: "simulation" };
+    mocks.rpc.mockResolvedValue({ data: null, error: new Error("fonction absente") });
+    await expect(evaluateAutopilotSilence(NOW)).rejects.toThrow("fonction absente");
   });
 });

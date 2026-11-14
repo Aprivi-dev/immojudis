@@ -65,6 +65,12 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
     "Pilote de l’Agent IA arrêté automatiquement",
     "agentPilot",
   ],
+  // Procédure : `docs/runbooks/information-agent.md`, section « Si aucun passage n’a lieu » (rappelée dans le
+  // détail de l'alerte, donc dans son e-mail).
+  "information_agent.autopilot.silent": [
+    "Pilote de l’Agent IA muet : aucun passage planifié dans la plage d’envoi",
+    "agentPilot",
+  ],
   // Même famille de clés que les avertissements à mi-seuil, mais sans seuil d'arrêt : un passage du pilote a
   // rencontré une erreur (brouillon, annulation, aperçu, marque de simulation). Libellé propre, avant la famille.
   "information_agent.autopilot.warning.run_errors": [
