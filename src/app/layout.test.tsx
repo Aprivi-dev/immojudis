@@ -17,7 +17,10 @@ vi.mock("./providers", () => ({ AppProviders: () => null }));
 vi.mock("@/components/SkipLink", () => ({ SkipLink: () => null }));
 vi.mock("./../styles.css", () => ({}));
 
-import { metadata } from "./layout";
+import RootLayout, { metadata } from "./layout";
+import { AppProviders } from "./providers";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooterSaleTypes } from "@/components/SiteFooterSaleTypes";
 
 type FontCall = Record<string, unknown> & {
   src: Array<{ path: string; weight: string; style: string }>;
@@ -91,5 +94,18 @@ describe("root layout metadata", () => {
     expect(readFileSync(join(layoutDir, "layout.tsx"), "utf8")).not.toMatch(
       /from\s+["']next\/font\/google["']/,
     );
+  });
+});
+
+describe("root layout frame", () => {
+  it("gives the providers the footer, with its « Ventes par type » group rendered on the server", async () => {
+    // The group is a Server Component passed as a prop: its links stay out of every page's
+    // client JavaScript (scripts/check-build-budgets.mjs).
+    const html = await RootLayout({ children: null });
+    const providers = [html.props.children.props.children]
+      .flat()
+      .find((node) => node?.type === AppProviders);
+    expect(providers?.props.footer.type).toBe(SiteFooter);
+    expect(providers?.props.footer.props.saleTypes.type).toBe(SiteFooterSaleTypes);
   });
 });

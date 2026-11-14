@@ -2,34 +2,27 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { HighlightedFigure } from "@/components/departments/HighlightedFigure";
 import { ProportionalBars } from "@/components/departments/ProportionalBars";
-import { SaleDetailLink } from "@/components/SaleDetailLink";
+import { UpcomingSaleWeeks } from "@/components/departments/UpcomingSaleWeeks";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
-import { Badge, Card, Eyebrow, PageTitle, buttonClasses } from "@/components/ui/primitives";
+import { Card, Eyebrow, PageTitle, buttonClasses } from "@/components/ui/primitives";
 import {
   DEPARTMENT_PAGES_PATH,
   departmentFromCode,
   departmentNextDateLabel,
-  departmentPriceLabel,
-  departmentSaleTimeText,
   departmentSearchPath,
-  departmentVenueLabel,
-  groupDepartmentSalesByWeek,
-  identicalSaleRanks,
   isParisToday,
-  parisDateBlock,
   type DepartmentRef,
-  type DepartmentSale,
   type DepartmentStats,
 } from "@/lib/department-pages";
 import { departmentRegionName } from "@/lib/department-geography";
 import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
 import { departmentIn } from "@/lib/department-grammar";
-import { formatDate, formatStartingPrice, formatWeekday, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, formatWeekday } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { EXISTING_GUIDE } from "@/lib/resource-articles";
 import { understandingResources } from "@/lib/resource-related";
-import { saleHearingTime, seoSurface } from "@/lib/seo";
+import { saleHearingTime } from "@/lib/seo";
 import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages";
 import { cn } from "@/lib/utils";
 
@@ -56,93 +49,6 @@ const FIGURE_NOTE = "col-start-1 text-caption text-ink-soft sm:mt-0.5";
 
 function saleWord(total: number): string {
   return total > 1 ? "ventes" : "vente";
-}
-
-function positivePrice(value: number | null): value is number {
-  return value != null && Number.isFinite(value) && value > 0;
-}
-
-/**
- * Une ligne de « Les prochaines ventes » : pavé de date, commune, détails, type de vente, prix. Le
- * lien garde la page du département comme origine de la fiche (« Retour aux ventes du
- * département »), ajoutée dans le navigateur seulement : le HTML reste `/sales/<id>`.
- */
-function SaleRow({
-  sale,
-  identical,
-  now,
-  returnTo,
-}: {
-  sale: DepartmentSale;
-  identical: { rank: number; of: number } | undefined;
-  now: Date;
-  /** Adresse de la page du département. */
-  returnTo: string;
-}) {
-  const postponed = sale.status === "postponed";
-  const block = postponed ? null : parisDateBlock(sale.saleDate);
-  const today = !postponed && isParisToday(sale.saleDate, now);
-  const venue = departmentVenueLabel(sale.venueType);
-  const details = [
-    propertyTypeLabel(sale.propertyType),
-    seoSurface(sale.surfaceM2),
-    departmentSaleTimeText(sale, saleHearingTime(sale.saleDate), now),
-    identical ? `annonce ${identical.rank} sur ${identical.of} de même description` : null,
-  ].filter(Boolean);
-  return (
-    <li>
-      <SaleDetailLink
-        saleId={sale.id.toLowerCase()}
-        returnTo={returnTo}
-        className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 px-3.5 py-3 hover:bg-surface-muted sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:px-[1.125rem] sm:py-3.5"
-      >
-        <span
-          className={cn(
-            "flex size-14 flex-col items-center justify-center rounded-lg leading-tight sm:size-16",
-            today ? "bg-brand-navy text-white" : "bg-surface-tint",
-          )}
-        >
-          {block ? (
-            <>
-              <span className="text-[1.375rem] font-bold tabular-nums">{block.day}</span>
-              <span
-                className={cn(
-                  "text-xs font-semibold tracking-[0.06em] uppercase",
-                  today ? "text-gold-light" : "text-ink-strong",
-                )}
-              >
-                {block.month}
-              </span>
-            </>
-          ) : (
-            <span aria-hidden className="text-[1.375rem] font-bold text-ink-soft">
-              –
-            </span>
-          )}
-        </span>
-        <span className="min-w-0">
-          <span className="block font-semibold">{sale.city || "Commune à confirmer"}</span>
-          <span className="mt-0.5 block text-sm text-ink-soft">{details.join(" · ")}</span>
-          {venue || today ? (
-            <span className="mt-2 flex flex-wrap gap-1.5">
-              {venue ? <Badge>{venue}</Badge> : null}
-              {today ? <Badge tone="danger">Aujourd’hui</Badge> : null}
-            </span>
-          ) : null}
-        </span>
-        <span className="col-start-2 flex flex-wrap items-baseline gap-x-1.5 sm:col-start-auto sm:block sm:text-right">
-          <span className="text-xs text-ink-soft sm:block">{departmentPriceLabel(sale)}</span>
-          {positivePrice(sale.startingPriceEur) ? (
-            <span className="text-lg font-semibold whitespace-nowrap text-brand-navy tabular-nums sm:block">
-              {formatStartingPrice(sale.startingPriceEur)}
-            </span>
-          ) : (
-            <span className="text-sm font-semibold text-ink-soft sm:block">Non communiqué</span>
-          )}
-        </span>
-      </SaleDetailLink>
-    </li>
-  );
 }
 
 function SidePanel({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -177,8 +83,6 @@ export function DepartmentView({
   const total = stats?.upcomingCount ?? 0;
   const now = new Date();
   const sales = stats?.sales ?? [];
-  const identicalSales = identicalSaleRanks(sales);
-  const weeks = groupDepartmentSalesByWeek(sales, now);
   const cities = stats?.cities ?? [];
   const nextDate = formatDate(stats?.nextSaleDate);
   const nextTime = saleHearingTime(stats?.nextSaleDate);
@@ -322,24 +226,7 @@ export function DepartmentView({
             </h2>
             {sales.length > 0 ? (
               <>
-                {weeks.map((week) => (
-                  <div key={week.key} className="mt-5">
-                    <h3 className="mb-2 text-caption font-bold tracking-[0.12em] text-gold-text uppercase">
-                      {week.label}
-                    </h3>
-                    <ul className="divide-y divide-line-soft rounded-lg border border-line-soft bg-white">
-                      {week.sales.map((sale) => (
-                        <SaleRow
-                          key={sale.id}
-                          sale={sale}
-                          identical={identicalSales.get(sale.id)}
-                          now={now}
-                          returnTo={department.path}
-                        />
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                <UpcomingSaleWeeks sales={sales} now={now} returnTo={department.path} />
                 {sales.length < total ? (
                   <p className="mt-4 text-sm text-ink-soft">
                     Les {count.format(sales.length)} prochaines ventes sont listées ici ; les autres
@@ -447,11 +334,16 @@ export function DepartmentView({
 
         <aside aria-label="En un coup d’œil" className="grid gap-3 lg:sticky lg:top-24">
           <div id="alerte" className="scroll-mt-24">
+            {/* Cadences citées dans `intro` : relecture des sources selon `INVENTORY_CADENCE`
+                (services/data-pipeline/src/autonomous_runner.py, 12 h), comparaison des alertes
+                par la tâche quotidienne `/api/cron/smart-alerts` (vercel.json). Si l'une change,
+                la phrase « relues au plus deux fois par jour selon la source… chaque jour » doit
+                suivre. */}
             <SectorAlertCta
               title={`Être prévenu des nouvelles ventes ${where}`}
               criteria={{ department: department.code }}
               className={NAVY_ALERT}
-              intro={`Recevez les nouvelles ventes référencées ${where} dès qu’elles sont publiées, dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
+              intro={`Les sources sont relues au plus deux fois par jour selon la source et vos alertes sont comparées au catalogue chaque jour : recevez les nouvelles ventes référencées ${where} dans vos alertes ou, si vous le souhaitez, dans un email récapitulatif.`}
             />
           </div>
 

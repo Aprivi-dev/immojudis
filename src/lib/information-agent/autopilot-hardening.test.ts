@@ -55,12 +55,26 @@ describe("administrateur d'exécution", () => {
     ],
     ["compte introuvable", () => (mocks.user = null)],
     [
-      "lecture impossible : le pilote s'arrête plutôt que d'agir sous une identité inconnue",
-      () => (mocks.userError = new Error("auth")),
+      "compte réellement introuvable (404 de l'API Auth)",
+      () =>
+        (mocks.userError = Object.assign(new Error("User not found"), {
+          status: 404,
+          code: "user_not_found",
+        })),
     ],
   ])("inactif : %s", async (_label, arrange) => {
     arrange();
     expect(await isActiveAdmin("admin-1")).toBe(false);
+  });
+
+  it("lecture impossible (panne passagère de l'API Auth) : l'erreur remonte, ce n'est pas un « non » (T7)", async () => {
+    // Un « non » arrêterait le pilote et remettrait à zéro l'horloge de la simulation ; une erreur fait échouer
+    // le seul passage en cours, le suivant relit l'état.
+    mocks.user = null;
+    mocks.userError = Object.assign(new Error("Gateway Timeout"), { status: 504 });
+    await expect(isActiveAdmin("admin-1")).rejects.toThrow("Gateway Timeout");
+    mocks.userError = new Error("fetch failed");
+    await expect(isActiveAdmin("admin-1")).rejects.toThrow("fetch failed");
   });
 
   it("une suspension échue ne compte plus", async () => {

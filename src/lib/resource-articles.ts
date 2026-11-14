@@ -23,6 +23,11 @@ import cadastreArticle from "@/content/resources/adresse-parcelle-cadastre-enche
 import taxationArticle from "@/content/resources/fiscalite-achat-encheres-occuper-louer-revendre.json";
 import glossaryArticle from "@/content/resources/glossaire-encheres-immobilieres.json";
 import energyArticle from "@/content/resources/dpe-diagnostics-travaux-bien-energivore-plafond.json";
+import houseArticle from "@/content/resources/acheter-maison-aux-encheres-etapes-frais-risques.json";
+import adjudicationArticle from "@/content/resources/adjudication-immobiliere-vente-par-adjudication.json";
+import notaryListingsArticle from "@/content/resources/immobilier-notaires-annonces-vente-interactive-encheres.json";
+import stateSalesArticle from "@/content/resources/ventes-domaniales-etat-biens-immobiliers-mobiliers.json";
+import onlineArticle from "@/content/resources/encheres-immobilieres-en-ligne-distance.json";
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 /** Un terme défini dans un glossaire : une phrase, un renvoi vers l'article détaillé et la source. */
@@ -150,6 +155,11 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(taxationArticle, "/media/landing/home-favorites.webp"),
   defineArticle(glossaryArticle, "/media/landing/judicial-candle.webp"),
   defineArticle(energyArticle, "/media/landing/home-bordeaux-twilight.webp"),
+  defineArticle(houseArticle, "/media/landing/gallery-townhouse.webp"),
+  defineArticle(adjudicationArticle, "/media/landing/auction-toulouse.webp"),
+  defineArticle(notaryListingsArticle, "/media/landing/dossier-apartment.webp"),
+  defineArticle(stateSalesArticle, "/media/landing/gallery-land.webp"),
+  defineArticle(onlineArticle, "/media/landing/home-favorites.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {

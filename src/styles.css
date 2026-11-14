@@ -415,7 +415,8 @@ html:has([data-sale-tabs]) {
   }
 
   .admin-button-primary,
-  .admin-button-secondary {
+  .admin-button-secondary,
+  .admin-button-danger {
     display: inline-flex;
     min-height: 2.75rem;
     align-items: center;
@@ -456,8 +457,21 @@ html:has([data-sale-tabs]) {
     color: var(--gold-soft);
   }
 
+  /* Action d'arrêt ou de retrait (arrêt d'urgence du pilote) : jamais confondue avec une validation, en or.
+     Mêmes couleurs que la variante `danger` des boutons communs (`src/components/ui/primitives.tsx`). */
+  .admin-button-danger {
+    border: 1px solid var(--danger);
+    background: #ffffff;
+    color: var(--danger);
+  }
+
+  .admin-button-danger:hover {
+    background: var(--danger-tint);
+  }
+
   .admin-button-primary:disabled,
-  .admin-button-secondary:disabled {
+  .admin-button-secondary:disabled,
+  .admin-button-danger:disabled {
     cursor: not-allowed;
     opacity: 0.55;
     transform: none;

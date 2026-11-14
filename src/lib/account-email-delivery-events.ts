@@ -2,6 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   revokeEmailAlertConsent,
+  revokeLaunchOfferEndNotice,
+  revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
   revokeWeeklyDigestConsent,
@@ -25,9 +27,9 @@ import { normalizeEmail } from "@/lib/account";
  * la réputation de l'expéditeur (et donc la livraison de tous les emails, factures comprises).
  *
  * - Rebond définitif (`bounce.type` « Permanent ») ou plainte : les consentements email du compte
- *   sont retirés (alertes, rappels d'audience, récapitulatif, alertes de résultat) et les envois en
- *   file d'alerte sont annulés. L'adresse n'est plus sollicitée tant que la personne ne redonne pas
- *   son accord elle-même.
+ *   sont retirés (alertes, rappels d'audience, récapitulatif, alertes de résultat, avis de fin
+ *   d'essai, demande d'être prévenu de l'ouverture) et les envois en file d'alerte sont annulés.
+ *   L'adresse n'est plus sollicitée tant que la personne ne redonne pas son accord elle-même.
  * - Rebond passager ou indéterminé : ignoré (la boîte était pleine ou le serveur indisponible).
  * - Emails de l'agent d'information (`INFORMATION_AGENT_EMAIL_FROM`) : ignorés ici, l'autre webhook
  *   les traite (registre de contacts, pas comptes).
@@ -91,7 +93,14 @@ export function accountEmailActionOf(
   return { kind: "bounce_permanent", emails };
 }
 
-/** Retire tous les consentements email du compte et annule les envois d'alerte en file. */
+/**
+ * Retire tous les consentements email du compte et annule les envois d'alerte en file. Depuis C8
+ * (14/11), cela couvre aussi les deux emails qui ne dépendent d'aucune préférence de notification :
+ * l'avis de fin d'essai (J+5) et le préavis de fin de l'offre de lancement, par leur liste
+ * d'exclusion commune, et l'email d'ouverture de l'offre Analyse, par le retrait de la demande (ses
+ * réponses facultatives partent avec elle, comme pour un retrait par le lien du message). Les deux
+ * files d'envoi excluent déjà ces comptes, en base.
+ */
 export async function revokeAllEmailConsents(userId: string, now = new Date()): Promise<void> {
   const results = await Promise.allSettled([
     // Annule aussi les envois d'alerte en file (`cancelQueuedEmailNotifications`).
@@ -99,6 +108,8 @@ export async function revokeAllEmailConsents(userId: string, now = new Date()): 
     revokeSaleReminderConsent({ userId, now }),
     revokeWeeklyDigestConsent({ userId, now }),
     revokeSaleResultsConsent({ userId, now }),
+    revokeLaunchOfferEndNotice({ userId }),
+    revokeOfferOpeningRequest({ userId, now }),
   ]);
   const failed = results.find((result) => result.status === "rejected");
   // Une erreur remonte : le fournisseur rejoue l'évènement, les retraits sont idempotents.

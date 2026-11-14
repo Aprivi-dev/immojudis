@@ -147,7 +147,7 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut/[page]", "page");
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/sales");
     expect(mocks.revalidateTag).toHaveBeenCalledTimes(7);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(9);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(13);
   });
 
   it("also expires the tribunal pages and the upcoming hearings, once per call", async () => {
@@ -198,6 +198,22 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     }
   });
 
+  it("also expires the pages by type of property or sale, once per call", async () => {
+    // Leurs lectures sont sous l'étiquette du catalogue public (expirée une fois) ; les pages, ici.
+    const response = await POST(request({ saleIds: [ID, OTHER_ID] }, `Bearer ${SECRET}`));
+    expect(response.status).toBe(200);
+    for (const path of [
+      "/maison-aux-encheres",
+      "/appartement-aux-encheres",
+      "/encheres-notariales",
+      "/ventes-immobilieres-etat",
+    ]) {
+      expect(mocks.revalidatePath.mock.calls.filter(([called]) => called === path)).toEqual([
+        [path],
+      ]);
+    }
+  });
+
   it("expires the catalogue once per call, however many sales are withdrawn or changed", async () => {
     const response = await POST(request({ saleIds: [ID, OTHER_ID, ID] }, `Bearer ${SECRET}`));
     expect(response.status).toBe(200);
@@ -211,9 +227,9 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(defaultPages).toHaveLength(1);
     // Two sales: two tags and two pages for them, plus the catalogue (first page and page variants),
     // the tribunal pages and the hearings, the court activity and the court directory, the department
-    // pages and the sitemaps.
+    // pages, the four pages by type of property or sale and the sitemaps.
     expect(mocks.revalidateTag).toHaveBeenCalledTimes(8);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(10);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(14);
   });
 
   it("expires several sales once each", async () => {

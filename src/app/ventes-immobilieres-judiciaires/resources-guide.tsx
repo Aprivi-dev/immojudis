@@ -468,7 +468,7 @@ export function ResourcesPage() {
           className="liquid-panel mt-6 rounded-lg p-5 sm:p-6"
         >
           <h2 id="definitions-en-bref" className="font-display text-xl text-foreground">
-            Définitions en bref
+            Enchères judiciaires : définitions en bref
           </h2>
           <dl className="mt-3 grid gap-3 sm:grid-cols-2">
             {BRIEF_DEFINITION_TERMS.map((term) => {

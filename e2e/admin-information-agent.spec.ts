@@ -1192,13 +1192,21 @@ function autopilotFixture(pilotMission: Record<string, unknown> | null = null) {
       allowLicitorDecoded: false,
       art14RuleEnabled: true,
       art14MaxAgeDays: 30,
+      art14Label:
+        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
+    runs: "Dernier passage : aucun · prochain passage : aucun (pilote éteint)",
     readiness: {
       ready: false,
       checks: [{ label: "AIPD attestée", ok: false, detail: "Aucune attestation d’AIPD." }],
     },
-    ready: { count: ready.length, items: ready },
+    ready: {
+      count: ready.length,
+      label: `Prêtes à valider (${ready.length} sur 10 au plus)`,
+      notice: null,
+      items: ready,
+    },
     events: [],
   };
 }

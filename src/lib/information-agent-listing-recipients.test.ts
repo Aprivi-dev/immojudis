@@ -280,7 +280,7 @@ describe("rôle du contact porté par `lawyer_contact` : jamais tiré du nom du 
         silentSendsInSixMonths: 0,
         lastSendAt: null,
       },
-      { allowLicitorDecoded: false, art14RuleEnabled: true, art14MaxAgeDays: 30 },
+      { allowLicitorDecoded: false, art14MaxAgeDays: 30 },
       new Date("2026-11-03T09:30:00Z"),
     );
 

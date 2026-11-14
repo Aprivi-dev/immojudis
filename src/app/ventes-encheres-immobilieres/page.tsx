@@ -18,6 +18,7 @@ import {
 import { DEPARTMENT_REGIONS, departmentRegionName } from "@/lib/department-geography";
 import { tryLoadDepartmentCatalogue } from "@/lib/department-pages.server";
 import { pageMetadata } from "@/lib/page-metadata";
+import { SALE_LANDING_PAGES, visibleSaleLandingKeys } from "@/lib/sale-landing-pages";
 
 // Rendue à l'avance (le build n'a pas toujours la base) puis rafraîchie : sans valeur explicite,
 // un rendu fait pendant une panne serait gardé jusqu'au prochain déploiement. 5 minutes, comme
@@ -210,6 +211,24 @@ export default async function Page() {
           </Link>
           .
         </p>
+        <nav
+          aria-label="Ventes par type de bien ou de vente"
+          className="mt-3 text-sm text-ink-soft"
+        >
+          <p>Ou par type de bien ou de vente :</p>
+          <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            {visibleSaleLandingKeys().map((key) => (
+              <li key={key}>
+                <Link
+                  href={SALE_LANDING_PAGES[key].path}
+                  className="font-semibold text-gold-text underline"
+                >
+                  {SALE_LANDING_PAGES[key].label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </main>
     </>
   );

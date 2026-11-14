@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   loadTribunalActivity: vi.fn(),
   loadDepartments: vi.fn(),
   loadHearings: vi.fn(),
+  loadSaleLandingPaths: vi.fn(),
+}));
+
+vi.mock("@/lib/sale-landing-pages.server", () => ({
+  loadIndexableSaleLandingPaths: mocks.loadSaleLandingPaths,
 }));
 
 vi.mock("@/lib/upcoming-hearings.server", () => ({
@@ -45,6 +50,7 @@ import {
   DEPARTMENT_PAGES_MAX_DURATION_SECONDS,
   type DepartmentSaleInput,
 } from "@/lib/department-pages";
+import { SALE_LANDING_KEYS, SALE_LANDING_PAGES } from "@/lib/sale-landing-pages";
 
 function departmentSales(department: string, count: number): DepartmentSaleInput[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -76,6 +82,8 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadDepartments.mockResolvedValue({ status: "error" });
     mocks.loadHearings.mockReset();
     mocks.loadHearings.mockResolvedValue({ status: "error" });
+    mocks.loadSaleLandingPaths.mockReset();
+    mocks.loadSaleLandingPaths.mockResolvedValue([]);
   });
   afterEach(() => {
     delete process.env.SITE_URL;
@@ -113,12 +121,13 @@ describe("sitemap.xml (static pages)", () => {
     );
     mocks.loadDepartments.mockImplementation(() => slow("departments", { status: "error" }));
     mocks.loadHearings.mockImplementation(() => slow("hearings", { status: "error" }));
+    mocks.loadSaleLandingPaths.mockImplementation(() => slow("pages by type", []));
     await sitemap();
-    // The three readings have all started before the first one ends.
+    // The readings have all started before the first one ends.
     const firstEnd = order.findIndex((step) => step.startsWith("end"));
     // (The courts are asked twice: by the page list and by the courts-and-hearings paths.)
     expect(new Set(order.slice(0, firstEnd))).toEqual(
-      new Set(["start courts", "start departments", "start hearings"]),
+      new Set(["start courts", "start departments", "start hearings", "start pages by type"]),
     );
   });
 
@@ -313,6 +322,41 @@ describe("sitemap.xml (static pages)", () => {
     });
   });
 
+  describe("pages by type of property or sale", () => {
+    it("lists the indexable ones (at least 3 upcoming sales, same threshold as their robots tag)", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadSaleLandingPaths.mockResolvedValue([
+        "/maison-aux-encheres",
+        "/encheres-notariales",
+      ]);
+      const entries = await sitemap();
+      const paths = entries.map((entry) => new URL(entry.url).pathname);
+      expect(paths).toContain("/maison-aux-encheres");
+      expect(paths).toContain("/encheres-notariales");
+      expect(paths).not.toContain("/appartement-aux-encheres");
+      expect(paths).not.toContain("/ventes-immobilieres-etat");
+      // No last-modified date: the list changes with every collection, not the page itself.
+      const registry = new Set(SALE_LANDING_KEYS.map((key) => SALE_LANDING_PAGES[key].path));
+      const landing = entries.filter((item) => registry.has(new URL(item.url).pathname));
+      expect(landing).toHaveLength(2);
+      for (const entry of landing) expect(entry).not.toHaveProperty("lastModified");
+    });
+
+    it("lists none of them when none qualifies or the readings failed", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadSaleLandingPaths.mockResolvedValue([]);
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      for (const path of [
+        "/maison-aux-encheres",
+        "/appartement-aux-encheres",
+        "/encheres-notariales",
+        "/ventes-immobilieres-etat",
+      ]) {
+        expect(paths).not.toContain(path);
+      }
+    });
+  });
+
   it("leaves out changeFrequency and priority, which search engines ignore", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales.slice(0, 3));
     const entries = [...(await sitemap()), ...resourcesSitemap()];
@@ -363,9 +407,9 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("dates an article by its last change (updatedAt), else by its publication", () => {
     const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
-    // Published on 05/10, updated on 28/10 (offre plafond, plafond chez le notaire).
+    // Published on 05/10, updated on 14/11 (direct answer and FAQ).
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
-      "2026-10-28",
+      "2026-11-14",
     );
     // Published on 13/10, updated on 31/10 (temporary 6.32 % rate, complete example, FAQ).
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(

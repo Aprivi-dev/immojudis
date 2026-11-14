@@ -1,0 +1,341 @@
+{
+  "slug": "acheter-maison-aux-encheres-etapes-frais-risques",
+  "publishedAt": "2026-11-14",
+  "title": "Acheter une maison aux enchères : étapes, frais, risques",
+  "seoTitle": "Maison aux enchères : étapes, frais, risques",
+  "category": "Les fondamentaux",
+  "description": "Où trouver une maison vendue aux enchères, comment se déroule l’achat au tribunal ou chez le notaire, quels frais s’ajoutent au prix et quels risques vérifier, avec une section sur l’appartement.",
+  "seoDescription": "Acheter une maison aux enchères : où trouver les ventes, étapes au tribunal ou chez le notaire, frais en plus du prix, risques à vérifier. Et l’appartement.",
+  "directAnswer": "Une maison peut être vendue aux enchères au tribunal (après une saisie immobilière, une licitation ou une liquidation judiciaire) ou chez un notaire (vente « à la bougie »). Elle peut aussi être vendue sur offres, en vente notariale interactive, ou par l’État, par adjudication ou appel d’offres. Au tribunal, vous enchérissez par un avocat après lui avoir remis une garantie de 10 % de la mise à prix (au moins 3 000 €), puis vous payez le prix et les frais dans les deux mois de l’adjudication définitive, sans condition suspensive de prêt ; les frais s’ajoutent au prix et la garantie des vices cachés ne joue pas dans une vente faite par autorité de justice : lisez le cahier des conditions de vente et visitez avant de fixer votre enchère plafond.",
+  "intro": [
+    "Acheter une maison aux enchères, c’est l’acheter selon une procédure particulière, pas forcément moins cher. Un prix de départ, appelé mise à prix, est fixé avant la vente ; la maison est ensuite attribuée au dernier enchérisseur. Cette attribution s’appelle l’adjudication, et celui qui remporte le bien est l’adjudicataire.",
+    "Cet article suit l’achat étape par étape, surtout pour une vente au tribunal, la plus encadrée par les textes. Il présente les frais, les risques propres à une maison (terrain, assainissement, diagnostics, occupation) et, dans une section dédiée, ce qui change pour un appartement en copropriété. Il donne des repères généraux, pas un conseil juridique : le cahier de chaque vente et votre avocat font foi."
+  ],
+  "takeaways": [
+    "Trois organisateurs possibles : le tribunal, un notaire ou l’État. Les règles changent avec l’organisateur : identifiez-le en premier.",
+    "Au tribunal, seul un avocat du barreau du tribunal peut enchérir, après avoir reçu une garantie de 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-40 et R. 322-41 du Code des procédures civiles d’exécution).",
+    "La mise à prix n’est pas une estimation : en saisie immobilière, elle est fixée par le créancier poursuivant (art. L. 322-6).",
+    "Les frais s’ajoutent au prix : environ 13 % pour un bien adjugé 150 000 € dans les hypothèses du simulateur Immojudis, davantage en proportion sur un petit prix.",
+    "Une maison demande des vérifications propres : limites du terrain, assainissement, diagnostics, urbanisme, occupation.",
+    "Pas de condition suspensive de prêt, pas de garantie des vices cachés dans une vente par autorité de justice : le financement et la visite se préparent avant l’audience."
+  ],
+  "sections": [
+    {
+      "id": "ou-trouver",
+      "title": "Où trouver une maison vendue aux enchères",
+      "paragraphs": [
+        "Au tribunal, chaque vente est annoncée par un avis déposé au greffe pour affichage et publié dans un journal d’annonces légales, entre un et deux mois avant l’audience. Cet avis indique la mise à prix, le jour, l’heure et le lieu de la vente, l’occupation éventuelle du bien, le cas échéant les dates de visite, et où consulter le cahier des conditions de vente (art. R. 322-31 du Code des procédures civiles d’exécution).",
+        "Les ventes aux enchères et les ventes interactives des notaires sont publiées sur le site immobilier des notaires. Les ventes immobilières de l’État sont annoncées sur le site des cessions immobilières de l’État et, pour les biens confisqués par la justice pénale, par l’AGRASC : l’article « Ventes domaniales : comment l’État vend ses biens immobiliers (et mobiliers) » les présente.",
+        "Immojudis rassemble dans un même catalogue des annonces de ventes au tribunal, chez le notaire et de l’État, publiées par des tiers, avec un filtre par type de bien. Le catalogue n’est pas exhaustif : chaque fiche renvoie vers l’annonce d’origine, qui fait foi."
+      ],
+      "links": [
+        { "label": "Les maisons aux enchères à venir", "href": "/maison-aux-encheres" },
+        {
+          "label": "Les ventes de l’État",
+          "href": "/ressources/ventes-domaniales-etat-biens-immobiliers-mobiliers"
+        }
+      ]
+    },
+    {
+      "id": "trois-cadres",
+      "title": "Tribunal, notaire ou État : trois cadres différents",
+      "paragraphs": [
+        "Le tableau résume ce qui change selon l’organisateur. L’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal » détaille chaque cadre. La suite de cet article décrit surtout la vente au tribunal."
+      ],
+      "table": {
+        "headers": ["Point", "Au tribunal", "Chez le notaire", "Vente de l’État"],
+        "rows": [
+          [
+            "Comment on achète",
+            "Par des enchères portées par un avocat, à l’audience du juge (art. L. 322-5 et R. 322-40).",
+            "À la bougie : enchères en salle, adjudication prononcée par le notaire. En vente interactive : offres en ligne, puis avant-contrat.",
+            "Par adjudication publique ou par cession amiable avec mise en concurrence, par exemple sur appel d’offres (art. R. 3211-2 du Code général de la propriété des personnes publiques)."
+          ],
+          [
+            "Garantie",
+            "10 % de la mise à prix, minimum 3 000 € (art. R. 322-41).",
+            "Fixée par le cahier des charges ; pour la bougie, Notaires de France cite un chèque de consignation de 20 % de la mise à prix.",
+            "Fixée par le cahier des charges ou l’avis de vente."
+          ],
+          [
+            "Après la vente",
+            "Surenchère possible pendant dix jours, puis paiement dans les deux mois de l’adjudication définitive (art. R. 322-51 et R. 322-56).",
+            "Selon le cahier des charges ; pour la bougie, Notaires de France décrit une surenchère de 10 % possible pendant dix jours et un paiement sous 45 jours.",
+            "Selon le cahier des charges ; l’acquéreur qui ne paie pas peut être déchu de la vente (art. R. 3211-8)."
+          ]
+        ]
+      },
+      "links": [
+        {
+          "label": "Tribunal, notaire, État : le comparatif détaillé",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal"
+        }
+      ]
+    },
+    {
+      "id": "etapes",
+      "title": "Les étapes d’un achat au tribunal",
+      "paragraphs": [
+        "Au tribunal, la maison est vendue à l’audience du juge de l’exécution. Voici la chronologie, du repérage à l’entrée dans les lieux. Les délais sont ceux du Code des procédures civiles d’exécution ; votre avocat vérifie ceux de votre dossier."
+      ],
+      "table": {
+        "headers": ["Étape", "Ce que vous faites", "Repère"],
+        "rows": [
+          [
+            "1. Repérer la vente",
+            "Lire l’avis de vente : mise à prix, date, occupation annoncée, dates de visite.",
+            "Un à deux mois avant l’audience (art. R. 322-31)"
+          ],
+          [
+            "2. Lire le cahier des conditions de vente",
+            "Le consulter au greffe ou chez l’avocat du créancier poursuivant : désignation du bien, baux, servitudes, procès-verbal de description, conditions de la vente, diagnostics annexés.",
+            "Art. R. 322-10 et R. 322-11"
+          ],
+          [
+            "3. Visiter",
+            "Assister à la visite prévue, souvent collective, avec le cahier en main.",
+            "Dates dans l’avis, le cas échéant"
+          ],
+          [
+            "4. Chiffrer et financer",
+            "Fixer votre enchère plafond (marché, frais, travaux, marge de sécurité) et faire valider le financement par écrit.",
+            "Avant l’audience"
+          ],
+          [
+            "5. Mandater un avocat",
+            "Choisir un avocat du barreau du tribunal, lui remettre la garantie, l’attestation sur l’honneur et une consigne écrite.",
+            "Art. R. 322-40, R. 322-41 et R. 322-41-1"
+          ],
+          [
+            "6. L’audience",
+            "L’avocat enchérit pour vous ; les enchères s’arrêtent 90 secondes après la dernière, qui emporte l’adjudication.",
+            "Art. R. 322-45"
+          ],
+          [
+            "7. Le délai de surenchère",
+            "Pendant dix jours, toute personne peut surenchérir d’au moins un dixième du prix principal.",
+            "Art. R. 322-50 et R. 322-51"
+          ],
+          [
+            "8. Payer",
+            "Verser ou consigner le prix, et payer les frais taxés et les droits de mutation, dans les deux mois de l’adjudication définitive.",
+            "Art. R. 322-56 et R. 322-58"
+          ],
+          [
+            "9. Entrer dans les lieux",
+            "Si la maison est occupée, tout dépend des droits de l’occupant : le jugement vaut titre d’expulsion contre le saisi, une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), pas contre un locataire dont le bail s’impose à vous.",
+            "Art. L. 322-13 et R. 322-64"
+          ]
+        ]
+      },
+      "links": [
+        {
+          "label": "Le jour de l’audience",
+          "href": "/ressources/jour-audience-encheres-role-avocat"
+        },
+        {
+          "label": "Après l’adjudication",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente"
+        },
+        {
+          "label": "Choisir son avocat",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout"
+        }
+      ]
+    },
+    {
+      "id": "frais",
+      "title": "Les frais : ce qui s’ajoute au prix",
+      "paragraphs": [
+        "En saisie immobilière, l’adjudicataire paie en plus du prix les frais de poursuite, taxés par le juge et annoncés avant les enchères, ainsi que les droits de mutation (art. R. 322-42 et R. 322-58). S’y ajoutent les émoluments des avocats, fixés par un barème, les honoraires de votre avocat, convenus avec lui, et des débours (les sommes qu’il avance pour votre compte).",
+        "Les droits de mutation sont le poste le plus lourd : environ 6,32 % du prix dans la plupart des départements pour les actes passés entre le 1er avril 2025 et le 31 mars 2028, moins pour une première acquisition de résidence principale. Dans les hypothèses par défaut du simulateur Immojudis, l’ensemble des frais représente environ 13 % du prix pour un bien adjugé 150 000 €, et davantage en proportion sur un petit prix. Le décompte de votre avocat fait foi.",
+        "Chez le notaire, lisez le cahier des charges : la Chambre des notaires de Paris (page de 2019) présente les frais comme payés en plus du prix d’adjudication, alors que Notaires de France écrit que « le prix comprend les frais de vente ». Demandez, vente par vente, s’ils s’ajoutent au prix.",
+        "Pour une maison, prévoyez aussi ce qui ne figure dans aucun décompte : travaux, mise en conformité éventuelle de l’assainissement, assurance, taxe foncière, et le portage tant que la maison n’est ni habitée ni louée."
+      ],
+      "links": [
+        {
+          "label": "Le détail des frais d’une vente judiciaire",
+          "href": "/ressources/frais-vente-encheres-judiciaire"
+        },
+        { "label": "Simuler les frais", "href": "/simulateur-frais-encheres" }
+      ]
+    },
+    {
+      "id": "risques-maison",
+      "title": "Les risques propres à une maison",
+      "paragraphs": [
+        "Une maison réunit un bâtiment et un terrain. Les points suivants ne se lisent pas tous dans l’annonce : vérifiez-les dans le cahier, à la visite et auprès de la mairie."
+      ],
+      "bullets": [
+        "Pas de garantie des vices cachés : l’article 1649 du Code civil l’écarte dans les ventes faites par autorité de justice. Pour une vente notariale volontaire, lisez la clause du cahier des charges.",
+        "Diagnostics : en cas de vente publique, le dossier de diagnostic technique est annexé au cahier des charges (art. L. 271-4 du Code de la construction et de l’habitation). Selon la situation du bien, il comprend notamment le contrôle de l’assainissement non collectif, l’état relatif aux termites, l’information sur le risque de mérule et l’état des risques.",
+        "Terrain : le plan cadastral ne fixe pas les limites de propriété ; seul un bornage établi par un géomètre-expert les détermine. Comparez la désignation du cahier, le plan et ce que vous voyez sur place.",
+        "Urbanisme : agrandir, diviser ou construire dépend du plan local d’urbanisme (PLU). Le certificat d’urbanisme, gratuit, indique les règles applicables au terrain.",
+        "Occupation : le jugement d’adjudication vaut titre d’expulsion contre le saisi (art. L. 322-13), une fois le prix versé ou consigné et les frais taxés payés (art. R. 322-64), mais pas contre un locataire dont le bail s’impose à l’acheteur. Une libération des lieux peut prendre des mois.",
+        "Énergie : si vous comptez louer, le DPE compte. En métropole, les logements classés G sont exclus des baux signés, renouvelés ou reconduits depuis 2025, puis ce sera le cas des F en 2028 et des E en 2034 ; le calendrier est différent outre-mer."
+      ],
+      "callout": {
+        "title": "Une visite ne suffit pas toujours",
+        "text": "Une visite de vente judiciaire est souvent courte et collective. Si la maison est à rénover, faites-vous accompagner par un professionnel du bâtiment, et chiffrez les travaux par des devis plutôt qu’en pourcentage de la valeur."
+      },
+      "links": [
+        { "label": "Lire le PLU", "href": "/ressources/lire-plu-bien-vendu-encheres" },
+        { "label": "Situer la parcelle", "href": "/ressources/adresse-parcelle-cadastre-encheres" },
+        {
+          "label": "Acheter un bien occupé",
+          "href": "/ressources/acheter-bien-occupe-encheres"
+        },
+        {
+          "label": "DPE et travaux",
+          "href": "/ressources/dpe-diagnostics-travaux-bien-energivore-plafond"
+        }
+      ]
+    },
+    {
+      "id": "appartement",
+      "title": "Et pour un appartement aux enchères ?",
+      "paragraphs": [
+        "Les étapes et les frais sont les mêmes. La différence tient à la copropriété : vous achetez un lot, avec une part des parties communes, des charges, et des décisions prises en assemblée générale que vous ne maîtrisez pas seul.",
+        "En cas de vente publique d’un lot en copropriété, les documents sur l’organisation et les finances de l’immeuble (règlement, procès-verbaux des trois dernières assemblées, charges, impayés, fonds de travaux) sont annexés au cahier des charges (art. L. 721-2 du Code de la construction et de l’habitation) : réclamez-les avant d’enchérir. Un travail voté avant l’adjudication mais appelé après peut vous revenir, car les provisions hors budget incombent à celui qui est copropriétaire quand elles sont exigibles (art. 6-2 du décret du 17 mars 1967)."
+      ],
+      "bullets": [
+        "Lire les derniers procès-verbaux d’assemblée générale : travaux votés, procédures en cours, impayés du syndicat.",
+        "Chiffrer les charges courantes, la cotisation au fonds de travaux et les travaux à venir.",
+        "Vérifier la surface dans le cahier et les diagnostics, et le lot exact (cave, stationnement) dans la désignation.",
+        "Si l’appartement est loué, lire le bail : un locataire dont le bail est opposable reste en place."
+      ],
+      "links": [
+        {
+          "label": "Les appartements aux enchères à venir",
+          "href": "/appartement-aux-encheres"
+        },
+        {
+          "label": "Copropriété : charges et assemblées",
+          "href": "/ressources/copropriete-encheres-charges-assemblees"
+        }
+      ]
+    },
+    {
+      "id": "decider-avec-immojudis",
+      "title": "Préparer votre décision avec Immojudis",
+      "paragraphs": [
+        "Sur chaque fiche, Immojudis indique l’organisateur et le type de vente, rapproche le bien de ventes comparables issues des données publiques DVF et propose, selon votre formule (compte gratuit ou offre Analyse), une enchère plafond en simulation, que vous pouvez corriger. Ces repères aident à décider ; ils ne remplacent ni la lecture du cahier, ni la visite, ni l’avis de votre avocat.",
+        "Si votre enchère plafond, frais et travaux compris, reste inférieure à la mise à prix, renoncer à cette vente est une décision cohérente."
+      ],
+      "links": [
+        {
+          "label": "Fixer son enchère plafond",
+          "href": "/ressources/prix-plafond-encheres-immobilieres"
+        },
+        {
+          "label": "Qu’est-ce que l’adjudication ?",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication"
+        }
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Où trouver les maisons vendues aux enchères ?",
+      "answer": "Au tribunal, chaque vente fait l’objet d’un avis publié dans un journal d’annonces légales et affiché au greffe un à deux mois avant l’audience (art. R. 322-31 du Code des procédures civiles d’exécution). Les ventes notariales sont publiées sur le site immobilier des notaires, celles de l’État sur le site des cessions immobilières de l’État et par l’AGRASC. Immojudis rassemble des annonces de ces trois origines, sans prétendre à l’exhaustivité."
+    },
+    {
+      "question": "Peut-on acheter une maison aux enchères sans avocat ?",
+      "answer": "Pas au tribunal : les enchères y sont portées par un avocat inscrit au barreau du tribunal (art. R. 322-40). Chez le notaire, nous n’avons pas relevé d’obligation d’avocat dans les textes consultés, et dans une licitation reçue par un notaire les enchères peuvent être faites sans avocat (art. 1278 du Code de procédure civile). Le cahier de chaque vente fait foi."
+    },
+    {
+      "question": "Quels frais prévoir en plus du prix ?",
+      "answer": "Les frais de poursuite taxés, les émoluments des avocats, les droits de mutation, les honoraires de votre avocat et les débours. Dans les hypothèses du simulateur Immojudis, ils représentent environ 13 % du prix pour un bien adjugé 150 000 €, davantage en proportion sur un petit prix ; le décompte de l’avocat fait foi."
+    },
+    {
+      "question": "Peut-on visiter la maison avant la vente ?",
+      "answer": "Quand des visites sont prévues, leurs dates figurent dans l’avis de vente (art. R. 322-31) ; elles sont souvent collectives. La garantie des vices cachés ne joue pas dans une vente faite par autorité de justice (art. 1649 du Code civil) : venez avec le cahier et, si besoin, un professionnel du bâtiment."
+    },
+    {
+      "question": "Une maison aux enchères est-elle moins chère ?",
+      "answer": "Rien ne le garantit. La mise à prix n’est qu’un point de départ, fixé par le créancier en saisie immobilière (art. L. 322-6), et le prix final dépend des enchérisseurs présents. Comparez votre enchère plafond, frais et travaux compris, aux ventes réalisées dans le secteur."
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente : mentions, visites, délai d’un à deux mois)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-5 (adjudication aux enchères publiques à l’audience du juge)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025975"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-6 (mise à prix fixée par le créancier poursuivant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-39 à R. 322-49 (enchères : avocat, garantie, arrêt des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-51 (surenchère dans les dix jours)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (paiement du prix sous deux mois)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-58 (frais taxés et droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-13 (titre d’expulsion contre le saisi)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025991"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-64 (mise à exécution du titre d’expulsion après paiement du prix et des frais taxés)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442022"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 271-4 (dossier de diagnostic technique, annexé au cahier en cas de vente publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049398848"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 721-2 (documents de copropriété annexés au cahier en cas de vente publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043977384"
+    },
+    {
+      "label": "Légifrance — Décret n° 67-223 du 17 mars 1967, articles 6-2 et 6-3 (charges lors d’une mutation à titre onéreux)",
+      "url": "https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000053191265"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1278 (enchères devant notaire en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459902"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-2 (vente des immeubles de l’État)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885632"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière (vente forcée, surenchère, expulsion ; page vérifiée le 25 avril 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Service-Public — Logement décent : calendrier des seuils de performance énergétique des baux",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2042"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales (page mise à jour le 29/04/2021)",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "Chambre des notaires de Paris (Notaires du Grand Paris) — Les ventes aux enchères immobilières par les notaires (page mise à jour le 13/03/2019)",
+      "url": "https://notairesdugrandparis.fr/fr/les-outils-du-notariat-au-service-des-franciliens/les-ventes-aux-encheres-immobilieres-par-les-notaires"
+    },
+    {
+      "label": "Immojudis — Simulateur de frais d’enchères",
+      "url": "/simulateur-frais-encheres"
+    }
+  ]
+}

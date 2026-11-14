@@ -770,6 +770,8 @@ function dashboardRunsPayload(runSource?: string, runStatus = "failed") {
           },
         ]
       : [],
+    // Toujours rendu par le serveur (`readRunsSection`) ; vide : aucune activité ouverte sans second facteur.
+    secondFactorExposures: [],
   };
 }
 

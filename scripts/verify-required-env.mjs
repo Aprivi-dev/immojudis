@@ -77,7 +77,7 @@ if (offerLabelProblems.length) {
   process.exit(1);
 }
 
-// Launch guards (legal notice, admin MFA, explicit canonical origin). They are the
+// Launch guards (legal notice, admin MFA, explicit canonical origin, Stripe key mode). They are the
 // last check so the other errors above keep their own messages.
 const launch = evaluateProductionLaunchConfig(process.env);
 for (const line of launch.warnings) console.warn(line);

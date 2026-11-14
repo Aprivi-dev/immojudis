@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import {
+  AUTOPILOT_MANUAL_RUN_MARK,
   parseAutopilotStats,
   sharedStructureCounts,
   type AutopilotMode,
@@ -133,7 +135,7 @@ const EVENT_DETAIL_KEYS = new Set([
   "prepared",
   "would_send",
   "sent",
-  // Passage lancé à la main (avec `actorId` et `reason`) : lu par `lastOnDemandAutopilotRunAt`.
+  // Marque d'un passage lancé à la main (`AUTOPILOT_MANUAL_RUN_MARK`, avec `actorId` et `reason`).
   "manual",
   // Passage à la demande arrêté par sa borne de temps.
   "stopped_by_time_budget",
@@ -206,6 +208,55 @@ export async function loadExcludedIdentityKeys(keys: readonly string[]): Promise
   return new Set((data ?? []).map((row) => row.identity_key));
 }
 
+export type PendingSimulatedDrafts = {
+  /** Brouillons lus (au plus `limit`), du plus récent au plus ancien. */
+  rows: Array<{ id: string; sale_id: string | null; created_at: string; sale_snapshot: Json }>;
+  /** Nombre total de brouillons simulés en attente (dans les ventes demandées, si `saleIds` est donné). */
+  total: number;
+};
+
+/**
+ * Brouillons simulés en attente de validation (« Prêtes à valider ») : brouillon (`draft`) du pilote
+ * (`metadata.trigger = autopilot`) marqué `autopilot_simulated` par `mark_information_agent_autopilot_simulated`.
+ * Seule définition, partagée par le plafond du passage, la sélection (vente déjà simulée) et l'écran. Une lecture
+ * impossible est propagée.
+ */
+export async function loadPendingSimulatedDrafts({
+  saleIds,
+  limit,
+}: {
+  saleIds?: readonly string[];
+  limit: number;
+}): Promise<PendingSimulatedDrafts> {
+  let query = supabaseAdmin
+    .from("information_agent_missions")
+    .select("id,sale_id,created_at,sale_snapshot", { count: "exact" })
+    .eq("status", "draft")
+    .eq("metadata->>trigger", "autopilot")
+    .eq("metadata->>autopilot_simulated", "true");
+  if (saleIds) query = query.in("sale_id", [...saleIds]);
+  const { data, error, count } = await query.order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  if (count == null) throw new Error("Pending simulated drafts count missing");
+  return { rows: data ?? [], total: count };
+}
+
+/**
+ * Date du dernier passage PLANIFIÉ journalisé (évènement `run` sans la marque d'un passage lancé à la main), nulle
+ * s'il n'y en a jamais eu. Un clic dans l'administration ne masque pas une tâche planifiée qui ne tourne plus.
+ */
+export async function loadLastAutopilotRunAt(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("at")
+    .eq("kind", "run")
+    .not("details", "cs", JSON.stringify(AUTOPILOT_MANUAL_RUN_MARK))
+    .order("at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0]?.at ?? null;
+}
+
 export type AutopilotEventRow = {
   id: string;
   at: string;
@@ -216,15 +267,15 @@ export type AutopilotEventRow = {
 };
 
 /**
- * Heure du dernier passage lancé à la main (`run` journalisé avec `manual`) depuis `since`, ou null. Une lecture
- * impossible est propagée (jamais un passage de plus).
+ * Heure du dernier passage lancé à la main (`run` journalisé avec `AUTOPILOT_MANUAL_RUN_MARK`) depuis `since`, ou
+ * null. Une lecture impossible est propagée (jamais un passage de plus).
  */
 export async function lastOnDemandAutopilotRunAt(since: Date): Promise<Date | null> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_autopilot_events")
     .select("at")
     .eq("kind", "run")
-    .eq("details->>manual", "true")
+    .contains("details", AUTOPILOT_MANUAL_RUN_MARK)
     .gte("at", since.toISOString())
     .order("at", { ascending: false })
     .limit(1);
