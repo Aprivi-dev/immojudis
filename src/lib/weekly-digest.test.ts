@@ -382,7 +382,7 @@ describe("buildDigestContent", () => {
     expect((await buildDigestContent({ store, userId: USER, now: TUESDAY })).changes).toEqual([]);
   });
 
-  it("ne reprend pas un changement de gravité « info », qui ne part jamais par email", async () => {
+  it("ne reprend pas un changement défini comme sans email, et garde les changements « info » habituels", async () => {
     const { store } = makeStore({
       events: {
         [USER]: [
@@ -399,14 +399,26 @@ describe("buildDigestContent", () => {
               currentValue: "unknown",
               reason: "unseen_undated",
             },
+            detectedAt: "2026-11-01T07:00:00.000Z",
           }),
-          change({ id: "hausse", severity: "info", fingerprint: "price-up" }),
-          change({ id: "baisse", severity: "important", fingerprint: "price-down" }),
+          // Une hausse de la mise à prix est de gravité « info » : elle figure au récapitulatif, comme avant.
+          change({
+            id: "hausse",
+            severity: "info",
+            fingerprint: "price-up",
+            changeSummary: {
+              field: "startingPriceEur",
+              previousValue: 100000,
+              currentValue: 120000,
+            },
+            detectedAt: "2026-11-01T06:00:00.000Z",
+          }),
         ],
       },
     });
     const content = await buildDigestContent({ store, userId: USER, now: TUESDAY });
-    expect(content.changes.map((item) => item.label)).toEqual(["Mise à prix abaissée"]);
+    expect(content.changes.map((item) => item.label)).toEqual(["Mise à prix augmentée"]);
+    expect(content.changesMore).toBe(0);
   });
 
   it("limite chaque rubrique et compte le reste", async () => {

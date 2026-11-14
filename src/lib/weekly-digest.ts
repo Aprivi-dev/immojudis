@@ -70,14 +70,6 @@ const MAX_DEPARTMENTS = 3;
 const DAY_MS = 86_400_000;
 /** Les changements montrent seulement leur libellé : jamais de montant ni de date (voir la fiche). */
 const MASKED_TOPICS: ReadonlySet<SaleChangeTopic> = new Set<SaleChangeTopic>(["price", "date"]);
-/**
- * Gravités envoyées par email. Un changement de gravité « info » (mise à prix augmentée, document retiré,
- * annonce sans date non revue depuis 14 jours…) reste dans « Mes favoris » mais ne part pas par email : ni
- * alerte immédiate, ni récapitulatif.
- */
-const EMAILED_CHANGE_SEVERITIES: ReadonlySet<SaleChangeEventSummary["severity"]> = new Set<
-  SaleChangeEventSummary["severity"]
->(["important", "urgent"]);
 
 // -- Calendrier ---------------------------------------------------------------------------------------
 
@@ -270,14 +262,10 @@ export async function buildDigestContent({
       )
     : [];
   const changed = recentSaleChanges(
-    events.filter(
-      (event) =>
-        Date.parse(event.detectedAt) >= since.getTime() &&
-        EMAILED_CHANGE_SEVERITIES.has(event.severity),
-    ),
+    events.filter((event) => Date.parse(event.detectedAt) >= since.getTime()),
     new Set(followedVisible.map((sale) => sale.id)),
     { now, hiddenTopics: () => MASKED_TOPICS },
-  );
+  ).filter((change) => change.emailed !== false);
   const changes: WeeklyDigestSaleItem[] = [];
   for (const change of changed.slice(0, MAX_CHANGES)) {
     const row = await calendarOf(change.event.saleId);
