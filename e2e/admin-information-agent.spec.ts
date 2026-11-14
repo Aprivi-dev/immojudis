@@ -232,21 +232,29 @@ test.describe("admin information agent", () => {
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Informations à contrôler" }) });
     await expect(reviewPanel.getByText(/Droits de diffusion : restreints/i)).toBeVisible();
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
 
     await reviewPanel.getByRole("button", { name: "Autoriser la diffusion" }).click();
     await expect(reviewPanel.getByText(/Droits de diffusion : autorisés/i)).toBeVisible();
     // Les droits ne suffisent pas : le caviardage doit aussi être vérifié par une personne nommée.
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
     await reviewPanel.getByRole("checkbox", { name: /J’ai contrôlé la pièce/ }).check();
     await reviewPanel
       .getByRole("textbox", { name: "Nom de la personne qui a contrôlé" })
       .fill("Contrôleur E2E");
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeEnabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeEnabled();
 
     await reviewPanel.getByRole("button", { name: "Prévisualiser la pièce" }).click();
     await expect(reviewPanel.getByTitle("Aperçu privé de dpe.pdf")).toBeVisible();
-    await reviewPanel.getByRole("button", { name: "Accepter", exact: true }).click();
+    await reviewPanel
+      .getByRole("button", { name: "Accepter et publier la pièce", exact: true })
+      .click();
     await expect(reviewPanel.getByText("dpe.pdf", { exact: true })).toHaveCount(0);
 
     await expect(
