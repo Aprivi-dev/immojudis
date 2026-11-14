@@ -133,7 +133,7 @@ describe("AdminPipelinePanel", () => {
 
     expect(
       await screen.findByText(
-        "Source encheres_immobilieres : fiches non revérifiées à temps · notification : en attente",
+        "Source Enchères Immobilières : fiches non revérifiées à temps · notification : en attente",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/pipeline\./)).toBeNull();

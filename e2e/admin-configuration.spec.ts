@@ -70,11 +70,11 @@ test.describe("admin configuration", () => {
     await page.clock.install();
     const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "running" });
     await page.goto("/admin/operations");
-    await expect(page.getByText("running", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("En cours", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeDisabled();
     state.runStatus = "succeeded";
     await page.clock.fastForward(10_100);
-    await expect(page.getByText("succeeded", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Réussie", { exact: true }).first()).toBeVisible();
     expect(state.dashboardCalls).toBeGreaterThan(1);
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
   });
@@ -319,10 +319,15 @@ test.describe("admin configuration", () => {
       "/admin/agent-ia?onglet=reponses",
     );
     await expect(
-      alerts.getByText("Source encheres_immobilieres : fiches non revérifiées à temps"),
+      alerts.getByText("Source Enchères Immobilières : fiches non revérifiées à temps"),
     ).toBeVisible();
     await expect(page.getByText("2 messages non rattachés en attente")).toBeVisible();
     await expect(page.getByText("1 réponse reçue à traiter")).toBeVisible();
+    // Ligne des collectes : état et source en clair.
+    const collections = page.getByText("Collectes :").locator("..");
+    await expect(collections).toContainText("Réussie");
+    await expect(collections).toContainText("Avoventes");
+    await expect(collections).not.toContainText(/succeeded|avoventes/);
     expect(await page.locator("body").innerText()).not.toMatch(/pipeline\.|information_agent\./);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

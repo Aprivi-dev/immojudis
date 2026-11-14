@@ -3,7 +3,7 @@
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import type * as React from "react";
 import { AdminPanel } from "@/components/admin/AdminShell";
-import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage, runStatusLabel } from "@/components/admin/admin-format";
 import { AdminPill } from "@/components/admin/admin-pill";
 
 export function AdminPanelLoading({ label }: { label: string }) {
@@ -105,7 +105,7 @@ export function StatusPill({ status }: { status: string }) {
         : status === "running"
           ? "info"
           : "warning";
-  return <AdminPill tone={tone}>{status}</AdminPill>;
+  return <AdminPill tone={tone}>{runStatusLabel(status)}</AdminPill>;
 }
 
 export function EmptyState({ label }: { label: string }) {

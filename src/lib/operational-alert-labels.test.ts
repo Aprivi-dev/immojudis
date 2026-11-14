@@ -19,21 +19,25 @@ describe("describeOperationalAlert", () => {
     );
     expect(
       describeOperationalAlert("pipeline.source.encheres_immobilieres.stale_listings").label,
-    ).toBe("Source encheres_immobilieres : fiches non revérifiées à temps");
+    ).toBe("Source Enchères Immobilières : fiches non revérifiées à temps");
     expect(describeOperationalAlert("pipeline.source.notaires.stale_listings").label).toBe(
-      "Source notaires : fiches non revérifiées à temps",
+      "Source Immobilier.notaires : fiches non revérifiées à temps",
     );
   });
 
   it("covers the keys built from a variable name", () => {
     expect(describeOperationalAlert("pipeline.source.licitor.missed").label).toBe(
-      "Source licitor : inventaire complet en retard",
+      "Source Licitor : inventaire complet en retard",
     );
     expect(describeOperationalAlert("pipeline.source.agrasc.nouveau_controle").label).toBe(
-      "Source agrasc : anomalie de collecte",
+      "Source AGRASC : anomalie de collecte",
     );
     expect(describeOperationalAlert("catalogue.source_absence.cessions_etat").label).toBe(
-      "Source cessions_etat : trop de ventes absentes d’un coup, retrait bloqué",
+      "Source Cessions de l'Etat : trop de ventes absentes d’un coup, retrait bloqué",
+    );
+    // Une source absente de la table des noms garde son nom de supervision.
+    expect(describeOperationalAlert("pipeline.source.test_source.drop").label).toBe(
+      "Source test_source : nombre d’annonces en forte baisse",
     );
     expect(describeOperationalAlert("catalogue.quality.land_with_rooms").place.href).toBe(
       "/admin/quality",

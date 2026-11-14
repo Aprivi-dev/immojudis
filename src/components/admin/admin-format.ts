@@ -48,6 +48,18 @@ export function runDuration(run: AuctionRun): string {
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
 
+/** États d'une collecte (`auction_runs.status`) ; un autre état reste affiché tel quel. */
+const RUN_STATUS_LABELS: Record<string, string> = {
+  queued: "En file",
+  running: "En cours",
+  succeeded: "Réussie",
+  failed: "Échouée",
+};
+
+export function runStatusLabel(status: string): string {
+  return Object.hasOwn(RUN_STATUS_LABELS, status) ? RUN_STATUS_LABELS[status] : status;
+}
+
 export function summaryNumber(run: AuctionRun, key: string): string {
   const value = run.summary[key];
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "—";

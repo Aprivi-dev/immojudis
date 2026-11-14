@@ -244,6 +244,9 @@ describe("AdminHomePage", () => {
     expect(text).toContain("0 en file");
     expect(text).toContain("0 en cours");
     expect(text).toContain("0 échec récent");
+    expect(text).toContain("Réussie");
+    expect(text).toContain("toutes les sources");
+    expect(text).not.toMatch(/succeeded|\ball\b/);
     expect(line.parentElement?.querySelector("a")?.getAttribute("href")).toBe("/admin/operations");
     expect(document.body.textContent).not.toMatch(/Upsert|\bruns?\b/i);
     expect(screen.queryByRole("navigation", { name: "Vues de l’administration" })).toBeNull();

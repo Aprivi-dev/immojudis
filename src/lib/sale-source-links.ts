@@ -1,20 +1,8 @@
 import type { AuctionSale } from "@/lib/types";
+import { sourceDisplayName } from "@/lib/source-names";
 import { isWithdrawnSourceName, safeDocumentUrl as cleanHref } from "@/lib/withdrawn-sources";
 
 export type SaleSourceLink = { label: string; href: string };
-
-const SOURCE_LABELS: Record<string, string> = {
-  agrasc: "AGRASC",
-  avoventes: "Avoventes",
-  cessions_etat: "Cessions de l'Etat",
-  encheres_immobilieres: "Enchères Immobilières",
-  encheres_publiques: "Enchères Publiques",
-  info_encheres: "Info-Enchères",
-  licitor: "Licitor",
-  notaires: "Immobilier.notaires",
-  petites_affiches: "Petites Affiches",
-  vench: "Vench",
-};
 
 const HOST_LABELS: Array<[RegExp, string]> = [
   [/avoventes\.fr$/i, "Avoventes"],
@@ -54,20 +42,21 @@ export function sourceLabel(
   fallback = "Source",
 ): string {
   const normalized = normalizeSourceName(sourceName);
-  if (normalized && SOURCE_LABELS[normalized]) return SOURCE_LABELS[normalized];
+  const known = normalized ? sourceDisplayName(normalized) : null;
+  if (known) return known;
   const fromHost = href ? sourceLabelFromUrl(href) : null;
   if (fromHost) return fromHost;
   return cleanLabel(sourceName) ?? fallback;
 }
 
 /**
- * Nom d'une source de la liste fermée ci-dessus, pour la fiche publique : jamais un nom interne
+ * Nom d'une source de la liste fermée (`source-names`), pour la fiche publique : jamais un nom interne
  * inconnu, jamais une source retirée du catalogue. `null` sinon.
  */
 export function knownSourceLabel(sourceName: string | null | undefined): string | null {
   if (isWithdrawnSourceName(sourceName)) return null;
   const normalized = normalizeSourceName(sourceName);
-  return normalized ? (SOURCE_LABELS[normalized] ?? null) : null;
+  return normalized ? sourceDisplayName(normalized) : null;
 }
 
 export function sourceLabelFromUrl(href: string): string | null {

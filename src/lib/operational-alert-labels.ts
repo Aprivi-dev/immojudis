@@ -1,3 +1,5 @@
+import { sourceDisplayName } from "@/lib/source-names";
+
 /**
  * Libellés des alertes d'exploitation (`public.operational_alerts`) : seule table de l'administration,
  * partagée par l'accueil, Opérations > Alertes, la supervision des sources et le diagnostic des services.
@@ -72,10 +74,7 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
   "flood_risk.write_blocked": ["Enregistrement du risque d’inondation bloqué", "settings"],
 };
 
-/**
- * `pipeline.source.<source>.<contrôle>` : une alerte par source supervisée. La source garde son nom de
- * supervision, celui de la colonne « Source » du tableau des sources dans Opérations, où l'on agit.
- */
+/** `pipeline.source.<source>.<contrôle>` : une alerte par source supervisée. */
 const SOURCE_CHECK_LABELS: Record<string, string> = {
   missed: "inventaire complet en retard",
   drop: "nombre d’annonces en forte baisse",
@@ -92,13 +91,13 @@ const FAMILIES: Array<{ prefix: string; describe: (rest: string) => AlertEntry }
       const cut = rest.lastIndexOf(".");
       const source = cut > 0 ? rest.slice(0, cut) : rest;
       const check = cut > 0 ? own(SOURCE_CHECK_LABELS, rest.slice(cut + 1)) : undefined;
-      return [`Source ${source} : ${check ?? "anomalie de collecte"}`, "operations"];
+      return [`Source ${sourceName(source)} : ${check ?? "anomalie de collecte"}`, "operations"];
     },
   },
   {
     prefix: "catalogue.source_absence.",
     describe: (source) => [
-      `Source ${source} : trop de ventes absentes d’un coup, retrait bloqué`,
+      `Source ${sourceName(source)} : trop de ventes absentes d’un coup, retrait bloqué`,
       "operations",
     ],
   },
@@ -125,6 +124,11 @@ const FALLBACKS: Record<string, AlertEntry> = {
   reference: ["Référentiel externe (loyers, zonage) à actualiser", "settings"],
 };
 const DEFAULT_FALLBACK: AlertEntry = ["Alerte d’exploitation non répertoriée", "settings"];
+
+/** Nom lisible de la source ; une source absente de la table garde son nom de supervision. */
+function sourceName(source: string): string {
+  return sourceDisplayName(source) ?? source;
+}
 
 /** Lecture d'une table sans remonter au prototype (`constructor`, `toString`…). */
 function own<T>(table: Record<string, T>, key: string): T | undefined {
