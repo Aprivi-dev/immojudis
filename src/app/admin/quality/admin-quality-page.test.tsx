@@ -29,9 +29,88 @@ vi.mock("@/components/admin/AdminCatalogueQualityPanel", async (importOriginal) 
   ...(await importOriginal<typeof import("@/components/admin/AdminCatalogueQualityPanel")>()),
   AdminCatalogueQualityPanel: () => null,
 }));
+// L'onglet Pépites a son propre test (AdminPepitesPanel.test.tsx).
+vi.mock("@/components/admin/AdminPepitesPanel", () => ({
+  PEPITES_QUERY_KEY: ["admin-pepites"],
+  AdminPepitesPanel: () => <p>Panneau des pépites</p>,
+}));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  window.history.replaceState(null, "", "/");
+});
+
+function renderPage() {
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
+    >
+      <AdminQualityPage />
+    </QueryClientProvider>,
+  );
+}
+
+describe("AdminQualityPage onglets", () => {
+  it("ouvre l'onglet Pépites demandé par l'adresse sans charger les indicateurs", async () => {
+    window.history.replaceState(null, "", "/admin/quality?onglet=pepites");
+    renderPage();
+
+    expect(await screen.findByText("Panneau des pépites")).toBeTruthy();
+    const tabs = screen.getByRole("tablist", { name: "Rubriques de la qualité" });
+    expect(tabs).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Pépites" }).getAttribute("aria-selected")).toBe("true");
+    expect(mocks.quality).not.toHaveBeenCalled();
+
+    mocks.quality.mockResolvedValue(emptyReport);
+    mocks.valuation.mockResolvedValue({
+      runtime: { status: "healthy", estimates: 0, driftSignals: [] },
+      activeModels: [],
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Indicateurs" }));
+    await waitFor(() => expect(mocks.quality).toHaveBeenCalled());
+    expect(window.location.search).toBe("?onglet=indicateurs");
+  });
+
+  it("ouvre les indicateurs par défaut", async () => {
+    mocks.quality.mockResolvedValue(emptyReport);
+    mocks.valuation.mockResolvedValue({
+      runtime: { status: "healthy", estimates: 0, driftSignals: [] },
+      activeModels: [],
+    });
+    renderPage();
+
+    expect(await screen.findByText("Surface exploitable")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Indicateurs" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByText("Panneau des pépites")).toBeNull();
+  });
+});
+
+describe("AdminQualityPage libellés", () => {
+  it("parle en clair des estimations, sans jargon technique", async () => {
+    mocks.quality.mockResolvedValue(emptyReport);
+    mocks.valuation.mockResolvedValue({
+      runtime: {
+        status: "healthy",
+        estimates: 12,
+        hybridSharePct: 40,
+        actionableSharePct: 80,
+        driftSignals: [],
+      },
+      activeModels: [],
+    });
+    renderPage();
+
+    expect(await screen.findByText("Fonctionnement normal")).toBeTruthy();
+    expect(screen.getByText("Avec le modèle statistique")).toBeTruthy();
+    expect(screen.getByText("Estimations exploitables")).toBeTruthy();
+    expect(screen.getByText(/occupation et score de confiance/)).toBeTruthy();
+    const text = document.body.textContent ?? "";
+    for (const jargon of ["LightGBM", "Runtime", "Actionnables", "confiance score"]) {
+      expect(text).not.toContain(jargon);
+    }
+  });
 });
 
 const emptyReport = {
