@@ -1,5 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { getEmailAddressesReport } from "@/lib/admin-emails/addresses";
 import { buildAddressesView } from "@/lib/admin-emails/views";
 import { adminRoute } from "@/lib/admin-route-deadline";
@@ -12,9 +10,12 @@ export const maxDuration = 30;
  * `?refresh=1` : revérifier maintenant.
  */
 export const GET = adminRoute(
-  { scope: "admin.emails.addresses.read", fallbackMessage: "Adresses d'envoi indisponibles" },
+  {
+    scope: "admin.emails.addresses.read",
+    fallbackMessage: "Adresses d'envoi indisponibles",
+    guard: "admin",
+  },
   async (request) => {
-    await assertAdminAuth(bearerTokenFromRequest(request));
     const refresh = new URL(request.url).searchParams.get("refresh") === "1";
     return buildAddressesView(await getEmailAddressesReport({ refresh }));
   },

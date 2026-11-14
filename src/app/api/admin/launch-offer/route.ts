@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import {
   adminLaunchOfferActionSchema,
@@ -10,14 +9,21 @@ import {
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "admin.launch-offer.read", fallbackMessage: "Offre de lancement indisponible" },
-  async (request) => getAdminLaunchOffer(bearerTokenFromRequest(request)),
+  {
+    scope: "admin.launch-offer.read",
+    fallbackMessage: "Offre de lancement indisponible",
+    guard: "admin",
+  },
+  async (_request, { authToken }) => getAdminLaunchOffer(authToken),
 );
 
 export const POST = adminRoute(
-  { scope: "admin.launch-offer.write", fallbackMessage: "Offre de lancement non modifiée" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.launch-offer.write",
+    fallbackMessage: "Offre de lancement non modifiée",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminLaunchOfferActionSchema.parse(await request.json());
     return setAdminLaunchOffer({ authToken, input });
   },

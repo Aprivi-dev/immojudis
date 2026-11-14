@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminPublicationQuerySchema,
   adminPublicationReviewInputSchema,
@@ -14,8 +13,9 @@ export const GET = adminRoute(
   {
     scope: "admin.publications.read",
     fallbackMessage: "Demandes de publication indisponibles.",
+    guard: "admin",
   },
-  async (request) => {
+  async (request, { authToken }) => {
     const url = new URL(request.url);
     const input = adminPublicationQuerySchema.parse({
       status: url.searchParams.get("status") ?? undefined,
@@ -23,7 +23,7 @@ export const GET = adminRoute(
       offset: url.searchParams.get("offset") ?? undefined,
       limit: url.searchParams.get("limit") ?? undefined,
     });
-    return listAdminPublicationRequests({ authToken: bearerTokenFromRequest(request), input });
+    return listAdminPublicationRequests({ authToken, input });
   },
 );
 
@@ -31,9 +31,9 @@ export const PATCH = adminRoute(
   {
     scope: "admin.publications.review",
     fallbackMessage: "Mise à jour de la publication impossible.",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminPublicationReviewInputSchema.parse(await request.json());
     return reviewAdminPublicationRequest({ authToken, input });
   },

@@ -2,8 +2,6 @@ import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
@@ -11,8 +9,7 @@ export const maxDuration = 30;
 
 const OPTIONS = { scope: "admin.pipeline", fallbackMessage: "Supervision indisponible" };
 
-export const GET = adminRoute(OPTIONS, async (request) => {
-  await assertAdminAuth(bearerTokenFromRequest(request));
+export const GET = adminRoute({ ...OPTIONS, guard: "admin" }, async () => {
   const [sourcesResult, controlResult, alertsResult, usageResult] = await Promise.all([
     supabaseAdmin.from("auction_source_state").select("*").order("source_name"),
     supabaseAdmin.from("auction_pipeline_control").select("*").single(),
@@ -60,8 +57,7 @@ export const GET = adminRoute(OPTIONS, async (request) => {
   };
 });
 
-export const PATCH = adminRoute(OPTIONS, async (request) => {
-  await assertAdminAuth(bearerTokenFromRequest(request));
+export const PATCH = adminRoute({ ...OPTIONS, guard: "admin" }, async (request) => {
   const input = z
     .object({ source: z.string().min(1).max(60), enabled: z.boolean() })
     .strict()

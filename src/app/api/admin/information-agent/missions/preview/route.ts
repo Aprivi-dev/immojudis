@@ -1,5 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
 import { informationAgentPreviewSchema } from "@/lib/information-agent/schemas";
@@ -16,11 +14,10 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.missions.preview",
     fallbackMessage: "Aperçu de la mission indisponible",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { auth }) => {
     const input = informationAgentPreviewSchema.parse(await request.json());
-    const auth = await assertAdminAuth(authToken);
     return previewAdminInformationAgentMission({ auth, input });
   },
 );

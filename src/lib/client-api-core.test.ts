@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const lazy = vi.hoisted(() => ({
   hasSupabaseAuthHint: vi.fn(),
@@ -242,5 +243,106 @@ describe("apiRequest", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * Audit de l'administration du 14/11/2026 (I2) : un délai dépassé affichait « signal timed out »,
+ * une coupure réseau « Failed to fetch ». Les deux sont traduits ici, pour tous les écrans ; une
+ * annulation voulue (changement de page, démontage) reste une annulation, sans message.
+ */
+describe("délai dépassé, coupure réseau et annulation", () => {
+  const TIMEOUT_MESSAGE = "Le serveur met trop de temps à répondre. Réessayez dans un instant.";
+  const NETWORK_MESSAGE = "Connexion impossible. Vérifiez votre réseau puis réessayez.";
+
+  /** `fetch` qui ne répond jamais et rejette comme le navigateur quand son signal est abandonné. */
+  const hangingFetch = (rejection?: (signal: AbortSignal) => unknown) =>
+    vi.fn(
+      (_path: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init.signal as AbortSignal;
+          const abort = () => reject(rejection ? rejection(signal) : signal.reason);
+          if (signal.aborted) abort();
+          else signal.addEventListener("abort", abort);
+        }),
+    );
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("traduit le délai dépassé (TimeoutError) d'une lecture d'administration", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+
+    const error = await apiRequest("/api/admin/dashboard", { anonymous: true, timeoutMs: 5 }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(TIMEOUT_MESSAGE);
+    expect(((error as Error).cause as Error).name).toBe("TimeoutError");
+  });
+
+  it("traduit aussi le délai d'un navigateur qui le rapporte comme un AbortError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      hangingFetch(() => new DOMException("The operation was aborted.", "AbortError")),
+    );
+
+    await expect(
+      apiRequest("/api/sales/s1/risks", { anonymous: true, timeoutMs: 5 }),
+    ).rejects.toThrow(TIMEOUT_MESSAGE);
+  });
+
+  it.each(["Failed to fetch", "NetworkError when attempting to fetch resource.", "Load failed"])(
+    "traduit la coupure réseau « %s »",
+    async (browserMessage) => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError(browserMessage)));
+
+      await expect(
+        apiRequest("/api/admin/pipeline", { anonymous: true, method: "PATCH", body: {} }),
+      ).rejects.toThrow(NETWORK_MESSAGE);
+    },
+  );
+
+  it("ne prend pas un corps qui ne se sérialise pas pour une coupure réseau", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = (await apiRequest("/api/admin/pipeline", {
+      anonymous: true,
+      method: "PATCH",
+      body: { limit: 1n },
+    }).catch((caught: unknown) => caught)) as Error;
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.message).not.toBe(NETWORK_MESSAGE);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("laisse passer telle quelle une annulation voulue par l'appelant, sans message traduit", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    const caller = new AbortController();
+
+    const pending = apiRequest("/api/admin/dashboard", { anonymous: true, signal: caller.signal });
+    caller.abort();
+    const error = (await pending.catch((caught: unknown) => caught)) as Error;
+
+    expect(error.name).toBe("AbortError");
+    expect([TIMEOUT_MESSAGE, NETWORK_MESSAGE]).not.toContain(error.message);
+  });
+
+  it("une requête annulée par React Query (page quittée) ne laisse aucune erreur à afficher", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    const client = new QueryClient();
+    const queryKey = ["admin-dashboard"];
+
+    const pending = client.prefetchQuery({
+      queryKey,
+      queryFn: ({ signal }) => apiRequest("/api/admin/dashboard", { anonymous: true, signal }),
+    });
+    await client.cancelQueries({ queryKey });
+    await pending;
+
+    expect(client.getQueryState(queryKey)?.error ?? null).toBeNull();
+    client.clear();
   });
 });

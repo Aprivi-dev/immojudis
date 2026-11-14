@@ -1,7 +1,3 @@
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import {
   executePrivacyErasure,
@@ -15,9 +11,12 @@ import {
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "api.admin.privacy_requests.list", fallbackMessage: "Demandes indisponibles." },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  {
+    scope: "api.admin.privacy_requests.list",
+    fallbackMessage: "Demandes indisponibles.",
+    guard: "admin",
+  },
+  async (request, { auth }) => {
     const url = new URL(request.url);
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const limit = Number(url.searchParams.get("limit") ?? 100);
@@ -35,9 +34,12 @@ export const GET = adminRoute(
 );
 
 export const PATCH = adminRoute(
-  { scope: "api.admin.privacy_requests.update", fallbackMessage: "Mise à jour impossible." },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  {
+    scope: "api.admin.privacy_requests.update",
+    fallbackMessage: "Mise à jour impossible.",
+    guard: "admin",
+  },
+  async (request, { auth }) => {
     const input = privacyRequestAdminUpdateSchema.parse(await request.json());
     return updatePrivacyRequestForAdmin({ auth, input });
   },
@@ -45,9 +47,12 @@ export const PATCH = adminRoute(
 
 /** Executes a verified erasure request (Stripe customer, application data, files, auth user). */
 export const POST = adminRoute(
-  { scope: "api.admin.privacy_requests.erase", fallbackMessage: "Effacement impossible." },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  {
+    scope: "api.admin.privacy_requests.erase",
+    fallbackMessage: "Effacement impossible.",
+    guard: "admin",
+  },
+  async (request, { auth }) => {
     const input = privacyErasureExecuteSchema.parse(await request.json());
     return executePrivacyErasure({ auth, input });
   },
