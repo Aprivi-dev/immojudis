@@ -13,6 +13,7 @@ from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import (
     LOCK_LOST_EXIT_CODE,
     CatalogueLockLost,
+    catalogue_lock_lost,
     catalogue_writer_lock,
     ensure_catalogue_lock_held,
 )
@@ -1563,7 +1564,12 @@ def run_with_catalogue_lock() -> int:
     """The queue worker writes sales like the pipeline does: it shares its lock, and fails when the lock is lost."""
     try:
         with catalogue_writer_lock(label="enrichment queue worker"):
-            return _run_as_script()
+            code = _run_as_script()
+            # A heartbeat that failed during the last batch raises nothing (no claim follows): the job fails all the
+            # same, its last writes may have happened without the lock.
+            if catalogue_lock_lost():
+                raise CatalogueLockLost("the catalogue writer lock may have been lost during the last batch")
+            return code
     except CatalogueLockLost as exc:
         LOGGER.error("Enrichment worker stopped: %s", exc)
         print(f"::error title=Verrou du catalogue perdu::{exc}", flush=True)

@@ -102,6 +102,26 @@ describe("describeSaleChange", () => {
     expect(`${change?.label} ${change?.detail}`).not.toMatch(/retir/i);
   });
 
+  it("announces an undated sale the collection no longer saw as unseen for 14 days", () => {
+    const change = describeSaleChange(
+      event({
+        eventKind: "status_changed",
+        severity: "info",
+        changeSummary: {
+          field: "status",
+          previousValue: "upcoming",
+          currentValue: "unknown",
+          reason: "unseen_undated",
+        },
+      }),
+    );
+    expect(change).toMatchObject({
+      topic: "status",
+      label: "Annonce non revue depuis 14 jours",
+      detail: "Elle n’est plus présentée comme à venir. À vérifier auprès de l’avocat poursuivant.",
+    });
+  });
+
   it("keeps « Vente retirée » for a withdrawal the source itself published", () => {
     expect(
       describeSaleChange(

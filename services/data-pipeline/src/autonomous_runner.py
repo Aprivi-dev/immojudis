@@ -33,7 +33,11 @@ from src.enrichment_queue_limits import (
     ENRICHMENT_MAX_JOBS_ENV,
 )
 from src.run_finalizer import register_run
-from src.source_absence import mark_unseen_undated_sales, withdraw_missing_sales
+from src.source_absence import (
+    mark_unseen_undated_sales,
+    mark_unseen_undated_sales_of_disabled_sources,
+    withdraw_missing_sales,
+)
 from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.sources.licitor import SOURCE_BUDGET_ENV as LICITOR_SOURCE_BUDGET_ENV
 from src.sources.petites_affiches import SOURCE_BUDGET_ENV as PETITES_AFFICHES_SOURCE_BUDGET_ENV
@@ -419,8 +423,13 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
     # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
     if inventory_complete and not denied:
         _withdraw_missing_sales(db_url, run_id, source, connect=connect)
-    # Après chaque passage, réussi ou non : la règle ne lit que la date de la dernière collecte qui a vu la vente.
-    _mark_unseen_undated_sales(db_url, run_id, source, connect=connect)
+        # Ventes à venir sans date non revues depuis 14 jours (D13) : même condition que le retrait.
+        _record_source_absence(db_url, run_id, 'unseen_undated_sales',
+                               mark_unseen_undated_sales(db_url, source, connect=connect), connect=connect)
+    # Sources désactivées : la même règle, sans condition d'inventaire (décision du propriétaire du 14/11/2026). Elles
+    # ne tournent pas : la fin de chaque passage d'une autre source les traite.
+    _record_source_absence(db_url, run_id, 'unseen_undated_disabled_sources',
+                           mark_unseen_undated_sales_of_disabled_sources(db_url, connect=connect), connect=connect)
 
 
 def _withdraw_missing_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
@@ -429,15 +438,9 @@ def _withdraw_missing_sales(db_url: str, run_id: str, source: str, *, connect: C
                            connect=connect)
 
 
-def _mark_unseen_undated_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
-    """Ventes à venir sans date que la source ne montre plus : statut inconnu (src.source_absence)."""
-    _record_source_absence(db_url, run_id, 'unseen_undated_sales',
-                           mark_unseen_undated_sales(db_url, source, connect=connect), connect=connect)
-
-
-def _record_source_absence(db_url: str, run_id: str, key: str, result: dict[str, Any] | None, *,
+def _record_source_absence(db_url: str, run_id: str, key: str, result: dict[str, Any] | list[Any] | None, *,
                            connect: Callable[[str], Any]) -> None:
-    if result is None:
+    if not result:
         return
     try:
         with connect(db_url) as db:

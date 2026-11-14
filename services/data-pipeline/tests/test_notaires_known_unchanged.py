@@ -141,11 +141,16 @@ def test_closed_card_rule_needs_a_proven_end():
     assert card_sale_long_past({"source_sale_schedule": {"closes_at": "2026-10-01T16:00:00+00:00"}}, now)
 
 
-# --- Contact : la carte de liste porte le téléphone seul, le détail « téléphone | adresse » (11/11/2026) ---
+# --- Contact (14/11/2026, D9) : seule la fiche dit qui est le contact, jamais la carte de liste ---
+# Jusqu'au 14/11 la carte portait le téléphone de l'interlocuteur, que la fiche complétait de son adresse (11/11/2026).
+# Ce téléphone peut être celui d'un négociateur : la carte n'en porte plus, et une vente dont la fiche n'est pas relue
+# reprend le contact que la règle de l'office (notaires_extraction.listing_contact) accorde à la fiche enregistrée.
 
 PHONE = "05 00 00 00 01"
 ADDRESS = "office@example.test"
 DETAIL_CONTACT = f"{PHONE} | {ADDRESS}"
+OFFICE = {"nom": "Office Exemple", "telephone": PHONE, "mail": ADDRESS}
+NEGOTIATOR = {"nom": "Camille DURAND", "telephone": "06 00 00 00 07", "mail": "camille.durand@example.test"}
 
 
 def _card_with_phone(phone: str = PHONE, **marks: object) -> dict:
@@ -153,92 +158,102 @@ def _card_with_phone(phone: str = PHONE, **marks: object) -> dict:
     return {**card, **marks}
 
 
-def _detail_contact(card: dict) -> str:
-    detail = notaires.parse_notaires_detail_json(
-        json.dumps(
-            {
-                "typeTransaction": "VNI",
-                "vni": {"descriptionFr": "Appartement à Bordeaux"},
-                "contact": {"nom": "Office Exemple", "telephone": PHONE, "mail": ADDRESS},
-            }
-        ),
+def _detail(card: dict, contact: dict) -> dict:
+    return notaires.parse_notaires_detail_json(
+        json.dumps({"typeTransaction": "VNI", "vni": {"descriptionFr": "Appartement à Bordeaux"}, "contact": contact}),
         card,
     )
-    return detail["lawyer_contact"]
 
 
-def _hydrated(card: dict, stored_contact: str, stored_source_url: str | None = None) -> str:
+def _stored(card: dict, detail: dict | None, source_url: str | None = None, **columns: object) -> dict:
+    """The known row of ``auction_sales`` after that detail reading (raw_payload keys of known_sale_projection)."""
+    payload = (
+        {"source_property_features": detail["source_property_features"], "source_blocks": detail["source_blocks"]}
+        if detail
+        else {}
+    )
+    row = {"lawyer_name": detail.get("lawyer_name"), "lawyer_contact": detail.get("lawyer_contact")} if detail else {}
+    return {"source_url": source_url or card["source_url"], **row, **columns, "raw_payload": payload}
+
+
+def _hydrated(card: dict, stored: dict | None) -> tuple[object, object]:
     from src import main
 
-    stored = {"source_url": stored_source_url or card["source_url"], "lawyer_contact": stored_contact, "raw_payload": {}}
-    known = {card["source_url"]: stored}
-    main._hydrate_known_unchanged_sales([card], known)
-    return card["lawyer_contact"]
+    main._hydrate_known_unchanged_sales([card], {card["source_url"]: stored} if stored else {})
+    return card.get("lawyer_name"), card.get("lawyer_contact")
 
 
-def test_an_unchanged_card_keeps_the_e_mail_address_of_the_stored_detail():
+def test_an_unchanged_card_takes_the_office_contact_of_its_stored_detail():
     card = _card_with_phone(_known_unchanged=True)
-    assert card["lawyer_contact"] == PHONE  # la carte de liste ne porte que le téléphone
-    stored = _detail_contact(card)  # ce que la lecture du détail a écrit
-    assert stored == DETAIL_CONTACT
+    assert card.get("lawyer_contact") is None  # la carte de liste ne porte plus de contact
+    detail = _detail(card, OFFICE)
+    assert detail["lawyer_contact"] == DETAIL_CONTACT
 
-    assert _hydrated(card, stored) == DETAIL_CONTACT
+    assert _hydrated(card, _stored(card, detail)) == ("Office Exemple", DETAIL_CONTACT)
 
 
-def test_a_phone_changed_on_the_card_replaces_the_stored_one_and_keeps_the_address():
+def test_the_phone_of_the_list_card_is_never_the_contact():
     card = _card_with_phone("05 00 00 00 02", _known_unchanged=True)
 
-    assert _hydrated(card, DETAIL_CONTACT) == f"05 00 00 00 02 | {ADDRESS}"
+    assert _hydrated(card, _stored(card, _detail(card, OFFICE))) == ("Office Exemple", DETAIL_CONTACT)
 
 
 @pytest.mark.parametrize(
-    "stored",
+    ("contact", "expected"),
     [
-        "05 00 00 00 09",  # aucune adresse connue
-        "05 00 00 00 09 | écrire @ l'étude",  # un « @ » n'est pas une adresse
-        "05 00 00 00 09 | maitre@avocat-conseil.fr",  # messagerie RPVA, écartée comme partout
+        ({"nom": "Office Exemple", "telephone": PHONE}, ("Office Exemple", PHONE)),  # aucune adresse publiée
+        ({"nom": "Service immobilier", "telephone": PHONE, "mail": ADDRESS}, (None, DETAIL_CONTACT)),  # service
+        ({"telephone": PHONE, "mail": ADDRESS}, (None, None)),  # sans nom : rien ne dit à qui sont ces coordonnées
     ],
 )
-def test_the_card_contact_stays_when_the_stored_one_has_no_usable_address(stored: str):
-    assert _hydrated(_card_with_phone(_known_unchanged=True), stored) == PHONE
+def test_the_stored_contact_goes_through_the_office_rule_again(contact: dict, expected: tuple):
+    card = _card_with_phone(_known_unchanged=True)
+
+    assert _hydrated(card, _stored(card, _detail(card, contact))) == expected
 
 
-@pytest.mark.parametrize("stored", [None, ""])
-def test_the_card_phone_goes_when_the_stored_detail_found_no_office_contact(stored):
-    # 14/11/2026 (D9): the detail keeps no contact for a negotiator; the card's phone is theirs.
-    detail = notaires.parse_notaires_detail_json(
-        json.dumps(
-            {
-                "typeTransaction": "VNI",
-                "vni": {"descriptionFr": "Appartement à Bordeaux"},
-                "contact": {"nom": "Camille DURAND", "telephone": PHONE, "mail": "camille.durand@example.test"},
-            }
-        ),
-        _card_with_phone(),
-    )
+def test_the_card_phone_goes_when_the_stored_detail_found_no_office_contact():
+    card = _card_with_phone(_known_unchanged=True)
+    detail = _detail(card, NEGOTIATOR)
     assert detail["lawyer_contact"] is None
 
-    assert _hydrated(_card_with_phone(_known_unchanged=True), stored) is None
+    assert _hydrated(card, _stored(card, detail)) == (None, None)
 
 
-def test_a_card_that_already_carries_an_address_is_left_alone():
-    card = _card_with_phone(_known_unchanged=True, lawyer_contact=f"{PHONE} | etude@example.test")
+def test_a_contact_stored_before_the_rule_is_not_copied_back():
+    # Ligne écrite avant le 14/11 : nom, téléphone et adresse du négociateur, dans les colonnes et dans les faits.
+    card = _card_with_phone(_known_unchanged=True)
+    legacy = {
+        "source_url": card["source_url"],
+        "lawyer_name": "Camille DURAND",
+        "lawyer_contact": "06 00 00 00 07 | camille.durand@example.test",
+        "raw_payload": {
+            "source_property_features": {
+                "contact": {"name": "Camille DURAND", "phone": "06 00 00 00 07", "email": "camille.durand@example.test"},
+            },
+        },
+    }
 
-    assert _hydrated(card, DETAIL_CONTACT) == f"{PHONE} | etude@example.test"
+    assert _hydrated(card, legacy) == (None, None)
 
 
-def test_a_failed_detail_read_keeps_the_card_contact():
-    # Le détail sera relu au passage suivant (il n'est pas frais) : la carte reste telle quelle d'ici là.
+def test_a_failed_detail_read_takes_only_the_contact_the_last_detail_validated():
+    # Le détail sera relu au passage suivant (il n'est pas frais) : d'ici là, le contact validé par la dernière fiche.
     card = _card_with_phone(_detail_fetch_failed=True)
+    assert _hydrated(card, _stored(card, _detail(card, OFFICE))) == ("Office Exemple", DETAIL_CONTACT)
 
-    assert _hydrated(card, DETAIL_CONTACT) == PHONE
+    stale = _card_with_phone(_detail_fetch_failed=True)
+    assert _hydrated(stale, _stored(stale, _detail(stale, NEGOTIATOR))) == (None, None)
+    # Vente nouvelle dont la fiche échoue : rien en base, et la carte n'apporte aucun contact.
+    assert _hydrated(_card_with_phone(_detail_fetch_failed=True), None) == (None, None)
 
 
 def test_a_merged_sale_stored_under_another_source_does_not_lend_its_contact():
     # Vente fusionnée : la ligne connue est celle d'une autre source, son contact n'est pas celui de ce détail.
     card = _card_with_phone(_known_unchanged=True)
+    other = _stored(card, _detail(card, OFFICE), "https://www.licitor.com/annonce/1.html")
 
-    assert _hydrated(card, "05 00 00 00 09 | cabinet@example.test", "https://www.licitor.com/annonce/1.html") == PHONE
+    assert _hydrated(card, other) == (None, None)
 
 
 def test_the_rule_is_for_notaires_only():
@@ -249,6 +264,7 @@ def test_the_rule_is_for_notaires_only():
         "_known_unchanged": True,
     }
 
-    assert _hydrated(card, DETAIL_CONTACT) == PHONE
-
-
+    assert _hydrated(card, {"source_url": card["source_url"], "lawyer_contact": DETAIL_CONTACT, "raw_payload": {}}) == (
+        None,
+        PHONE,
+    )

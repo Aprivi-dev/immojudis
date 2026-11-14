@@ -46,6 +46,9 @@ describe("describeOperationalAlert", () => {
     expect(describeOperationalAlert("catalogue.source_absence.cessions_etat").label).toBe(
       "Source Cessions de l'Etat : trop de ventes absentes d’un coup, retrait bloqué",
     );
+    expect(describeOperationalAlert("catalogue.unseen_undated.cessions_etat").label).toBe(
+      "Source Cessions de l'Etat : trop de ventes sans date non revues d’un coup, passage en statut inconnu bloqué",
+    );
     // Une source absente de la table des noms garde son nom de supervision.
     expect(describeOperationalAlert("pipeline.source.test_source.drop").label).toBe(
       "Source test_source : nombre d’annonces en forte baisse",

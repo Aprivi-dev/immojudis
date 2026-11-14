@@ -12,12 +12,16 @@ set local lock_timeout = '5s';
 --
 -- Redéfinition COMPLÈTE de public.observe_autonomous_pipeline(timestamptz), point de départ 20261029170100 (aucune
 -- migration ne l'a modifiée depuis). Seuls changent :
---   * la mesure immobile_24h : tâche ni terminée ni épuisée (statut queued, running ou failed, hors échec à bout
---     d'essais) dont ni la dernière écriture (updated_at) ni l'échéance de la prochaine tentative
---     (next_attempt_at) ne datent de moins de 24 h. Chaque écriture d'attempt_count (prise, fin, report) pose aussi
---     updated_at : une tâche dont updated_at n'a pas bougé n'a pas changé d'attempt_count. L'échéance protège un
---     report voulu (budget jusqu'à minuit UTC, attente d'accès de 24 h, Retry-After) : la tâche n'est immobile
---     qu'une fois restée 24 h prenable sans que rien ne la touche ;
+--   * la mesure immobile_24h, somme de deux comptes :
+--     (a) tâche running dont le bail de 30 minutes a expiré depuis plus de 24 h sans reprise ;
+--     (b) tâche PRENABLE (colonne claimable de la CTE classified : vente gardée, révision la plus récente, source
+--         active, aucun bail en cours sur la vente), hors attente d'une tâche pdf de la même vente (garde de
+--         20261111050000), dont ni la dernière écriture (updated_at) ni l'échéance de la prochaine tentative
+--         (next_attempt_at) ne datent de moins de 24 h.
+--     Une tâche retenue volontairement (attente de la lecture des pièces, source désactivée ou suspendue, révision
+--     remplacée, vente expirée) n'est jamais immobile. Chaque écriture d'attempt_count (prise, fin, report) pose
+--     aussi updated_at : une tâche dont updated_at n'a pas bougé n'a pas changé d'attempt_count. L'échéance protège
+--     un report voulu (budget jusqu'à minuit UTC, attente d'accès de 24 h, Retry-After) ;
 --   * la condition de l'alerte : immobile_24h > 0 l'ouvre toujours ; sinon la règle de 20261029170100 s'applique
 --     (budget_limited : seules les tâches source_detail de plus de 24 h ; sinon toute tâche de plus de 24 h).
 -- Tout le reste est recopié tel quel : alertes des sources, pilote coupé, inventaire, tâches épuisées, droits.
@@ -30,24 +34,26 @@ set local lock_timeout = '5s';
 -- fait échouer la migration (refuser de deviner).
 --
 -- RETOUR ARRIÈRE : réappliquer la définition de 20261029170100_pipeline_observer_alerts.sql.
+-- Garde de départ : empreinte md5 du corps (pg_proc.prosrc), mesurée sur la définition de 20261029170100 rejouée
+-- telle quelle, et celle du corps ci-dessous (migration rejouée). Tout autre corps, même voisin, fait échouer la
+-- migration : une modification faite hors migration serait sinon écrasée sans le dire.
 do $guard$
 declare
-  definition text := pg_catalog.pg_get_functiondef(
-    'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
+  body_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.observe_autonomous_pipeline(timestamptz)'::regprocedure
   );
 begin
-  -- Déjà redéfini par cette migration : le remplacement ci-dessous est idempotent.
-  if position('immobile_24h' in definition) > 0 then
-    return;
-  end if;
-  if position('pipeline.scheduler.disabled' in definition) = 0
-    or position('budget_deferred_24h' in definition) = 0
-    or position('delayed_source_detail' in definition) = 0
-    or position(') < p_now - interval ''18 hours'';' in definition) = 0
-    or position('pipeline.enrichment.exhausted' in definition) = 0 then
+  if body_md5 not in (
+    'fcab3b61c4a6841134d95e569fbfb05b',  -- 20261029170100 (point de départ)
+    '7c716e042eb481d63d99e7f2060c1d05'   -- cette migration, déjà appliquée
+  ) then
     raise exception using
       errcode = '55000',
-      message = 'Unexpected health observer definition; refusing the immobile-job redefinition.';
+      message = format(
+        'Unexpected health observer body (md5 %s); refusing the immobile-job redefinition.', body_md5
+      );
   end if;
 end;
 $guard$;
@@ -71,6 +77,8 @@ declare
   budget_deferred integer;
   delayed_source_detail integer;
   immobile integer;
+  immobile_running integer;
+  immobile_claimable integer;
   alert_active boolean;
   enabled_at timestamptz;
   control_enabled boolean;
@@ -376,7 +384,10 @@ begin
            j.job_type,
            j.source_url,
            j.detail_source_name,
-           j.detail_source_url
+           j.detail_source_url,
+           j.status,
+           j.updated_at,
+           j.next_attempt_at
       from public.auction_enrichment_jobs j
      where (
              j.status in ('queued','failed')
@@ -465,14 +476,37 @@ begin
                   and coalesce(active.locked_at,active.updated_at)
                       >= p_now - interval '30 minutes'
              )
-           ) as claimable
+           ) as claimable,
+           -- Description et faits attendent la tâche pdf de leur vente (garde de la revendication,
+           -- 20261111050000) : une attente voulue, jamais une tâche immobile.
+           (
+             due.job_type in ('display_description', 'fact_extraction')
+             and exists (
+               select 1
+                 from public.auction_enrichment_jobs pdf
+                where pdf.source_url = due.source_url
+                  and pdf.job_type = 'pdf'
+                  and pdf.status in ('queued', 'running', 'failed')
+                  and (pdf.status = 'running' or pdf.attempt_count < pdf.max_attempts)
+             )
+           ) as waits_for_pdf,
+           due.status,
+           due.updated_at,
+           due.next_attempt_at
       from due_candidates due
       join revision_ranked revision
         on revision.id = due.id
   )
   select count(*) filter (where claimable),
-         count(*) filter (where not claimable)
-    into claimable_due, excluded_due
+         count(*) filter (where not claimable),
+         -- Immobile (b) : prenable par la revendication, ni écrite ni attendue depuis 24 h.
+         count(*) filter (
+           where claimable
+             and not waits_for_pdf
+             and status <> 'running'
+             and greatest(updated_at, next_attempt_at) < p_now - interval '24 hours'
+         )
+    into claimable_due, excluded_due, immobile_claimable
     from classified;
 
   select count(*),
@@ -496,15 +530,15 @@ begin
              and not (status = 'failed' and attempt_count >= max_attempts)
              and job_type = 'source_detail'
          ),
-         -- Immobile : ni écrite (prise, fin, report, attempt_count) ni attendue depuis 24 h ; un running dont le bail
-         -- a expiré sans reprise en fait partie.
+         -- Immobile (a) : running dont le bail de 30 minutes a expiré depuis plus de 24 h, sans reprise.
          count(*) filter (
-           where not (status = 'failed' and attempt_count >= max_attempts)
-             and greatest(updated_at, next_attempt_at) < p_now - interval '24 hours'
+           where status = 'running'
+             and coalesce(locked_at, updated_at) < p_now - interval '24 hours 30 minutes'
          )
-    into backlog, delayed, exhausted, exhausted_recent, budget_deferred, delayed_source_detail, immobile
+    into backlog, delayed, exhausted, exhausted_recent, budget_deferred, delayed_source_detail, immobile_running
     from public.auction_enrichment_jobs
    where status in ('queued', 'running', 'failed');
+  immobile := immobile_running + immobile_claimable;
   evidence := jsonb_build_object(
     'backlog', backlog,
     'older_than_24h', delayed,

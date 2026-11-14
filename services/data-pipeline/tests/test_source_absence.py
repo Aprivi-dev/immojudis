@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from contextlib import nullcontext
+from pathlib import Path
 
 import pytest
 
@@ -152,65 +153,149 @@ def test_finish_source_never_withdraws_on_a_partial_failed_or_refused_inventory(
 
 # --- Ventes à venir sans date non revues (14/11/2026, D13) ---------------------------------------------------------
 
-
-class _SweepDb:
-    def __init__(self, rows=(), fail=False):
-        self.rows, self.fail = list(rows), fail
-        self.calls: list[tuple[str, object]] = []
-
-    def execute(self, sql, params=None):
-        self.calls.append((sql, params))
-        if self.fail:
-            raise RuntimeError("boom")
-        return _FetchAll(self.rows)
+UNSEEN_MIGRATION = (
+    Path(__file__).resolve().parents[3] / "supabase" / "migrations" / "20261119101020_mark_unseen_undated_sales.sql"
+)
 
 
-def test_undated_upcoming_sales_unseen_for_fourteen_days_become_unknown() -> None:
-    db = _SweepDb(rows=[("42800000-0000-4000-8000-000000000010",)])
+def _unseen_function_sql() -> str:
+    """The function definition of the migration, without its transaction (to run inside a test transaction)."""
+    text = UNSEEN_MIGRATION.read_text(encoding="utf-8")
+    start = text.index("create or replace function app_private.mark_unseen_undated_sales(")
+    end = text.index("$function$;", start) + len("$function$;")
+    return text[start:end]
+
+
+def test_undated_upcoming_sales_unseen_for_fourteen_days_go_through_the_sql_function() -> None:
+    db = _FakeDb(result={"action": "marked", "marked": 2})
 
     result = source_absence.mark_unseen_undated_sales("db", "notaires", connect=_connect(db))
 
-    assert result == {"marked": 1, "sample_sale_ids": ["42800000-0000-4000-8000-000000000010"], "unseen_days": 14}
-    [(sql, params)] = db.calls
-    assert params == {"source": "notaires", "days": source_absence.UNSEEN_UNDATED_DAYS} and params["days"] == 14
-    flat = " ".join(sql.split())
-    assert "set status = 'unknown'" in flat and "delete" not in flat.lower()
-    for condition in (
-        "sale.source_name = %(source)s",
-        "sale.status = 'upcoming'",
-        "sale.sale_date is null",
-        "sale.last_seen_at < now() - make_interval(days => %(days)s::integer)",
-    ):
-        assert condition in flat
+    assert result == {"action": "marked", "marked": 2}
+    assert db.calls[-1] == ("select app_private.mark_unseen_undated_sales(%s, true)", ("notaires",))
+    assert db.calls[0][1] == (source_absence.UNSEEN_FUNCTION,)
 
 
 def test_the_undated_sweep_never_raises_into_the_run_closing() -> None:
-    assert source_absence.mark_unseen_undated_sales("db", "notaires", connect=_connect(_SweepDb(fail=True))) is None
+    assert source_absence.mark_unseen_undated_sales("db", "notaires", connect=_connect(_FakeDb(fail=True))) is None
+    assert source_absence.mark_unseen_undated_sales("db", "notaires", connect=_connect(_FakeDb(deployed=False))) is None
     assert source_absence.mark_unseen_undated_sales("", "notaires") is None
 
 
-@pytest.mark.parametrize("status", ["succeeded", "failed"])
-def test_finish_source_sweeps_undated_sales_after_every_run(monkeypatch, status) -> None:
-    sweeps: list[tuple[str, str]] = []
-    summaries: list[object] = []
+def test_the_sql_function_keeps_the_python_constants() -> None:
+    text = UNSEEN_MIGRATION.read_text(encoding="utf-8")
+    assert f"c_unseen_days constant integer := {source_absence.UNSEEN_UNDATED_DAYS};" in text
+    assert source_absence.UNSEEN_UNDATED_DAYS == 14
+    assert f"c_max_share constant numeric := {source_absence.MAX_WITHDRAWN_SHARE};" in text
+    assert f"c_min_marks constant integer := {source_absence.MIN_WITHDRAWALS};" in text
+    # Twice the « not seen again » threshold of the health report.
+    health = (Path(__file__).resolve().parents[1] / "src" / "pipeline_health.py").read_text(encoding="utf-8")
+    assert "last_seen_at < now() - interval '7 days'" in health
+
+
+def test_a_blocked_undated_sweep_is_flagged_in_the_job_log(capsys) -> None:
+    source_absence.report_unseen_undated("notaires", {"action": "blocked", "candidates": 9, "population": 40})
+
+    out = capsys.readouterr().out
+    assert "Ventes non revues bloquées" in out and "9 of 40" in out
+
+
+class _DisabledDb(_FakeDb):
+    def __init__(self, disabled: list[str], **kwargs):
+        super().__init__(**kwargs)
+        self.disabled = disabled
+
+    def execute(self, sql, params=None):
+        if "where not enabled" in sql:
+            self.calls.append((sql, params))
+            return _FetchAll([(name,) for name in self.disabled])
+        return super().execute(sql, params)
+
+
+def test_every_disabled_source_is_swept_without_an_inventory() -> None:
+    db = _DisabledDb(["avoventes", "encheres_publiques"], result={"action": "marked", "marked": 1})
+
+    results = source_absence.mark_unseen_undated_sales_of_disabled_sources("db", connect=_connect(db))
+
+    assert len(results) == 2
+    calls = [params for sql, params in db.calls if sql.startswith("select app_private.mark_unseen_undated_sales")]
+    assert calls == [("avoventes",), ("encheres_publiques",)]
+
+
+def _finish_with_sweeps(monkeypatch, *, status, coverage) -> tuple[list[str], list[str], list[dict]]:
+    swept: list[str] = []
+    disabled_sweeps: list[str] = []
+    summaries: list[dict] = []
 
     class Db(_FinishDb):
         def execute(self, sql, params=None):
-            if "summary=coalesce(summary,'{}') || %s" in sql and "unseen_undated_sales" in str(params):
-                summaries.append(params)
+            if "summary=coalesce(summary,'{}') || %s" in sql and "unseen_undated" in str(params):
+                summaries.append(params[0].obj)
             return super().execute(sql, params)
 
-    def fake_sweep(db_url, source, connect=None):
-        sweeps.append((db_url, source))
-        return {"marked": 2, "sample_sale_ids": [], "unseen_days": 14}
+    def sweep(db_url, source, connect=None):
+        swept.append(source)
+        return {"action": "marked", "marked": 2}
 
-    monkeypatch.setattr(autonomous_runner, "mark_unseen_undated_sales", fake_sweep)
-    _finish(monkeypatch, Db(status=status, coverage={"coverage_complete": False, "listings_emitted": 5}), [])
+    def sweep_disabled(db_url, connect=None):
+        disabled_sweeps.append(db_url)
+        return [{"source": "encheres_publiques", "action": "marked", "marked": 1}]
 
-    assert sweeps == [("db", "vench")]
-    [(report, run_id)] = summaries
-    assert report.obj == {"unseen_undated_sales": {"marked": 2, "sample_sale_ids": [], "unseen_days": 14}}
-    assert run_id == "run-1"
+    monkeypatch.setattr(autonomous_runner, "mark_unseen_undated_sales", sweep)
+    monkeypatch.setattr(autonomous_runner, "mark_unseen_undated_sales_of_disabled_sources", sweep_disabled)
+    _finish(monkeypatch, Db(status=status, coverage=coverage), [])
+    return swept, disabled_sweeps, summaries
+
+
+def test_finish_source_sweeps_its_undated_sales_only_after_a_complete_inventory(monkeypatch) -> None:
+    swept, disabled, summaries = _finish_with_sweeps(
+        monkeypatch, status="succeeded", coverage={"coverage_complete": True, "listings_emitted": 5}
+    )
+
+    assert swept == ["vench"] and disabled == ["db"]
+    assert {"unseen_undated_sales": {"action": "marked", "marked": 2}} in summaries
+    assert {"unseen_undated_disabled_sources": [{"source": "encheres_publiques", "action": "marked", "marked": 1}]} in (
+        summaries
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "coverage"),
+    [
+        ("succeeded", {"coverage_complete": False, "listings_emitted": 5}),
+        ("failed", {"coverage_complete": True, "listings_emitted": 5}),
+        ("succeeded", {"coverage_complete": True, "listings_emitted": 5, "access_denials": 2}),
+    ],
+)
+def test_a_partial_failed_or_refused_inventory_sweeps_only_the_disabled_sources(monkeypatch, status, coverage) -> None:
+    swept, disabled, _ = _finish_with_sweeps(monkeypatch, status=status, coverage=coverage)
+
+    assert swept == [] and disabled == ["db"]
+
+
+def _unseen_schema(db) -> None:
+    db.execute("create schema if not exists app_private")
+    db.execute(
+        """create table public.auction_source_state(
+             source_name text primary key, enabled boolean not null, last_inventory_complete_at timestamptz)"""
+    )
+    db.execute(
+        """create table public.auction_sales(
+             id uuid primary key, source_name text, status text, sale_date timestamptz,
+             last_seen_at timestamptz, updated_at timestamptz, raw_payload jsonb)"""
+    )
+    db.execute("create table public.pgtest_alerts(alert_key text, active boolean, details jsonb)")
+    db.execute(
+        """create or replace function app_private.auction_sale_is_publicly_visible(uuid) returns boolean
+           language sql as $$ select true $$"""
+    )
+    db.execute(
+        """create or replace function app_private.sync_operational_alert(
+             p_alert_key text, p_category text, p_severity text, p_details jsonb, p_active boolean,
+             p_now timestamptz default statement_timestamp()) returns void
+           language sql as $$ insert into public.pgtest_alerts values (p_alert_key, p_active, p_details) $$"""
+    )
+    db.execute(_unseen_function_sql())
 
 
 def test_the_undated_sweep_marks_only_old_undated_upcoming_sales_of_the_source() -> None:
@@ -219,38 +304,60 @@ def test_the_undated_sweep_marks_only_old_undated_upcoming_sales_of_the_source()
         pytest.skip("Requires disposable PostgreSQL")
     with _postgres_connect(url) as db:
         try:
+            _unseen_schema(db)
             db.execute(
-                """create table public.auction_sales(
-                    id uuid primary key, source_name text, status text, sale_date timestamptz,
-                    last_seen_at timestamptz, updated_at timestamptz, raw_payload jsonb)"""
+                """insert into public.auction_source_state values
+                   ('notaires', true, now() - interval '10 minutes'),
+                   ('licitor', true, now() - interval '3 hours'),
+                   ('encheres_publiques', false, null)"""
             )
-            db.execute(
-                """insert into public.auction_sales(id, source_name, status, sale_date, last_seen_at, raw_payload) values
-                   ('42800000-0000-4000-8000-000000000020', 'notaires', 'upcoming', null, now() - interval '20 days',
-                    '{"source_blocks": {}}'),
-                   ('42800000-0000-4000-8000-000000000021', 'notaires', 'upcoming', null, now() - interval '13 days', null),
-                   ('42800000-0000-4000-8000-000000000022', 'notaires', 'upcoming', now() + interval '9 days',
-                    now() - interval '20 days', null),
-                   ('42800000-0000-4000-8000-000000000023', 'notaires', 'postponed', null, now() - interval '20 days', null),
-                   ('42800000-0000-4000-8000-000000000024', 'licitor', 'upcoming', null, now() - interval '20 days', null)"""
-            )
+            sales = [
+                ("20", "notaires", "upcoming", None, "20 days"),
+                ("21", "notaires", "upcoming", None, "13 days"),  # seen 13 days ago
+                ("22", "notaires", "upcoming", "9 days", "20 days"),  # dated: its date ends it
+                ("23", "notaires", "postponed", None, "20 days"),
+                ("24", "licitor", "upcoming", None, "20 days"),  # its last complete inventory is 3 hours old
+                ("25", "encheres_publiques", "upcoming", None, "20 days"),  # disabled source: no inventory needed
+            ]
+            sales += [(str(30 + n), "notaires", "upcoming", "9 days", "1 day") for n in range(6)]  # population
+            for suffix, source, status, sale_in, unseen in sales:
+                db.execute(
+                    """insert into public.auction_sales(id, source_name, status, sale_date, last_seen_at, raw_payload)
+                       values (%s::uuid, %s, %s, now() + %s::interval, now() - %s::interval, '{"source_blocks": {}}')""",
+                    (f"42800000-0000-4000-8000-0000000000{suffix}", source, status, sale_in, unseen),
+                )
 
-            result = source_absence.mark_unseen_undated_sales(url, "notaires", connect=lambda _url: nullcontext(db))
+            def sweep(source: str) -> dict:
+                return source_absence.mark_unseen_undated_sales(url, source, connect=lambda _url: nullcontext(db))
 
-            assert result is not None and result["marked"] == 1
-            rows = dict(db.execute("select id::text, status from public.auction_sales").fetchall())
-            assert rows == {
-                "42800000-0000-4000-8000-000000000020": "unknown",
-                "42800000-0000-4000-8000-000000000021": "upcoming",  # seen 13 days ago
-                "42800000-0000-4000-8000-000000000022": "upcoming",  # dated: its date ends it
-                "42800000-0000-4000-8000-000000000023": "postponed",
-                "42800000-0000-4000-8000-000000000024": "upcoming",  # another source
+            assert sweep("notaires")["marked"] == 1
+            assert sweep("licitor")["reason"] == "no_recent_complete_inventory"
+            assert sweep("encheres_publiques")["marked"] == 1
+            rows = dict(db.execute("select right(id::text, 2), status from public.auction_sales").fetchall())
+            assert {key: rows[key] for key in ("20", "21", "22", "23", "24", "25")} == {
+                "20": "unknown", "21": "upcoming", "22": "upcoming", "23": "postponed", "24": "upcoming",
+                "25": "unknown",
             }
             trace = db.execute(
                 "select raw_payload from public.auction_sales where id = '42800000-0000-4000-8000-000000000020'"
             ).fetchone()[0]
             assert trace["source_blocks"] == {} and trace["unseen_undated"]["status_before"] == "upcoming"
             assert trace["unseen_undated"]["unseen_days"] == 14
+
+            # Cap of the withdrawal: more than 15 % of the visible sales at once (at least one) is refused, and alerted.
+            db.execute(
+                "update public.auction_sales set status = 'upcoming', sale_date = null, last_seen_at = now() - "
+                "interval '20 days' where source_name = 'notaires' and status <> 'postponed'"
+            )
+            blocked = sweep("notaires")
+            assert blocked["action"] == "blocked"
+            assert db.execute(
+                "select count(*) from public.auction_sales where source_name = 'notaires' and status = 'unknown'"
+            ).fetchone()[0] == 0
+            assert db.execute(
+                "select active from public.pgtest_alerts where alert_key = 'catalogue.unseen_undated.notaires'"
+                " order by ctid desc limit 1"
+            ).fetchone()[0] is True
         finally:
             db.rollback()
 

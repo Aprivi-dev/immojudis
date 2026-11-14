@@ -413,17 +413,31 @@ def test_the_office_and_its_services_keep_their_contact(name, lawyer_name):
     assert detail["source_property_features"]["contact"]["email"] == "contact@office-fictif.test"
 
 
-def test_the_detail_removes_the_phone_of_the_list_card_when_its_contact_is_a_person():
-    card = {"source_name": "notaires", "source_url": VNI_URL, "lawyer_contact": "0600000000", "source_blocks": {}}
+def test_only_the_detail_gives_the_contact_never_the_list_card():
+    # The list card used to carry the phone of the API contact: a negotiator's phone stayed after the detail merge.
+    row = {
+        "annonceId": "9000002", "typeTransaction": "VNI", "urlDetailAnnonceFr": VNI_URL, "inseeDepartement": "33",
+        "communeNom": "Exempleville", "typeBien": "APP", "descriptionFr": "Appartement", "telephone": "0600000000",
+    }
+    [card] = notaires.parse_notaires_json(json.dumps({"annonceResumeDto": [row]}))
+    assert "lawyer_contact" not in card
     payload = json.loads(vni_payload())  # contact « Négociatrice fictive »
 
     notaires._merge_detail(card, notaires.parse_notaires_detail_json(json.dumps(payload), fallback=card))
 
-    assert card["lawyer_contact"] is None and card["lawyer_name"] is None
-    office = {**card, "lawyer_contact": "0500000000"}
+    assert card.get("lawyer_contact") is None and card.get("lawyer_name") is None
+    office = dict(card)
     payload["contact"] = {"nom": "Office notarial du Port", "telephone": "0500000001", "mail": "office@example.test"}
     notaires._merge_detail(office, notaires.parse_notaires_detail_json(json.dumps(payload), fallback=office))
     assert office["lawyer_contact"] == "0500000001 | office@example.test"
+
+
+def test_the_source_text_sent_to_the_model_carries_no_negotiator_contact():
+    detail = notaires.parse_notaires_detail_json(vni_payload(), fallback={"source_url": VNI_URL, "source_blocks": {}})
+    assert "0600000000" not in detail["raw_text"] and "nego@office-fictif.test" not in detail["raw_text"]
+
+    office = notaires.parse_notaires_detail_json(vae_payload(), fallback={"source_url": VAE_URL, "source_blocks": {}})
+    assert "0500000000 | contact@office-fictif.test" in office["raw_text"]
 
 
 def test_adjudicated_notarial_sale_reports_its_price():

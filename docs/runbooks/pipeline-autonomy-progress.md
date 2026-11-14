@@ -89,6 +89,16 @@ Les contrôles de surface suivants corrigent `01 ha 00 a 30 ca` (10 030 m², pas
 
 Trois anciennes fiches supplémentaires portant déjà une contradiction critique d'identité/procédure sont mises en quarantaine : `a911a0da-4936-4d02-bbcc-53dd9750a885`, `6225a9bf-b147-4c6f-b265-52c799c49c3a`, `d838f5ac-761d-45d4-ac91-79f7bf2aeaf8`. Les sources Enchères Publiques (403) et Enchères Immobilières (timeouts) sont explicitement désactivées avec leur état et motif ; 298 fiches ont reçu une réserve d'indisponibilité, sans déduire de disparition.
 
+> **Mise à jour du 14/11/2026 (décision du propriétaire, état des lieux D13).** Pour une source désactivée, une
+> vente « upcoming » sans date d'audience qu'aucune collecte n'a revue depuis plus de 14 jours passe désormais en
+> statut « unknown » : elle n'est plus présentée comme à venir. La source ne tournant pas, aucune condition
+> d'inventaire ne s'applique ; le reste vaut comme pour une source active : rien n'est retiré ni supprimé, le statut
+> précédent est gardé dans `raw_payload.unseen_undated`, au plus 15 % des ventes visibles de la source d'un coup
+> (au moins une), alerte `catalogue.unseen_undated.<source>` au-delà. Fonction
+> `app_private.mark_unseen_undated_sales` (migration `20261119101020`), appelée à la fin de chaque passage du runner
+> autonome pour toutes les sources désactivées (`src/source_absence.py`). Les ventes datées et les réserves
+> d'indisponibilité ne changent pas.
+
 Corrections factuelles sourcées en production : Montoire `28b071ea-91d9-4867-ae9d-c9b578a51cba`, habitation 149,68 m², ancienne surface au sol 170,07 retirée du champ habitable, 155,56 m² du commerce retirés du terrain ; Lyon `447ea205-aec6-402a-b104-418ceb88fedf`, surfaces propres aux bureaux retirées des totaux de l'immeuble ; Romilly `fff6c926-7190-4268-9876-63a3eced8509`, terrain 10 844 m² = 10 282 des huit parcelles principales + 562 du jardin, calcul et composantes conservés ; Vidauban `87d6182e-48be-4c00-8a9d-0330dcec5bce`, deux lots distincts (24 000 / 30 000 EUR, Carrez 51,82 / 42,90), occupation globale inconnue et périmètres incertains documentés. Les analyses précédentes sont invalidées.
 
 Le contrôle Le Cannet `5d988d56-a7f5-4df8-a42b-c00a969e5cab` a obtenu la page de recherche Avoventes au lieu d'une fiche. Le parser rejette désormais ce retour sans emprunter un code postal d'une autre annonce et le collecteur conserve les faits connus sans avancer leur fraîcheur. Les ventes explicitement en plusieurs lots portent une réserve de prix/surfaces/occupation par lot. Validation locale finale de cette étape : 1 212 tests Python, 32 ignorés sans base, typecheck/Ruff/formatage réussis. Les 634 écarts Notaires de l'inventaire initial portent tous une date source antérieure au délai de conservation à l'heure du diagnostic ; cela explique leur inéligibilité actuelle, mais ne prouve ni leur vente ni le motif historique de chaque écriture absente. Les 83 autres écarts demandent encore un examen individuel.
@@ -238,6 +248,8 @@ PR 136 intégrée à 10:24:03 UTC, merge e997725aeaab53da8c934f15bba57d1bb2e03c9
 ## Ordre de déploiement — compteur de tentatives des lectures documentaires (octobre 2026)
 
 La migration `supabase/migrations/20261020120021_document_readings_attempt_count.sql` (colonne `auction_document_readings.attempt_count`) doit être **appliquée avant** le déploiement du code Python correspondant (`services/data-pipeline/src/document_reading.py`, repli 12 h / 24 h / 72 h et abandon à la quatrième tentative). Le code lit et écrit cette colonne ; déployé en premier, chaque requête de lecture documentaire échouerait sur une colonne inexistante.
+
+De même, `supabase/migrations/20261119101010_document_readings_failed_rereading.sql` (colonnes `failed_*` et `last_failed_at`, 14/11/2026) doit être **appliquée avant** le code qui trace l'échec d'une relecture d'une lecture terminée et la fait attendre (même repli 12 h / 24 h / 72 h, abandon à la quatrième tentative).
 
 Ordre à suivre :
 

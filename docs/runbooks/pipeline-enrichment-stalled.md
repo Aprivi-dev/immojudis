@@ -30,7 +30,7 @@ n'en est pas une tant que son échéance n'a pas 24 h. Cas d'origine : une lectu
 
 La revendication (`claim_auction_enrichment_jobs_family`) reprend une tâche `running` dont le bail de 30 minutes
 a expiré, avec une tentative de plus, et la passe en `failed` à sa dernière tentative (test
-`supabase/tests/896_enrichment_claim_reclaims_expired_lease.sql`). Une tâche immobile est donc une tâche que la
+`supabase/tests/898_enrichment_claim_reclaims_expired_lease.sql`). Une tâche immobile est donc une tâche que la
 revendication ne voit pas :
 
 ```sql

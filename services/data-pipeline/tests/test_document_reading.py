@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from contextlib import nullcontext
 from types import SimpleNamespace
 
+import pytest
+
 from src import document_reading as reading
+from src.storage.supabase_client import _postgres_connect
 
 V3 = reading.DOCUMENT_READING_VERSION
 
@@ -171,8 +176,8 @@ def test_run_stores_readings_and_skips_unchanged_texts(monkeypatch) -> None:
             if "from public.auction_sales sale" in statement:
                 return SimpleNamespace(
                     fetchall=lambda: [
-                        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None),
-                        ("sale-2", "https://example.test/2", MANIFEST, unchanged, "completed", 0, False, None, None, None, V3),
+                        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None, None, 0),
+                        ("sale-2", "https://example.test/2", MANIFEST, unchanged, "completed", 0, False, None, None, None, V3, None, 0),
                     ]
                 )
             return SimpleNamespace(fetchone=lambda: None)
@@ -238,7 +243,7 @@ def test_candidates_leave_out_sales_whose_sources_are_all_withdrawn() -> None:
 
 def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True, None, None, None, V3, None, 0)
 
     counts, upserts, touched = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -251,7 +256,7 @@ def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) 
 
 def test_failed_reading_gives_up_at_the_fourth_failure_with_a_readable_error_code(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3, None, 0)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -264,7 +269,7 @@ def test_failed_reading_gives_up_at_the_fourth_failure_with_a_readable_error_cod
 def test_failed_reading_waiting_for_its_backoff_is_not_read_again(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
     # Candidate because its extraction was rewritten, but the back-off has not elapsed (or attempts ran out).
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 4, False, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 4, False, None, None, None, V3, None, 0)
     calls: list[str] = []
 
     def generator(_system: str, _user: str):
@@ -278,7 +283,7 @@ def test_failed_reading_waiting_for_its_backoff_is_not_read_again(monkeypatch) -
 
 
 def test_changed_text_restarts_the_attempt_count(monkeypatch) -> None:
-    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-fingerprint", "failed", 4, False, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-fingerprint", "failed", 4, False, None, None, None, V3, None, 0)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -289,7 +294,7 @@ def test_changed_text_restarts_the_attempt_count(monkeypatch) -> None:
 
 def test_completed_reading_after_failures_resets_the_counter(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 2, True, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 2, True, None, None, None, V3, None, 0)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, lambda _s, _u: {"points": []})
 
@@ -304,7 +309,7 @@ def test_budget_refusal_does_not_use_up_an_attempt(monkeypatch) -> None:
         raise PipelineBudgetExhausted("Daily LLM budget exhausted")
 
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3, None, 0)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, over_budget)
 
@@ -507,9 +512,11 @@ def test_stored_points_are_revalidated_without_a_model_call(monkeypatch) -> None
             return SimpleNamespace(fetchall=lambda: rows)
 
     monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
-    counts = reading.revalidate_stored_readings("postgresql://test", limit=10)
+    report = reading.revalidate_stored_readings("postgresql://test")
 
-    assert counts == {"selected": 3, "unchanged": 1, "updated": 1, "points_removed": 2, "stale_text": 1}
+    assert {key: report[key] for key in ("selected", "unchanged", "updated", "points_removed", "stale_text")} == {
+        "selected": 3, "unchanged": 1, "updated": 1, "points_removed": 2, "stale_text": 1,
+    }
     [(statement, params)] = [(sql, values) for sql, values in executed if sql.lstrip().startswith("update")]
     assert "updated_at" not in statement  # a newer page text must still bring the reading back
     assert params[1:] == ("sale-1", v2_fingerprint)
@@ -517,6 +524,10 @@ def test_stored_points_are_revalidated_without_a_model_call(monkeypatch) -> None
     assert [point["title"] for point in kept] == ["Bien loué", "Contact"]
     assert kept[0]["page_corrected"] is True
     assert kept[1]["explanation"] is None
+    assert [(item["title"], item["reason"], item["applied"]) for item in report["removed"]] == [
+        ("Bien libre à la vente", "occupation_contradiction", True),
+        ("Citation courte", "quote_not_found", True),
+    ]
     assert "limit %s" in reading.REVALIDATION_SQL and "reading.status = 'completed'" in reading.REVALIDATION_SQL
 
 
@@ -601,7 +612,7 @@ def test_run_passes_the_lot_of_the_sale_to_the_reading(monkeypatch) -> None:
         prompts.append(user)
         return LOTS_RESPONSE
 
-    row = ("sale-1", "https://example.test/1", LOTS_MANIFEST, None, None, 0, False, "apartment", "Nice", LOT_1, None)
+    row = ("sale-1", "https://example.test/1", LOTS_MANIFEST, None, None, 0, False, "apartment", "Nice", LOT_1, None, None, 0)
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, generator)
 
     assert counts["completed"] == 1
@@ -628,7 +639,7 @@ def test_stored_v2_points_of_another_lot_are_dropped_by_the_revalidation(monkeyp
             return SimpleNamespace(fetchall=lambda: rows)
 
     monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
-    counts = reading.revalidate_stored_readings("postgresql://test", limit=10)
+    counts = reading.revalidate_stored_readings("postgresql://test")
 
     assert counts["updated"] == 1 and counts["points_removed"] == 1
     [params] = [values for sql, values in executed if sql.lstrip().startswith("update")]
@@ -699,8 +710,8 @@ def test_a_budget_refusal_keeps_a_completed_reading_and_stops_the_run(monkeypatc
     rows = [
         # Read in v2 for lot 1; v3 reads it again with the lot and the model is refused.
         ("sale-1", "https://example.test/1", LOTS_MANIFEST, "v2-fingerprint", "completed", 0, False,
-         "apartment", "Nice", LOT_1, V2),
-        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+         "apartment", "Nice", LOT_1, V2, None, 0),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None, None, 0),
     ]
 
     counts, upserts, touched, calls = _run_rows(monkeypatch, rows, _over_budget)
@@ -712,8 +723,8 @@ def test_a_budget_refusal_keeps_a_completed_reading_and_stops_the_run(monkeypatc
 
 def test_a_provider_failure_keeps_the_previous_reading_and_goes_on(monkeypatch) -> None:
     rows = [
-        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3),
-        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3, None, 0),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None, None, 0),
     ]
 
     counts, upserts, _, calls = _run_rows(monkeypatch, rows, _boom)
@@ -725,8 +736,8 @@ def test_a_provider_failure_keeps_the_previous_reading_and_goes_on(monkeypatch) 
 
 def test_a_budget_refusal_on_a_sale_never_read_is_stored_and_stops_the_run(monkeypatch) -> None:
     rows = [
-        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None),
-        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None, None, 0),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None, None, 0),
     ]
 
     counts, upserts, _, calls = _run_rows(monkeypatch, rows, _over_budget)
@@ -747,7 +758,7 @@ def test_v4_reads_again_every_reading_of_an_earlier_version() -> None:
 def test_an_earlier_reading_is_read_again_even_when_its_text_is_the_same(monkeypatch) -> None:
     rows = [
         ("sale-1", "https://example.test/1", MANIFEST, reading.input_fingerprint(MANIFEST, version=version),
-         "completed", 0, False, None, None, None, version)
+         "completed", 0, False, None, None, None, version, None, 0)
         for version in (V2, "document_reading_v3")
     ]
 
@@ -761,9 +772,9 @@ def test_an_earlier_reading_is_read_again_even_when_its_text_is_the_same(monkeyp
 def test_a_v2_reading_is_read_again_in_v3_when_its_text_changed_or_its_lot_is_designated(monkeypatch) -> None:
     v2_lots = reading.input_fingerprint(LOTS_MANIFEST, version=V2)
     rows = [
-        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V2),
+        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V2, None, 0),
         ("sale-2", "https://example.test/2", LOTS_MANIFEST, v2_lots, "completed", 0, False,
-         "apartment", "Nice", LOT_1, V2),
+         "apartment", "Nice", LOT_1, V2, None, 0),
     ]
 
     # Each dossier gets an answer that quotes it: a list whose every point is rejected is a failure (D7).
@@ -870,7 +881,7 @@ def test_a_risk_word_of_the_title_is_kept_when_the_page_writes_it() -> None:
     kept = reading.validate_reading_points([raw], [document])
 
     assert [point["title"] for point in kept] == ["Amiante dans les dalles de sol"]
-    assert reading.title_rejection("Plomb dans les peintures", page) == "title_unsupported_risk_term"
+    assert reading.title_rejection("Plomb dans les peintures", page, raw["quote"]) == "title_unsupported_risk_term"
 
 
 def test_a_stored_title_cut_around_its_contact_is_dropped_by_the_revalidation() -> None:
@@ -880,13 +891,39 @@ def test_a_stored_title_cut_around_its_contact_is_dropped_by_the_revalidation() 
         "quote": PROBE_QUOTE, "document_index": 1, "page": 3, "page_corrected": False,
     }
 
-    assert reading.title_rejection("Appelez le ou pour visiter", PROBE_PAGE) == "title_call_to_action"
+    assert reading.title_rejection("Appelez le ou pour visiter", PROBE_PAGE, PROBE_QUOTE) == "title_call_to_action"
     assert reading.revalidate_stored_points([stored], [PROBE_DOCUMENT]) == []
 
 
 def test_the_occupation_contradiction_is_checked_whatever_the_theme() -> None:
     for theme in ("autre", "conditions_vente", "juridique"):
         assert reading.validate_reading_points([_probe("Bien libre à la vente", theme=theme)], [PROBE_DOCUMENT]) == []
+
+
+# Probes of code-reviewer on the first version of D5 (14/11/2026): a co-ownership minute and a date written otherwise.
+MINUTE_PAGE = (
+    "Procès-verbal de l'assemblée générale du 12 mars 2025 : un appel de fonds exceptionnel de 18 000 euros "
+    "est voté pour la réfection de la toiture. Travaux exceptionnels à la charge des copropriétaires. "
+    "Charges courantes : 2 400 euros par an."
+)
+
+
+@pytest.mark.parametrize(
+    ("title", "quote", "expected"),
+    [
+        ("Appel de fonds exceptionnel de 18 000 €", "un appel de fonds exceptionnel de 18 000 euros est voté", None),
+        ("Travaux exceptionnels votés", "Travaux exceptionnels à la charge des copropriétaires", None),
+        ("Vente le 12/03/2025", "Procès-verbal de l'assemblée générale du 12 mars 2025", None),
+        # The quote must write « exceptionnel » itself, and the other promotional phrases stay refused.
+        ("Travaux exceptionnels votés", "Charges courantes : 2 400 euros par an.", "title_promotional"),
+        ("Toiture exceptionnelle, idéal pour investir", "Travaux exceptionnels à la charge des copropriétaires",
+         "title_promotional"),
+        # Another day is still an unproven figure.
+        ("Vente le 13/03/2025", "Procès-verbal de l'assemblée générale du 12 mars 2025", "title_unproven_figure"),
+    ],
+)
+def test_a_title_may_use_the_words_and_dates_its_page_writes(title: str, quote: str, expected: str | None) -> None:
+    assert reading.title_rejection(title, MINUTE_PAGE, quote) == expected
 
 
 HIDDEN_ORDER_PAGE = (
@@ -946,7 +983,7 @@ def test_a_dossier_made_only_of_hidden_orders_is_not_sent() -> None:
 
 
 def test_the_run_counts_the_pages_kept_from_the_model(monkeypatch) -> None:
-    row = ("sale-1", "https://example.test/1", HIDDEN_ORDER_MANIFEST, None, None, 0, False, None, None, None, None)
+    row = ("sale-1", "https://example.test/1", HIDDEN_ORDER_MANIFEST, None, None, 0, False, None, None, None, None, None, 0)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, lambda _s, _u: {"points": []})
 
@@ -983,29 +1020,257 @@ def test_an_answer_whose_every_point_is_rejected_is_a_failed_reading() -> None:
     assert (empty.status, empty.points, empty.error_code) == ("completed", [], None)
 
 
+def _run_recording(monkeypatch, row, generate_json) -> tuple[dict[str, int], list[tuple[str, tuple]]]:
+    """Run one candidate; return the counts and every statement written."""
+    executed: list[tuple[str, tuple]] = []
+
+    class FakeConnection:
+        def execute(self, statement, params=()):
+            if "from public.auction_sales sale" in statement:
+                return SimpleNamespace(fetchall=lambda: [row])
+            executed.append((statement, params))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
+    counts = reading.run_document_readings(
+        "postgresql://test", max_sales=10, budget_seconds=60, generator=(generate_json, "test-model")
+    )
+    return counts, executed
+
+
 def test_an_answer_out_of_format_or_wholly_rejected_keeps_the_previous_reading(monkeypatch) -> None:
     invented = {"theme": "autre", "title": "Point", "document": "D1", "page": 1, "quote": "texte qui n'est dans aucune pièce"}
-    for payload in ({"error": "cannot comply"}, {"points": [invented]}):
-        row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3)
-        counts, upserts, touched = _run_with_candidate(monkeypatch, row, lambda _s, _u, p=payload: p)
+    fingerprint = reading.input_fingerprint(MANIFEST)
+    for payload, code in (({"error": "cannot comply"}, "READING_OUTPUT_INVALID"),
+                          ({"points": [invented]}, "READING_ALL_POINTS_REJECTED")):
+        row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3, None, 0)
+        counts, executed = _run_recording(monkeypatch, row, lambda _s, _u, p=payload: p)
         assert counts["failed"] == 1 and counts["completed"] == 0
-        assert upserts == [] and touched == []  # the completed reading stays served
+        # The completed reading stays served: no upsert, no touch of updated_at; only the failure is recorded (D7).
+        [(statement, params)] = executed
+        assert statement == reading.FAILED_REREADING_SQL
+        assert params == (fingerprint, reading.DOCUMENT_READING_VERSION, 1, code, "sale-1")
 
-    row = ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None)
+    row = ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None, None, 0)
     _, upserts, _ = _run_with_candidate(monkeypatch, row, lambda _s, _u: {"result": []})
     assert (upserts[0][5], upserts[0][-2], upserts[0][-1]) == ("failed", "READING_OUTPUT_INVALID", 1)
 
 
+def test_failed_rereadings_on_the_same_text_add_up_and_a_new_text_starts_again(monkeypatch) -> None:
+    fingerprint = reading.input_fingerprint(MANIFEST)
+    same = ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3,
+            fingerprint, 3)
+    counts, [(_, params)] = _run_recording(monkeypatch, same, _boom)
+    assert params[2] == 4 and counts["abandoned"] == 1  # fourth failure: no more re-reading until the text changes
+
+    other = same[:-2] + ("the-fingerprint-of-an-older-text", 3)
+    _, [(_, params)] = _run_recording(monkeypatch, other, _boom)
+    assert params[2] == 1
+
+
+def test_a_budget_refusal_records_no_failed_rereading(monkeypatch) -> None:
+    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3,
+           None, 0)
+
+    counts, executed = _run_recording(monkeypatch, row, _over_budget)
+
+    assert executed == [] and counts["failed"] == 1
+
+
+def test_the_candidates_wait_after_a_failed_rereading() -> None:
+    sql = " ".join(reading.CANDIDATES_SQL.split())
+    assert "and not coalesce((reading.status = 'completed' and reading.failed_attempts > 0" in sql
+    assert "reading.failed_prompt_version = %s" in sql and "reading.failed_attempts >= 4" in sql
+    assert "reading.last_failed_at > now() - case when reading.failed_attempts <= 1 then interval '12 hours'" in sql
+    assert sql.count("%s") == 3  # version, version of the failed re-reading, limit
+    assignments = reading.FAILED_REREADING_SQL.split("where")[0]
+    for kept in ("updated_at", "points", "status", "prompt_version ="):
+        assert re.search(rf"(?<![_\w]){re.escape(kept)}", assignments) is None, kept
+    assert re.search(r"(?<!failed_)input_fingerprint\s*=", assignments) is None
+
+
 def test_the_revalidation_runs_from_the_command_line_without_a_model(monkeypatch) -> None:
-    calls: list[tuple[str, int]] = []
+    calls: list[tuple[str, bool, bool]] = []
 
     def model_pass(*_args: object, **_kwargs: object) -> dict[str, int]:
         raise AssertionError("the model pass must not start")
 
+    def revalidate(url: str, *, dry_run: bool, allow_empty: bool) -> dict[str, object]:
+        calls.append((url, dry_run, allow_empty))
+        return {}
+
     monkeypatch.setenv(reading.READING_ENABLED_ENV, "false")  # the switch spares the model: not this command
     monkeypatch.setattr(reading, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(reading, "revalidate_stored_readings", lambda url, *, limit: calls.append((url, limit)) or {})
+    monkeypatch.setattr(reading, "revalidate_stored_readings", revalidate)
     monkeypatch.setattr(reading, "run_document_readings", model_pass)
 
-    assert reading.main(["--revalidate-stored", "--max-sales", "7"]) == 0
-    assert calls == [("postgresql://test", 7)]
+    assert reading.main(["--revalidate-stored", "--dry-run"]) == 0
+    assert reading.main(["--revalidate-stored", "--allow-empty"]) == 0
+    assert calls == [("postgresql://test", True, False), ("postgresql://test", False, True)]
+    with pytest.raises(SystemExit):
+        reading.main(["--dry-run"])  # only with --revalidate-stored
+
+
+def _paged_readings(monkeypatch, rows: list[tuple]) -> list[tuple[str, tuple]]:
+    """Serve ``rows`` (sorted by sale_id) page by page like REVALIDATION_SQL; return the statements executed."""
+    executed: list[tuple[str, tuple]] = []
+
+    class FakeConnection:
+        def execute(self, statement, params=()):
+            executed.append((statement, params))
+            if statement is reading.REVALIDATION_SQL:
+                after, size = params
+                return SimpleNamespace(fetchall=lambda: [row for row in rows if row[0] > after][:size])
+            return SimpleNamespace(fetchall=lambda: [])
+
+    monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
+    return executed
+
+
+def test_a_dry_run_lists_the_points_to_remove_and_writes_nothing(monkeypatch) -> None:
+    v2 = reading.input_fingerprint(RENTED_MANIFEST, version="document_reading_v2")
+    stored = [
+        _stored("Bien loué", "occupé par un locataire qui déclare payer un loyer mensuel de 650 euros"),
+        _stored("Bien libre à la vente", "Le logement est occupé par un locataire"),
+    ]
+    sale = "42800000-0000-4000-8000-000000000041"
+    executed = _paged_readings(monkeypatch, [(sale, "document_reading_v2", v2, stored, RENTED_MANIFEST, None, None, None)])
+
+    report = reading.revalidate_stored_readings("postgresql://test", dry_run=True)
+
+    assert [sql for sql, _ in executed if sql is not reading.REVALIDATION_SQL] == []
+    assert report["dry_run"] is True and report["updated"] == 1 and report["points_removed"] == 1
+    assert report["removed"] == [
+        {"sale_id": sale, "title": "Bien libre à la vente", "reason": "occupation_contradiction", "applied": False}
+    ]
+
+
+def test_a_reading_that_would_lose_every_point_is_left_whole_unless_asked(monkeypatch) -> None:
+    v2 = reading.input_fingerprint(RENTED_MANIFEST, version="document_reading_v2")
+    row = ("42800000-0000-4000-8000-000000000042", "document_reading_v2", v2,
+           [_stored("Bien libre à la vente", "Le logement est occupé par un locataire")], RENTED_MANIFEST, None, None,
+           None)
+    executed = _paged_readings(monkeypatch, [row])
+
+    report = reading.revalidate_stored_readings("postgresql://test")
+
+    assert (report["left_whole"], report["updated"]) == (1, 0)
+    assert [sql for sql, _ in executed if sql is not reading.REVALIDATION_SQL] == []
+    assert report["removed"][0]["applied"] is False
+
+    executed = _paged_readings(monkeypatch, [row])
+    report = reading.revalidate_stored_readings("postgresql://test", allow_empty=True)
+    [(statement, params)] = [(sql, values) for sql, values in executed if sql is not reading.REVALIDATION_SQL]
+    assert json.loads(params[0]) == [] and report["updated"] == 1
+
+
+def test_every_stored_reading_is_reached_page_by_page(monkeypatch) -> None:
+    v2 = reading.input_fingerprint(RENTED_MANIFEST, version="document_reading_v2")
+    point = [_stored("Bien loué", "occupé par un locataire qui déclare payer un loyer mensuel de 650 euros")]
+    rows = [
+        (f"42800000-0000-4000-8000-{index:012d}", "document_reading_v2", v2, point, RENTED_MANIFEST, None, None, None)
+        for index in range(reading.REVALIDATION_PAGE_SIZE + 5)
+    ]
+    executed = _paged_readings(monkeypatch, rows)
+
+    report = reading.revalidate_stored_readings("postgresql://test")
+
+    pages = [params for sql, params in executed if sql is reading.REVALIDATION_SQL]
+    assert [after for after, _ in pages] == [reading._FIRST_SALE_ID, rows[reading.REVALIDATION_PAGE_SIZE - 1][0]]
+    assert report["selected"] == len(rows) and report["unchanged"] == len(rows)
+
+
+READINGS_SCHEMA = (
+    "create schema if not exists app_private",
+    """create or replace function app_private.catalogue_withdrawn_sources() returns text[]
+       language sql as $$ select '{}'::text[] $$""",
+    """create or replace function app_private.sale_is_fully_withdrawn(text, jsonb, text[]) returns boolean
+       language sql as $$ select false $$""",
+    """create table public.auction_sales (
+         id uuid primary key, source_url text not null unique, source_name text, status text, sale_date timestamptz,
+         observations jsonb not null default '[]'::jsonb, property_type text, city text,
+         raw_payload jsonb not null default '{}'::jsonb)""",
+    "create table public.auction_extractions (source_url text, provider text, result jsonb, updated_at timestamptz)",
+    # Columns of 20261018110000, 20261020120021 and 20261119101010.
+    """create table public.auction_document_readings (
+         sale_id uuid primary key, source_url text not null, input_fingerprint text not null,
+         prompt_version text not null, model text, status text not null,
+         points jsonb not null default '[]'::jsonb, documents jsonb not null default '[]'::jsonb,
+         input_truncated boolean not null default false, error_code text,
+         attempt_count integer not null default 0,
+         generated_at timestamptz not null default statement_timestamp(),
+         updated_at timestamptz not null default statement_timestamp(),
+         failed_input_fingerprint text, failed_prompt_version text, failed_attempts integer not null default 0,
+         last_failed_at timestamptz, failed_error_code text)""",
+)
+
+
+def test_a_failed_rereading_is_not_paid_again_before_its_delay(monkeypatch) -> None:
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    sale_id = "42800000-0000-4000-8000-000000000031"
+    calls: list[str] = []
+
+    def out_of_format(_system: str, user: str):
+        calls.append(user)
+        return {"error": "cannot comply"}
+
+    with _postgres_connect(url) as db:
+        try:
+            for statement in READINGS_SCHEMA:
+                db.execute(statement)
+            db.execute(
+                """insert into public.auction_sales (id, source_url, source_name, status, sale_date)
+                   values (%s, 'https://example.test/1', 'licitor', 'upcoming', now() + interval '20 days')""",
+                (sale_id,),
+            )
+            db.execute(
+                """insert into public.auction_extractions (source_url, provider, result, updated_at)
+                   values ('https://example.test/1', 'pdf_text', %s::jsonb, now() - interval '1 day')""",
+                (json.dumps(MANIFEST),),
+            )
+            db.execute(
+                """insert into public.auction_document_readings
+                     (sale_id, source_url, input_fingerprint, prompt_version, status, points, generated_at, updated_at)
+                   values (%s, 'https://example.test/1', 'v3-text', 'document_reading_v3', 'completed',
+                           '[{"title": "Bien loué"}]'::jsonb, now() - interval '2 days', now() - interval '2 days')""",
+                (sale_id,),
+            )
+            original = db.execute(
+                "select updated_at from public.auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()[0]
+
+            def run() -> dict[str, int]:
+                return reading.run_document_readings(
+                    url, max_sales=10, budget_seconds=60, generator=(out_of_format, "test-model")
+                )
+
+            monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(db))
+            first, second = run(), run()
+            assert len(calls) == 1  # the second pass waits: no second paid call
+            assert (first["failed"], second["candidates"]) == (1, 0)
+            row = db.execute(
+                """select status, points, input_fingerprint, prompt_version, updated_at, failed_attempts,
+                          failed_error_code, failed_prompt_version
+                     from public.auction_document_readings where sale_id = %s""",
+                (sale_id,),
+            ).fetchone()
+            assert row[:5] == ("completed", [{"title": "Bien loué"}], "v3-text", "document_reading_v3", original)
+            assert row[5:] == (1, "READING_OUTPUT_INVALID", reading.DOCUMENT_READING_VERSION)
+            # Once the 12-hour delay is over, the sale is read again, and the failure counts twice.
+            db.execute(
+                "update public.auction_document_readings set last_failed_at = now() - interval '13 hours'"
+                " where sale_id = %s",
+                (sale_id,),
+            )
+            run()
+            assert len(calls) == 2
+            assert db.execute(
+                "select failed_attempts from public.auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()[0] == 2
+            # The paged revalidation query runs on the same table (its text changed since: left alone).
+            report = reading.revalidate_stored_readings(url, dry_run=True)
+            assert (report["selected"], report["stale_text"]) == (1, 1)
+        finally:
+            db.rollback()

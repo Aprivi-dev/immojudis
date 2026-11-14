@@ -25,7 +25,7 @@ import multiprocessing
 import os
 import time
 from collections.abc import Callable
-from concurrent.futures import Executor, Future, ProcessPoolExecutor
+from concurrent.futures import Executor, Future, ProcessPoolExecutor, wait
 from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Any
@@ -237,17 +237,31 @@ class DocumentPrefetcher:
             self.stats["errors"] += 1
 
     def close(self) -> None:
-        if self._executor is not None:
-            self._executor.shutdown(wait=True, cancel_futures=True)
-            self._executor = None
+        """End the pool: preparations still running get until the drain's deadline, then the pool is stopped (D20).
+
+        Called by the drain once it stops (``document_backlog``), possibly after its deadline: ``shutdown(wait=True)``
+        then waited for a preparation that no longer checked the deadline, past the drain's budget.
+        """
+        if self._executor is None:
+            return
+        running = [future for future in self._futures.values() if not future.cancel()]
+        remaining = self._deadline - self._clock()
+        if remaining > 0:
+            wait(running, timeout=remaining)
+        if any(not future.done() for future in running):
+            self._stop_overdue_pool()
+            return
+        self._executor.shutdown(wait=True, cancel_futures=True)
+        self._executor = None
 
     def _stop_overdue_pool(self) -> None:
         """A preparation outlived the drain's deadline: stop the pool now instead of waiting for it (D20).
 
-        ``shutdown(wait=True)`` in :meth:`close` waited for that preparation, a download or an OCR that no longer
-        checks the deadline, well past the drain's budget. Nothing is scheduled after the deadline anyway. Idle
-        processes leave at once; a busy one gets :data:`STOP_GRACE_SECONDS`, then is terminated. A cache file it was
-        writing may be cut short: its reader takes an unreadable file for a missing one.
+        ``shutdown(wait=True)`` waited for that preparation, a download or an OCR that no longer checks the deadline,
+        well past the drain's budget. Nothing is scheduled after the deadline anyway. ``shutdown(wait=False)`` does not
+        make the pool's processes leave, idle ones included (measured on Python 3.12): every process still alive after
+        :data:`STOP_GRACE_SECONDS` (shared by all of them) is terminated. A cache file it was writing may be cut short:
+        its reader takes an unreadable file for a missing one.
         """
         executor, self._executor = self._executor, None
         if executor is None:

@@ -76,6 +76,58 @@ def office_name(office: dict[str, Any] | None) -> str | None:
     return clean_text(office.get("title") or office.get("name"))
 
 
+def contact_text(contact: dict[str, Any]) -> str | None:
+    return clean_text(" | ".join(part for part in (contact.get("telephone"), contact.get("mail")) if clean_text(part)))
+
+
+def _professional_name(value: object) -> str | None:
+    """A name that starts with a professional mark (``PROFESSIONAL_PREFIX_RE``); never « Prénom NOM »."""
+    text = clean_text(value)
+    return text if text and PROFESSIONAL_PREFIX_RE.match(text) else None
+
+
+def listing_contact(
+    contact: dict[str, Any],
+    *,
+    office: dict[str, Any] | None,
+    notary: str | None = None,
+    visit_name: object = None,
+) -> tuple[str | None, str | None]:
+    """Who the contact of a notaires listing is (14/11/2026, D9): ``(lawyer_name, lawyer_contact)``.
+
+    The only place that decides it, for a detail just read and for one read at an earlier collection
+    (:func:`known_listing_contact`). The name has a professional mark (``PROFESSIONAL_PREFIX_RE``, as for Licitor and
+    Petites Affiches: the notary named in the text, the API contact, the visit contact), else it is the office named
+    by the operator page. The phone and address are those of the API contact, and only when it names the office or
+    one of its services (``office_contact``): never a negotiator's. The visit's contact text (``visiteContact``) and
+    the phone of the list card are not read: nothing says whose they are.
+    """
+    desk = office_contact(contact)
+    name = notary or _professional_name(desk.get("nom")) or _professional_name(visit_name) or office_name(office)
+    return name, contact_text(desk)
+
+
+def known_listing_contact(sale: dict[str, Any], known: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The contact of a listing whose detail was not read at this collection (unchanged card, failed read).
+
+    :func:`listing_contact` again, on what the last detail reading stored: its API contact block
+    (``source_property_features.contact``), its office and the notary named in its text. A contact stored under an
+    older rule (a negotiator's name, phone and address) is therefore never copied back, and a sale stored under
+    another source lends nothing.
+    """
+    if known.get("source_url") != sale.get("source_url"):
+        return None, None
+    payload = known.get("raw_payload") if isinstance(known.get("raw_payload"), dict) else {}
+    features = payload.get("source_property_features") if isinstance(payload.get("source_property_features"), dict) else {}
+    blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
+    stored = features.get("contact") if isinstance(features.get("contact"), dict) else {}
+    return listing_contact(
+        {"nom": stored.get("name"), "telephone": stored.get("phone"), "mail": stored.get("email")},
+        office=features.get("office") if isinstance(features.get("office"), dict) else None,
+        notary=clean_text(blocks.get("notary_name")),
+    )
+
+
 def round_negotiation_fee_rate(rate: float) -> float:
     """Taux d'honoraires de négociation arrondi au demi-point (0,005), moitiés vers le haut."""
     steps = (Decimal(repr(float(rate))) / NEGOTIATION_FEE_RATE_STEP).quantize(Decimal(1), rounding=ROUND_HALF_UP)

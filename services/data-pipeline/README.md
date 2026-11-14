@@ -1360,15 +1360,20 @@ consigne adressée au modèle, mots de risque) ne touche d'abord que les nouvell
 lectures déjà enregistrées sans relecture payante :
 
 ```bash
-SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored --max-sales 500
+# D'abord à blanc : rien n'est écrit, la sortie liste chaque point qui serait retiré (vente, titre, raison).
+SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored --dry-run
+# Puis pour de bon.
+SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored
 ```
 
 - aucun appel au modèle : les points enregistrés (citation, pièce, page) repassent par les contrôles actuels
   (`revalidate_stored_readings`) ; un point qui n'y résiste plus est retiré, rien n'est ajouté ;
-- `--max-sales` borne le nombre de lectures repassées (1 à 500), ventes à venir d'abord ;
+- toutes les lectures terminées des ventes à venir sont repassées, par pages de 200 dans l'ordre de `sale_id` ;
+- une lecture qui perdrait tous ses points est laissée entière (`left_whole`) : `--allow-empty` l'écrit vide ;
 - une lecture dont le texte des pièces a changé depuis est laissée telle quelle : la prochaine lecture la refait ;
 - `updated_at` de la lecture ne bouge pas, et `DOCUMENT_READING_ENABLED` ne s'applique pas (il épargne le modèle) ;
-- sortie : un compte JSON (`selected`, `unchanged`, `updated`, `points_removed`, `stale_text`).
+- sortie : un JSON (`selected`, `unchanged`, `updated`, `points_removed`, `stale_text`, `left_whole`, `dry_run`, et
+  `removed` : chaque point retiré avec sa vente, son titre, sa raison et `applied`).
 
 Commande à lancer à la main ; elle n'est dans aucun workflow.
 

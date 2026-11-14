@@ -13,9 +13,9 @@ delete from public.auction_enrichment_jobs;
 
 insert into public.auction_sales (source_name, source_url, status, sale_date, raw_payload)
 values
-  ('pgtap-896-origin', 'https://example.test/pgtap/896/stuck', 'upcoming', statement_timestamp() + interval '7 days',
+  ('pgtap-898-origin', 'https://example.test/pgtap/898/stuck', 'upcoming', statement_timestamp() + interval '7 days',
    '{}'::jsonb),
-  ('pgtap-896-origin', 'https://example.test/pgtap/896/spent', 'upcoming', statement_timestamp() + interval '7 days',
+  ('pgtap-898-origin', 'https://example.test/pgtap/898/spent', 'upcoming', statement_timestamp() + interval '7 days',
    '{}'::jsonb);
 
 -- Sale triggers can create ordinary revisions; remove that side effect.
@@ -27,11 +27,11 @@ insert into public.auction_enrichment_jobs (
 )
 values
   -- A worker died three days ago during the first attempt.
-  ('https://example.test/pgtap/896/stuck', 'pdf', 'running', 10, 'pgtap-896-stuck', 1, 4,
+  ('https://example.test/pgtap/898/stuck', 'pdf', 'running', 10, 'pgtap-898-stuck', 1, 4,
    statement_timestamp() - interval '3 days 1 minute', statement_timestamp() - interval '3 days',
    statement_timestamp() - interval '3 days 1 minute', statement_timestamp() - interval '3 days'),
   -- Same, during its last allowed attempt.
-  ('https://example.test/pgtap/896/spent', 'pdf', 'running', 10, 'pgtap-896-spent', 4, 4,
+  ('https://example.test/pgtap/898/spent', 'pdf', 'running', 10, 'pgtap-898-spent', 4, 4,
    statement_timestamp() - interval '3 days 1 minute', statement_timestamp() - interval '3 days',
    statement_timestamp() - interval '3 days 1 minute', statement_timestamp() - interval '3 days');
 
@@ -47,7 +47,7 @@ select ok(
        and attempt_count = 2
        and locked_at >= statement_timestamp() - interval '5 minutes'
       from public.auction_enrichment_jobs
-     where input_hash = 'pgtap-896-stuck'
+     where input_hash = 'pgtap-898-stuck'
   ),
   'a running job whose lease expired is taken again and counts one more attempt'
 );
@@ -59,7 +59,7 @@ select ok(
        and locked_at is null
        and last_error = 'Worker lease expired and retry budget exhausted'
       from public.auction_enrichment_jobs
-     where input_hash = 'pgtap-896-spent'
+     where input_hash = 'pgtap-898-spent'
   ),
   'at its last attempt, an expired lease fails instead of being claimed again'
 );
