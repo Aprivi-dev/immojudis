@@ -18,6 +18,15 @@ absentes des deux derniers inventaires complets, avec ces garde-fous, tous appli
 
 Ce module n'est que l'appel côté pipeline : il ne lève jamais (une panne ici ne doit pas empêcher de clore le run)
 et ignore une base où la migration n'est pas encore appliquée.
+
+Ventes sans date non revues (14/11/2026, D13). Une vente datée quitte « à venir » avec sa date ; une vente sans
+date d'audience n'a pas d'échéance. Le retrait ci-dessus ne voit que les inventaires complets : 33 ventes à venir sans
+date, que leur source n'avait plus montrées depuis août ou septembre, restaient présentées comme à venir
+(encheres_publiques, notaires, avoventes, cessions_etat). Après chaque passage d'une source,
+:func:`mark_unseen_undated_sales` passe en ``unknown`` ses ventes ``upcoming`` sans date qu'aucune collecte n'a revues
+(``last_seen_at``) depuis :data:`UNSEEN_UNDATED_DAYS` jours. Rien n'est retiré ni supprimé : la vente reste visible,
+son statut précédent est gardé dans ``raw_payload.unseen_undated``, et la collecte qui la revoit la republie avec le
+statut que la source donne.
 """
 
 from __future__ import annotations
@@ -37,6 +46,66 @@ MIN_ABSENT_INVENTORIES = 2
 #: Plancher absolu : une petite source (moins de 7 ventes visibles) peut toujours perdre une vente.
 MIN_WITHDRAWALS = 1
 MIN_INVENTORY_SPACING_HOURS = 12
+
+#: 14 jours sans être revue : 28 inventaires manqués à la cadence de 12 h (``autonomous_runner.INVENTORY_CADENCE``),
+#: deux fois le seuil d'une vente « non revue » du rapport de santé (7 jours, ``src.pipeline_health``). Une panne de
+#: source, signalée en 18 h par ``pipeline.source.<source>.missed``, a deux semaines pour être réparée avant que ses
+#: ventes sans date changent de statut ; une vente disparue quitte « à venir » en deux semaines, et non plus jamais.
+UNSEEN_UNDATED_DAYS = 14
+UNSEEN_UNDATED_SQL = """
+update public.auction_sales sale
+   set status = 'unknown',
+       updated_at = now(),
+       raw_payload = (
+         case when pg_catalog.jsonb_typeof(sale.raw_payload) = 'object' then sale.raw_payload else '{}'::jsonb end
+       ) || pg_catalog.jsonb_build_object(
+         'unseen_undated', pg_catalog.jsonb_build_object(
+           'status_before', sale.status,
+           'marked_at', now(),
+           'last_seen_at', sale.last_seen_at,
+           'unseen_days', %(days)s::integer
+         )
+       )
+ where sale.source_name = %(source)s
+   and sale.status = 'upcoming'
+   and sale.sale_date is null
+   and sale.last_seen_at < now() - make_interval(days => %(days)s::integer)
+returning sale.id
+"""
+
+
+def mark_unseen_undated_sales(
+    db_url: str,
+    source: str,
+    *,
+    connect: Callable[[str], Any] | None = None,
+) -> dict[str, Any] | None:
+    """Passe en ``unknown`` les ventes à venir sans date de ``source`` non revues depuis UNSEEN_UNDATED_DAYS jours.
+
+    Renvoie ``{"marked": n, "sample_sale_ids": [...], "unseen_days": 14}`` ; ``None`` en cas d'erreur, journalisée
+    (jamais d'échec ici).
+    """
+    if not db_url or not source:
+        return None
+    try:
+        if connect is None:
+            from src.storage.supabase_client import connect as default_connect
+
+            connect = default_connect
+        with connect(db_url) as db:
+            rows = db.execute(UNSEEN_UNDATED_SQL, {"source": source, "days": UNSEEN_UNDATED_DAYS}).fetchall()
+    except Exception as exc:  # le run est déjà clos : jamais d'échec ici
+        LOGGER.warning("Unseen undated sales: %s failed (%s: %s)", source, type(exc).__name__, exc)
+        return None
+    marked = [str(row[0]) for row in rows or []]
+    if marked:
+        LOGGER.info(
+            "Unseen undated sales: %s upcoming sales of %s without a date and unseen for %s days are now unknown.",
+            len(marked),
+            source,
+            UNSEEN_UNDATED_DAYS,
+        )
+    return {"marked": len(marked), "sample_sale_ids": marked[:10], "unseen_days": UNSEEN_UNDATED_DAYS}
 
 
 def max_withdrawals(population: int) -> int:

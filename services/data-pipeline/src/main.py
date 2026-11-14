@@ -1126,6 +1126,9 @@ def _keep_known_notaires_contact_email(sale: dict[str, object], known: dict[str,
     whose card carries a contact poorer than its detail), and only for a card whose detail was skipped as
     unchanged: a failed detail read keeps the card as it is and is read again at the next collection. The
     address is read by the common extractor (``clear_email``).
+
+    A stored detail without any contact found no office behind the listing, only a person (a negotiator,
+    ``notaires_extraction.office_contact``, 14/11/2026): the card's phone is that person's and is dropped too.
     """
     if sale.get("source_name") != "notaires" or not sale.get("_known_unchanged"):
         return
@@ -1134,6 +1137,9 @@ def _keep_known_notaires_contact_email(sale: dict[str, object], known: dict[str,
         return
     card_contact = str(sale.get("lawyer_contact") or "").strip()
     if clear_email(card_contact):
+        return
+    if not str(known.get("lawyer_contact") or "").strip():
+        sale["lawyer_contact"] = None
         return
     address = clear_email(known.get("lawyer_contact"))
     if address:

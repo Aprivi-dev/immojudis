@@ -364,6 +364,68 @@ def test_immo_interactif_page_supplies_inventory_office_and_fee_schedule():
     assert detail["source_property_features"]["seller_type"] == "PROFESSIONAL"
 
 
+@pytest.mark.parametrize("person", ["Négociatrice fictive", "Camille DURAND", None])
+def test_a_negotiator_is_never_the_lawyer_nor_the_contact_of_the_listing(person):
+    # 14/11/2026 (D9): the API contact of the VNI fixture is a negotiator; « Prénom NOM » and a nameless contact
+    # are persons too (nothing says whose phone or address they give).
+    payload = json.loads(vni_payload())
+    payload["contact"] = {"nom": person, "telephone": "0600000000", "mail": "nego@office-fictif.test"}
+    fallback = {"source_url": VNI_URL, "source_blocks": {}}
+
+    alone = notaires.parse_notaires_detail_json(json.dumps(payload), fallback=fallback)
+    with_page = notaires.parse_notaires_detail_json(
+        json.dumps(payload), fallback=fallback, operator_page=parse_immo_interactif_page(immo_page(), "9000002")
+    )
+
+    for detail in (alone, with_page):
+        serialized = json.dumps(
+            {key: detail.get(key) for key in ("lawyer_name", "lawyer_contact", "source_property_features", "source_blocks")},
+            ensure_ascii=False,
+        )
+        assert detail["lawyer_contact"] is None
+        assert "0600000000" not in serialized and "nego@office-fictif.test" not in serialized
+        assert not any((detail["source_property_features"].get("contact") or {}).values())
+        if person:
+            assert person not in serialized
+    assert alone["lawyer_name"] is None
+    # Without a professional name, the lawyer of the sale is the office named by the operator page.
+    assert with_page["lawyer_name"] == "Maître Fictif et Associés"
+    assert with_page["source_blocks"]["caracteristiques_bien"]["manager"]["service"] == "Maître Fictif et Associés"
+
+
+@pytest.mark.parametrize(
+    ("name", "lawyer_name"),
+    [
+        ("Office notarial du Port", "Office notarial du Port"),
+        ("SCP Fictif et Associés", "SCP Fictif et Associés"),
+        ("Maître Paul FICTIF", "Maître Paul FICTIF"),
+        ("Service immobilier fictif", None),  # a service of the office: its coordinates, never a lawyer's name
+    ],
+)
+def test_the_office_and_its_services_keep_their_contact(name, lawyer_name):
+    payload = json.loads(vae_payload())
+    payload["contact"] = {"nom": name, "telephone": "0500000000", "mail": "contact@office-fictif.test"}
+
+    detail = notaires.parse_notaires_detail_json(json.dumps(payload), fallback={"source_url": VAE_URL, "source_blocks": {}})
+
+    assert detail["lawyer_name"] == lawyer_name
+    assert detail["lawyer_contact"] == "0500000000 | contact@office-fictif.test"
+    assert detail["source_property_features"]["contact"]["email"] == "contact@office-fictif.test"
+
+
+def test_the_detail_removes_the_phone_of_the_list_card_when_its_contact_is_a_person():
+    card = {"source_name": "notaires", "source_url": VNI_URL, "lawyer_contact": "0600000000", "source_blocks": {}}
+    payload = json.loads(vni_payload())  # contact « Négociatrice fictive »
+
+    notaires._merge_detail(card, notaires.parse_notaires_detail_json(json.dumps(payload), fallback=card))
+
+    assert card["lawyer_contact"] is None and card["lawyer_name"] is None
+    office = {**card, "lawyer_contact": "0500000000"}
+    payload["contact"] = {"nom": "Office notarial du Port", "telephone": "0500000001", "mail": "office@example.test"}
+    notaires._merge_detail(office, notaires.parse_notaires_detail_json(json.dumps(payload), fallback=office))
+    assert office["lawyer_contact"] == "0500000001 | office@example.test"
+
+
 def test_adjudicated_notarial_sale_reports_its_price():
     detail = notaires.parse_notaires_detail_json(
         vae_payload(bienVendu="OUI", prixAdjudication=135000), fallback={"source_url": VAE_URL, "source_blocks": {}}

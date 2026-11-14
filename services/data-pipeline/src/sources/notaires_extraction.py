@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 from src.cadastre_references import ParcelRef, designation, ref_label, references_signature
 from src.normalize import clean_text, parse_french_datetime, parse_surface
+from src.sources.professional_contact import PROFESSIONAL_PREFIX_RE
 from src.timestamps import sale_window
 
 FEATURES_SCHEMA_VERSION = "notaires_features_v2"
@@ -52,6 +53,27 @@ NEGOTIATION_FEE_RATE_MAX = 0.20
 # prix de réserve dans les barèmes dégressifs et permettrait de le retrouver. Même arrondi que
 # ``app_private.public_sale_conditions`` (moitiés vers le haut).
 NEGOTIATION_FEE_RATE_STEP = Decimal("0.005")
+
+# Interlocuteur nommé par le bloc ``contact`` de l'API (14/11/2026, D9) : l'office (« Office notarial… », « SCP… »,
+# « Maître… », marques de ``PROFESSIONAL_PREFIX_RE``), un de ses services (« Service immobilier ») ou une personne,
+# souvent un négociateur salarié (« Prénom NOM »). Le nom, le téléphone et l'adresse d'une personne ne sont repris
+# ni comme avocat de la vente, ni dans le bloc d'affichage, ni dans les faits de l'annonce. Un contact sans nom est
+# traité comme une personne : rien ne dit à qui sont ses coordonnées.
+_OFFICE_SERVICE_RE = re.compile(r"^service\b", re.I)
+
+
+def office_contact(contact: dict[str, Any]) -> dict[str, Any]:
+    """The API contact block when it names the office or one of its services; ``{}`` when it names a person."""
+    name = clean_text(contact.get("nom"))
+    if name and (PROFESSIONAL_PREFIX_RE.match(name) or _OFFICE_SERVICE_RE.match(name)):
+        return contact
+    return {}
+
+
+def office_name(office: dict[str, Any] | None) -> str | None:
+    """Name of the notarial office read on the Immo-Interactif page (its title, else the name it displays)."""
+    office = office or {}
+    return clean_text(office.get("title") or office.get("name"))
 
 
 def round_negotiation_fee_rate(rate: float) -> float:
@@ -792,7 +814,7 @@ def build_display(
              "virtual_tours": len(features.get("virtual_tours") or [])}
     listing = features.get("listing") or {}
     office = office or {}
-    service = clean_text(office.get("title") or office.get("name")) or known(contact.get("nom"))
+    service = office_name(office) or known(contact.get("nom"))
     display: dict[str, Any] = {
         "schema_version": DISPLAY_SCHEMA_VERSION,
         "source": "notaires",

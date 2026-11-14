@@ -203,6 +203,24 @@ def test_the_card_contact_stays_when_the_stored_one_has_no_usable_address(stored
     assert _hydrated(_card_with_phone(_known_unchanged=True), stored) == PHONE
 
 
+@pytest.mark.parametrize("stored", [None, ""])
+def test_the_card_phone_goes_when_the_stored_detail_found_no_office_contact(stored):
+    # 14/11/2026 (D9): the detail keeps no contact for a negotiator; the card's phone is theirs.
+    detail = notaires.parse_notaires_detail_json(
+        json.dumps(
+            {
+                "typeTransaction": "VNI",
+                "vni": {"descriptionFr": "Appartement à Bordeaux"},
+                "contact": {"nom": "Camille DURAND", "telephone": PHONE, "mail": "camille.durand@example.test"},
+            }
+        ),
+        _card_with_phone(),
+    )
+    assert detail["lawyer_contact"] is None
+
+    assert _hydrated(_card_with_phone(_known_unchanged=True), stored) is None
+
+
 def test_a_card_that_already_carries_an_address_is_left_alone():
     card = _card_with_phone(_known_unchanged=True, lawyer_contact=f"{PHONE} | etude@example.test")
 

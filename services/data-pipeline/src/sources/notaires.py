@@ -25,6 +25,8 @@ from src.sources.notaires_extraction import (
     known_value,
     merge_operator_page,
     number,
+    office_contact,
+    office_name,
     parse_immo_interactif_page,
 )
 from src.sources.notaires_extraction import (
@@ -43,6 +45,7 @@ from src.sources.notaires_inventory import (
 )
 from src.sources.notaires_price_nature import starting_price_nature
 from src.sources.notaires_text_terms import notaires_price_fields, text_offer_schedule, text_sale_date
+from src.sources.professional_contact import PROFESSIONAL_PREFIX_RE
 from src.sources.source_features import extract_parking_count
 from src.text_folding import to_ascii
 
@@ -398,6 +401,8 @@ def parse_notaires_detail_json(
     description_text = description.get("long") or description.get("short") or ""
     visit = transaction.get("visite") if isinstance(transaction.get("visite"), dict) else {}
     contact = data.get("contact") if isinstance(data.get("contact"), dict) else {}
+    # The office's contact only, never a person's (D9): the source text below keeps the block as published.
+    office_desk = office_contact(contact)
     postal_code = clean_text(property_block.get("codePostal") or transaction.get("codePostal"))
     city = clean_text(property_block.get("communeNom") or property_block.get("localiteNom") or transaction.get("ville"))
     source_images = _multimedia_images(transaction.get("multimedias"))
@@ -606,7 +611,7 @@ def parse_notaires_detail_json(
             transaction=transaction,
             property_block=property_block,
             coproperty=coproperty_block,
-            contact=contact,
+            contact=office_desk,
             description=description_text,
             images=source_images,
         ),
@@ -624,14 +629,14 @@ def parse_notaires_detail_json(
         coproperty=coproperty_block,
         features=extra_features,
         visit_dates=visit_dates,
-        contact=contact,
+        contact=office_desk,
         office=extra_features.get("office"),
     )
     property_features = _notaires_property_features(
         property_block=property_block,
         coproperty=coproperty_block,
         transaction=transaction,
-        contact=contact,
+        contact=office_desk,
         description_features=description_features,
         surface_features=surface_features,
         source_images=source_images,
@@ -694,9 +699,13 @@ def parse_notaires_detail_json(
         "sale_date": _sale_date(transaction, transaction_type) or text_sale_date(description_text),
         "source_sale_schedule": text_offer_schedule(_sale_schedule(transaction, transaction_type), description_text),
         "visit_dates": visit_dates,
+        # A name with a professional prefix, as for Licitor and Petites Affiches, else the office (D9). The visit's
+        # contact text (``visiteContact``) is no longer read: nothing says whose phone or address it gives.
         "lawyer_name": _notary_from_text(description_text)
-        or clean_text(contact.get("nom") or visit.get("visiteNomContact")),
-        "lawyer_contact": _contact_text(contact) or clean_text(visit.get("visiteContact")),
+        or _professional_name(office_desk.get("nom"))
+        or _professional_name(visit.get("visiteNomContact"))
+        or office_name(extra_features.get("office")),
+        "lawyer_contact": _contact_text(office_desk),
         "status": _status(transaction),
         "latitude": latitude,
         "longitude": longitude,
@@ -1001,8 +1010,16 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     return True
 
 
+# The detail alone tells the office from a negotiator (``office_contact``, D9): it decides the contact of the listing,
+# an empty one included. The list card carries the contact's phone without saying whose it is.
+DETAIL_DECIDES_CONTACT = frozenset({"lawyer_name", "lawyer_contact"})
+
+
 def _merge_detail(sale: dict[str, Any], detail: dict[str, Any]) -> None:
     for key, value in detail.items():
+        if key in DETAIL_DECIDES_CONTACT:
+            sale[key] = value or None
+            continue
         if value in (None, "", [], {}):
             continue
         if key == "quality_flags" and isinstance(value, list):
@@ -1379,6 +1396,12 @@ def _is_visit_ui_state(value: str) -> bool:
 
 def _contact_text(contact: dict[str, Any]) -> str | None:
     return clean_text(" | ".join(part for part in (contact.get("telephone"), contact.get("mail")) if clean_text(part)))
+
+
+def _professional_name(value: object) -> str | None:
+    """A name that starts with a professional mark (``PROFESSIONAL_PREFIX_RE``); never « Prénom NOM »."""
+    text = clean_text(value)
+    return text if text and PROFESSIONAL_PREFIX_RE.match(text) else None
 
 
 def _notary_from_text(value: str | None) -> str | None:

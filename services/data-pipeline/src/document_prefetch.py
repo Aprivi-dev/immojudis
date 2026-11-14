@@ -45,6 +45,8 @@ MAX_ROUNDS_PER_DOCUMENT = 6
 # with one sale ahead per worker the processes sat idle while the locked pass waited. The queue is only file
 # names and a deadline; the work it holds is what the locked pass would have done anyway.
 LOOKAHEAD_PER_WORKER = 4
+# Time a preparation process still running at the deadline gets to finish before it is terminated (14/11/2026).
+STOP_GRACE_SECONDS = 10.0
 # Totals reported by the drain (``DocumentPrefetcher.stats``, besides ``workers``).
 PREFETCH_STAT_KEYS = ("prepared", "documents", "read", "cached", "deferred_exhausted", "errors")
 
@@ -213,6 +215,7 @@ class DocumentPrefetcher:
             except FutureTimeout:
                 LOGGER.warning("Document prefetch still running for %s at the deadline", source_url)
                 self.stats["errors"] += 1
+                self._stop_overdue_pool()
             except Exception as exc:  # noqa: BLE001 - a broken worker never stops the drain
                 LOGGER.warning("Document prefetch failed for %s: %s", source_url, exc)
                 self.stats["errors"] += 1
@@ -237,6 +240,30 @@ class DocumentPrefetcher:
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)
             self._executor = None
+
+    def _stop_overdue_pool(self) -> None:
+        """A preparation outlived the drain's deadline: stop the pool now instead of waiting for it (D20).
+
+        ``shutdown(wait=True)`` in :meth:`close` waited for that preparation, a download or an OCR that no longer
+        checks the deadline, well past the drain's budget. Nothing is scheduled after the deadline anyway. Idle
+        processes leave at once; a busy one gets :data:`STOP_GRACE_SECONDS`, then is terminated. A cache file it was
+        writing may be cut short: its reader takes an unreadable file for a missing one.
+        """
+        executor, self._executor = self._executor, None
+        if executor is None:
+            return
+        # ``ProcessPoolExecutor`` lists its processes in ``_processes`` only (``terminate_workers`` comes with Python
+        # 3.14; the pipeline runs 3.12). Another executor (tests) has none to stop.
+        processes = list((getattr(executor, "_processes", None) or {}).values())
+        executor.shutdown(wait=False, cancel_futures=True)
+        self._futures.clear()
+        grace_ends = time.monotonic() + STOP_GRACE_SECONDS
+        for process in processes:
+            process.join(timeout=max(0.0, grace_ends - time.monotonic()))
+            if process.is_alive():
+                LOGGER.warning("Document prefetch process %s terminated after the deadline", process.pid)
+                process.terminate()
+                process.join(timeout=STOP_GRACE_SECONDS)
 
 
 def _per_process_host_delay(workers: int) -> float:
