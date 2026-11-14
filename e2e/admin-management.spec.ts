@@ -29,8 +29,13 @@ test.describe("admin management", () => {
   test("grants a client plan and sends the expected manual payload", async ({ page }) => {
     const state = await prepareAdminManagementPage(page);
 
+    // Ancienne adresse : redirigée vers l'onglet « Clients & abonnements » de la vue Comptes.
     await page.goto("/admin/clients");
-    await expect(page.getByRole("heading", { name: "Clients & abonnements" })).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/comptes\?onglet=clients$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
+    await expect(
+      page.getByRole("tab", { name: "Clients & abonnements", selected: true }),
+    ).toBeVisible();
     await page.getByLabel("Email ou UUID utilisateur").fill("client.e2e@example.test");
     await page.getByLabel("Plan").selectOption("analyse");
     await page.getByLabel("Statut").selectOption("active");
@@ -65,7 +70,10 @@ test.describe("admin management", () => {
       requestedLawyerId: lawyerId,
     });
 
-    await page.getByRole("button", { name: "Réseau référencé" }).click();
+    // Aucun avocat référencé : le réseau et le relevé sont repliés, joignables par un bouton.
+    await expect(page.getByRole("tab", { name: "Réseau référencé" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Référencer un avocat" }).click();
+    await expect(page.getByRole("tab", { name: "Réseau référencé", selected: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Mise en relation avocat" })).toBeVisible();
     await page.getByLabel("Nom affiché", { exact: true }).fill("Me E2E Référencé");
     await page.getByRole("combobox", { name: "Statut fiche", exact: true }).selectOption("active");
@@ -122,17 +130,20 @@ test.describe("admin management", () => {
   test("loads only its own data on every management view", async ({ page }) => {
     const state = await prepareAdminManagementPage(page);
     const own: Array<[string, string[]]> = [
-      // /admin/clients porte aussi l'interrupteur de l'essai gratuit et la liste d'attente.
+      // L'onglet Clients porte aussi l'interrupteur de l'essai gratuit et, offre ouverte, la liste
+      // d'attente. L'onglet Inscriptions lit ses comptes en POST : aucune lecture GET des clients.
       [
-        "/admin/clients",
+        "/admin/comptes?onglet=clients",
         [
           "/api/admin/launch-offer",
           "/api/admin/offer-opening-notifier",
           "/api/admin/subscriptions",
         ],
       ],
-      ["/admin/lawyers", ["/api/admin/lawyer-referrals"]],
-      ["/admin/compliance", ["/api/admin/privacy-requests", "/api/admin/readiness"]],
+      ["/admin/comptes", []],
+      // La liste des avocats référencés décide de l'affichage des onglets Réseau et Relevé.
+      ["/admin/lawyers", ["/api/admin/lawyer-referrals", "/api/admin/lawyers"]],
+      ["/admin/compliance", ["/api/admin/privacy-requests"]],
       ["/admin/publications", ["/api/admin/publications"]],
     ];
     for (const [url, expected] of own) {
@@ -143,9 +154,97 @@ test.describe("admin management", () => {
       expect([...new Set(state.adminGetPaths)].sort()).toEqual([...expected].sort());
     }
   });
+
+  test("keeps /admin/inscriptions and scrolls the sign-up table inside its frame", async ({
+    page,
+  }, testInfo) => {
+    await prepareAdminManagementPage(page);
+
+    await page.goto("/admin/inscriptions");
+    await expect(page).toHaveURL(/\/admin\/comptes\?onglet=inscriptions$/);
+    await expect(page.getByRole("tab", { name: "Inscriptions", selected: true })).toBeVisible();
+    const table = page.getByRole("table", { name: "Comptes inscrits sur Immojudis" });
+    await expect(table.getByText("Camille Durand-Lemoine")).toBeVisible();
+    // La page ne défile plus en largeur : seul le cadre du tableau défile sur téléphone.
+    const pageSizes = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }));
+    expect(pageSizes.scroll).toBeLessThanOrEqual(pageSizes.client);
+    if (testInfo.project.name.includes("mobile")) {
+      const frame = await table.evaluate((element) => ({
+        scroll: element.parentElement!.scrollWidth,
+        client: element.parentElement!.clientWidth,
+      }));
+      expect(frame.scroll).toBeGreaterThan(frame.client);
+    }
+  });
+
+  test("hides the waiting-list mailing until the Analyse subscription opens", async ({ page }) => {
+    const state = await prepareAdminManagementPage(page, { offerOpen: false });
+
+    await page.goto("/admin/comptes?onglet=clients");
+    await expect(
+      page.getByRole("heading", { name: "Attribution manuelle des plans" }),
+    ).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("heading", { name: "Prévenir la liste d’attente" })).toHaveCount(0);
+    expect(state.adminGetPaths).not.toContain("/api/admin/offer-opening-notifier");
+  });
+
+  test("shows the pepites as a Quality tab, emergency stop in view", async ({ page }) => {
+    const state = await prepareAdminManagementPage(page);
+
+    await page.goto("/admin/pepites");
+    await expect(page).toHaveURL(/\/admin\/quality\?onglet=pepites$/);
+    await expect(page.getByRole("tab", { name: "Pépites", selected: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Mode : Ouvert" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Suspendre les pépites" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    // L'onglet Pépites ne charge pas les indicateurs de qualité.
+    expect(state.adminGetPaths).not.toContain("/api/admin/data-quality");
+  });
+
+  test("lists ten views and reaches account security under the admin address", async ({
+    page,
+  }, testInfo) => {
+    await prepareAdminManagementPage(page);
+    await page.goto("/admin/compliance");
+    await expect(page.getByRole("heading", { level: 1, name: "Conformité" })).toBeVisible();
+
+    if (testInfo.project.name.includes("mobile")) {
+      await page.getByRole("button", { name: "Ouvrir la navigation administrateur" }).click();
+    }
+    const menu = page.getByRole("navigation", { name: "Navigation administrateur" });
+    await expect(menu.getByRole("link")).toHaveText([
+      "Vue d’ensemble",
+      "Opérations",
+      "Agent IA",
+      "Emails",
+      "Qualité des données",
+      "Comptes",
+      "Pilotage",
+      "Avocats",
+      "Conformité",
+      "Configuration",
+    ]);
+    await page.getByRole("link", { name: "Sécurité du compte" }).click();
+
+    await expect(page).toHaveURL(/\/admin\/securite$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Sécurité du compte" })).toBeVisible();
+    // Le jeton factice du test fait échouer la lecture des facteurs : une erreur lisible remplace le
+    // « Chargement… » sans fin, avec un bouton pour réessayer.
+    const alert = page.getByRole("alert").filter({ hasText: "n’a pas pu être lu" });
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole("button", { name: "Réessayer" })).toBeVisible();
+    await expect(page.getByText("Chargement…", { exact: true })).toHaveCount(0);
+  });
 });
 
-async function prepareAdminManagementPage(page: Page): Promise<ManagementState> {
+async function prepareAdminManagementPage(
+  page: Page,
+  { offerOpen = true }: { offerOpen?: boolean } = {},
+): Promise<ManagementState> {
   const state: ManagementState = {
     subscriptionPayloads: [],
     lawyerPayloads: [],
@@ -202,6 +301,13 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
     }
     await route.fulfill({ status: 200, json: [] });
   });
+
+  // Offre Analyse ouverte (prix configuré) : condition d'affichage de « Prévenir la liste d'attente ».
+  await page.route("**/api/billing/offer", (route) =>
+    route.fulfill({
+      json: { configured: offerOpen, trialDays: 7, trialAvailable: false, label: "59 € / mois" },
+    }),
+  );
 
   await page.route("**/api/admin/**", async (route) => {
     const url = new URL(route.request().url());
@@ -301,10 +407,87 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
       return;
     }
 
+    if (path === "/api/admin/signups/search") {
+      await route.fulfill({ status: 200, json: signupsPayload() });
+      return;
+    }
+
+    if (path === "/api/admin/pepites" && method === "GET") {
+      await route.fulfill({ status: 200, json: pepitesPayload() });
+      return;
+    }
+
+    if (path === "/api/admin/sale-feedback") {
+      await route.fulfill({
+        status: 200,
+        json: { generatedAt: null, windowDays: 90, rows: [], measured: true },
+      });
+      return;
+    }
+
     await route.fulfill({ status: 200, json: {} });
   });
 
   return state;
+}
+
+function signupsPayload() {
+  return {
+    accounts: [
+      {
+        userId: "76000000-0000-4000-8000-000000000201",
+        email: "investisseur.avec.une.adresse.longue@example.test",
+        fullName: "Camille Durand-Lemoine",
+        accountType: "b2c",
+        createdAt: "2026-11-01T10:00:00.000Z",
+        emailConfirmedAt: "2026-11-01T10:05:00.000Z",
+        lastSignInAt: "2026-11-13T10:00:00.000Z",
+        access: "trial",
+        accessEndsAt: "2026-11-08T10:00:00.000Z",
+        trialEndsAt: "2026-11-08T10:00:00.000Z",
+        extendable: true,
+        usage: { unlocks: 0, ceilings: 0, favorites: 0, sheetsServed: 0 },
+      },
+    ],
+    summary: {
+      total: 1,
+      confirmed: 1,
+      last7Days: 1,
+      last30Days: 1,
+      byAccess: {
+        trial: 1,
+        trial_extended: 0,
+        analyse_paid: 0,
+        analyse_manual: 0,
+        premium: 0,
+        decouverte: 0,
+      },
+      trialEndedIdle: 0,
+    },
+    launchOfferActive: true,
+    truncated: false,
+    usageAvailable: true,
+    generatedAt: "2026-11-14T07:00:00.000Z",
+    offset: 0,
+    limit: 50,
+    total: 1,
+    hasMore: false,
+  };
+}
+
+function pepitesPayload() {
+  return {
+    canSuspend: true,
+    sections: [
+      {
+        id: "mode",
+        title: "Mode : Ouvert",
+        paragraphs: ["Les pépites sont publiques. Règle pepite-v1.1."],
+        alert: null,
+        table: null,
+      },
+    ],
+  };
 }
 
 function subscriptionsPayload(state: ManagementState) {
