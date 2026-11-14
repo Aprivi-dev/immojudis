@@ -86,6 +86,21 @@ describe("POST /api/admin/scroll : confirmation et une seule collecte par source
     },
   );
 
+  // Comme le planificateur : `coalesce(started_at, created_at)` (migration 20260929153000).
+  it("un run démarré se juge sur son démarrage, pas sur sa création", async () => {
+    state.fake!.tables.auction_runs.push({
+      id: "run-long-en-file",
+      source: "licitor",
+      status: "running",
+      created_at: minutesAgo(300),
+      started_at: minutesAgo(10),
+    });
+    expect((await launch({ source: "licitor", confirm: true })).status).toBe(409);
+
+    state.fake!.tables.auction_runs[0].started_at = minutesAgo(195);
+    expect((await launch({ source: "licitor", confirm: true })).status).toBe(200);
+  });
+
   it("un run terminé ne bloque pas", async () => {
     state.fake!.tables.auction_runs.push({
       id: "run-done",
