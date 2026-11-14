@@ -348,14 +348,26 @@ export function sharedStructureCounts(
 // ---------------------------------------------------------------------------------------------------------
 export type AutopilotRunGate = { ok: true } | { ok: false; code: string };
 
-/** Garde de tête de passage : mode, arrêt, pause, plage horaire. */
-export function autopilotRunGate(settings: AutopilotSettings, now: Date): AutopilotRunGate {
+/** Au plus un passage lancé à la main toutes les 10 minutes (journal : événement `run` avec `manual`). */
+export const AUTOPILOT_ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
+
+/**
+ * Garde de tête de passage : mode, arrêt, pause, plage horaire. Un passage lancé à la main par un administrateur
+ * (`onDemand`) n'existe qu'en simulation (`not_simulation` sinon, réel compris) et seule la plage horaire ne
+ * l'arrête pas : il n'envoie jamais rien.
+ */
+export function autopilotRunGate(
+  settings: AutopilotSettings,
+  now: Date,
+  { onDemand = false }: { onDemand?: boolean } = {},
+): AutopilotRunGate {
+  if (onDemand && settings.mode !== "simulation") return { ok: false, code: "not_simulation" };
   if (settings.mode === "off") return { ok: false, code: "disabled" };
   if (settings.autoStoppedAt) return { ok: false, code: "auto_stopped" };
   if (settings.pausedUntil && Date.parse(settings.pausedUntil) > now.getTime()) {
     return { ok: false, code: "paused" };
   }
-  if (!isWithinAutopilotSendWindow(now)) return { ok: false, code: "outside_window" };
+  if (!onDemand && !isWithinAutopilotSendWindow(now)) return { ok: false, code: "outside_window" };
   return { ok: true };
 }
 
