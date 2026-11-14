@@ -13,6 +13,7 @@ import { runAdminInformationAgentAutopilotActionClient } from "@/lib/client-api"
 import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-view";
 
 const BTN = "admin-button-secondary";
+const INPUT = "mt-1 block w-28 rounded-lg border bg-white px-2 py-1";
 const MODES = [
   ["off", "Éteint"],
   ["simulation", "Simulation"],
@@ -20,10 +21,14 @@ const MODES = [
 ] as const;
 
 /**
- * Pilote automatique : interrupteur à trois états, compteurs, contrôle de préparation, brouillons prêts à
- * valider, derniers événements et arrêt d’urgence. Désactivé par défaut. Tout arrive mis en forme par le
- * serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est journalisé. Un brouillon prêt
- * à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`), là où il se valide.
+ * Pilote automatique : interrupteur à trois états, passages, compteurs, contrôle de préparation, réglages du
+ * pilote, conformité, brouillons prêts à valider, derniers événements et arrêt d’urgence. Désactivé par défaut.
+ * Tout arrive mis en forme par le serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est
+ * journalisé. Un brouillon prêt à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`).
+ *
+ * Les boutons disent l’action qu’ils font, jamais l’état (P3, 14/11/2026). L’article 14 et l’AIPD sont à part,
+ * dans « Conformité », et chaque action y demande une confirmation explicite (J9 : l’article 14 ne se désactive
+ * plus, son délai va de 1 à 90 jours depuis la décision du propriétaire du 14/11/2026 ; la base le refuse aussi).
  */
 export function AdminInformationAgentAutopilotPanel({
   onOpenDraft,
@@ -47,6 +52,9 @@ export function AdminInformationAgentAutopilotPanel({
   });
   const view = query.data;
   const ready = reason.trim().length >= 8 && !run.isPending;
+  const daysValue = Number(days);
+  // RÈGLE LIÉE : 1 à 90 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
+  const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 90;
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">
@@ -60,9 +68,12 @@ export function AdminInformationAgentAutopilotPanel({
       ) : null}
       {view ? (
         <div className="mt-3 space-y-4 text-sm">
-          <p>
-            État : <strong>{view.modeLabel}</strong>
-          </p>
+          <div>
+            <p>
+              État : <strong>{view.modeLabel}</strong>
+            </p>
+            <p className="text-brand-navy/70">{view.runs}</p>
+          </div>
           {view.notice ? (
             <p
               role="alert"
@@ -116,72 +127,158 @@ export function AdminInformationAgentAutopilotPanel({
             </ul>
           </details>
           <details>
-            <summary className="cursor-pointer font-medium">Réglages</summary>
-            <div className="mt-2 flex flex-wrap items-end gap-2 text-xs">
-              {(
-                [
-                  ["Plafond par jour", cap, setCap, view.settings.capTotalOverride ?? "phase"],
-                  ["Article 14 : jours", days, setDays, view.settings.art14MaxAgeDays],
-                  ["Version de l’AIPD", aipd, setAipd, view.settings.aipdLabel],
-                ] as const
-              ).map(([label, value, set, hint]) => (
-                <label key={label}>
-                  {label}
+            <summary className="cursor-pointer font-medium">Réglages du pilote</summary>
+            <div className="mt-2 space-y-3 text-xs">
+              <div className="flex flex-wrap items-end gap-2">
+                <label>
+                  Plafond par jour
                   <input
-                    value={value}
-                    onChange={(event) => set(event.target.value)}
-                    placeholder={String(hint)}
-                    className="mt-1 block w-28 rounded-lg border bg-white px-2 py-1"
+                    value={cap}
+                    onChange={(event) => setCap(event.target.value)}
+                    placeholder={String(view.settings.capTotalOverride ?? "phase")}
+                    className={INPUT}
                   />
                 </label>
-              ))}
-              <button
-                type="button"
-                className={BTN}
-                disabled={!ready || (!cap && !days)}
-                onClick={() =>
-                  run.mutate({
-                    action: "update_settings",
-                    reason,
-                    changes: {
-                      ...(cap ? { capTotalOverride: Number(cap) } : {}),
-                      ...(days ? { art14MaxAgeDays: Number(days) } : {}),
-                    },
-                  })
-                }
-              >
-                Enregistrer
-              </button>
-              <button
-                type="button"
-                className={BTN}
-                disabled={!ready || !aipd.trim()}
-                onClick={() => run.mutate({ action: "attest_aipd", version: aipd.trim(), reason })}
-              >
-                Attester l’AIPD
-              </button>
-              {(
-                [
-                  ["Licitor décodées", "allowLicitorDecoded", view.settings.allowLicitorDecoded],
-                  ["Article 14", "art14RuleEnabled", view.settings.art14RuleEnabled],
-                ] as const
-              ).map(([label, key, on]) => (
                 <button
-                  key={key}
+                  type="button"
+                  className={BTN}
+                  disabled={!ready || !cap}
+                  onClick={() =>
+                    run.mutate({
+                      action: "update_settings",
+                      reason,
+                      changes: { capTotalOverride: Number(cap) },
+                    })
+                  }
+                >
+                  Enregistrer le plafond
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p>
+                  Adresses Licitor décodées :{" "}
+                  <strong>
+                    {view.settings.allowLicitorDecoded ? "ouvertes au pilote" : "fermées au pilote"}
+                  </strong>
+                </p>
+                <button
                   type="button"
                   className={BTN}
                   disabled={!ready}
                   onClick={() =>
-                    run.mutate({ action: "update_settings", reason, changes: { [key]: !on } })
+                    run.mutate({
+                      action: "update_settings",
+                      reason,
+                      changes: { allowLicitorDecoded: !view.settings.allowLicitorDecoded },
+                    })
                   }
                 >
-                  {label} : {on ? "oui" : "non"}
+                  {view.settings.allowLicitorDecoded
+                    ? "Fermer les adresses Licitor décodées"
+                    : "Ouvrir les adresses Licitor décodées"}
                 </button>
-              ))}
+              </div>
+            </div>
+          </details>
+          <details>
+            <summary className="cursor-pointer font-medium">Conformité (article 14, AIPD)</summary>
+            <div className="mt-2 space-y-3 text-xs">
+              <div className="space-y-2">
+                <p>
+                  Article 14 : <strong>{view.settings.art14Label}</strong>
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label>
+                    Délai en jours
+                    <input
+                      inputMode="numeric"
+                      value={days}
+                      onChange={(event) => setDays(event.target.value)}
+                      placeholder={String(view.settings.art14MaxAgeDays)}
+                      className={INPUT}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={!ready || !daysValid}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Passer le délai d’information de l’article 14 de ${view.settings.art14MaxAgeDays} à ${daysValue} jours ? Le pilote n’écrira qu’aux adresses relevées depuis ${daysValue} jours au plus, ou aux personnes déjà informées. Le changement est journalisé avec votre motif.`,
+                        )
+                      )
+                        return;
+                      run.mutate({
+                        action: "update_settings",
+                        reason,
+                        changes: { art14MaxAgeDays: daysValue },
+                      });
+                    }}
+                  >
+                    Modifier le délai de l’article 14
+                  </button>
+                  {view.settings.art14RuleEnabled ? null : (
+                    <button
+                      type="button"
+                      className={BTN}
+                      disabled={!ready}
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            "Rétablir la règle de l’article 14 ? Elle ne pourra plus être désactivée.",
+                          )
+                        )
+                          return;
+                        run.mutate({
+                          action: "update_settings",
+                          reason,
+                          changes: { art14RuleEnabled: true },
+                        });
+                      }}
+                    >
+                      Rétablir la règle de l’article 14
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p>
+                  AIPD : <strong>{view.settings.aipdLabel}</strong>
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label>
+                    Version de l’AIPD
+                    <input
+                      value={aipd}
+                      onChange={(event) => setAipd(event.target.value)}
+                      className={INPUT}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={!ready || !aipd.trim()}
+                    onClick={() => {
+                      const version = aipd.trim();
+                      if (
+                        !window.confirm(
+                          `Attester l’AIPD, version « ${version} » ? Cette attestation lève l’un des verrous du mode réel : ne la donnez que pour une AIPD rédigée, signée et versée au dossier.`,
+                        )
+                      )
+                        return;
+                      run.mutate({ action: "attest_aipd", version, reason });
+                    }}
+                  >
+                    Attester l’AIPD
+                  </button>
+                </div>
+              </div>
             </div>
           </details>
           <div>
-            <p className="font-medium">Prêtes à valider ({view.ready.count})</p>
+            <p className="font-medium">{view.ready.label}</p>
+            {view.ready.notice ? <p className="text-warning">{view.ready.notice}</p> : null}
             <ul className="mt-1 list-inside list-disc text-brand-navy/70">
               {view.ready.items.map((item) => (
                 <li key={item.missionId}>

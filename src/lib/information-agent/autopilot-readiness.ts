@@ -15,6 +15,12 @@ export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2099-01-01.0";
 
 const AUTOPILOT_MIN_MANUAL_SENDS = 30;
 const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
+/**
+ * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé et sans
+ * passage en erreur (`cleanSimulationDays`). 5 : les jours ouvrés d'une semaine, seuls jours de passage (lundi au
+ * vendredi). Un pilote muet, plafonné ou en erreur ne remplit plus la porte en laissant passer le temps.
+ */
+export const AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS = 5;
 const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
 const DAY_MS = 86_400_000;
 
@@ -27,7 +33,8 @@ export type AutopilotReadinessInput = {
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
   roundtripVerifiedAt: string | null;
-  actingAdminIsAdmin: boolean;
+  /** Nul : état du compte illisible pour le moment (panne passagère) ; le contrôle n'est pas satisfait. */
+  actingAdminIsAdmin: boolean | null;
   privacyVersion: string;
   /** Domaines Resend vérifiés (noms) ; `null` : liste illisible, donc non vérifiable. */
   verifiedResendDomains: ReadonlySet<string> | null;
@@ -196,13 +203,15 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   const started = settings.simulationStartedAt ? Date.parse(settings.simulationStartedAt) : NaN;
   const simulationDays = Number.isFinite(started) ? (now.getTime() - started) / DAY_MS : 0;
   const simulationOk =
-    simulationDays >= AUTOPILOT_MIN_SIMULATION_DAYS && stats.anomaliesSinceSimulation === 0;
+    simulationDays >= AUTOPILOT_MIN_SIMULATION_DAYS &&
+    stats.cleanSimulationDays >= AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS &&
+    stats.anomaliesSinceSimulation === 0;
   checks.push(
     check(
       "simulation",
-      "Au moins 7 jours de simulation sans anomalie",
+      "Au moins 7 jours de simulation, dont 5 jours effectifs, sans anomalie",
       simulationOk,
-      `${Math.floor(simulationDays)} jour(s) de simulation, ${stats.anomaliesSinceSimulation} anomalie(s).`,
+      `${Math.floor(simulationDays)} jour(s) de simulation, ${stats.cleanSimulationDays} jour(s) effectif(s) (envoi simulé, aucun passage en erreur), ${stats.anomaliesSinceSimulation} anomalie(s).`,
     ),
   );
 
@@ -220,10 +229,12 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
     check(
       "acting_admin",
       "Administrateur d’exécution toujours administrateur",
-      Boolean(settings.actingAdminId) && input.actingAdminIsAdmin,
-      input.actingAdminIsAdmin
-        ? "Oui."
-        : "Le compte d’exécution n’est plus administrateur (ou n’est pas choisi).",
+      Boolean(settings.actingAdminId) && input.actingAdminIsAdmin === true,
+      input.actingAdminIsAdmin === null
+        ? "Lecture impossible pour le moment (panne passagère) : réessayer."
+        : input.actingAdminIsAdmin
+          ? "Oui."
+          : "Le compte d’exécution n’est plus administrateur (ou n’est pas choisi).",
     ),
   );
 
@@ -274,10 +285,17 @@ export async function loadRoundtripVerifiedAt(): Promise<string | null> {
   return data?.inbound_roundtrip_verified_at ?? null;
 }
 
+/** Réponse de l'API Auth pour un compte qui n'existe pas (et non une panne). */
+function isAuthUserNotFound(error: unknown): boolean {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  return status === 404 || code === "user_not_found";
+}
+
 /**
  * Le compte est-il toujours un administrateur actif ? Rôle `admin` au profil ET compte ni supprimé ni suspendu
- * (`banned_until`). Une lecture impossible vaut « non » : le pilote s'arrête plutôt que d'agir sous une
- * identité dont l'état est inconnu.
+ * (`banned_until`). Un compte réellement introuvable vaut « non » (le pilote s'arrête). Une lecture impossible
+ * (base, panne passagère de l'API Auth) n'est pas une réponse : l'erreur remonte, le passage échoue sans rien
+ * faire ni s'arrêter, et le suivant relit l'état (T7, 14/11/2026).
  */
 export async function isActiveAdmin(userId: string | null): Promise<boolean> {
   if (!userId) return false;
@@ -289,8 +307,12 @@ export async function isActiveAdmin(userId: string | null): Promise<boolean> {
   if (error) throw error;
   if (data?.user_role !== "admin") return false;
   const account = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (account.error) {
+    if (isAuthUserNotFound(account.error)) return false;
+    throw account.error;
+  }
   const user = account.data?.user;
-  if (account.error || !user) return false;
+  if (!user) return false;
   const bannedUntil = (user as { banned_until?: string | null }).banned_until;
   const deletedAt = (user as { deleted_at?: string | null }).deleted_at;
   return !deletedAt && !(bannedUntil && Date.parse(bannedUntil) > Date.now());
