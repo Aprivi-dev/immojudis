@@ -101,14 +101,15 @@ test.describe("ventes aux profils variés", () => {
     await mockBrowser(page);
     await openSale(page, ids.lawyer);
     const mentions = page.getByTestId("lawyer-fact-source");
-    // Mise à prix (texte validé, sous le montant) et surface (une mention pour le bloc « Le bien », qui
-    // nomme la valeur), dans le HTML du serveur, sans attendre le navigateur.
+    // Mise à prix (texte retenu le 14/11/2026, sous le montant) et surface (une mention pour le bloc
+    // « Le bien », qui nomme la valeur), chacune suivie du lien vers les pièces, dans le HTML du
+    // serveur, sans attendre le navigateur.
     await expect(mentions).toHaveCount(2);
     await expect(mentions.nth(0)).toHaveText(
-      "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+      "Source : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier",
     );
     await expect(mentions.nth(1)).toHaveText(
-      "Surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+      "Source de la surface : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier",
     );
     for (const mention of await mentions.all()) {
       await mention.scrollIntoViewIfNeeded();
