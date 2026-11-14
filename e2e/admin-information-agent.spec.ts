@@ -18,12 +18,17 @@ const ASSET_ID = "00000000-0000-4000-8000-000000000006";
 const MESSAGE_ID = "00000000-0000-4000-8000-000000000007";
 const REFRESH_ID = "00000000-0000-4000-8000-000000000008";
 const REGISTRY_CLAIM_ID = "00000000-0000-4000-8000-000000000009";
+const PILOT_SALE_ID = "00000000-0000-4000-8000-00000000000b";
+const PILOT_MISSION_ID = "00000000-0000-4000-8000-00000000000c";
+const PILOT_EMAIL = "avocat@cabinet-licitor.example.test";
 const adminEmail = "admin.e2e@example.test";
 
 type AgentMockState = {
   events: Array<{ method: string; path: string; payload: unknown }>;
   unexpectedRequests: string[];
   mission: Record<string, unknown> | null;
+  /** Brouillon préparé par le pilote (« Prêtes à valider ») ; null = aucun. */
+  pilotMission: Record<string, unknown> | null;
   claimItems: Array<Record<string, unknown>>;
   /** Observations du registre des pièces (panneau « Observations à décider »). */
   decisionItems: Array<Record<string, unknown>>;
@@ -552,6 +557,75 @@ test.describe("admin information agent", () => {
     expect(state.unexpectedRequests).toEqual([]);
   });
 
+  // Incident du 14/11/2026 : la vente du brouillon du pilote diffère de la première vente de la file.
+  // Le lien « Prêtes à valider » doit ouvrir CETTE mission, et l'envoi ne porter que sur elle.
+  test("opens the autopilot draft itself from « Prêtes à valider » when « À contacter » was never visited", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.pilotMission = pilotMissionFixture();
+
+    await page.goto("/admin/agent-ia?onglet=pilote");
+    await page.getByRole("button", { name: "Maison prête à valider" }).click();
+
+    await expect(page.getByRole("tab", { name: /^À contacter/, selected: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` }),
+    ).toBeVisible();
+    // La file (première vente : une autre) est chargée sans rien remplacer.
+    await expect(page.getByRole("button", { name: "Ouvrir le message" })).toBeVisible();
+    await expect(page.getByText(`annonce ${PILOT_SALE_ID}`, { exact: false })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Email", exact: true })).toHaveValue(
+      PILOT_EMAIL,
+    );
+    await sendOpenedDraft(page);
+
+    expect(sentPayloads(state)).toEqual([
+      expect.objectContaining({
+        action: "approve_and_send",
+        missionId: PILOT_MISSION_ID,
+        recipientEmail: PILOT_EMAIL,
+      }),
+    ]);
+    expect(state.events.filter((event) => event.path.endsWith("/missions/prepare"))).toEqual([]);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("replaces another sale already open in « À contacter » with the autopilot draft", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.pilotMission = pilotMissionFixture();
+
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
+    await page.getByRole("button", { name: "Ouvrir le message" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Brouillon pour contact@example.test" }),
+    ).toBeVisible();
+
+    await page.getByRole("tab", { name: "Pilote" }).click();
+    await page.getByRole("button", { name: "Maison prête à valider" }).click();
+
+    await expect(page.getByRole("tab", { name: /^À contacter/, selected: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /contact@example\.test/ })).toHaveCount(0);
+    await expect(page.getByText(`annonce ${PILOT_SALE_ID}`, { exact: false })).toBeVisible();
+    await sendOpenedDraft(page);
+
+    expect(sentPayloads(state)).toEqual([
+      expect.objectContaining({ missionId: PILOT_MISSION_ID, recipientEmail: PILOT_EMAIL }),
+    ]);
+    // Le seul brouillon préparé reste celui que l'administrateur a ouvert lui-même avant le clic.
+    expect(
+      state.events
+        .filter((event) => event.path.endsWith("/missions/prepare"))
+        .map((event) => event.payload),
+    ).toEqual([{ saleId: SALE_ID }]);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
   test("shows the address origin field right under the unknown-origin message", async ({
     page,
   }) => {
@@ -624,12 +698,36 @@ test.describe("admin information agent", () => {
   });
 });
 
+/** Aperçu, confirmation de relecture puis « Valider et envoyer » sur le brouillon ouvert. */
+async function sendOpenedDraft(page: Page) {
+  await page.getByRole("button", { name: "Afficher l’aperçu" }).click();
+  await expect(
+    page.frameLocator('iframe[title="Aperçu de l’e-mail envoyé"]').getByText("Aperçu exact"),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: /J’ai relu le message exact/ }).check();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Valider et envoyer" }).click();
+  await expect(toastMessage(page, "Demande envoyée.", { exact: true })).toBeVisible();
+}
+
+function sentPayloads(state: AgentMockState) {
+  return state.events
+    .filter(
+      (event) =>
+        event.path === "/api/admin/information-agent/missions" &&
+        event.method === "PATCH" &&
+        (event.payload as { action?: string }).action === "approve_and_send",
+    )
+    .map((event) => event.payload);
+}
+
 async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockState> {
   const session = createSession();
   const state: AgentMockState = {
     events: [],
     unexpectedRequests: [],
     mission: null,
+    pilotMission: null,
     claimItems: [factClaimFixture()],
     decisionItems: [factClaimDecisionFixture()],
     reviewFacts: [informationAgentFactFixture()],
@@ -765,9 +863,12 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
             id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
             recipientEmail: `mission${index}@example.test`,
           }))
-        : state.mission
-          ? [state.mission]
-          : [];
+        : [state.mission, state.pilotMission].filter(
+            (mission): mission is Record<string, unknown> =>
+              mission !== null &&
+              (!url.searchParams.get("saleId") ||
+                mission.saleId === url.searchParams.get("saleId")),
+          );
       const total = state.longListTotal ?? missions.length;
       await route.fulfill({
         status: 200,
@@ -833,7 +934,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
         });
         return;
       }
-      await route.fulfill({ status: 200, json: autopilotFixture() });
+      await route.fulfill({ status: 200, json: autopilotFixture(state.pilotMission) });
       return;
     }
     // Publication automatique des informations reçues (onglet Réglages) : arrêt par défaut, automatique
@@ -854,19 +955,22 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       return;
     }
     if (path === "/api/admin/information-agent/missions" && method === "PATCH") {
-      const action = (payload as { action?: string }).action;
-      if (action === "approve_and_send" && state.mission) {
-        state.mission = {
-          ...state.mission,
+      const { action, missionId } = payload as { action?: string; missionId?: string };
+      const key = missionId && missionId === state.pilotMission?.id ? "pilotMission" : "mission";
+      const target = state[key];
+      if (action === "approve_and_send" && target) {
+        state[key] = {
+          ...target,
           status: "sent",
           recipientEmail: (payload as { recipientEmail: string }).recipientEmail,
           approvedAt: "2026-10-04T10:02:00.000Z",
           sentAt: "2026-10-04T10:02:01.000Z",
         };
       }
+      const updated = state[key];
       await route.fulfill({
         status: 200,
-        json: { ok: true, missions: state.mission ? [state.mission] : [], facts: [] },
+        json: { ok: true, missions: updated ? [updated] : [], facts: [] },
       });
       return;
     }
@@ -1029,10 +1133,43 @@ function unroutedMessageFixture(index: number) {
   };
 }
 
-function autopilotFixture() {
+/** Brouillon du pilote : autre vente (Licitor) et autre destinataire (avocat) que la file. */
+function pilotMissionFixture() {
   return {
-    mode: "off",
-    modeLabel: "Éteint",
+    ...missionFixture("draft"),
+    id: PILOT_MISSION_ID,
+    caseId: null,
+    saleId: PILOT_SALE_ID,
+    saleTitle: "Maison à Lyon (Licitor)",
+    trigger: "autopilot",
+    recipientKind: "source_lawyer",
+    recipientName: "Maître Licitor",
+    recipientEmail: PILOT_EMAIL,
+    recipientProfile: {
+      roleLabel: "Avocat",
+      addressKind: "nominative",
+      addressKindLabel: "Adresse nominative",
+      originLabel: "Adresse publiée dans l’annonce",
+      originSourceName: "licitor",
+      originUrl: null,
+    },
+  };
+}
+
+function autopilotFixture(pilotMission: Record<string, unknown> | null = null) {
+  const ready =
+    pilotMission && pilotMission.status === "draft"
+      ? [
+          {
+            missionId: pilotMission.id,
+            saleId: pilotMission.saleId,
+            label: "Maison prête à valider",
+          },
+        ]
+      : [];
+  return {
+    mode: pilotMission ? "simulation" : "off",
+    modeLabel: pilotMission ? "Simulation" : "Éteint",
     notice: null,
     sentToday: "0 sur 5",
     counters: [{ label: "Envois aujourd’hui (manuels inclus)", value: "0 sur 5" }],
@@ -1048,7 +1185,7 @@ function autopilotFixture() {
       ready: false,
       checks: [{ label: "AIPD attestée", ok: false, detail: "Aucune attestation d’AIPD." }],
     },
-    ready: { count: 0, items: [] },
+    ready: { count: ready.length, items: ready },
     events: [],
   };
 }
