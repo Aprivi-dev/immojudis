@@ -5,6 +5,10 @@ import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { PIPELINE_QUERY_KEY } from "@/lib/admin-query-keys";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
+import {
+  describeOperationalAlert,
+  operationalAlertNotificationLabel,
+} from "@/lib/operational-alert-labels";
 import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {
   return formatNumericDateTime(value, "Non établie");
@@ -220,7 +224,8 @@ export function AdminPipelinePanel() {
           .filter((alert) => alert.status === "open")
           .map((alert) => (
             <li key={alert.alert_key}>
-              {alert.alert_key} — notification : {alert.notification_status}
+              {describeOperationalAlert(alert.alert_key).label} · notification :{" "}
+              {operationalAlertNotificationLabel(alert.notification_status).toLowerCase()}
             </li>
           ))}
       </ul>
