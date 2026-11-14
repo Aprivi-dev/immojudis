@@ -25,6 +25,16 @@ describe("describeOperationalAlert", () => {
     );
   });
 
+  it("points to the views of the new menu (accounts and quality tabs)", () => {
+    expect(describeOperationalAlert("pepites.evaluation.stale").place).toEqual({
+      href: "/admin/quality?onglet=pepites",
+      label: "Qualité des données › Pépites",
+    });
+    expect(describeOperationalAlert("billing.reconciliation.mismatch").place.href).toBe(
+      "/admin/comptes?onglet=clients",
+    );
+  });
+
   it("covers the keys built from a variable name", () => {
     expect(describeOperationalAlert("pipeline.source.licitor.missed").label).toBe(
       "Source Licitor : inventaire complet en retard",
