@@ -101,13 +101,27 @@ test.describe("admin configuration", () => {
     await expect(page).toHaveTitle(/Opérations admin/);
     await page.getByRole("combobox", { name: "Source", exact: true }).selectOption("avoventes");
     await page.getByRole("button", { name: "Lancer", exact: true }).click();
+    // Confirmation avant l'envoi : rien ne part tant que l'administrateur n'a pas confirmé.
+    const confirmation = page.getByRole("dialog", { name: "Lancer une collecte ?" });
+    await expect(confirmation).toContainText("Avoventes");
+    expect(state.scrollPayloads).toEqual([]);
+    await confirmation.getByRole("button", { name: "Lancer la collecte" }).click();
     await expect.poll(() => state.scrollPayloads.length).toBe(1);
-    expect(state.scrollPayloads[0]).toEqual({ source: "avoventes", mode: "collect" });
+    expect(state.scrollPayloads[0]).toEqual({
+      source: "avoventes",
+      mode: "collect",
+      confirm: true,
+    });
     await expect(toastMessage(page, "Traitement demandé", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Relancer", exact: true }).click();
+    await confirmation.getByRole("button", { name: "Lancer la collecte" }).click();
     await expect.poll(() => state.scrollPayloads.length).toBe(2);
-    expect(state.scrollPayloads[1]).toEqual({ source: "avoventes", mode: "collect" });
+    expect(state.scrollPayloads[1]).toEqual({
+      source: "avoventes",
+      mode: "collect",
+      confirm: true,
+    });
     // The AI description backfill was removed: neither its tab nor its launcher remain.
     await expect(page.getByRole("button", { name: "Enrichissement IA", exact: true })).toHaveCount(
       0,

@@ -1,9 +1,7 @@
 import "server-only";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { NextResponse } from "next/server";
 import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -29,9 +27,9 @@ export const GET = adminRoute<{ id: string }>(
     fallbackMessage: "Pièce indisponible.",
     // Une pièce absente arrive comme une erreur de `.single()` : elle doit rester un 404.
     fallbackStatus: 404,
+    guard: "admin",
   },
   async (request, { params }) => {
-    await assertAdminAuth(bearerTokenFromRequest(request));
     const id = evidenceAssetIdSchema.parse(params.id);
     const { data: asset, error: assetError } = await supabaseAdmin
       .from("information_agent_evidence_assets")
@@ -58,10 +56,13 @@ export const GET = adminRoute<{ id: string }>(
 );
 
 export const PATCH = adminRoute<{ id: string }>(
-  { scope: "admin.information-agent.evidence.id", fallbackMessage: "Révision impossible." },
-  async (request, { params }) => {
+  {
+    scope: "admin.information-agent.evidence.id",
+    fallbackMessage: "Révision impossible.",
+    guard: "admin",
+  },
+  async (request, { params, auth }) => {
     try {
-      const auth = await assertAdminAuth(bearerTokenFromRequest(request));
       const id = evidenceAssetIdSchema.parse(params.id);
       const input = evidenceRightsReviewSchema.parse(await request.json());
       const { data: current, error: currentError } = await supabaseAdmin

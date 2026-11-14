@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { translateFactClaimDatabaseError } from "@/lib/fact-claim-database-errors";
 import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
-import {
   adminAuctionFactClaimDecisionSchema,
   adminAuctionFactClaimReviewQuerySchema,
   listAdminAuctionFactClaims,
@@ -21,9 +17,8 @@ const OPTIONS = {
   fallbackMessage: "Revue du fait indisponible.",
 };
 
-export const GET = adminRoute(OPTIONS, async (request) => {
+export const GET = adminRoute({ ...OPTIONS, guard: "admin" }, async (request, { auth }) => {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminAuctionFactClaimReviewQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
@@ -34,9 +29,8 @@ export const GET = adminRoute(OPTIONS, async (request) => {
   }
 });
 
-export const POST = adminRoute(OPTIONS, async (request) => {
+export const POST = adminRoute({ ...OPTIONS, guard: "admin" }, async (request, { auth }) => {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminAuctionFactClaimDecisionSchema.parse(await request.json());
     const response = await reviewAdminAuctionFactClaim({ auth, input });
     return NextResponse.json(response, { headers: NO_REFERRER });

@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminInformationAgentEmailTemplateActionSchema,
   getAdminInformationAgentEmailTemplateWorkspace,
@@ -13,18 +12,18 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.template.read",
     fallbackMessage: "Modèle d'email indisponible",
+    guard: "admin",
   },
-  async (request) =>
-    getAdminInformationAgentEmailTemplateWorkspace(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminInformationAgentEmailTemplateWorkspace(authToken),
 );
 
 export const POST = adminRoute(
   {
     scope: "admin.information-agent.template.write",
     fallbackMessage: "Modèle d'email non modifié",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminInformationAgentEmailTemplateActionSchema.parse(await request.json());
     return runAdminInformationAgentEmailTemplateAction({ authToken, input });
   },

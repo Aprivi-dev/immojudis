@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   attestAdminInformationAgentRoundtrip,
   getAdminInformationAgentOperations,
@@ -13,8 +12,9 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.operations.read",
     fallbackMessage: "Indicateurs d'exploitation indisponibles",
+    guard: "admin",
   },
-  async (request) => getAdminInformationAgentOperations(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminInformationAgentOperations(authToken),
 );
 
 /** « J'ai vérifié l'aller-retour réel » : enregistre la date. N'envoie rien. */
@@ -22,6 +22,7 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.operations.attest",
     fallbackMessage: "Vérification non enregistrée",
+    guard: "admin",
   },
-  async (request) => attestAdminInformationAgentRoundtrip(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => attestAdminInformationAgentRoundtrip(authToken),
 );

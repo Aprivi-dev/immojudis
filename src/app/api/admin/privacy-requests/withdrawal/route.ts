@@ -1,7 +1,3 @@
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import {
   contractWithdrawalInputSchema,
@@ -15,9 +11,9 @@ export const POST = adminRoute(
   {
     scope: "api.admin.privacy_requests.withdrawal",
     fallbackMessage: "Rétractation impossible à exécuter.",
+    guard: "admin",
   },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  async (request, { auth }) => {
     const input = contractWithdrawalInputSchema.parse(await request.json());
     return executeContractWithdrawal({ auth, input });
   },

@@ -1,5 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { readEmailMessage } from "@/lib/admin-emails/history";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { NotFoundError } from "@/lib/api-errors";
@@ -12,9 +10,12 @@ export const maxDuration = 30;
  * lu chez Resend à la demande ; email reçu en texte seul. Liens d'action masqués. Consultation tracée.
  */
 export const GET = adminRoute<{ id: string }>(
-  { scope: "admin.emails.history.message.read", fallbackMessage: "Message indisponible" },
-  async (request, { params }) => {
-    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
+  {
+    scope: "admin.emails.history.message.read",
+    fallbackMessage: "Message indisponible",
+    guard: "admin",
+  },
+  async (_request, { params, auth }) => {
     // Next décode déjà le segment : aucun second décodage.
     const message = await readEmailMessage({ adminUserId: auth.userId, id: params.id });
     if (!message) throw new NotFoundError("Message introuvable.");
