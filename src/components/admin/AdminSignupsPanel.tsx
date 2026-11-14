@@ -133,7 +133,9 @@ export function AdminSignupsPanel() {
     : null;
 
   return (
-    <div className="grid gap-4">
+    // Colonne `minmax(0, 1fr)` : sans elle, la piste de la grille prend la largeur minimale du tableau
+    // (64rem) et toute la page défile en largeur sur téléphone ; le tableau défile dans son cadre.
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <AdminPanel>
           <OverviewMetric
