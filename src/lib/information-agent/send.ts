@@ -28,7 +28,10 @@ import {
   assertAdminDailyApprovalCap,
 } from "@/lib/information-agent/approval-cap";
 import { assertInformationAgentAddressDeliverable } from "@/lib/information-agent/address-deliverability";
-import { assertAutopilotSendAllowed } from "@/lib/information-agent/autopilot-send-guard";
+import {
+  assertAutopilotSendAllowed,
+  AutopilotSendRefusedError,
+} from "@/lib/information-agent/autopilot-send-guard";
 import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentNotarySendAllowed,
@@ -498,6 +501,12 @@ const MISSION_NOT_APPROVABLE_MESSAGE =
 /** Refus de `approve_information_agent_mission_admin` (migration 20261110220100). */
 const APPROVAL_CAP_REACHED = "53400";
 const MISSION_NOT_APPROVABLE = "55000";
+/**
+ * Filet SQL du pilote (garde des missions, migration 20261110230000) : une mission `trigger = autopilot` ne passe
+ * pas en « sending » hors du mode réel. Même code que le refus d'un contact opposé (23514) : le texte départage.
+ */
+const MISSION_GUARD_REFUSED = "23514";
+const AUTOPILOT_NOT_LIVE_SQL_MESSAGE = "Autopilot send refused";
 
 /**
  * L'email est parti (accepté par Resend) mais son enregistrement est incomplet : la mission reste
@@ -567,6 +576,13 @@ async function approveInformationAgentMissionForAdmin(
   }
   if (error?.code === MISSION_NOT_APPROVABLE) {
     throw new PublicApiError(MISSION_NOT_APPROVABLE_MESSAGE, 409, { cause: error });
+  }
+  // Pilote coupé entre sa dernière relecture et l'approbation : un arrêt, pas une erreur d'API.
+  if (
+    error?.code === MISSION_GUARD_REFUSED &&
+    error.message?.startsWith(AUTOPILOT_NOT_LIVE_SQL_MESSAGE)
+  ) {
+    throw new AutopilotSendRefusedError("not_live", { cause: error });
   }
   if (error) throw new Error("Admin mission approval failed", { cause: error });
   const approval = data?.[0];

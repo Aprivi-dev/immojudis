@@ -4,12 +4,14 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { missionsQuery } from "@/components/admin/information-agent-queries";
 import {
   isMissionEditable,
   MISSION_DELIVERY_TONE_CLASS,
   missionDeliveryLabel,
   missionStatusLabel,
+  missionTriggerLabel,
 } from "@/components/admin/information-agent-missions-ui";
 import { adminClampOffset } from "@/lib/admin-pagination";
 import { queryErrorMessage } from "@/components/admin/admin-format";
@@ -109,15 +111,21 @@ export function AdminInformationAgentMissionsList({
                       </p>
                     ) : null}
                   </div>
-                  {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
-                    (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
-                  <button
-                    type="button"
-                    className="admin-button-secondary"
-                    onClick={() => onOpenMission(mission)}
-                  >
-                    {isMissionEditable(mission.status) ? "Reprendre" : "Ouvrir"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {/* Origine de la mission : le pilote automatique ou un administrateur. */}
+                    <AdminPill tone={mission.trigger === "autopilot" ? "info" : "neutral"}>
+                      {missionTriggerLabel(mission.trigger)}
+                    </AdminPill>
+                    {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
+                      (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
+                    <button
+                      type="button"
+                      className="admin-button-secondary"
+                      onClick={() => onOpenMission(mission)}
+                    >
+                      {isMissionEditable(mission.status) ? "Reprendre" : "Ouvrir"}
+                    </button>
+                  </div>
                 </div>
               );
             })}

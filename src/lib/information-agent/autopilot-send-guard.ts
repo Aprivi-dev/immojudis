@@ -17,6 +17,22 @@ import {
 } from "@/lib/information-agent/autopilot-settings";
 
 /**
+ * Refus du pilote au moment de l'envoi : une règle revérifiée ne tient plus, ou le pilote n'est plus en mode réel
+ * (`not_live`, levé ici ou par le filet SQL de la garde des missions). Une décision, jamais une erreur d'API :
+ * l'exécuteur la journalise à part et ne la compte pas parmi les erreurs consécutives du fournisseur.
+ */
+export class AutopilotSendRefusedError extends PublicApiError {
+  /** Code du motif (`not_live`, `identity_excluded`, `reply_pause`…). */
+  readonly refusal: string;
+
+  constructor(refusal: string, options: { cause?: unknown } = {}) {
+    super(`Envoi automatique refusé (${refusal}) : validation manuelle requise.`, 409, options);
+    this.name = "AutopilotSendRefusedError";
+    this.refusal = refusal;
+  }
+}
+
+/**
  * Revérification des règles du pilote JUSTE AVANT l'envoi (déclencheur `autopilot` seulement) : l'état a pu changer
  * entre la sélection et l'envoi (origine de l'adresse, identité exclue, réponse reçue, pilote coupé…).
  *
@@ -43,10 +59,7 @@ export async function assertAutopilotSendAllowed({
   now?: Date;
 }): Promise<void> {
   const refuse = (code: string): never => {
-    throw new PublicApiError(
-      `Envoi automatique refusé (${code}) : validation manuelle requise.`,
-      409,
-    );
+    throw new AutopilotSendRefusedError(code);
   };
   const settings = await loadAutopilotSettings();
   if (settings.mode !== "live") refuse("not_live");

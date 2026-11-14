@@ -19,7 +19,10 @@ vi.mock("@/lib/information-agent/autopilot-facts", () => ({
   loadAutopilotHistoryFacts: mocks.history,
 }));
 
-import { assertAutopilotSendAllowed } from "@/lib/information-agent/autopilot-send-guard";
+import {
+  assertAutopilotSendAllowed,
+  AutopilotSendRefusedError,
+} from "@/lib/information-agent/autopilot-send-guard";
 
 const NOW = new Date("2026-11-03T09:30:00Z");
 const base = {
@@ -208,8 +211,10 @@ describe("revérification des règles du pilote juste avant l'envoi", () => {
     ],
   ])("refuse : %s", async (_label, arrange, overrides, code) => {
     arrange();
-    await expect(assertAutopilotSendAllowed({ ...base, ...overrides })).rejects.toThrow(
-      `(${code})`,
-    );
+    const check = assertAutopilotSendAllowed({ ...base, ...overrides });
+    await expect(check).rejects.toThrow(`(${code})`);
+    // Refus dédié : l'exécuteur le journalise à part, jamais comme une erreur d'API.
+    await expect(check).rejects.toBeInstanceOf(AutopilotSendRefusedError);
+    await expect(check).rejects.toMatchObject({ refusal: code, status: 409 });
   });
 });

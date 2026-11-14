@@ -37,6 +37,7 @@ import {
   INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE,
   informationAgentQuestionAudience,
   informationAgentQuestionTextFor,
+  informationAgentSaleAudience,
   isInformationAgentQuestionAllowed,
 } from "@/lib/information-agent/recipient-questions";
 import {
@@ -87,6 +88,26 @@ describe("destinataire des questions : le rôle établi, sinon l'organisateur de
 
   it("un notaire désigné reste un notaire même si l'organisateur de la vente est inconnu", () => {
     expect(audience("notary", "unknown", null)).toBe("notary");
+  });
+
+  it("un avocat reçoit le modèle de l'avocat, quels que soient l'organisateur et la source de la vente", () => {
+    expect(audience("lawyer", "notary", "notaires")).toBe("lawyer");
+    expect(audience("lawyer", "pursuing_lawyer", "notaires")).toBe("lawyer");
+    expect(audience("lawyer", "unknown", "notaires")).toBe("lawyer");
+    expect(audience("lawyer", "state_service", "cessions_etat")).toBe("lawyer");
+    expect(informationAgentAudienceTemplate(audience("lawyer", "notary", "notaires"))).toBeNull();
+  });
+
+  it("ce que la vente désigne ne dépend pas du destinataire", () => {
+    const sale = (
+      organizerType: "pursuing_lawyer" | "notary" | "state_service" | "unknown",
+      sourceName: string | null,
+    ) => informationAgentSaleAudience({ organizerType, sourceName });
+    expect(sale("notary", "licitor")).toBe("notary");
+    expect(sale("pursuing_lawyer", "notaires")).toBe("notary");
+    expect(sale("unknown", "cessions_etat")).toBe("state_service");
+    expect(sale("pursuing_lawyer", "avoventes")).toBeNull();
+    expect(sale("unknown", null)).toBeNull();
   });
 });
 
@@ -247,11 +268,29 @@ describe("envois aux notaires fermés par défaut", () => {
     ).toThrow("Envoi à un notaire fermé");
     for (const recipient of [
       { role: "lawyer", questionAudience: "lawyer", email },
+      { role: "lawyer", questionAudience: "lawyer", saleAudience: null, email },
       { role: "organizer", questionAudience: "state_service", email },
       { role: null, questionAudience: "other", email },
     ]) {
       expect(() => assertInformationAgentNotarySendAllowed(recipient, {})).not.toThrow();
     }
+  });
+
+  it("un avocat d'une vente notariale reçoit le modèle de l'avocat, mais l'envoi reste fermé", () => {
+    const lawyer = {
+      role: "lawyer",
+      questionAudience: "lawyer",
+      saleAudience: "notary",
+      email: "me.durand@cabinet-durand.example.test",
+    };
+    expect(() => assertInformationAgentNotarySendAllowed(lawyer, {})).toThrow(
+      "Envoi à un notaire fermé",
+    );
+    expect(() =>
+      assertInformationAgentNotarySendAllowed(lawyer, {
+        INFORMATION_AGENT_NOTARY_SEND_ENABLED: "true",
+      }),
+    ).not.toThrow();
   });
 
   it("vaut pour toute adresse en `notaires.fr` ou l'un de ses sous-domaines, quel que soit le rôle", () => {

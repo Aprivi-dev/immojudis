@@ -22,7 +22,11 @@ import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInfo
 import { AdminInformationAgentUnroutedPanel } from "@/components/admin/AdminInformationAgentUnroutedPanel";
 import { useInformationAgentSummary } from "@/components/admin/use-information-agent-summary";
 import { toggle } from "@/components/admin/emails/email-ui";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { fetchAdminInformationAgentMissions } from "@/lib/client-api";
+import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-view";
 import type { InformationAgentMission } from "@/lib/information-agent/schemas";
+import { toast } from "@/lib/toast";
 
 // Imports statiques, comme le module Emails : un `dynamic()` par onglet recopie les modules communs
 // dans chaque groupe de chargement et coûte plus de JavaScript qu'il n'en économise.
@@ -37,6 +41,9 @@ export type AgentTabId = (typeof AGENT_TABS)[number]["id"];
 
 /** Au-delà de ce délai sans réponse des listes de réponses, l'onglet d'accueil est « À contacter ». */
 const HOME_TAB_FALLBACK_MS = 3_000;
+
+const PREPARED_DRAFT_NOT_FOUND =
+  "Brouillon introuvable dans vos missions : déjà traité, ou préparé sous le compte de l’administrateur d’exécution du pilote.";
 
 /**
  * Espace de travail de l'agent : bandeau de synthèse, puis cinq onglets. L'onglet vit dans l'adresse
@@ -91,6 +98,22 @@ export function AdminInformationAgentWorkspace() {
     setSelection(null);
     setOpenRequest((previous) => ({ mission, nonce: (previous?.nonce ?? 0) + 1 }));
     select("a-contacter");
+  }
+
+  /**
+   * Brouillon préparé par le pilote (« Prêtes à valider ») : relu dans les missions de la vente (route existante),
+   * puis ouvert dans l'éditeur comme depuis l'onglet « Envois ». Absent des missions de l'administrateur connecté
+   * (déjà traité, ou préparé sous le compte de l'administrateur d'exécution du pilote) : il le dit.
+   */
+  async function openPreparedDraft(draft: AutopilotPreparedDraft) {
+    try {
+      const page = await fetchAdminInformationAgentMissions({ saleId: draft.saleId });
+      const mission = page.missions.find((item) => item.id === draft.missionId);
+      if (mission) openMission(mission);
+      else toast.error(PREPARED_DRAFT_NOT_FOUND);
+    } catch (error) {
+      toast.error(queryErrorMessage(error, "Brouillon indisponible"));
+    }
   }
 
   const counts: Partial<Record<AgentTabId, number | null>> = {
@@ -185,7 +208,7 @@ export function AdminInformationAgentWorkspace() {
       {panel(
         "pilote",
         <>
-          <AdminInformationAgentAutopilotPanel />
+          <AdminInformationAgentAutopilotPanel onOpenDraft={openPreparedDraft} />
           <AdminInformationAgentOperationsPanel />
         </>,
       )}
