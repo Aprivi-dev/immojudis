@@ -3,7 +3,7 @@
 -- désactivée sans condition d'inventaire (décision du propriétaire du 14/11/2026) ; rien n'est supprimé.
 begin;
 
-select plan(12);
+select plan(13);
 
 select ok(
   (
@@ -26,11 +26,35 @@ update public.auction_source_state
    set last_inventory_complete_at = statement_timestamp() - interval '10 minutes'
  where source_name = 'pgtap-899-active';
 
+-- Every sale has a sale window that closes in 40 days (an online notarial sale). On the real schema an undated
+-- sale is in the public catalogue only through such a window (catalogue_expiry_deadline, from
+-- sale_catalogue_retention_deadline) or a live state listing: without it, the sweep would see no visible sale.
 insert into public.auction_sales (source_name, source_url, status, sale_date, raw_payload)
 select source_name, 'https://example.test/pgtap/899/' || source_name || '/' || sale_number, 'upcoming',
-       case when sale_number = 1 then null else statement_timestamp() + interval '30 days' end, '{}'::jsonb
+       case when sale_number = 1 then null else statement_timestamp() + interval '30 days' end,
+       jsonb_build_object(
+         'source_sale_schedule',
+         jsonb_build_object(
+           'opens_at',
+           to_char(statement_timestamp() at time zone 'UTC' - interval '10 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+           'closes_at',
+           to_char(statement_timestamp() at time zone 'UTC' + interval '40 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+           'source', 'notarial_transaction'
+         )
+       )
   from (values ('pgtap-899-active'), ('pgtap-899-disabled')) sources(source_name)
   cross join generate_series(1, 8) as sale_number;
+
+select is(
+  (
+    select count(*)
+      from public.auction_sales
+     where source_url like 'https://example.test/pgtap/899/%'
+       and app_private.auction_sale_is_publicly_visible(id)
+  ),
+  16::bigint,
+  'fixture: every sale, dated or not, is in the public catalogue'
+);
 -- The first sale of each source has no hearing date and has not been seen for 20 days.
 update public.auction_sales
    set last_seen_at = statement_timestamp() - interval '20 days'
