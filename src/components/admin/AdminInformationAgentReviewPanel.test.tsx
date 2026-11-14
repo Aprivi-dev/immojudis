@@ -729,7 +729,7 @@ describe("AdminInformationAgentReviewPanel", () => {
     });
   });
 
-  it("dit ce que change l'acceptation : une valeur confirmée reste celle de la fiche", async () => {
+  it("dit ce que change l'acceptation : la valeur proposée remplace celle de la fiche", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [
         {
@@ -759,10 +759,12 @@ describe("AdminInformationAgentReviewPanel", () => {
 
     expect(screen.getByText(/Accepter une pièce \(document ou photo\) la publie/)).toBeTruthy();
     expect(
-      screen.getByText(/Confirmer une autre information ne change pas la valeur affichée/),
+      screen.getByText(
+        /la valeur proposée remplace celle de la fiche, sauf si le champ est déjà tenu par une pièce du registre/,
+      ),
     ).toBeTruthy();
     const mark = await screen.findByRole("button", {
-      name: "Confirmer la valeur (inchangée)",
+      name: "Accepter et mettre à jour la fiche",
     });
     expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
     fireEvent.click(mark);
@@ -813,7 +815,7 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(
       (
         screen.getByRole("button", {
-          name: "Confirmer la valeur (inchangée)",
+          name: "Accepter et mettre à jour la fiche",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
