@@ -28,8 +28,8 @@ export const POST = adminRoute(
     fallbackMessage: "Pilote automatique non modifié",
     guard: "admin",
   },
-  async (request, { authToken }) => {
+  async (request, { api, authToken }) => {
     const input = adminAutopilotActionSchema.parse(await request.json());
-    return runAdminAutopilotAction({ authToken, input });
+    return runAdminAutopilotAction({ authToken, input, startedAt: api.startedAt });
   },
 );

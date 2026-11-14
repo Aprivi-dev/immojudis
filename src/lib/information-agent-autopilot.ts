@@ -88,6 +88,8 @@ export type AutopilotRunSummary = {
    */
   errors: Record<string, number>;
   warnings: string[];
+  /** Passage à la demande arrêté par sa borne de temps (examen ou candidat non entamé). Jamais pour la tâche planifiée. */
+  stoppedByTimeBudget: boolean;
 };
 
 export type PreparedAutopilotDraft = {
@@ -123,6 +125,7 @@ export type AutopilotDeps = {
     settings: AutopilotSettings,
     now: Date,
     limit: number,
+    shouldStop: () => boolean,
   ) => Promise<AutopilotCandidateSearch>;
   prepareDraft: (
     candidate: AutopilotCandidate,
@@ -161,8 +164,11 @@ const SIMULATION_PER_RUN = 5;
 /** Au plus un passage lancé à la main toutes les 10 minutes (journal : `run` avec `manual`). */
 const ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
 
-/** Passage lancé à la main : administrateur vérifié par le serveur (jamais une valeur du client) et motif. */
-export type AutopilotOnDemandRequest = { adminId: string; reason: string };
+/**
+ * Passage lancé à la main : administrateur vérifié par le serveur (jamais une valeur du client), motif, et heure
+ * après laquelle aucun examen ni aucun candidat n'est plus entamé (borne de la route qui l'appelle).
+ */
+export type AutopilotOnDemandRequest = { adminId: string; reason: string; deadline: Date };
 
 /**
  * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
@@ -256,8 +262,8 @@ export function defaultAutopilotDeps(
     claimLease: () => claimCronLease("information-agent-autopilot", 600),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
     hasOnDemandRunSince: hasOnDemandAutopilotRunSince,
-    findCandidates: (settings, now, limit) =>
-      findAutopilotCandidates({ settings, now, limit, env }),
+    findCandidates: (settings, now, limit, shouldStop) =>
+      findAutopilotCandidates({ settings, now, limit, env, shouldStop }),
     prepareDraft: prepareAutopilotDraft,
     preview: async (draft, settings, runId) => {
       const response = await previewAdminInformationAgentMission({
@@ -389,6 +395,7 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
     skipped: {},
     errors: {},
     warnings: [],
+    stoppedByTimeBudget: false,
   };
 }
 
@@ -479,7 +486,13 @@ async function runAutopilotPass(
 
     // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement.
     const live = settings.mode === "live";
-    const search = await deps.findCandidates(settings, now, live ? 3 : SIMULATION_PER_RUN);
+    // Borne de temps du seul passage à la demande ; la tâche planifiée n'en a pas (`Infinity`).
+    const deadline = onDemand ? onDemand.deadline.getTime() : Infinity;
+    const timeUp = () => {
+      if (deps.now().getTime() >= deadline) summary.stoppedByTimeBudget = true;
+      return summary.stoppedByTimeBudget;
+    };
+    const search = await deps.findCandidates(settings, now, live ? 3 : SIMULATION_PER_RUN, timeUp);
     summary.examined = search.examined;
     summary.skipped = { ...search.skipped };
     const skip = (code: string) => {
@@ -501,6 +514,8 @@ async function runAutopilotPass(
     };
 
     for (const candidate of search.candidates) {
+      // Le candidat en cours se termine ; le suivant n'est pas entamé une fois l'heure passée.
+      if (timeUp()) break;
       // Relecture de l'interrupteur et des compteurs avant CHAQUE envoi.
       settings = await deps.loadSettings();
       if (settings.mode !== summary.mode || settings.autoStoppedAt || settings.mode === "off") {
@@ -641,6 +656,7 @@ async function runAutopilotPass(
     await deps.record("run", runId, {
       mode: settings.mode,
       ...(onDemand ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason } : {}),
+      ...(summary.stoppedByTimeBudget ? { stopped_by_time_budget: true } : {}),
       examined: summary.examined,
       prepared: summary.prepared,
       would_send: summary.wouldSend,

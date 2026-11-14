@@ -940,7 +940,12 @@ describe("relecture de la PR #501 : simulation juste dès lundi", () => {
 
 describe("passage de simulation lancé à la main (demande du 14/11/2026)", () => {
   const SATURDAY = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris, hors plage
-  const request = { adminId: "admin-2", reason: "Premier passage demandé" };
+  const request = {
+    adminId: "admin-2",
+    reason: "Premier passage demandé",
+    // Borne de temps : 20 s après le début de la requête.
+    deadline: new Date(SATURDAY.getTime() + 20_000),
+  };
   const simulation = { loadSettings: async () => settings({ mode: "simulation" }) };
 
   it("accepté en simulation un samedi hors plage : même passage, aucun envoi, journalisé « à la main »", async () => {
@@ -1049,6 +1054,135 @@ describe("passage de simulation lancé à la main (demande du 14/11/2026)", () =
     expect(summary.skipped).toEqual({ interrupted: 1 });
     expect(calls.sends).toBe(0);
     expect(calls.prepares).toBe(0);
+  });
+
+  /** Horloge qui avance à chaque examen et à chaque brouillon (examens et brouillons lents). */
+  function slowClock(start: Date) {
+    let at = start.getTime();
+    return {
+      now: () => new Date(at),
+      advance: (ms: number) => {
+        at += ms;
+      },
+      at: () => at,
+    };
+  }
+
+  it("examens lents : plus aucun examen entamé après la borne ; passage journalisé « arrêté », bail rendu", async () => {
+    const clock = slowClock(SATURDAY);
+    const examStarts: number[] = [];
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        // Chaque examen prend 3 s ; la recherche s'arrête quand la borne le dit.
+        findCandidates: async (_settings, _now, _limit, shouldStop) => {
+          let examined = 0;
+          while (examined < 25 && !shouldStop()) {
+            examStarts.push(clock.at());
+            examined += 1;
+            clock.advance(3_000);
+          }
+          return { candidates: [candidate()], skipped: {}, examined };
+        },
+      },
+      SATURDAY,
+    );
+    const summary = await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(examStarts.every((at) => at < request.deadline.getTime())).toBe(true);
+    expect(summary).toMatchObject({
+      status: "ran",
+      examined: 7,
+      prepared: 0,
+      wouldSend: 0,
+      stoppedByTimeBudget: true,
+    });
+    // Le candidat trouvé n'est pas entamé : l'heure est passée.
+    expect(calls.prepares).toBe(0);
+    expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
+      manual: true,
+      examined: 7,
+      stopped_by_time_budget: true,
+    });
+    expect(calls.released).toBe(1);
+  });
+
+  it("brouillons lents : le candidat en cours se termine, le suivant n'est pas entamé après la borne", async () => {
+    const clock = slowClock(SATURDAY);
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        findCandidates: async () => {
+          clock.advance(15_000);
+          return {
+            candidates: ["a", "b", "c"].map((saleId) =>
+              candidate({ saleId, domain: `${saleId}.test` }),
+            ),
+            skipped: {},
+            examined: 3,
+          };
+        },
+        // Chaque brouillon et son aperçu prennent 4 s : « a » à 15 s, « b » à 19 s, « c » à 23 s.
+        prepareDraft: async (item) => {
+          calls.prepares += 1;
+          clock.advance(4_000);
+          return draft({ missionId: `mission-${item.saleId}` });
+        },
+      },
+      SATURDAY,
+    );
+    const summary = await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(summary).toMatchObject({ prepared: 2, wouldSend: 2, stoppedByTimeBudget: true });
+    expect(calls.prepares).toBe(2);
+    expect(calls.records.map((record) => record.kind)).toEqual(["would_send", "would_send", "run"]);
+    expect(calls.released).toBe(1);
+  });
+
+  it("un passage qui finit avant la borne n'est pas marqué « arrêté »", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    const summary = await runInformationAgentAutopilotOnDemand(request, deps);
+    expect(summary.stoppedByTimeBudget).toBe(false);
+    expect(calls.records.find((record) => record.kind === "run")?.details).not.toHaveProperty(
+      "stopped_by_time_budget",
+    );
+  });
+
+  it("la tâche planifiée n'a pas de borne de temps nouvelle : examens et brouillons lents vont au bout", async () => {
+    const clock = slowClock(MONDAY_10H);
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        findCandidates: async (_settings, _now, _limit, shouldStop) => {
+          let examined = 0;
+          while (examined < 25 && !shouldStop()) {
+            examined += 1;
+            clock.advance(3_000);
+          }
+          return {
+            candidates: ["a", "b", "c"].map((saleId) =>
+              candidate({ saleId, domain: `${saleId}.test` }),
+            ),
+            skipped: {},
+            examined,
+          };
+        },
+        prepareDraft: async (item) => {
+          calls.prepares += 1;
+          clock.advance(60_000);
+          return draft({ missionId: `mission-${item.saleId}` });
+        },
+      },
+      MONDAY_10H,
+    );
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary).toMatchObject({
+      examined: 25,
+      prepared: 3,
+      wouldSend: 3,
+      stoppedByTimeBudget: false,
+    });
   });
 
   it("la tâche planifiée garde sa plage horaire et ne consulte pas le délai des passages à la demande", async () => {

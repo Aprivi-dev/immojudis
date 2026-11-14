@@ -405,6 +405,9 @@ describe("passage de simulation lancé à la main", () => {
       journal: [] as Array<{ at: Date; kind: string; details: Record<string, unknown> }>,
       sends: 0,
       runs: 0,
+      released: 0,
+      /** Durée d'un examen (examens lents : la borne de temps les arrête). */
+      examMs: 0,
     };
     mocks.pilotDeps = () => ({
       now: () => state.now,
@@ -416,24 +419,33 @@ describe("passage de simulation lancé à la main", () => {
         state.runs += 1;
         return { kind: "held", token: "bail" };
       },
-      releaseLease: async () => undefined,
+      releaseLease: async () => {
+        state.released += 1;
+      },
       hasOnDemandRunSince: async (since) =>
         state.journal.some(
           (event) => event.kind === "run" && event.details.manual === true && event.at >= since,
         ),
-      findCandidates: async () => ({
-        candidates: [
-          {
-            saleId: "sale-1",
-            tribunalCode: "T1",
-            email: "contact@cabinet-fictif.test",
-            domain: "cabinet-fictif.test",
-            identityKeys: ["lawyer|bordeaux|dupont jean"],
-          },
-        ],
-        skipped: { not_class_a: 2 },
-        examined: 3,
-      }),
+      findCandidates: async (_settings, _now, _limit, shouldStop) => {
+        let examined = 0;
+        while (examined < 3 && !shouldStop()) {
+          examined += 1;
+          state.now = new Date(state.now.getTime() + state.examMs);
+        }
+        return {
+          candidates: [
+            {
+              saleId: "sale-1",
+              tribunalCode: "T1",
+              email: "contact@cabinet-fictif.test",
+              domain: "cabinet-fictif.test",
+              identityKeys: ["lawyer|bordeaux|dupont jean"],
+            },
+          ],
+          skipped: { not_class_a: 2 },
+          examined,
+        };
+      },
       prepareDraft: async () => ({
         missionId: "mission-1",
         recipientEmail: "contact@cabinet-fictif.test",
@@ -488,6 +500,7 @@ describe("passage de simulation lancé à la main", () => {
       authToken: "token",
       // Une identité envoyée par le client n'est jamais lue : seule la session vérifiée compte.
       input: adminAutopilotActionSchema.parse({ ...input, actorId: "intrus", adminId: "intrus" }),
+      startedAt: +state.now,
       env: {},
     });
     expect(response.onDemandRun).toEqual({
@@ -511,17 +524,45 @@ describe("passage de simulation lancé à la main", () => {
 
   it("refuse un second passage dans les 10 minutes (429), l'accepte ensuite", async () => {
     const state = pilot();
-    await runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    await runAdminAutopilotAction({ authToken: "token", input, env: {}, startedAt: +state.now });
     state.now = new Date(SATURDAY.getTime() + 9 * 60_000);
-    const second = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    const second = runAdminAutopilotAction({
+      authToken: "token",
+      input,
+      env: {},
+      startedAt: +state.now,
+    });
     await expect(second).rejects.toBeInstanceOf(RateLimitError);
     await expect(second).rejects.toMatchObject({
       publicMessage: expect.stringContaining("il y a moins de 10 minutes"),
     });
     expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(1);
     state.now = new Date(SATURDAY.getTime() + 11 * 60_000);
-    await runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    await runAdminAutopilotAction({ authToken: "token", input, env: {}, startedAt: +state.now });
     expect(state.journal.filter((event) => event.kind === "run")).toHaveLength(2);
+    expect(state.sends).toBe(0);
+  });
+
+  it("examens lents : arrêté par la borne de 20 s comptée depuis le début de la requête, bail rendu", async () => {
+    const state = pilot();
+    state.examMs = 7_000;
+    const response = await runAdminAutopilotAction({
+      authToken: "token",
+      input,
+      env: {},
+      // La requête a commencé 2 s avant le passage : la borne tombe 18 s après son début.
+      startedAt: SATURDAY.getTime() - 2_000,
+    });
+    // Examens entamés à 0 s, 7 s et 14 s ; à 21 s, le candidat trouvé n'est pas entamé.
+    expect(response.onDemandRun).toEqual({
+      text: "Passage de simulation terminé : 3 examinées, 0 préparées, 0 simulées, arrêté au bout de 20 s. Aucun envoi.",
+    });
+    expect(state.journal.find((event) => event.kind === "run")?.details).toMatchObject({
+      manual: true,
+      examined: 3,
+      stopped_by_time_budget: true,
+    });
+    expect(state.released).toBe(1);
     expect(state.sends).toBe(0);
   });
 
@@ -561,9 +602,14 @@ describe("passage de simulation lancé à la main", () => {
 
   it("le passage fait, une relecture de l'état en échec le dit sans le faire passer pour refusé", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    pilot();
+    const state = pilot();
     mocks.events.mockRejectedValue(new Error("lecture impossible"));
-    const failure = runAdminAutopilotAction({ authToken: "token", input, env: {} });
+    const failure = runAdminAutopilotAction({
+      authToken: "token",
+      input,
+      env: {},
+      startedAt: +state.now,
+    });
     await expect(failure).rejects.toMatchObject({
       status: 503,
       message: expect.stringContaining("Passage de simulation terminé : 3 examinées"),
