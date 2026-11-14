@@ -79,6 +79,9 @@ async function send(
 ): Promise<Response> {
   const headers: Record<string, string> = options.anonymous ? {} : await authHeaders();
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  // Hors du `try` : une valeur qui ne se sérialise pas (BigInt, référence circulaire) lève sa propre
+  // `TypeError`, qui n'est pas une coupure réseau.
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body);
   const ms =
     options.timeoutMs ??
     (path.startsWith("/api/admin/") || !(options.method || options.file) ? API_TIMEOUT_MS : 0);
@@ -92,12 +95,7 @@ async function send(
     if (signal !== options.signal) deadline = timeout;
   }
   try {
-    return await fetch(path, {
-      method: options.method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal,
-    });
+    return await fetch(path, { method: options.method, headers, body, signal });
   } catch (error) {
     // Une annulation voulue (page quittée, lecture que React Query abandonne) reste ce qu'elle
     // est : React Query l'ignore, aucun message n'est à montrer.
