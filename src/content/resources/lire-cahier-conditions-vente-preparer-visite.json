@@ -1,10 +1,12 @@
 {
   "slug": "lire-cahier-conditions-vente-preparer-visite",
   "publishedAt": "2026-10-13",
+  "updatedAt": "2026-11-14",
   "title": "Lire le cahier des conditions de vente et préparer la visite",
   "seoTitle": "Cahier des conditions de vente : lecture, visite",
   "category": "Méthode",
   "description": "Où trouver le cahier des conditions de vente, quelles rubriques lire en priorité, comment préparer la visite du bien et transformer ce que vous voyez en hypothèses chiffrées.",
+  "directAnswer": "Le cahier des conditions de vente est le document qui décrit le bien et fixe les règles d’une vente judiciaire : désignation du bien, servitudes, baux, procès-verbal de description, conditions de la vente et mise à prix (art. R. 322-10 du Code des procédures civiles d’exécution). En saisie immobilière, il se consulte au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-11). Lisez-le avant la visite, puis transformez chaque constat en hypothèse chiffrée pour votre enchère plafond.",
   "intro": [
     "Le cahier des conditions de vente est le document central d’une vente judiciaire. Il décrit le bien et fixe les règles de la vente : prix de départ, garanties, frais, occupation. Lui et la visite sont les deux sources les plus fiables avant d’enchérir. Une annonce, elle, ne reprend qu’une partie de ses informations.",
     "Cet article explique où le trouver, comment le lire sans être juriste, comment préparer la visite et comment convertir vos constats en chiffres pour votre enchère plafond, c’est-à-dire la limite que vous vous interdisez de dépasser. Les ventes notariales et domaniales ont un cahier « des charges » qui répond à la même logique : voir l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
@@ -140,7 +142,35 @@
         "Mettre à jour l’enchère plafond avec les frais du cahier (voir « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir »).",
         "Faire valider l’analyse juridique par votre avocat, notamment sur l’occupation.",
         "Lire aussi « Le jour de l’audience : déroulé et rôle de l’avocat » pour préparer la suite."
+      ],
+      "links": [
+        {
+          "label": "Acheter une maison aux enchères",
+          "href": "/ressources/acheter-maison-aux-encheres-etapes-frais-risques"
+        },
+        {
+          "label": "Fixer son enchère plafond",
+          "href": "/ressources/prix-plafond-encheres-immobilieres"
+        }
       ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Où consulter le cahier des conditions de vente ?",
+      "answer": "Au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-11 du Code des procédures civiles d’exécution). L’avis de vente, publié un à deux mois avant l’audience, rappelle où le consulter (art. R. 322-31). Demandez une copie complète, annexes comprises."
+    },
+    {
+      "question": "Les diagnostics figurent-ils dans le cahier ?",
+      "answer": "Oui : en cas de vente publique, le dossier de diagnostic technique est annexé au cahier des charges (art. L. 271-4 du Code de la construction et de l’habitation). Selon le bien, il comprend notamment le DPE et les états relatifs à l’amiante, au plomb, à l’électricité, au gaz, aux risques ou aux termites."
+    },
+    {
+      "question": "Peut-on se retourner contre le vendeur pour un vice caché ?",
+      "answer": "Pas dans une vente faite par autorité de justice : l’article 1649 du Code civil y écarte la garantie des vices cachés. Pour une vente notariale volontaire, demandez la clause du cahier des charges. La visite et les diagnostics sont donc vos principales sources d’information."
+    },
+    {
+      "question": "Comment se passe la visite d’un bien vendu aux enchères ?",
+      "answer": "Quand des visites sont prévues, leurs dates figurent dans l’avis de vente ; elles sont souvent collectives et encadrées par un commissaire de justice. Relisez le cahier avant d’y aller, demandez si les photos sont autorisées et notez ce que vous n’avez pas pu voir."
     }
   ],
   "sources": [

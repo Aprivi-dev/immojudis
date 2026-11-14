@@ -7,6 +7,7 @@ import {
 } from "@/lib/public-adjudication-prices";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
+import { loadIndexableSaleLandingPaths } from "@/lib/sale-landing-pages.server";
 import { siteOrigin } from "@/lib/site-url";
 import { loadTribunalAndHearingPaths } from "@/lib/sitemap-tribunal-hearing-pages.server";
 
@@ -65,12 +66,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // `/tribunaux` then stays listed (only a successful read that finds no court removes it).
   // The departments follow the same rule as the courts: a read error leaves the index listed and
   // adds no department page (a passing outage must not remove them for good, nor invent them).
-  // The three readings are independent: they run together (the courts and hearings paths do not
-  // throw, see `loadTribunalAndHearingPaths`).
-  const [tribunals, departments, tribunalAndHearingPaths] = await Promise.all([
+  // The readings are independent: they run together (the courts and hearings paths and the pages by
+  // type of property or sale do not throw, see `loadTribunalAndHearingPaths` and
+  // `loadIndexableSaleLandingPaths`).
+  const [tribunals, departments, tribunalAndHearingPaths, saleLandingPaths] = await Promise.all([
     loadPublicTribunalActivity(),
     tryLoadDepartmentCatalogue(),
     loadTribunalAndHearingPaths(),
+    loadIndexableSaleLandingPaths(),
   ]);
   const indexable = departments.status === "ok" ? indexableDepartments(departments.catalogue) : [];
 
@@ -106,5 +109,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...departmentPages,
     ...indexable.map((department) => ({ url: `${origin}${department.path}` })),
     ...tribunalAndHearingPages,
+    // Pages par type de bien ou de vente (maison, appartement, notaires, État) : au moins 3 ventes à
+    // venir, même seuil que leur balise robots ; une lecture en échec n'ajoute pas la page.
+    ...saleLandingPaths.map((path) => ({ url: `${origin}${path}` })),
   ];
 }

@@ -17,6 +17,18 @@ const MAIN_LINKS = [
   { href: "/contact", label: "Contact" },
 ] as const;
 
+/**
+ * Groupe « Ventes par type » : les pages par type de bien ou de vente. Adresses écrites ici (le module
+ * `sale-landing-pages.ts` n'entre pas dans le JavaScript du navigateur) ; un test vérifie qu'elles
+ * sont celles de `SALE_LANDING_PAGES`, dans le même ordre.
+ */
+const SALE_TYPE_LINKS = [
+  { href: "/maison-aux-encheres", label: "Maisons aux enchères" },
+  { href: "/appartement-aux-encheres", label: "Appartements aux enchères" },
+  { href: "/encheres-notariales", label: "Enchères notariales" },
+  { href: "/ventes-immobilieres-etat", label: "Ventes immobilières de l’État" },
+] as const;
+
 /** Groupe « Transparence » : qui nous sommes, le guide, le simulateur et les méthodes de calcul. */
 const TRANSPARENCY_LINKS = [
   { href: "/a-propos", label: "À propos" },
@@ -85,6 +97,22 @@ export function SiteFooter() {
             </ul>
           </nav>
         </div>
+        <nav aria-label="Ventes par type" className="border-t border-border pt-5">
+          <p className="mb-2 font-semibold text-foreground">Ventes par type</p>
+          <ul className="flex flex-wrap gap-x-5">
+            {SALE_TYPE_LINKS.map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  prefetch={false}
+                  className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
         <nav aria-label="Transparence" className="border-t border-border pt-5">
           <p className="mb-2 font-semibold text-foreground">Transparence</p>
           <ul className="flex flex-wrap gap-x-5">

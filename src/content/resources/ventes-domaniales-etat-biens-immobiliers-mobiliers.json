@@ -1,0 +1,231 @@
+{
+  "slug": "ventes-domaniales-etat-biens-immobiliers-mobiliers",
+  "publishedAt": "2026-11-14",
+  "title": "Ventes domaniales : comment l’État vend ses biens immobiliers (et mobiliers)",
+  "seoTitle": "Vente domaniale : comment l’État vend ses biens",
+  "category": "Les fondamentaux",
+  "description": "Qui vend les biens de l’État, comment se déroulent les cessions immobilières (appel d’offres, adjudication, gré à gré), ce que fait l’AGRASC pour les biens confisqués, et où trouver les ventes mobilières du Domaine.",
+  "seoDescription": "Vente domaniale : le Domaine (DGFiP) vend les immeubles de l’État par appel d’offres ou adjudication, et les meubles sur un site dédié. Qui, comment, où.",
+  "directAnswer": "Une vente domaniale est une vente, par l’État, d’un bien qui lui appartient et dont il n’a plus l’usage ; elle est conduite par le Domaine, rattaché à la direction générale des Finances publiques (DGFiP). Les immeubles se vendent avec publicité et mise en concurrence, par appel d’offres ou par adjudication publique (vente aux enchères), et de gré à gré seulement dans des cas limités ; les immeubles confisqués par la justice pénale sont vendus par l’AGRASC. Les ventes de meubles (véhicules, matériel, objets) passent par le site officiel encheres-domaine.gouv.fr ; Immojudis, lui, ne couvre que les biens immobiliers.",
+  "intro": [
+    "« Vente domaniale » désigne une vente de l’État. Le mot vient du Domaine, le service qui gère et vend les biens de l’État au sein de la direction générale des Finances publiques (DGFiP). L’expression recouvre deux mondes très différents : les immeubles (logements, bureaux, terrains, bâtiments techniques ou agricoles) et les meubles (véhicules, matériel, bijoux, objets confisqués ou trouvés).",
+    "Ce guide explique qui vend, comment se déroule la vente d’un immeuble, ce que fait l’AGRASC pour les biens confisqués par la justice pénale, et où trouver les ventes de meubles. Immojudis ne couvre que la partie immobilière : pour un véhicule ou du matériel, c’est le site officiel des ventes du Domaine qu’il faut consulter."
+  ],
+  "takeaways": [
+    "Le Domaine, rattaché à la DGFiP, vend les biens dont l’État n’a plus l’usage : les immeubles d’un côté, les meubles de l’autre.",
+    "La vente d’un immeuble du domaine privé de l’État se fait avec publicité et mise en concurrence, par adjudication publique ou à l’amiable (art. R. 3211-2 du Code général de la propriété des personnes publiques).",
+    "Avant la mise en vente, la commune ou l’intercommunalité titulaire du droit de préemption urbain dispose d’un droit de priorité pour acheter le bien (art. L. 240-1 du Code de l’urbanisme).",
+    "L’AGRASC vend les biens immobiliers définitivement confisqués par la justice pénale ; ses annonces précisent le mode de vente (gré à gré, appel d’offres ou enchères).",
+    "Les ventes mobilières du Domaine (véhicules, matériel, objets) se font sur encheres-domaine.gouv.fr, hors du champ d’Immojudis.",
+    "Une vente de l’État n’est pas toujours une vente aux enchères : lisez le cahier des charges ou l’avis de vente de chaque bien."
+  ],
+  "sections": [
+    {
+      "id": "qui-vend",
+      "title": "Qui vend les biens de l’État ?",
+      "paragraphs": [
+        "Pour les immeubles, la direction de l’immobilier de l’État, au sein de la DGFiP, et les services locaux du Domaine conduisent les cessions. Selon la DGFiP, l’acte de vente est préparé par un notaire et signé au nom de l’État. Pour les meubles, les ventes sont assurées par la direction nationale d’interventions domaniales (DNID), rattachée à la DGFiP, et par ses commissariats aux ventes.",
+        "Les biens saisis ou confisqués au cours d’une procédure pénale suivent en partie une autre voie. Les meubles confisqués figurent parmi les biens vendus par le Domaine, et l’AGRASC peut aussi en vendre dans des cas exceptionnels. Les immeubles définitivement confisqués sont gérés et vendus par l’AGRASC, l’Agence de gestion et de recouvrement des avoirs saisis et confisqués, un établissement public placé sous la tutelle conjointe du ministère de la Justice et du ministère chargé des Comptes publics."
+      ],
+      "table": {
+        "headers": ["Ce qui est vendu", "Qui vend", "Où trouver les ventes"],
+        "rows": [
+          [
+            "Immeubles de l’État (logements, bureaux, terrains…)",
+            "Le Domaine (DGFiP), avec un notaire pour l’acte",
+            "Site des cessions immobilières de l’État (cessions.immobilier-etat.gouv.fr)"
+          ],
+          [
+            "Immeubles confisqués par la justice pénale",
+            "L’AGRASC",
+            "agrasc.gouv.fr, rubrique « Les ventes »"
+          ],
+          [
+            "Meubles : véhicules, matériel réformé, objets confisqués ou trouvés",
+            "Le Domaine (DNID et commissariats aux ventes)",
+            "encheres-domaine.gouv.fr"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "cessions-immobilieres",
+      "title": "Comment l’État vend un immeuble",
+      "paragraphs": [
+        "Selon la DGFiP, l’État vend les immeubles devenus inutiles, inadaptés ou coûteux à entretenir. Le Code général de la propriété des personnes publiques pose le principe : « L’aliénation d’un immeuble du domaine privé de l’Etat est consentie avec publicité et mise en concurrence », soit par adjudication publique, soit à l’amiable (art. R. 3211-2). Le ministre chargé du domaine établit un cahier des charges type, qui fixe les conditions générales de vente.",
+        "Avant la mise en vente, la commune ou l’intercommunalité titulaire du droit de préemption urbain dispose d’un droit de priorité sur le projet de cession (art. L. 240-1 du Code de l’urbanisme). Selon la DGFiP, elle a deux mois à compter de la notification pour décider d’acheter ou de renoncer. Un bien peut donc être acquis par la commune avant même d’être annoncé au public."
+      ],
+      "table": {
+        "headers": ["Procédure", "Comment elle se déroule", "Texte"],
+        "rows": [
+          [
+            "Appel d’offres (cession amiable avec mise en concurrence)",
+            "Un avis du préfet décrit le bien, les modalités de présentation des offres et les visites ; les offres sont jugées notamment sur leurs conditions financières et leurs garanties de bonne fin et de solvabilité. Selon la DGFiP, c’est la procédure de droit commun.",
+            "Art. R. 3211-4 et R. 3211-5"
+          ],
+          [
+            "Adjudication publique (vente aux enchères)",
+            "Autorisée par le préfet après avis du directeur départemental des finances publiques, qui fixe la mise à prix.",
+            "Art. R. 3211-3"
+          ],
+          [
+            "Cession amiable sans mise en concurrence (gré à gré)",
+            "Possible seulement dans des cas listés, par exemple après une adjudication restée infructueuse ou au profit d’un acquéreur désigné par la loi.",
+            "Art. R. 3211-7"
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Une vente de l’État n’est pas toujours une enchère",
+        "text": "Dans un appel d’offres, vous remettez une offre selon les modalités de l’avis ; dans une adjudication, les enchères sont publiques. L’État peut aussi confier la vente à des professionnels habilités (art. R. 3211-2). Identifiez la procédure avant tout, puis lisez le cahier des charges : garantie, délais de paiement et frais y sont fixés."
+      }
+    },
+    {
+      "id": "agrasc",
+      "title": "L’AGRASC : les immeubles confisqués par la justice pénale",
+      "paragraphs": [
+        "Créée par la loi du 9 juillet 2010, l’AGRASC gère, sur mandat de justice, les biens saisis ou confisqués au cours d’une procédure pénale. Son département immobilier gère les biens immobiliers définitivement confisqués et les vend ; il s’appuie sur un réseau de prestataires, dont des notaires, des agents immobiliers et des commissaires de justice.",
+        "Les annonces publiées par l’AGRASC indiquent le mode de vente de chaque bien : de gré à gré, par appel d’offres ou aux enchères, parfois en ligne sur la plateforme d’un prestataire. Elles mentionnent aussi l’état du bien et une éventuelle location : lisez-les avec le même soin qu’un cahier des conditions de vente.",
+        "Depuis la loi du 8 avril 2021, l’AGRASC peut aussi mettre un immeuble confisqué à disposition d’associations, de fondations reconnues d’utilité publique ou d’organismes agréés ; la loi du 9 avril 2024 a étendu ce dispositif aux collectivités territoriales. Tous les immeubles confisqués ne sont donc pas mis en vente."
+      ]
+    },
+    {
+      "id": "ventes-mobilieres",
+      "title": "Véhicules, matériel, objets : les ventes mobilières du Domaine",
+      "paragraphs": [
+        "Les ventes mobilières du Domaine portent sur les biens dont les services de l’État n’ont plus l’usage, les biens confisqués par la justice, les véhicules réputés abandonnés dans les fourrières et les objets trouvés. Le Domaine vend aussi des biens mobiliers réformés d’établissements publics et de collectivités qui le lui confient.",
+        "Les catalogues, le calendrier et les conditions de vente sont publiés sur le site officiel encheres-domaine.gouv.fr. Les ventes s’y font aux enchères, en salle avec diffusion en direct ou en ligne, ou par appel d’offres, selon les lots. Les conditions de chaque vente précisent les frais à la charge de l’acheteur."
+      ],
+      "callout": {
+        "title": "Immojudis ne couvre pas ces ventes",
+        "text": "Immojudis est consacré aux ventes immobilières. Pour un véhicule, du matériel ou un objet vendu par l’État, consultez directement encheres-domaine.gouv.fr."
+      }
+    },
+    {
+      "id": "acheteur",
+      "title": "Ce qui change pour l’acheteur d’un immeuble de l’État",
+      "paragraphs": [
+        "Les règles d’une vente au tribunal (avocat obligatoire, garantie de 10 % de la mise à prix, surenchère du dixième) ne s’appliquent pas d’office à une vente de l’État : le cahier des charges ou l’avis de vente fait foi. Avant de vous engager, vérifiez au moins ces points."
+      ],
+      "bullets": [
+        "La procédure : une adjudication, un appel d’offres et une cession de gré à gré ne se préparent pas de la même façon.",
+        "La garantie éventuelle, les modalités de dépôt des offres ou des enchères, et la date limite.",
+        "Les visites : l’avis d’une cession amiable en précise les modalités (art. R. 3211-4).",
+        "Les frais : les ventes d’immeubles domaniaux sont soumises aux droits d’enregistrement (art. 683 du Code général des impôts) ; faites chiffrer le coût total avant de vous engager.",
+        "Les échéances de paiement : en cas de défaut, l’acquéreur peut être déchu de la vente après une mise en demeure d’un mois (art. R. 3211-8) et doit une amende égale au dixième de la somme exigible, sans pouvoir être inférieure au vingtième du prix (art. L. 3211-12)."
+      ],
+      "links": [
+        {
+          "label": "Tribunal, notaire, État : les différences",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal"
+        },
+        {
+          "label": "Qu’est-ce que l’adjudication ?",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication"
+        }
+      ]
+    },
+    {
+      "id": "dans-immojudis",
+      "title": "Les ventes immobilières de l’État dans Immojudis",
+      "paragraphs": [
+        "Immojudis référence des cessions immobilières de l’État et des ventes immobilières de l’AGRASC, publiées par ces organismes, avec les ventes au tribunal et chez le notaire. La fiche indique la procédure lorsque l’annonce la précise (adjudication, appel d’offres ou cession amiable) et renvoie vers l’annonce d’origine, qui fait foi. Le catalogue n’est pas exhaustif.",
+        "L’enchère plafond d’Immojudis n’est pas proposée pour les ventes domaniales : pour ces biens, le cahier des charges et l’organisme vendeur restent vos premières sources."
+      ],
+      "links": [
+        {
+          "label": "Les ventes immobilières de l’État à venir",
+          "href": "/ventes-immobilieres-etat"
+        },
+        {
+          "label": "Enchères immobilières en ligne",
+          "href": "/ressources/encheres-immobilieres-en-ligne-distance"
+        }
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Qu’est-ce qu’une vente domaniale ?",
+      "answer": "C’est la vente, par l’État, d’un bien qui lui appartient, conduite par le Domaine, rattaché à la direction générale des Finances publiques. Elle peut porter sur un immeuble, vendu par adjudication publique ou à l’amiable avec mise en concurrence, ou sur des meubles (véhicules, matériel, objets), vendus sur encheres-domaine.gouv.fr."
+    },
+    {
+      "question": "Où voir les biens immobiliers vendus par l’État ?",
+      "answer": "Sur le site des cessions immobilières de l’État pour les immeubles du Domaine, et sur agrasc.gouv.fr pour les immeubles confisqués par la justice pénale. Immojudis reprend une partie de ces annonces dans son catalogue, avec un renvoi vers l’annonce d’origine."
+    },
+    {
+      "question": "Les ventes de l’État se font-elles toujours aux enchères ?",
+      "answer": "Non. Le Code prévoit l’adjudication publique ou la cession amiable avec mise en concurrence et, dans des cas limités, une cession amiable sans mise en concurrence (art. R. 3211-2 et R. 3211-7 du Code général de la propriété des personnes publiques). Selon la DGFiP, l’appel d’offres est la procédure de droit commun."
+    },
+    {
+      "question": "Faut-il un avocat pour acheter un bien de l’État ?",
+      "answer": "Nous n’avons pas relevé d’obligation d’avocat dans les textes consultés, contrairement à une vente au tribunal. Le cahier des charges ou l’avis de vente précise les conditions de participation, la garantie éventuelle et les délais."
+    },
+    {
+      "question": "Où acheter un véhicule vendu par les Domaines ?",
+      "answer": "Sur le site officiel encheres-domaine.gouv.fr, qui publie les catalogues, le calendrier et les conditions des ventes mobilières du Domaine. Immojudis ne couvre pas ces ventes."
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-2 (publicité et mise en concurrence, adjudication publique ou vente amiable)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885632"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, articles R. 3211-1 à R. 3211-8 (adjudication publique, cession amiable, cession sans mise en concurrence, déchéance)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070299/LEGISCTA000024885625/"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-3 (adjudication publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885635"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-8 (déchéance de l’acquéreur défaillant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885647"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article L. 3211-12 (amende de l’acquéreur déchu)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030254174"
+    },
+    {
+      "label": "Légifrance — Code de l’urbanisme, article L. 240-1 (droit de priorité des communes et intercommunalités)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043342268"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 683 (droits d’enregistrement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006310209"
+    },
+    {
+      "label": "DGFiP, direction de l’immobilier de l’État — Description du jeu de données « Cessions immobilières de l’État-propriétaire » (octobre 2017 : droit de priorité, appel d’offres de droit commun, adjudication, gré à gré, acte préparé par un notaire)",
+      "url": "https://data.economie.gouv.fr/api/datasets/1.0/cessions-immobilieres-de-letat-copie/attachments/descriptif_donnee_cession_pdf"
+    },
+    {
+      "label": "Cessions immobilières de l’État — annonces des biens à vendre",
+      "url": "https://cessions.immobilier-etat.gouv.fr/"
+    },
+    {
+      "label": "AGRASC — Présentation de l’agence (mise à jour le 15/01/2026 : statut, département immobilier, vente des biens confisqués)",
+      "url": "https://agrasc.gouv.fr/presentation"
+    },
+    {
+      "label": "AGRASC — Nos missions (mise à jour le 03/12/2025 : vente des biens immobiliers, affectation sociale)",
+      "url": "https://agrasc.gouv.fr/nos-missions"
+    },
+    {
+      "label": "AGRASC — Les ventes (ventes aux enchères et ventes immobilières, consulté le 14/11/2026)",
+      "url": "https://agrasc.gouv.fr/ventes-aux-encheres"
+    },
+    {
+      "label": "DGFiP — Ventes mobilières du Domaine (dépliant d’août 2017 : DNID, biens vendus, ventes par adjudication ou appel d’offres)",
+      "url": "https://impots.gouv.fr/portail/files/media/3_Documentation/depliants/dgfip_ventes_mobilieres_domaine.pdf"
+    },
+    {
+      "label": "Collectivités locales — Les ventes de biens mobiliers (le Domaine, la DNID et encheres-domaine.gouv.fr)",
+      "url": "https://www.collectivites-locales.gouv.fr/competences/ventes-de-biens-mobiliers"
+    },
+    {
+      "label": "Enchères du Domaine — site officiel des ventes mobilières de l’État",
+      "url": "https://encheres-domaine.gouv.fr/"
+    }
+  ]
+}

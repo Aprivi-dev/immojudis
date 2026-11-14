@@ -3,9 +3,10 @@
   "publishedAt": "2026-10-13",
   "updatedAt": "2026-10-31",
   "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
-  "seoTitle": "Ventes notariales et domaniales : différences",
+  "seoTitle": "Enchères des notaires : bougie et vente en ligne",
   "category": "Les fondamentaux",
   "description": "Qui organise la vente, avocat obligatoire ou non, garantie, surenchère, délais de paiement : les différences entre enchères au tribunal, chez le notaire (bougie ou vente interactive) et ventes de l’État.",
+  "seoDescription": "Vente aux enchères notariale à la bougie ou vente interactive en ligne : avocat, garantie, surenchère, frais. Ce qui change par rapport au tribunal.",
   "intro": [
     "Toutes les ventes aux enchères immobilières ne se déroulent pas au tribunal. Un bien peut être vendu par un tribunal à la suite d’une dette (c’est la saisie immobilière), par un notaire à la demande de son propriétaire, ou par l’État lorsqu’il se sépare d’un immeuble qui lui appartient. Ce sont trois cadres juridiques différents, avec des règles de garantie, de délai et de représentation qui ne se ressemblent pas. Dans une vente aux enchères, l’adjudication est l’attribution du bien au dernier enchérisseur.",
     "Chez le notaire, il faut en plus distinguer deux formules. La vente à la bougie est une vente aux enchères au sens strict : on enchérit en salle et le notaire prononce l’adjudication. La vente interactive en ligne fonctionne par offres et avant-contrat, sans adjudication : pendant une durée limitée, des acheteurs déposent des offres, puis l’acheteur retenu signe un avant-contrat. Les règles d’une vente au tribunal ne s’y appliquent donc pas en principe (qualification à confirmer avec le notaire ou l’avocat).",
@@ -160,6 +161,12 @@
         "L’État peut vendre les immeubles de son domaine privé lorsqu’ils ne sont plus utilisés par un service public (art. L. 3211-1 du Code général de la propriété des personnes publiques). Le principe est la publicité et la mise en concurrence, soit par adjudication publique, soit à l’amiable (art. R. 3211-2).",
         "L’adjudication publique est autorisée par le préfet après avis du directeur départemental des finances publiques, qui fixe la mise à prix (art. R. 3211-3). La cession amiable est annoncée par un avis du préfet qui précise les modalités de présentation des offres et de visite. Les offres sont jugées notamment sur les conditions financières et les garanties de bonne fin et de solvabilité (art. R. 3211-4 et R. 3211-5). Dans certains cas, par exemple si l’adjudication a été infructueuse, la cession peut se faire à l’amiable sans nouvelle mise en concurrence (art. R. 3211-7).",
         "Le site des cessions immobilières de l’État recense les biens à vendre. Selon l’article R. 3211-2, la vente se fait avec publicité et mise en concurrence, soit par adjudication publique, soit à l’amiable. L’acquéreur qui ne paie pas aux échéances peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8) et doit alors une amende égale au dixième de la somme exigible, sans pouvoir être inférieure au vingtième du prix (art. L. 3211-12) ; il n’y a pas de réitération des enchères. Le régime de l’acquéreur (garantie, surenchère éventuelle, délais) figure dans le cahier des charges de chaque vente : demandez-le avant de vous engager."
+      ],
+      "links": [
+        {
+          "label": "Ventes domaniales : comment l’État vend ses biens",
+          "href": "/ressources/ventes-domaniales-etat-biens-immobiliers-mobiliers"
+        }
       ]
     },
     {
@@ -192,6 +199,20 @@
       "paragraphs": [
         "Sur chaque fiche, Immojudis indique l’organisateur (tribunal, office notarial ou organisme de l’État) et le type de vente. Une vente organisée par un notaire n’est pas forcément judiciaire, et une vente judiciaire peut être confiée à un notaire. Le mode de participation (sur place, en ligne ou les deux) est une information distincte.",
         "Attention : « en ligne » ne suffit pas à savoir de quoi il s’agit. Une vente interactive en ligne fonctionne par offres et avant-contrat, pas par enchères et adjudication. Vérifiez la formule dans l’annonce d’origine et dans les conditions de la vente. Le catalogue n’est pas exhaustif et la couverture varie selon les sources : en cas de doute, remontez à l’annonce d’origine et à l’organisateur."
+      ],
+      "links": [
+        {
+          "label": "Les enchères notariales à venir",
+          "href": "/encheres-notariales"
+        },
+        {
+          "label": "Immobilier des notaires : annonces, ventes interactives, enchères",
+          "href": "/ressources/immobilier-notaires-annonces-vente-interactive-encheres"
+        },
+        {
+          "label": "Enchères immobilières en ligne",
+          "href": "/ressources/encheres-immobilieres-en-ligne-distance"
+        }
       ],
       "callout": {
         "title": "À retenir",
@@ -300,7 +321,7 @@
       "url": "/methode-pepites"
     }
   ],
-  "directAnswer": "Trois organisateurs, trois régimes : le tribunal (saisie immobilière, soumise au Code des procédures civiles d’exécution, avec un avocat obligatoire), le notaire (vente à la bougie avec adjudication, ou vente interactive par offres et avant-contrat) et l’État (vente domaniale). La garantie de 10 % de la mise à prix, la surenchère du dixième et le délai de paiement sont imposés par la loi au tribunal ; ailleurs, le cahier des conditions de vente ou des charges fait foi.",
+  "directAnswer": "Une vente aux enchères notariale prend deux formes : la vente « à la bougie », en salle, où le notaire prononce l’adjudication au dernier enchérisseur, et la vente interactive en ligne, où les acheteurs déposent des offres pendant une durée limitée avant qu’un avant-contrat soit signé avec l’acheteur retenu. Ce n’est pas une vente au tribunal : nous n’avons pas relevé d’avocat obligatoire dans les textes consultés, et la garantie, la surenchère éventuelle et le délai de paiement se lisent dans le cahier des charges, alors que le Code les impose en saisie immobilière. Les ventes de l’État, dites domaniales, suivent encore d’autres règles, comparées plus bas.",
   "faq": [
     {
       "question": "Faut-il un avocat pour enchérir chez le notaire ou dans une vente de l’État ?",

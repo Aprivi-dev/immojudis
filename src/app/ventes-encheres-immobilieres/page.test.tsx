@@ -280,6 +280,22 @@ describe("index des ventes par département", () => {
     ).toBe("/tribunaux");
   });
 
+  it("renvoie vers les pages par type de bien ou de vente", async () => {
+    mocks.load.mockResolvedValue({ status: "ok", catalogue: CATALOGUE });
+    render(await Page());
+    const types = screen.getByRole("navigation", { name: "Ventes par type de bien ou de vente" });
+    expect(
+      within(types)
+        .getAllByRole("link")
+        .map((link) => [link.textContent, link.getAttribute("href")]),
+    ).toEqual([
+      ["Maisons aux enchères", "/maison-aux-encheres"],
+      ["Appartements aux enchères", "/appartement-aux-encheres"],
+      ["Enchères notariales", "/encheres-notariales"],
+      ["Ventes immobilières de l’État", "/ventes-immobilieres-etat"],
+    ]);
+  });
+
   it("reste disponible sans chiffres quand la base est indisponible", async () => {
     mocks.load.mockResolvedValue({ status: "error" });
     render(await Page());

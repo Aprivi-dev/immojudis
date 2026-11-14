@@ -23,6 +23,10 @@ vi.mock("@/lib/public-tribunal-activity.server", () => ({
 vi.mock("@/lib/public-tribunal-directory.server", () => ({
   tryLoadPublicTribunalDirectory: mocks.loadDirectory,
 }));
+// Pages par type de bien ou de vente : testées dans `sitemap.sale-landing.test.ts`.
+vi.mock("@/lib/sale-landing-pages.server", () => ({
+  loadIndexableSaleLandingPaths: async () => [],
+}));
 vi.mock("@/lib/upcoming-hearings.server", () => ({
   tryLoadUpcomingHearings: mocks.loadHearings,
 }));
