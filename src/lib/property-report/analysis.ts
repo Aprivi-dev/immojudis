@@ -71,7 +71,7 @@ export function buildOpportunityAnalysis({
   sale: AuctionSale;
   surfaceM2: number | null;
   /** Nature de la surface (`getSaleSurface(sale).kind`) : une surface estimée ne donne pas de prix au m². */
-  surfaceKind?: SaleSurface["kind"] | null;
+  surfaceKind: SaleSurface["kind"];
   marketEstimate: MarketEstimate | null;
   ceilingSnapshot: ReturnType<typeof buildCeilingSnapshot>;
   /** Référence de loyer de la vente (carte ANIL à la commune) ; absente, repli départemental. */

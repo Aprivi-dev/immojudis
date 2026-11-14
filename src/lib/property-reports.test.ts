@@ -35,6 +35,7 @@ describe("report rent reference", () => {
     buildOpportunityAnalysis({
       sale,
       surfaceM2: 50,
+      surfaceKind: "recorded",
       marketEstimate: null,
       ceilingSnapshot: buildCeilingSnapshot(
         sale,
@@ -66,6 +67,7 @@ describe("report rent reference", () => {
     const opportunity = buildOpportunityAnalysis({
       sale: land,
       surfaceM2: 50,
+      surfaceKind: "recorded",
       marketEstimate: null,
       ceilingSnapshot: buildCeilingSnapshot(
         land,
@@ -97,6 +99,7 @@ describe("property report sharing", () => {
     const result = buildOpportunityAnalysis({
       sale,
       surfaceM2: 80,
+      surfaceKind: "recorded",
       marketEstimate: null,
       ceilingSnapshot: buildCeilingSnapshot(sale, null, {}, DEFAULT_OPEN_FEE_REGIMES),
     });
@@ -610,6 +613,7 @@ describe("property report sharing", () => {
         occupancy_status: "vacant",
       },
       surfaceM2: 80,
+      surfaceKind: "recorded",
       marketEstimate: {
         source: "DVF Cerema",
         yearsBack: 3,
@@ -733,6 +737,7 @@ describe("property report sharing", () => {
     const { rentabilityScore } = buildOpportunityAnalysis({
       sale,
       surfaceM2: 60,
+      surfaceKind: "recorded",
       marketEstimate: null,
       ceilingSnapshot,
     });
