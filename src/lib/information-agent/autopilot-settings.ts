@@ -133,13 +133,20 @@ const EVENT_DETAIL_KEYS = new Set([
   "prepared",
   "would_send",
   "sent",
+  // Passage lancé à la main (avec `actorId` et `reason`) : lu par `lastOnDemandAutopilotRunAt`.
+  "manual",
+  // Passage à la demande arrêté par sa borne de temps.
+  "stopped_by_time_budget",
 ]);
+
+/** Longueur maximale d'une chaîne des `details` du journal (motif d'un passage à la demande compris). */
+export const AUTOPILOT_EVENT_TEXT_MAX = 200;
 
 /** Filtre `details` : liste blanche de clés, « @ » neutralisé dans toute chaîne (aucune adresse dans une erreur de contrainte). */
 export function sanitizeAutopilotEventDetails(
   details: Record<string, string | number | boolean | null | string[]>,
 ): Record<string, string | number | boolean | null | string[]> {
-  const clean = (value: string) => value.replaceAll("@", "(at)").slice(0, 200);
+  const clean = (value: string) => value.replaceAll("@", "(at)").slice(0, AUTOPILOT_EVENT_TEXT_MAX);
   return Object.fromEntries(
     Object.entries(details)
       .filter(
@@ -207,6 +214,24 @@ export type AutopilotEventRow = {
   reason: string | null;
   details: unknown;
 };
+
+/**
+ * Heure du dernier passage lancé à la main (`run` journalisé avec `manual`) depuis `since`, ou null. Une lecture
+ * impossible est propagée (jamais un passage de plus).
+ */
+export async function lastOnDemandAutopilotRunAt(since: Date): Promise<Date | null> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("at")
+    .eq("kind", "run")
+    .eq("details->>manual", "true")
+    .gte("at", since.toISOString())
+    .order("at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const at = data?.[0]?.at;
+  return at ? new Date(at) : null;
+}
 
 export async function loadRecentAutopilotEvents(limit = 20): Promise<AutopilotEventRow[]> {
   const { data, error } = await supabaseAdmin

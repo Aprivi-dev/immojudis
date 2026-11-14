@@ -258,6 +258,26 @@ describe("file du pilote : les ventes refusées d'avance ne consomment pas les 2
     expect(result.skipped).toEqual({ reply_pause: 25 });
   });
 
+  it("borne de temps (passage à la demande) : aucun examen n'est entamé une fois l'heure passée", async () => {
+    queue(Array.from({ length: 40 }, (_, n) => eligible(400 + n)));
+    mocks.history.mockResolvedValue({
+      alreadyInformed: false,
+      lastReplyAt: "2026-11-01T10:00:00Z",
+      silentSendsInSixMonths: 0,
+      lastSendAt: null,
+    });
+    // L'heure est passée après le 4e examen (chaque examen lit le registre une fois).
+    const result = await findAutopilotCandidates({
+      settings,
+      now: NOW,
+      limit: 3,
+      env: {},
+      shouldStop: () => mocks.registry.mock.calls.length >= 4,
+    });
+    expect(result.examined).toBe(4);
+    expect(mocks.registry).toHaveBeenCalledTimes(4);
+  });
+
   describe("avocat d'une annonce de vente notariale : la garde des envois aux notaires le refusera", () => {
     // Organisateur déclaré « avocat poursuivant » sur une annonce de `notaires` : le bloc avocat est un avocat,
     // mais la vente est notariale (`sale_audience = notary`), dont les envois restent fermés par défaut.

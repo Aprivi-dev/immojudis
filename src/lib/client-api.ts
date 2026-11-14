@@ -9,6 +9,7 @@ export {
   fetchAdminInformationAgentOperations,
   fetchAdminInformationAgentAutopilot,
   runAdminInformationAgentAutopilotActionClient,
+  runAdminInformationAgentAutopilotSimulationClient,
   attestAdminInformationAgentRoundtripClient,
   fetchAdminCatalogueReadiness,
   runAdminCatalogueReadinessActionClient,
