@@ -577,6 +577,10 @@ describe("AdminInformationAgentWorkspace : brouillons préparés par le pilote",
     });
     expect(screen.getByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` })).toBeTruthy();
     expect(screen.getByText(new RegExp(`annonce ${PILOT_SALE_ID}`))).toBeTruthy();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
     expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe(
       PILOT_EMAIL,
     );
@@ -623,6 +627,10 @@ describe("AdminInformationAgentWorkspace : brouillons préparés par le pilote",
       screen.queryByRole("heading", { name: "Brouillon pour notaire@example.test" }),
     ).toBeNull();
     expect(screen.getByText(new RegExp(`annonce ${PILOT_SALE_ID}`))).toBeTruthy();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
 
     const sent = await previewAndSend();
     expect(sent).toMatchObject({ missionId: PILOT_MISSION_ID, recipientEmail: PILOT_EMAIL });
