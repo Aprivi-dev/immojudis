@@ -24,6 +24,7 @@ import type {
   PrivacyRequestStatus,
 } from "@/lib/privacy-requests";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { adminOfTotal } from "@/lib/admin-pagination";
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "received", label: "Reçue" },
@@ -137,8 +138,8 @@ export function AdminPrivacyRequestsPanel() {
       {data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {data.total}
-          . Les compteurs ouverts et en retard couvrent toute la file.
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""}
+          {adminOfTotal(data.total)}. Les compteurs ouverts et en retard couvrent toute la file.
         </p>
       ) : null}
       {!isLoading && !requests.length ? (

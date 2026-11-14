@@ -79,16 +79,31 @@ test.describe("admin configuration", () => {
 
   test("pauses and resumes a source independently of the global scheduler", async ({ page }) => {
     const state = await prepareAdminPage(page);
-    await page.goto("/admin/settings");
-    await page.getByRole("tab", { name: "Sources de données" }).click();
-    const source = page.getByRole("row", { name: /test-source/ });
+    // Planificateur global suspendu : une source se suspend et se réactive quand même, sans le
+    // rallumer. La supervision des sources est dans Opérations (plus recopiée dans Configuration).
+    state.control.enabled = false;
+    await page.goto("/admin/operations");
+    const pipeline = page.getByRole("region", { name: "Collecte automatique par source" });
+    await expect(pipeline.getByText(/Planification suspendue/)).toBeVisible();
+    const readsBefore = state.pipelineGetCalls;
+
+    const source = pipeline.getByRole("row", { name: /test-source/ });
     await source.getByRole("button", { name: /Suspendre/ }).click();
     await expect(source.getByRole("button", { name: /Activer/ })).toBeVisible();
-    expect(state.sourcePayloads).toEqual([{ source: "test-source", enabled: false }]);
     await source.getByRole("button", { name: /Activer/ }).click();
     await expect(source.getByRole("button", { name: /Suspendre/ })).toBeVisible();
-    expect(state.sourceEnabled).toBe(true);
+    expect(state.sourcePayloads).toEqual([
+      { source: "test-source", enabled: false },
+      { source: "test-source", enabled: true },
+    ]);
+
+    // La supervision est relue après chaque action : le planificateur global n'a pas bougé.
+    expect(state.pipelineGetCalls).toBeGreaterThan(readsBefore);
+    await expect(pipeline.getByText(/Planification suspendue/)).toBeVisible();
     expect(state.controlPayloads).toEqual([]);
+    // Et Configuration, où se règle le planificateur global, le montre toujours suspendu.
+    await page.goto("/admin/settings");
+    await expect(page.getByLabel("Activer la planification automatique")).not.toBeChecked();
   });
 
   test("launches a selected source and restarts a collection in collect mode", async ({
@@ -139,8 +154,7 @@ test.describe("admin configuration", () => {
     page,
   }, testInfo) => {
     await prepareAdminPage(page, { collectionErrors: true });
-    await page.goto("/admin/settings");
-    await page.getByRole("tab", { name: "Sources de données" }).click();
+    await page.goto("/admin/operations");
     await expect(page.getByRole("row", { name: /notaires/ })).toContainText(
       "Publication partielle",
     );
@@ -227,28 +241,31 @@ test.describe("admin configuration", () => {
     await expect(page.locator('p[role="alert"]')).toHaveCount(0);
   });
 
-  test("guards tab changes while dirty and exposes source supervision after cancel", async ({
+  test("guards tab changes while dirty and exposes the services diagnostic after cancel", async ({
     page,
   }) => {
     await prepareAdminPage(page);
     await page.goto("/admin/settings");
 
     const budget = page.getByRole("spinbutton", { name: "Budget IA quotidien (USD)" });
-    const sourcesTab = page.getByRole("tab", { name: "Sources de données" });
+    const servicesTab = page.getByRole("tab", { name: "Services & diagnostics" });
     await budget.fill("12");
-    await expect(sourcesTab).toBeDisabled();
-    await sourcesTab.click({ force: true });
+    await expect(servicesTab).toBeDisabled();
+    await servicesTab.click({ force: true });
     await expect(
       page.getByRole("heading", { name: "Collecte automatique et consommation IA" }),
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Annuler les modifications" }).click();
-    await expect(sourcesTab).toBeEnabled();
-    await sourcesTab.click();
+    await expect(servicesTab).toBeEnabled();
+    await servicesTab.click();
     await expect(
-      page.getByRole("heading", { name: "Collecte automatique par source" }),
+      page.getByRole("heading", { name: "Connexions et état des services" }),
     ).toBeVisible();
-    await expect(page.getByRole("row", { name: /test-source/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activation commerciale" })).toBeVisible();
+    // Ni l'onglet des sources (dans Opérations) ni les raccourcis qui recopiaient le menu.
+    await expect(page.getByRole("tab", { name: "Sources de données" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Gestion du site" })).toHaveCount(0);
   });
 
   test("recovers from a settings loading failure with the retry action", async ({ page }) => {

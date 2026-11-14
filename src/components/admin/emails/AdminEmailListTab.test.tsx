@@ -97,6 +97,20 @@ describe("AdminEmailListTab", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it.each([
+    ["sans sections", { footnote: "Vérifié.", alerts: [] }],
+    ["vide", {}],
+  ])("ne tombe pas sur une réponse %s : erreur lisible et « Réessayer »", async (_, partial) => {
+    const fetchView = vi.fn().mockResolvedValue(partial as EmailListView);
+    renderTab(fetchView);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Réponse incomplète");
+    fetchView.mockResolvedValue(view());
+    fireEvent.click(within(alert).getByRole("button", { name: "Réessayer" }));
+    expect(await screen.findByText("Secrets")).toBeTruthy();
+  });
+
   it("annonce le chargement puis propose de réessayer en cas d'échec", async () => {
     const fetchView = vi.fn().mockRejectedValue(new Error("Erreur HTTP 503"));
     renderTab(fetchView);

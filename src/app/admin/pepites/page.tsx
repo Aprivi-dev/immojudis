@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import { AdminPepitesPage } from "./admin-pepites-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Pépites",
-  description: "Résultats de la règle des pépites sur le catalogue réel, avant toute publication.",
-};
-
+/** Ancienne adresse : « Pépites » est un onglet de la vue Qualité des données. */
 export default function Page() {
-  return <AdminPepitesPage />;
+  redirect("/admin/quality?onglet=pepites");
 }

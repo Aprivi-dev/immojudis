@@ -2,27 +2,16 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminPepitesView } from "@/lib/admin-pepites-view";
-import { AdminPepitesPage } from "./admin-pepites-page";
+import { AdminPepitesPanel } from "./AdminPepitesPanel";
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { email: "admin@example.test" } }) }));
 vi.mock("@/integrations/supabase/lazy", () => ({
   hasSupabaseAuthHint: () => true,
   getSupabase: async () => ({
     auth: { getSession: async () => ({ data: { session: { access_token: "jeton" } } }) },
   }),
-}));
-vi.mock("@/components/admin/AdminShell", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/components/admin/AdminShell")>()),
-  AdminShell: ({ children, title }: { children: ReactNode; title: string }) => (
-    <main>
-      <h1>{title}</h1>
-      {children}
-    </main>
-  ),
 }));
 
 // Le tableau des retours par vente a son propre test (AdminSaleFeedbackPanel.test.tsx).
@@ -43,7 +32,7 @@ function renderPage(response: Response) {
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
     >
-      <AdminPepitesPage />
+      <AdminPepitesPanel />
     </QueryClientProvider>,
   );
 }
@@ -51,7 +40,13 @@ function renderPage(response: Response) {
 const view: AdminPepitesView = {
   canSuspend: false,
   sections: [
-    { id: "mode", title: "Mode : shadow", paragraphs: ["Observation."], alert: null, table: null },
+    {
+      id: "mode",
+      title: "Mode : Observation",
+      paragraphs: ["Observation."],
+      alert: null,
+      table: null,
+    },
     {
       id: "rate",
       title: "Taux de pépites",
@@ -80,11 +75,11 @@ const view: AdminPepitesView = {
   ],
 };
 
-describe("page d'administration des pépites", () => {
+describe("onglet Pépites de Qualité des données", () => {
   it("lit la page préparée par le serveur, avec le jeton de l'administrateur et un délai", async () => {
     renderPage(Response.json(view));
 
-    expect(await screen.findByText("Mode : shadow")).toBeTruthy();
+    expect(await screen.findByText("Mode : Observation")).toBeTruthy();
     expect(mocks.fetch).toHaveBeenCalledWith(
       "/api/admin/pepites",
       expect.objectContaining({
@@ -145,7 +140,7 @@ describe("page d'administration des pépites", () => {
     it("n'affiche pas « Suspendre les pépites » hors du mode on", async () => {
       renderPage(Response.json(view));
 
-      await screen.findByText("Mode : shadow");
+      await screen.findByText("Mode : Observation");
       expect(screen.queryByRole("button", { name: "Suspendre les pépites" })).toBeNull();
     });
 
@@ -160,14 +155,17 @@ describe("page d'administration des pépites", () => {
         <QueryClientProvider
           client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
         >
-          <AdminPepitesPage />
+          <AdminPepitesPanel />
         </QueryClientProvider>,
       );
 
       fireEvent.click(await screen.findByRole("button", { name: "Suspendre les pépites" }));
 
       await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(3));
-      expect(confirm).toHaveBeenCalled();
+      // La confirmation parle en clair : « observation », pas le nom technique du mode.
+      expect(confirm).toHaveBeenCalledWith(
+        "Repasser les pépites en observation : elles ne seront plus visibles du public. Continuer ?",
+      );
       const [url, init] = mocks.fetch.mock.calls[1];
       expect(url).toBe("/api/admin/pepites");
       // Écriture d'administration : le même délai de 30 s que les lectures.
@@ -212,7 +210,7 @@ describe("page d'administration des pépites", () => {
     vi.stubGlobal("fetch", mocks.fetch);
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <AdminPepitesPage />
+        <AdminPepitesPanel />
       </QueryClientProvider>,
     );
 
