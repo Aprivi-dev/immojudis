@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { EXAMPLE_SALE } from "@/lib/example-sale";
+import type { AuctionSale } from "@/lib/types";
 import {
   COMPARE_SALE_PARAM,
   buildSaleComparisonSnapshot,
   compareSaleIdFromParam,
+  comparedSaleSurface,
   readSaleComparisonSnapshot,
+  toggleComparedSale,
   type ComparedSale,
 } from "./sale-comparison";
 
@@ -78,5 +82,33 @@ describe("saved sale comparison snapshot", () => {
     expect(readSaleComparisonSnapshot({ items: [sale] })).toEqual([]);
     expect(readSaleComparisonSnapshot({ version: 2, items: [sale] })).toEqual([]);
     expect(readSaleComparisonSnapshot(null)).toEqual([]);
+  });
+});
+
+describe("surface comparée et sa nature, pour le prix au m²", () => {
+  const compare = (overrides: Partial<AuctionSale>) =>
+    toggleComparedSale([], { ...EXAMPLE_SALE, ...overrides } as AuctionSale)[0];
+
+  it("la surface publiée est une mesure", () => {
+    expect(comparedSaleSurface(compare({ app_surface_m2: 42 }))).toEqual({
+      value: 42,
+      kind: "recorded",
+    });
+  });
+
+  it("un studio sans surface publiée n'a pas de surface : jamais les 20 m² présumés", () => {
+    const studio = compare({
+      property_type: "studio",
+      title: "Studio",
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+    } as Partial<AuctionSale>);
+    expect(comparedSaleSurface(studio)).toEqual({ value: null, kind: "none" });
+  });
+
+  it("une comparaison enregistrée garde la même règle", () => {
+    const [saved] = readSaleComparisonSnapshot(buildSaleComparisonSnapshot([sale]));
+    expect(comparedSaleSurface(saved)).toEqual({ value: 42, kind: "recorded" });
   });
 });
