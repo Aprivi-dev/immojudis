@@ -19,8 +19,9 @@ const startScrollSchema = z
   .strict();
 const AUTOMATIC_LLM_ENRICHMENT = true;
 /**
- * Une collecte en file ou en cours, créée il y a moins de 190 minutes, bloque une nouvelle demande
- * pour la même source. C'est le bail d'un run manuel : au-delà, le planificateur le clôt en échec
+ * Une collecte en file ou en cours, démarrée (ou, en file, créée) il y a moins de 190 minutes, bloque
+ * une nouvelle demande pour la même source. C'est le bail d'un run manuel, mesuré comme le
+ * planificateur sur `coalesce(started_at, created_at)` : au-delà, il le clôt en échec
  * (`lease_expired`, 180 minutes de limite du runner plus une marge, migration
  * `20260929153000_enrichment_drain_mode.sql`).
  */
@@ -124,6 +125,7 @@ type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
   range: (from: number, to: number) => QueryBuilder<T>;
   eq: (column: string, value: unknown) => QueryBuilder<T>;
   in: (column: string, values: readonly unknown[]) => QueryBuilder<T>;
+  is: (column: string, value: null) => QueryBuilder<T>;
   gte: (column: string, value: unknown) => QueryBuilder<T>;
 };
 
@@ -460,17 +462,24 @@ export async function startAdminScroll(
     );
   }
   const admin = getAdminClient();
-  const active = await admin
-    .from<AuctionRunRow>("auction_runs")
-    .select("id")
-    .eq("source", data.source)
-    .in("status", ["queued", "running"])
-    .gte("created_at", new Date(Date.now() - ACTIVE_RUN_WINDOW_MS).toISOString())
-    .limit(1);
-  if (active.error) {
-    throw new Error(active.error.message ?? "Impossible de vérifier les collectes en cours.");
+  // `coalesce(started_at, created_at) >= since`, en deux lectures : démarrés depuis, ou en file
+  // (sans démarrage) créés depuis.
+  const since = new Date(Date.now() - ACTIVE_RUN_WINDOW_MS).toISOString();
+  const activeRuns = () =>
+    admin
+      .from<AuctionRunRow>("auction_runs")
+      .select("id")
+      .eq("source", data.source)
+      .in("status", ["queued", "running"]);
+  const active = await Promise.all([
+    activeRuns().gte("started_at", since).limit(1),
+    activeRuns().is("started_at", null).gte("created_at", since).limit(1),
+  ]);
+  const failedRead = active.find((result) => result.error)?.error;
+  if (failedRead) {
+    throw new Error(failedRead.message ?? "Impossible de vérifier les collectes en cours.");
   }
-  if (active.data?.length) {
+  if (active.some((result) => result.data?.length)) {
     throw new PublicApiError(
       "Une collecte de cette source est déjà en file ou en cours. Suivez-la dans l'historique des runs et attendez sa fin avant d'en lancer une autre.",
       409,

@@ -220,14 +220,15 @@ class FakeQueryBuilder implements PromiseLike<FakeResult> {
           return (value as unknown[]).includes(current);
         case "is":
           return current === value;
+        // Comme en SQL, une comparaison avec NULL n'est jamais vraie : la ligne est écartée.
         case "gt":
-          return String(current) > String(value);
+          return current !== null && String(current) > String(value);
         case "gte":
-          return String(current) >= String(value);
+          return current !== null && String(current) >= String(value);
         case "lt":
-          return String(current) < String(value);
+          return current !== null && String(current) < String(value);
         case "lte":
-          return String(current) <= String(value);
+          return current !== null && String(current) <= String(value);
       }
     });
   }

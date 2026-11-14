@@ -64,6 +64,9 @@ describe("manual collection includes cloud sources in the existing workflow", ()
         // Collectes en file ou en cours pour la même source : aucune.
         in: () => ({
           gte: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
+          is: () => ({
+            gte: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
+          }),
         }),
         limit: () =>
           Promise.resolve({
