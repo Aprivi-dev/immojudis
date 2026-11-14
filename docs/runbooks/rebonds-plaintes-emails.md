@@ -18,7 +18,12 @@ réputation de l'expéditeur baisse, et avec elle la livraison de tous les email
 3. retrouve le compte de l'adresse (`public.user_id_for_email`, migration `20261110130100`, adresse confirmée
    seulement) ; une adresse inconnue est acquittée sans effet ;
 4. retire les quatre consentements email du compte (alertes, rappels d'audience, récapitulatif hebdomadaire,
-   alertes de résultat) et annule ses emails d'alerte en file (`delivery_status = 'cancelled'`) ;
+   alertes de résultat) et annule ses emails d'alerte en file (`delivery_status = 'cancelled'`). Depuis le
+   14/11 (C8), il arrête aussi les deux emails qui ne dépendent d'aucun de ces consentements : l'avis de fin
+   d'essai (J+5) et le préavis de fin de l'offre de lancement (le compte entre dans
+   `launch_offer_end_notice_optouts`), et l'email d'ouverture de l'offre Analyse (la demande de
+   `offer_opening_notifications` est retirée, avec ses réponses facultatives au questionnaire, comme par le
+   lien du message). Les deux files d'envoi excluent ces comptes en base ;
 5. une panne (base, configuration) répond 500 : Resend rejoue l'évènement, les retraits sont idempotents.
 
 Aucune adresse n'est écrite dans les journaux (`scope: "account-email-delivery"`, nombre de destinataires et de

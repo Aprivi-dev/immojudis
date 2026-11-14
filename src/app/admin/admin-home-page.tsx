@@ -34,7 +34,11 @@ import {
   PUBLICATION_REQUESTS_QUERY_KEY,
   READINESS_QUERY_KEY,
 } from "@/lib/admin-query-keys";
-import type { AdminDashboardRunsData, AuctionRun } from "@/lib/admin.server";
+import type {
+  AdminDashboardRunsData,
+  AdminSecondFactorExposure,
+  AuctionRun,
+} from "@/lib/admin.server";
 import {
   fetchAdminDashboardRuns,
   fetchAdminPrivacyRequests,
@@ -123,6 +127,10 @@ export function AdminHomePage() {
           isRetrying={isFetching}
           onRetry={retry}
         />
+      ) : null}
+
+      {data?.secondFactorExposures.length ? (
+        <SecondFactorWarning exposures={data.secondFactorExposures} />
       ) : null}
 
       <div className="space-y-3">
@@ -222,6 +230,49 @@ export function AdminHomePage() {
         </AdminPanel>
       </div>
     </AdminShell>
+  );
+}
+
+const SECOND_FACTOR_EXPOSURE_LABELS: Record<AdminSecondFactorExposure, string> = {
+  payment: "le paiement de l’offre Analyse est ouvert",
+  information_agent_outbound:
+    "l’envoi de l’agent d’information est ouvert (INFORMATION_AGENT_OUTBOUND_ENABLED)",
+};
+
+/**
+ * T3 (14/11) : le second facteur n'est pas exigé alors que le paiement ou l'envoi de l'agent est
+ * ouvert (calculé par le serveur, `adminSecondFactorExposures`). Avertissement seulement : rien n'est
+ * bloqué, l'enrôlement et les interrupteurs restent des actions du propriétaire.
+ */
+function SecondFactorWarning({ exposures }: { exposures: AdminSecondFactorExposure[] }) {
+  return (
+    <section
+      aria-labelledby="admin-second-factor-warning"
+      className="mb-4 rounded-lg border border-warning/30 bg-warning-tint p-4 text-sm text-brand-navy"
+    >
+      <h2
+        id="admin-second-factor-warning"
+        className="flex items-center gap-2 font-semibold text-warning"
+      >
+        <AlertTriangle className="size-4" aria-hidden />
+        Second facteur non exigé
+      </h2>
+      <p className="mt-2">
+        L’administration n’exige pas de second facteur (ADMIN_MFA_REQUIRED) alors que{" "}
+        {exposures.map((exposure) => SECOND_FACTOR_EXPOSURE_LABELS[exposure]).join(" et que ")}. Un
+        mot de passe volé suffirait pour agir.
+      </p>
+      <p className="mt-2">
+        Enrôlez le second facteur sur la page Sécurité, puis activez les trois interrupteurs dans
+        l’ordre de la procédure (docs/runbooks/ouverture-paiements.md, section 6).
+      </p>
+      <Link
+        href="/admin/securite"
+        className="mt-3 inline-flex items-center gap-1 font-semibold text-gold-text"
+      >
+        Ouvrir la page Sécurité <ChevronRight className="size-4" />
+      </Link>
+    </section>
   );
 }
 

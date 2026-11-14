@@ -88,7 +88,10 @@ try {
 /**
  * "3 déblocages par mois": six simultaneous unlocks of six different sales by one Découverte
  * account must leave exactly three rows (the account is serialized by an advisory lock), and a
- * simultaneous repeat of one already unlocked sale must consume nothing.
+ * simultaneous repeat of one already unlocked sale must consume nothing. Each refusal must carry
+ * the detail `sale_unlock_quota_reached` (T27, 14/11): it is what `unlockSale`
+ * (src/lib/sale-unlocks.server.ts) turns into the 409 of `/api/sales/[id]/unlock`; any other
+ * refusal under concurrency would reach the account as a 500.
  */
 async function verifyConcurrentSaleUnlocks() {
   // L'offre de lancement (active par défaut) donne l'accès Analyse à tout compte qui a un profil :
@@ -138,7 +141,10 @@ async function verifyConcurrentSaleUnlocks() {
     );
     const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
     const quotaRefusals = outcomes.filter(
-      (outcome) => outcome.status === "rejected" && outcome.reason?.code === "P0001",
+      (outcome) =>
+        outcome.status === "rejected" &&
+        outcome.reason?.code === "P0001" &&
+        outcome.reason?.detail === "sale_unlock_quota_reached",
     ).length;
     const [{ count }] = await admin`
       select count(*)::integer as count from public.user_sale_unlocks where user_id = ${unlockUserId}
