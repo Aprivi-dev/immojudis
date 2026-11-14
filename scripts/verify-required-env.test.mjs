@@ -224,9 +224,23 @@ describe("garde-fous de lancement (build de production)", () => {
       });
       expect(outcome.exitCode).toBe(1);
       expect(outcome.errors.join("\n")).toContain(
-        "La clé Stripe de test ne peut pas être contournée par ALLOW_INCOMPLETE_LAUNCH_CONFIG",
+        "Une clé Stripe qui n'est pas du mode réel ne peut pas être contournée par ALLOW_INCOMPLETE_LAUNCH_CONFIG",
       );
     }
+  });
+
+  it("exige au build de production une clé dont le mode réel se lit : une forme inconnue est refusée", () => {
+    for (const STRIPE_SECRET_KEY of ["stripe-secret", "sk_abc", "pk_live_abc", "live_abc"]) {
+      const outcome = evaluateProductionLaunchConfig({
+        ...completeLaunch,
+        VERCEL_ENV: "production",
+        STRIPE_SECRET_KEY,
+        ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+      });
+      expect(outcome.exitCode, STRIPE_SECRET_KEY).toBe(1);
+      expect(outcome.errors.join("\n")).toContain("son mode ne se lit pas");
+    }
+    expect(stripeKeyModeProblems({ STRIPE_SECRET_KEY: "  " })).toEqual([]);
   });
 
   it("accepte au build de production une clé réelle ou l'absence de clé, et une clé de test hors production", () => {

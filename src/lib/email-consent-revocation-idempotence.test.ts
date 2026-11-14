@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -75,6 +75,11 @@ vi.mock("@/integrations/supabase/client.server", () => {
 
 import { revokeAllEmailConsents } from "@/lib/account-email-delivery-events";
 
+beforeEach(() => {
+  store.tables.clear();
+  store.notifications.length = 0;
+});
+
 function snapshot() {
   return JSON.stringify([
     [...store.tables.entries()].map(([name, rows]) => [name, [...rows.entries()]]),
@@ -145,5 +150,76 @@ describe("retrait des consentements : idempotent quand Resend rejoue l'évèneme
       "sent",
       "queued",
     ]);
+  });
+});
+
+describe("retrait de la demande d'ouverture et de l'avis de fin d'essai (C8)", () => {
+  const FIRST = new Date("2026-11-01T10:00:00.000Z");
+  const NEXT_DAY = new Date("2026-11-02T10:00:00.000Z");
+  /** Demande d'ouverture active, avec les réponses facultatives au questionnaire. */
+  const openingRequest = (userId: string) => ({
+    user_id: userId,
+    notify_enabled: true,
+    consented_at: "2026-10-20T10:00:00.000Z",
+    revoked_at: null,
+    consent_text_version: "offer-opening-v1",
+    survey_profile: "investor",
+    survey_sales_per_month: 2,
+    survey_price_too_expensive_eur: 90,
+    survey_price_cheap_eur: 20,
+    survey_interview_accepted: true,
+    survey_interview_consented_at: "2026-10-20T10:05:00.000Z",
+    survey_text_version: "survey-v1",
+    survey_answered_at: "2026-10-20T10:05:00.000Z",
+  });
+
+  it("garde la date du premier retrait au rejeu du lendemain, vide le questionnaire, et ne touche pas un autre compte", async () => {
+    store.tables.set(
+      "offer_opening_notifications",
+      new Map([
+        ["user-1", openingRequest("user-1")],
+        ["user-2", openingRequest("user-2")],
+      ]),
+    );
+    store.tables.set(
+      "user_notification_preferences",
+      new Map([["user-2", { user_id: "user-2", alert_email_enabled: true }]]),
+    );
+    const otherAccountBefore = JSON.stringify([
+      store.tables.get("offer_opening_notifications")?.get("user-2"),
+      store.tables.get("user_notification_preferences")?.get("user-2"),
+    ]);
+
+    await revokeAllEmailConsents("user-1", FIRST);
+    // Resend rejoue l'évènement le lendemain (ou un second rebond arrive) : rien ne se redate.
+    await revokeAllEmailConsents("user-1", NEXT_DAY);
+
+    const withdrawn = store.tables.get("offer_opening_notifications")?.get("user-1");
+    expect(withdrawn).toMatchObject({
+      notify_enabled: false,
+      revoked_at: FIRST.toISOString(),
+      // La preuve du consentement reste ; les réponses facultatives partent avec la demande.
+      consented_at: "2026-10-20T10:00:00.000Z",
+      consent_text_version: "offer-opening-v1",
+      survey_profile: null,
+      survey_sales_per_month: null,
+      survey_price_too_expensive_eur: null,
+      survey_price_cheap_eur: null,
+      survey_interview_accepted: false,
+      survey_interview_consented_at: null,
+      survey_text_version: null,
+      survey_answered_at: null,
+    });
+    expect([...(store.tables.get("launch_offer_end_notice_optouts")?.keys() ?? [])]).toEqual([
+      "user-1",
+    ]);
+    // Le second compte n'est ni retiré de la liste d'attente, ni désinscrit, ni exclu de l'avis J+5.
+    expect(
+      JSON.stringify([
+        store.tables.get("offer_opening_notifications")?.get("user-2"),
+        store.tables.get("user_notification_preferences")?.get("user-2"),
+      ]),
+    ).toBe(otherAccountBefore);
+    expect(store.tables.get("launch_offer_end_notice_optouts")?.has("user-2")).toBe(false);
   });
 });

@@ -76,7 +76,8 @@ Depuis le 14/11 (D2), un modèle actif n'est plus utilisé au service s'il n'a p
 (`comparison.served_interval_coverage_pct`) au moins égale au plancher de mise en service
 (`hybrid-market-valuation.ts`). L'ancienne approximation tirée des comparables du moteur
 (`legacyLocalFeatures`) est supprimée. C'est le cas des deux modèles actifs au 08/11 (voir « État en
-production ») : l'estimation de ces segments retombe sur les comparables seuls.
+production ») : les nouvelles estimations de ces segments retombent sur les comparables seuls ; celles déjà
+stockées restent jusqu'à leur recalcul (voir le cas dédié du runbook de retour arrière).
 
 ## Découpage et apprentissage
 
@@ -160,7 +161,7 @@ Mesuré en lecture seule dans `valuation_model_versions` :
   `lightgbm_quantile`, 350 000 lignes d'entraînement, activées le 27/07/2026 ;
 - pas d'export `artifact.localMarket` : jusqu'au 14/11, les variables locales servies étaient
   l'approximation tirée des comparables, pas celles de l'entraînement ; depuis D2, ces modèles ne
-  sont plus utilisés au service ;
+  calculent plus de nouvelle estimation (les estimations stockées restent jusqu'à leur recalcul) ;
 - pas de bloc `training_metrics.comparison` (clés présentes : `test_rows`, `train_rows`,
   `test_mape_pct`, `calibration_rows`, `confidence_level`, `test_p75_ape_pct`,
   `test_median_ape_pct`, `interval_coverage_pct`, `interval_mean_width_pct`) : ces modèles n'ont

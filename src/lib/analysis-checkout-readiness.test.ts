@@ -165,8 +165,33 @@ describe("mode de la clé Stripe et du déploiement (C3)", () => {
     const readiness = analysisCheckoutReadiness({ ...COMPLETE_ENV, VERCEL_ENV: "production" });
     expect(readiness).toMatchObject({ open: false, missing: [], keyModeMismatch: true });
     expect(() => assertAnalysisCheckoutOpen({ ...COMPLETE_ENV, VERCEL_ENV: "production" })).toThrow(
-      /STRIPE_SECRET_KEY \(mode de la clé différent.*checkout est suspendu/,
+      /STRIPE_SECRET_KEY \(mode de la clé inconnu ou différent.*checkout est suspendu/,
     );
+  });
+
+  it("exige le mode réel en production : une clé dont le mode ne se lit pas ferme la garde", () => {
+    for (const STRIPE_SECRET_KEY of ["stripe-secret", "sk_abc", "pk_live_abc", "live_abc"]) {
+      expect(
+        analysisCheckoutReadiness({ ...COMPLETE_ENV, STRIPE_SECRET_KEY, VERCEL_ENV: "production" }),
+        STRIPE_SECRET_KEY,
+      ).toMatchObject({ open: false, missing: [], keyModeMismatch: true });
+    }
+    // Sur un preview aussi : seule une clé de test l'ouvre.
+    expect(
+      analysisCheckoutReadiness({
+        ...COMPLETE_ENV,
+        STRIPE_SECRET_KEY: "stripe-secret",
+        VERCEL_ENV: "preview",
+      }).open,
+    ).toBe(false);
+    // Clé absente : elle manque, ce n'est pas une question de mode.
+    expect(
+      analysisCheckoutReadiness({
+        ...COMPLETE_ENV,
+        STRIPE_SECRET_KEY: "",
+        VERCEL_ENV: "production",
+      }),
+    ).toMatchObject({ missing: ["STRIPE_SECRET_KEY"], keyModeMismatch: false });
   });
 
   it("ferme la garde avec une clé réelle sur un preview ou en développement", () => {

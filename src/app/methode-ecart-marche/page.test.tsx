@@ -247,19 +247,19 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     expect(text).toContain("environ 8 prix de vente sur 10");
     expect(text).toContain("un objectif de construction, pas une garantie");
     expect(text).toContain("n’est pas encore vérifiée");
+    // D3 (14/11) : la mesure est celle de la porte d'activation, sur l'intervalle du modèle seul ; un
+    // modèle sans elle ou sous le plancher n'est pas utilisé (`hybrid-market-valuation.ts`). L'ancienne
+    // phrase « elle est mesurée avant sa mise en service » était fausse pour les deux modèles activés
+    // avant la porte, et la fourchette combinée n'est pas mesurée.
     expect(text).toContain(
-      `un modèle dont l’intervalle en contient moins de ${VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas mis en service`,
-    );
-    // D3 (14/11) : la mesure est celle de la porte d'activation, et un modèle activé sans elle n'est
-    // pas utilisé (`hybrid-market-valuation.ts`). L'ancienne phrase « elle est mesurée avant sa mise
-    // en service » était fausse pour les deux modèles activés avant la porte.
-    expect(text).toContain(
-      "une porte d’activation mesure cette proportion avant toute mise en service",
+      "une porte d’activation mesure, sur les ventes les plus récentes mises de côté, la part qui tombe dans l’intervalle du modèle seul, avant combinaison avec les ventes comparables",
     );
     expect(text).toContain(
-      "un modèle activé sans cette mesure n’est pas utilisé pour l’estimation",
+      `Un modèle dont cette mesure manque ou reste sous ${VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas utilisé pour l’estimation.`,
     );
+    expect(text).toContain("La fourchette combinée n’est pas encore vérifiée.");
     expect(text).not.toContain("elle est mesurée avant sa mise en service");
+    expect(text).not.toContain("n’est pas mis en service");
   });
 
   it("dit que le rayon continue de s'élargir jusqu'à l'effectif exigé par la porte publique", () => {

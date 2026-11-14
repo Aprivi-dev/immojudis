@@ -107,10 +107,16 @@ recevaient au service des variables locales approchées depuis les comparables, 
 entraînement, et leur mélange avec les comparables n'a jamais été évalué. Il n'existe pas de version antérieure qui
 ait passé la porte : on arrête le modèle (action B), on ne réactive rien.
 
-Depuis le déploiement du lot A (D2, 14/11), l'application n'utilise plus un modèle actif sans export
-`localMarket` ou sans couverture mesurée par la porte (`training_metrics.comparison.served_interval_coverage_pct`
-au moins égale au plancher) : ces deux modèles ne servent déjà plus, les estimations de ces segments retombent sur
-les comparables seuls. L'action B ne fait alors que mettre le registre en accord avec ce que sert l'application.
+Depuis le déploiement du lot A (D2, 14/11), l'application ne calcule plus de **nouvelle** estimation avec un modèle
+actif sans export `localMarket` ou sans couverture mesurée par la porte
+(`training_metrics.comparison.served_interval_coverage_pct` au moins égale au plancher). Mais les estimations
+`hybrid_lightgbm` **déjà stockées** dans `auction_sale_market_estimates` restent affichées sur les fiches jusqu'à
+leur recalcul (`next_refresh_at`, 7 jours après le calcul). Tant que ces deux modèles restent `active` en base, elles
+comptent aussi pour la porte publique de l'écart au marché et pour les pépites, qui n'écartent une estimation
+hybride que si son modèle n'est plus actif.
+
+**L'action B reste donc à faire juste après le déploiement du lot A**, puis la requête qui avance le recalcul des
+estimations hybrides (plus bas).
 
 Les deux segments dans une seule transaction ; la condition sur l'export empêche de retirer par erreur un modèle
 plus récent qui, lui, l'aurait.
@@ -134,6 +140,36 @@ where model_key = 'immojudis_market_value' and segment in ('house', 'apartment')
 
 commit;  -- ou rollback; si l'UPDATE n'a pas touché exactement 2 lignes ou si le contrôle montre une ligne
 ```
+
+Puis avancer le recalcul des estimations hybrides déjà stockées, pour qu'elles soient recalculées sur les
+comparables seuls au lieu d'attendre jusqu'à 7 jours.
+
+**À valider par expert-postgres avant usage ; écriture en production par le propriétaire seulement** (aucun agent
+ne l'exécute).
+
+```sql
+-- Lecture d'abord : combien de lignes, et jusqu'à quand elles attendraient.
+select count(*) as lignes, min(next_refresh_at) as premiere, max(next_refresh_at) as derniere
+from public.auction_sale_market_estimates
+where engine_kind = 'hybrid_lightgbm'
+  and next_refresh_at > now();
+
+-- Puis l'écriture : les lignes passent en tête de leur rang de priorité dans la file de recalcul
+-- (claim_auction_sale_market_estimates prend les lignes dont next_refresh_at est passé).
+begin;
+
+update public.auction_sale_market_estimates
+set next_refresh_at = now()
+where engine_kind = 'hybrid_lightgbm'
+  and next_refresh_at > now();
+-- Attendu : autant de lignes que le « lignes » de la lecture ci-dessus.
+
+commit;  -- ou rollback; si le nombre diffère
+```
+
+Le recalcul passe par lots (`VALUATION_PRECOMPUTE_BATCH_LIMIT`, 75 par passage par défaut) : compter plusieurs
+passages si les lignes sont nombreuses. Contrôle ensuite (lecture seule) : la même requête de comptage, sans la
+condition sur `next_refresh_at`, doit tendre vers 0 ligne `hybrid_lightgbm`.
 
 Ensuite, voir « Après : vérifier » (requêtes de contrôle et effet attendu sur la fiche), puis lancer un
 entraînement en brouillon (workflow « Immojudis Valuation Model Training », `activate` décoché) et le faire

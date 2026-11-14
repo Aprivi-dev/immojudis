@@ -4,6 +4,7 @@ import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import type { AutopilotSettings, AutopilotStats } from "@/lib/information-agent/autopilot-rules";
 import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
 import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
+import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ. Fixée volontairement
@@ -63,7 +64,7 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   });
   const checks: AutopilotReadinessCheck[] = [];
 
-  const outbound = env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true";
+  const outbound = informationAgentOutboundEnabled(env);
   const canaryOff = env.INFORMATION_AGENT_OUTBOUND_CANARY_ONLY === "false";
   checks.push(
     check(
