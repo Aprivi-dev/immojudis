@@ -107,7 +107,7 @@ export function buildOpportunityAnalysis({
   const marketGap = resolveMarketGap({
     estimatedValueEur: estimatedMarketValue,
     startingPriceEur: startingPrice,
-    surfaceM2: surface,
+    startingPricePerM2,
   });
   const apparentDiscountPct =
     !gapWithheld && marketGap.status === "gap" ? marketGap.discountPct : null;
