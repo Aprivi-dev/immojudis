@@ -88,11 +88,11 @@ export function AdminAuctionFactClaimReviewPanel() {
               Contrôle des faits sourcés
             </div>
             <h2 id="fact-review-title" className="mt-2 font-semibold">
-              Faits à vérifier
+              Faits à vérifier, sans effet sur la fiche
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
-              Comparez la valeur extraite avec la valeur canonique avant de l’accepter. Une preuve
-              acceptée ne modifie pas automatiquement la fiche.
+              Marquer un fait vérifié confirme que la valeur extraite correspond à celle de la fiche
+              : la fiche ne change pas.
             </p>
           </div>
           <button
@@ -262,7 +262,7 @@ function ClaimLine({
               onClick={() => onDecision("accepted")}
             >
               <CheckCircle className="size-3.5" />
-              Accepter
+              Marquer vérifié (la fiche ne change pas)
             </button>
             <button
               type="button"
@@ -299,7 +299,7 @@ function ClaimLine({
         <div className="mt-4 rounded-lg bg-slate-50 p-3">
           <p className="text-sm font-medium">
             {activeDraft.decision === "accepted"
-              ? "Confirmer l’acceptation"
+              ? "Confirmer la vérification"
               : activeDraft.decision === "rejected"
                 ? "Motif du rejet"
                 : "Motif du conflit"}
