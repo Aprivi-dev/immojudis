@@ -448,8 +448,9 @@ pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de b
   référentiel à l'aperçu et à l'envoi, et **la vente est relue** (tribunal inchangé, toujours une vente au tribunal reconnue,
   sans `tribunal_inconsistent`, toujours aucun email d'avocat exploitable) : sinon l'aperçu et l'envoi sont refusés.
 - **Message adapté** (`src/lib/information-agent/court-registry-template.ts`) : « Madame, Monsieur, », une seule question :
-  « Pouvez-vous nous indiquer l'avocat poursuivant de cette vente ou, à défaut, les pièces publiques du dossier… et selon
-  quelles modalités ? ». Aucune des questions posées à un avocat, aucun nom de personne (jamais de nom de greffier dans un champ
+  « Pouvez-vous nous indiquer l’avocat poursuivant de cette vente ou, à défaut, où et selon quelles modalités un candidat
+  acquéreur peut consulter le cahier des conditions de vente ? » (objet : « … : avocat poursuivant et consultation du
+  cahier »). Aucune des questions posées à un avocat, aucun nom de personne (jamais de nom de greffier dans un champ
   structuré). Le modèle n'est pas éditable dans l'administration.
 - **Gardes ordinaires conservées** : envoi désactivé et canari, opposition, rebond permanent, aperçu obligatoire, une validation
   humaine par message, un seul message par adresse et par vente. **Le délai de 30 jours par adresse est levé pour les greffes
@@ -551,9 +552,10 @@ juridique-rgpd et de code. Migration `20261119100900`, gabarit du code en révis
   fonction qui retire les traces des réponses (`forget_information_agent_verified_facts`), avant de supprimer les
   dossiers.
 
-**Tant que la migration n’est pas appliquée en production** (palliatif de juridique-rgpd) : n’accepter aucune mise à
-prix, date ou type de bien venant d’un avocat, et vérifier la fiche publique en navigation privée avant de répondre à
-la personne.
+**Tant que la migration n’est pas appliquée en production, ou que le test pgTAP 900 n’a pas été exécuté avec succès**
+(palliatif de juridique-rgpd) : n’accepter pour affichage aucune réponse d’avocat, quel que soit le champ (surface,
+terrain, nombre de pièces, occupation, mise à prix, date, type de bien), et n’exécuter aucun effacement de
+professionnel. Avant toute réponse à la personne, vérifier la fiche publique en navigation privée.
 
 **« Accepter et mettre à jour la fiche » passe par le registre des pièces (T4).**
 
@@ -604,9 +606,10 @@ plus de mention, sa valeur reste affichée.
   la mention de source, qui le rend identifiable, et retirées au plus tard un mois après sa demande ; à un notaire, un
   service de l’État ou un professionnel saisi à la main, elles complètent la fiche sans nom ni qualité ; à un greffe,
   sa réponse sert à identifier l’avocat poursuivant.
-- Portée de l’opposition dans le pied : « toute la structure » seulement à l’adresse générique d’une structure dont la
-  clé vaut pour l’adresse ; à une adresse générique sans telle clé (gouv.fr par exemple), « cette adresse ; les autres
-  adresses … ne sont pas concernées » ; à une personne nommée, aucune phrase de portée.
+- Portée de l’opposition dans le pied : « toute la structure » dès qu’une clé de structure vaut pour l’adresse (cabinet
+  ou étude à domaine propre, numéro d’office), même si une personne est nommée ; à une adresse générique sans telle clé
+  (gouv.fr par exemple), « cette adresse ; les autres adresses … ne sont pas concernées » ; à une personne nommée sans
+  telle clé, aucune phrase de portée.
 
 **Retrait après une opposition (J10) : un mois au plus, 28 jours en interne.** Une opposition d’un avocat vaut aussi
 retrait des valeurs publiées depuis ses réponses. Le retrait n’est pas automatique : une décision du registre s’écrit
@@ -648,10 +651,10 @@ avec le jeton d’un administrateur.
      souhaitez aussi ne plus être contacté, répondez simplement à ce message. »
 6. **Ce qui reste à la main.**
    - Mise à prix, date et type de bien : le registre ne tient pas ces champs. L’opposition efface la mention et ferme la
-     ligne, mais la valeur de l’avocat reste dans la colonne jusqu’à ce que la collecte de l’annonce la réécrive. Si
-     l’annonce n’est plus collectée (retirée, vente passée), demander à l’équipe technique de remettre la valeur
-     précédente (journal `information_agent_fact_publications.previous_values`), puis vérifier la fiche en navigation
-     privée avant de répondre (modèle A sans la mention « a repris la valeur de l’annonce » tant que ce n’est pas fait).
+     ligne, mais la valeur de l’avocat reste dans la colonne jusqu’à ce que la collecte de l’annonce la réécrive (valeur
+     précédente : journal `information_agent_fact_publications.previous_values`). Ne pas envoyer le modèle A tant que la
+     fiche publique ou celle des comptes affiche encore la valeur : la faire remettre par l’équipe technique dans les 28
+     jours, puis répondre.
    - Pièces et photos publiées : aucune liste ; les retirer à la main avec l’équipe technique.
 7. **Effacement d’un professionnel** (« Exécuter l’effacement »). L’effacement retire de chaque fiche les traces de ses
    réponses (`raw_payload.information_agent_verified_facts`) : la mention disparaît. Les valeurs tenues par le registre

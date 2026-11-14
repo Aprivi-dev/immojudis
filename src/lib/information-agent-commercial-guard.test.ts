@@ -146,8 +146,8 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       INFORMATION_AGENT_QUESTIONS.occupancy.question,
       COURT_REGISTRY_QUESTION,
       INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT,
-      "les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
-      "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite.",
+      "Les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
+      "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite, ou à indiquer aux candidats où consulter le cahier.",
       "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
       "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.example. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
     ];

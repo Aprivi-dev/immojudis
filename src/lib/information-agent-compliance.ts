@@ -449,11 +449,11 @@ export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT = `Si vous vo
 /**
  * Portée de l'opposition, avec le mot de la structure du destinataire (relecture juridique-rgpd du 14/11/2026),
  * pour le pied du message et la page de confirmation de l'opposition :
- *  - une clé de structure tient pour l'adresse (`structureOpposition`, quel que soit le type de structure) :
- *    l'opposition vaut pour toute la structure ;
+ *  - une clé de structure tient pour l'adresse (`structureOpposition`, quel que soit le type de structure, qu'une
+ *    personne soit nommée ou non) : l'opposition vaut pour toute la structure ;
  *  - sinon, l'adresse générique d'une structure (`structureAddress`) : l'opposition vaut pour cette adresse
  *    seule, et la phrase le dit ;
- *  - sinon (personne nommée) : aucune phrase, l'opposition générale suffit.
+ *  - sinon (personne nommée, sans clé qui tienne) : aucune phrase, l'opposition générale suffit.
  */
 function informationAgentObjectionScopeStatement({
   structureOpposition,
@@ -521,9 +521,9 @@ export const INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT = `Les information
 const INFORMATION_AGENT_REPLY_DISPLAY_STATEMENTS: Record<InformationAgentReplyDisplay, string> = {
   source_lawyer: INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT,
   professional:
-    "les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
+    "Les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
   court_registry:
-    "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite.",
+    "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite, ou à indiquer aux candidats où consulter le cahier.",
 };
 
 /** Droit de réclamation (art. 14(2)(e) RGPD). */

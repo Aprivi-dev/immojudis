@@ -465,10 +465,9 @@ describe("opposition au niveau de la structure", () => {
     expect(drafted).toMatchObject({
       role: "notary",
       addressKind: "generic",
-      // « Jean Martin » est nommé : pied ordinaire, sans phrase de portée (juridique-rgpd du 14/11/2026). La clé
-      // de l'office reste dans les clés d'identité : son opposition vaudra quand même pour l'étude.
+      // « Jean Martin » est nommé : pied ordinaire, mais l'opposition vaudra pour l'étude.
       structureAddress: null,
-      structureOpposition: null,
+      structureOpposition: "notary_office",
       questionAudience: "notary",
     });
 

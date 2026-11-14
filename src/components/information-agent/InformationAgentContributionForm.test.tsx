@@ -792,7 +792,9 @@ describe("InformationAgentContributionForm", () => {
       ).toBeTruthy();
       expect(
         screen.getByText(/celles qui sont retenues peuvent être affichées/).textContent,
-      ).toContain("sur la fiche publique de la vente, sans votre nom");
+      ).toContain(
+        "sur la fiche publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant, certaines portent la mention de source décrite dans notre message, qui vous rend identifiable.",
+      );
     });
 
     it("garde des contrastes suffisants : bordure des champs, case cochée et survol des boutons", async () => {

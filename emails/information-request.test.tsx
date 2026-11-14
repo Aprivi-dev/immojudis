@@ -462,7 +462,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     });
     const message = await renderInformationRequestEmail({
       subject:
-        "Vente aux enchères du 14/09/2026 (Bordeaux) : avocat poursuivant ou pièces publiques",
+        "Vente aux enchères du 14/09/2026 (Bordeaux) : avocat poursuivant et consultation du cahier",
       bodyText: body,
       replyTo: "enquete+1234@reponses.immojudis.com",
       caseReference: "IJ-8F31A290",
@@ -492,7 +492,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
       expect(output).not.toContain("Quelques points à vérifier");
       // La réponse d'un greffe sert à trouver l'avocat poursuivant : jamais affichée ni attribuée.
       expect(output).toContain(
-        "Affichage sur la fiche : Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite.",
+        "Affichage sur la fiche : Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite, ou à indiquer aux candidats où consulter le cahier.",
       );
       expect(output).not.toContain("Les informations que vous nous transmettez");
     }

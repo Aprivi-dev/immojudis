@@ -78,3 +78,38 @@ describe("AdminPrivacyRequestsPanel : rétractation", () => {
     });
   });
 });
+
+describe("AdminPrivacyRequestsPanel : effacement d'un professionnel", () => {
+  it("demande de traiter d'abord les « Retraits à faire » de l'adresse (lot C)", async () => {
+    mocks.fetchRequests.mockResolvedValue({
+      requests: [
+        {
+          ...WITHDRAWAL,
+          requestType: "erasure",
+          identityStatus: "verified",
+          requesterEmail: "avocat@cabinet.example",
+          userId: null,
+          subjectKind: "information_agent_professional",
+        },
+      ],
+      total: 1,
+      openCount: 1,
+      overdueCount: 0,
+      truncated: false,
+      offset: 0,
+      limit: 100,
+      hasMore: false,
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AdminPrivacyRequestsPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        /Traitez d'abord les « Retraits à faire » de cette adresse : après l'effacement, les valeurs affichées ne peuvent plus être listées\./,
+      ),
+    ).toBeTruthy();
+  });
+});

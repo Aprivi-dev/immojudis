@@ -291,13 +291,22 @@ describe("information agent inbound parsing", () => {
     expect(surface("Appartement T3 95 m².")).toEqual({ value: 95, unit: "m2" });
     // Même lecture pour le terrain.
     expect(land("Terrain : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
-    // Un numéro écrit juste avant (lot, section cadastrale, type de logement) n'est pas un millier.
+    // Numéro collé à une lettre (type de logement) ou annoncé par « n° » : ce n'est pas un millier.
     expect(surface("Lot n° 3 105 m².")).toEqual({ value: 105, unit: "m2" });
-    expect(surface("Surface du lot 2 125 m².")).toEqual({ value: 125, unit: "m2" });
     expect(surface("Appartement T3 105 m².")).toEqual({ value: 105, unit: "m2" });
-    expect(land("Terrain cadastré section AB 12 450 m².")).toEqual({ value: 450, unit: "m2" });
-    expect(land("Parcelle 12 450 m².")).toEqual({ value: 450, unit: "m2" });
-    // Après une ponctuation, le nombre est bien groupé par milliers.
+    expect(surface("Appartement T4 105 m².")).toEqual({ value: 105, unit: "m2" });
+    expect(surface("Appartement T3 65 m².")).toEqual({ value: 65, unit: "m2" });
+    // Mot qui annonce un numéro, puis un nombre groupé : numéro ou milliers ? Aucune lecture plutôt que choisir.
+    expect(surface("Surface du lot 2 125 m².")).toBeUndefined();
+    expect(surface("Surface du bâtiment 1 250 m².")).toBeUndefined();
+    expect(surface("Bâtiment 1 250 m² à usage d’entrepôt.")).toBeUndefined();
+    expect(land("Terrain : parcelle 2 500 m².")).toBeUndefined();
+    expect(land("Terrain cadastré section AB 12 450 m².")).toBeUndefined();
+    expect(land("Parcelle 12 450 m².")).toBeUndefined();
+    // Sans marqueur, ou après une ponctuation, le nombre est bien groupé par milliers.
+    expect(surface("Surface habitable : 1 105 m².")).toEqual({ value: 1105, unit: "m2" });
+    expect(surface("La maison fait 1 105 m².")).toEqual({ value: 1105, unit: "m2" });
+    expect(surface("Local commercial, lot 7 : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
     expect(surface("Surface du lot : 2 125 m².")).toEqual({ value: 2125, unit: "m2" });
   });
 
