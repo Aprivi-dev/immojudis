@@ -6,6 +6,7 @@ const predictLightGbmQuantiles = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/lightgbm-inference", () => ({ predictLightGbmQuantiles }));
 
 import { applyActiveHybridModel, type HybridValuationInput } from "@/lib/hybrid-market-valuation";
+import { VALUATION_MODEL_MIN_COVERAGE_PCT } from "@/lib/market-comparable-minimums";
 
 const input: HybridValuationInput = {
   segment: "apartment",
@@ -37,7 +38,20 @@ function localMarket(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function model(artifact: Record<string, unknown>) {
+/** Bloc `comparison` écrit par la porte d'activation (`published_training_metrics`). */
+function gateComparison(servedIntervalCoveragePct: number | null = 78) {
+  return {
+    candidate_median_ape_pct: 11,
+    naive_median_ape_pct: 14,
+    served_interval_coverage_pct: servedIntervalCoveragePct,
+    activated: true,
+  };
+}
+
+function model(
+  artifact: Record<string, unknown>,
+  trainingMetrics: Record<string, unknown> = { test_mape_pct: 12, comparison: gateComparison() },
+) {
   return {
     id: "model-1",
     version: "v1",
@@ -46,7 +60,7 @@ function model(artifact: Record<string, unknown>) {
     feature_names: [],
     artifact,
     calibration: {},
-    training_metrics: { test_mape_pct: 12 },
+    training_metrics: trainingMetrics,
   };
 }
 
@@ -90,12 +104,61 @@ describe("variables locales du modèle hybride", () => {
     expect(predictLightGbmQuantiles).not.toHaveBeenCalled();
   });
 
-  it("garde l'ancienne approximation pour un artefact antérieur à l'export", async () => {
+  // D2 (14/11) : ce test garantissait l'inverse (l'ancienne approximation tirée des comparables pour un
+  // artefact sans export). Ces variables ne sont pas celles de l'entraînement : le modèle n'est plus
+  // servi, l'estimation retombe sur les comparables seuls.
+  it("n'applique pas un modèle dont l'artefact est antérieur à l'export : comparables seuls", async () => {
     loadActiveValuationModel.mockResolvedValue(model({}));
+    expect(await applyActiveHybridModel(input)).toBeNull();
+    expect(predictLightGbmQuantiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("couverture mesurée par la porte d'activation (D2)", () => {
+  it("n'applique pas un modèle activé sans la mesure de la porte (pas de bloc comparison)", async () => {
+    loadActiveValuationModel.mockResolvedValue(
+      model({ localMarket: localMarket() }, { test_mape_pct: 12 }),
+    );
+    expect(await applyActiveHybridModel(input)).toBeNull();
+    expect(predictLightGbmQuantiles).not.toHaveBeenCalled();
+  });
+
+  it("n'applique pas un modèle dont la couverture n'a pas été mesurée", async () => {
+    loadActiveValuationModel.mockResolvedValue(
+      model(
+        { localMarket: localMarket() },
+        { test_mape_pct: 12, comparison: gateComparison(null) },
+      ),
+    );
+    expect(await applyActiveHybridModel(input)).toBeNull();
+  });
+
+  it("n'applique pas un modèle remis en service sous le plancher de couverture", async () => {
+    loadActiveValuationModel.mockResolvedValue(
+      model(
+        { localMarket: localMarket() },
+        {
+          test_mape_pct: 12,
+          comparison: gateComparison(VALUATION_MODEL_MIN_COVERAGE_PCT - 0.1),
+        },
+      ),
+    );
+    expect(await applyActiveHybridModel(input)).toBeNull();
+  });
+
+  it("applique un modèle qui a passé la porte, à partir du plancher", async () => {
+    loadActiveValuationModel.mockResolvedValue(
+      model(
+        { localMarket: localMarket() },
+        { test_mape_pct: 12, comparison: gateComparison(VALUATION_MODEL_MIN_COVERAGE_PCT) },
+      ),
+    );
     expect(await applyActiveHybridModel(input)).not.toBeNull();
-    const features = predictLightGbmQuantiles.mock.calls[0][1];
-    expect(features.local_median_log).toBeCloseTo(Math.log(9_000), 10);
-    expect(features.local_spread_log).toBeCloseTo(Math.log(10_800 / 7_500), 10);
-    expect(features.local_sample_size_log).toBeCloseTo(Math.log1p(9), 10);
+  });
+
+  it("les deux modèles lgbm-cqr-20260713 actifs (ni export ni comparaison) ne servent plus", async () => {
+    loadActiveValuationModel.mockResolvedValue(model({}, { test_mape_pct: 12 }));
+    expect(await applyActiveHybridModel(input)).toBeNull();
+    expect(predictLightGbmQuantiles).not.toHaveBeenCalled();
   });
 });

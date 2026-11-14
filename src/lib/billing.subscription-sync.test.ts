@@ -609,3 +609,88 @@ describe("litiges Stripe : accès rendu à la clôture (n° 46)", () => {
     expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
   });
 });
+
+describe("mode réel ou test, et interrupteur de vente (C2, C3 du 14/11)", () => {
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_sync");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_sync");
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_a");
+    vi.stubEnv("STRIPE_ANALYSIS_LEGACY_PRICE_IDS", "");
+    vi.stubEnv("STRIPE_ANALYSIS_SALES_OPEN", "");
+    mocks.rpc.mockReset();
+    mocks.from.mockReset();
+    mocks.constructEvent.mockReset();
+    mocks.subscriptionsRetrieve.mockReset();
+    mocks.from.mockImplementation((table: string) =>
+      tableAnswer({
+        data: table === "stripe_webhook_events" ? { processing_status: "processed" } : [],
+        error: null,
+      }),
+    );
+    vi.restoreAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  function deliverInMode(livemode: boolean, object: unknown) {
+    mocks.constructEvent.mockReturnValue({
+      id: `evt_mode_${livemode}`,
+      type: "customer.subscription.updated",
+      created: 1_800_000_500,
+      livemode,
+      data: { object },
+    });
+    return handleStripeWebhook({ payload: "{}", signature: "sig" });
+  }
+
+  it("refuse en 400 un événement réel reçu avec une clé de test, sans le journaliser ni le traiter", async () => {
+    stubRpc({ applied: true, reason: "applied" });
+    mocks.subscriptionsRetrieve.mockResolvedValue(subscription({ status: "active" }));
+
+    await expect(deliverInMode(true, subscription({ status: "active" }))).rejects.toMatchObject({
+      name: "PublicApiError",
+      status: 400,
+    });
+
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("refuse en 400 un événement de test reçu avec une clé réelle", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_live_sync");
+    stubRpc({ applied: true, reason: "applied" });
+
+    await expect(deliverInMode(false, subscription({ status: "active" }))).rejects.toMatchObject({
+      name: "PublicApiError",
+      status: 400,
+    });
+
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("traite un événement du même mode que la clé (réel avec réel)", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "rk_live_sync");
+    stubRpc({ applied: true, reason: "applied" });
+    mocks.subscriptionsRetrieve.mockResolvedValue(subscription({ status: "active" }));
+
+    const result = await deliverInMode(true, subscription({ status: "active" }));
+
+    expect(result.handled).toBe(true);
+    expect(rpcCalls("begin_stripe_webhook_event")[0][1]).toMatchObject({ p_livemode: true });
+  });
+
+  it("vente fermée : le Price reste reconnu et l'abonné garde l'offre Analyse", async () => {
+    vi.stubEnv("STRIPE_ANALYSIS_SALES_OPEN", "false");
+    stubRpc({ applied: true, reason: "applied" });
+    mocks.subscriptionsRetrieve.mockResolvedValue(subscription({ status: "active" }));
+
+    const result = await deliverInMode(false, subscription({ status: "active" }));
+
+    expect(result.handled).toBe(true);
+    expect(rpcCalls("apply_stripe_subscription_state")[0][1]).toMatchObject({
+      p_plan_code: "analyse",
+      p_status: "active",
+      p_user_id: USER_ID,
+    });
+  });
+});

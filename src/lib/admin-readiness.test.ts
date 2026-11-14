@@ -167,6 +167,48 @@ describe("admin readiness", () => {
     expect(items.every((item) => item.status === "ready")).toBe(true);
   });
 
+  it("names the sales switch or the key mode when they close a complete checkout (C2, C3)", () => {
+    const complete = {
+      NEXT_PUBLIC_APP_URL: "https://immojudis.example",
+      STRIPE_SECRET_KEY: "sk_live_ready",
+      STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisLive",
+      STRIPE_WEBHOOK_SECRET: "whsec_live",
+      VERCEL_ENV: "production",
+      RESEND_API_KEY: "re_live",
+      ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
+      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de Paris, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS Paris 000 000 000",
+      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction Immojudis",
+      NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.fr",
+      NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur de la consommation",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS: "1 rue de la Médiation, 75001 Paris",
+      NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE: "https://mediateur.example",
+    };
+    const checkout = (env: Record<string, string>) =>
+      buildEnvironmentReadiness(env).find((item) => item.key === "billing.checkout.analyse");
+
+    expect(checkout(complete)).toMatchObject({ status: "ready", action: null });
+    expect(checkout({ ...complete, STRIPE_ANALYSIS_SALES_OPEN: "false" })).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("les abonnés gardent leur accès"),
+      action: "Pour rouvrir la vente : retirer STRIPE_ANALYSIS_SALES_OPEN, puis redéployer.",
+    });
+    expect(checkout({ ...complete, STRIPE_SECRET_KEY: "sk_test_ready" })).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("clé de test en production"),
+      action: expect.stringContaining("sk_live_… en Production"),
+    });
+    // Le webhook reste prêt : fermer la vente ne coupe pas la réconciliation des abonnés.
+    expect(
+      buildEnvironmentReadiness({ ...complete, STRIPE_ANALYSIS_SALES_OPEN: "false" }).find(
+        (item) => item.key === "billing.webhook",
+      ),
+    ).toMatchObject({ status: "ready" });
+  });
+
   it("no longer audits the AI summary coverage, which the pipeline stopped producing", async () => {
     for (const name of ["SUPABASE_DB_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL"]) {
       vi.stubEnv(name, "");

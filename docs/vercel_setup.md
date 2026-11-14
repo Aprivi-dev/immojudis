@@ -327,7 +327,9 @@ Quand `VERCEL_ENV=production`, `npm run build` (script `scripts/verify-required-
   commercialisation ») ;
 - `ADMIN_MFA_REQUIRED=true` ;
 - une origine canonique explicite (`SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL` ou
-  `APP_URL`) : `VERCEL_URL` change à chaque déploiement et ne compte pas.
+  `APP_URL`) : `VERCEL_URL` change à chaque déploiement et ne compte pas ;
+- une clé Stripe du mode réel : le build échoue si `STRIPE_SECRET_KEY` est une clé de test
+  (`sk_test_…` ou `rk_test_…`), qui ferait obtenir l'offre Analyse avec la carte de test de Stripe.
 
 **Échappatoire.** Tant que les valeurs ne sont pas fournies, `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true`
 (variable Vercel, environnement Production) transforme les erreurs sur les mentions légales et
@@ -336,7 +338,7 @@ passe, mais il n'est **pas conforme** : mentions légales absentes ou administra
 facteur. Retirer la variable dès que les valeurs sont renseignées, puis redéployer. Seule la
 valeur exacte `true` est prise en compte. L'origine canonique n'est jamais contournable : sans
 elle, les adresses canoniques, `robots.txt` et le sitemap de production pointeraient vers
-`localhost`.
+`localhost`. La clé Stripe de test non plus : c'est une valeur fausse, pas une valeur manquante.
 
 `npm run env:check:prod` n'accepte plus `VERCEL_URL` comme origine canonique.
 

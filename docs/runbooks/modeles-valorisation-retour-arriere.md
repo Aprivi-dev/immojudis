@@ -102,10 +102,15 @@ Pour le remettre en service ensuite : action A, sans la première requête.
 ### Cas : modèles actifs antérieurs à la porte (sans `localMarket`)
 
 Situation mesurée le 08/11/2026 : deux lignes `active`, `house` et `apartment`, version `lgbm-cqr-20260713`,
-activées le 27/07/2026, sans `artifact.localMarket` ni `training_metrics.comparison`. Ces modèles reçoivent au
-service des variables locales approchées depuis les comparables, différentes de celles de leur entraînement, et
-leur mélange avec les comparables n'a jamais été évalué. Il n'existe pas de version antérieure qui ait passé la
-porte : on arrête le modèle (action B), on ne réactive rien.
+activées le 27/07/2026, sans `artifact.localMarket` ni `training_metrics.comparison`. Jusqu'au 14/11, ces modèles
+recevaient au service des variables locales approchées depuis les comparables, différentes de celles de leur
+entraînement, et leur mélange avec les comparables n'a jamais été évalué. Il n'existe pas de version antérieure qui
+ait passé la porte : on arrête le modèle (action B), on ne réactive rien.
+
+Depuis le déploiement du lot A (D2, 14/11), l'application n'utilise plus un modèle actif sans export
+`localMarket` ou sans couverture mesurée par la porte (`training_metrics.comparison.served_interval_coverage_pct`
+au moins égale au plancher) : ces deux modèles ne servent déjà plus, les estimations de ces segments retombent sur
+les comparables seuls. L'action B ne fait alors que mettre le registre en accord avec ce que sert l'application.
 
 Les deux segments dans une seule transaction ; la condition sur l'export empêche de retirer par erreur un modèle
 plus récent qui, lui, l'aurait.

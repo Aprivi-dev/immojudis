@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
+import { isAdminMfaRequired } from "@/lib/admin-mfa";
+import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { serverEnv } from "@/lib/env";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
@@ -88,7 +90,34 @@ export type AdminDashboardRunsData = {
   runner: AdminDashboardData["runner"];
   stats: Pick<AdminDashboardData["stats"], "queuedRuns" | "runningRuns" | "failedRuns">;
   runs: AuctionRun[];
+  /** Ce qui est ouvert sans second facteur exigé (voir `adminSecondFactorExposures`). */
+  secondFactorExposures: AdminSecondFactorExposure[];
 };
+
+/** Une activité ouverte alors que l'administration n'exige pas de second facteur. */
+export type AdminSecondFactorExposure = "payment" | "information_agent_outbound";
+
+/**
+ * T3 (14/11) : ce que l'accueil de l'administration signale quand le second facteur n'est pas exigé
+ * (`ADMIN_MFA_REQUIRED`, `isAdminMfaRequired`) alors que le paiement Analyse est ouvert
+ * (`analysisCheckoutReadiness`) ou que l'envoi de l'agent d'information l'est
+ * (`INFORMATION_AGENT_OUTBOUND_ENABLED`). Un mot de passe volé suffirait alors pour agir sur des
+ * abonnés ou écrire à des avocats. Avertissement seulement : rien n'est bloqué. Vide quand le second
+ * facteur est exigé ou que rien n'est ouvert.
+ */
+export function adminSecondFactorExposures(
+  env: Pick<NodeJS.ProcessEnv, string>,
+): AdminSecondFactorExposure[] {
+  if (isAdminMfaRequired(env)) return [];
+  const exposures: AdminSecondFactorExposure[] = [];
+  if (analysisCheckoutReadiness(env).open) exposures.push("payment");
+  // Même lecture que `assertInformationAgentOutboundEnabled` (information-agent/config.ts) : seule
+  // la valeur exacte `true` ouvre l'envoi.
+  if (env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true") {
+    exposures.push("information_agent_outbound");
+  }
+  return exposures;
+}
 
 export type AdminDashboardCountsData = {
   checkedAt: string;
@@ -389,6 +418,7 @@ async function readRunsSection(
       failedRuns: statusCount(runs, "failed"),
     },
     runs,
+    secondFactorExposures: adminSecondFactorExposures(process.env),
   };
 }
 
