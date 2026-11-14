@@ -58,6 +58,18 @@ export function SalePublicChecks({
         <SalePointsToVerify points={points} saleId={saleId} className={styles.points} />
       </div>
       <ul className={styles.docs} aria-label="Pièces et sources">
+        {/* Cible du lien « Où consulter le cahier » des mentions de l'avocat poursuivant : le cahier se
+            consulte sans compte (même texte que le guide, art. R. 322-11 CPCE). */}
+        {procedure.venueType === "tribunal" ? (
+          <li>
+            <FileText aria-hidden />
+            <b>Cahier des conditions de vente</b>
+            <span>
+              Consultable au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de
+              l’avocat du créancier poursuivant
+            </span>
+          </li>
+        ) : null}
         {documentCount > 0 ? (
           <li>
             <FileText aria-hidden />

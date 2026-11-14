@@ -535,3 +535,88 @@ pas d'adresse, ou dont l'adresse est refusée (opposition, rebond), n'a pas de b
 - Fiches Licitor déjà en base : le rattrapage est celui de la collecte, borné par ses règles existantes, sans requête ajoutée. Le détail d'une fiche n'est tenu pour frais que 24 heures (6 heures quand l'audience est à moins de 7 jours, `src/freshness.py`) : passé ce délai il est relu, carte inchangée ou non, et l'adresse est écrite ou rafraîchie à cette lecture. La relecture reste dans le budget de la source : 42 minutes par passage, décomptées dès le début du passage, donc lecture des listes comprise ; les fiches aux audiences les plus proches passent d'abord, le reste au passage suivant. Avec un passage toutes les 12 heures environ, les ventes à venir sont couvertes en deux à trois passages après une réactivation, 36 heures environ, et une même fiche n'est jamais relue deux fois dans sa fenêtre de fraîcheur. Le texte stocké (`page_text`) contient encore « [email protected] » et la relecture sans réseau ne peut pas le décoder. Un point de reprise de collecte restauré (24 heures au plus) ne porte pas l’adresse : une fiche reprise d'un run interrompu est publiée sans adresse à ce passage, et la reçoit à la relecture suivante de son détail, au plus 24 heures après sa lecture d'origine (comportement assumé : aucune relecture forcée, aucune requête ajoutée). Dans l’intervalle, l’administrateur saisit l’adresse et la page publique où il l’a relevée. Le balayage manuel `insufficient_sales`, le rapport SQL d’informations insuffisantes et la porte de publication (`contact_emails`) ne comptent pas cette adresse comme contact : leur verdict reste celui du miroir TypeScript.
 - Une seule sollicitation par professionnel (hors greffes, voir « Greffe de secours ») et par période de 30 jours, toutes ventes confondues (par adresse, et par identité quand le nom et le barreau ou la ville sont connus) : un avocat chargé de plusieurs ventes ne reçoit qu’une demande par mois, même sous deux adresses de son cabinet.
 - Les pièces ne sont reconnues que par leur libellé ou leur type ; un PDF au nom neutre (« 3742_001.pdf ») n’est pas compté.
+
+## Lot C : acceptation par le registre, textes de l’e-mail, retraits après opposition (14/11/2026)
+
+Section propre au lot C (validé par le propriétaire le 14/11/2026). Migration `20261119100900`, gabarit du code en
+révision 10 (« version 11 »), gabarit HTML `information_request_v13`.
+
+**Ordre d’application.** Appliquer d’abord la migration `20261119100900`, puis déployer le code. Dans l’autre ordre,
+une acceptation écrirait encore la fiche avant la décision du registre, et le bloc « annonce » mémorisé par le registre
+serait la valeur de l’avocat. Migration seule, sans le code : une valeur acceptée n’est pas affichée tant que sa
+décision n’est pas prise dans « Observations à décider » (échec fermé).
+
+**« Accepter et mettre à jour la fiche » passe par le registre des pièces (T4).**
+
+- Pour une surface, un terrain, un nombre de pièces, une occupation, une mise à prix, une date ou un type de bien,
+  choisir le rattachement au lot avant d’accepter. Seuls « Vente à un seul lot » et « Lot identifié dans la pièce »
+  affichent la valeur.
+- L’acceptation enregistre le fait de l’agent, puis la décision au registre, à votre nom. Surface, terrain, pièces et
+  occupation sont alors affichés et tenus : la collecte ne les écrase plus. Mise à prix, date et type de bien restent
+  écrits par le noyau, comme avant ; leur décision est inscrite au journal, sans protection.
+- Si l’écran dit « Réponse acceptée, mais la valeur n’est pas encore sur la fiche », la décision n’a pas été
+  enregistrée (import en cours, contradiction…). Aller dans « Observations à décider », saisir la vente indiquée, et
+  accepter l’observation. Rien n’est affiché d’ici là.
+- Une occupation « occupé par le propriétaire », « squatté » ou « inconnue » ne s’accepte plus : la rejeter. La fiche
+  ne dit que « libre », « occupé » ou « loué ».
+
+**Textes de l’e-mail (C12, C13, C14, J10, J15).**
+
+- Le modèle du code passe en révision 10. Dans Admin › Agent IA › Modèle de message, vérifier l’état du modèle publié :
+  - modèle publié marqué « ignoré » (révision inférieure à 7, cas constaté le 23/10) : le modèle du code s’applique,
+    rien à faire ;
+  - modèle publié en révision 7 ou plus : il garde les anciens textes (invitation à joindre « documents ou photos »,
+    procès-verbal descriptif, ancienne signature). Le republier depuis l’éditeur, avec les blocs du modèle du code,
+    avant tout envoi. La publication contrôle l’absence de mention commerciale.
+- Brouillons préparés avant le déploiement : les régénérer avant tout envoi. La préparation (« Ouvrir le message ») et
+  le pilote ne reprennent pas un brouillon d’une autre révision. Mais un brouillon déjà ouvert peut encore partir :
+  avant le premier envoi, annuler (« Annuler la mission ») chaque brouillon dont la révision n’est pas la révision
+  courante, puis rouvrir la fiche. Liste en lecture seule :
+  `select id, sale_id, status, metadata->>'trigger' as declencheur, metadata->>'email_content_template_revision' as revision from public.information_agent_missions where status in ('draft', 'failed') order by created_at;`
+- Le pied du message à l’avocat poursuivant (dossier `source_lawyer`) dit désormais que ses informations peuvent être
+  affichées sur la fiche, avec la mention de source, et comment les faire retirer.
+
+**Retrait après une opposition (J10) : un mois au plus.** Une opposition d’un avocat vaut aussi retrait des valeurs
+publiées depuis ses réponses. Le retrait n’est pas automatique : une décision du registre s’écrit avec le jeton d’un
+administrateur.
+
+1. **Déclencheur.** Chaque opposition (lien « Ne plus être contacté », réponse « STOP », bouton « Enregistrer
+   l’opposition ») et chaque demande de retrait reçue (réponse à l’e-mail, courrier, téléphone).
+2. **Contrôle quotidien.** Admin › Agent IA › Réponses, bloc « Retraits à faire après une opposition » : une ligne par
+   valeur acceptée d’un dossier dont le destinataire s’est opposé (par son adresse, ou par son identité sous une autre
+   adresse), avec la date limite (opposition + 30 jours), en rouge une fois dépassée. Une demande de retrait sans
+   opposition n’y figure pas : la traiter de la même façon, à la main.
+3. **Décision, dans le mois.** « Observations à décider », saisir la vente de la ligne, puis :
+   - opposition : « Opposition » (motif par défaut, opposition du professionnel) ;
+   - simple demande de retrait : « Retirer », motif « Autorisation d’affichage retirée ».
+     Les deux sont définitives. La valeur de l’annonce revient sur la fiche pour la surface, le terrain, les pièces et
+     l’occupation, et la ligne quitte le bloc.
+4. **Trace.** La décision reste au journal du registre (auteur, date, motif) ; c’est la preuve du retrait.
+5. **Réponse à la personne**, à faire relire par juridique-rgpd : « Nous avons bien reçu votre demande. Les
+   informations transmises par votre cabinet ont été retirées de nos fiches le [date] ; nous ne vous solliciterons
+   plus. »
+6. **Hors de portée de ce bloc.** Mise à prix, date et type de bien : la décision s’inscrit au journal, mais la valeur
+   reste dans la colonne jusqu’à ce que l’annonce la réécrive, avec sa mention tant qu’elle est égale. Pièces et
+   photos publiées : aucune liste, à retirer à la main avec l’équipe technique.
+
+**Libellé des pièces publiées.** Une pièce acceptée est publiée sous « Pièce transmise par l’avocat poursuivant le
+JJ/MM/AAAA : <type> » (« Pièce transmise le … » pour un autre destinataire), jamais sous le nom du fichier d’origine.
+Les pièces publiées avant la migration gardent leur ancien libellé : aucune réparation dans une migration (règle
+T17). Mesure, en lecture seule :
+
+```sql
+select count(*) as pieces, count(distinct document.source_url) as ventes
+from public.auction_documents document
+join public.information_agent_evidence_assets asset
+  on asset.id::text = document.raw_payload->>'evidence_asset_id'
+where document.raw_payload->>'source' = 'information_agent'
+  and document.label = asset.original_filename;
+```
+
+Reprise proposée, à faire valider puis passer par le propriétaire comme rattrapage séparé (`supabase/repairs/`, avec
+sa procédure), jamais dans une migration : réécrire `label` de ces lignes avec le même libellé neutre (expéditeur,
+jour de réception du message, type tiré de `information_agent_evidence_extractions.document_kind`).
+
+**Banc d’évaluation à rejouer.** Les nouveaux textes changent la demande que 63 cas du jeu citent mot pour mot, et la
+lecture de « 1 250 m² » (T10) change l’étape des règles (cas F5-23). Rejouer le banc (section « Jeu d’évaluation »)
+après avoir mis à jour la demande citée dans ces cas, par qa-modeles.

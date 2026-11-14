@@ -729,7 +729,7 @@ describe("AdminInformationAgentReviewPanel", () => {
     });
   });
 
-  it("dit ce que change l'acceptation : la valeur proposée remplace celle de la fiche", async () => {
+  it("dit ce que change l'acceptation et demande le rattachement au lot avant d'inscrire la valeur au registre", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [
         {
@@ -758,23 +758,115 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
 
     expect(screen.getByText(/Accepter une pièce \(document ou photo\) la publie/)).toBeTruthy();
+    // Lot C (T4) : la valeur est inscrite au registre des pièces, qui la tient contre la collecte.
     expect(
       screen.getByText(
-        /la valeur proposée remplace celle de la fiche, sauf si le champ est déjà tenu par une pièce du registre/,
+        /l’inscrit au registre des pièces, à votre nom .* protégés contre la collecte/,
       ),
     ).toBeTruthy();
-    const mark = await screen.findByRole("button", {
+    const mark = (await screen.findByRole("button", {
       name: "Accepter et mettre à jour la fiche",
-    });
+    })) as HTMLButtonElement;
     expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+    // Sans rattachement au lot, rien ne part.
+    expect(mark.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Rattachement au lot (obligatoire pour accepter)"), {
+      target: { value: "single_lot" },
+    });
+    expect(
+      screen.getByText(/La valeur sera affichée sur la fiche et protégée contre la collecte/),
+    ).toBeTruthy();
+    expect(mark.disabled).toBe(false);
     fireEvent.click(mark);
     await waitFor(() => expect(mocks.reviewFact).toHaveBeenCalledTimes(1));
-    // Même décision qu'avant le changement de libellé.
     expect(mocks.reviewFact.mock.calls[0][0]).toEqual({
       factId: "fact-a",
       decision: "accepted",
       notes: null,
+      lotAttachment: "single_lot",
     });
+  });
+
+  it("refuse d'accepter une occupation que la fiche ne peut pas afficher", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-occupancy",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "occupancy_status",
+          proposed_value: { value: "owner_occupied" },
+          display_value: "Bien occupé par le propriétaire",
+          confidence: 0.8,
+          evidence_asset_id: null,
+          evidence_excerpt: null,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "replied" }],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Occupation non affichable : la fiche ne dit que « libre », « occupé » ou « loué », jamais qui occupe ni pourquoi. Rejetez cette information.",
+      ),
+    ).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Accepter et mettre à jour la fiche",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.queryByLabelText("Rattachement au lot (obligatoire pour accepter)")).toBeNull();
+  });
+
+  it("montre les retraits à faire après une opposition, avec leur date limite", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      messages: [],
+      withdrawalTasks: [
+        {
+          factId: "fact-1",
+          factKey: "surface_m2",
+          displayValue: "54 m²",
+          saleId: "11111111-1111-4111-8111-111111111111",
+          claimId: "claim-1",
+          latestDecision: "accepted",
+          opposedAt: "2026-11-15T10:00:00Z",
+          dueAt: "2026-12-15T10:00:00Z",
+          overdue: true,
+        },
+      ],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const section = await screen.findByRole("region", {
+      name: "Retraits à faire après une opposition (1)",
+    });
+    expect(section.textContent).toContain("Surface : 54 m²");
+    expect(section.textContent).toContain(
+      "opposition du 15/11/2026, à retirer avant le 15/12/2026 (délai dépassé)",
+    );
+    expect(section.textContent).toContain("« Opposition »");
   });
 
   it("disables acceptance when the case is already completed", async () => {

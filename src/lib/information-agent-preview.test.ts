@@ -242,10 +242,23 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("vous opposer à tout moment, sans motif");
       expect(output).toContain("https://www.cnil.fr/fr/plaintes");
       expect(output).not.toContain("retrouvée automatiquement");
+      // J10 : l'avocat poursuivant apprend que sa réponse peut être affichée, et comment la retirer.
+      expect(output).toContain(
+        "Les informations que vous nous transmettez peuvent être affichées sur la fiche, sans votre nom",
+      );
     }
     expect(db.writes).toEqual([]);
     expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("n'annonce l'affichage des réponses qu'à l'avocat poursuivant, pas à une adresse remplacée", async () => {
+    const replaced = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: { ...content, recipientEmail: "autre-cabinet@example.test" },
+    });
+    // L'adresse remplacée sera enregistrée « manual_professional » à l'envoi : la fiche ne lui attribuera rien.
+    expect(replaced.preview.text).not.toContain("Affichage sur la fiche");
   });
 
   it("signale un contact opposé et l'absence d'origine connue comme bloquants", async () => {
@@ -1041,7 +1054,7 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
     vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
     const notary = await preview();
     for (const output of [notary.preview.html, notary.preview.text]) {
-      expect(output).not.toContain("Déposer des pièces");
+      expect(output).not.toContain("l’espace privé de ce dossier");
       expect(output).not.toContain("/contribuer/");
     }
     // Service de l'État : le lien de dépôt reste proposé.
@@ -1053,7 +1066,9 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
       ...(db.mission.metadata as object),
       contact_identity: { role: "organizer", structure_kind: "state_service", city: "Bordeaux" },
     };
-    expect((await preview()).preview.text).toContain("Déposer des pièces");
+    expect((await preview()).preview.text).toContain(
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier",
+    );
   });
 
   it("adresse nominative : pied de la personne, sans portée de structure", async () => {

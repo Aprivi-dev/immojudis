@@ -27,17 +27,20 @@ const values = {
 describe("information agent email content template", () => {
   it("la question sur les modalités distingue la garantie pour enchérir du paiement du prix (art. R. 322-41)", () => {
     const question = INFORMATION_AGENT_QUESTIONS.sale_terms.question;
-    expect(question).toContain("la garantie à remettre avant d’enchérir");
-    expect(question).toContain("10 % de la mise à prix, 3 000 € au minimum");
-    expect(question).toContain("chèque de banque ou caution bancaire");
-    expect(question).toContain("dont celui de paiement du prix");
+    expect(question).toBe(
+      "Pouvez-vous confirmer le montant et la forme de la garantie à remettre pour enchérir, les frais annoncés et le délai de paiement du prix ?",
+    );
+    // Aucune leçon de procédure posée à l'avocat qui conduit la vente (C14).
+    expect(question).not.toContain("10 %");
+    expect(question).not.toContain("3 000 €");
+    expect(question).not.toContain("chèque de banque");
     // « consignation » désigne le dépôt du prix après la vente, pas la garantie.
     expect(question).not.toContain("consignation");
   });
 
-  it("nomme le gabarit par défaut en version 10", () => {
+  it("nomme le gabarit par défaut en version 11", () => {
     expect(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.name).toBe(
-      "Demande de précisions sur une vente — version 10",
+      "Demande de précisions sur une vente — version 11",
     );
   });
 
@@ -61,11 +64,18 @@ describe("information agent email content template", () => {
     expect(rendered.bodyText).not.toContain("consignation");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("Mise à prix annoncée : 85 000 €");
-    expect(rendered.bodyText).toContain("Une réponse même partielle nous est utile");
+    expect(rendered.bodyText).toContain("Une réponse, même partielle, suffit");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
+    // L'intérêt de l'avocat vient avant les questions, la signature ne le répète pas (C14).
+    expect(rendered.bodyText.indexOf("Une fiche exacte évite aux candidats")).toBeLessThan(
+      rendered.bodyText.indexOf(values.questions),
+    );
+    expect(rendered.bodyText).toContain("Merci par avance.\n\nBien cordialement");
     // Le caractère facultatif ouvre les consignes au lieu d'être noyé au milieu.
     expect(rendered.bodyText).toContain("Répondre est facultatif.");
-    expect(rendered.bodyText).toContain("documents ou photos que vous êtes autorisé à partager");
+    // Ni invitation à joindre des pièces, ni procès-verbal descriptif (identité des occupants, J15).
+    expect(rendered.bodyText).not.toContain("documents ou photos");
+    expect(rendered.bodyText).not.toContain("procès-verbal descriptif");
     expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
     expect(rendered.bodyText).toContain("votre secret professionnel prime sur notre demande");
     expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);

@@ -59,7 +59,13 @@ import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
-import { LAWYER_DAY_LABEL, lawyerSourceForDisplayedValue } from "@/lib/lawyer-fact-sources";
+import { SALE_DETAIL_PIECES_HREF as PIECES_SECTION_HREF } from "./sale-detail-anchors";
+import {
+  LAWYER_DAY_LABEL,
+  LAWYER_PROPERTY_TYPE_LABEL,
+  LAWYER_SURFACE_LABEL,
+  lawyerSourceForDisplayedValue,
+} from "@/lib/lawyer-fact-sources";
 import {
   getFactPresentation,
   getFactReliabilityForDisplay,
@@ -254,17 +260,21 @@ export function ListingOverview({
   const lawyerOccupancy = lawyerSourceForDisplayedValue(sale, "occupancy_status", {
     blocked: occupancyReview.blocked || occupancyMissing,
   });
+  // Libellé du montant dans la mention, avec son article (« Source de la mise à prix : … »).
   const startLabel = state
-    ? "Prix publié"
+    ? "le prix publié"
     : ceilingWording?.byOffers
-      ? "Première offre possible"
-      : "Mise à prix";
+      ? "la première offre possible"
+      : "la mise à prix";
   return (
     <section className={styles.overview} aria-label="Synthèse de la vente">
       {lead}
       {lead ? (
         // Avec le panneau d'analyse, le montant est dans ce panneau : la mention le nomme.
-        <LawyerFactSourceNote items={[{ label: startLabel, source: lawyerPrice }]} />
+        <LawyerFactSourceNote
+          items={[{ label: startLabel, source: lawyerPrice }]}
+          cahierHref={PIECES_SECTION_HREF}
+        />
       ) : null}
       {!lead && (notary || state) ? (
         <div className={styles.procedureLead}>
@@ -309,7 +319,10 @@ export function ListingOverview({
               {price == null ? "Non renseigné" : formatPrice(price)}
             </AiReviewField>
           </p>
-          <LawyerFactSourceNote items={[{ label: "", source: lawyerPrice }]} />
+          <LawyerFactSourceNote
+            items={[{ label: "", source: lawyerPrice }]}
+            cahierHref={PIECES_SECTION_HREF}
+          />
           <p className={styles.muted}>
             {state
               ? "Conditions et frais à vérifier dans l'annonce officielle"
@@ -343,7 +356,10 @@ export function ListingOverview({
                 </AiReviewField>
                 {publicDateFact ? <PublicListingFactSource fact={publicDateFact} compact /> : null}
               </span>
-              <LawyerFactSourceNote items={[{ label: LAWYER_DAY_LABEL, source: lawyerDate }]} />
+              <LawyerFactSourceNote
+                items={[{ label: LAWYER_DAY_LABEL, source: lawyerDate }]}
+                cahierHref={PIECES_SECTION_HREF}
+              />
               {saleStatus ? (
                 <span role="status" className={styles.summaryNote}>
                   {saleStatus}
@@ -398,7 +414,10 @@ export function ListingOverview({
                 <PublicListingFactSource fact={publicOccupancyFact} compact />
               ) : null}
             </span>
-            <LawyerFactSourceNote items={[{ label: "", source: lawyerOccupancy }]} />
+            <LawyerFactSourceNote
+              items={[{ label: "", source: lawyerOccupancy }]}
+              cahierHref={PIECES_SECTION_HREF}
+            />
           </dd>
         </div>
       </dl>
@@ -496,11 +515,11 @@ export function SaleDetailHeading({
     ? []
     : [
         {
-          label: "Type de bien",
+          label: LAWYER_PROPERTY_TYPE_LABEL,
           source: lawyerSourceForDisplayedValue(sale, "property_type", { blocked: typeBlocked }),
         },
         {
-          label: "Surface",
+          label: LAWYER_SURFACE_LABEL,
           source: lawyerSourceForDisplayedValue(sale, "surface", {
             blocked: Boolean(surfaceBlocked),
             surface: shown.app_surface_m2,
@@ -530,7 +549,7 @@ export function SaleDetailHeading({
           <span className="tabular-nums"> · Réf. {saleReference(sale.id)}</span>
         ) : null}
       </p>
-      <LawyerFactSourceNote items={lawyerHeadingItems} />
+      <LawyerFactSourceNote items={lawyerHeadingItems} cahierHref={PIECES_SECTION_HREF} />
     </header>
   );
 }

@@ -36,6 +36,15 @@ import { EMAIL_TEMPLATES } from "./registry";
  * (`LAUNCH_OFFER_END_NEEDS_ANALYSIS`, `launch-offer-end-lists.ts`) : le plafond et les alertes en tête, le PDF
  * cité une seule fois, formulations relues par juridique-rgpd. Avec l’ancienne liste, le rendu redonne
  * l’empreinte d’avant (vérifié).
+ *
+ * Mise à jour explicite du 14/11/2026 (lot C, validé par le propriétaire : C12, C13, C14, J10, J15) : les
+ * empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT celles-là. Les deux rendus
+ * perdent l'encadré doré et le bouton « Déposer des pièces » au profit d'une ligne de texte (« Vous pouvez
+ * aussi répondre dans l’espace privé de ce dossier… Rien n’est publié sans relecture par notre équipe. ») ;
+ * agent_request reçoit en plus les nouveaux textes du modèle (introduction avant les questions, consignes sans
+ * « documents ou photos » ni procès-verbal descriptif, « Merci par avance. », question des modalités sans
+ * rappel de procédure) et la section « Affichage sur la fiche : » du pied de l'avocat poursuivant. Textes
+ * gardés mot pour mot par emails/information-request.test.tsx.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -50,8 +59,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "cb2ab85a91f403b7d4733dab28dfdbecf91cc785003ca7fd4e2e8895d029d7ba",
-  agent_court_registry: "7d736d062cd27e551d153d1cfd913de9b98281658327fad48c627c5ae5ab3bb5",
+  agent_request: "3e7d82d37de5f1285ffc615b4dab73364e7504722715396dd3dd0113558f3333",
+  agent_court_registry: "967f2a21b682217555fcf63009c1104d4dc93981ad91ece3eaa63962980ab641",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

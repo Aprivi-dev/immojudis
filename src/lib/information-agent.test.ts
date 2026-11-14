@@ -498,11 +498,11 @@ describe("supervised information agent", () => {
           if (scenario === "notary_sent") {
             // Message réellement envoyé à un notaire : aucune invitation à déposer des pièces.
             for (const output of [sent, html]) {
-              expect(output).not.toContain("Déposer des pièces");
+              expect(output).not.toContain("l’espace privé de ce dossier");
               expect(output).not.toContain("/contribuer/");
             }
           } else {
-            expect(sent).toContain("Déposer des pièces");
+            expect(sent).toContain("Vous pouvez aussi répondre dans l’espace privé de ce dossier");
             expect(html).toContain("/contribuer/");
           }
           expect(sent).toContain("Immojudis SAS");
@@ -741,7 +741,7 @@ describe("supervised information agent", () => {
     expect(draft.bodyText).toContain("vérifier avec vous quelques points de la fiche");
     expect(draft.bodyText).toContain("n’agit pas au nom d’un tribunal");
     expect(draft.bodyText).not.toContain("service indépendant");
-    expect(draft.bodyText).toContain("réponse même partielle");
+    expect(draft.bodyText).toContain("Une réponse, même partielle, suffit");
     expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(draft.bodyText).toContain("cahier des conditions de vente");
     expect(draft.bodyText).not.toContain("utilisateur intéressé");

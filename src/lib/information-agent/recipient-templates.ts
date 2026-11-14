@@ -44,11 +44,8 @@ function listingFieldTemplate(
       block("greeting"),
       { ...block("identity"), content: identity },
       { ...block("sale_details"), content: "Vente concernée : {{sale_reference}}" },
-      {
-        ...block("request_intro"),
-        content:
-          "Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.",
-      },
+      // Même introduction que le modèle des professionnels : une seule rédaction à tenir.
+      block("request_intro"),
       block("questions"),
       {
         ...block("reply_instructions"),

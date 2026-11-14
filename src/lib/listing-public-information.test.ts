@@ -491,7 +491,7 @@ describe("valeurs transmises par l'avocat poursuivant", () => {
       sources: [],
       lawyerSource: manual("rooms_count"),
       explanation:
-        "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+        "Source : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
     });
     expect(item(result, "starting_price_eur")).toMatchObject({
       status: "reported",

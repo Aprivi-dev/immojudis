@@ -3,8 +3,11 @@ import {
   fetchLawyerFactSources,
   LAWYER_DAY_LABEL,
   LAWYER_FACT_KEYS,
+  LAWYER_PROPERTY_TYPE_LABEL,
   LAWYER_ROOMS_LABEL,
+  LAWYER_SURFACE_LABEL,
   lawyerFactMention,
+  lawyerFactMentionText,
   lawyerNoteSentences,
   lawyerSourceForDisplayedValue,
   LawyerFactSourcesReadError,
@@ -16,7 +19,7 @@ import {
 
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const MENTION =
-  "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+  "Source : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.";
 const source = (key: LawyerFactSource["key"], receivedOn = "2026-11-12"): LawyerFactSource => ({
   key,
   receivedOn,
@@ -26,47 +29,56 @@ const source = (key: LawyerFactSource["key"], receivedOn = "2026-11-12"): Lawyer
 afterEach(() => vi.restoreAllMocks());
 
 describe("texte de la mention", () => {
-  it("dit le texte validé, avec la date de réception au format JJ/MM/AAAA", () => {
+  it("dit le texte retenu le 14/11/2026, avec la date de réception au format JJ/MM/AAAA", () => {
     expect(lawyerFactMention({ receivedOn: "2026-11-12", mode: "manual" })).toBe(MENTION);
-  });
-
-  it("ajoute « extraite automatiquement » pour une publication automatique", () => {
-    expect(lawyerFactMention({ receivedOn: "2026-01-05", mode: "auto" })).toBe(
-      "Information transmise par l’avocat poursuivant le 05/01/2026, extraite automatiquement, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    // Le pied de l'email aux avocats cite le même texte, la date restant à venir.
+    expect(lawyerFactMentionText("[date]")).toBe(
+      "Source : avocat poursuivant, message du [date]. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
     );
   });
 
-  it("garde le texte validé pour une seule valeur sans libellé", () => {
+  it("ajoute « lu automatiquement » pour une publication automatique", () => {
+    expect(lawyerFactMention({ receivedOn: "2026-01-05", mode: "auto" })).toBe(
+      "Source : avocat poursuivant, message du 05/01/2026, lu automatiquement. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
+    );
+  });
+
+  it("garde le texte retenu pour une seule valeur sans libellé", () => {
     expect(lawyerNoteSentences([{ label: "", source: source("starting_price_eur") }])).toEqual([
       MENTION,
     ]);
     expect(lawyerNoteSentences([{ label: "", source: null }])).toEqual([]);
   });
 
-  it("nomme les valeurs d'un bloc en une seule phrase par jour de réception", () => {
+  it("nomme les valeurs d'un bloc en une seule phrase par jour de réception, accords compris", () => {
     expect(
       lawyerNoteSentences([
-        { label: "Type de bien", source: source("property_type") },
-        { label: "Surface", source: source("surface_m2") },
-        { label: LAWYER_ROOMS_LABEL, source: null },
+        { label: LAWYER_PROPERTY_TYPE_LABEL, source: source("property_type") },
+        { label: LAWYER_SURFACE_LABEL, source: source("surface_m2") },
+        { label: LAWYER_ROOMS_LABEL, source: source("rooms_count") },
       ]),
     ).toEqual([
-      "Type de bien et surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-les dans le cahier des conditions de vente.",
+      "Source du type de bien, de la surface et du nombre de pièces (sans les chambres) : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
     ]);
     expect(
       lawyerNoteSentences([
-        { label: "Surface", source: source("surface_m2") },
+        { label: LAWYER_SURFACE_LABEL, source: source("surface_m2") },
         { label: LAWYER_ROOMS_LABEL, source: source("rooms_count", "2026-11-14") },
       ]),
     ).toEqual([
-      "Surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
-      "Nombre de pièces (sans les chambres) : information transmise par l’avocat poursuivant le 14/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+      "Source de la surface : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
+      "Source du nombre de pièces (sans les chambres) : avocat poursuivant, message du 14/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
     ]);
   });
 
-  it("borne la date au jour et les pièces au nombre de pièces", () => {
-    expect(LAWYER_DAY_LABEL).toBe("Jour de la vente (sans l’heure)");
-    expect(LAWYER_ROOMS_LABEL).toBe("Nombre de pièces (sans les chambres)");
+  it("borne la date au jour (l'heure vient de l'annonce) et les pièces au nombre de pièces", () => {
+    expect(LAWYER_DAY_LABEL).toBe("le jour de la vente (l’heure vient de l’annonce)");
+    expect(LAWYER_ROOMS_LABEL).toBe("le nombre de pièces (sans les chambres)");
+    expect(lawyerNoteSentences([{ label: LAWYER_DAY_LABEL, source: source("sale_date") }])).toEqual(
+      [
+        "Source du jour de la vente (l’heure vient de l’annonce) : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.",
+      ],
+    );
   });
 });
 

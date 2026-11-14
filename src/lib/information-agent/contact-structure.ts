@@ -271,6 +271,21 @@ export function isInformationAgentStructureKey(key: string): boolean {
 }
 
 /**
+ * La clé de structure vaut-elle vraiment pour cette adresse, selon les règles d'aujourd'hui ? Office : un code
+ * bien formé ; domaine : le domaine PROPRE exact de l'adresse. Une clé enregistrée sous une règle plus ancienne
+ * (domaine partagé comme gouv.fr ou notaires.fr, messagerie de profession comme avocat.fr) ne vaut rien. SEUL
+ * prédicat des textes qui promettent qu'une opposition vaudra pour toute la structure (pied du message, page
+ * d'opposition) : sans clé qui tienne, la promesse porte sur l'adresse seule.
+ */
+export function informationAgentStructureKeyHolds(key: string, email: string): boolean {
+  const [kind, scope, value] = key.split("|");
+  if (kind !== "structure" || !value) return false;
+  if (scope === "office") return normalizedOfficeCode(value) === value;
+  if (scope === "domain") return value === ownMailDomainOf(email);
+  return false;
+}
+
+/**
  * Unité de plafond d'envoi d'un destinataire (pilote automatique).
  *
  * - hors domaine partagé : la structure est le domaine (`sharedDomain` nul), plafond par domaine inchangé ;

@@ -138,14 +138,21 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 9;
+/**
+ * Révision du modèle du code. Un brouillon préparé sous une autre révision n'est pas repris : la
+ * préparation et le pilote le régénèrent (`email_content_template_revision` de la mission).
+ */
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 10;
 
 /**
  * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
  * révision (présentation commerciale d'Immojudis, invitation à créer un compte…) est ignoré au profit
  * du modèle du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
- * numérotation après cette révision (migration `information_agent_legal_safeguards`). Les révisions 8 et 9
- * ne changent que la rédaction : le seuil de conformité reste la révision 7.
+ * numérotation après cette révision (migration `information_agent_legal_safeguards`). Les révisions 8 à
+ * 10 ne changent que la rédaction : le seuil de conformité reste la révision 7. La révision 10 (lot C du
+ * 14/11/2026) retire l'invitation à joindre des documents ou des photos et la mention du procès-verbal
+ * descriptif : un modèle publié depuis l'éditeur avant elle les garde, il se republie (runbook de l'agent,
+ * section du lot C).
  */
 export const MIN_COMPLIANT_TEMPLATE_REVISION = 7;
 
@@ -263,7 +270,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 10",
+  name: "Demande de précisions sur une vente — version 11",
   subjectTemplate: "{{sale_subject_title}}, {{subject_date}} : vérification de l’annonce",
   blocks: [
     {
@@ -290,7 +297,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.",
+        "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.",
     },
     {
       id: "questions",
@@ -302,15 +309,16 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       id: "reply_instructions",
       kind: "fixed",
       label: "Consignes de réponse",
+      // Ni invitation à joindre des documents ou des photos, ni procès-verbal descriptif : ces pièces portent
+      // l'identité des occupants (J15 du 14/11/2026).
       content:
-        "Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
+        "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
-      content:
-        "Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+      content: "Merci par avance.\n\nBien cordialement,\nL’équipe Immojudis",
     },
   ],
 };

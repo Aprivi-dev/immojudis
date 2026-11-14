@@ -560,9 +560,9 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   {opposed ? null : (
                     <p className="mt-2 text-sm leading-relaxed">
                       Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
-                      sans cette vérification. Pour corriger ou retirer un envoi, répondez
-                      simplement à l’email reçu (référence {session.caseReference}). Vous pouvez
-                      fermer cette page.
+                      sans cette relecture. Pour corriger ou retirer un envoi, répondez simplement à
+                      l’email reçu (référence {session.caseReference}). Vous pouvez fermer cette
+                      page.
                     </p>
                   )}
                 </div>

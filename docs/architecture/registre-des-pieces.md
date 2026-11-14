@@ -720,7 +720,14 @@ runbook R2c).
 
 ## Reste pour le lot R2c
 
-- Le noyau de l'agent d'information écrit observation, décision et projection ; le pont est retiré.
+- Le noyau de l'agent d'information écrit observation, décision et projection ; le pont est retiré. **Palliatif du
+  lot C (14/11/2026, migration `20261119100900`)** : pour un champ que le registre tient (surface, terrain, pièces,
+  occupation), le noyau n'écrit plus la fiche ; le pont crée l'observation, et la route de relecture enregistre
+  aussitôt la décision d'acceptation avec le jeton de l'administrateur (`src/lib/admin-information-agent.ts`). La
+  projection écrit et tient la valeur, avec la vraie valeur d'annonce dans le bloc `listing`. Le noyau refuse une
+  occupation que le registre ne tient pas. Restent : un seul chemin en base (aucune fonction ne peut appeler la
+  décision, l'acceptation se fait donc en deux temps, et une décision qui échoue laisse le fait accepté sans valeur
+  affichée), et la provenance (fait, destinataire, réception) que la décision ne reprend pas encore.
 - La mention publique lit le registre ; fonction séparée pour les origines autres que l'avocat poursuivant.
 - Refus d'un bloc d'annonce marqué `information_agent_verified` à la première prise (reprise de l'existant).
 - Écran de décision : fait côté application (voir « Écran de décision »). Restent la valeur d'annonce et l'état du

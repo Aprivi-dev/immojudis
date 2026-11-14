@@ -33,6 +33,7 @@ import {
 } from "@/lib/listing-public-information";
 import styles from "./ListingDataCoverage.module.css";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
+import { SALE_DETAIL_PIECES_HREF } from "./sale-detail-anchors";
 import type { AuctionSale } from "@/lib/types";
 import { asRecordOrNull } from "@/lib/guards";
 import { formatShortDate } from "@/lib/format/dates";
@@ -535,7 +536,10 @@ function PublicInformationSection({
             ) : (
               <>
                 <p className={styles.factValue}>{factValue(fact)}</p>
-                <LawyerFactSourceNote items={[{ label: "", source: fact.lawyerSource ?? null }]} />
+                <LawyerFactSourceNote
+                  items={[{ label: "", source: fact.lawyerSource ?? null }]}
+                  cahierHref={SALE_DETAIL_PIECES_HREF}
+                />
                 <div className={styles.factMeta}>
                   <PublicListingFactSource fact={fact} />
                 </div>

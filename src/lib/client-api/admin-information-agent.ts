@@ -17,6 +17,7 @@ import type {
   AdminInformationAgentMessageAction,
   AdminInformationAgentReviewInput,
   AdminInformationAgentReviewResponse,
+  AdminInformationAgentReviewResult,
   AdminInformationAgentUnroutedAction,
   AdminInformationAgentUnroutedResponse,
 } from "@/lib/admin-information-agent";
@@ -196,8 +197,8 @@ export function fetchAdminInformationAgentReview(
 
 export function reviewAdminInformationAgentFactClient(
   data: AdminInformationAgentReviewInput,
-): Promise<{ ok: true; result: unknown }> {
-  return apiRequest<{ ok: true; result: unknown }>("/api/admin/information-agent", {
+): Promise<AdminInformationAgentReviewResult> {
+  return apiRequest<AdminInformationAgentReviewResult>("/api/admin/information-agent", {
     method: "PATCH",
     body: data,
   });
