@@ -92,11 +92,13 @@ Le pilote automatique de l'agent n'est pas dans `cron.stale` : il ne travaille q
 vendredi hors jours fériés, 9 h 30-11 h 30 et 14 h-16 h 30, heure de Paris), et un passage arrêté par sa garde (hors
 plage, en pause, hors production) compte comme un succès dans `operational_job_runs`. Sa surveillance est l'alerte
 `information_agent.autopilot.silent` (migration `20261119101100`), évaluée par `operational-health` à chacun de ses
-passages (toutes les 30 minutes). Elle s'ouvre quand le mode n'est pas « off », que la garde du pilote laisse
-travailler chaque créneau des 40 dernières minutes (plage ouverte, ni pause ni arrêt automatique) et qu'aucun passage
-planifié n'a eu lieu depuis. Un passage lancé à la main ne compte pas (même règle que « Dernier passage planifié »).
-Elle se referme deux heures après un passage planifié ou la fermeture de la plage. Conduite à tenir :
-`docs/runbooks/information-agent.md`, « Si aucun passage n'a lieu ».
+passages (toutes les 30 minutes). Elle s'ouvre quand la garde du pilote le laisse travailler (mode autre que « off »,
+ni pause ni arrêt automatique, plage ouverte) et que 40 minutes de plage ouverte se sont cumulées depuis le dernier
+passage planifié, nuits, pause de midi et jours fériés exclus. Un passage lancé à la main ne compte pas (même règle
+que « Dernier passage planifié »). Plage fermée, rien n'est écrit : l'alerte garde son état, sans se dire résolue
+chaque midi et chaque soir. Elle ne se referme qu'après un passage planifié, ou quand le pilote est éteint, arrêté
+automatiquement ou en pause, et deux heures plus tard seulement (comme toute alerte d'exploitation). Conduite à
+tenir : `docs/runbooks/information-agent.md`, « Si aucun passage n'a lieu ».
 
 La complétude des annonces est recalculée par lots de 300 ventes (variable
 `LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ

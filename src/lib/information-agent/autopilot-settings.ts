@@ -4,12 +4,13 @@ import type { Json } from "@/integrations/supabase/types";
 import {
   AUTOPILOT_MANUAL_RUN_MARK,
   AUTOPILOT_SILENT_AFTER_MINUTES,
-  isAutopilotSilent,
+  autopilotSilence,
   parseAutopilotStats,
   sharedStructureCounts,
   type AutopilotMode,
   type AutopilotSettings,
   type AutopilotSharedSend,
+  type AutopilotSilenceState,
   type AutopilotStats,
   type SharedStructureCounts,
 } from "@/lib/information-agent/autopilot-rules";
@@ -259,32 +260,38 @@ export async function loadLastAutopilotRunAt(): Promise<string | null> {
   return data?.[0]?.at ?? null;
 }
 
-export type AutopilotSilence = { silent: boolean; lastScheduledRunAt: string | null };
+export type AutopilotSilence = {
+  state: AutopilotSilenceState;
+  lastScheduledRunAt: string | null;
+};
 
 /**
  * Alerte `information_agent.autopilot.silent` (pilote muet), évaluée par la santé opérationnelle
- * (`evaluateOperationalHealth`) : règle `isAutopilotSilent`, avec le même dernier passage planifié que la ligne
- * « Dernier passage planifié » (`loadLastAutopilotRunAt`). Refermée dès qu'un passage planifié a lieu ou que la plage
- * se ferme (la base ne la résout qu'après deux heures calmes, comme toute alerte d'exploitation). Une lecture ou une
- * écriture impossible est propagée : la santé opérationnelle échoue et l'alerte garde son état.
+ * (`evaluateOperationalHealth`) : règle `autopilotSilence`, avec le même dernier passage planifié que la ligne
+ * « Dernier passage planifié » (`loadLastAutopilotRunAt`). Plage fermée (`unknown`), rien n'est écrit : l'alerte ne se
+ * referme qu'après un passage planifié, pilote éteint, arrêté ou en pause (la base ne la résout qu'après deux heures
+ * calmes, comme toute alerte d'exploitation). Une lecture ou une écriture impossible est propagée : la santé
+ * opérationnelle échoue et l'alerte garde son état.
  */
 export async function evaluateAutopilotSilence(now: Date): Promise<AutopilotSilence> {
   const [settings, lastScheduledRunAt] = await Promise.all([
     loadAutopilotSettings(),
     loadLastAutopilotRunAt(),
   ]);
-  const silent = isAutopilotSilent(settings, lastScheduledRunAt, now);
-  const { error } = await supabaseAdmin.rpc("sync_information_agent_autopilot_silent_alert", {
-    p_active: silent,
-    p_details: {
-      mode: settings.mode,
-      last_scheduled_run_at: lastScheduledRunAt,
-      silent_after_minutes: AUTOPILOT_SILENT_AFTER_MINUTES,
-      runbook: "docs/runbooks/information-agent.md, section « Si aucun passage n’a lieu »",
-    },
-  });
-  if (error) throw error;
-  return { silent, lastScheduledRunAt };
+  const state = autopilotSilence(settings, lastScheduledRunAt, now);
+  if (state !== "unknown") {
+    const { error } = await supabaseAdmin.rpc("sync_information_agent_autopilot_silent_alert", {
+      p_active: state === "silent",
+      p_details: {
+        mode: settings.mode,
+        last_scheduled_run_at: lastScheduledRunAt,
+        silent_after_minutes: AUTOPILOT_SILENT_AFTER_MINUTES,
+        runbook: "docs/runbooks/information-agent.md, section « Si aucun passage n’a lieu »",
+      },
+    });
+    if (error) throw error;
+  }
+  return { state, lastScheduledRunAt };
 }
 
 export type AutopilotEventRow = {

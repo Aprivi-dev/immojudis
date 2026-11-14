@@ -397,7 +397,10 @@ export function autopilotRunGate(
  * `immojudis-information-agent-autopilot` (migration 20261110230000) ; les deux changent ensemble.
  */
 export const AUTOPILOT_RUN_EVERY_MINUTES = 10;
-/** Au-delà de deux semaines sans passage possible (pause la plus longue : 7 jours), on ne cherche plus. */
+/**
+ * Au-delà de deux semaines sans passage possible (pause la plus longue : 7 jours), on ne cherche plus : ni le
+ * prochain passage, ni la plage ouverte depuis le dernier.
+ */
 const NEXT_RUN_HORIZON_MS = 14 * 86_400_000;
 
 /**
@@ -417,37 +420,56 @@ export function nextAutopilotRunAt(settings: AutopilotSettings, now: Date): Date
 }
 
 /**
- * Silence au-delà duquel le pilote est dit muet (alerte `information_agent.autopilot.silent`) : quatre créneaux de
- * 10 minutes sans passage planifié.
+ * Plage ouverte cumulée au-delà de laquelle le pilote est dit muet (alerte `information_agent.autopilot.silent`) :
+ * quatre créneaux de 10 minutes sans passage planifié.
  */
 export const AUTOPILOT_SILENT_AFTER_MINUTES = 40;
 
 /**
- * Pilote muet : depuis 40 minutes, la tâche planifiée aurait dû travailler à chaque créneau et aucun passage
- * planifié n'a eu lieu. « Aurait dû » est la garde de tête du passage lui-même (`autopilotRunGate` : mode, arrêt
- * automatique, pause, plage d'envoi à l'heure de Paris, changements d'heure compris), appliquée à chaque créneau des
- * 40 dernières minutes : à l'ouverture de la plage, après la pause de midi ou la fin d'une pause, le délai part de
- * la réouverture. Une simulation mise en route depuis moins de 40 minutes (`simulationStartedAt`, posé à la mise en
- * route et à la réactivation) n'est pas muette non plus : les réglages ne disent pas autrement depuis quand le mode
- * est actif. `lastScheduledRunAt` est le dernier passage PLANIFIÉ (`loadLastAutopilotRunAt`, qui écarte par
- * `AUTOPILOT_MANUAL_RUN_MARK` les passages lancés à la main) : un clic dans l'administration ne fait pas taire
- * l'alerte. Pilote éteint ou arrêté, en pause, plage fermée : jamais muet.
+ * État du pilote pour l'alerte `information_agent.autopilot.silent` :
+ * - `silent` (l'alerte s'ouvre ou reste ouverte) : la garde laisse travailler la tâche planifiée et 40 minutes de
+ *   plage ouverte se sont CUMULÉES depuis le dernier passage planifié, nuits, pause de midi et jours fériés exclus ;
+ * - `active` (l'alerte se referme) : un passage planifié a eu lieu depuis, ou la garde est fermée pour une autre
+ *   raison que l'horaire (pilote éteint, arrêté automatiquement, en pause) ;
+ * - `unknown` (rien n'est écrit) : plage fermée. Le pilote ne doit pas passer, son silence ne dit rien : l'alerte
+ *   garde son état au lieu de se dire résolue chaque midi et chaque soir.
+ * La plage ouverte est celle de la garde du passage lui-même (`autopilotRunGate` : mode, arrêt, pause, plage d'envoi
+ * à l'heure de Paris, changements d'heure compris), créneau par créneau. Elle se compte depuis le dernier passage
+ * PLANIFIÉ (`loadLastAutopilotRunAt`, qui écarte par `AUTOPILOT_MANUAL_RUN_MARK` les passages lancés à la main : un
+ * clic dans l'administration ne fait pas taire l'alerte), ou depuis la mise en route de la simulation
+ * (`simulationStartedAt`, posé à la mise en route et à la réactivation) si elle est plus récente : les réglages ne
+ * disent pas autrement depuis quand le mode est actif.
  */
-export function isAutopilotSilent(
+export type AutopilotSilenceState = "silent" | "active" | "unknown";
+
+export function autopilotSilence(
   settings: AutopilotSettings,
   lastScheduledRunAt: string | null,
   now: Date,
-): boolean {
-  const since = now.getTime() - AUTOPILOT_SILENT_AFTER_MINUTES * 60_000;
-  if (lastScheduledRunAt && Date.parse(lastScheduledRunAt) >= since) return false;
-  const startedAt = settings.simulationStartedAt;
-  if (startedAt && Date.parse(startedAt) > since) return false;
-  if (!autopilotRunGate(settings, now).ok) return false;
+): AutopilotSilenceState {
+  const gate = autopilotRunGate(settings, now);
+  if (!gate.ok) return gate.code === "outside_window" ? "unknown" : "active";
+  const at = now.getTime();
+  const since = Math.max(
+    at - NEXT_RUN_HORIZON_MS,
+    ...[lastScheduledRunAt, settings.simulationStartedAt]
+      .map((value) => (value ? Date.parse(value) : Number.NaN))
+      .filter(Number.isFinite),
+  );
+  const threshold = AUTOPILOT_SILENT_AFTER_MINUTES * 60_000;
   const step = AUTOPILOT_RUN_EVERY_MINUTES * 60_000;
-  for (let at = Math.floor(since / step) * step; at < now.getTime(); at += step) {
-    if (!autopilotRunGate(settings, new Date(at)).ok) return false;
+  // Du créneau en cours vers le passé, jusqu'au seuil : la plage s'ouvre et se ferme sur un créneau.
+  let open = 0;
+  for (
+    let slot = Math.floor(at / step) * step;
+    slot + step > since && open < threshold;
+    slot -= step
+  ) {
+    if (autopilotRunGate(settings, new Date(slot)).ok) {
+      open += Math.max(0, Math.min(slot + step, at) - Math.max(slot, since));
+    }
   }
-  return true;
+  return open >= threshold ? "silent" : "active";
 }
 
 /**

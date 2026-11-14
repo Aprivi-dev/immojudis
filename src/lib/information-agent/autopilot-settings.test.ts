@@ -192,29 +192,33 @@ describe("passages lancés à la main : journal", () => {
 });
 
 describe("pilote muet : alerte évaluée par la santé opérationnelle", () => {
-  const silenceCall = () =>
-    mocks.rpc.mock.calls.find(([name]) => name === "sync_information_agent_autopilot_silent_alert");
+  const silenceCalls = () =>
+    mocks.rpc.mock.calls.filter(
+      ([name]) => name === "sync_information_agent_autopilot_silent_alert",
+    );
 
-  it("simulation, plage ouverte, aucun passage planifié depuis 40 minutes : l'alerte s'ouvre", async () => {
+  it("simulation, plage ouverte, 40 minutes de plage sans passage planifié : l'alerte s'ouvre", async () => {
     mocks.settingsRow = { mode: "simulation", simulation_started_at: "2026-11-02T08:00:00Z" };
     mocks.rows = [{ at: "2026-11-03T08:40:00+00:00" }];
     mocks.rpc.mockResolvedValue({ data: null, error: null });
 
     await expect(evaluateAutopilotSilence(NOW)).resolves.toEqual({
-      silent: true,
+      state: "silent",
       lastScheduledRunAt: "2026-11-03T08:40:00+00:00",
     });
-    expect(silenceCall()).toEqual([
-      "sync_information_agent_autopilot_silent_alert",
-      {
-        p_active: true,
-        p_details: {
-          mode: "simulation",
-          last_scheduled_run_at: "2026-11-03T08:40:00+00:00",
-          silent_after_minutes: 40,
-          runbook: "docs/runbooks/information-agent.md, section « Si aucun passage n’a lieu »",
+    expect(silenceCalls()).toEqual([
+      [
+        "sync_information_agent_autopilot_silent_alert",
+        {
+          p_active: true,
+          p_details: {
+            mode: "simulation",
+            last_scheduled_run_at: "2026-11-03T08:40:00+00:00",
+            silent_after_minutes: 40,
+            runbook: "docs/runbooks/information-agent.md, section « Si aucun passage n’a lieu »",
+          },
         },
-      },
+      ],
     ]);
   });
 
@@ -225,29 +229,38 @@ describe("pilote muet : alerte évaluée par la santé opérationnelle", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: null });
 
     await expect(evaluateAutopilotSilence(NOW)).resolves.toEqual({
-      silent: true,
+      state: "silent",
       lastScheduledRunAt: null,
     });
     expect(mocks.calls).toContainEqual({
       method: "not",
       args: ["details", "cs", '{"manual":true}'],
     });
-    expect(silenceCall()?.[1]).toMatchObject({ p_active: true });
+    expect(silenceCalls()[0]?.[1]).toMatchObject({ p_active: true });
   });
 
-  it("passage planifié récent, plage fermée ou pilote éteint : l'alerte se referme", async () => {
+  it("passage planifié récent ou pilote éteint : l'alerte se referme", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: null });
     mocks.settingsRow = { mode: "simulation" };
     mocks.rows = [{ at: "2026-11-03T09:20:00+00:00" }];
-    expect((await evaluateAutopilotSilence(NOW)).silent).toBe(false);
+    expect((await evaluateAutopilotSilence(NOW)).state).toBe("active");
     mocks.rows = [];
-    expect((await evaluateAutopilotSilence(new Date("2026-11-07T10:00:00Z"))).silent).toBe(false);
     mocks.settingsRow = { mode: "off" };
-    expect((await evaluateAutopilotSilence(NOW)).silent).toBe(false);
-    const states = mocks.rpc.mock.calls
-      .filter(([name]) => name === "sync_information_agent_autopilot_silent_alert")
-      .map(([, args]) => (args as { p_active: boolean }).p_active);
-    expect(states).toEqual([false, false, false]);
+    expect((await evaluateAutopilotSilence(NOW)).state).toBe("active");
+    expect(silenceCalls().map(([, args]) => (args as { p_active: boolean }).p_active)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  it("plage fermée (midi, soir, week-end) : rien n'est écrit, l'alerte garde son état", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    mocks.settingsRow = { mode: "simulation" };
+    mocks.rows = [];
+    for (const now of ["2026-11-03T11:00:00Z", "2026-11-03T17:30:00Z", "2026-11-07T10:00:00Z"]) {
+      expect((await evaluateAutopilotSilence(new Date(now))).state).toBe("unknown");
+    }
+    expect(silenceCalls()).toEqual([]);
   });
 
   it("une écriture impossible de l'alerte est propagée", async () => {

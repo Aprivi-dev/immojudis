@@ -24,7 +24,7 @@ import { evaluateOperationalHealth } from "@/lib/operational-health-job";
 
 describe("operational cron errors", () => {
   beforeEach(() => {
-    mocks.evaluateAutopilotSilence.mockResolvedValue({ silent: false, lastScheduledRunAt: null });
+    mocks.evaluateAutopilotSilence.mockResolvedValue({ state: "active", lastScheduledRunAt: null });
   });
 
   afterEach(() => {
@@ -96,7 +96,7 @@ describe("operational cron errors", () => {
       valuation: { ok: true },
       pipeline: { ok: true },
       informationAgent: { ok: true },
-      informationAgentAutopilot: { silent: false, lastScheduledRunAt: null },
+      informationAgentAutopilot: { state: "active", lastScheduledRunAt: null },
       externalAlerts: {
         channel: "github_actions",
         configured: true,

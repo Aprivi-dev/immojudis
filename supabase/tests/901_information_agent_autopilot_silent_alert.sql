@@ -1,7 +1,7 @@
--- Pilote de l'agent muet (20261119101100) : l'application évalue la règle (40 minutes de plage ouverte sans passage
--- planifié, isAutopilotSilent) ; la base n'écrit que l'alerte information_agent.autopilot.silent. Un pilote muet
--- ouvre un avertissement, un passage planifié ou la fermeture de la plage le marque inactif (la résolution attend
--- deux heures calmes), la fonction est réservée au serveur.
+-- Pilote de l'agent muet (20261119101100) : l'application évalue la règle (40 minutes de plage ouverte cumulées sans
+-- passage planifié, autopilotSilence) ; la base n'écrit que l'alerte information_agent.autopilot.silent. Un pilote
+-- muet ouvre un avertissement, un passage planifié le marque inactif (la résolution attend deux heures calmes), la
+-- fonction est réservée au serveur.
 begin;
 
 select plan(9);
@@ -64,7 +64,7 @@ select isnt(
   (select inactive_since from public.operational_alerts
    where alert_key = 'information_agent.autopilot.silent'),
   null::timestamptz,
-  'a scheduled run, or the window closing, marks the alert inactive'
+  'a scheduled run marks the alert inactive'
 );
 
 select throws_ok(
