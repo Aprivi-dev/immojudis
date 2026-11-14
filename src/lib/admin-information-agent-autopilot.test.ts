@@ -145,18 +145,19 @@ describe("schéma des actions du pilote", () => {
     ).toBe(true);
   });
 
-  it("article 14 (J9) : la règle ne se désactive pas et son délai va de 1 à 30 jours", () => {
+  it("article 14 : la règle ne se désactive pas et son délai va de 1 à 90 jours (décision du 14/11/2026)", () => {
     const base = { action: "update_settings", reason: "Motif suffisant" };
     const accepts = (changes: Record<string, unknown>) =>
       adminAutopilotActionSchema.safeParse({ ...base, changes }).success;
     expect(accepts({ art14RuleEnabled: false })).toBe(false);
     // « Vrai » reste admis : il rétablit une valeur fausse antérieure à la contrainte de la base.
     expect(accepts({ art14RuleEnabled: true })).toBe(true);
-    expect(accepts({ art14MaxAgeDays: 31 })).toBe(false);
-    expect(accepts({ art14MaxAgeDays: 90 })).toBe(false);
+    expect(accepts({ art14MaxAgeDays: 91 })).toBe(false);
+    expect(accepts({ art14MaxAgeDays: 365 })).toBe(false);
     expect(accepts({ art14MaxAgeDays: 0 })).toBe(false);
     expect(accepts({ art14MaxAgeDays: 1 })).toBe(true);
     expect(accepts({ art14MaxAgeDays: 30 })).toBe(true);
+    expect(accepts({ art14MaxAgeDays: 90 })).toBe(true);
   });
 });
 

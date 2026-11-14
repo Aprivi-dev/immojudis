@@ -383,17 +383,22 @@ describe("candidat du pilote", () => {
         verdict({ contactFirstRecordedAt: "2026-09-01T10:00:00Z", alreadyInformed: true }),
       ).toEqual({ ok: true });
     });
-    it("la règle n'est plus désactivable et son délai ne dépasse jamais 30 jours (J9, 14/11/2026)", () => {
-      const old = { contactFirstRecordedAt: "2026-09-01T10:00:00Z" };
+    it("la règle n'est plus désactivable et son délai ne dépasse jamais 90 jours (décision du 14/11/2026)", () => {
+      expect(AUTOPILOT_ART14_MAX_DAYS).toBe(90);
       const expired = { ok: false, code: "art14_window_expired" };
-      // Une valeur antérieure à la contrainte de la base (90 jours, règle coupée) reste sans effet.
-      expect(verdict(old, { art14MaxAgeDays: 90 })).toEqual(expired);
+      // Adresse relevée il y a 125 jours : une valeur antérieure à la contrainte de la base (120 ou 365 jours,
+      // règle coupée) reste sans effet, le délai appliqué ne dépasse pas 90 jours.
+      const old = { contactFirstRecordedAt: "2026-07-01T10:00:00Z" };
+      expect(verdict(old, { art14MaxAgeDays: 120 })).toEqual(expired);
+      expect(verdict(old, { art14MaxAgeDays: 365 })).toEqual(expired);
       expect(verdict(old, { art14RuleEnabled: false })).toEqual(expired);
+      // Adresse relevée il y a 63 jours : admise à 90 jours, refusée au délai par défaut de 30.
+      const twoMonths = { contactFirstRecordedAt: "2026-09-01T10:00:00Z" };
+      expect(verdict(twoMonths, { art14MaxAgeDays: 90 })).toEqual({ ok: true });
+      expect(verdict(twoMonths, { art14MaxAgeDays: 30 })).toEqual(expired);
+      // Un délai plus court s'applique.
       const recent = { contactFirstRecordedAt: "2026-10-31T10:00:00Z" };
-      expect(verdict(recent, { art14MaxAgeDays: 90 })).toEqual({ ok: true });
-      // Un délai plus court, de 1 à 30 jours, s'applique.
       expect(verdict(recent, { art14MaxAgeDays: 2 })).toEqual(expired);
-      expect(AUTOPILOT_ART14_MAX_DAYS).toBe(30);
     });
   });
 
