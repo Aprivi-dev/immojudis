@@ -1,6 +1,8 @@
+import { pricePerM2 } from "@/lib/geo";
 import type { MarketEstimate } from "@/lib/market.server";
 import { resolveMarketGap } from "@/lib/market-gap";
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
+import type { SaleSurface } from "@/lib/surface";
 
 /** What a free account sees of the valuation: a range and the gap with the starting price. */
 export type ValuePreview = {
@@ -31,6 +33,12 @@ export type ValuePreview = {
 
 const roundThousand = (value: number) => Math.round(value / 1000) * 1000;
 
+/** Nature de la surface de référence de l'estimation, pour `pricePerM2` : présumée, terrain ou mesurée. */
+function subjectSurfaceKind(estimate: MarketEstimate | null): SaleSurface["kind"] {
+  if (estimate?.subjectSurfaceEstimated) return "estimated";
+  return estimate?.surfaceBasis === "land" ? "land" : "recorded";
+}
+
 export function buildValuePreview(
   estimate: MarketEstimate | null,
   startingPrice: number | null,
@@ -54,7 +62,11 @@ export function buildValuePreview(
   const gap = resolveMarketGap({
     estimatedValueEur: value,
     startingPriceEur: startingPrice,
-    surfaceM2: estimate?.subjectSurfaceM2,
+    startingPricePerM2: pricePerM2(
+      startingPrice,
+      estimate?.subjectSurfaceM2,
+      subjectSurfaceKind(estimate),
+    ),
   });
   const low = estimate?.estimatedValueLowEur ?? value * 0.85;
   const high = estimate?.estimatedValueHighEur ?? value * 1.15;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pricePerM2 } from "@/lib/geo";
 import {
   MARKET_GAP_MAX_DISCOUNT_PCT,
   MARKET_GAP_MIN_DISCOUNT_PCT,
@@ -52,16 +53,32 @@ describe("resolveMarketGap", () => {
     });
   });
 
-  it("rend le prix au m² d'un écart aberrant", () => {
+  it("rend le prix au m² d'un écart aberrant, calculé par pricePerM2 sur une surface mesurée", () => {
     expect(
-      resolveMarketGap({ estimatedValueEur: 300_000, startingPriceEur: 30_000, surfaceM2: 60 }),
+      resolveMarketGap({
+        estimatedValueEur: 300_000,
+        startingPriceEur: 30_000,
+        startingPricePerM2: pricePerM2(30_000, 60, "recorded"),
+      }),
     ).toEqual({ status: "not_significant", startingPricePerM2: 500 });
   });
 
-  it("n'invente pas de prix au m² sans surface exploitable", () => {
-    for (const surfaceM2 of [undefined, null, 0, -3]) {
+  it("n'invente pas de prix au m² sans surface exploitable ni sur une surface présumée (D17)", () => {
+    for (const startingPricePerM2 of [
+      undefined,
+      null,
+      Number.NaN,
+      pricePerM2(30_000, 0, "recorded"),
+      pricePerM2(30_000, -3, "recorded"),
+      // 20 m² présumés d'un studio sans surface publiée : 1 500 €/m² serait inventé.
+      pricePerM2(30_000, 20, "estimated"),
+    ]) {
       expect(
-        resolveMarketGap({ estimatedValueEur: 300_000, startingPriceEur: 30_000, surfaceM2 }),
+        resolveMarketGap({
+          estimatedValueEur: 300_000,
+          startingPriceEur: 30_000,
+          startingPricePerM2,
+        }),
       ).toEqual({ status: "not_significant", startingPricePerM2: null });
     }
   });

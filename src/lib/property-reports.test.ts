@@ -4,6 +4,8 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
+import { getSaleSurface } from "@/lib/surface";
+import type { AuctionSale } from "@/lib/types";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
 import { buildOpportunityAnalysis } from "./property-report/analysis";
@@ -90,6 +92,39 @@ describe("report rent reference", () => {
 
     expect(opportunity.grossYieldPct).toBeNull();
     expect(opportunity.rentReference).toBeNull();
+  });
+});
+
+describe("écart avec le marché du rapport", () => {
+  // Reproduction de la relecture de la PR #513 : un studio sans surface publiée (20 m² présumés), écart aberrant.
+  it("ne cite pas de prix au m² de la mise à prix sur une surface présumée (D17)", () => {
+    const sale = {
+      ...EXAMPLE_SALE,
+      title: "Studio",
+      property_type: "studio",
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+      rooms_count: null,
+      occupancy_status: "vacant",
+      starting_price_eur: 8_000,
+    } as AuctionSale;
+    const surface = getSaleSurface(sale);
+    expect(surface).toMatchObject({ value: 20, kind: "estimated" });
+    const opportunity = buildOpportunityAnalysis({
+      sale,
+      surfaceM2: surface.value,
+      surfaceKind: surface.kind,
+      marketEstimate: {
+        medianPricePerM2: 10_000,
+        p25PricePerM2: 9_000,
+        p75PricePerM2: 11_000,
+      } as never,
+      ceilingSnapshot: buildCeilingSnapshot(sale, null, {}, DEFAULT_OPEN_FEE_REGIMES, null),
+    });
+    expect(opportunity.startingPricePerM2).toBeNull();
+    // L'écart aberrant reste dit (décision produit en attente), sans les « 400 €/m² » de la surface présumée.
+    expect(opportunity.apparentDiscountNote).toBe("Écart non significatif.");
   });
 });
 

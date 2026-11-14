@@ -145,8 +145,9 @@ describe("estimateSaleGrossYieldRange", () => {
 });
 
 describe("pricePerM2", () => {
-  it("divise le prix par une surface mesurée", () => {
+  it("divise le prix par une surface mesurée ou par un terrain", () => {
     expect(pricePerM2(100_000, 50, "recorded")).toBe(2_000);
+    expect(pricePerM2(100_000, 50, "land")).toBe(2_000);
   });
 
   it("refuse une surface estimée : un studio sans surface publiée n'a pas de prix au m²", () => {
@@ -158,12 +159,16 @@ describe("pricePerM2", () => {
     expect(pricePerM2(studio.starting_price_eur, surface.value, surface.kind)).toBeNull();
   });
 
-  it("exige la nature de la surface : l'appel à deux arguments ne compile plus (D17)", () => {
-    // Sans `kind`, les 20 m² présumés d'un studio donnaient 5 000 €/m² comme une mesure. Le contrôle est celui
-    // du typage (`tsc`) : la directive ci-dessous échoue si l'appel redevient permis.
+  it("exige la nature de la surface : sans elle, ni compilation ni prix (D17)", () => {
+    // Sans `kind`, les 20 m² présumés d'un studio donnaient 5 000 €/m² comme une mesure. La directive échoue au
+    // typage (`tsc`) si l'appel à deux arguments redevient permis ; à l'exécution, il ne rend pas de prix.
     // @ts-expect-error -- `kind` est obligatoire.
-    const untyped = () => pricePerM2(100_000, 20);
-    expect(typeof untyped).toBe("function");
+    expect(pricePerM2(100_000, 20)).toBeNull();
+    expect(pricePerM2(100_000, 20, undefined as never)).toBeNull();
+    expect(pricePerM2(100_000, 20, null as never)).toBeNull();
+    expect(pricePerM2(100_000, 20, "inconnue" as never)).toBeNull();
+    // « none » : aucune surface, aucun prix, même si une valeur est donnée.
+    expect(pricePerM2(100_000, 20, "none")).toBeNull();
   });
 
   it("renvoie null sans prix, sans surface ou avec une surface nulle", () => {

@@ -79,18 +79,21 @@ export type MarketGap =
 export function resolveMarketGap(input: {
   estimatedValueEur: number | null | undefined;
   startingPriceEur: number | null | undefined;
-  /** Surface de référence de l'estimation (bâtie, ou terrain pour un terrain). */
-  surfaceM2?: number | null;
+  /**
+   * Prix au m² de la mise à prix sur la surface de référence de l'estimation (bâtie, ou terrain pour un
+   * terrain), calculé par `pricePerM2` avec la nature de cette surface : nul pour une surface présumée.
+   * Ce module ne divise pas lui-même, pour ne pas refaire cette règle.
+   */
+  startingPricePerM2?: number | null;
 }): MarketGap {
   const discountPct = marketDiscountPct(input.estimatedValueEur, input.startingPriceEur);
   if (discountPct == null) return { status: "unavailable" };
   if (isSignificantMarketGap(discountPct)) return { status: "gap", discountPct };
-  const surface = input.surfaceM2;
-  const startingPricePerM2 =
-    surface != null && Number.isFinite(surface) && surface > 0 && input.startingPriceEur
-      ? Math.round(input.startingPriceEur / surface)
-      : null;
-  return { status: "not_significant", startingPricePerM2 };
+  const perM2 = input.startingPricePerM2;
+  return {
+    status: "not_significant",
+    startingPricePerM2: perM2 != null && Number.isFinite(perM2) ? Math.round(perM2) : null,
+  };
 }
 
 /**
