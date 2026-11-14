@@ -91,6 +91,11 @@ export async function executeContractWithdrawal({
   now?: Date;
 }): Promise<ContractWithdrawalResult> {
   assertAdmin(auth);
+  // Defence in depth: the route already validates `confirm: true`; a caller that bypasses it
+  // cancels and refunds nothing without the operator's confirmation.
+  if ((input.confirm as unknown) !== true) {
+    throw new PublicApiError("Confirmez la rétractation avant de l'exécuter.", 400);
+  }
 
   const { data: request, error: requestError } = await supabaseAdmin
     .from("data_subject_requests")
