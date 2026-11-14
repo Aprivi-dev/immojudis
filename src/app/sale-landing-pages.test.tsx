@@ -13,6 +13,7 @@ vi.mock("@/lib/sale-landing-pages.server", async () => {
   return { ...actual, loadSaleLandingForPage: mocks.load };
 });
 
+import { DEPARTMENT_PAGES_MAX_DURATION_SECONDS } from "@/lib/department-pages";
 import { saleDetailPath } from "@/lib/navigation";
 import { SALE_LANDING_REVALIDATE_SECONDS } from "@/lib/sale-landing-pages.server";
 import * as housePage from "./maison-aux-encheres/page";
@@ -153,6 +154,11 @@ describe.each(PAGES)("page $path", ({ key, path, module, title, headings, search
   it("est rendue à l'avance et rafraîchie toutes les heures, comme sa lecture", () => {
     expect(module.revalidate).toBe(3600);
     expect(module.revalidate).toBe(SALE_LANDING_REVALIDATE_SECONDS);
+  });
+
+  it("a la durée des rendus qui lisent tout un filtre, comme les pages de département", () => {
+    expect(module.maxDuration).toBe(60);
+    expect(module.maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
   });
 
   it("a son titre, sa description, sa canonique, et reste indexable à partir de 3 ventes", async () => {
@@ -346,8 +352,9 @@ describe("contenu propre à chaque page", () => {
     const guide = screen.getByRole("region", { name: step });
     expect(within(guide).getAllByRole("listitem")).toHaveLength(5);
     expect(guide.textContent).toContain("avocat inscrit au barreau du tribunal compétent");
+    // Même formulation que le guide des ventes judiciaires (lexique « Garantie pour enchérir »).
     expect(guide.textContent).toContain(
-      "de la mise à prix, au moins 3\u202f000\u00a0€ (art. R. 322-41 du Code des procédures civiles d’exécution)",
+      "de la mise à prix, avec un minimum de 3\u202f000\u00a0€ en saisie immobilière (art. R. 322-41 du Code des procédures civiles d’exécution)",
     );
     expect(guide.textContent).toContain(
       "l’État vend par adjudication publique ou cession amiable, le plus souvent sur appel d’offres, et de gré à gré dans des cas limités ; les biens confisqués sont vendus par l’AGRASC.",

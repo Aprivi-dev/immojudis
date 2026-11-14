@@ -79,12 +79,29 @@ const cachedSaleLanding = unstable_cache(
   },
 );
 
+// Lecture en vol, partagée par page au niveau du module, comme le catalogue des départements
+// (`loadDepartmentCatalogue`) : après une purge du cache, `generateMetadata`, la page et le sitemap
+// d'un même processus qui arrivent pendant la lecture d'un filtre attendent la même promesse au lieu
+// d'en lancer chacun une. Elle est libérée dès qu'elle se termine, succès ou échec : un échec n'est
+// donc jamais rejoué par les appels suivants. Le cache de données prend le relais ensuite.
+const inFlight = new Map<SaleLandingKey, Promise<SaleLandingData>>();
+
+function loadSaleLanding(key: SaleLandingKey): Promise<SaleLandingData> {
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const reading = cachedSaleLanding(key).finally(() => {
+    if (inFlight.get(key) === reading) inFlight.delete(key);
+  });
+  inFlight.set(key, reading);
+  return reading;
+}
+
 export type SaleLandingResult = PublicLoadResult<{ data: SaleLandingData }>;
 
 /** Ne lève pas : une base en panne donne `error`. */
 export function tryLoadSaleLanding(key: SaleLandingKey): Promise<SaleLandingResult> {
   return tryPublicLoad(`[pages par type] Ventes « ${key} » indisponibles:`, async () => ({
-    data: await cachedSaleLanding(key),
+    data: await loadSaleLanding(key),
   }));
 }
 

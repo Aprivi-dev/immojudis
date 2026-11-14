@@ -19,8 +19,9 @@ export const DEPARTMENT_PAGES_PATH = "/ventes-encheres-immobilieres";
 
 /**
  * Durée maximale (secondes) des rendus qui peuvent déclencher la lecture complète : pages de
- * département, index et sitemap. Next.js exige un littéral dans chaque fichier ; les tests
- * vérifient qu'ils valent tous cette constante.
+ * département, index et sitemap, et pages par type (`sale-landing-pages.server.ts`), qui lisent tout
+ * leur filtre. Next.js exige un littéral dans chaque fichier ; les tests vérifient qu'ils valent tous
+ * cette constante.
  */
 export const DEPARTMENT_PAGES_MAX_DURATION_SECONDS = 60;
 
