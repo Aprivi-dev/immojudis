@@ -15,9 +15,12 @@ export const GET = adminRoute(
 );
 
 export const POST = adminRoute(
-  { scope: "admin.launch-offer.write", fallbackMessage: "Offre de lancement non modifiée" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.launch-offer.write",
+    fallbackMessage: "Offre de lancement non modifiée",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminLaunchOfferActionSchema.parse(await request.json());
     return setAdminLaunchOffer({ authToken, input });
   },

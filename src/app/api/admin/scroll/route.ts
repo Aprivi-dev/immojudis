@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { startAdminScroll } from "@/lib/admin.server";
 import { PublicApiError } from "@/lib/api-errors";
 import { isPublicErrorMessage } from "@/lib/api-error-detail";
@@ -8,9 +7,13 @@ import { adminRoute } from "@/lib/admin-route-deadline";
 export const maxDuration = 30;
 
 export const POST = adminRoute(
-  { scope: "admin.scroll.start", fallbackMessage: "La collecte n'a pas pu être lancée." },
-  async (request) => {
-    const result = await startAdminScroll(bearerTokenFromRequest(request), await request.json());
+  {
+    scope: "admin.scroll.start",
+    fallbackMessage: "La collecte n'a pas pu être lancée.",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
+    const result = await startAdminScroll(authToken, await request.json());
     if (!result.ok || !result.dispatched) {
       // The dispatch summary is composed by our own code, but never forward anything
       // that does not read like a user-facing message.

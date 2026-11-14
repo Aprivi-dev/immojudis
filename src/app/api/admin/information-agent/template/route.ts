@@ -22,9 +22,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.template.write",
     fallbackMessage: "Modèle d'email non modifié",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminInformationAgentEmailTemplateActionSchema.parse(await request.json());
     return runAdminInformationAgentEmailTemplateAction({ authToken, input });
   },

@@ -22,10 +22,8 @@ export const GET = adminRoute(
 
 /** Arrêt d'urgence : « on » vers « shadow » ou « off » seulement (jamais l'ouverture). */
 export const POST = adminRoute(
-  { scope: "admin.pepites.suspend", fallbackMessage: "Pépites non suspendues" },
-  async (request) => {
-    // Le jeton d'abord : sans session, la réponse est 401, que le corps soit valide ou non.
-    const authToken = bearerTokenFromRequest(request);
+  { scope: "admin.pepites.suspend", fallbackMessage: "Pépites non suspendues", guard: "admin" },
+  async (request, { authToken }) => {
     // Corps facultatif : sans corps, le mode par défaut du schéma (« shadow »).
     const raw = await request.text();
     const input = adminPepitesSuspendSchema.parse(raw.trim() ? JSON.parse(raw) : {});

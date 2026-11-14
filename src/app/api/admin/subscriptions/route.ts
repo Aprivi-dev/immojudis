@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminSubscriptionGrantInputSchema,
   grantAdminSubscription,
@@ -11,9 +10,8 @@ import { adminRoute } from "@/lib/admin-route-deadline";
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "admin.subscriptions.read", fallbackMessage: "Erreur admin abonnement" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  { scope: "admin.subscriptions.read", fallbackMessage: "Erreur admin abonnement", guard: "admin" },
+  async (request, { authToken }) => {
     const page = adminPageQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
@@ -22,9 +20,12 @@ export const GET = adminRoute(
 );
 
 export const POST = adminRoute(
-  { scope: "admin.subscriptions.grant", fallbackMessage: "Erreur admin abonnement" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.subscriptions.grant",
+    fallbackMessage: "Erreur admin abonnement",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminSubscriptionGrantInputSchema.parse(await request.json());
     return grantAdminSubscription({ authToken, input });
   },
