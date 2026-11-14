@@ -33,7 +33,9 @@ export function privacyDeadlineStatus(
 export function privacyDeadlineLabel(deadline: PrivacyDeadlineStatus): string {
   if (deadline.daysRemaining === null) return "Clôturée";
   if (deadline.overdue) {
+    // Dépassée depuis moins d'un jour : `Math.ceil` donne -0, jamais « En retard de 0 jour ».
     const late = Math.abs(deadline.daysRemaining);
+    if (late === 0) return "Échéance dépassée aujourd'hui";
     return `En retard de ${late} jour${late > 1 ? "s" : ""}`;
   }
   if (deadline.daysRemaining === 0) return "Échéance aujourd'hui";
