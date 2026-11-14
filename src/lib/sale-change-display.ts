@@ -23,6 +23,11 @@ export type DescribedSaleChange = {
   label: string;
   /** Previous and current value: « 120 000 € → 100 000 € ». `null` when there is nothing to add. */
   detail: string | null;
+  /**
+   * `false` for a change shown in « Mes favoris » only, never sent by email (weekly digest included).
+   * Absent: the change follows the usual email rules.
+   */
+  emailed?: false;
 };
 
 /**
@@ -52,7 +57,8 @@ export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’organisateur d
  * Motif d'un passage en statut inconnu décidé par le pipeline (14/11/2026) : l'annonce, sans date d'audience,
  * n'a été revue par aucune collecte depuis 14 jours (`raw_payload.unseen_undated`, posé par
  * `app_private.mark_unseen_undated_sales`). Elle n'est plus présentée comme à venir ; ce n'est ni un retrait ni un
- * report, d'où une gravité faible (et aucun email : le statut inconnu n'est pas grave).
+ * report, d'où une gravité faible, et aucun email : ni alerte (le statut inconnu n'est pas grave), ni
+ * récapitulatif hebdomadaire (`emailed: false`, posé par `describeSaleChange`).
  */
 export const SALE_CHANGE_REASON_UNSEEN_UNDATED = "unseen_undated";
 export const UNSEEN_UNDATED_LABEL = "Annonce non revue depuis 14 jours";
@@ -158,6 +164,7 @@ export function describeSaleChange(
           topic: "status",
           label: UNSEEN_UNDATED_LABEL,
           detail: UNSEEN_UNDATED_DETAIL,
+          emailed: false,
         };
       }
       const known = typeof current === "string" ? STATUS_LABELS[current.toLowerCase()] : undefined;
