@@ -345,7 +345,7 @@ describe("AdminInformationAgentReviewPanel", () => {
         .getAllByText(/Suite du message\./)
         .some((node) => (node.textContent?.length ?? 0) > 500),
     ).toBe(true);
-    expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Accepter|^Marquer contrôlée/ })).toBeNull();
   });
 
   it("labels a manually imported message separately from a verified reply", async () => {
@@ -418,9 +418,10 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(await screen.findByText(/Surface extraite : 70 m²/)).toBeTruthy();
     expect(screen.getByText("Pièce jointe : pv.pdf")).toBeTruthy();
     expect(screen.getByText(/Analyse : needs_password/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (screen.getByRole("button", { name: "Accepter et publier la pièce" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("shows a vision summary as review-only text and surfaces extraction details", async () => {
@@ -659,7 +660,8 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
 
     expect(await screen.findByText(/Droits de diffusion : autorisés/)).toBeTruthy();
-    const accept = () => screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement;
+    const accept = () =>
+      screen.getByRole("button", { name: "Accepter et publier la pièce" }) as HTMLButtonElement;
     // Rights and analysis are fine, but the "Caviardage vérifié" step is still pending.
     expect(accept().disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/J’ai contrôlé la pièce/));
@@ -727,6 +729,52 @@ describe("AdminInformationAgentReviewPanel", () => {
     });
   });
 
+  it("dit ce que change l'acceptation : une valeur contrôlée laisse la fiche telle quelle", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-a",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "surface_m2",
+          display_value: "70 m²",
+          confidence: 0.9,
+          evidence_asset_id: null,
+          evidence_excerpt: null,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "replied" }],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+    mocks.reviewFact.mockResolvedValue({ ok: true });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/Accepter une pièce \(document ou photo\) la publie/)).toBeTruthy();
+    expect(
+      screen.getByText(/marquer une autre information contrôlée ne change pas la fiche/),
+    ).toBeTruthy();
+    const mark = await screen.findByRole("button", {
+      name: "Marquer contrôlée (la fiche ne change pas)",
+    });
+    expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+    fireEvent.click(mark);
+    await waitFor(() => expect(mocks.reviewFact).toHaveBeenCalledTimes(1));
+    // Même décision qu'avant le changement de libellé.
+    expect(mocks.reviewFact.mock.calls[0][0]).toEqual({
+      factId: "fact-a",
+      decision: "accepted",
+      notes: null,
+    });
+  });
+
   it("disables acceptance when the case is already completed", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [
@@ -762,9 +810,13 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(
       await screen.findByText(/Le dossier est fermé ou indisponible pour cette revue/),
     ).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Marquer contrôlée (la fiche ne change pas)",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("shows the reason a contact's attachment could not be processed", async () => {
