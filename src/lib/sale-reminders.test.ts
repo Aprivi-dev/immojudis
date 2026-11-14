@@ -793,7 +793,7 @@ describe("retrait déduit de l'absence de l'annonce à la source", () => {
     expect(emails).toHaveLength(1);
     expect(emails[0].subject).toContain("Annonce disparue de la source");
     expect(emails[0].subject).not.toMatch(/retir/i);
-    expect(emails[0].text).toContain("À vérifier auprès de l’avocat poursuivant.");
+    expect(emails[0].text).toContain("À vérifier auprès de l’organisateur de la vente.");
     expect(emails[0].text).not.toMatch(/retir/i);
   });
 });

@@ -89,6 +89,16 @@ Les contrôles de surface suivants corrigent `01 ha 00 a 30 ca` (10 030 m², pas
 
 Trois anciennes fiches supplémentaires portant déjà une contradiction critique d'identité/procédure sont mises en quarantaine : `a911a0da-4936-4d02-bbcc-53dd9750a885`, `6225a9bf-b147-4c6f-b265-52c799c49c3a`, `d838f5ac-761d-45d4-ac91-79f7bf2aeaf8`. Les sources Enchères Publiques (403) et Enchères Immobilières (timeouts) sont explicitement désactivées avec leur état et motif ; 298 fiches ont reçu une réserve d'indisponibilité, sans déduire de disparition.
 
+> **Mise à jour du 14/11/2026 (décision du propriétaire, état des lieux D13).** Pour une source désactivée, une
+> vente « upcoming » sans date d'audience qu'aucune collecte n'a revue depuis plus de 14 jours passe désormais en
+> statut « unknown » : elle n'est plus présentée comme à venir. La source ne tournant pas, aucune condition
+> d'inventaire ne s'applique ; le reste vaut comme pour une source active : rien n'est retiré ni supprimé, le statut
+> précédent est gardé dans `raw_payload.unseen_undated`, au plus 15 % des ventes visibles de la source d'un coup
+> (au moins une), alerte `catalogue.unseen_undated.<source>` au-delà. Fonction
+> `app_private.mark_unseen_undated_sales` (migration `20261119101020`), appelée à la fin de chaque passage du runner
+> autonome pour toutes les sources désactivées (`src/source_absence.py`). Les ventes datées et les réserves
+> d'indisponibilité ne changent pas.
+
 Corrections factuelles sourcées en production : Montoire `28b071ea-91d9-4867-ae9d-c9b578a51cba`, habitation 149,68 m², ancienne surface au sol 170,07 retirée du champ habitable, 155,56 m² du commerce retirés du terrain ; Lyon `447ea205-aec6-402a-b104-418ceb88fedf`, surfaces propres aux bureaux retirées des totaux de l'immeuble ; Romilly `fff6c926-7190-4268-9876-63a3eced8509`, terrain 10 844 m² = 10 282 des huit parcelles principales + 562 du jardin, calcul et composantes conservés ; Vidauban `87d6182e-48be-4c00-8a9d-0330dcec5bce`, deux lots distincts (24 000 / 30 000 EUR, Carrez 51,82 / 42,90), occupation globale inconnue et périmètres incertains documentés. Les analyses précédentes sont invalidées.
 
 Le contrôle Le Cannet `5d988d56-a7f5-4df8-a42b-c00a969e5cab` a obtenu la page de recherche Avoventes au lieu d'une fiche. Le parser rejette désormais ce retour sans emprunter un code postal d'une autre annonce et le collecteur conserve les faits connus sans avancer leur fraîcheur. Les ventes explicitement en plusieurs lots portent une réserve de prix/surfaces/occupation par lot. Validation locale finale de cette étape : 1 212 tests Python, 32 ignorés sans base, typecheck/Ruff/formatage réussis. Les 634 écarts Notaires de l'inventaire initial portent tous une date source antérieure au délai de conservation à l'heure du diagnostic ; cela explique leur inéligibilité actuelle, mais ne prouve ni leur vente ni le motif historique de chaque écriture absente. Les 83 autres écarts demandent encore un examen individuel.
@@ -244,3 +254,112 @@ Ordre à suivre :
 1. Appliquer la migration par le workflow de migration habituel (elle est idempotente : `add column if not exists`) et vérifier qu'elle figure au registre.
 2. Seulement ensuite, fusionner et déployer le code Python (workers et workflows GitHub).
 3. Un worker déjà démarré avec l'ancien code reste compatible avec la colonne ajoutée : elle a une valeur par défaut à 0.
+
+Pour `supabase/migrations/20261119101010_document_readings_failed_rereading.sql` (colonnes `failed_*`, `last_failed_at` et `failed_text_at`, 14/11/2026), l'ordre ci-dessus ne peut pas être suivi : le workflow de migration exige la branche `main`. **Fusionner, puis lancer aussitôt l'application des migrations.** Entre les deux, la requête des candidates de la lecture des pièces échoue avant tout appel au modèle : la lecture des pièces s'arrête (erreur rapportée par la passe optionnelle, statut du run inchangé) jusqu'à l'application, sans autre effet.
+
+## Contacts des fiches notaires : négociateurs déjà en base (D9, 14/11/2026)
+
+Jusqu'au lot D, une fiche notaires dont l'API nommait une personne (souvent un négociateur salarié, « Prénom NOM ») stockait son nom, son téléphone et son adresse dans `lawyer_name`, `lawyer_contact` et `raw_payload.source_property_features.contact`. L'agent d'information lit `contact.email` comme l'adresse du notaire (`src/lib/information-agent/listing-contacts.ts`).
+
+Pour une vente que la source liste encore, le cycle normal suffit, sans commande particulière. Une fiche relue applique directement la règle de l'office (`notaires_extraction.listing_contact`, `display_manager`). Une fiche que la collecte ne relit pas (carte inchangée, lecture en échec) reprend les faits et les blocs de la ligne stockée (`restore_known_detail_blocks`), puis la même règle les décide de nouveau (`known_listing_contact`, `redecide_known_contact`) : `lawyer_name`, `lawyer_contact`, le bloc `contact` des faits et la ligne « Office notarial » du bloc d'affichage. Aucun négociateur stocké n'est donc réécrit à la collecte suivante, et chaque fiche est en plus relue en 72 h au plus (fraîcheur des fiches notaires, dans la limite du temps de collecte).
+
+Une vente que la source ne liste plus n'est plus collectée : ses colonnes et son bloc `contact` restent tels quels. Elle est comptée ici comme « non revue depuis 3 jours » : la collecte notaires passe toutes les 12 h et voit chaque vente listée. La règle « personne » ci-dessous est celle de `office_contact` : un contact retenu porte en tête une marque de `PROFESSIONAL_PREFIX_RE` (`src/sources/professional_contact.py`) ou « service » ; un contact sans nom mais avec des coordonnées est traité comme une personne.
+
+Comptage (lecture seule) :
+
+```sql
+with notaires as (
+  select id, last_seen_at, lawyer_name, lawyer_contact,
+         raw_payload -> 'source_property_features' -> 'contact' as contact,
+         raw_payload #>> '{source_blocks,caracteristiques_bien,manager,service}' as display_service
+    from public.auction_sales
+   where source_name = 'notaires'
+), person as (
+  select *
+    from notaires
+   where jsonb_typeof(contact) = 'object'
+     and coalesce(contact ->> 'name', contact ->> 'phone', contact ->> 'email') is not null
+     and coalesce(btrim(contact ->> 'name'), '') !~* '^(ma[îiÎI]tre|me|scp|selarl|selas|selurl|selafa|aarpi|a\.a\.r\.p\.i\.?|cabinet|[éeÉE]tude|office|sas|sarl|eurl|service)\y'
+)
+select count(*) filter (where last_seen_at is null or last_seen_at < now() - interval '3 days') as plus_listees,
+       count(*) filter (
+         where (last_seen_at is null or last_seen_at < now() - interval '3 days')
+           and (lawyer_contact is not null or lawyer_name = btrim(contact ->> 'name'))
+       ) as plus_listees_avec_colonnes_a_revoir,
+       count(*) filter (
+         where (last_seen_at is null or last_seen_at < now() - interval '3 days')
+           and display_service = btrim(contact ->> 'name')
+       ) as plus_listees_avec_nom_affiche,
+       count(*) as toutes_y_compris_listees
+  from person;
+```
+
+**Réparation : à faire valider par le propriétaire, puis exécuter par lui.** Elle n'est ni une migration (règle T17), ni lancée par le pipeline. Elle applique aux ventes comptées `plus_listees` ce que `known_listing_contact` et `redecide_known_contact` décident pour une vente encore listée :
+
+- le bloc `contact` devient vide ;
+- `lawyer_contact` devient vide, car l'office ne donne pas de coordonnées ;
+- `lawyer_name` devient le notaire nommé dans le texte (`source_blocks.notary_name`), sinon l'office de la page opérateur ;
+- la ligne « Office notarial » du bloc d'affichage (`source_blocks.caracteristiques_bien.manager`) disparaît quand elle porte le nom de cette personne : avant le lot D, elle le prenait quand l'office était inconnu.
+
+Les valeurs retirées ne sont pas sauvegardées : ce sont les données personnelles que la réparation retire. La rejouer d'abord sur une copie de la base.
+
+Avant de lancer, remplacer `A_REMPLACER` par la valeur `plus_listees` que le comptage vient de donner. Le bloc `DO` lève une erreur, et rien n'est écrit, si le nombre de lignes modifiées en diffère (ventes revues ou nouvelles depuis le comptage) ou si la valeur n'a pas été reportée. En cas d'erreur, la transaction est annulée : refaire le comptage, puis relancer.
+
+```sql
+begin;
+
+set local immojudis.d9_expected = 'A_REMPLACER';
+
+do $repair$
+declare
+  v_expected integer := pg_catalog.current_setting('immojudis.d9_expected')::integer;
+  v_updated integer;
+begin
+  with person as (
+    select id
+      from public.auction_sales
+     where source_name = 'notaires'
+       and (last_seen_at is null or last_seen_at < now() - interval '3 days')
+       and jsonb_typeof(raw_payload -> 'source_property_features' -> 'contact') = 'object'
+       and coalesce(
+             raw_payload #>> '{source_property_features,contact,name}',
+             raw_payload #>> '{source_property_features,contact,phone}',
+             raw_payload #>> '{source_property_features,contact,email}'
+           ) is not null
+       and coalesce(btrim(raw_payload #>> '{source_property_features,contact,name}'), '')
+           !~* '^(ma[îiÎI]tre|me|scp|selarl|selas|selurl|selafa|aarpi|a\.a\.r\.p\.i\.?|cabinet|[éeÉE]tude|office|sas|sarl|eurl|service)\y'
+  )
+  update public.auction_sales sale
+     set raw_payload = jsonb_set(
+           case
+             when sale.raw_payload #>> '{source_blocks,caracteristiques_bien,manager,service}'
+                  = btrim(sale.raw_payload #>> '{source_property_features,contact,name}')
+               then sale.raw_payload #- '{source_blocks,caracteristiques_bien,manager}'
+             else sale.raw_payload
+           end,
+           '{source_property_features,contact}',
+           '{"name": null, "phone": null, "email": null}'::jsonb
+         ),
+         lawyer_contact = null,
+         lawyer_name = coalesce(
+           nullif(btrim(sale.raw_payload #>> '{source_blocks,notary_name}'), ''),
+           nullif(btrim(sale.raw_payload #>> '{source_property_features,office,title}'), ''),
+           nullif(btrim(sale.raw_payload #>> '{source_property_features,office,name}'), '')
+         )
+    from person
+   where sale.id = person.id;
+  get diagnostics v_updated = row_count;
+  if v_updated <> v_expected then
+    raise exception 'Réparation D9 : % lignes modifiées, % attendues au comptage. Rien n''est écrit.',
+      v_updated, v_expected;
+  end if;
+  raise notice 'Réparation D9 : % lignes modifiées, comme au comptage.', v_updated;
+end;
+$repair$;
+
+commit;
+```
+
+Avec `psql -v ON_ERROR_STOP=1`, une erreur arrête le script avant `commit;` et la transaction est annulée. Sans cette option, `commit;` sur une transaction en erreur annule aussi.
+
+Hors de cette réparation : le `raw_text` de ces ventes, écrit avant le lot D, contient encore le téléphone et l'adresse du contact. Le traiter demande une décision à part.

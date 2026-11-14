@@ -212,6 +212,98 @@ describe("suivi des ventes sorties du catalogue", () => {
     expect(response.events[0].changeSummary).not.toHaveProperty("reason");
   });
 
+  describe("vente sans date passée en statut inconnu par le pipeline (non revue depuis 14 jours)", () => {
+    function followedUndatedSale(marker: Row | null) {
+      mocks.tables = {
+        user_favorites: [{ id: "fav-1", user_id: USER, sale_id: SALE, created_at: "2026-10-01" }],
+        user_sale_watch_snapshots: [
+          {
+            user_id: USER,
+            sale_id: SALE,
+            watch_kind: "favorite",
+            watch_id: "fav-1",
+            snapshot: { ...previousSnapshot, saleDate: null },
+          },
+        ],
+        // Toujours au catalogue : la vue garde les statuts upcoming, unknown et postponed.
+        v_auction_sales_app: [
+          {
+            id: SALE,
+            title: "Maison",
+            status: "unknown",
+            sale_date: null,
+            starting_price_eur: 100_000,
+          },
+        ],
+        auction_sales: [{ id: SALE, unseen_undated: marker }],
+      };
+    }
+
+    it("l'annonce sans gravité, avec son motif", async () => {
+      followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+      const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+      expect(response.events).toHaveLength(1);
+      expect(response.events[0]).toMatchObject({
+        eventKind: "status_changed",
+        severity: "info",
+        summaryLabel: "Annonce non revue depuis 14 jours",
+        changeSummary: {
+          previousValue: "upcoming",
+          currentValue: "unknown",
+          reason: "unseen_undated",
+        },
+      });
+    });
+
+    it("garde le libellé ordinaire quand la source elle-même donne le statut inconnu", async () => {
+      followedUndatedSale(null);
+      const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+      expect(response.events[0]).toMatchObject({
+        severity: "important",
+        summaryLabel: "Statut de la vente modifié",
+      });
+      expect(response.events[0].changeSummary).not.toHaveProperty("reason");
+    });
+
+    it("ne lit pas le marqueur d'une vente déjà inconnue au relevé précédent (cession de l'État)", async () => {
+      // Colonnes demandées à la base : le marqueur se lit par `raw_payload->unseen_undated`.
+      const selected: string[] = [];
+      const from = supabaseAdmin.from.bind(supabaseAdmin);
+      const spy = vi.spyOn(supabaseAdmin, "from").mockImplementation(((table: string) => {
+        const query = from(table as never) as unknown as { select: (columns?: string) => unknown };
+        const select = query.select;
+        query.select = (columns?: string) => {
+          selected.push(`${table} ${columns ?? ""}`);
+          return select(columns);
+        };
+        return query;
+      }) as never);
+      const readsMarker = () => selected.some((columns) => columns.includes("unseen_undated"));
+      try {
+        // Témoin : passage de « upcoming » à « unknown », le marqueur est lu.
+        followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+        await monitorUserSaleChanges({ auth: auth(), now: NOW });
+        expect(readsMarker()).toBe(true);
+
+        selected.length = 0;
+        followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+        mocks.tables.user_sale_watch_snapshots[0].snapshot = {
+          ...previousSnapshot,
+          saleDate: null,
+          status: "unknown",
+        };
+        const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+        expect(response.events).toEqual([]);
+        expect(readsMarker()).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   it("ne signale que le statut : la date et les autres champs gardent leur valeur précédente", async () => {
     followedSaleOutsideCatalogue({ status: "withdrawn", sale_date: "2027-01-01T09:00:00Z" });
     const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });

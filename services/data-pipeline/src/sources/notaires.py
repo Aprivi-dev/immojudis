@@ -19,12 +19,15 @@ from src.sources.notaires_extraction import (
     build_features,
     cadastre_location,
     card_sale_long_past,
+    contact_text,
     energy_class,
     flat_blocks,
     integer,
     known_value,
+    listing_contact,
     merge_operator_page,
     number,
+    office_contact,
     parse_immo_interactif_page,
 )
 from src.sources.notaires_extraction import (
@@ -359,7 +362,7 @@ def parse_notaires_json(payload: str) -> list[dict[str, Any]]:
                 **starting_price_nature(item.get("prixAffiche"), item.get("premiereOffrePossible"), primary_nature="displayed_price"),
                 "sale_date": _sale_date(item, item.get("typeTransaction")),
                 "source_sale_schedule": _sale_schedule(item, item.get("typeTransaction")),
-                "lawyer_contact": clean_text(item.get("telephone")),
+                # No contact on the card: its phone may be a negotiator's, only the detail tells (listing_contact).
                 "status": "past" if item.get("bienVendu") == "OUI" else "upcoming",
                 "documents": [],
                 "raw_text": raw_text,
@@ -398,6 +401,8 @@ def parse_notaires_detail_json(
     description_text = description.get("long") or description.get("short") or ""
     visit = transaction.get("visite") if isinstance(transaction.get("visite"), dict) else {}
     contact = data.get("contact") if isinstance(data.get("contact"), dict) else {}
+    # The office's contact only, never a person's (D9): the source text below keeps the block as published.
+    office_desk = office_contact(contact)
     postal_code = clean_text(property_block.get("codePostal") or transaction.get("codePostal"))
     city = clean_text(property_block.get("communeNom") or property_block.get("localiteNom") or transaction.get("ville"))
     source_images = _multimedia_images(transaction.get("multimedias"))
@@ -498,7 +503,7 @@ def parse_notaires_detail_json(
             clean_text(property_block.get("departementNom")),
             clean_text(transaction_type),
             clean_text(visit.get("visiteLibre")),
-            _contact_text(contact),
+            contact_text(office_desk),
         ]
     )
 
@@ -606,7 +611,7 @@ def parse_notaires_detail_json(
             transaction=transaction,
             property_block=property_block,
             coproperty=coproperty_block,
-            contact=contact,
+            contact=office_desk,
             description=description_text,
             images=source_images,
         ),
@@ -624,14 +629,14 @@ def parse_notaires_detail_json(
         coproperty=coproperty_block,
         features=extra_features,
         visit_dates=visit_dates,
-        contact=contact,
+        contact=office_desk,
         office=extra_features.get("office"),
     )
     property_features = _notaires_property_features(
         property_block=property_block,
         coproperty=coproperty_block,
         transaction=transaction,
-        contact=contact,
+        contact=office_desk,
         description_features=description_features,
         surface_features=surface_features,
         source_images=source_images,
@@ -641,6 +646,11 @@ def parse_notaires_detail_json(
     if (extra_features.get("energy_status") or {}).get("dpe") == "Non soumis" and "DPE non soumis" not in (risk_notes or ""):
         risk_notes = "; ".join(part for part in (risk_notes, "DPE non soumis") if part)
     adjudication_price = (extra_features.get("sale_conditions") or {}).get("adjudication_price_eur")
+    lawyer_name, lawyer_contact = listing_contact(
+        contact,
+        office=extra_features.get("office"),
+        notary=_notary_from_text(description_text),
+    )
     return {
         "source_conflicts": conflicts,
         "department": clean_text(property_block.get("inseeDepartement")),
@@ -694,9 +704,8 @@ def parse_notaires_detail_json(
         "sale_date": _sale_date(transaction, transaction_type) or text_sale_date(description_text),
         "source_sale_schedule": text_offer_schedule(_sale_schedule(transaction, transaction_type), description_text),
         "visit_dates": visit_dates,
-        "lawyer_name": _notary_from_text(description_text)
-        or clean_text(contact.get("nom") or visit.get("visiteNomContact")),
-        "lawyer_contact": _contact_text(contact) or clean_text(visit.get("visiteContact")),
+        "lawyer_name": lawyer_name,
+        "lawyer_contact": lawyer_contact,
         "status": _status(transaction),
         "latitude": latitude,
         "longitude": longitude,
@@ -1375,10 +1384,6 @@ def _is_visit_ui_state(value: str) -> bool:
     if not (text.startswith("[") or text.startswith("{")):
         return False
     return bool(re.search(r"['\"]?opened['\"]?\s*:\s*(?:true|false)", text, re.I))
-
-
-def _contact_text(contact: dict[str, Any]) -> str | None:
-    return clean_text(" | ".join(part for part in (contact.get("telephone"), contact.get("mail")) if clean_text(part)))
 
 
 def _notary_from_text(value: str | None) -> str | None:

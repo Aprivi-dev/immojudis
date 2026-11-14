@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 from src.cadastre_references import ParcelRef, designation, ref_label, references_signature
 from src.normalize import clean_text, parse_french_datetime, parse_surface
+from src.sources.professional_contact import PROFESSIONAL_PREFIX_RE
 from src.timestamps import sale_window
 
 FEATURES_SCHEMA_VERSION = "notaires_features_v2"
@@ -52,6 +53,133 @@ NEGOTIATION_FEE_RATE_MAX = 0.20
 # prix de réserve dans les barèmes dégressifs et permettrait de le retrouver. Même arrondi que
 # ``app_private.public_sale_conditions`` (moitiés vers le haut).
 NEGOTIATION_FEE_RATE_STEP = Decimal("0.005")
+
+# Interlocuteur nommé par le bloc ``contact`` de l'API (14/11/2026, D9) : l'office (« Office notarial… », « SCP… »,
+# « Maître… », marques de ``PROFESSIONAL_PREFIX_RE``), un de ses services (« Service immobilier ») ou une personne,
+# souvent un négociateur salarié (« Prénom NOM »). Le nom, le téléphone et l'adresse d'une personne ne sont repris
+# ni comme avocat de la vente, ni dans le bloc d'affichage, ni dans les faits de l'annonce. Un contact sans nom est
+# traité comme une personne : rien ne dit à qui sont ses coordonnées.
+_OFFICE_SERVICE_RE = re.compile(r"^service\b", re.I)
+
+
+def office_contact(contact: dict[str, Any]) -> dict[str, Any]:
+    """The API contact block when it names the office or one of its services; ``{}`` when it names a person."""
+    name = clean_text(contact.get("nom"))
+    if name and (PROFESSIONAL_PREFIX_RE.match(name) or _OFFICE_SERVICE_RE.match(name)):
+        return contact
+    return {}
+
+
+def office_name(office: dict[str, Any] | None) -> str | None:
+    """Name of the notarial office read on the Immo-Interactif page (its title, else the name it displays)."""
+    office = office or {}
+    return clean_text(office.get("title") or office.get("name"))
+
+
+def contact_text(contact: dict[str, Any]) -> str | None:
+    return clean_text(" | ".join(part for part in (contact.get("telephone"), contact.get("mail")) if clean_text(part)))
+
+
+def _professional_name(value: object) -> str | None:
+    """A name that starts with a professional mark (``PROFESSIONAL_PREFIX_RE``); never « Prénom NOM »."""
+    text = clean_text(value)
+    return text if text and PROFESSIONAL_PREFIX_RE.match(text) else None
+
+
+def listing_contact(
+    contact: dict[str, Any],
+    *,
+    office: dict[str, Any] | None,
+    notary: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Who the contact of a notaires listing is (14/11/2026, D9): ``(lawyer_name, lawyer_contact)``.
+
+    The only place that decides it, for a detail just read and for one read at an earlier collection
+    (:func:`known_listing_contact`). The name has a professional mark (``PROFESSIONAL_PREFIX_RE``, as for Licitor and
+    Petites Affiches: the notary named in the text, the API contact), else it is the office named by the operator
+    page. The phone and address are those of the API contact, and only when it names the office or one of its
+    services (``office_contact``): never a negotiator's. The visit's contact (``visiteNomContact``, ``visiteContact``)
+    and the phone of the list card are not read: nothing says whose they are, and the visit is not stored, so a
+    detail read again and a detail replayed from the stored row would not name the same contact.
+    """
+    desk = office_contact(contact)
+    name = notary or _professional_name(desk.get("nom")) or office_name(office)
+    return name, contact_text(desk)
+
+
+def _stored_contact(features: dict[str, Any]) -> dict[str, Any]:
+    """The contact block stored with the facts (``source_property_features.contact``), as the API names its keys."""
+    stored = features.get("contact") if isinstance(features.get("contact"), dict) else {}
+    return {"nom": stored.get("name"), "telephone": stored.get("phone"), "mail": stored.get("email")}
+
+
+def known_listing_contact(sale: dict[str, Any], known: dict[str, Any]) -> tuple[str | None, str | None]:
+    """The contact of a listing whose detail was not read at this collection (unchanged card, failed read).
+
+    :func:`listing_contact` again, on what the last detail reading stored: its API contact block
+    (``source_property_features.contact``), its office and the notary named in its text. A contact stored under an
+    older rule (a negotiator's name, phone and address) is therefore never copied back, and a sale stored under
+    another source lends nothing.
+    """
+    if known.get("source_url") != sale.get("source_url"):
+        return None, None
+    payload = known.get("raw_payload") if isinstance(known.get("raw_payload"), dict) else {}
+    features = payload.get("source_property_features") if isinstance(payload.get("source_property_features"), dict) else {}
+    blocks = payload.get("source_blocks") if isinstance(payload.get("source_blocks"), dict) else {}
+    return listing_contact(
+        _stored_contact(features),
+        office=features.get("office") if isinstance(features.get("office"), dict) else None,
+        notary=clean_text(blocks.get("notary_name")),
+    )
+
+
+def known_facts_with_office_contact(features: dict[str, Any]) -> dict[str, Any]:
+    """A copy of the stored facts (``source_property_features``) whose contact block the office rule decides again.
+
+    The block a detail read today stores (``legacy_property_features`` over :func:`office_contact`): the office's
+    name, phone and address, or nothing. A negotiator's, stored under an older rule, is not carried to the next
+    write: the information agent reads ``contact.email`` as the notary's address (second review, 14/11/2026).
+    """
+    desk = office_contact(_stored_contact(features))
+    return {**features, "contact": {"name": desk.get("nom"), "phone": desk.get("telephone"), "email": desk.get("mail")}}
+
+
+def display_manager(contact: dict[str, Any], office: dict[str, Any] | None) -> dict[str, str] | None:
+    """The « Office notarial » line of the display block (``caracteristiques_bien.manager``), or None.
+
+    The office named by the operator page, else the API contact when it names the office or one of its services
+    (:func:`office_contact`): never a negotiator's name (D9). Shared by :func:`build_display` and
+    :func:`redecide_known_contact`.
+    """
+    service = office_name(office) or known(office_contact(contact).get("nom"))
+    return {"service": service, "heading": "Office notarial"} if service else None
+
+
+def redecide_known_contact(sale: dict[str, Any]) -> None:
+    """The office rule applied again, on copies, to what a stored detail lends to a sale not read again (D9).
+
+    To run once the stored facts and blocks are restored (``restore_known_detail_blocks`` puts back the contact block
+    of the facts tree and the display block): the contact block of the facts (:func:`known_facts_with_office_contact`)
+    and the « Office notarial » line of the display (:func:`display_manager`), both decided from the stored contact
+    and office. A negotiator stored under an older rule is not written again (third review, 14/11/2026).
+    """
+    features = sale.get("source_property_features")
+    if not isinstance(features, dict):
+        return
+    if "contact" in features:
+        sale["source_property_features"] = known_facts_with_office_contact(features)
+    blocks = sale.get("source_blocks")
+    display = blocks.get("caracteristiques_bien") if isinstance(blocks, dict) else None
+    if not isinstance(display, dict):
+        return
+    office = features.get("office") if isinstance(features.get("office"), dict) else None
+    manager = display_manager(_stored_contact(features), office)
+    if display.get("manager") == manager:
+        return
+    display = {key: value for key, value in display.items() if key != "manager"}
+    if manager:
+        display["manager"] = manager
+    sale["source_blocks"] = {**blocks, "caracteristiques_bien": display}
 
 
 def round_negotiation_fee_rate(rate: float) -> float:
@@ -792,7 +920,7 @@ def build_display(
              "virtual_tours": len(features.get("virtual_tours") or [])}
     listing = features.get("listing") or {}
     office = office or {}
-    service = clean_text(office.get("title") or office.get("name")) or known(contact.get("nom"))
+    manager = display_manager(contact, office)
     display: dict[str, Any] = {
         "schema_version": DISPLAY_SCHEMA_VERSION,
         "source": "notaires",
@@ -811,9 +939,8 @@ def build_display(
     if attachments:
         display["attachments_access"] = {"restricted": True, "note": DOCUMENTS_ACCESS_NOTE}
     # Aucune adresse e-mail dans le bloc d'affichage : leur collecte n'est pas décidée.
-    if service:
-        display["manager"] = {"service": service,
-                              "heading": "Office notarial"}
+    if manager:
+        display["manager"] = manager
     if features.get("cadastre_designation"):
         display["location"] = {"designation": features["cadastre_designation"],
                                **({"insee_code": features.get("insee_code")} if features.get("insee_code") else {})}

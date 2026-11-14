@@ -147,6 +147,13 @@ const FAMILIES: Array<{ prefix: string; describe: (rest: string) => AlertEntry }
     ],
   },
   {
+    prefix: "catalogue.unseen_undated.",
+    describe: (source) => [
+      `Source ${sourceName(source)} : trop de ventes sans date non revues d’un coup, passage en statut inconnu bloqué`,
+      "operations",
+    ],
+  },
+  {
     prefix: "catalogue.quality.",
     describe: (check) => [
       familyLabel("Qualité du catalogue", CATALOGUE_QUALITY_LABELS, check),
