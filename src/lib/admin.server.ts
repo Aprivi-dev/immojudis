@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
 import { serverEnv } from "@/lib/env";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
-import { ConfigurationError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { SCROLL_SOURCES } from "@/lib/admin-run-actions";
 
 const startScrollSchema = z
@@ -13,9 +13,18 @@ const startScrollSchema = z
     source: z.enum(SCROLL_SOURCES).default("all"),
     mode: z.enum(["collect"]).default("collect"),
     limit: z.coerce.number().int().min(1).max(100).optional(),
+    /** Confirmation explicite de l'administrateur : une collecte ne part jamais d'un corps incomplet. */
+    confirm: z.literal(true),
   })
   .strict();
 const AUTOMATIC_LLM_ENRICHMENT = true;
+/**
+ * Une collecte en file ou en cours, créée il y a moins de 190 minutes, bloque une nouvelle demande
+ * pour la même source. C'est le bail d'un run manuel : au-delà, le planificateur le clôt en échec
+ * (`lease_expired`, 180 minutes de limite du runner plus une marge, migration
+ * `20260929153000_enrichment_drain_mode.sql`).
+ */
+const ACTIVE_RUN_WINDOW_MS = 190 * 60 * 1000;
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -114,6 +123,8 @@ type QueryBuilder<T> = PromiseLike<QueryResult<T>> & {
   limit: (count: number) => QueryBuilder<T>;
   range: (from: number, to: number) => QueryBuilder<T>;
   eq: (column: string, value: unknown) => QueryBuilder<T>;
+  in: (column: string, values: readonly unknown[]) => QueryBuilder<T>;
+  gte: (column: string, value: unknown) => QueryBuilder<T>;
 };
 
 type TableClient<T> = {
@@ -449,6 +460,22 @@ export async function startAdminScroll(
     );
   }
   const admin = getAdminClient();
+  const active = await admin
+    .from<AuctionRunRow>("auction_runs")
+    .select("id")
+    .eq("source", data.source)
+    .in("status", ["queued", "running"])
+    .gte("created_at", new Date(Date.now() - ACTIVE_RUN_WINDOW_MS).toISOString())
+    .limit(1);
+  if (active.error) {
+    throw new Error(active.error.message ?? "Impossible de vérifier les collectes en cours.");
+  }
+  if (active.data?.length) {
+    throw new PublicApiError(
+      "Une collecte de cette source est déjà en file ou en cours. Suivez-la dans l'historique des runs et attendez sa fin avant d'en lancer une autre.",
+      409,
+    );
+  }
   const requestedAt = new Date().toISOString();
   const initialSummary = {
     requested_by: requestedBy,
