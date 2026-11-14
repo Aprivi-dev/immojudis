@@ -257,4 +257,58 @@ describe("file du pilote : les ventes refusées d'avance ne consomment pas les 2
     expect(result.candidates).toEqual([]);
     expect(result.skipped).toEqual({ reply_pause: 25 });
   });
+
+  describe("avocat d'une annonce de vente notariale : la garde des envois aux notaires le refusera", () => {
+    // Organisateur déclaré « avocat poursuivant » sur une annonce de `notaires` : le bloc avocat est un avocat,
+    // mais la vente est notariale (`sale_audience = notary`), dont les envois restent fermés par défaut.
+    const notarialSale = () =>
+      sale({
+        source_name: "notaires",
+        source_url: "https://annonces.example.test/notaires/vente-1",
+        lawyer_name: null,
+        lawyer_contact: null,
+        information_agent_organizer_type: "pursuing_lawyer",
+        listing_contact_blocks: [
+          {
+            sourceName: "notaires",
+            sourceUrl: "https://annonces.example.test/notaires/vente-1",
+            officeCode: null,
+            contact: [],
+            manager: [],
+            lawyer: [
+              {
+                email: "me.durand@cabinet-durand.example.test",
+                name: "Maître Paul Durand",
+                field: "source_blocks.lawyer.email",
+                principal: true,
+                addressKind: "nominative",
+              },
+            ],
+          },
+        ],
+      });
+
+    it("écarté par la file, sans examen ni rejet de politique à l'aperçu", async () => {
+      mocks.sale.mockResolvedValue(notarialSale());
+      const result = await search();
+      expect(result.candidates).toEqual([]);
+      expect(result.skipped).toEqual({ notary_send_closed: 1 });
+      expect(result.examined).toBe(0);
+      expect(mocks.persist).not.toHaveBeenCalled();
+    });
+
+    it("retenu quand le réglage ouvre les envois aux notaires (même règle que la garde)", async () => {
+      mocks.sale.mockResolvedValue(notarialSale());
+      const result = await findAutopilotCandidates({
+        settings,
+        now: NOW,
+        limit: 3,
+        env: { INFORMATION_AGENT_NOTARY_SEND_ENABLED: "true" },
+      });
+      expect(result.skipped).toEqual({});
+      expect(result.candidates.map((candidate) => candidate.email)).toEqual([
+        "me.durand@cabinet-durand.example.test",
+      ]);
+    });
+  });
 });
