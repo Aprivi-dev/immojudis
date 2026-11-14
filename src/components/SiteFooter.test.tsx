@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { SiteFooter, showsSiteFooter } from "./SiteFooter";
+import { SALE_LANDING_KEYS, SALE_LANDING_PAGES } from "@/lib/sale-landing-pages";
 
 const pathname = vi.hoisted(() => ({ current: "/sales" }));
 vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
@@ -88,6 +89,18 @@ it("groupe les pages de transparence : à propos, guide, simulateur et méthodes
     ["Méthode de l’écart avec le marché", "/methode-ecart-marche"],
     ["Méthode Pépite", "/methode-pepites"],
   ]);
+});
+
+it("renvoie vers les pages par type de bien ou de vente, celles du registre, dans son ordre", () => {
+  render(<SiteFooter />);
+  const types = within(screen.getByRole("navigation", { name: "Ventes par type" }));
+  // Les adresses sont écrites dans le pied de page (pour ne pas charger le registre dans le
+  // navigateur) : elles doivent rester celles de `SALE_LANDING_PAGES`.
+  expect(
+    types.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual(
+    SALE_LANDING_KEYS.map((key) => [SALE_LANDING_PAGES[key].label, SALE_LANDING_PAGES[key].path]),
+  );
 });
 
 it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {

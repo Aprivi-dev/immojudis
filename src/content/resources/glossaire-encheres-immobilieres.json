@@ -124,7 +124,7 @@
         {
           "term": "Adjudication",
           "definition": "Attribution du bien au dernier enchérisseur à l’audience, qui emporte vente forcée.",
-          "href": "/ressources/jour-audience-encheres-role-avocat",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication",
           "source": "CPCE, art. L. 322-5 et L. 322-10"
         },
         {
@@ -412,7 +412,7 @@
         {
           "term": "Vente domaniale",
           "definition": "Vente d’un immeuble du domaine privé de l’État, par adjudication publique ou à l’amiable avec mise en concurrence.",
-          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
+          "href": "/ressources/ventes-domaniales-etat-biens-immobiliers-mobiliers",
           "source": "Code général de la propriété des personnes publiques, art. L. 3211-1 et R. 3211-2"
         },
         {

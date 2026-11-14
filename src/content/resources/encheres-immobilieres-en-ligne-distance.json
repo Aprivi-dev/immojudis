@@ -1,0 +1,206 @@
+{
+  "slug": "encheres-immobilieres-en-ligne-distance",
+  "publishedAt": "2026-11-14",
+  "title": "Enchères immobilières en ligne : ce qui se fait à distance et ce qui ne se fait pas",
+  "seoTitle": "Enchères immobilières en ligne : où et comment",
+  "category": "Les fondamentaux",
+  "description": "Peut-on enchérir sur un bien immobilier depuis chez soi ? Au tribunal, non : un avocat enchérit à l’audience. Chez le notaire, la vente interactive se fait en ligne. Ce que chaque type de vente permet à distance.",
+  "seoDescription": "Enchérir en ligne sur un bien immobilier : impossible au tribunal, où un avocat enchérit à l’audience ; possible en vente notariale interactive. Le point.",
+  "directAnswer": "Au tribunal, les enchères ne se font pas en ligne : l’adjudication a lieu aux enchères publiques à l’audience du juge, et ce sont des avocats inscrits au barreau du tribunal qui enchérissent (art. L. 322-5 et R. 322-40 du Code des procédures civiles d’exécution). Ces textes n’imposent pas votre présence dans la salle : l’avocat que vous mandatez porte vos enchères dans la limite que vous lui fixez. Chez le notaire, la vente interactive se déroule en ligne, par offres, et certaines ventes immobilières de l’AGRASC passent par une plateforme d’enchères en ligne.",
+  "intro": [
+    "« En ligne » est un mot trompeur dans l’immobilier aux enchères. Une annonce peut être en ligne sans que la vente le soit, et une vente « en ligne » n’est pas toujours une vente aux enchères. Selon l’organisateur, on enchérit à l’audience par un avocat, en salle chez un notaire, ou en déposant des offres sur internet.",
+    "Cet article fait le tri : ce qui se fait à distance, ce qui exige un déplacement ou un intermédiaire, et les questions à poser avant de vous inscrire sur un site."
+  ],
+  "takeaways": [
+    "Au tribunal, il n’y a pas d’enchères en ligne : l’adjudication a lieu à l’audience du juge, et seuls les avocats du barreau du tribunal enchérissent.",
+    "Vous pouvez mandater un avocat sans assister à l’audience, mais vous ne pouvez pas enchérir vous-même.",
+    "Chez le notaire, la vente à la bougie se tient en salle ; la vente interactive se fait en ligne, par offres, et aboutit à un avant-contrat.",
+    "L’État vend aussi par des procédures qui ne passent pas par une salle d’audience : appel d’offres, et enchères en ligne pour certains biens de l’AGRASC.",
+    "Avant de vous inscrire sur un site, vérifiez qui organise la vente, ce que vous signerez à la fin et quelles conditions s’appliquent."
+  ],
+  "sections": [
+    {
+      "id": "tableau",
+      "title": "Ce qui se fait à distance, vente par vente",
+      "paragraphs": [
+        "Le tableau résume ce que chaque type de vente permet de faire depuis chez soi, et ce qui demande un déplacement ou un intermédiaire."
+      ],
+      "table": {
+        "headers": ["Type de vente", "À distance", "Sur place ou par un intermédiaire"],
+        "rows": [
+          [
+            "Au tribunal (saisie immobilière, licitation à l’audience)",
+            "Repérer la vente, lire l’avis, échanger avec un avocat, préparer le financement.",
+            "Consulter le cahier au greffe ou chez l’avocat du poursuivant, visiter, enchérir par un avocat à l’audience (art. L. 322-5, R. 322-31 et R. 322-40)."
+          ],
+          [
+            "Chez le notaire, à la bougie",
+            "Repérer la vente, poser vos questions au notaire.",
+            "Visiter, remettre le chèque de consignation et enchérir en salle, selon Notaires de France."
+          ],
+          [
+            "Chez le notaire, en vente interactive",
+            "S’inscrire et déposer des offres en ligne pendant la période prévue.",
+            "Signer la demande d’agrément et les conditions de vente lors de la visite, puis l’avant-contrat chez le notaire, selon Notaires de France."
+          ],
+          [
+            "Vente d’un immeuble de l’État",
+            "Consulter l’annonce et, en cas d’appel d’offres, remettre une offre selon les modalités de l’avis (art. R. 3211-4).",
+            "Visiter selon l’avis ; en adjudication publique, les conditions de participation figurent au cahier des charges."
+          ],
+          [
+            "Immeuble confisqué vendu par l’AGRASC",
+            "Selon l’annonce : offre de gré à gré, appel d’offres ou enchères en ligne sur la plateforme d’un prestataire.",
+            "Visites selon l’annonce."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "tribunal",
+      "title": "Au tribunal : pas d’enchères en ligne, mais un avocat",
+      "paragraphs": [
+        "La règle est posée par le Code : « L’adjudication de l’immeuble a lieu aux enchères publiques à l’audience du juge » (art. L. 322-5 du Code des procédures civiles d’exécution). Les enchères sont portées par un avocat inscrit au barreau du tribunal judiciaire où la vente est poursuivie (art. R. 322-40), et elles s’arrêtent 90 secondes après la dernière (art. R. 322-45). Ces textes ne prévoient pas d’enchères en ligne pour une vente au tribunal.",
+        "Vous n’êtes pas pour autant obligé d’être dans la salle : aucun des articles cités n’impose la présence de l’enchérisseur, puisque c’est son avocat qui enchérit, muni de son mandat et de la garantie (art. R. 322-41). Donnez-lui par écrit votre enchère plafond et convenez de la façon de vous joindre pendant l’audience. L’audience est publique : vous pouvez aussi y assister (art. 22 du Code de procédure civile).",
+        "Le cahier des conditions de vente se consulte au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-31). Certaines pièces sont aussi diffusées en ligne avec les annonces ; la version du greffe ou de l’avocat reste la référence."
+      ],
+      "links": [
+        {
+          "label": "Choisir son avocat et son mandat",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout"
+        },
+        {
+          "label": "Le jour de l’audience",
+          "href": "/ressources/jour-audience-encheres-role-avocat"
+        }
+      ]
+    },
+    {
+      "id": "notaire",
+      "title": "Chez le notaire : la vente interactive se fait en ligne",
+      "paragraphs": [
+        "Notaires de France décrit la vente à la bougie comme une vente en salle : chaque enchérisseur remet un chèque de consignation, puis les enchères se poursuivent jusqu’à ce que deux feux successifs s’éteignent sans nouvelle enchère.",
+        "La vente interactive, elle, se déroule sur internet. Selon Notaires de France (page mise à jour le 29 avril 2021), l’acheteur signe une demande d’agrément et les conditions de vente lors de la visite, s’inscrit sur immobilier.notaires.fr, puis dépose ses offres pendant la période en ligne, décrite comme durant 24 heures. Ce n’est pas une adjudication : l’acheteur retenu signe ensuite un avant-contrat chez le notaire, qui peut comporter des conditions suspensives."
+      ],
+      "links": [
+        {
+          "label": "Immobilier des notaires : les trois formules",
+          "href": "/ressources/immobilier-notaires-annonces-vente-interactive-encheres"
+        },
+        {
+          "label": "Bougie ou vente interactive : le comparatif",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal"
+        }
+      ]
+    },
+    {
+      "id": "etat",
+      "title": "Les ventes de l’État et de l’AGRASC",
+      "paragraphs": [
+        "Pour les immeubles du Domaine, la vente se fait par adjudication publique ou à l’amiable avec mise en concurrence ; dans ce second cas, un avis du préfet précise les modalités de présentation des offres et de visite (art. R. 3211-2 et R. 3211-4 du Code général de la propriété des personnes publiques). Lisez l’avis pour savoir comment et où remettre votre offre.",
+        "Sur le site de l’AGRASC, les annonces d’immeubles confisqués indiquent le mode de vente : de gré à gré, par appel d’offres ou aux enchères. Certaines renvoient vers la plateforme d’enchères en ligne d’un prestataire privé : lisez ses conditions avant de vous inscrire.",
+        "Le site encheres-domaine.gouv.fr est celui des ventes mobilières du Domaine (véhicules, matériel, objets), dont les ventes aux enchères peuvent se suivre en direct ou en ligne. Les immeubles de l’État sont annoncés ailleurs, sur le site des cessions immobilières de l’État."
+      ],
+      "links": [
+        {
+          "label": "Ventes domaniales : comment vend l’État",
+          "href": "/ressources/ventes-domaniales-etat-biens-immobiliers-mobiliers"
+        }
+      ]
+    },
+    {
+      "id": "avant-inscription",
+      "title": "Avant de vous inscrire sur un site d’enchères en ligne",
+      "paragraphs": [
+        "Une vente « en ligne » reste une vente immobilière : la visite, la lecture des documents et le financement se préparent avant la première offre. Posez-vous ces questions."
+      ],
+      "bullets": [
+        "Qui organise la vente : un tribunal, un notaire, un organisme de l’État, ou un opérateur privé pour leur compte ?",
+        "Est-ce une adjudication, une vente par offres ou un appel d’offres ? Que signerez-vous à la fin : un jugement, un procès-verbal, un avant-contrat ?",
+        "Le vendeur doit-il retenir l’offre la plus élevée ? Existe-t-il un prix de réserve ?",
+        "Quelle garantie ou quel dépôt est demandé, et quand est-il restitué ?",
+        "Quels frais s’ajoutent au prix, et une condition suspensive de prêt est-elle possible ?",
+        "Le site qui affiche l’annonce est-il l’organisateur ? Sinon, remontez à l’annonce d’origine."
+      ]
+    },
+    {
+      "id": "immojudis",
+      "title": "Ce qu’Immojudis permet de faire à distance",
+      "paragraphs": [
+        "Immojudis rassemble en ligne des annonces de ventes au tribunal, chez le notaire et de l’État, avec le type de vente et, quand l’annonce le précise, le mode de participation. Vous pouvez y repérer une vente, consulter les pièces référencées, comparer le bien au marché et simuler votre enchère ou votre offre plafond.",
+        "Immojudis n’organise aucune vente et ne recueille aucune enchère ni aucune offre : pour enchérir, vous passez par l’avocat, le notaire ou l’organisme vendeur."
+      ],
+      "links": [
+        { "label": "Voir les ventes à venir", "href": "/sales" },
+        {
+          "label": "Qu’est-ce que l’adjudication ?",
+          "href": "/ressources/adjudication-immobiliere-vente-par-adjudication"
+        }
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Peut-on enchérir en ligne sur une vente au tribunal ?",
+      "answer": "Non. L’adjudication a lieu aux enchères publiques à l’audience du juge, et les enchères sont portées par un avocat inscrit au barreau du tribunal (art. L. 322-5 et R. 322-40 du Code des procédures civiles d’exécution). Vous pouvez en revanche mandater un avocat sans être présent dans la salle."
+    },
+    {
+      "question": "Qu’est-ce qu’une vente immobilière interactive ?",
+      "answer": "Une vente organisée par un notaire sur internet : pendant une durée limitée, les acheteurs agréés déposent des offres en ligne, puis l’acheteur retenu signe un avant-contrat chez le notaire. Ce n’est pas une adjudication."
+    },
+    {
+      "question": "Les ventes en ligne du Domaine concernent-elles l’immobilier ?",
+      "answer": "Le site encheres-domaine.gouv.fr est celui des ventes mobilières du Domaine : véhicules, matériel, objets. Les immeubles de l’État sont annoncés sur le site des cessions immobilières de l’État, et les immeubles confisqués sur celui de l’AGRASC."
+    },
+    {
+      "question": "Faut-il être présent pour une vente notariale à la bougie ?",
+      "answer": "Notaires de France la décrit comme une vente en salle, où chaque enchérisseur remet un chèque de consignation avant d’enchérir. Demandez au notaire si une représentation par un mandataire est admise pour la vente qui vous intéresse."
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-5 (« L’adjudication de l’immeuble a lieu aux enchères publiques à l’audience du juge »)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025975"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-40 (enchères portées par un avocat)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41 (garantie remise à l’avocat)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-45 (arrêt des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939165"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente et consultation du cahier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 22 (publicité des débats)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006410115"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, articles R. 3211-1 à R. 3211-8 (adjudication publique et cession amiable)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070299/LEGISCTA000024885625/"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales (page mise à jour le 29/04/2021 : vente à la bougie et vente interactive)",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "AGRASC — Les ventes (ventes aux enchères et ventes immobilières, consulté le 14/11/2026)",
+      "url": "https://agrasc.gouv.fr/ventes-aux-encheres"
+    },
+    {
+      "label": "Collectivités locales — Les ventes de biens mobiliers (encheres-domaine.gouv.fr, ventes diffusées en direct ou en ligne)",
+      "url": "https://www.collectivites-locales.gouv.fr/competences/ventes-de-biens-mobiliers"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière (chaque acheteur enchérit par l’intermédiaire de son avocat ; page vérifiée le 25 avril 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    }
+  ]
+}

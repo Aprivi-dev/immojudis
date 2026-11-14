@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   loadTribunalActivity: vi.fn(),
   loadDepartments: vi.fn(),
   loadHearings: vi.fn(),
+  loadSaleLandingPaths: vi.fn(),
+}));
+
+vi.mock("@/lib/sale-landing-pages.server", () => ({
+  loadIndexableSaleLandingPaths: mocks.loadSaleLandingPaths,
 }));
 
 vi.mock("@/lib/upcoming-hearings.server", () => ({
@@ -76,6 +81,8 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadDepartments.mockResolvedValue({ status: "error" });
     mocks.loadHearings.mockReset();
     mocks.loadHearings.mockResolvedValue({ status: "error" });
+    mocks.loadSaleLandingPaths.mockReset();
+    mocks.loadSaleLandingPaths.mockResolvedValue([]);
   });
   afterEach(() => {
     delete process.env.SITE_URL;
@@ -113,12 +120,13 @@ describe("sitemap.xml (static pages)", () => {
     );
     mocks.loadDepartments.mockImplementation(() => slow("departments", { status: "error" }));
     mocks.loadHearings.mockImplementation(() => slow("hearings", { status: "error" }));
+    mocks.loadSaleLandingPaths.mockImplementation(() => slow("pages by type", []));
     await sitemap();
-    // The three readings have all started before the first one ends.
+    // The readings have all started before the first one ends.
     const firstEnd = order.findIndex((step) => step.startsWith("end"));
     // (The courts are asked twice: by the page list and by the courts-and-hearings paths.)
     expect(new Set(order.slice(0, firstEnd))).toEqual(
-      new Set(["start courts", "start departments", "start hearings"]),
+      new Set(["start courts", "start departments", "start hearings", "start pages by type"]),
     );
   });
 
@@ -310,6 +318,40 @@ describe("sitemap.xml (static pages)", () => {
       const urls = (await sitemap()).map((entry) => entry.url);
       expect(new Set(urls).size).toBe(urls.length);
       expect(resourcesSitemap().some((entry) => entry.url.includes("ventes-encheres"))).toBe(false);
+    });
+  });
+
+  describe("pages by type of property or sale", () => {
+    it("lists the indexable ones (at least 3 upcoming sales, same threshold as their robots tag)", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadSaleLandingPaths.mockResolvedValue([
+        "/maison-aux-encheres",
+        "/encheres-notariales",
+      ]);
+      const entries = await sitemap();
+      const paths = entries.map((entry) => new URL(entry.url).pathname);
+      expect(paths).toContain("/maison-aux-encheres");
+      expect(paths).toContain("/encheres-notariales");
+      expect(paths).not.toContain("/appartement-aux-encheres");
+      expect(paths).not.toContain("/ventes-immobilieres-etat");
+      // No last-modified date: the list changes with every collection, not the page itself.
+      for (const entry of entries.filter((item) => item.url.endsWith("-aux-encheres"))) {
+        expect(entry).not.toHaveProperty("lastModified");
+      }
+    });
+
+    it("lists none of them when none qualifies or the readings failed", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadSaleLandingPaths.mockResolvedValue([]);
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      for (const path of [
+        "/maison-aux-encheres",
+        "/appartement-aux-encheres",
+        "/encheres-notariales",
+        "/ventes-immobilieres-etat",
+      ]) {
+        expect(paths).not.toContain(path);
+      }
     });
   });
 

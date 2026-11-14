@@ -337,28 +337,28 @@ function parisWeekStart(time: number): Date {
   return date;
 }
 
-export type DepartmentSaleWeek = {
+export type DepartmentSaleWeek<T extends DepartmentSale = DepartmentSale> = {
   /** Lundi de la semaine (`AAAA-MM-JJ`), ou `later` pour les ventes sans date valable. */
   key: string;
   label: string;
-  sales: DepartmentSale[];
+  sales: T[];
 };
 
 /**
  * Regroupe des ventes (déjà triées par date) par semaine du lundi au dimanche, à Paris : « Semaine
  * en cours », puis « Semaine du 9 novembre » (l'année n'est écrite que si elle diffère de celle de
  * `now`). Une vente reportée, sans date, ou d'une semaine déjà passée va dans un dernier groupe
- * « Date à confirmer ».
+ * « Date à confirmer ». Les ventes gardent leurs autres champs (le département d'une liste nationale).
  */
-export function groupDepartmentSalesByWeek(
-  sales: readonly DepartmentSale[],
+export function groupDepartmentSalesByWeek<T extends DepartmentSale>(
+  sales: readonly T[],
   now: Date = new Date(),
-): DepartmentSaleWeek[] {
+): DepartmentSaleWeek<T>[] {
   const current = parisWeekStart(now.getTime());
   const currentKey = current.toISOString().slice(0, 10);
   const currentYear = Number(parisDateKey(now).slice(0, 4));
-  const weeks = new Map<string, DepartmentSaleWeek>();
-  const later: DepartmentSale[] = [];
+  const weeks = new Map<string, DepartmentSaleWeek<T>>();
+  const later: T[] = [];
   for (const sale of sales) {
     const time = timestamp(sale.saleDate);
     if (sale.status === "postponed" || time == null) {

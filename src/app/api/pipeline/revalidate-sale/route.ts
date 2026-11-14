@@ -11,6 +11,7 @@ import { SITEMAP_CACHE_TAG } from "@/lib/public-sitemap.server";
 import { UUID_PATTERN } from "@/lib/uuid";
 import { PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG } from "@/lib/public-tribunal-activity.server";
 import { resolveRequestId } from "@/lib/request-id";
+import { SALE_LANDING_KEYS, SALE_LANDING_PAGES } from "@/lib/sale-landing-pages";
 import { warmSalePages } from "@/lib/sale-page-warmup";
 import {
   SALES_DEFAULT_PATH,
@@ -50,8 +51,9 @@ const bodySchema = z.union([
  * tagged `public-tribunal-activity`, whose counts change with the sales) and the upcoming hearings
  * (`/audiences-a-venir`, tagged `upcoming-hearings`).
  * A withdrawn sale must leave them as soon as it leaves its own page. Same for the department pages
- * (`/ventes-encheres-immobilieres` and its pages, data cache tagged `department-pages`) and for the
- * sitemaps: the sales list (`public-sitemap` tag, read by `/sales/sitemap/<n>.xml`) and `/sitemap.xml`,
+ * (`/ventes-encheres-immobilieres` and its pages, data cache tagged `department-pages`), for the pages
+ * by type of property or sale (`/maison-aux-encheres`…, data cache tagged `public-catalogue`) and for
+ * the sitemaps: the sales list (`public-sitemap` tag, read by `/sales/sitemap/<n>.xml`) and `/sitemap.xml`,
  * whose courts and departments follow the same thresholds as their `robots` tag. Without them a
  * withdrawn sale stayed listed (a 404 in the sitemap) and a page that fell under its threshold
  * stayed announced while already `noindex`, which the Search Console reports. And the catalogue pages: the
@@ -134,6 +136,9 @@ export async function POST(request: Request) {
   revalidateTag(DEPARTMENT_CATALOGUE_CACHE_TAG, { expire: 0 });
   revalidatePath(DEPARTMENT_PAGES_PATH);
   revalidatePath(`${DEPARTMENT_PAGES_PATH}/[departement]`, "page");
+  // Pages par type de bien ou de vente (`/maison-aux-encheres`…) : leurs lectures sont sous
+  // l'étiquette du catalogue public, expirée plus haut ; les pages elles-mêmes (une heure) ici.
+  for (const key of SALE_LANDING_KEYS) revalidatePath(SALE_LANDING_PAGES[key].path);
   // Sitemaps : la liste des ventes (lue à chaque demande de `/sales/sitemap/<n>.xml`, mise en cache une
   // heure) et `/sitemap.xml` (ISR, une heure), qui suit les seuils des tribunaux et des départements.
   // Reconstruits à la prochaine visite d'un robot, pas maintenant.

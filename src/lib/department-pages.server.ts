@@ -41,7 +41,12 @@ type Reader = (
 
 type PublicSaleItems = Awaited<ReturnType<typeof runPreviewSearch>>["items"];
 
-function saleRows(
+/**
+ * Lignes de la liste publique réduites à ce qu'une page de liste affiche, sans l'annonce de
+ * démonstration : pages de département et pages par type de vente ou de bien
+ * (`sale-landing-pages.server.ts`). `postponedIds` : les ventes reportées, que la ligne ne dit pas.
+ */
+export function saleRows(
   items: PublicSaleItems,
   postponedIds: ReadonlySet<string>,
 ): DepartmentSaleInput[] {
