@@ -8,6 +8,11 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
     if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
+  // Garde de la route (`adminRoute({ guard: "admin" })`) : « user-token » est un compte ordinaire.
+  requireSupabaseAuthContext: async (token: string) => ({
+    userId: "admin-user",
+    isAdmin: token !== "user-token",
+  }),
 }));
 vi.mock("@/lib/admin-offer-opening-notifier", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-offer-opening-notifier")>()),

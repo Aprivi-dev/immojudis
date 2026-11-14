@@ -26,6 +26,20 @@ export function adminPageMeta({
   return { offset, limit, total, hasMore: offset + limit < total };
 }
 
+/**
+ * Total d'une liste, ou `null` quand la réponse n'en a pas (serveur ancien, réponse tronquée) : on
+ * n'écrit alors ni « sur … » ni « page NaN sur NaN », seulement les lignes reçues.
+ */
+export function adminKnownTotal(total: number): number | null {
+  return Number.isFinite(total) ? total : null;
+}
+
+/** « sur 230 » à la suite d'un compte de lignes affichées, ou rien quand le total est inconnu. */
+export function adminOfTotal(total: number): string {
+  const known = adminKnownTotal(total);
+  return known == null ? "" : ` sur ${known}`;
+}
+
 /** « 51–100 sur 230 », ou « 0 sur 0 » pour une liste vide. */
 export function adminPageRange({
   offset,

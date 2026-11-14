@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { getValuationAdminOverview } from "@/lib/valuation-admin";
 
@@ -9,6 +8,7 @@ export const GET = adminRoute(
   {
     scope: "admin.valuation-models.read",
     fallbackMessage: "Modèles de valorisation indisponibles",
+    guard: "admin",
   },
-  async (request) => getValuationAdminOverview(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getValuationAdminOverview(authToken),
 );

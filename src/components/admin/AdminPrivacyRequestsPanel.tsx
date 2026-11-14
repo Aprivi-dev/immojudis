@@ -24,6 +24,7 @@ import type {
   PrivacyRequestStatus,
 } from "@/lib/privacy-requests";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import { adminOfTotal } from "@/lib/admin-pagination";
 import { PRIVACY_REQUESTS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
@@ -136,8 +137,8 @@ export function AdminPrivacyRequestsPanel() {
       {data ? (
         <p className="mt-4 text-xs text-muted-foreground">
           {requests.length} demande{requests.length > 1 ? "s" : ""} récente
-          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {data.total}
-          . Les compteurs ouverts et en retard couvrent toute la file.
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""}
+          {adminOfTotal(data.total)}. Les compteurs ouverts et en retard couvrent toute la file.
         </p>
       ) : null}
       {!isLoading && !requests.length ? (
@@ -156,7 +157,10 @@ export function AdminPrivacyRequestsPanel() {
               professionalExport.isPending
             }
             onSave={(input) => mutation.mutate(input)}
-            onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
+            onWithdraw={(refundMode) =>
+              // Appelé par « Confirmer : résilier et rembourser » seulement.
+              withdrawal.mutate({ requestId: request.id, refundMode, confirm: true })
+            }
             onErase={(input) => erasure.mutate(input)}
             onExportProfessional={(requestId) => professionalExport.mutate(requestId)}
           />

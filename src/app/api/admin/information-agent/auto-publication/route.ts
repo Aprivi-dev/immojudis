@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminAutoPublicationActionSchema,
   getAdminAutoPublicationView,
@@ -14,8 +13,9 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.auto-publication.read",
     fallbackMessage: "Publication automatique indisponible",
+    guard: "admin",
   },
-  async (request) => getAdminAutoPublicationView(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminAutoPublicationView(authToken),
 );
 
 /** Changement de mode ou arrêt d'urgence (administrateur, tracé en base). */
@@ -23,9 +23,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.auto-publication.write",
     fallbackMessage: "Publication automatique non modifiée",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminAutoPublicationActionSchema.parse(await request.json());
     return runAdminAutoPublicationAction({ authToken, input });
   },

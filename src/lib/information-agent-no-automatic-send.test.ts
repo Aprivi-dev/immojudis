@@ -117,12 +117,13 @@ describe("agent d'information : aucun envoi automatique", () => {
         FACADE,
       ].sort(),
     );
-    // La route n'expose l'action qu'en PATCH administrateur (garde admin d'abord), avec une confirmation
-    // explicite, et sans déclencheur : seul le pilote en passe un.
+    // La route n'expose l'action qu'en PATCH administrateur (garde admin d'abord : `guard: "admin"`
+    // de `adminRoute`, avant toute lecture du corps), avec une confirmation explicite, et sans
+    // déclencheur : seul le pilote en passe un.
     const route = read("src/app/api/admin/information-agent/missions/route.ts");
     const patch = route.slice(route.indexOf("export const PATCH = adminRoute("));
     expect(patch).toMatch(
-      /const auth = await assertAdminAuth\(authToken\);\s*return runAdminInformationAgentAction\(\{ auth, input \}\);/,
+      /guard: "admin",\s*\},\s*async \(request, \{ auth \}\) => \{\s*const input = informationAgentAdminActionSchema\.parse\(await request\.json\(\)\);\s*return runAdminInformationAgentAction\(\{ auth, input \}\);/,
     );
     expect(route.match(/runAdminInformationAgentAction\(/g)).toHaveLength(1);
     const schemas = read(SCHEMAS_MODULE);

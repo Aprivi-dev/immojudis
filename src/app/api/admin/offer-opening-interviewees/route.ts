@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminOfferOpeningInterviewees } from "@/lib/admin-offer-opening-survey";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -14,6 +13,7 @@ export const GET = adminRoute(
   {
     scope: "admin.offer-opening-interviewees.read",
     fallbackMessage: "Liste des entretiens indisponible",
+    guard: "admin",
   },
-  async (request) => getAdminOfferOpeningInterviewees(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminOfferOpeningInterviewees(authToken),
 );

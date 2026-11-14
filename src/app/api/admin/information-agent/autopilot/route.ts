@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminAutopilotActionSchema,
   getAdminAutopilotView,
@@ -14,8 +13,9 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.autopilot.read",
     fallbackMessage: "Pilote automatique indisponible",
+    guard: "admin",
   },
-  async (request) => getAdminAutopilotView(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminAutopilotView(authToken),
 );
 
 /** Mode, réglages, arrêt d'urgence, attestation d'AIPD : toujours journalisés, motif obligatoire. */
@@ -23,9 +23,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.autopilot.write",
     fallbackMessage: "Pilote automatique non modifié",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminAutopilotActionSchema.parse(await request.json());
     return runAdminAutopilotAction({ authToken, input });
   },

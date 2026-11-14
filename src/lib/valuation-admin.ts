@@ -294,7 +294,7 @@ function runtimeDriftSignals({
   if (count === 0) return ["Aucune estimation sur les dernières 24 h."];
   const signals: string[] = [];
   if (actionableSharePct != null && actionableSharePct < 50) {
-    signals.push("Moins de 50 % des estimations sont actionnables.");
+    signals.push("Moins de 50 % des estimations sont exploitables.");
   }
   if (averageConfidenceScore != null && averageConfidenceScore < 55) {
     signals.push("La confiance moyenne est inférieure à 55.");

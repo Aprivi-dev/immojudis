@@ -21,6 +21,8 @@ export type InformationAgentReplies = {
 
 export type InformationAgentSummaryData = InformationAgentReplies & {
   pilotMode: SummaryValue<"off" | "simulation" | "live">;
+  /** Arrêté automatiquement par un seuil ; le motif en clair est dans `pilotNotice`. */
+  pilotAutoStopped: boolean;
   pilotNotice: { tone: "alert" | "warn"; text: string } | null;
   sentToday: SummaryValue<string>;
   contactable: SummaryValue<number>;
@@ -68,6 +70,7 @@ export function useInformationAgentSummary(): InformationAgentSummaryData {
   return {
     ...useInformationAgentReplies(),
     pilotMode: pick(pilot, (data) => data.mode),
+    pilotAutoStopped: pilot.data?.autoStopped === true,
     pilotNotice: pilot.data?.notice ?? null,
     sentToday: pick(pilot, (data) => data.sentToday),
     contactable: pick(readiness, (data) => data.total),
