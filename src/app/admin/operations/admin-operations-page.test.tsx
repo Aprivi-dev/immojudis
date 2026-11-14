@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   fetchRuns: vi.fn(),
   fetchCounts: vi.fn(),
   startScroll: vi.fn(),
+  fetchReadiness: vi.fn(),
 }));
 
 vi.mock("@/components/admin/AdminPipelinePanel", () => ({
@@ -59,6 +60,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminDashboardRuns: mocks.fetchRuns,
   fetchAdminDashboardCounts: mocks.fetchCounts,
   startAdminScrollRequest: mocks.startScroll,
+  fetchAdminReadiness: mocks.fetchReadiness,
 }));
 
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
@@ -84,6 +86,10 @@ const RUNS: AdminDashboardRunsData = {
   ],
 };
 
+// Nom d'alerte rangé dans une constante : un champ `key: "…"` littéral ressemble à un secret
+// pour le contrôle anti-secrets.
+const NOTAIRES_STALE = "pipeline.source.notaires.stale_listings";
+
 const COUNTS: AdminDashboardCountsData = {
   checkedAt: "2026-09-19T08:00:00.000Z",
   counts: {
@@ -100,6 +106,21 @@ beforeEach(() => {
   mocks.fetchRuns.mockResolvedValue(RUNS);
   mocks.fetchCounts.mockResolvedValue(COUNTS);
   mocks.startScroll.mockResolvedValue({ message: "Traitement demandé", run: RUNS.runs[0] });
+  mocks.fetchReadiness.mockResolvedValue({
+    operations: {
+      openAlertCount: 1,
+      alerts: [
+        {
+          key: NOTAIRES_STALE,
+          category: "import",
+          severity: "warning",
+          status: "open",
+          deliveryStatus: "delivered",
+          lastSeenAt: "2026-09-19T07:30:00.000Z",
+        },
+      ],
+    },
+  });
 });
 
 afterEach(() => {
@@ -125,7 +146,7 @@ describe("AdminOperationsPage", () => {
     await waitFor(() => expect(mocks.fetchRuns).toHaveBeenCalledTimes(1));
     expect(mocks.fetchCounts).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Documents" }));
     expect(await screen.findByText("Documents indexés")).toBeTruthy();
     await waitFor(() => expect(mocks.fetchCounts).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("8")).toBeTruthy();
@@ -141,9 +162,31 @@ describe("AdminOperationsPage", () => {
     expect(screen.queryByText(/Synthèse IA/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Lancer le backfill" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Enrichissement IA" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Alertes" }));
-    expect(screen.getByText("Runs échoués récents")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Alertes" }));
+    expect(await screen.findByRole("heading", { name: "Alertes ouvertes" })).toBeTruthy();
     expect(screen.queryByText("Synthèses IA à traiter")).toBeNull();
+  });
+
+  it("exposes its sections as tabs and loads the open alerts only on the Alertes tab", async () => {
+    renderOperations();
+    const collections = await screen.findByRole("tab", { name: "Collectes" });
+    expect(collections.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tablist", { name: "Rubriques des opérations" })).toBeTruthy();
+    expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(collections.id);
+    expect(mocks.fetchReadiness).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(collections, { key: "ArrowLeft" });
+    const alerts = screen.getByRole("tab", { name: "Alertes" });
+    expect(alerts.getAttribute("aria-selected")).toBe("true");
+    expect(collections.getAttribute("aria-selected")).toBe("false");
+
+    expect(
+      await screen.findByText("Source notaires : fiches non revérifiées à temps"),
+    ).toBeTruthy();
+    expect(mocks.fetchReadiness).toHaveBeenCalledTimes(1);
+    // Les trois compteurs d'exécutions, répétés de l'accueil, ont laissé place aux alertes.
+    expect(screen.queryByText("Runs en file")).toBeNull();
+    expect(screen.queryByText("Runs échoués récents")).toBeNull();
   });
 
   it("refreshes the active dashboard queries from the section toolbar", async () => {

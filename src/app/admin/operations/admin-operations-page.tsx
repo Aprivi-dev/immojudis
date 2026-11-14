@@ -9,6 +9,7 @@ import Play from "lucide-react/dist/esm/icons/play.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
+import { AdminOperationalAlerts } from "@/components/admin/AdminOperationalAlerts";
 import { AdminPipelinePanel } from "@/components/admin/AdminPipelinePanel";
 import { OperationsRunTable, RunDetails, SOURCE_OPTIONS } from "@/components/admin/AdminRunPanels";
 import {
@@ -25,7 +26,6 @@ import {
 import {
   AdminQueryErrorNotice,
   OverviewMetric,
-  PipelineStat,
   useAdminRefresh,
 } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,6 +33,7 @@ import {
   DASHBOARD_QUERY_KEY,
   DASHBOARD_RUNS_QUERY_KEY,
   PIPELINE_QUERY_KEY,
+  READINESS_QUERY_KEY,
 } from "@/lib/admin-query-keys";
 import type { AdminRunRequest } from "@/lib/admin-run-actions";
 import { collectionTransportNote } from "@/lib/admin-source-collection";
@@ -43,11 +44,17 @@ import {
   startAdminScrollRequest,
 } from "@/lib/client-api";
 
-type OperationsTab = "collections" | "documents" | "alerts";
+const TABS = [
+  { id: "collections", label: "Collectes" },
+  { id: "documents", label: "Documents" },
+  { id: "alerts", label: "Alertes" },
+] as const;
+type OperationsTab = (typeof TABS)[number]["id"];
 
 /**
  * Vue « Opérations ». Chaque bloc ne charge que ce qu'il affiche : les runs (rapide, relus toutes
- * les 10 s tant qu'un run est actif) et les comptages de tables (onglet Documents seulement).
+ * les 10 s tant qu'un run est actif), les comptages de tables (onglet Documents seulement) et les
+ * alertes ouvertes (onglet Alertes seulement).
  */
 export function AdminOperationsPage() {
   const { user } = useAuth();
@@ -75,6 +82,7 @@ export function AdminOperationsPage() {
   const { isRefreshing, refresh } = useAdminRefresh([
     DASHBOARD_QUERY_KEY[0],
     PIPELINE_QUERY_KEY[0],
+    READINESS_QUERY_KEY[0],
   ]);
 
   const startMutation = useMutation({
@@ -243,105 +251,107 @@ function AdminOperations({
         </AdminPanel>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-brand-navy/14">
-        {(
-          [
-            ["collections", "Collectes"],
-            ["documents", "Documents"],
-            ["alerts", "Alertes"],
-          ] as Array<[OperationsTab, string]>
-        ).map(([tab, label]) => (
+      <div
+        role="tablist"
+        aria-label="Rubriques des opérations"
+        className="flex gap-1 overflow-x-auto border-b border-brand-navy/14"
+      >
+        {TABS.map((item, index) => (
           <button
-            key={tab}
+            key={item.id}
             type="button"
-            onClick={() => onTabChange(tab)}
+            role="tab"
+            id={`operations-tab-${item.id}`}
+            aria-selected={activeTab === item.id}
+            aria-controls={`operations-panel-${item.id}`}
+            tabIndex={activeTab === item.id ? 0 : -1}
+            onClick={() => onTabChange(item.id)}
+            onKeyDown={(event) => {
+              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = TABS[(index + step + TABS.length) % TABS.length];
+              onTabChange(next.id);
+              document.getElementById(`operations-tab-${next.id}`)?.focus();
+            }}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition ${
-              activeTab === tab
+              activeTab === item.id
                 ? "border-gold-soft text-gold-text"
                 : "border-transparent text-brand-navy/58 hover:text-brand-navy"
             }`}
           >
-            {label}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {activeTab === "collections" ? (
-        <>
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <AdminPanel className="overflow-hidden">
-              <div className="border-b border-brand-navy/10 px-5 py-4">
-                <AdminSectionHeading title="Exécutions" />
-              </div>
-              <OperationsRunTable
-                runs={runs}
-                isLoading={isLoading}
-                selectedRunId={selectedRun?.id ?? null}
-                onSelectRun={onSelectRun}
+      <div
+        role="tabpanel"
+        id={`operations-panel-${activeTab}`}
+        aria-labelledby={`operations-tab-${activeTab}`}
+        className="space-y-4"
+      >
+        {activeTab === "collections" ? (
+          <>
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
+              <AdminPanel className="overflow-hidden">
+                <div className="border-b border-brand-navy/10 px-5 py-4">
+                  <AdminSectionHeading title="Exécutions" />
+                </div>
+                <OperationsRunTable
+                  runs={runs}
+                  isLoading={isLoading}
+                  selectedRunId={selectedRun?.id ?? null}
+                  onSelectRun={onSelectRun}
+                />
+              </AdminPanel>
+              <RunDetails
+                run={selectedRun}
+                onRestart={onRestart}
+                restartPending={startMutationPending}
               />
-            </AdminPanel>
-            <RunDetails
-              run={selectedRun}
-              onRestart={onRestart}
-              restartPending={startMutationPending}
-            />
-          </div>
-          {(data?.stats.failedRuns ?? 0) > 0 ? (
-            <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-              <AlertTriangle className="size-5 shrink-0" />
-              {data?.stats.failedRuns} run{(data?.stats.failedRuns ?? 0) > 1 ? "s" : ""} en échec
-              nécessite{(data?.stats.failedRuns ?? 0) > 1 ? "nt" : ""} une vérification.
             </div>
-          ) : null}
-        </>
-      ) : null}
+            {(data?.stats.failedRuns ?? 0) > 0 ? (
+              <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+                <AlertTriangle className="size-5 shrink-0" />
+                {data?.stats.failedRuns} run{(data?.stats.failedRuns ?? 0) > 1 ? "s" : ""} en échec
+                nécessite{(data?.stats.failedRuns ?? 0) > 1 ? "nt" : ""} une vérification.
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
-      {activeTab === "documents" ? (
-        <>
-          {countsError ? (
-            <p
-              className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
-              role="status"
-            >
-              Les comptages sont indisponibles pour le moment.
-            </p>
-          ) : null}
-          <div className="grid gap-3 md:grid-cols-2">
-            <AdminPanel className="p-6">
-              <OverviewMetric
-                icon={<FileSearch />}
-                value={counts ? formatInteger(counts.documents) : "—"}
-                label="Documents indexés"
-              />
-            </AdminPanel>
-            <AdminPanel className="p-6">
-              <OverviewMetric
-                icon={<Activity />}
-                value={counts ? formatInteger(counts.extractions) : "—"}
-                label="Extractions structurées"
-              />
-            </AdminPanel>
-          </div>
-        </>
-      ) : null}
+        {activeTab === "documents" ? (
+          <>
+            {countsError ? (
+              <p
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                role="status"
+              >
+                Les comptages sont indisponibles pour le moment.
+              </p>
+            ) : null}
+            <div className="grid gap-3 md:grid-cols-2">
+              <AdminPanel className="p-6">
+                <OverviewMetric
+                  icon={<FileSearch />}
+                  value={counts ? formatInteger(counts.documents) : "—"}
+                  label="Documents indexés"
+                />
+              </AdminPanel>
+              <AdminPanel className="p-6">
+                <OverviewMetric
+                  icon={<Activity />}
+                  value={counts ? formatInteger(counts.extractions) : "—"}
+                  label="Extractions structurées"
+                />
+              </AdminPanel>
+            </div>
+          </>
+        ) : null}
 
-      {activeTab === "alerts" ? (
-        <AdminPanel className="p-5">
-          <AdminSectionHeading
-            title="Alertes opérationnelles"
-            description="Signaux calculés à partir des exécutions récentes"
-          />
-          <div className="mt-5 divide-y divide-brand-navy/10">
-            <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? null} />
-            <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? null} />
-            <PipelineStat
-              label="Runs échoués récents"
-              value={data?.stats.failedRuns ?? null}
-              danger={(data?.stats.failedRuns ?? 0) > 0}
-            />
-          </div>
-        </AdminPanel>
-      ) : null}
+        {activeTab === "alerts" ? <AdminOperationalAlerts /> : null}
+      </div>
     </div>
   );
 }

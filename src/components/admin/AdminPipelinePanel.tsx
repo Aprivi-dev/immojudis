@@ -13,6 +13,19 @@ import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {
   return formatNumericDateTime(value, "Non établie");
 }
+/** Sous `md`, chaque source devient une carte : l'en-tête est masqué et chaque cellule nomme sa colonne. */
+const COLUMNS = [
+  "Source",
+  "État",
+  "Inventaire complet",
+  "Publication complète",
+  "Fiches vérifiées à temps",
+  "Planification",
+] as const;
+const CELL = "p-2 max-md:block max-md:px-0 max-md:py-1";
+function CellLabel({ column }: { column: (typeof COLUMNS)[number] }) {
+  return <span className="block text-xs font-semibold text-slate-600 md:hidden">{column}</span>;
+}
 export function AdminPipelinePanel() {
   const client = useQueryClient();
   const query = useQuery({
@@ -107,18 +120,17 @@ export function AdminPipelinePanel() {
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
+        <table className="w-full text-left text-sm max-md:block">
+          <thead className="max-md:sr-only">
             <tr>
-              <th className="p-2">Source</th>
-              <th className="p-2">État</th>
-              <th className="p-2">Inventaire complet</th>
-              <th className="p-2">Publication complète</th>
-              <th className="p-2">Fiches vérifiées à temps</th>
-              <th className="p-2">Planification</th>
+              {COLUMNS.map((column) => (
+                <th key={column} className="p-2">
+                  {column}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-md:block max-md:space-y-3">
             {data.sources.map((source) => {
               const metrics = data.observations.find(
                 (item) => item.source_name === source.source_name,
@@ -126,9 +138,13 @@ export function AdminPipelinePanel() {
               const ratio = metrics?.freshness_ratio;
               const status = pipelineSourceStatus(source);
               return (
-                <tr key={source.source_name} className="border-t align-top">
-                  <th className="p-2 font-medium">{source.source_name}</th>
-                  <td className="p-2">
+                <tr
+                  key={source.source_name}
+                  className="border-t align-top max-md:block max-md:rounded-lg max-md:border max-md:p-3"
+                >
+                  <th className={`${CELL} font-medium`}>{source.source_name}</th>
+                  <td className={CELL}>
+                    <CellLabel column="État" />
                     {status.label}
                     {status.detail ? (
                       <p className="max-w-xs text-xs text-slate-600">{status.detail}</p>
@@ -143,7 +159,8 @@ export function AdminPipelinePanel() {
                       </details>
                     ) : null}
                   </td>
-                  <td className="p-2">
+                  <td className={CELL}>
+                    <CellLabel column="Inventaire complet" />
                     {date(source.last_inventory_complete_at)}
                     {source.coverage?.scoped_inventory_complete ? (
                       <p className="max-w-xs text-xs">
@@ -151,7 +168,8 @@ export function AdminPipelinePanel() {
                       </p>
                     ) : null}
                   </td>
-                  <td className="p-2">
+                  <td className={CELL}>
+                    <CellLabel column="Publication complète" />
                     {date(source.last_publication_complete_at)}
                     {typeof source.coverage?.publication_published === "number" ? (
                       <p className="text-xs">
@@ -183,12 +201,14 @@ export function AdminPipelinePanel() {
                       </details>
                     ) : null}
                   </td>
-                  <td className="p-2">
+                  <td className={CELL}>
+                    <CellLabel column="Fiches vérifiées à temps" />
                     {typeof ratio === "number"
                       ? `${formatShareAsPercent(ratio)} (${metrics?.fresh_listings}/${metrics?.active_listings})`
                       : "Non mesuré"}
                   </td>
-                  <td className="p-2">
+                  <td className={CELL}>
+                    <CellLabel column="Planification" />
                     <span className="mb-2 block text-xs font-medium">
                       {source.enabled ? "Activée" : "Suspendue"}
                     </span>
