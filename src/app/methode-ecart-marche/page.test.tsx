@@ -250,6 +250,16 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     expect(text).toContain(
       `un modèle dont l’intervalle en contient moins de ${VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas mis en service`,
     );
+    // D3 (14/11) : la mesure est celle de la porte d'activation, et un modèle activé sans elle n'est
+    // pas utilisé (`hybrid-market-valuation.ts`). L'ancienne phrase « elle est mesurée avant sa mise
+    // en service » était fausse pour les deux modèles activés avant la porte.
+    expect(text).toContain(
+      "une porte d’activation mesure cette proportion avant toute mise en service",
+    );
+    expect(text).toContain(
+      "un modèle activé sans cette mesure n’est pas utilisé pour l’estimation",
+    );
+    expect(text).not.toContain("elle est mesurée avant sa mise en service");
   });
 
   it("dit que le rayon continue de s'élargir jusqu'à l'effectif exigé par la porte publique", () => {

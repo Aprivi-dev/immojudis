@@ -71,9 +71,12 @@ globale des ventes antérieures (après 30 ventes) et effectif 0. À l'entraîne
 que les ventes strictement antérieures. Au service, les mêmes statistiques sont relues dans l'export
 `localMarket` de l'artefact (cellules calculées sur toutes les ventes jusqu'à `fittedThrough`).
 
-Transition : un artefact sans `localMarket` (antérieur à l'export) reçoit au service une
-approximation tirée des comparables du moteur (`legacyLocalFeatures`), différente de ce qu'il a vu à
-l'entraînement. C'est le cas des deux modèles actifs au 08/11 (voir « État en production »).
+Depuis le 14/11 (D2), un modèle actif n'est plus utilisé au service s'il n'a pas l'export
+`localMarket`, ou si ses `training_metrics` n'ont pas la couverture mesurée par la porte
+(`comparison.served_interval_coverage_pct`) au moins égale au plancher de mise en service
+(`hybrid-market-valuation.ts`). L'ancienne approximation tirée des comparables du moteur
+(`legacyLocalFeatures`) est supprimée. C'est le cas des deux modèles actifs au 08/11 (voir « État en
+production ») : l'estimation de ces segments retombe sur les comparables seuls.
 
 ## Découpage et apprentissage
 
@@ -155,8 +158,9 @@ Mesuré en lecture seule dans `valuation_model_versions` :
 
 - 2 lignes actives, segments `house` et `apartment`, version `lgbm-cqr-20260713`, cadre
   `lightgbm_quantile`, 350 000 lignes d'entraînement, activées le 27/07/2026 ;
-- pas d'export `artifact.localMarket` : les variables locales servies sont l'approximation tirée des
-  comparables, pas celles de l'entraînement ;
+- pas d'export `artifact.localMarket` : jusqu'au 14/11, les variables locales servies étaient
+  l'approximation tirée des comparables, pas celles de l'entraînement ; depuis D2, ces modèles ne
+  sont plus utilisés au service ;
 - pas de bloc `training_metrics.comparison` (clés présentes : `test_rows`, `train_rows`,
   `test_mape_pct`, `calibration_rows`, `confidence_level`, `test_p75_ape_pct`,
   `test_median_ape_pct`, `interval_coverage_pct`, `interval_mean_width_pct`) : ces modèles n'ont

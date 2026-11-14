@@ -11,7 +11,11 @@ import {
   recordCommercialAcceptance,
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
-import { analysisPriceId, assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
+import {
+  analysisPriceId,
+  assertAnalysisCheckoutOpen,
+  stripeKeyMode,
+} from "@/lib/analysis-checkout-readiness";
 import { serverEnv } from "@/lib/env";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
@@ -520,6 +524,12 @@ export async function handleStripeWebhook({
 
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret());
+  if (stripeEventModeMismatch(event.livemode, stripeSecretKey())) {
+    throw new PublicApiError(
+      "Mode de l’événement Stripe différent de celui de la clé secrète : événement refusé.",
+      400,
+    );
+  }
   const isNewEvent = await beginStripeWebhookEvent(event);
   if (!isNewEvent) {
     // Un événement encore « processing » n'est pas un doublon traité : le premier passage a pu
@@ -587,6 +597,18 @@ export async function handleStripeWebhook({
     await completeStripeWebhookEvent(event.id, "failed", message).catch(() => undefined);
     throw error;
   }
+}
+
+/**
+ * C3 (14/11) : un événement dont le mode (`livemode`) n'est pas celui de la clé secrète est refusé
+ * (400), avant d'être journalisé ou traité. Un point de terminaison de test branché sur une clé
+ * réelle (ou l'inverse) n'ouvre ni ne retire aucun accès ; Stripe rejoue l'événement refusé, ce qui
+ * rend l'erreur de configuration visible dans son tableau de bord. Clé d'une forme inconnue : rien à
+ * comparer.
+ */
+function stripeEventModeMismatch(livemode: boolean, secretKey: string): boolean {
+  const keyMode = stripeKeyMode(secretKey);
+  return keyMode !== null && (keyMode === "live") !== livemode;
 }
 
 export function stripeRefundRequiresAccessRevocation(

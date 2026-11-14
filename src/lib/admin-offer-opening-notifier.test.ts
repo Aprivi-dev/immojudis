@@ -453,6 +453,27 @@ describe("envoi d'un lot", () => {
     expect(mocks.send.mock.calls[0][0].message.to).toBe(`${idOf(2)}@exemple.fr`);
   });
 
+  it("n'envoie pas à une demande retirée entre la lecture de la file et l'envoi, par un rebond ou une plainte (C8)", async () => {
+    // Le webhook des emails de compte retire la demande (`notify_enabled` à faux) : la marque, posée
+    // seulement sur une demande encore active, échoue, et rien ne part.
+    database({ rows: [idOf(1)], recipients: 1, claimed: () => false });
+    const claims: Call[][] = [];
+    const resolve = mocks.resolve.getMockImplementation()!;
+    mocks.resolve.mockImplementation((calls: Call[]) => {
+      if (has(calls, "update")) claims.push(calls);
+      return resolve(calls);
+    });
+
+    const result = await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
+
+    expect(claims[0].filter(([method]) => method === "eq").map(([, a]) => a)).toContainEqual([
+      "notify_enabled",
+      true,
+    ]);
+    expect(result).toMatchObject({ sent: 0, skipped: 1 });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
   it("relancé quand plus personne n'est à prévenir : aucun envoi, aucune écriture", async () => {
     const { updates } = database({ rows: [], recipients: 0 });
     const result = await sendOfferOpeningBatch({ authToken: "t", env });

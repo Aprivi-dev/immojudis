@@ -1,7 +1,8 @@
 # Ouverture des paiements Stripe (offre Analyse)
 
-Mise à jour : 09/11/2026. Bloquant C11 de l'état des lieux du 08/11 (`docs/equipe/2026-11-08-etat-des-lieux.md`)
-et ligne « Stripe configuré en production » de `docs/roadmaps/conditions-de-lancement-2026-10-10.md`.
+Mise à jour : 14/11/2026 (lot A : C2, C3 et T3 de `docs/equipe/2026-11-14-etat-des-lieux.md`). Bloquant C11 de l'état
+des lieux du 08/11 (`docs/equipe/2026-11-08-etat-des-lieux.md`) et ligne « Stripe configuré en production » de
+`docs/roadmaps/conditions-de-lancement-2026-10-10.md`.
 
 Le code de facturation est en place (checkout, webhook, portail, réconciliation). Ouvrir les paiements, c'est
 **configurer** Stripe et Vercel, puis faire la recette en mode test **avant** de passer en production. Ce document
@@ -10,12 +11,25 @@ dit quoi faire, dans quel ordre, et comment revenir en arrière.
 ## 0. Ce que le code exige (ne pas le contourner)
 
 Le checkout ne s'ouvre que si `analysisCheckoutReadiness` (`src/lib/analysis-checkout-readiness.ts`) ne signale
-rien de manquant :
+rien de manquant ni de fermé :
 
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_ANALYSIS_PRICE_ID` (forme `price_…`) ;
+- une clé du mode du déploiement : `sk_live_…` (ou `rk_live_…`) en Production, `sk_test_…` (ou `rk_test_…`) en
+  Preview. Une clé de test en Production ferait obtenir Analyse avec la carte de test de Stripe ; une clé réelle
+  sur un Preview encaisserait de vrais paiements sur une base de test. Dans les deux cas le checkout reste fermé ;
 - l'identité légale `NEXT_PUBLIC_LEGAL_*` ;
 - le canal de confirmation contractuelle : `RESEND_API_KEY`, l'expéditeur (`TRANSACTIONAL_EMAIL_FROM` ou
-  `ALERT_EMAIL_FROM`) et `SITE_URL`.
+  `ALERT_EMAIL_FROM`) et `SITE_URL` ;
+- l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN` : absent, la vente est ouverte ; posé à toute autre valeur
+  que `true`, il ferme le checkout (voir le § 5).
+
+Deux autres contrôles du mode, hors de cette garde :
+
+- le build Production est refusé avec une clé de test (`scripts/lib/launch-config.mjs`, `stripeKeyModeProblems`) ;
+  `ALLOW_INCOMPLETE_LAUNCH_CONFIG` ne lève pas ce refus ;
+- le webhook répond 400 à un événement dont le mode (`livemode`) n'est pas celui de la clé, avant de l'enregistrer
+  ou de le traiter : un point de terminaison de test branché sur la clé réelle (ou l'inverse) n'ouvre ni ne retire
+  aucun accès. Stripe rejoue alors l'événement pendant 3 jours : corriger le secret du webhook ou la clé.
 
 Au moment du paiement, le Price est relu chez Stripe et refusé s'il n'est pas : **actif, récurrent, EUR,
 5 900 centimes, mensuel (intervalle 1), comportement fiscal « inclusive »** (`resolveConfiguredAnalysisPrice`,
@@ -104,6 +118,7 @@ Redéployer le Preview après chaque changement de variable.
 | 9   | Litige                             | carte `4000 0000 0000 0259`                                                                          | Accès suspendu à l'ouverture du litige                                                       |
 | 10  | Alerte quotidienne (C1)            | compte en fin d'essai avec une alerte quotidienne, puis souscription                                 | Alerte passée en hebdomadaire à la fin de l'essai, de nouveau quotidienne après l'abonnement |
 | 11  | Webhook rejoué                     | Stripe → Webhooks → renvoyer un événement déjà traité                                                | Réponse 200 « duplicate », aucun second email                                                |
+| 12  | Fermeture de la vente (§ 5)        | `STRIPE_ANALYSIS_SALES_OPEN=false` sur le Preview, redéployer, puis renouvellement (horloge de test) | Souscription fermée ; l'abonné du scénario 1 garde l'accès Analyse après le renouvellement   |
 
 La page `/admin/compliance`, panneau « Activation commerciale », doit tout afficher prêt sur le Preview.
 
@@ -114,17 +129,60 @@ La page `/admin/compliance`, panneau « Activation commerciale », doit tout aff
    `20261113100000` (marqueur de fréquence des alertes, C1).
 3. Stripe en mode **live** : refaire le § 2, créer le produit et le Price (mêmes caractéristiques), créer le webhook
    vers `https://immojudis.com/api/stripe/webhook` avec les événements du § 1.
-4. Vercel, cible **Production** : `STRIPE_SECRET_KEY` (`sk_live_…`, type « sensitive »), `STRIPE_WEBHOOK_SECRET`,
-   `STRIPE_ANALYSIS_PRICE_ID`. Retirer `ALLOW_INCOMPLETE_LAUNCH_CONFIG`. Redéployer.
+4. Vercel, cible **Production** : `STRIPE_SECRET_KEY` (`sk_live_…`, type « sensitive » ; le build refuse une clé
+   `sk_test_…`), `STRIPE_WEBHOOK_SECRET` (celui du point de terminaison en mode **live**),
+   `STRIPE_ANALYSIS_PRICE_ID`. Ne pas poser `STRIPE_ANALYSIS_SALES_OPEN`. Retirer `ALLOW_INCOMPLETE_LAUNCH_CONFIG`
+   (il faut pour cela le § 6, `ADMIN_MFA_REQUIRED=true`). Redéployer.
 5. Premier paiement réel avec sa propre carte, puis remboursement depuis Stripe : vérifier l'accès, la facture,
    les emails, puis la fin d'accès.
 
 ## 5. Retour arrière
 
-- **Fermer la vente** sans toucher aux abonnés : retirer `STRIPE_ANALYSIS_PRICE_ID` de Vercel et redéployer. Le
-  checkout se ferme de lui-même, les textes repassent en « pas encore ouverte ».
+- **Fermer la vente** sans toucher aux abonnés : dans Vercel, cible Production, poser
+  `STRIPE_ANALYSIS_SALES_OPEN=false`, puis redéployer. Le checkout se ferme (`analysisCheckoutReadiness`), les
+  textes repassent en « pas encore ouverte », et le panneau « Activation commerciale » de `/admin/compliance`
+  affiche « Vente fermée ». Le Price reste reconnu et le rapprochement continue : les abonnés en cours gardent leur
+  accès, leurs renouvellements, le portail et la résiliation.
+- **Rouvrir la vente** : retirer `STRIPE_ANALYSIS_SALES_OPEN` (ou la passer à `true`), puis redéployer.
+- **Ne jamais retirer `STRIPE_ANALYSIS_PRICE_ID` pour fermer la vente.** Sans lui, le Price des abonnés n'est plus
+  reconnu : leur prochain événement d'abonnement les fait passer en Découverte alors qu'ils sont prélevés
+  (`isRecognisedAnalysisPrice`, `src/lib/billing.ts`), et le rapprochement quotidien se tait
+  (`billingReconciliationConfigured`). Pour changer de Price, ajouter d'abord l'ancien à
+  `STRIPE_ANALYSIS_LEGACY_PRICE_IDS`, puis remplacer `STRIPE_ANALYSIS_PRICE_ID`.
 - **Ne pas** supprimer le webhook ni la clé secrète tant qu'un abonnement existe : les renouvellements,
   résiliations et remboursements ne seraient plus répercutés sur les accès.
 - Secret compromis : `docs/runbooks/fuite-secret-ou-donnees.md`.
 - Écart entre Stripe et la base : la réconciliation quotidienne (`/api/cron/billing-reconciliation`) le signale ;
   rejouer les événements manqués depuis Stripe → Webhooks.
+
+## 6. Second facteur de l'administration (actions du propriétaire)
+
+Tant que le second facteur n'est pas exigé alors que le paiement est ouvert, ou que
+`INFORMATION_AGENT_OUTBOUND_ENABLED=true`, l'accueil de `/admin` affiche l'avertissement « Second facteur non
+exigé ». Un mot de passe volé suffirait pour agir sur les abonnés, écrire à des avocats ou décider au registre des
+pièces. L'avertissement ne bloque rien. Il disparaît quand `ADMIN_MFA_REQUIRED=true` est déployé (étape 3).
+
+Faire les quatre étapes dans cet ordre, sans en sauter : chaque interrupteur refuse une session sans second facteur,
+et l'enrôlement doit donc précéder les trois autres.
+
+1. **Enrôler le TOTP** : se connecter en administrateur, ouvrir `/admin/securite`, scanner le QR code avec une
+   application d'authentification, saisir le code à 6 chiffres. Garder la « clé de saisie manuelle » affichée
+   sous le QR code en lieu sûr (ou l'enregistrer dans une seconde application) : sans elle, perdre le téléphone
+   ferme l'administration une fois les étapes 2 et 3 faites. Dès cet enrôlement, l'écran « Code de vérification » est demandé à chaque
+   ouverture de l'administration.
+2. **Interrupteur en base** : dans l'éditeur SQL de Supabase (rôle propriétaire de la base), exécuter
+   `select app_private.set_admin_mfa_required(true);`. La fonction refuse tant qu'aucun administrateur n'a de
+   facteur vérifié (étape 1). Ensuite, les droits d'administrateur en base exigent une session `aal2`.
+3. **Interrupteur de l'application** : dans Vercel, cible Production, poser `ADMIN_MFA_REQUIRED=true`, retirer
+   `ALLOW_INCOMPLETE_LAUNCH_CONFIG` si les mentions légales sont complètes, puis redéployer. Les routes
+   d'administration refusent alors toute session sans le code (`aal1`), même appelées directement.
+4. **Registre des pièces** : dans l'éditeur SQL, exécuter
+   `select app_private.set_fact_registry_decisions_second_factor(true);`. Une décision au registre exige alors une
+   session `aal2` (voir `docs/runbooks/registre-des-pieces-r2c.md`).
+
+Vérifier : se déconnecter, se reconnecter, le code TOTP est demandé ; l'accueil de `/admin` n'affiche plus
+l'avertissement.
+
+Retour arrière (perte du facteur) : `select app_private.set_admin_mfa_required(false);` et
+`select app_private.set_fact_registry_decisions_second_factor(false);` dans l'éditeur SQL, puis
+`ADMIN_MFA_REQUIRED` retiré dans Vercel et redéploiement. Réenrôler un facteur, puis reprendre à l'étape 2.
