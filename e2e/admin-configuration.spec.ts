@@ -79,16 +79,31 @@ test.describe("admin configuration", () => {
 
   test("pauses and resumes a source independently of the global scheduler", async ({ page }) => {
     const state = await prepareAdminPage(page);
-    // La supervision des sources n'est plus recopiée dans Configuration : elle est dans Opérations.
+    // Planificateur global suspendu : une source se suspend et se réactive quand même, sans le
+    // rallumer. La supervision des sources est dans Opérations (plus recopiée dans Configuration).
+    state.control.enabled = false;
     await page.goto("/admin/operations");
-    const source = page.getByRole("row", { name: /test-source/ });
+    const pipeline = page.getByRole("region", { name: "Collecte automatique par source" });
+    await expect(pipeline.getByText(/Planification suspendue/)).toBeVisible();
+    const readsBefore = state.pipelineGetCalls;
+
+    const source = pipeline.getByRole("row", { name: /test-source/ });
     await source.getByRole("button", { name: /Suspendre/ }).click();
     await expect(source.getByRole("button", { name: /Activer/ })).toBeVisible();
-    expect(state.sourcePayloads).toEqual([{ source: "test-source", enabled: false }]);
     await source.getByRole("button", { name: /Activer/ }).click();
     await expect(source.getByRole("button", { name: /Suspendre/ })).toBeVisible();
-    expect(state.sourceEnabled).toBe(true);
+    expect(state.sourcePayloads).toEqual([
+      { source: "test-source", enabled: false },
+      { source: "test-source", enabled: true },
+    ]);
+
+    // La supervision est relue après chaque action : le planificateur global n'a pas bougé.
+    expect(state.pipelineGetCalls).toBeGreaterThan(readsBefore);
+    await expect(pipeline.getByText(/Planification suspendue/)).toBeVisible();
     expect(state.controlPayloads).toEqual([]);
+    // Et Configuration, où se règle le planificateur global, le montre toujours suspendu.
+    await page.goto("/admin/settings");
+    await expect(page.getByLabel("Activer la planification automatique")).not.toBeChecked();
   });
 
   test("launches a selected source and restarts a collection in collect mode", async ({
