@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
@@ -221,36 +222,60 @@ def test_the_card_phone_goes_when_the_stored_detail_found_no_office_contact():
     assert _hydrated(card, _stored(card, detail)) == (None, None)
 
 
-def test_a_contact_stored_before_the_rule_is_not_copied_back():
-    # Ligne écrite avant le 14/11 : nom, téléphone et adresse du négociateur, dans les colonnes et dans les faits.
-    card = _card_with_phone(_known_unchanged=True)
-    legacy = {
-        "source_url": card["source_url"],
-        "lawyer_name": "Camille DURAND",
-        "lawyer_contact": "06 00 00 00 07 | camille.durand@example.test",
-        "raw_payload": {
-            "source_property_features": {
-                "contact": {"name": "Camille DURAND", "phone": "06 00 00 00 07", "email": "camille.durand@example.test"},
-            },
-        },
+def _restorable(stored: dict) -> dict:
+    """``stored`` after checking it has the shape restore_known_detail_blocks puts back (facts tree, display block)."""
+    payload = stored["raw_payload"]
+    assert payload["source_property_features"].get("schema_version")
+    assert isinstance(payload["source_blocks"].get("caracteristiques_bien"), dict)
+    return stored
+
+
+def _legacy_negotiator_row(card: dict) -> dict:
+    """Ligne écrite avant le 14/11 pour une fiche dont l'API nomme un négociateur : la forme stockée d'un détail, avec
+    le négociateur dans les colonnes, le bloc contact des faits et la ligne « Office notarial » de l'affichage."""
+    stored = _stored(card, _detail(card, NEGOTIATOR))
+    payload = copy.deepcopy(stored["raw_payload"])
+    payload["source_property_features"]["contact"] = {
+        "name": NEGOTIATOR["nom"], "phone": NEGOTIATOR["telephone"], "email": NEGOTIATOR["mail"],
     }
+    payload["source_blocks"]["caracteristiques_bien"]["manager"] = {"service": NEGOTIATOR["nom"], "heading": "Office notarial"}
+    return _restorable({
+        **stored,
+        "lawyer_name": NEGOTIATOR["nom"],
+        "lawyer_contact": f"{NEGOTIATOR['telephone']} | {NEGOTIATOR['mail']}",
+        "raw_payload": payload,
+    })
+
+
+def test_a_contact_stored_before_the_rule_is_not_copied_back():
+    card = _card_with_phone(_known_unchanged=True)
+    legacy = _legacy_negotiator_row(card)
 
     assert _hydrated(card, legacy) == (None, None)
-    # Ni dans les faits recopiés de la ligne stockée, que l'écriture emporte (l'agent d'information lit contact.email
-    # comme l'adresse du notaire) : même bloc vide qu'une fiche relue aujourd'hui. La ligne stockée n'est pas modifiée.
+    # Ni dans les faits ni dans l'affichage repris de la ligne stockée, que l'écriture emporte (l'agent d'information
+    # lit contact.email comme l'adresse du notaire, le site affiche la ligne « Office notarial ») : ce qu'une fiche
+    # relue aujourd'hui écrirait. L'arbre de faits reste celui de la fiche ; la ligne stockée n'est pas modifiée.
     preserve_known_enrichment_payloads([card], {card["source_url"]: legacy})
-    assert card["source_property_features"]["contact"] == {"name": None, "phone": None, "email": None}
-    assert card["source_property_features"]["contact"] == _detail(card, NEGOTIATOR)["source_property_features"]["contact"]
-    assert legacy["raw_payload"]["source_property_features"]["contact"]["name"] == "Camille DURAND"
+    fresh = _detail(card, NEGOTIATOR)
+    features, display = card["source_property_features"], card["source_blocks"]["caracteristiques_bien"]
+    assert features["contact"] == {"name": None, "phone": None, "email": None}
+    assert features["contact"] == fresh["source_property_features"]["contact"]
+    assert "manager" not in display and "manager" not in fresh["source_blocks"]["caracteristiques_bien"]
+    assert features["schema_version"] == legacy["raw_payload"]["source_property_features"]["schema_version"]
+    assert legacy["raw_payload"]["source_property_features"]["contact"]["name"] == NEGOTIATOR["nom"]
+    assert legacy["raw_payload"]["source_blocks"]["caracteristiques_bien"]["manager"]["service"] == NEGOTIATOR["nom"]
 
 
-def test_the_office_contact_of_the_stored_facts_is_kept():
+def test_the_office_contact_of_the_stored_detail_is_kept():
     card = _card_with_phone(_known_unchanged=True)
-    stored = _stored(card, _detail(card, OFFICE))
+    stored = _restorable(_stored(card, _detail(card, OFFICE)))
     _hydrated(card, stored)
     preserve_known_enrichment_payloads([card], {card["source_url"]: stored})
 
     assert card["source_property_features"]["contact"] == {"name": "Office Exemple", "phone": PHONE, "email": ADDRESS}
+    display = card["source_blocks"]["caracteristiques_bien"]
+    assert display["manager"] == {"service": "Office Exemple", "heading": "Office notarial"}
+    assert display == stored["raw_payload"]["source_blocks"]["caracteristiques_bien"]
 
 
 def test_a_failed_detail_read_takes_only_the_contact_the_last_detail_validated():

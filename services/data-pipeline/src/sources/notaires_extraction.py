@@ -144,6 +144,44 @@ def known_facts_with_office_contact(features: dict[str, Any]) -> dict[str, Any]:
     return {**features, "contact": {"name": desk.get("nom"), "phone": desk.get("telephone"), "email": desk.get("mail")}}
 
 
+def display_manager(contact: dict[str, Any], office: dict[str, Any] | None) -> dict[str, str] | None:
+    """The « Office notarial » line of the display block (``caracteristiques_bien.manager``), or None.
+
+    The office named by the operator page, else the API contact when it names the office or one of its services
+    (:func:`office_contact`): never a negotiator's name (D9). Shared by :func:`build_display` and
+    :func:`redecide_known_contact`.
+    """
+    service = office_name(office) or known(office_contact(contact).get("nom"))
+    return {"service": service, "heading": "Office notarial"} if service else None
+
+
+def redecide_known_contact(sale: dict[str, Any]) -> None:
+    """The office rule applied again, on copies, to what a stored detail lends to a sale not read again (D9).
+
+    To run once the stored facts and blocks are restored (``restore_known_detail_blocks`` puts back the contact block
+    of the facts tree and the display block): the contact block of the facts (:func:`known_facts_with_office_contact`)
+    and the « Office notarial » line of the display (:func:`display_manager`), both decided from the stored contact
+    and office. A negotiator stored under an older rule is not written again (third review, 14/11/2026).
+    """
+    features = sale.get("source_property_features")
+    if not isinstance(features, dict):
+        return
+    if "contact" in features:
+        sale["source_property_features"] = known_facts_with_office_contact(features)
+    blocks = sale.get("source_blocks")
+    display = blocks.get("caracteristiques_bien") if isinstance(blocks, dict) else None
+    if not isinstance(display, dict):
+        return
+    office = features.get("office") if isinstance(features.get("office"), dict) else None
+    manager = display_manager(_stored_contact(features), office)
+    if display.get("manager") == manager:
+        return
+    display = {key: value for key, value in display.items() if key != "manager"}
+    if manager:
+        display["manager"] = manager
+    sale["source_blocks"] = {**blocks, "caracteristiques_bien": display}
+
+
 def round_negotiation_fee_rate(rate: float) -> float:
     """Taux d'honoraires de négociation arrondi au demi-point (0,005), moitiés vers le haut."""
     steps = (Decimal(repr(float(rate))) / NEGOTIATION_FEE_RATE_STEP).quantize(Decimal(1), rounding=ROUND_HALF_UP)
@@ -882,7 +920,7 @@ def build_display(
              "virtual_tours": len(features.get("virtual_tours") or [])}
     listing = features.get("listing") or {}
     office = office or {}
-    service = office_name(office) or known(contact.get("nom"))
+    manager = display_manager(contact, office)
     display: dict[str, Any] = {
         "schema_version": DISPLAY_SCHEMA_VERSION,
         "source": "notaires",
@@ -901,9 +939,8 @@ def build_display(
     if attachments:
         display["attachments_access"] = {"restricted": True, "note": DOCUMENTS_ACCESS_NOTE}
     # Aucune adresse e-mail dans le bloc d'affichage : leur collecte n'est pas décidée.
-    if service:
-        display["manager"] = {"service": service,
-                              "heading": "Office notarial"}
+    if manager:
+        display["manager"] = manager
     if features.get("cadastre_designation"):
         display["location"] = {"designation": features["cadastre_designation"],
                                **({"insee_code": features.get("insee_code")} if features.get("insee_code") else {})}
