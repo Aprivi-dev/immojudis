@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
-  classify: vi.fn(),
+  contactSales: vi.fn(),
   sale: vi.fn(),
   allowed: vi.fn(),
   persist: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   return { supabaseAdmin: { rpc: mocks.rpc, from: () => query } };
 });
 vi.mock("@/lib/admin-information-agent-sale", () => ({
-  classifyInformationAgentSaleContacts: mocks.classify,
+  loadInformationAgentContactSales: mocks.contactSales,
   loadAdminInformationAgentSale: mocks.sale,
 }));
 vi.mock("@/lib/auction-fact-claims", () => ({
@@ -77,7 +77,15 @@ function sale(overrides: Record<string, unknown>) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.rpc.mockResolvedValue({ data: { items: [{ id: SALE_ID }] }, error: null });
-  mocks.classify.mockResolvedValue(new Map([[SALE_ID, "A"]]));
+  // Lecture légère des ventes de la file (annonce et registre interne) : même fiche que la lecture complète.
+  mocks.contactSales.mockImplementation(async ({ saleIds }: { saleIds: string[] }) => ({
+    sales: new Map(
+      await Promise.all(
+        saleIds.map(async (saleId) => [saleId, await mocks.sale({ saleId })] as const),
+      ),
+    ),
+    registryReadable: true,
+  }));
   mocks.allowed.mockResolvedValue(undefined);
   mocks.persist.mockResolvedValue(undefined);
   mocks.excluded.mockResolvedValue(new Set());
@@ -150,5 +158,157 @@ describe("sélection du pilote : identité du professionnel et clé de structure
         ],
       }),
     );
+  });
+});
+
+describe("file du pilote : les ventes refusées d'avance ne consomment pas les 25 examens", () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  /** Vente dont la seule adresse est une adresse Licitor décodée (registre interne). */
+  const licitorOnly = (n: number) =>
+    sale({
+      id: id(n),
+      source_name: "licitor",
+      lawyer_name: null,
+      lawyer_contact: null,
+      registry_contacts: [
+        {
+          email: `me.avocat${n}@cabinet-licitor-${n}.example.test`,
+          displayName: `Maître Paul Licitor${n}`,
+          role: "lawyer",
+          sourceName: "licitor",
+          sourceUrl: `https://annonces.example.test/licitor/${n}`,
+          observedAt: "2026-11-01T10:00:00Z",
+        },
+      ],
+    });
+  const eligible = (n: number) =>
+    sale({
+      id: id(n),
+      lawyer_name: `Maître Jean Dupont${n}`,
+      lawyer_contact: `me.dupont${n}@cabinet-dupont-${n}.example.test`,
+    });
+
+  function queue(sales: Array<ReturnType<typeof sale>>) {
+    const byId = new Map(sales.map((item) => [item.id as string, item]));
+    mocks.rpc.mockImplementation(
+      async (_name: string, args: { p_limit: number; p_offset: number }) => ({
+        data: {
+          items: sales
+            .slice(args.p_offset, args.p_offset + args.p_limit)
+            .map((item) => ({ id: item.id })),
+        },
+        error: null,
+      }),
+    );
+    mocks.sale.mockImplementation(async ({ saleId }: { saleId: string }) => byId.get(saleId));
+    mocks.registry.mockImplementation(async (email: string) => ({
+      firstRecordedAt: "2026-11-01T10:00:00Z",
+      observedAt: "2026-11-01T10:00:00Z",
+      originKinds: ["sale_listing"],
+      licitorDecoded: email.includes("licitor"),
+    }));
+  }
+
+  it("30 ventes Licitor décodées en tête de file : des candidats au-delà, sans examen de ces 30", async () => {
+    queue([
+      ...Array.from({ length: 30 }, (_, n) => licitorOnly(n)),
+      ...Array.from({ length: 10 }, (_, n) => eligible(100 + n)),
+    ]);
+    const result = await search();
+    expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([
+      id(100),
+      id(101),
+      id(102),
+    ]);
+    expect(result.skipped).toEqual({ licitor_decoded_refused: 30 });
+    expect(result.examined).toBe(3);
+    // Aucun relevé enregistré ni aucune lecture du registre pour les ventes écartées d'avance.
+    expect(mocks.persist).toHaveBeenCalledTimes(3);
+    expect(mocks.registry).toHaveBeenCalledTimes(3);
+  });
+
+  it("toute une page de ventes refusées d'avance : la page suivante de la file est lue", async () => {
+    const soon = (n: number) => ({ ...eligible(n), sale_date: "2026-11-08T10:00:00Z" });
+    queue([
+      ...Array.from({ length: 60 }, (_, n) => licitorOnly(n)),
+      ...Array.from({ length: 60 }, (_, n) => soon(200 + n)),
+      eligible(300),
+    ]);
+    const result = await search();
+    expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([id(300)]);
+    expect(result.skipped).toEqual({ licitor_decoded_refused: 60, sale_too_soon: 60 });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "admin_information_agent_queue",
+      expect.objectContaining({ p_offset: 100, p_class: "A" }),
+    );
+  });
+
+  it("la borne de 25 examens réels par passage tient", async () => {
+    // Ventes examinées puis refusées par la vérification complète (réponse reçue il y a moins de 90 jours).
+    queue(Array.from({ length: 40 }, (_, n) => eligible(400 + n)));
+    mocks.history.mockResolvedValue({
+      alreadyInformed: false,
+      lastReplyAt: "2026-11-01T10:00:00Z",
+      silentSendsInSixMonths: 0,
+      lastSendAt: null,
+    });
+    const result = await search();
+    expect(result.examined).toBe(25);
+    expect(result.candidates).toEqual([]);
+    expect(result.skipped).toEqual({ reply_pause: 25 });
+  });
+
+  describe("avocat d'une annonce de vente notariale : la garde des envois aux notaires le refusera", () => {
+    // Organisateur déclaré « avocat poursuivant » sur une annonce de `notaires` : le bloc avocat est un avocat,
+    // mais la vente est notariale (`sale_audience = notary`), dont les envois restent fermés par défaut.
+    const notarialSale = () =>
+      sale({
+        source_name: "notaires",
+        source_url: "https://annonces.example.test/notaires/vente-1",
+        lawyer_name: null,
+        lawyer_contact: null,
+        information_agent_organizer_type: "pursuing_lawyer",
+        listing_contact_blocks: [
+          {
+            sourceName: "notaires",
+            sourceUrl: "https://annonces.example.test/notaires/vente-1",
+            officeCode: null,
+            contact: [],
+            manager: [],
+            lawyer: [
+              {
+                email: "me.durand@cabinet-durand.example.test",
+                name: "Maître Paul Durand",
+                field: "source_blocks.lawyer.email",
+                principal: true,
+                addressKind: "nominative",
+              },
+            ],
+          },
+        ],
+      });
+
+    it("écarté par la file, sans examen ni rejet de politique à l'aperçu", async () => {
+      mocks.sale.mockResolvedValue(notarialSale());
+      const result = await search();
+      expect(result.candidates).toEqual([]);
+      expect(result.skipped).toEqual({ notary_send_closed: 1 });
+      expect(result.examined).toBe(0);
+      expect(mocks.persist).not.toHaveBeenCalled();
+    });
+
+    it("retenu quand le réglage ouvre les envois aux notaires (même règle que la garde)", async () => {
+      mocks.sale.mockResolvedValue(notarialSale());
+      const result = await findAutopilotCandidates({
+        settings,
+        now: NOW,
+        limit: 3,
+        env: { INFORMATION_AGENT_NOTARY_SEND_ENABLED: "true" },
+      });
+      expect(result.skipped).toEqual({});
+      expect(result.candidates.map((candidate) => candidate.email)).toEqual([
+        "me.durand@cabinet-durand.example.test",
+      ]);
+    });
   });
 });

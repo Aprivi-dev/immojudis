@@ -11,6 +11,8 @@ export type SummaryValue<T> = { value: T | null; failed: boolean };
 
 export type InformationAgentSummaryData = {
   pilotMode: SummaryValue<"off" | "simulation" | "live">;
+  /** Arrêté automatiquement par un seuil ; le motif en clair est dans `pilotNotice`. */
+  pilotAutoStopped: boolean;
   pilotNotice: { tone: "alert" | "warn"; text: string } | null;
   sentToday: SummaryValue<string>;
   toReview: SummaryValue<number>;
@@ -44,6 +46,7 @@ export function useInformationAgentSummary(): InformationAgentSummaryData {
   const unroutedCount = pick(unrouted, (data) => data.total);
   return {
     pilotMode: pick(pilot, (data) => data.mode),
+    pilotAutoStopped: pilot.data?.autoStopped === true,
     pilotNotice: pilot.data?.notice ?? null,
     sentToday: pick(pilot, (data) => data.sentToday),
     toReview,
