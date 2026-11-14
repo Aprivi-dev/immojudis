@@ -117,10 +117,10 @@ function SaleDetailContent({
   const [from, setFrom] = useState<string | null>(null);
   const [requestedHash, setRequestedHash] = useState("");
   useEffect(() => {
-    const origin = new URLSearchParams(window.location.search).get("from");
-    setFrom(origin);
-    // « S'inscrire » de l'en-tête ne porte pas la vente : `/login` la retrouve dans l'onglet.
-    rememberSaleForSignup(saleDetailPath(id, safeSalesReturnTo(origin)));
+    setFrom(new URLSearchParams(window.location.search).get("from"));
+    // « S'inscrire » de l'en-tête ne porte pas la vente : `/login` la retrouve dans l'onglet (adresse
+    // de la fiche seule, sans origine : elle part dans le lien de confirmation par e-mail).
+    rememberSaleForSignup(saleDetailPath(id));
     const updateHash = () => setRequestedHash(window.location.hash);
     updateHash();
     window.addEventListener("hashchange", updateHash);

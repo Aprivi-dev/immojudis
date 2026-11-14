@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rememberedSaleForSignup, rememberSaleForSignup } from "@/lib/signup-return-sale";
+import {
+  forgetSaleForSignup,
+  rememberedSaleForSignup,
+  rememberSaleForSignup,
+} from "@/lib/signup-return-sale";
 
 const SALE = "/sales/0f8c3b9e-6a1d-4c2e-9b7a-2d5e8f1a3c4b";
 
@@ -13,8 +17,13 @@ describe("fiche retenue pour l'inscription", () => {
   it("rend l'adresse notée dans l'onglet, telle quelle", () => {
     rememberSaleForSignup(SALE);
     expect(rememberedSaleForSignup()).toBe(SALE);
-    rememberSaleForSignup(`${SALE}?from=%2Ffavoris`);
-    expect(rememberedSaleForSignup()).toBe(`${SALE}?from=%2Ffavoris`);
+  });
+
+  it("efface l'adresse quand elle a servi", () => {
+    rememberSaleForSignup(SALE);
+    forgetSaleForSignup();
+    expect(rememberedSaleForSignup()).toBeUndefined();
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it("ne rend rien quand aucune fiche n'a été notée", () => {
@@ -33,6 +42,7 @@ describe("fiche retenue pour l'inscription", () => {
     });
     expect(() => rememberSaleForSignup(SALE)).not.toThrow();
     expect(rememberedSaleForSignup()).toBeUndefined();
+    expect(() => forgetSaleForSignup()).not.toThrow();
   });
 
   it("stockage plein ou lecture refusée : ni erreur, ni fiche", () => {
