@@ -149,7 +149,7 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (type de pièce et date), avec leur contenu tel qu’il a été transmis",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur, date de réception et type de pièce), avec leur contenu tel qu’il a été transmis",
     basis:
       "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
@@ -320,13 +320,13 @@ export function PrivacyPage({
             <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
               de pièces, l’occupation, la mise à prix ou la date de la vente) peuvent compléter ou
-              corriger la fiche publique de la vente, après vérification par un membre de l’équipe.
-              Ces valeurs sont affichées sans votre nom. Pour une information venue de l’avocat
-              poursuivant, la fiche indique cette qualité et la date de son message, et rappelle de
-              la vérifier dans le cahier des conditions de vente : comme la fiche nomme par ailleurs
-              l’organisateur de la vente, l’avocat reste identifiable. Une photo ou une pièce
-              transmise peut aussi être ajoutée à la fiche, après la même vérification : une pièce
-              transmise est publiée sous un libellé neutre (type de pièce et date) ; son contenu est
+              corriger la fiche publique de la vente, après relecture. Ces valeurs sont affichées
+              sans votre nom. Pour une information venue de l’avocat poursuivant, la fiche indique
+              cette qualité et la date de son message, et rappelle de la vérifier dans le cahier des
+              conditions de vente : comme la fiche nomme par ailleurs l’organisateur de la vente,
+              l’avocat reste identifiable. Une photo ou une pièce transmise peut aussi être ajoutée
+              à la fiche, après la même relecture : une pièce transmise est publiée sous un libellé
+              neutre (qualité de l’expéditeur, date de réception et type de pièce) ; son contenu est
               publié tel qu’il a été transmis. Vous pouvez à tout moment, sans motif, demander le
               retrait de ce que vous nous avez transmis, en répondant à notre message ou en écrivant
               à {legalValue(publisher.contactEmail)} : nous le retirons alors de la fiche, au plus
