@@ -424,23 +424,60 @@ function saleTooSoon(saleDate: string | null, now: Date): boolean {
 }
 
 /**
- * Refus que la file permet de prononcer AVANT tout examen coûteux (registre, historique, opposition, DNS), avec les
- * seules données de l'annonce : rôle et adresse du contact retenu, date de la vente, réglages en vigueur. Chaque refus
- * rendu ici, `evaluateAutopilotCandidate` le prononcerait aussi (mêmes prédicats) : la file n'écarte jamais un candidat
- * que la vérification complète aurait admis. Le code peut différer du premier motif de la vérification complète.
+ * Article 14 : une personne jamais informée (aucun envoi précédent à cette adresse ou à cette identité) ne peut
+ * l'être que dans les `art14MaxAgeDays` jours qui suivent le premier enregistrement de son adresse. Sans cette date,
+ * la règle est invérifiable : refus. Seule définition, pour la vérification complète et pour le tri de la file.
+ */
+export function autopilotArt14Refusal(
+  facts: Pick<AutopilotCandidateFacts, "alreadyInformed" | "contactFirstRecordedAt">,
+  settings: Pick<AutopilotSettings, "art14RuleEnabled" | "art14MaxAgeDays">,
+  now: Date,
+): "art14_unknown" | "art14_window_expired" | null {
+  if (!settings.art14RuleEnabled || facts.alreadyInformed) return null;
+  if (!facts.contactFirstRecordedAt) return "art14_unknown";
+  const days = (now.getTime() - Date.parse(facts.contactFirstRecordedAt)) / DAY_MS;
+  return days > settings.art14MaxAgeDays ? "art14_window_expired" : null;
+}
+
+/**
+ * Refus que la file permet de prononcer AVANT tout examen coûteux (opposition, relevé de l'adresse, DNS, pièces) :
+ * données de l'annonce (rôle, identité et adresse du contact retenu, date de la vente) puis, quand le tri de la page
+ * les a lues, brouillon d'un administrateur, premier enregistrement de l'adresse et envois précédents. Un fait absent
+ * (non lu) ne refuse jamais. Chaque refus rendu ici, `evaluateAutopilotCandidate` le prononcerait aussi (mêmes
+ * prédicats) : la file n'écarte jamais un candidat que la vérification complète aurait admis. Le code peut différer
+ * du premier motif de la vérification complète.
+ *
+ * Article 14 : une date de premier enregistrement absente ne refuse pas ici. L'examen enregistre l'adresse de
+ * l'annonce avant de lire cette date (`persistInformationAgentContactObservations`) : une adresse encore inconnue
+ * du registre y est datée du jour même.
  */
 export function autopilotQueueRefusal(
   facts: Pick<
     AutopilotCandidateFacts,
-    "recipientRole" | "consumerDomain" | "observationChannel" | "saleDate"
-  >,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded">,
+    "recipientRole" | "identityComplete" | "consumerDomain" | "observationChannel" | "saleDate"
+  > &
+    Partial<
+      Pick<
+        AutopilotCandidateFacts,
+        "humanDraftExists" | "alreadyInformed" | "contactFirstRecordedAt"
+      >
+    >,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14RuleEnabled" | "art14MaxAgeDays">,
   now: Date,
 ): string | null {
   if (facts.recipientRole !== "lawyer") return "role_not_lawyer";
+  if (!facts.identityComplete) return "identity_incomplete";
   if (facts.consumerDomain) return "consumer_domain";
   if (licitorDecodedRefused(facts.observationChannel, settings)) return "licitor_decoded_refused";
   if (saleTooSoon(facts.saleDate, now)) return "sale_too_soon";
+  if (facts.humanDraftExists) return "admin_draft_exists";
+  if (facts.alreadyInformed === false && facts.contactFirstRecordedAt) {
+    return autopilotArt14Refusal(
+      { alreadyInformed: false, contactFirstRecordedAt: facts.contactFirstRecordedAt },
+      settings,
+      now,
+    );
+  }
   return null;
 }
 
@@ -472,13 +509,8 @@ export function evaluateAutopilotCandidate(
   if (!facts.hasUnpublishedGap) return no("no_unpublished_gap");
   if (facts.humanDraftExists) return no("admin_draft_exists");
   if (facts.identityExcluded) return no("identity_excluded");
-  if (settings.art14RuleEnabled && !facts.alreadyInformed) {
-    // Sans date de premier relevé, la règle ne peut pas être vérifiée : refus.
-    if (!facts.contactFirstRecordedAt) return no("art14_unknown");
-    if (daysSince(facts.contactFirstRecordedAt) > settings.art14MaxAgeDays) {
-      return no("art14_window_expired");
-    }
-  }
+  const art14 = autopilotArt14Refusal(facts, settings, now);
+  if (art14) return no(art14);
   if (facts.lastReplyAt && daysSince(facts.lastReplyAt) < AUTOPILOT_REPLY_PAUSE_DAYS) {
     return no("reply_pause");
   }
