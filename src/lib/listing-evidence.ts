@@ -1,4 +1,4 @@
-import { occupancyLabel } from "./format";
+import { formatClock, occupancyLabel } from "./format";
 import type { AuctionSale } from "./types";
 import { saleSession, saleWindow } from "./sale-window";
 import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
@@ -156,6 +156,6 @@ export function saleTimeConflict(sale: AuctionSale): string | null {
     minute: "2-digit",
   }).format(date);
   return sourceDay !== parisDateKey(date) || sourceTime !== actualTime
-    ? `Date ou horaire contradictoire : le texte source indique le ${match[1]} à ${sourceTime}. Faites confirmer le rendez-vous par l’organisateur.`
+    ? `Date ou horaire contradictoire : le texte source indique le ${match[1]} à ${formatClock(match[2], match[3] ?? "00")}. Faites confirmer le rendez-vous par l’organisateur.`
     : null;
 }

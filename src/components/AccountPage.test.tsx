@@ -112,14 +112,14 @@ describe("AccountPage unlocks", () => {
 
     const status = await screen.findByTestId("account-launch-offer");
     expect(status.textContent).toBe(
-      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14 h 05 ; rien ne devient payant automatiquement. À son terme, votre compte revient à l’offre Découverte, gratuite.",
     );
     expect(screen.getByText("Analyse · essai gratuit prolongé")).toBeTruthy();
     expect(screen.queryByText(/portail sécurisé Stripe/)).toBeNull();
     expect(screen.queryByText(/accès jusqu’au/)).toBeNull();
     expect(screen.getByTestId("account-offer-end")).toBeTruthy();
     expect(screen.getByTestId("account-offer-end-date").textContent).toBe(
-      "Votre essai gratuit, prolongé, se termine le 1er décembre 2026 à 14:05.",
+      "Votre essai gratuit, prolongé, se termine le 1er décembre 2026 à 14 h 05.",
     );
   });
 
@@ -137,7 +137,7 @@ describe("AccountPage unlocks", () => {
     renderPage();
 
     expect((await screen.findByTestId("account-offer-end-date")).textContent).toBe(
-      "Votre essai gratuit se termine le 1er novembre 2026 à 14:05.",
+      "Votre essai gratuit se termine le 1er novembre 2026 à 14 h 05.",
     );
   });
 

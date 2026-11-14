@@ -14,6 +14,7 @@ export {
 export {
   formatDate,
   formatDateTime,
+  formatClock,
   formatWeekdayDate,
   formatWeekday,
   formatShortDate,

@@ -379,7 +379,11 @@ export function ListingChecks({
       <p className={styles.checksNote}>{POINTS_TO_VERIFY_NOTE}</p>
 
       <p className={styles.checksDocuments}>
-        {documentCount > 0 ? `${documentCount} pièce(s) consultable(s)` : "Aucune pièce attachée"}
+        {documentCount > 1
+          ? `${documentCount} pièces consultables`
+          : documentCount === 1
+            ? "1 pièce consultable"
+            : "Aucune pièce attachée"}
         {" · "}
         <a href="#documents">Consulter les pièces du dossier</a>
         {saleId ? (

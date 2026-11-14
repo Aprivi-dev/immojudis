@@ -255,7 +255,7 @@ describe("page Mon compte", () => {
 
     expect(await screen.findByText("Analyse · essai gratuit")).toBeTruthy();
     expect(screen.getByTestId("account-launch-offer").textContent).toBe(
-      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14:05. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.",
+      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14 h 05. À son terme, votre compte revient à l’offre Découverte, gratuite : rien ne devient payant automatiquement.",
     );
     // Aucun compteur de déblocages (accès complet) et aucune explication du portail Stripe.
     expect(screen.queryByTestId("account-unlocks")).toBeNull();

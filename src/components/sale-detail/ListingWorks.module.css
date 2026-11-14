@@ -1,4 +1,6 @@
 .section {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
   /* Les grilles suivent la largeur réelle du bloc (colonne de la fiche), pas celle de l'écran. */
   container-type: inline-size;
   /* La fiche coupe les mots n'importe où (`overflow-wrap: anywhere`) : ici, un titre ne se coupe

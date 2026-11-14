@@ -389,8 +389,8 @@ describe("readable listing sections", () => {
   it("shows the actual visits and an actionable dossier contact", () => {
     render(<ListingPracticalDetails sale={item()} />);
     expect(screen.getByRole("heading").textContent).toBe("L’audience et les visites");
-    expect(screen.getByText("2 octobre 2026 · 14:00")).toBeTruthy();
-    expect(screen.getByText("7 octobre 2026 · 10:30")).toBeTruthy();
+    expect(screen.getByText("2 octobre 2026 · 14 h 00")).toBeTruthy();
+    expect(screen.getByText("7 octobre 2026 · 10 h 30")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "contact-demo@immojudis.com" }).getAttribute("href"),
     ).toBe("mailto:contact-demo@immojudis.com");

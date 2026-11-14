@@ -184,17 +184,17 @@ describe("listing dates", () => {
     expect(listingDate("2026-10-15")).toBe("15 octobre 2026");
   });
   it("displays a zoned auction time in Paris", () => {
-    expect(listingDate("2026-10-15T07:30:00Z")).toContain("09:30");
+    expect(listingDate("2026-10-15T07:30:00Z")).toContain("9 h 30");
   });
   it("does not display a fabricated Paris hour for a UTC-midnight date-only value", () => {
     expect(listingDate("2026-10-14T00:00:00+00:00")).toBe("14 octobre 2026");
   });
   it.each(["2026-10-02 à 14:00", "2026-10-02T14:00:00"])("keeps the local time of %s", (date) => {
-    expect(listingDate(date)).toBe("2 octobre 2026 · 14:00");
+    expect(listingDate(date)).toBe("2 octobre 2026 · 14 h 00");
   });
   it("keeps published free text and ranges", () => {
     expect(listingDate("Sur rendez-vous uniquement")).toBe("Sur rendez-vous uniquement");
-    expect(listingDate("2026-10-02 à 14:00–15:00")).toBe("2 octobre 2026 · 14:00–15:00");
+    expect(listingDate("2026-10-02 à 14:00–15:00")).toBe("2 octobre 2026 · 14 h 00–15 h 00");
     expect(listingDate("2026-02-31")).toBe("2026-02-31");
     expect(listingDate(null)).toBe("Date non renseignée");
   });
@@ -206,7 +206,7 @@ describe("listing dates", () => {
           source_blocks: { visites: "Le 2 octobre à 14 heures" },
         }),
       ),
-    ).toEqual(["2 octobre 2026 · 14:00"]);
+    ).toEqual(["2 octobre 2026 · 14 h 00"]);
   });
   it("uses published visit text when structured slots are absent", () => {
     expect(listingVisits(sale({ source_blocks: { visites: "Sur rendez-vous" } }))).toEqual([

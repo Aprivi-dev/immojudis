@@ -1,5 +1,6 @@
 .page {
-  background: var(--surface);
+  /* Un seul fond de page, le papier du site (docs/design/fondations.md). */
+  background: var(--background);
   color: var(--brand-navy);
   min-height: 100vh;
   overflow-wrap: anywhere;

@@ -180,9 +180,9 @@ export function MarketEvidence({
 
   return (
     <div id="market" className="min-w-0 scroll-mt-2">
-      <h2 className="font-display text-4xl font-medium text-brand-navy sm:text-5xl">
+      <h3 className="mt-10 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
         Marché local
-      </h2>
+      </h3>
       <dl className="mt-7 grid gap-4">
         <MarketFact
           icon={<BadgeEuro className="h-5 w-5" />}
@@ -269,7 +269,7 @@ export function MarketEvidence({
             {comparables.map((item, index) => (
               <li
                 key={`${item.date}-${item.totalPrice}-${index}`}
-                className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto] sm:items-center sm:gap-4"
+                className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_8rem] sm:items-center sm:gap-4"
               >
                 <div>
                   <p className="text-sm font-semibold">
