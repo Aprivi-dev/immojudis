@@ -303,6 +303,21 @@ describe("délai dépassé, coupure réseau et annulation", () => {
     },
   );
 
+  it("ne prend pas un corps qui ne se sérialise pas pour une coupure réseau", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = (await apiRequest("/api/admin/pipeline", {
+      anonymous: true,
+      method: "PATCH",
+      body: { limit: 1n },
+    }).catch((caught: unknown) => caught)) as Error;
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.message).not.toBe(NETWORK_MESSAGE);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("laisse passer telle quelle une annulation voulue par l'appelant, sans message traduit", async () => {
     vi.stubGlobal("fetch", hangingFetch());
     const caller = new AbortController();
