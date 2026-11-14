@@ -20,13 +20,14 @@ export const GET = adminRoute(
   },
 );
 
-/** Arrêt d'urgence : « on » vers « shadow » ou « off » seulement (jamais l'ouverture). */
+/**
+ * Arrêt d'urgence : « on » vers « shadow » ou « off » seulement (jamais l'ouverture). Le mode est
+ * obligatoire (`{ mode: "shadow" | "off" }`) : un corps vide ou sans mode est refusé en 400.
+ */
 export const POST = adminRoute(
   { scope: "admin.pepites.suspend", fallbackMessage: "Pépites non suspendues", guard: "admin" },
   async (request, { authToken }) => {
-    // Corps facultatif : sans corps, le mode par défaut du schéma (« shadow »).
-    const raw = await request.text();
-    const input = adminPepitesSuspendSchema.parse(raw.trim() ? JSON.parse(raw) : {});
+    const input = adminPepitesSuspendSchema.parse(await request.json());
     return suspendAdminPepites(authToken, input);
   },
 );
