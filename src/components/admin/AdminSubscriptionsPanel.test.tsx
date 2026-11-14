@@ -86,4 +86,20 @@ describe("AdminSubscriptionsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Précédent — accès payants" }));
     expect(await screen.findByText("1–50 sur 51 · page 1 sur 2")).toBeTruthy();
   });
+
+  it("n'affiche que l'erreur quand la liste échoue, pas l'état vide en plus", async () => {
+    mocks.list.mockRejectedValue(new Error("Liste des abonnements indisponible"));
+    renderPanel();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Liste des abonnements indisponible");
+    expect(screen.queryByText("Aucun accès payant attribué pour le moment")).toBeNull();
+  });
+
+  it("laisse l'actualisation au bouton de l'en-tête de la vue", async () => {
+    renderPanel();
+
+    await screen.findByText("1–50 sur 51 · page 1 sur 2");
+    expect(screen.queryByRole("button", { name: /actualiser/i })).toBeNull();
+  });
 });
