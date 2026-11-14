@@ -174,18 +174,28 @@ describe("buildAdminPepitesView", () => {
   it("dit le mode et que rien n'est visible du public en observation, sans bouton", () => {
     const mode = section(buildAdminPepitesView(data()), "mode");
 
-    expect(mode.title).toBe("Mode : shadow");
+    expect(mode.title).toBe("Mode : Observation");
     expect(mode.paragraphs[0]).toContain("rien n’est visible du public");
     expect(mode.paragraphs[0]).toContain("Règle pepite-v1.1");
     expect(mode.paragraphs[0]).toContain("il n’y a pas de bouton ici");
   });
 
   it.each([
-    ["off", /ne tourne pas/],
-    ["on", /publiques/],
-    ["unknown", /migration/],
-  ] as const)("dit en clair le mode %s", (mode, text) => {
-    expect(section(buildAdminPepitesView(data({ mode })), "mode").paragraphs[0]).toMatch(text);
+    ["off", "Arrêté", /ne tourne pas/],
+    ["on", "Ouvert", /publiques/],
+    ["unknown", "Inconnu", /migration/],
+  ] as const)("dit en clair le mode %s", (mode, label, text) => {
+    const view = section(buildAdminPepitesView(data({ mode })), "mode");
+    expect(view.title).toBe(`Mode : ${label}`);
+    expect(view.paragraphs[0]).toMatch(text);
+  });
+
+  it("ne montre jamais le nom technique des modes (shadow, on, off)", () => {
+    for (const mode of ["off", "shadow", "on", "unknown"] as const) {
+      const view = buildAdminPepitesView(data({ mode }));
+      const text = view.sections.flatMap((item) => [item.title, ...item.paragraphs]).join(" ");
+      expect(text, mode).not.toMatch(/\bshadow\b|« on »|« off »|\(on\)|\(off\)/);
+    }
   });
 
   it("affiche les compteurs par type de vente et le total", () => {
