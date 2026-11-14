@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiRequest } from "@/lib/client-api-core";
 import { formatCompactDateTime, queryErrorMessage } from "./admin-format";
 
 // 23:30 UTC le 31 octobre est déjà le 1er novembre à Paris (UTC+1) : le jour et l'heure affichés
@@ -20,5 +21,40 @@ describe("formats des écrans admin", () => {
     );
     expect(queryErrorMessage(new Error(""), "Chargement impossible")).toBe("Chargement impossible");
     expect(queryErrorMessage("échec", "Chargement impossible")).toBe("Chargement impossible");
+  });
+});
+
+// Audit du 14/11/2026 (I2) : les écrans admin affichent le message de l'erreur ; un délai dépassé
+// ou une coupure réseau arrivent déjà traduits par `apiFetch`.
+describe("message d'une requête admin qui n'aboutit pas", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("affiche en français une coupure réseau", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const error = await apiRequest("/api/admin/dashboard", { anonymous: true }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(queryErrorMessage(error, "Chargement impossible")).toBe(
+      "Connexion impossible. Vérifiez votre réseau puis réessayez.",
+    );
+  });
+
+  it("affiche en français un délai dépassé", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_path: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
+          ),
+      ),
+    );
+    const error = await apiRequest("/api/admin/dashboard", {
+      anonymous: true,
+      timeoutMs: 5,
+    }).catch((caught: unknown) => caught);
+    expect(queryErrorMessage(error, "Chargement impossible")).toBe(
+      "Le serveur met trop de temps à répondre. Réessayez dans un instant.",
+    );
   });
 });
