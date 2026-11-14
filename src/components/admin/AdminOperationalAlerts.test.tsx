@@ -72,7 +72,9 @@ describe("AdminOperationalAlerts", () => {
     expect(unrouted.closest("li")?.querySelector("a")?.getAttribute("href")).toBe(
       "/admin/agent-ia?onglet=reponses",
     );
-    expect(screen.getByText("Source notaires : fiches non revérifiées à temps")).toBeTruthy();
+    expect(
+      screen.getByText("Source Immobilier.notaires : fiches non revérifiées à temps"),
+    ).toBeTruthy();
     // Une alerte refermée dont la notification reste à livrer n'est pas « ouverte ».
     expect(screen.queryByText("Tâches planifiées en retard")).toBeNull();
     expect(screen.getAllByRole("listitem")).toHaveLength(3);

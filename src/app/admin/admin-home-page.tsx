@@ -40,6 +40,7 @@ import {
   fetchAdminPublicationRequests,
 } from "@/lib/client-api";
 import { formatShortDate } from "@/lib/format/dates";
+import { sourceDisplayName } from "@/lib/source-names";
 import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type { PrivacyRequestAdminSummary } from "@/lib/privacy-requests";
 
@@ -211,6 +212,13 @@ function quantity(value: number, singular: string, plural: string): string {
   return `${formatInteger(value)} ${value > 1 ? plural : singular}`;
 }
 
+/** Source d'une collecte : nom lisible, ou « toutes les sources » pour un lancement complet (`all`). */
+function runSourceName(source: string | null): string {
+  if (!source) return "source inconnue";
+  if (source === "all") return "toutes les sources";
+  return sourceDisplayName(source) ?? source;
+}
+
 function summaryCount(run: AuctionRun, key: string): number | null {
   const value = run.summary[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -238,7 +246,7 @@ function CollectionsLine({ data }: { data: AdminDashboardRunsData }) {
           <span>dernière exécution</span>
           <StatusPill status={run.status} />
           <span>
-            {run.source ?? "source inconnue"}
+            {runSourceName(run.source)}
             {run.startedAt ? `, ${formatRelativeTime(run.startedAt)}` : ""}
           </span>
         </>

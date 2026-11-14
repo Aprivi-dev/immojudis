@@ -22,6 +22,7 @@ import {
   formatInteger,
   formatRelativeTime,
   queryErrorMessage,
+  runStatusLabel,
 } from "@/components/admin/admin-format";
 import {
   AdminQueryErrorNotice,
@@ -102,7 +103,7 @@ export function AdminOperationsPage() {
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase("fr-FR");
   const filteredRuns = (data?.runs ?? []).filter((run) =>
     normalizedSearch
-      ? [run.id, run.source, run.status].some((value) =>
+      ? [run.id, run.source, run.status, runStatusLabel(run.status)].some((value) =>
           String(value ?? "")
             .toLocaleLowerCase("fr-FR")
             .includes(normalizedSearch),
@@ -118,7 +119,7 @@ export function AdminOperationsPage() {
       description="Collecte, enrichissement et suivi des traitements."
       adminEmail={data?.adminEmail ?? user?.email}
       searchValue={searchQuery}
-      searchPlaceholder="Rechercher un run…"
+      searchPlaceholder="Rechercher une collecte…"
       onSearchChange={setSearchQuery}
       onRefresh={() => void refresh()}
       isRefreshing={isRefreshing}
@@ -314,8 +315,8 @@ function AdminOperations({
             {(data?.stats.failedRuns ?? 0) > 0 ? (
               <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
                 <AlertTriangle className="size-5 shrink-0" />
-                {data?.stats.failedRuns} run{(data?.stats.failedRuns ?? 0) > 1 ? "s" : ""} en échec
-                nécessite{(data?.stats.failedRuns ?? 0) > 1 ? "nt" : ""} une vérification.
+                {data?.stats.failedRuns} collecte{(data?.stats.failedRuns ?? 0) > 1 ? "s" : ""} en
+                échec nécessite{(data?.stats.failedRuns ?? 0) > 1 ? "nt" : ""} une vérification.
               </div>
             ) : null}
           </>

@@ -181,7 +181,7 @@ describe("AdminOperationsPage", () => {
     expect(collections.getAttribute("aria-selected")).toBe("false");
 
     expect(
-      await screen.findByText("Source notaires : fiches non revérifiées à temps"),
+      await screen.findByText("Source Immobilier.notaires : fiches non revérifiées à temps"),
     ).toBeTruthy();
     expect(mocks.fetchReadiness).toHaveBeenCalledTimes(1);
     // Les trois compteurs d'exécutions, répétés de l'accueil, ont laissé place aux alertes.
