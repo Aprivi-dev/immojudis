@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminInformationAgentMessageActionSchema,
   adminInformationAgentReviewQuerySchema,
@@ -16,13 +15,14 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.read",
     fallbackMessage: "Relecture de l'agent d'information indisponible",
+    guard: "admin",
   },
-  async (request) => {
+  async (request, { authToken }) => {
     // `offset` / `limit` (50 par défaut, 100 au plus) bornent les deux listes ; le total est renvoyé.
     const input = adminInformationAgentReviewQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    return listAdminInformationAgentReview(bearerTokenFromRequest(request), input);
+    return listAdminInformationAgentReview(authToken, input);
   },
 );
 
@@ -30,9 +30,9 @@ export const PATCH = adminRoute(
   {
     scope: "admin.information-agent.review",
     fallbackMessage: "Relecture non enregistrée",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminInformationAgentReviewSchema.parse(await request.json());
     return reviewAdminInformationAgentFact({ authToken, input });
   },
@@ -43,9 +43,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.message-action",
     fallbackMessage: "Action sur la réponse impossible",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminInformationAgentMessageActionSchema.parse(await request.json());
     return runAdminInformationAgentMessageAction({ authToken, input });
   },

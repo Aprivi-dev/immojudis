@@ -102,6 +102,29 @@ describe("AdminInformationAgentMissionsList (onglet Envois)", () => {
     });
   });
 
+  it("marque chaque mission « Pilote » ou « Manuel », « Manuel » quand la marque manque", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: (["autopilot", "manual", null, undefined] as const).map((trigger, index) => ({
+        ...mission("sent"),
+        id: `mission-${index}`,
+        recipientEmail: `origine${index}@example.test`,
+        trigger,
+      })),
+      facts: [],
+    });
+
+    renderList();
+
+    const pilot = await screen.findByText("Pilote");
+    expect(pilot.className).toContain("text-info");
+    expect(screen.getAllByText("Manuel")).toHaveLength(3);
+    // La marque est sur la ligne de sa mission.
+    expect(pilot.closest("div.flex")?.parentElement?.textContent).toContain(
+      "origine0@example.test",
+    );
+  });
+
   it("indique l'état de chaque mission : brouillon, envoyée, réponse reçue, échec", async () => {
     mocks.list.mockResolvedValue({
       ok: true,

@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminLawyerReferralUpdateInputSchema,
   listAdminLawyerReferralRequests,
@@ -14,9 +13,9 @@ export const GET = adminRoute(
   {
     scope: "admin.lawyer-referrals.read",
     fallbackMessage: "Mises en relation indisponibles",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const page = adminPageQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
@@ -28,9 +27,9 @@ export const PATCH = adminRoute(
   {
     scope: "admin.lawyer-referrals.write",
     fallbackMessage: "Mise en relation non modifiée",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminLawyerReferralUpdateInputSchema.parse(await request.json());
     return updateAdminLawyerReferralRequest({ authToken, input });
   },

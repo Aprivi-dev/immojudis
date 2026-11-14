@@ -2,8 +2,6 @@ import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { NotFoundError } from "@/lib/api-errors";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
@@ -23,9 +21,12 @@ const pipelineControlSettingsSchema = z
   });
 
 export const PATCH = adminRoute(
-  { scope: "admin.pipeline.control", fallbackMessage: "Contrôle du pipeline indisponible" },
+  {
+    scope: "admin.pipeline.control",
+    fallbackMessage: "Contrôle du pipeline indisponible",
+    guard: "admin",
+  },
   async (request) => {
-    await assertAdminAuth(bearerTokenFromRequest(request));
     const input = pipelineControlSettingsSchema.parse(await request.json());
     const { data, error } = await supabaseAdmin
       .from("auction_pipeline_control")

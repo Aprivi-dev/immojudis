@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminDashboardQuerySchema,
   getAdminDashboard,
@@ -20,13 +19,16 @@ const CACHE_CONTROL: Record<AdminDashboardSection | "all", string> = {
 };
 
 export const GET = adminRoute(
-  { scope: "admin.dashboard.read", fallbackMessage: "Tableau de bord indisponible" },
-  async (request) => {
+  {
+    scope: "admin.dashboard.read",
+    fallbackMessage: "Tableau de bord indisponible",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     // `?section=runs|counts` ne calcule que la section demandée ; sans paramètre, toutes.
     const { section } = adminDashboardQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    const authToken = bearerTokenFromRequest(request);
     const dashboard = section
       ? await getAdminDashboardSection(authToken, section)
       : await getAdminDashboard(authToken);

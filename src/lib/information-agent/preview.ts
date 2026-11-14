@@ -46,7 +46,18 @@ import { informationAgentAudienceInvitesDocuments } from "@/lib/information-agen
 import { missionRecipient, missionSaleReference } from "@/lib/information-agent/mission-identity";
 import { loadOwnedMission } from "@/lib/information-agent/mission-store";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
-import type { InformationAgentPreviewInput } from "@/lib/information-agent/schemas";
+import {
+  assertIssuedAutopilotTrigger,
+  type InformationAgentPreviewInput,
+  type InformationAgentSendTrigger,
+} from "@/lib/information-agent/schemas";
+
+/**
+ * Motif d'un contrôle qui n'a pas pu s'exécuter (panne passagère de la base ou d'un service) : rien n'est refusé,
+ * l'aperçu est à refaire. Le pilote le compte comme une erreur de son passage, jamais comme un rejet de politique.
+ */
+export const INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE =
+  "Contrôle impossible pour le moment : réessayez l’aperçu.";
 
 export type InformationAgentPreviewResponse = {
   ok: true;
@@ -82,12 +93,16 @@ export async function previewAdminInformationAgentMission({
   auth,
   input,
   env = process.env,
+  trigger,
 }: {
   auth: SupabaseAuthContext;
   input: InformationAgentPreviewInput;
   env?: NodeJS.ProcessEnv;
+  /** Interne : le pilote automatique, comme pour l'envoi (`approveAndSendMission`) ; absent pour un administrateur. */
+  trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentPreviewResponse> {
   assertAdmin(auth);
+  assertIssuedAutopilotTrigger(trigger);
   const mission = await loadOwnedMission(auth.userId, input.missionId);
   const recipient = normalizedEmail(input.recipientEmail);
   if (!recipient) {
@@ -105,7 +120,7 @@ export async function previewAdminInformationAgentMission({
         console.error(
           JSON.stringify({ scope: "information_agent.preview", error: errorDetailForLog(error) }),
         );
-        blockers.push("Contrôle impossible pour le moment : réessayez l’aperçu.");
+        blockers.push(INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE);
       }
     }
   };
@@ -169,7 +184,8 @@ export async function previewAdminInformationAgentMission({
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
   await collect(() => assertInformationAgentAddressDeliverable(recipient));
-  await collect(() => assertAdminDailyApprovalCap(auth.userId, { env }));
+  // Même règle qu'à l'envoi : le pilote a ses propres plafonds, celui des administrateurs ne s'y applique pas.
+  if (!trigger) await collect(() => assertAdminDailyApprovalCap(auth.userId, { env }));
   await collect(() => resolveInformationAgentEmailConfig(env));
 
   const appUrl = informationAgentAppOrigin(env);

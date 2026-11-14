@@ -69,6 +69,23 @@ describe("executeContractWithdrawal", () => {
     mocks.updatePrivacyRequest.mockImplementation(async ({ input }) => input);
   });
 
+  // Audit du 14/11/2026 (D3), relecture de la PR #502 : la route valide déjà `confirm: true` ; le
+  // module le revérifie, pour un appel qui ne passerait pas par elle.
+  it.each([false, undefined, "oui"])(
+    "refuses an unconfirmed withdrawal (confirm: %j) before reading or changing anything",
+    async (confirm) => {
+      await expect(
+        executeContractWithdrawal({
+          auth,
+          input: { requestId: REQUEST_ID, refundMode: "full", confirm } as never,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(mocks.from).not.toHaveBeenCalled();
+      expect(mocks.subscriptionsCancel).not.toHaveBeenCalled();
+      expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    },
+  );
+
   it("tags the refund with the request so that a retry can find it", async () => {
     mocks.chargesList.mockResolvedValue({
       data: [{ id: "ch_1", paid: true, refunded: false, amount: 5_900, amount_refunded: 0 }],
@@ -77,7 +94,7 @@ describe("executeContractWithdrawal", () => {
 
     const result = await executeContractWithdrawal({
       auth,
-      input: { requestId: REQUEST_ID, refundMode: "prorata" },
+      input: { requestId: REQUEST_ID, refundMode: "prorata", confirm: true },
       now: new Date("2026-10-04T00:00:00.000Z"),
     });
 
@@ -109,7 +126,7 @@ describe("executeContractWithdrawal", () => {
 
     const result = await executeContractWithdrawal({
       auth,
-      input: { requestId: REQUEST_ID, refundMode: "full" },
+      input: { requestId: REQUEST_ID, refundMode: "full", confirm: true },
       // Two days later: Stripe's 24-hour idempotency key no longer protects the call.
       now: new Date("2026-10-06T00:00:00.000Z"),
     });
@@ -144,7 +161,10 @@ describe("executeContractWithdrawal", () => {
     );
 
     await expect(
-      executeContractWithdrawal({ auth, input: { requestId: REQUEST_ID, refundMode: "full" } }),
+      executeContractWithdrawal({
+        auth,
+        input: { requestId: REQUEST_ID, refundMode: "full", confirm: true },
+      }),
     ).rejects.toMatchObject({ status: 409, message: expect.stringContaining(message) });
     expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
     expect(mocks.refundsCreate).not.toHaveBeenCalled();

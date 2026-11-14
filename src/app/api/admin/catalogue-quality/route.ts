@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminCatalogueQuality } from "@/lib/admin-catalogue-quality.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -13,6 +12,7 @@ export const GET = adminRoute(
   {
     scope: "admin.catalogue-quality.read",
     fallbackMessage: "Contrôles qualité du catalogue indisponibles",
+    guard: "admin",
   },
-  async (request) => getAdminCatalogueQuality(bearerTokenFromRequest(request)),
+  async (_request, { authToken }) => getAdminCatalogueQuality(authToken),
 );

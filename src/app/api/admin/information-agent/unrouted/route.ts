@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminInformationAgentUnroutedActionSchema,
   adminInformationAgentUnroutedQuerySchema,
@@ -15,12 +14,13 @@ export const GET = adminRoute(
   {
     scope: "admin.information-agent.unrouted.read",
     fallbackMessage: "Messages sans dossier indisponibles",
+    guard: "admin",
   },
-  async (request) => {
+  async (request, { authToken }) => {
     const input = adminInformationAgentUnroutedQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    return listAdminInformationAgentUnrouted(bearerTokenFromRequest(request), input);
+    return listAdminInformationAgentUnrouted(authToken, input);
   },
 );
 
@@ -29,9 +29,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.unrouted.action",
     fallbackMessage: "Message non marqué comme traité",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminInformationAgentUnroutedActionSchema.parse(await request.json());
     return runAdminInformationAgentUnroutedAction({ authToken, input });
   },

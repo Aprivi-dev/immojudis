@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import {
   adminFactClaimDecisionQuerySchema,
   adminFactClaimDecisionSchema,
@@ -25,10 +23,10 @@ export const GET = adminRoute(
   {
     scope: "admin.fact-claims.decisions",
     fallbackMessage: "Liste des observations indisponible.",
+    guard: "admin",
   },
   async (request) => {
     try {
-      await assertAdminAuth(bearerTokenFromRequest(request));
       const input = adminFactClaimDecisionQuerySchema.parse(
         Object.fromEntries(new URL(request.url).searchParams.entries()),
       );
@@ -44,10 +42,10 @@ export const POST = adminRoute(
   {
     scope: "admin.fact-claims.decisions",
     fallbackMessage: "La décision n'a pas pu être enregistrée.",
+    guard: "admin",
   },
-  async (request) => {
+  async (request, { auth }) => {
     try {
-      const auth = await assertAdminAuth(bearerTokenFromRequest(request));
       const input = adminFactClaimDecisionSchema.parse(await request.json());
       const response = await decideAdminFactClaim({ auth, input });
       return NextResponse.json(response, { headers: NO_REFERRER });

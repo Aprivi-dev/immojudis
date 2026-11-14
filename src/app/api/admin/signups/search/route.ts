@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { adminSignupListQuerySchema, listAdminSignups } from "@/lib/admin-signups";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -10,10 +9,8 @@ export const maxDuration = 30;
  * jamais dans l'URL, que les journaux de requêtes de l'hébergeur conservent.
  */
 export const POST = adminRoute(
-  { scope: "admin.signups.search", fallbackMessage: "Erreur admin inscriptions" },
-  async (request) => {
-    // Le jeton d'abord : sans session, la réponse est 401, que le corps soit valide ou non.
-    const authToken = bearerTokenFromRequest(request);
+  { scope: "admin.signups.search", fallbackMessage: "Erreur admin inscriptions", guard: "admin" },
+  async (request, { authToken }) => {
     const query = adminSignupListQuerySchema.parse(await request.json());
     return listAdminSignups(authToken, query);
   },

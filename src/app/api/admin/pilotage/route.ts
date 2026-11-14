@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminActivation, unavailableActivation } from "@/lib/admin-activation";
 import { getAdminBidCeilings, unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
 import {
@@ -21,9 +20,8 @@ export const maxDuration = 30;
 
 /** Agrégats de la page « Pilotage » : administrateur seulement, jamais mis en cache. */
 export const GET = adminRoute(
-  { scope: "admin.pilotage.read", fallbackMessage: "Pilotage indisponible" },
-  async (request) => {
-    const token = bearerTokenFromRequest(request);
+  { scope: "admin.pilotage.read", fallbackMessage: "Pilotage indisponible", guard: "admin" },
+  async (_request, { authToken: token }) => {
     const now = new Date();
     // La mesure des rappels ne doit pas faire tomber le reste du pilotage : en cas d'échec, elle vaut
     // « non mesuré » (le contrôle du rôle administrateur est fait par `getAdminPilotage`).
