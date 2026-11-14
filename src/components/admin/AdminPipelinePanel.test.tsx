@@ -110,7 +110,7 @@ describe("AdminPipelinePanel", () => {
     expect(screen.queryByText(/Bloquée par/)).toBeNull();
   });
 
-  it("lists the open source alerts in French, never as a technical key", async () => {
+  it("counts the open collection alerts and points to the Alertes tab, without a second list", async () => {
     mocks.fetchStatus.mockResolvedValue({
       ...status([source({})]),
       alerts: [
@@ -133,10 +133,9 @@ describe("AdminPipelinePanel", () => {
 
     expect(
       await screen.findByText(
-        "Source Enchères Immobilières : fiches non revérifiées à temps · notification : en attente",
+        "1 alerte de collecte ouverte : détail dans l’onglet Alertes d’Opérations.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/pipeline\./)).toBeNull();
-    expect(screen.queryByText(/Enrichissement des fiches/)).toBeNull();
   });
 });

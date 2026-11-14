@@ -5,6 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminOperationalReadinessResponse } from "@/lib/admin-readiness";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { AdminOperationalAlerts } from "./AdminOperationalAlerts";
 
 const mocks = vi.hoisted(() => ({ fetchReadiness: vi.fn() }));
@@ -17,16 +18,18 @@ vi.mock("@/components/admin/AdminShell", () => ({
 
 type Alert = AdminOperationalReadinessResponse["operations"]["alerts"][number];
 
+/** Alerte telle que le serveur l'envoie : ligne de la base et libellés déjà mis en forme. */
 function alert(key: string, overrides: Partial<Alert> = {}): Alert {
-  return {
+  const row = {
     key,
     category: "import",
-    severity: "warning",
-    status: "open",
-    deliveryStatus: "delivered",
+    severity: "warning" as const,
+    status: "open" as const,
+    deliveryStatus: "delivered" as const,
     lastSeenAt: "2026-11-14T08:00:00.000Z",
     ...overrides,
   };
+  return { ...row, ...operationalAlertLabels(row) };
 }
 
 function readiness(
