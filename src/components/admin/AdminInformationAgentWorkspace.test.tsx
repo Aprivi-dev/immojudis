@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   sourceStatus: vi.fn(),
   autoPublication: vi.fn(),
+  preview: vi.fn(),
+  action: vi.fn(),
 }));
 
 vi.mock("@/lib/client-api", () => ({
@@ -42,8 +44,8 @@ vi.mock("@/lib/client-api", () => ({
   // Actions : jamais appelées ici, mais lues par les panneaux au montage.
   runAdminCatalogueReadinessActionClient: vi.fn(),
   runAdminInformationAgentAutopilotActionClient: mocks.autopilotAction,
-  runAdminInformationAgentMissionAction: vi.fn(),
-  previewAdminInformationAgentMission: vi.fn(),
+  runAdminInformationAgentMissionAction: mocks.action,
+  previewAdminInformationAgentMission: mocks.preview,
   requestAdminSourceRefresh: vi.fn(),
   reviewAdminInformationAgentFactClient: vi.fn(),
   runAdminInformationAgentMessageActionClient: vi.fn(),
@@ -102,6 +104,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
 });
 
@@ -502,6 +505,145 @@ describe("AdminInformationAgentWorkspace : brouillons préparés par le pilote",
     );
     expect(tab(/Pilote/).getAttribute("aria-selected")).toBe("true");
   });
+
+  // Incident du 14/11/2026 : la vente du brouillon du pilote diffère de la première vente de la file.
+  // Le lien doit ouvrir CETTE mission et l'envoi ne doit porter que sur elle.
+  const PILOT_SALE_ID = "44444444-4444-4444-8444-444444444444";
+  const PILOT_MISSION_ID = "55555555-5555-4555-8555-555555555555";
+  const PILOT_EMAIL = "avocat@cabinet-licitor.example.test";
+  const pilotReady = {
+    count: 1,
+    label: "Prêtes à valider (1 sur 10 au plus)",
+    notice: null,
+    items: [
+      { missionId: PILOT_MISSION_ID, saleId: PILOT_SALE_ID, label: "Maison prête à valider" },
+    ],
+  };
+  const pilotMission = () => ({
+    ...mission("draft", PILOT_EMAIL),
+    id: PILOT_MISSION_ID,
+    saleId: PILOT_SALE_ID,
+    saleTitle: "Maison à Lyon (Licitor)",
+    trigger: "autopilot",
+    recipientName: "Maître Licitor",
+    recipientProfile: {
+      roleLabel: "Avocat",
+      addressKind: "nominative",
+      addressKindLabel: "Adresse nominative",
+      originLabel: "Adresse publiée dans l’annonce",
+      originSourceName: "licitor",
+      originUrl: null,
+    },
+  });
+
+  function mockPilotMissions() {
+    mocks.autopilot.mockResolvedValue(autopilot({ mode: "simulation", ready: pilotReady }));
+    // Missions de la vente du pilote (lien « Prêtes à valider ») ; la première page de l'éditeur les
+    // contient aussi, comme en production.
+    mocks.missions.mockImplementation(async (args?: { saleId?: string }) => ({
+      ok: true,
+      missions: !args?.saleId || args.saleId === PILOT_SALE_ID ? [pilotMission()] : [],
+      facts: [],
+    }));
+    mocks.preview.mockResolvedValue(previewResponse());
+    mocks.action.mockResolvedValue({
+      ok: true,
+      missions: [{ ...pilotMission(), status: "sent" }],
+      facts: [],
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  }
+
+  /** Affiche l'aperçu, confirme la relecture et envoie : rend la charge utile de l'envoi. */
+  async function previewAndSend() {
+    fireEvent.click(screen.getByRole("button", { name: "Afficher l’aperçu" }));
+    await screen.findByTitle("Aperçu de l’e-mail envoyé");
+    fireEvent.click(await screen.findByRole("checkbox", { name: /J’ai relu le message exact/ }));
+    const send = screen.getByRole("button", { name: "Valider et envoyer" }) as HTMLButtonElement;
+    await waitFor(() => expect(send.disabled).toBe(false));
+    fireEvent.click(send);
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    return mocks.action.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it("onglet « À contacter » jamais visité : ouvre la mission du pilote, pas la première vente de la file", async () => {
+    mockPilotMissions();
+    window.history.replaceState(null, "", "/admin/agent-ia?onglet=pilote");
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Maison prête à valider" }));
+
+    expect(await screen.findByRole("tab", { name: /À contacter/, selected: true })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` }),
+    ).toBeTruthy();
+    // La file se charge ensuite (première vente : une autre) sans rien remplacer.
+    await screen.findByRole("button", { name: "Ouvrir le message" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.getByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` })).toBeTruthy();
+    expect(screen.getByText(new RegExp(`annonce ${PILOT_SALE_ID}`))).toBeTruthy();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe(
+      PILOT_EMAIL,
+    );
+
+    const sent = await previewAndSend();
+    expect(mocks.preview.mock.calls[0][0]).toMatchObject({ missionId: PILOT_MISSION_ID });
+    expect(sent).toMatchObject({
+      action: "approve_and_send",
+      missionId: PILOT_MISSION_ID,
+      recipientEmail: PILOT_EMAIL,
+    });
+    // Aucun brouillon préparé pour une autre vente.
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("une autre vente déjà ouverte dans « À contacter » : le lien du pilote la remplace par sa mission", async () => {
+    mockPilotMissions();
+    // Brouillon de la première vente de la file, préparé par l'administrateur avant le clic.
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft", "notaire@example.test"),
+        id: "66666666-6666-4666-8666-666666666666",
+      },
+      gaps: [],
+      facts: [],
+    });
+    window.history.replaceState(null, "", "/admin/agent-ia?onglet=a-contacter");
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "Ouvrir le message" }));
+    expect(
+      await screen.findByRole("heading", { name: "Brouillon pour notaire@example.test" }),
+    ).toBeTruthy();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(tab("Pilote"));
+    fireEvent.click(await screen.findByRole("button", { name: "Maison prête à valider" }));
+
+    expect(
+      await screen.findByRole("heading", { name: `Brouillon pour ${PILOT_EMAIL}` }),
+    ).toBeTruthy();
+    expect(tab(/À contacter/).getAttribute("aria-selected")).toBe("true");
+    expect(
+      screen.queryByRole("heading", { name: "Brouillon pour notaire@example.test" }),
+    ).toBeNull();
+    expect(screen.getByText(new RegExp(`annonce ${PILOT_SALE_ID}`))).toBeTruthy();
+    // À côté de « Valider et envoyer » : la vente et le rôle du destinataire de CETTE mission.
+    expect(screen.getByTestId("send-target").textContent).toBe(
+      "Vente : Maison à Lyon (Licitor) · Destinataire : Avocat",
+    );
+
+    const sent = await previewAndSend();
+    expect(sent).toMatchObject({ missionId: PILOT_MISSION_ID, recipientEmail: PILOT_EMAIL });
+    // Le seul brouillon préparé reste celui que l'administrateur a ouvert lui-même avant le clic.
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("AdminInformationAgentWorkspace : brouillons conservés d'un onglet à l'autre", () => {
@@ -731,6 +873,28 @@ function templateWorkspace() {
     history: [source],
     variables: INFORMATION_AGENT_EMAIL_VARIABLES,
     protectedBlocks: [],
+  };
+}
+
+function previewResponse() {
+  return {
+    ok: true,
+    preview: {
+      from: "agent@example.test",
+      to: "Maître Licitor <avocat@cabinet-licitor.example.test>",
+      replyTo: "enquete+jeton-attribue-a-l-envoi@reponses.example.test",
+      subject: "Demande de pièces",
+      html: "<p>Aperçu</p>",
+      text: "Aperçu",
+    },
+    blockers: [],
+    addressOrigin: {
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente.",
+      url: null,
+      automated: false,
+      known: true,
+    },
+    fingerprint: "f".repeat(64),
   };
 }
 
