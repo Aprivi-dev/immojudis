@@ -281,3 +281,31 @@ describe("lectures des pages et du sitemap", () => {
     ]);
   });
 });
+
+describe("lecture en vol partagée", () => {
+  it("ne lit le filtre qu'une fois quand la page, ses métadonnées et le sitemap arrivent ensemble", async () => {
+    serve({ house: 40, apartment: 3, notary: 2, state: 0 });
+    const [page, metadata, paths] = await Promise.all([
+      tryLoadSaleLanding("house"),
+      loadSaleLandingForPage("house"),
+      loadIndexableSaleLandingPaths(),
+    ]);
+    expect(page).toEqual({ status: "ok", data: metadata });
+    expect(paths).toEqual(["/maison-aux-encheres", "/appartement-aux-encheres"]);
+    // Une lecture par page : « house » partagée par les trois appels, puis les trois autres pages.
+    expect(mocks.client).toHaveBeenCalledTimes(4);
+  });
+
+  it("libère la lecture à sa fin, succès ou échec : l'appel suivant relit", async () => {
+    serve({ house: 4 });
+    await tryLoadSaleLanding("house");
+    await tryLoadSaleLanding("house");
+    expect(mocks.client).toHaveBeenCalledTimes(2);
+
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "down" } });
+    expect(await tryLoadSaleLanding("house")).toEqual({ status: "error" });
+    serve({ house: 4 });
+    const after = await tryLoadSaleLanding("house");
+    expect(after.status === "ok" ? after.data.upcomingCount : null).toBe(4);
+  });
+});

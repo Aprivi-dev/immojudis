@@ -11,6 +11,11 @@ import { loadSaleLandingForPage } from "@/lib/sale-landing-pages.server";
 // SALE_LANDING_REVALIDATE_SECONDS (un test le vérifie).
 export const revalidate = 3600;
 
+// Quand le cache de données est vide, le rendu lit tout le filtre (plusieurs appels à la base) : même
+// durée que les pages de département. Littéral égal à DEPARTMENT_PAGES_MAX_DURATION_SECONDS (un test le
+// vérifie).
+export const maxDuration = 60;
+
 const PAGE = SALE_LANDING_PAGES.apartment;
 
 const count = new Intl.NumberFormat("fr-FR");
