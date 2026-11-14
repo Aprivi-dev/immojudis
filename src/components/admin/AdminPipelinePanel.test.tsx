@@ -53,6 +53,11 @@ function status(sources: PipelineSourceState[]): PipelineStatus {
   };
 }
 
+// Noms d'alerte rangés dans des constantes : un champ `alert_key: "…"` littéral ressemble à un
+// secret pour le contrôle anti-secrets.
+const SOURCE_STALE = "pipeline.source.encheres_immobilieres.stale_listings";
+const ENRICHMENT_STALLED = "pipeline.enrichment.stalled";
+
 function renderPanel() {
   render(
     <QueryClientProvider
@@ -103,5 +108,34 @@ describe("AdminPipelinePanel", () => {
 
     await screen.findByText("agrasc");
     expect(screen.queryByText(/Bloquée par/)).toBeNull();
+  });
+
+  it("counts the open collection alerts and points to the Alertes tab, without a second list", async () => {
+    mocks.fetchStatus.mockResolvedValue({
+      ...status([source({})]),
+      alerts: [
+        {
+          alert_key: SOURCE_STALE,
+          status: "open",
+          notification_status: "pending",
+          notification_event: "opened",
+        },
+        {
+          alert_key: ENRICHMENT_STALLED,
+          status: "resolved",
+          notification_status: "delivered",
+          notification_event: "resolved",
+        },
+      ],
+    });
+
+    renderPanel();
+
+    expect(
+      await screen.findByText(
+        "1 alerte de collecte ouverte : détail dans l’onglet Alertes d’Opérations.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/pipeline\./)).toBeNull();
   });
 });

@@ -6,19 +6,17 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { formatPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
-import { fetchAdminReadiness } from "@/lib/client-api";
-import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
+import type {
+  AdminOperationalReadinessResponse,
+  ReadinessItem,
+  ReadinessStatus,
+} from "@/lib/admin-readiness";
+import { adminReadinessQuery } from "@/components/admin/admin-readiness-query";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { AdminPill } from "@/components/admin/admin-pill";
 
-export const READINESS_QUERY_KEY = ["admin-readiness"] as const;
-
 export function AdminReadinessPanel() {
-  const readinessQuery = useQuery({
-    queryKey: READINESS_QUERY_KEY,
-    queryFn: fetchAdminReadiness,
-    staleTime: 30_000,
-  });
+  const readinessQuery = useQuery(adminReadinessQuery());
   const readiness = readinessQuery.data ?? null;
   const webhookUrl = readiness?.webhookUrl ?? null;
 
@@ -137,8 +135,8 @@ export function AdminReadinessPanel() {
         <div className="mt-5 overflow-hidden rounded-lg border border-brand-navy/10">
           <div className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <span>Incident opérationnel</span>
-            <span>Sévérité</span>
-            <span>Livraison</span>
+            <span>Gravité</span>
+            <span>Notification</span>
           </div>
           <div className="divide-y divide-brand-navy/10">
             {readiness.operations.alerts.map((alert) => (
@@ -147,13 +145,13 @@ export function AdminReadinessPanel() {
                 className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 px-3 py-3 text-xs"
               >
                 <div className="min-w-0">
-                  <div className="truncate font-mono text-foreground">{alert.key}</div>
+                  <div className="text-foreground">{alert.label}</div>
                   <div className="mt-1 text-muted-foreground">
-                    {alert.category} · {formatCompactDateTime(alert.lastSeenAt)}
+                    {alert.stateLabel} · dernier signal le {formatCompactDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
-                <span className="text-foreground">{alert.severity}</span>
-                <span className="text-foreground">{alert.deliveryStatus}</span>
+                <span className="text-foreground">{alert.severityLabel}</span>
+                <span className="text-foreground">{alert.notificationLabel}</span>
               </div>
             ))}
           </div>
@@ -230,7 +228,7 @@ async function copyWebhookUrl(url: string) {
 }
 
 function formatOperationalSlo(
-  operations: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["operations"] | null,
+  operations: AdminOperationalReadinessResponse["operations"] | null,
 ): string {
   if (!operations || operations.successRatePercent == null) return "Non calculé";
   return `${formatPercent(operations.successRatePercent, 3, 3)} / ${formatPercent(operations.sloTargetPercent, 3)}`;

@@ -5,12 +5,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminDashboardCountsData, AdminDashboardRunsData } from "@/lib/admin.server";
+import { operationalAlertLabels } from "@/lib/operational-alert-labels";
 import { AdminOperationsPage } from "./admin-operations-page";
 
 const mocks = vi.hoisted(() => ({
   fetchRuns: vi.fn(),
   fetchCounts: vi.fn(),
   startScroll: vi.fn(),
+  fetchReadiness: vi.fn(),
   toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
@@ -60,6 +62,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminDashboardRuns: mocks.fetchRuns,
   fetchAdminDashboardCounts: mocks.fetchCounts,
   startAdminScrollRequest: mocks.startScroll,
+  fetchAdminReadiness: mocks.fetchReadiness,
 }));
 
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
@@ -85,6 +88,10 @@ const RUNS: AdminDashboardRunsData = {
   ],
 };
 
+// Nom d'alerte rangé dans une constante : un champ `key: "…"` littéral ressemble à un secret
+// pour le contrôle anti-secrets.
+const NOTAIRES_STALE = "pipeline.source.notaires.stale_listings";
+
 const COUNTS: AdminDashboardCountsData = {
   checkedAt: "2026-09-19T08:00:00.000Z",
   counts: {
@@ -101,6 +108,27 @@ beforeEach(() => {
   mocks.fetchRuns.mockResolvedValue(RUNS);
   mocks.fetchCounts.mockResolvedValue(COUNTS);
   mocks.startScroll.mockResolvedValue({ message: "Traitement demandé", run: RUNS.runs[0] });
+  mocks.fetchReadiness.mockResolvedValue({
+    operations: {
+      openAlertCount: 1,
+      alerts: [
+        {
+          key: NOTAIRES_STALE,
+          category: "import",
+          severity: "warning",
+          status: "open",
+          deliveryStatus: "delivered",
+          lastSeenAt: "2026-09-19T07:30:00.000Z",
+          ...operationalAlertLabels({
+            key: NOTAIRES_STALE,
+            severity: "warning",
+            status: "open",
+            deliveryStatus: "delivered",
+          }),
+        },
+      ],
+    },
+  });
 });
 
 afterEach(() => {
@@ -126,7 +154,7 @@ describe("AdminOperationsPage", () => {
     await waitFor(() => expect(mocks.fetchRuns).toHaveBeenCalledTimes(1));
     expect(mocks.fetchCounts).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Documents" }));
     expect(await screen.findByText("Documents indexés")).toBeTruthy();
     await waitFor(() => expect(mocks.fetchCounts).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("8")).toBeTruthy();
@@ -142,9 +170,38 @@ describe("AdminOperationsPage", () => {
     expect(screen.queryByText(/Synthèse IA/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Lancer le backfill" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Enrichissement IA" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Alertes" }));
-    expect(screen.getByText("Runs échoués récents")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Alertes" }));
+    expect(await screen.findByRole("heading", { name: "Alertes ouvertes" })).toBeTruthy();
     expect(screen.queryByText("Synthèses IA à traiter")).toBeNull();
+  });
+
+  it("exposes its sections as tabs and loads the open alerts only on the Alertes tab", async () => {
+    renderOperations();
+    const collections = await screen.findByRole("tab", { name: "Collectes" });
+    expect(collections.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tablist", { name: "Rubriques des opérations" })).toBeTruthy();
+    expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(collections.id);
+    // Seul l'onglet actif pointe vers un panneau : les autres panneaux n'existent pas.
+    expect(collections.getAttribute("aria-controls")).toBe(screen.getByRole("tabpanel").id);
+    expect(screen.getByRole("tab", { name: "Documents" }).getAttribute("aria-controls")).toBeNull();
+    expect(mocks.fetchReadiness).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(collections, { key: "End" });
+    expect(screen.getByRole("tab", { name: "Alertes" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Alertes" }), { key: "Home" });
+    expect(collections.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(collections, { key: "ArrowLeft" });
+    const alerts = screen.getByRole("tab", { name: "Alertes" });
+    expect(alerts.getAttribute("aria-selected")).toBe("true");
+    expect(collections.getAttribute("aria-selected")).toBe("false");
+
+    expect(
+      await screen.findByText("Source Immobilier.notaires : fiches non revérifiées à temps"),
+    ).toBeTruthy();
+    expect(mocks.fetchReadiness).toHaveBeenCalledTimes(1);
+    // Les trois compteurs d'exécutions, répétés de l'accueil, ont laissé place aux alertes.
+    expect(screen.queryByText("Runs en file")).toBeNull();
+    expect(screen.queryByText("Runs échoués récents")).toBeNull();
   });
 
   it("refreshes the active dashboard queries from the section toolbar", async () => {
