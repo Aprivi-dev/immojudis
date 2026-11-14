@@ -20,8 +20,8 @@ const PLACES = {
   agentSends: { href: "/admin/agent-ia?onglet=envois", label: "Agent IA › Envois" },
   agentPilot: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
   quality: { href: "/admin/quality", label: "Qualité des données" },
-  pepites: { href: "/admin/pepites", label: "Pépites" },
-  clients: { href: "/admin/clients", label: "Clients & abonnements" },
+  pepites: { href: "/admin/quality?onglet=pepites", label: "Qualité des données › Pépites" },
+  clients: { href: "/admin/comptes?onglet=clients", label: "Comptes › Clients" },
   settings: { href: "/admin/settings", label: "Configuration" },
 } satisfies Record<string, AlertPlace>;
 

@@ -189,13 +189,19 @@ export function AdminHomePage() {
               : retours « Utile / Pas pertinent », questionnaire de la liste d’attente, parcours.
             </li>
             <li>
-              <Link href="/admin/inscriptions" className="font-semibold text-gold-text underline">
+              <Link
+                href="/admin/comptes?onglet=inscriptions"
+                className="font-semibold text-gold-text underline"
+              >
                 Inscriptions
               </Link>{" "}
               : nouveaux comptes, essais qui finissent, essais finis sans activité.
             </li>
             <li>
-              <Link href="/admin/pepites" className="font-semibold text-gold-text underline">
+              <Link
+                href="/admin/quality?onglet=pepites"
+                className="font-semibold text-gold-text underline"
+              >
                 Pépites
               </Link>{" "}
               : compteurs, presque-pépites, retours négatifs par vente.
