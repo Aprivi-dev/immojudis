@@ -356,10 +356,12 @@ const routeBudgets = [
     maxBytes: 505_000,
   },
   {
-    name: "admin-clients",
-    manifest: ".next/server/app/admin/clients/page_client-reference-manifest.js",
-    routeKey: "/admin/clients/page",
-    entryKey: "[project]/src/app/admin/clients/page",
+    // Vue « Comptes » (14/11/2026) : l'ancienne page /admin/clients, avec l'onglet Inscriptions.
+    // /admin/clients n'est plus qu'une redirection côté serveur, sans JavaScript propre.
+    name: "admin-accounts",
+    manifest: ".next/server/app/admin/comptes/page_client-reference-manifest.js",
+    routeKey: "/admin/comptes/page",
+    entryKey: "[project]/src/app/admin/comptes/page",
     maxBytes: 515_000,
   },
   {

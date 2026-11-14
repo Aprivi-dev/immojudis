@@ -50,7 +50,7 @@ it("saves only changed settings, including a zero AI budget", async () => {
   const budget = await screen.findByLabelText("Budget IA quotidien (USD)");
   fireEvent.change(budget, { target: { value: "0" } });
   expect(
-    (screen.getByRole("tab", { name: "Sources de données" }) as HTMLButtonElement).disabled,
+    (screen.getByRole("tab", { name: "Services & diagnostics" }) as HTMLButtonElement).disabled,
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Enregistrer les réglages" }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ daily_ai_budget_usd: 0 }));
@@ -90,6 +90,18 @@ it("blocks internal links while edits are unsaved", async () => {
   setup();
   const budget = await screen.findByLabelText("Budget IA quotidien (USD)");
   fireEvent.change(budget, { target: { value: "12" } });
-  expect(fireEvent.click(screen.getByRole("link", { name: "Configurer les emails" }))).toBe(false);
+  const [menuLink] = screen.getAllByRole("link", { name: "Opérations" });
+  expect(fireEvent.click(menuLink)).toBe(false);
   expect((budget as HTMLInputElement).value).toBe("12");
+});
+
+it("ne recopie ni la supervision des sources (Opérations) ni le menu", async () => {
+  setup();
+  await screen.findByLabelText("Budget IA quotidien (USD)");
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    "Collecte & IA",
+    "Services & diagnostics",
+  ]);
+  expect(screen.queryByRole("heading", { name: "Gestion du site" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Configurer les emails" })).toBeNull();
 });

@@ -4,10 +4,9 @@ import Activity from "lucide-react/dist/esm/icons/activity.js";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
-import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
-import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import Gauge from "lucide-react/dist/esm/icons/gauge.js";
+import KeyRound from "lucide-react/dist/esm/icons/key-round.js";
 import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
@@ -15,12 +14,17 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import UserPlus from "lucide-react/dist/esm/icons/user-plus.js";
+import Users from "lucide-react/dist/esm/icons/users.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
+/**
+ * Vue affichée. « publications » et « security » n'ont pas d'entrée de menu : Publications reste
+ * joignable par son adresse (aucune demande à ce jour, l'accueil la signalera), la sécurité du compte
+ * par le lien sous l'adresse de l'administrateur.
+ */
 export type AdminSection =
   | "settings"
   | "overview"
@@ -29,12 +33,11 @@ export type AdminSection =
   | "emails"
   | "quality"
   | "publications"
-  | "clients"
-  | "signups"
+  | "accounts"
   | "pilotage"
-  | "pepites"
   | "lawyers"
-  | "compliance";
+  | "compliance"
+  | "security";
 
 const ADMIN_NAV_ITEMS: Array<{
   section: AdminSection;
@@ -47,11 +50,8 @@ const ADMIN_NAV_ITEMS: Array<{
   { section: "agent", href: "/admin/agent-ia", label: "Agent IA", icon: Bot },
   { section: "emails", href: "/admin/emails", label: "Emails", icon: Mail },
   { section: "quality", href: "/admin/quality", label: "Qualité des données", icon: BarChart3 },
-  { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
-  { section: "signups", href: "/admin/inscriptions", label: "Inscriptions", icon: UserPlus },
-  { section: "clients", href: "/admin/clients", label: "Clients & abonnements", icon: CreditCard },
+  { section: "accounts", href: "/admin/comptes", label: "Comptes", icon: Users },
   { section: "pilotage", href: "/admin/pilotage", label: "Pilotage", icon: Gauge },
-  { section: "pepites", href: "/admin/pepites", label: "Pépites", icon: Search },
   { section: "lawyers", href: "/admin/lawyers", label: "Avocats", icon: Scale },
   { section: "compliance", href: "/admin/compliance", label: "Conformité", icon: ShieldCheck },
   { section: "settings", href: "/admin/settings", label: "Configuration", icon: Settings },
@@ -231,14 +231,27 @@ function AdminSidebarContent({
         })}
       </nav>
 
-      <div className="m-3 flex shrink-0 items-center gap-3 rounded-xl border border-brand-navy/10 bg-white/[0.06] p-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gold-soft text-xs font-bold text-white">
-          {initials}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-white">Administrateur</span>
-          <span className="block truncate text-xs text-white/58">{adminEmail || "Immojudis"}</span>
-        </span>
+      <div className="m-3 shrink-0 rounded-xl border border-brand-navy/10 bg-white/[0.06] p-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gold-soft text-xs font-bold text-white">
+            {initials}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-white">Administrateur</span>
+            <span className="block truncate text-xs text-white/58">
+              {adminEmail || "Immojudis"}
+            </span>
+          </span>
+        </div>
+        <Link
+          href="/admin/securite"
+          onClick={onNavigate}
+          aria-current={activeSection === "security" ? "page" : undefined}
+          className="mt-2 flex min-h-8 items-center gap-2 rounded-lg px-1 text-xs font-medium text-white/75 hover:text-white hover:underline aria-[current=page]:text-gold-text"
+        >
+          <KeyRound className="size-3.5 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+          Sécurité du compte
+        </Link>
       </div>
     </div>
   );

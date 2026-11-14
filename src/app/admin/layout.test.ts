@@ -36,6 +36,7 @@ describe("arborescence /admin", () => {
         "/admin/agent-ia",
         "/admin/clients",
         "/admin/compliance",
+        "/admin/comptes",
         "/admin/emails",
         "/admin/inscriptions",
         "/admin/lawyers",
@@ -71,6 +72,25 @@ describe("arborescence /admin", () => {
     }
   });
 
+  it.each([
+    ["inscriptions", "/admin/comptes?onglet=inscriptions"],
+    ["clients", "/admin/comptes?onglet=clients"],
+    ["pepites", "/admin/quality?onglet=pepites"],
+  ])("redirige l’ancienne adresse /admin/%s vers son onglet", async (segment, target) => {
+    const { default: Page } = (await import(
+      /* @vite-ignore */ join(ADMIN_DIR, segment, "page.tsx")
+    )) as { default: () => unknown };
+    let thrown: unknown;
+    try {
+      Page();
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { digest?: string } | undefined)?.digest).toMatch(
+      new RegExp(`^NEXT_REDIRECT;[a-z]+;${target.replace(/[?]/g, "\\?")};307;`),
+    );
+  });
+
   it("ne charge dans chaque page que sa propre vue (plus de module admin unique)", () => {
     const own: Record<string, string> = {
       "page.tsx": "./admin-home-page",
@@ -78,12 +98,11 @@ describe("arborescence /admin", () => {
       "agent-ia/page.tsx": "./admin-agent-page",
       "emails/page.tsx": "./admin-emails-page",
       "publications/page.tsx": "./admin-publications-page",
-      "clients/page.tsx": "./admin-clients-page",
+      "comptes/page.tsx": "./admin-accounts-page",
       "lawyers/page.tsx": "./admin-lawyers-page",
       "compliance/page.tsx": "./admin-compliance-page",
       "quality/page.tsx": "./admin-quality-page",
       "pilotage/page.tsx": "./admin-pilotage-page",
-      "pepites/page.tsx": "./admin-pepites-page",
     };
     for (const [file, module] of Object.entries(own)) {
       const source = readFileSync(join(ADMIN_DIR, file), "utf8");
