@@ -12,8 +12,7 @@ import {
   lawyerStatementMonthSchema,
   previousLawyerStatementMonth,
 } from "@/lib/lawyer-statement";
-
-export const LAWYER_STATEMENT_QUERY_KEY = "admin-lawyer-statement";
+import { LAWYER_STATEMENT_QUERY_KEY } from "@/components/admin/admin-lawyers-query-keys";
 
 /** Télécharge le CSV (BOM UTF-8 pour l'ouverture directe dans un tableur en français). */
 function downloadCsv(filename: string, content: string) {
@@ -30,7 +29,7 @@ export function AdminLawyerStatementPanel() {
   const [month, setMonth] = useState(() => previousLawyerStatementMonth());
   const monthIsValid = lawyerStatementMonthSchema.safeParse(month).success;
   const query = useQuery({
-    queryKey: [LAWYER_STATEMENT_QUERY_KEY, month],
+    queryKey: [...LAWYER_STATEMENT_QUERY_KEY, month],
     queryFn: () => fetchAdminLawyerStatement(month),
     enabled: monthIsValid,
     staleTime: 60_000,

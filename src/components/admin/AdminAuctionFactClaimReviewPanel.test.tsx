@@ -81,7 +81,9 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
   it("shows the extracted value, canonical value and source evidence", async () => {
     renderPanel();
 
-    expect(await screen.findByRole("heading", { name: "Faits à vérifier" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Faits à vérifier, valeur inchangée" }),
+    ).toBeTruthy();
     expect(await screen.findByText("Appartement T3")).toBeTruthy();
     expect(screen.getByText("Valeur extraite")).toBeTruthy();
     expect(screen.getByText("Valeur canonique actuelle")).toBeTruthy();
@@ -89,6 +91,20 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
     expect(screen.getByRole("link", { name: /Ouvrir la source/ }).getAttribute("href")).toBe(
       "https://source.example/sale",
     );
+  });
+
+  it("dit que la valeur ne change pas et que la fiche la signale vérifiée, sans « Accepter » ambigu", async () => {
+    renderPanel();
+
+    await screen.findByText("Appartement T3");
+    expect(
+      screen.getByText(
+        "La valeur affichée ne change pas ; la fiche la signale comme vérifiée sur source.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer la valeur (inchangée)" }));
+    expect(screen.getByText("Confirmer la vérification")).toBeTruthy();
   });
 
   it("shows 50 facts per page and moves between pages with offset/limit", async () => {
@@ -138,7 +154,7 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
   it("sends an accepted decision without a justification", async () => {
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accepter" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmer la valeur (inchangée)" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmer" }));
 
     await waitFor(() => expect(mocks.review).toHaveBeenCalled());
@@ -231,7 +247,7 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
     expect(
       screen.getByText(/lancer une nouvelle collecte ou attendre une nouvelle observation/i),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirmer la valeur (inchangée)" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rejeter" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Marquer conflit" })).toBeNull();
     expect(mocks.review).not.toHaveBeenCalled();

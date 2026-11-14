@@ -211,10 +211,16 @@ test.describe("admin information agent", () => {
     const state = await prepareAdminInformationAgentPage(page);
 
     await page.goto("/admin/agent-ia?onglet=reponses");
-    const panel = page.getByRole("region", { name: "Observations à décider" });
+    const panel = page.getByRole("region", {
+      name: "Observations à décider, qui peuvent modifier la fiche",
+    });
     await expect(panel.getByText("À décider", { exact: true })).toBeVisible();
     await expect(panel.getByText("Libre", { exact: true })).toBeVisible();
     await expect(panel.getByText("Occupé", { exact: true })).toBeVisible();
+    // Le registre peut remplacer la valeur de la fiche : son bouton le dit.
+    await expect(
+      panel.getByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
+    ).toBeVisible();
 
     await panel.getByRole("button", { name: "Enregistrer une opposition" }).click();
     await expect(panel.getByText(/Une opposition est définitive\./)).toBeVisible();
@@ -249,25 +255,42 @@ test.describe("admin information agent", () => {
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Informations à contrôler" }) });
     await expect(reviewPanel.getByText(/Droits de diffusion : restreints/i)).toBeVisible();
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
 
     await reviewPanel.getByRole("button", { name: "Autoriser la diffusion" }).click();
     await expect(reviewPanel.getByText(/Droits de diffusion : autorisés/i)).toBeVisible();
     // Les droits ne suffisent pas : le caviardage doit aussi être vérifié par une personne nommée.
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeDisabled();
     await reviewPanel.getByRole("checkbox", { name: /J’ai contrôlé la pièce/ }).check();
     await reviewPanel
       .getByRole("textbox", { name: "Nom de la personne qui a contrôlé" })
       .fill("Contrôleur E2E");
-    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeEnabled();
+    await expect(
+      reviewPanel.getByRole("button", { name: "Accepter et publier la pièce", exact: true }),
+    ).toBeEnabled();
 
     await reviewPanel.getByRole("button", { name: "Prévisualiser la pièce" }).click();
     await expect(reviewPanel.getByTitle("Aperçu privé de dpe.pdf")).toBeVisible();
-    await reviewPanel.getByRole("button", { name: "Accepter", exact: true }).click();
+    await reviewPanel
+      .getByRole("button", { name: "Accepter et publier la pièce", exact: true })
+      .click();
     await expect(reviewPanel.getByText("dpe.pdf", { exact: true })).toHaveCount(0);
 
-    await expect(page.getByRole("heading", { name: "Faits à vérifier" })).toBeVisible();
-    const claimsPanel = page.getByRole("region", { name: "Faits à vérifier" });
+    await expect(
+      page.getByRole("heading", { name: "Faits à vérifier, valeur inchangée" }),
+    ).toBeVisible();
+    const claimsPanel = page.getByRole("region", {
+      name: "Faits à vérifier, valeur inchangée",
+    });
+    // Vérifier un fait ne touche pas la fiche : le bouton le dit, sans « Accepter » ambigu.
+    await expect(
+      claimsPanel.getByRole("button", { name: "Confirmer la valeur (inchangée)" }),
+    ).toBeVisible();
+    await expect(claimsPanel.getByRole("button", { name: "Accepter", exact: true })).toHaveCount(0);
     await claimsPanel.getByRole("button", { name: "Rejeter", exact: true }).click();
     await expect(claimsPanel.getByText("Motif du rejet", { exact: true })).toBeVisible();
     await claimsPanel
@@ -443,7 +466,11 @@ test.describe("admin information agent", () => {
       headings.filter({
         hasText: /Informations à contrôler|Faits à vérifier|Messages non rattachés/,
       }),
-    ).toHaveText(["Informations à contrôler", "Faits à vérifier", "Messages non rattachés"]);
+    ).toHaveText([
+      "Informations à contrôler",
+      "Faits à vérifier, valeur inchangée",
+      "Messages non rattachés",
+    ]);
 
     await tabs.getByRole("tab", { name: /^Envois/ }).click();
     await expect(page).toHaveURL(/onglet=envois/);

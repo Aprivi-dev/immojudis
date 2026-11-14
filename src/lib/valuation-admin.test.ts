@@ -43,6 +43,23 @@ describe("valuation admin runtime summary", () => {
     });
   });
 
+  it("dit en clair qu'une part trop faible d'estimations est exploitable", () => {
+    const runtime = summarizeValuationRuntime([
+      {
+        engine_kind: "comparable_ensemble",
+        segment: "house",
+        confidence_score: 60,
+        comparable_count: 6,
+        actionable: false,
+        latency_ms: 280,
+        created_at: "2026-07-13T11:00:00Z",
+      },
+    ]);
+
+    expect(runtime.driftSignals).toContain("Moins de 50 % des estimations sont exploitables.");
+    expect(runtime.driftSignals.join(" ")).not.toMatch(/actionnable/);
+  });
+
   it("mirrors the training promotion gates in the admin cockpit", () => {
     expect(
       evaluateValuationPromotionGate({

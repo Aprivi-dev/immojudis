@@ -52,7 +52,7 @@ describe("GET /api/admin/pepites", () => {
       "list",
       "independence",
     ]);
-    expect(JSON.stringify(body)).toContain("Mode : shadow");
+    expect(JSON.stringify(body)).toContain("Mode : Observation");
     expect(mocks.get).toHaveBeenCalledWith("admin-token");
   });
 

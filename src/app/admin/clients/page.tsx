@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import { AdminClientsPage } from "./admin-clients-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Clients et abonnements admin",
-  description: "Gestion des accès et abonnements Immojudis.",
-};
-
+/** Ancienne adresse : « Clients & abonnements » est un onglet de la vue Comptes. */
 export default function Page() {
-  return <AdminClientsPage />;
+  redirect("/admin/comptes?onglet=clients");
 }
