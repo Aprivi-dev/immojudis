@@ -120,15 +120,18 @@ def test_a_failing_preparation_never_stops_the_drain() -> None:
 
 
 class _Process:
-    def __init__(self, pid: int, *, busy: bool) -> None:
-        self.pid, self.busy, self.terminated = pid, busy, False
+    """A process of the pool. After ``shutdown(wait=False)`` none leaves by itself, idle ones included (Python 3.12,
+    probe of code-reviewer of 14/11/2026): only ``terminate`` ends it."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid, self.terminated = pid, False
         self.joins: list[float | None] = []
 
     def join(self, timeout: float | None = None) -> None:
         self.joins.append(timeout)
 
     def is_alive(self) -> bool:
-        return self.busy and not self.terminated
+        return not self.terminated
 
     def terminate(self) -> None:
         self.terminated = True
@@ -150,27 +153,61 @@ class _OverdueExecutor:
         self.shutdowns.append((wait, cancel_futures))
 
 
-def test_a_preparation_past_the_deadline_stops_the_pool_instead_of_waiting_for_it() -> None:
-    # 14/11/2026 (D20): close() used to wait (shutdown(wait=True)) for a preparation still running at the deadline.
-    busy, idle = _Process(101, busy=True), _Process(102, busy=False)
-    executor = _OverdueExecutor([busy, idle])
-    now = [0.0]
+def _overdue_prefetcher(now: list[float]) -> tuple[prefetch.DocumentPrefetcher, _OverdueExecutor, list[_Process]]:
+    processes = [_Process(101), _Process(102)]
+    executor = _OverdueExecutor(processes)
     prefetcher = prefetch.DocumentPrefetcher(
         ["a", "b"], workers=2, deadline=10.0, executor_factory=lambda workers, delay: executor,
         prefetch=lambda url, remaining: {}, clock=lambda: now[0],
     )
     prefetcher.start()
+    return prefetcher, executor, processes
+
+
+def test_a_preparation_past_the_deadline_stops_the_pool_instead_of_waiting_for_it() -> None:
+    # 14/11/2026 (D20): close() used to wait (shutdown(wait=True)) for a preparation still running at the deadline.
+    now = [0.0]
+    prefetcher, executor, processes = _overdue_prefetcher(now)
     now[0] = 11.0  # the drain reached its deadline while "a" was still being prepared
 
     prefetcher.wait_for("a")
 
     assert executor.shutdowns == [(False, True)]
-    assert busy.terminated and not idle.terminated
-    assert busy.joins[0] is not None and busy.joins[0] <= prefetch.STOP_GRACE_SECONDS
+    assert all(process.terminated for process in processes)  # idle ones do not leave by themselves either
+    assert all(0 <= process.joins[0] <= prefetch.STOP_GRACE_SECONDS for process in processes)
     assert prefetcher.stats["errors"] == 1
     prefetcher.wait_for("b")  # nothing left to wait for
     prefetcher.close()
     assert executor.shutdowns == [(False, True)]
+
+
+def test_closing_after_the_deadline_stops_the_pool_instead_of_waiting() -> None:
+    # The drain stops at its deadline and closes the prefetcher without waiting for "a" (document_backlog).
+    now = [0.0]
+    prefetcher, executor, processes = _overdue_prefetcher(now)
+    now[0] = 11.0
+
+    prefetcher.close()
+
+    assert executor.shutdowns == [(False, True)]
+    assert all(process.terminated for process in processes)
+
+
+def test_closing_before_the_deadline_waits_for_the_preparations_that_end() -> None:
+    finished = threading.Event()
+
+    def fake(url: str, remaining: float) -> dict:
+        time.sleep(0.05)
+        finished.set()
+        return {}
+
+    prefetcher = prefetch.DocumentPrefetcher(
+        ["a"], workers=1, deadline=time.monotonic() + 60, executor_factory=_thread_executor(), prefetch=fake
+    )
+    prefetcher.start()
+    prefetcher.close()
+
+    assert finished.is_set() and prefetcher._executor is None
 
 
 def test_the_process_pool_still_lists_its_processes() -> None:

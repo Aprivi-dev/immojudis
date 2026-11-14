@@ -45,11 +45,11 @@ update public.auction_pipeline_control
  where id;
 
 insert into public.auction_source_state (source_name, enabled, suspended_until, next_inventory_at)
-values ('pgtap-895-origin', false, null, statement_timestamp() + interval '1 day');
+values ('pgtap-897-origin', false, null, statement_timestamp() + interval '1 day');
 
 insert into public.auction_sales (source_name, source_url, status, sale_date, raw_payload)
-select 'pgtap-895-origin',
-       'https://example.test/pgtap/895/' || sale_number,
+select 'pgtap-897-origin',
+       'https://example.test/pgtap/897/' || sale_number,
        'upcoming',
        statement_timestamp() + interval '7 days',
        '{}'::jsonb
@@ -64,35 +64,40 @@ insert into public.auction_enrichment_jobs (
 )
 values
   -- Deferred today by the AI budget, until midnight UTC: the queue is budget-limited.
-  ('https://example.test/pgtap/895/1', 'pdf', 'queued', 10, 'pgtap-895-budget', 0, 4,
+  ('https://example.test/pgtap/897/1', 'pdf', 'queued', 10, 'pgtap-897-budget', 0, 4,
    statement_timestamp() + interval '12 hours', null,
    'Daily LLM budget exhausted: 5.0000 EUR spent of 5 EUR, request needs up to 0.0100 EUR',
    statement_timestamp() - interval '3 days', statement_timestamp() - interval '1 hour'),
   -- A document reading stuck in running for three days: its 30-minute lease expired long ago.
-  ('https://example.test/pgtap/895/2', 'pdf', 'running', 10, 'pgtap-895-stuck', 1, 4,
+  ('https://example.test/pgtap/897/2', 'pdf', 'running', 10, 'pgtap-897-stuck', 1, 4,
    statement_timestamp() - interval '3 days 1 minute', statement_timestamp() - interval '3 days', null,
    statement_timestamp() - interval '4 days', statement_timestamp() - interval '3 days'),
   -- Exhausted: reported by pipeline.enrichment.exhausted, never immobile.
-  ('https://example.test/pgtap/895/3', 'fact_extraction', 'failed', 10, 'pgtap-895-exhausted', 4, 4,
+  ('https://example.test/pgtap/897/3', 'fact_extraction', 'failed', 10, 'pgtap-897-exhausted', 4, 4,
    statement_timestamp() - interval '2 days', null, 'boom',
    statement_timestamp() - interval '3 days', statement_timestamp() - interval '2 days'),
   -- Untouched for three days but scheduled for tomorrow: waiting, not immobile.
-  ('https://example.test/pgtap/895/4', 'pdf', 'failed', 10, 'pgtap-895-later', 1, 4,
+  ('https://example.test/pgtap/897/4', 'pdf', 'failed', 10, 'pgtap-897-later', 1, 4,
    statement_timestamp() + interval '1 day', null, 'retry later',
-   statement_timestamp() - interval '4 days', statement_timestamp() - interval '3 days');
+   statement_timestamp() - interval '4 days', statement_timestamp() - interval '3 days'),
+  -- Due and untouched for three days, but it waits for the document reading of its sale (claim guard of
+  -- 20261111050000): held on purpose, not immobile.
+  ('https://example.test/pgtap/897/2', 'fact_extraction', 'queued', 10, 'pgtap-897-dependent', 0, 4,
+   statement_timestamp() - interval '3 days', null, null,
+   statement_timestamp() - interval '3 days', statement_timestamp() - interval '3 days');
 
-create temporary table pgtap_895_context (
+create temporary table pgtap_897_context (
   case_name text primary key,
   p_now timestamptz not null,
   payload jsonb
 ) on commit drop;
 
-insert into pgtap_895_context(case_name, p_now)
+insert into pgtap_897_context(case_name, p_now)
 values ('stuck', statement_timestamp());
 
 select lives_ok(
   $sql$
-    update pgtap_895_context
+    update pgtap_897_context
        set payload = public.observe_autonomous_pipeline(p_now)
      where case_name = 'stuck';
   $sql$,
@@ -103,11 +108,12 @@ select ok(
   (
     select (payload->'queue'->>'budget_limited')::boolean
        and (payload->'queue'->>'immobile_24h')::integer = 1
-       and (payload->'queue'->>'older_than_24h')::integer = 3
-      from pgtap_895_context
+       and (payload->'queue'->>'older_than_24h')::integer = 4
+      from pgtap_897_context
      where case_name = 'stuck'
   ),
-  'only the stuck running job is immobile: not the budget deferral, the exhausted job nor the scheduled retry'
+  'only the stuck running job is immobile: not the budget deferral, the exhausted job, the scheduled retry nor '
+  || 'the job that waits for the document reading of its sale'
 );
 
 select ok(
@@ -121,19 +127,20 @@ select ok(
   'an immobile job opens pipeline.enrichment.stalled even when the AI budget deferred jobs'
 );
 
--- The stuck reading is taken again (claim) and finishes: what is left is a budget deferral and a scheduled retry.
+-- The stuck reading is taken again (claim) and finishes, then its fact pass: what is left is a budget deferral and a
+-- scheduled retry.
 update public.auction_enrichment_jobs
    set status = 'completed',
        completed_at = statement_timestamp(),
        updated_at = statement_timestamp()
- where input_hash = 'pgtap-895-stuck';
+ where input_hash in ('pgtap-897-stuck', 'pgtap-897-dependent');
 
-insert into pgtap_895_context(case_name, p_now)
+insert into pgtap_897_context(case_name, p_now)
 values ('recovered', statement_timestamp() + interval '1 minute');
 
 select lives_ok(
   $sql$
-    update pgtap_895_context
+    update pgtap_897_context
        set payload = public.observe_autonomous_pipeline(p_now)
      where case_name = 'recovered';
   $sql$,
@@ -143,7 +150,7 @@ select lives_ok(
 select is(
   (
     select (payload->'queue'->>'immobile_24h')::integer
-      from pgtap_895_context
+      from pgtap_897_context
      where case_name = 'recovered'
   ),
   0,

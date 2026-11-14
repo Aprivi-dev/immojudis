@@ -2924,3 +2924,28 @@ def test_the_worker_exits_with_a_failure_code_when_its_lock_is_lost(monkeypatch,
     assert "Verrou du catalogue perdu" in capsys.readouterr().out
     monkeypatch.setattr(queued_runner, "_run_as_script", lambda: 0)
     assert queued_runner.run_with_catalogue_lock() == 0
+
+
+def test_a_lock_lost_during_the_last_batch_still_fails_the_job(monkeypatch, capsys) -> None:
+    # No claim follows the last batch, so nothing raised: the worker still exits with a failure code.
+    from contextlib import contextmanager
+
+    from src.catalogue_lock import LOCK_LOST_EXIT_CODE, catalogue_writer_lock
+
+    held: dict[str, object] = {}
+
+    @contextmanager
+    def lock(**_kwargs):
+        with catalogue_writer_lock("postgresql://example/db", connect=lambda url: _LockSession(), heartbeat_seconds=0) as handle:
+            held["handle"] = handle
+            yield handle
+
+    def last_batch() -> int:
+        held["handle"].mark_lost()  # the heartbeat fails while the last batch runs
+        return 0
+
+    monkeypatch.setattr(queued_runner, "catalogue_writer_lock", lock)
+    monkeypatch.setattr(queued_runner, "_run_as_script", last_batch)
+
+    assert queued_runner.run_with_catalogue_lock() == LOCK_LOST_EXIT_CODE
+    assert "Verrou du catalogue perdu" in capsys.readouterr().out

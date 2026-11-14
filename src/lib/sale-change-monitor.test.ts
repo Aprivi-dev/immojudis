@@ -142,6 +142,24 @@ describe("sale change monitor", () => {
     });
   });
 
+  it("annonce sans gravité une vente sans date non revue depuis 14 jours", () => {
+    const previous = buildSaleChangeSnapshot(saleFixture({ status: "upcoming" }));
+    const current = buildSaleChangeSnapshot(saleFixture({ status: "unknown" }));
+    const [change] = detectSaleChanges({
+      previous,
+      current,
+      now: NOW,
+      statusReason: "unseen_undated",
+    });
+    expect(change).toMatchObject({
+      eventKind: "status_changed",
+      severity: "info",
+      summaryLabel: "Annonce non revue depuis 14 jours",
+      reason: "unseen_undated",
+      fingerprint: "status_changed:status:upcoming:unknown",
+    });
+  });
+
   it("marque urgent un statut retiré ou annulé", () => {
     const previous = buildSaleChangeSnapshot(saleFixture({ status: "upcoming" }));
     for (const status of ["withdrawn", "cancelled", "adjudicated"]) {

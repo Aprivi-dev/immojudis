@@ -27,7 +27,13 @@ LABELLED_AMOUNT = re.compile(
     re.I,
 )
 SINGLE_ROOM_PREFIX = re.compile(r"\bd(?:e\s+|['’]\s*)$", re.I)
-PROMOTIONAL = re.compile(r"\b(?:exceptionnell?e?s?|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I)
+# « exceptionnel » is promotion in a listing, but a co-ownership minute writes « appel de fonds exceptionnel »: the
+# reading of the documents tolerates it where its own quote writes it (document_reading.title_rejection).
+_EXCEPTIONAL_WORD = r"exceptionnell?e?s?"
+EXCEPTIONAL = re.compile(rf"\b{_EXCEPTIONAL_WORD}\b", re.I)
+PROMOTIONAL = re.compile(
+    rf"\b(?:{_EXCEPTIONAL_WORD}|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I
+)
 PROMPT_INJECTION = re.compile(
     r"(?:"
     r"\b(?:ignorez?|ignorer|ignore|disregard|forget)\b[^.!?\n]{0,100}"
@@ -123,7 +129,8 @@ def unsupported_risk_terms(text: str, evidence: str) -> list[str]:
     return [label for label, claim, support in RISK_TERMS if claim.search(claimed) and not support.search(proof)]
 
 
-def _dates(text: str) -> list[tuple[str, str]]:
+def written_dates(text: str) -> list[tuple[str, str]]:
+    """Dates written in ``text`` (« 12/03/2025 », « 2025-03-12 », « 12 mars 2025 ») with their ISO form, or 'invalid'."""
     result = []
     for m in DATES.finditer(text):
         try:
@@ -203,10 +210,10 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
                            'exact_land_unit_conversion': converted.group() if converted else None})
             if not supported:
                 issues.append({'code': 'unsupported_' + kind, 'claim': claim.group()})
-    supported_dates = {iso for _, iso in _dates(evidence)}
+    supported_dates = {iso for _, iso in written_dates(evidence)}
     if fields.get('sale_date'):
-        supported_dates.update(iso for _, iso in _dates(str(fields['sale_date'])))
-    for claim, value in _dates(text):
+        supported_dates.update(iso for _, iso in written_dates(str(fields['sale_date'])))
+    for claim, value in written_dates(text):
         if value == 'invalid' or value not in supported_dates:
             issues.append({'code': 'unsupported_date', 'claim': claim})
     for match in re.finditer(r"\d+(?:[.,]\d+)?[eE][+-]\d+\s*m[²2]", text):

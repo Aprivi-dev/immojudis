@@ -212,6 +212,62 @@ describe("suivi des ventes sorties du catalogue", () => {
     expect(response.events[0].changeSummary).not.toHaveProperty("reason");
   });
 
+  describe("vente sans date passée en statut inconnu par le pipeline (non revue depuis 14 jours)", () => {
+    function followedUndatedSale(marker: Row | null) {
+      mocks.tables = {
+        user_favorites: [{ id: "fav-1", user_id: USER, sale_id: SALE, created_at: "2026-10-01" }],
+        user_sale_watch_snapshots: [
+          {
+            user_id: USER,
+            sale_id: SALE,
+            watch_kind: "favorite",
+            watch_id: "fav-1",
+            snapshot: { ...previousSnapshot, saleDate: null },
+          },
+        ],
+        // Toujours au catalogue : la vue garde les statuts upcoming, unknown et postponed.
+        v_auction_sales_app: [
+          {
+            id: SALE,
+            title: "Maison",
+            status: "unknown",
+            sale_date: null,
+            starting_price_eur: 100_000,
+          },
+        ],
+        auction_sales: [{ id: SALE, unseen_undated: marker }],
+      };
+    }
+
+    it("l'annonce sans gravité, avec son motif", async () => {
+      followedUndatedSale({ source: "notaires", status_before: "upcoming", unseen_days: 14 });
+      const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+      expect(response.events).toHaveLength(1);
+      expect(response.events[0]).toMatchObject({
+        eventKind: "status_changed",
+        severity: "info",
+        summaryLabel: "Annonce non revue depuis 14 jours",
+        changeSummary: {
+          previousValue: "upcoming",
+          currentValue: "unknown",
+          reason: "unseen_undated",
+        },
+      });
+    });
+
+    it("garde le libellé ordinaire quand la source elle-même donne le statut inconnu", async () => {
+      followedUndatedSale(null);
+      const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
+
+      expect(response.events[0]).toMatchObject({
+        severity: "important",
+        summaryLabel: "Statut de la vente modifié",
+      });
+      expect(response.events[0].changeSummary).not.toHaveProperty("reason");
+    });
+  });
+
   it("ne signale que le statut : la date et les autres champs gardent leur valeur précédente", async () => {
     followedSaleOutsideCatalogue({ status: "withdrawn", sale_date: "2027-01-01T09:00:00Z" });
     const response = await monitorUserSaleChanges({ auth: auth(), now: NOW });
