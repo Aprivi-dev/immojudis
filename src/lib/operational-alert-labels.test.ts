@@ -3,6 +3,7 @@ import {
   describeOperationalAlert,
   operationalAlertNotificationLabel,
   operationalAlertSeverityLabel,
+  operationalAlertStateLabel,
 } from "./operational-alert-labels";
 
 describe("describeOperationalAlert", () => {
@@ -52,10 +53,23 @@ describe("describeOperationalAlert", () => {
     expect(describeOperationalAlert("catalogue.quality.land_with_rooms").place.href).toBe(
       "/admin/quality",
     );
+    // Chaque contrôle connu d'une famille garde un libellé distinct ; un contrôle inconnu, celui de la famille.
+    expect(describeOperationalAlert("catalogue.quality.land_with_rooms").label).toBe(
+      "Qualité du catalogue : Terrains avec un nombre de pièces",
+    );
+    expect(describeOperationalAlert("catalogue.quality.nouveau").label).toBe(
+      "Qualité du catalogue",
+    );
     expect(describeOperationalAlert("fact_registry.projection_drift").label).toBe(
-      "Registre des pièces : contrôle de cohérence",
+      "Registre des pièces : fiche qui ne reflète plus les décisions",
+    );
+    expect(describeOperationalAlert("fact_registry.column_mismatch").label).toBe(
+      "Registre des pièces : colonne tenue différente de sa pièce",
     );
     expect(describeOperationalAlert("information_agent.autopilot.warning.bounce_rate").label).toBe(
+      "Pilote de l’Agent IA proche d’un seuil d’arrêt : taux de rebonds définitifs",
+    );
+    expect(describeOperationalAlert("information_agent.autopilot.warning.nouveau").label).toBe(
       "Pilote de l’Agent IA proche d’un seuil d’arrêt",
     );
     // Clé réelle, lue par sa famille : le module ne nomme pas la table privée des loyers.
@@ -98,5 +112,7 @@ describe("severity and notification labels", () => {
     expect(operationalAlertNotificationLabel("delivered")).toBe("Envoyée");
     expect(operationalAlertNotificationLabel("failed")).toBe("En échec");
     expect(operationalAlertNotificationLabel("autre")).toBe("État inconnu");
+    expect(operationalAlertStateLabel("open")).toBe("Ouverte");
+    expect(operationalAlertStateLabel("resolved")).toBe("Refermée");
   });
 });

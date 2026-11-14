@@ -24,13 +24,14 @@ import {
   REVIEW_QUERY_KEY,
   UNROUTED_QUERY_KEY,
   autopilotQuery,
-  reviewQuery,
-  unroutedQuery,
 } from "@/components/admin/information-agent-queries";
+import { useInformationAgentReplies } from "@/components/admin/use-information-agent-summary";
 import { useAuth } from "@/hooks/use-auth";
 import {
   DASHBOARD_QUERY_KEY,
   DASHBOARD_RUNS_QUERY_KEY,
+  PRIVACY_REQUESTS_QUERY_KEY,
+  PUBLICATION_REQUESTS_QUERY_KEY,
   READINESS_QUERY_KEY,
 } from "@/lib/admin-query-keys";
 import type { AdminDashboardRunsData, AuctionRun } from "@/lib/admin.server";
@@ -39,21 +40,20 @@ import {
   fetchAdminPrivacyRequests,
   fetchAdminPublicationRequests,
 } from "@/lib/client-api";
-import { formatShortDate } from "@/lib/format/dates";
+import { formatShortDate, formatShortDateTime } from "@/lib/format/dates";
 import { sourceDisplayName } from "@/lib/source-names";
 import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type { PrivacyRequestAdminSummary } from "@/lib/privacy-requests";
 
-/** Compteurs propres à l'accueil (demandes RGPD, annonces à valider) : clés distinctes de leurs vues. */
-const HOME_QUERY_KEY = ["admin-home"] as const;
 /** Demandes RGPD ouvertes détaillées sur l'accueil ; les suivantes sont dans Conformité. */
 const SHOWN_PRIVACY_REQUESTS = 3;
 
 /**
  * Accueil « À traiter » : ce qui demande une action, chaque point avec un lien vers l'endroit où agir.
  * Toutes les données viennent des routes des vues (mêmes clés pour l'agent et le diagnostic : la vue
- * ouverte ensuite les trouve en cache). La pastille de santé ne passe au vert que si aucune exécution
- * récente n'a échoué ET qu'aucune alerte d'exploitation n'est ouverte.
+ * ouverte ensuite les trouve en cache, et une action dans la vue rafraîchit l'accueil). La pastille de
+ * santé ne passe au vert que si aucune exécution récente n'a échoué, qu'aucune alerte d'exploitation
+ * n'est ouverte ET que la surveillance tourne (tâche planifiée active, dernière mesure récente).
  */
 export function AdminHomePage() {
   const { user } = useAuth();
@@ -72,23 +72,31 @@ export function AdminHomePage() {
     AUTOPILOT_QUERY_KEY[0],
     REVIEW_QUERY_KEY[0],
     UNROUTED_QUERY_KEY[0],
-    HOME_QUERY_KEY[0],
+    PRIVACY_REQUESTS_QUERY_KEY[0],
+    PUBLICATION_REQUESTS_QUERY_KEY[0],
   ]);
   const failedRuns = data?.stats.failedRuns ?? null;
-  const openAlerts = readiness.data?.operations.openAlertCount ?? null;
-  // Une erreur des exécutions s'affiche tout de suite ; sinon le verdict attend aussi les alertes.
-  const healthState =
+  const operations = readiness.data?.operations;
+  const openAlerts = operations?.openAlertCount ?? null;
+  // Une erreur des exécutions s'affiche tout de suite ; sinon le verdict attend aussi les alertes. Un
+  // rafraîchissement en échec (exécutions ou diagnostic) ne laisse pas l'ancien état passer pour frais.
+  const health =
     isLoading && !data
       ? "loading"
       : error && !data
         ? "error"
         : readiness.isPending
           ? "loading"
-          : error
+          : error || (readiness.isError && readiness.data)
             ? "stale"
-            : "ready";
-  const needsIntervention = Boolean(failedRuns) || Boolean(openAlerts);
-  const healthy = healthState === "ready" && failedRuns === 0 && openAlerts === 0;
+            : openAlerts === null
+              ? "alerts-unknown"
+              : !operations?.schedulerActive || !operations.lastHealthRunFresh
+                ? "monitoring-stopped"
+                : failedRuns || openAlerts
+                  ? "intervention"
+                  : "healthy";
+  const healthy = health === "healthy";
   const retry = () => void refetch();
 
   return (
@@ -121,14 +129,14 @@ export function AdminHomePage() {
         <AdminPanel className="flex items-start gap-4 p-5 sm:gap-5 sm:p-6">
           <span
             className={`grid size-12 shrink-0 place-items-center rounded-full sm:size-14 ${
-              healthState === "loading"
+              health === "loading"
                 ? "bg-slate-300 text-white"
                 : healthy
                   ? "bg-emerald-600 text-white"
                   : "bg-amber-500 text-white"
             }`}
           >
-            {healthState === "loading" ? (
+            {health === "loading" ? (
               <RefreshCw className="size-7 animate-spin" />
             ) : healthy ? (
               <CheckCircle className="size-8" />
@@ -138,24 +146,28 @@ export function AdminHomePage() {
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-semibold text-brand-navy">
-              {healthState === "loading"
+              {health === "loading"
                 ? "Vérification de la santé…"
-                : healthState === "error"
+                : health === "error"
                   ? "État de santé indisponible"
-                  : healthState === "stale"
+                  : health === "stale"
                     ? "Données de santé potentiellement obsolètes"
-                    : needsIntervention
-                      ? "Une intervention est requise"
-                      : openAlerts === null
-                        ? "Alertes indisponibles : santé incomplète"
-                        : "Aucune alerte ni échec récent"}
+                    : health === "alerts-unknown"
+                      ? "Alertes indisponibles : santé incomplète"
+                      : health === "monitoring-stopped"
+                        ? operations?.lastHealthRunAt
+                          ? `Surveillance arrêtée depuis le ${formatShortDateTime(operations.lastHealthRunAt)}`
+                          : "Surveillance arrêtée : aucune mesure de santé"
+                        : health === "intervention"
+                          ? "Une intervention est requise"
+                          : "Aucune alerte ni échec récent"}
             </h2>
             <p className="mt-2 text-sm text-brand-navy/60">
               {data?.checkedAt
-                ? `${error ? "Dernière vérification" : "Vérifié"} ${formatRelativeTime(data.checkedAt)} · santé calculée sur les alertes ouvertes et les exécutions récentes`
+                ? `Exécutions ${error ? "vérifiées pour la dernière fois" : "vérifiées"} ${formatRelativeTime(data.checkedAt)} · santé calculée sur les exécutions récentes, les alertes ouvertes et la surveillance`
                 : "Les résultats apparaîtront après la vérification du tableau de bord."}
             </p>
-            {healthState === "error" ? (
+            {health === "error" ? (
               <div role="alert" className="mt-3 text-sm text-red-700">
                 <p>{queryErrorMessage(error, "Erreur de chargement admin")}</p>
                 <button type="button" className="admin-button-secondary mt-3" onClick={retry}>
@@ -298,10 +310,7 @@ function Unavailable({ children }: { children: ReactNode }) {
 /** État du pilote (lecture seule) et réponses à traiter, lus par les requêtes de l'Agent IA. */
 function AgentSection() {
   const pilot = useQuery(autopilotQuery());
-  const review = useQuery(reviewQuery(0));
-  const unrouted = useQuery(unroutedQuery(0));
-  const replies = review.data?.messagesTotal ?? null;
-  const unroutedCount = unrouted.data?.total ?? null;
+  const { toReview, unrouted, replies } = useInformationAgentReplies();
 
   return (
     <AdminPanel className="p-5">
@@ -326,26 +335,28 @@ function AgentSection() {
             </p>
           ) : null}
         </TodoLine>
-        {review.isError || unrouted.isError ? (
+        {toReview.failed || unrouted.failed ? (
           <TodoLine>
             <Unavailable>Réponses indisponibles pour le moment.</Unavailable>
           </TodoLine>
-        ) : replies === null || unroutedCount === null ? (
+        ) : replies === null ? (
           <TodoLine>
             <span role="status">Chargement des réponses…</span>
           </TodoLine>
-        ) : replies === 0 && unroutedCount === 0 ? (
+        ) : replies === 0 ? (
           <TodoLine>Aucune réponse à traiter</TodoLine>
         ) : (
           <TodoLine action={<PlaceLink href="/admin/agent-ia?onglet=reponses">Réponses</PlaceLink>}>
             <ul className="space-y-1">
-              {replies ? (
-                <li>{quantity(replies, "réponse reçue à traiter", "réponses reçues à traiter")}</li>
+              {toReview.value ? (
+                <li>
+                  {quantity(toReview.value, "réponse reçue à traiter", "réponses reçues à traiter")}
+                </li>
               ) : null}
-              {unroutedCount ? (
+              {unrouted.value ? (
                 <li>
                   {quantity(
-                    unroutedCount,
+                    unrouted.value,
                     "message non rattaché en attente",
                     "messages non rattachés en attente",
                   )}
@@ -365,9 +376,10 @@ function deadlineTone({ deadline }: PrivacyRequestAdminSummary) {
 
 /** Demandes RGPD ouvertes et leur échéance (délai d'un mois, calculé par `privacy-deadline`). */
 function PrivacySection() {
+  // Même requête que la première page de Conformité : une action là-bas rafraîchit l'accueil.
   const query = useQuery({
-    queryKey: [...HOME_QUERY_KEY, "rgpd"],
-    queryFn: () => fetchAdminPrivacyRequests(),
+    queryKey: [...PRIVACY_REQUESTS_QUERY_KEY, 0],
+    queryFn: () => fetchAdminPrivacyRequests({ offset: 0 }),
     staleTime: 30_000,
   });
   const data = query.data;
@@ -419,26 +431,40 @@ function PrivacySection() {
   );
 }
 
-/** Annonces de professionnels à valider : la section n'existe que s'il y en a. */
+/**
+ * Annonces de professionnels à valider : la section disparaît seulement quand il n'y en a aucune ; en
+ * chargement ou en erreur, elle le dit. Sous la clé de Publications : une validation là-bas rafraîchit
+ * l'accueil.
+ */
 function PublicationsSection() {
   const query = useQuery({
-    queryKey: [...HOME_QUERY_KEY, "annonces"],
+    queryKey: [...PUBLICATION_REQUESTS_QUERY_KEY, "accueil"],
     queryFn: () => fetchAdminPublicationRequests({ status: "pending", limit: 1 }),
     staleTime: 30_000,
   });
-  const pending = query.data?.pendingCount ?? 0;
-  if (!pending) return null;
+  const pending = query.data?.pendingCount ?? null;
+  if (pending === 0 && !query.isError) return null;
   return (
     <AdminPanel className="p-5">
       <AdminSectionHeading title="Annonces de professionnels" />
       <div className="mt-1">
-        <TodoLine action={<PlaceLink href="/admin/publications">Publications</PlaceLink>}>
-          {quantity(
-            pending,
-            "annonce en attente de validation",
-            "annonces en attente de validation",
-          )}
-        </TodoLine>
+        {query.isError ? (
+          <TodoLine>
+            <Unavailable>Annonces indisponibles pour le moment.</Unavailable>
+          </TodoLine>
+        ) : pending === null ? (
+          <TodoLine>
+            <span role="status">Chargement des annonces…</span>
+          </TodoLine>
+        ) : (
+          <TodoLine action={<PlaceLink href="/admin/publications">Publications</PlaceLink>}>
+            {quantity(
+              pending,
+              "annonce en attente de validation",
+              "annonces en attente de validation",
+            )}
+          </TodoLine>
+        )}
       </div>
     </AdminPanel>
   );

@@ -1,3 +1,4 @@
+import { CATALOGUE_QUALITY_LABELS } from "@/lib/catalogue-quality-labels";
 import { sourceDisplayName } from "@/lib/source-names";
 
 /**
@@ -83,6 +84,43 @@ const SOURCE_CHECK_LABELS: Record<string, string> = {
   stale_listings: "fiches non revérifiées à temps",
 };
 
+/** `fact_registry.<contrôle>` : les treize contrôles quotidiens du registre (migration 20261118100300). */
+const FACT_REGISTRY_CHECK_LABELS: Record<string, string> = {
+  projection_drift: "fiche qui ne reflète plus les décisions",
+  triggers_not_always: "déclencheur du registre manquant ou modifié",
+  column_mismatch: "colonne tenue différente de sa pièce",
+  registry_label: "source « registre » sans pièce qui la tienne",
+  echo_suspected: "écho d’une pièce suspecté dans l’annonce",
+  internal_column_copied: "champ interne recopié dans les données brutes",
+  events_burst: "rafale d’écritures directes",
+  echo_suppressed: "écho écarté récemment",
+  echo_blocked: "écriture bloquée par un écho",
+  stale_listing: "annonce muette sur un champ tenu",
+  reprojection_enabled: "relance planifiée de la projection ouverte",
+  final_decisions: "décision définitive enregistrée",
+  final_decisions_over_limit: "plafond des décisions définitives dépassé",
+};
+
+/**
+ * `information_agent.autopilot.warning.<code>` : avertissements du pilote, à mi-chemin d'un seuil d'arrêt
+ * (codes des règles du pilote, que ce module ne peut pas importer : les fichiers du pilote ne bougent pas).
+ */
+const AUTOPILOT_WARNING_LABELS: Record<string, string> = {
+  bounce_early: "rebonds définitifs dès les premiers envois",
+  bounce_rate: "taux de rebonds définitifs",
+  policy_rejections: "rejets de politique ou de contenu",
+  delivery_rate: "taux de messages remis",
+  oppositions: "oppositions des destinataires",
+  api_errors: "erreurs du fournisseur d’envoi",
+  delayed_24h: "messages retardés sur 24 h",
+};
+
+/** Libellé d'une famille, précisé par le contrôle quand il est connu. */
+function familyLabel(base: string, table: Readonly<Record<string, string>>, check: string): string {
+  const detail = own(table, check);
+  return detail ? `${base} : ${detail}` : base;
+}
+
 /** Familles dont la clé porte un nom variable (source, contrôle, code d'avertissement). */
 const FAMILIES: Array<{ prefix: string; describe: (rest: string) => AlertEntry }> = [
   {
@@ -101,14 +139,26 @@ const FAMILIES: Array<{ prefix: string; describe: (rest: string) => AlertEntry }
       "operations",
     ],
   },
-  { prefix: "catalogue.quality.", describe: () => ["Contrôle qualité du catalogue", "quality"] },
+  {
+    prefix: "catalogue.quality.",
+    describe: (check) => [
+      familyLabel("Qualité du catalogue", CATALOGUE_QUALITY_LABELS, check),
+      "quality",
+    ],
+  },
   {
     prefix: "fact_registry.",
-    describe: () => ["Registre des pièces : contrôle de cohérence", "agentReplies"],
+    describe: (check) => [
+      familyLabel("Registre des pièces", FACT_REGISTRY_CHECK_LABELS, check),
+      "agentReplies",
+    ],
   },
   {
     prefix: "information_agent.autopilot.warning.",
-    describe: () => ["Pilote de l’Agent IA proche d’un seuil d’arrêt", "agentPilot"],
+    describe: (code) => [
+      familyLabel("Pilote de l’Agent IA proche d’un seuil d’arrêt", AUTOPILOT_WARNING_LABELS, code),
+      "agentPilot",
+    ],
   },
 ];
 
@@ -146,6 +196,11 @@ export function describeOperationalAlert(key: string): OperationalAlertDescripti
     own(FALLBACKS, key.split(".")[0]) ??
     DEFAULT_FALLBACK;
   return { label, place: PLACES[place] };
+}
+
+/** État d'une alerte : ouverte, ou refermée mais encore listée tant que sa notification n'est pas partie. */
+export function operationalAlertStateLabel(status: string): string {
+  return status === "open" ? "Ouverte" : "Refermée";
 }
 
 const SEVERITY_LABELS: Record<string, string> = {

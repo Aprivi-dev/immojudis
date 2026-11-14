@@ -546,6 +546,7 @@ function readinessPayload() {
       pendingDeliveryCount: 0,
       failedDeliveryCount: 0,
       lastHealthRunAt: "2026-09-19T09:00:00.000Z",
+      lastHealthRunFresh: true,
       alerts: [],
       detail: "CI",
     },

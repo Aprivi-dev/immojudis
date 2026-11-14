@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminDashboardRunsData } from "@/lib/admin.server";
@@ -84,9 +84,19 @@ const RUNS: AdminDashboardRunsData = {
 
 type Alert = AdminOperationalReadinessResponse["operations"]["alerts"][number];
 
-function readiness(alerts: Alert[]) {
+function readiness(
+  alerts: Alert[],
+  monitoring: Partial<AdminOperationalReadinessResponse["operations"]> = {},
+) {
   return {
-    operations: { openAlertCount: alerts.length, alerts },
+    operations: {
+      openAlertCount: alerts.length,
+      alerts,
+      schedulerActive: true,
+      lastHealthRunAt: "2026-11-14T07:45:00.000Z",
+      lastHealthRunFresh: true,
+      ...monitoring,
+    },
   } as AdminOperationalReadinessResponse;
 }
 
@@ -126,15 +136,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderHome() {
+function renderHome(): QueryClient {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <AdminHomePage />
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 function section(title: string): HTMLElement {
@@ -311,6 +322,69 @@ describe("AdminHomePage", () => {
         { timeout: 5_000 },
       ),
     ).toBeTruthy();
+  });
+
+  it("is never green while the monitoring is stopped", async () => {
+    mocks.fetchReadiness.mockResolvedValue(
+      readiness([], { lastHealthRunAt: "2026-11-14T06:00:00.000Z", lastHealthRunFresh: false }),
+    );
+
+    renderHome();
+
+    expect(
+      await screen.findByRole("heading", { name: /^Surveillance arrêtée depuis le 14 nov\. 2026/ }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Aucune alerte ni échec récent")).toBeNull();
+  });
+
+  it("says the monitoring is stopped when its scheduled task is off", async () => {
+    mocks.fetchReadiness.mockResolvedValue(
+      readiness([], { schedulerActive: false, lastHealthRunAt: null }),
+    );
+
+    renderHome();
+
+    expect(
+      await screen.findByRole("heading", { name: "Surveillance arrêtée : aucune mesure de santé" }),
+    ).toBeTruthy();
+  });
+
+  it("does not take a failed refresh of the alerts for a fresh state", async () => {
+    const client = renderHome();
+    await screen.findByRole("heading", { name: "Aucune alerte ni échec récent" });
+
+    mocks.fetchReadiness.mockRejectedValue(new Error("diagnostic indisponible"));
+    await act(() => client.refetchQueries({ queryKey: ["admin-readiness"] }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Données de santé potentiellement obsolètes" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Actualisation impossible : la liste date du dernier chargement réussi."),
+    ).toBeTruthy();
+  });
+
+  it("says when replies, RGPD requests or listings cannot be read", async () => {
+    mocks.fetchReview.mockRejectedValue(new Error("réponses"));
+    mocks.fetchPrivacy.mockRejectedValue(new Error("rgpd"));
+    mocks.fetchPublications.mockRejectedValue(new Error("annonces"));
+
+    renderHome();
+
+    expect(await screen.findByText("Réponses indisponibles pour le moment.")).toBeTruthy();
+    expect(await screen.findByText("Demandes RGPD indisponibles pour le moment.")).toBeTruthy();
+    expect(await screen.findByText("Annonces indisponibles pour le moment.")).toBeTruthy();
+    expect(screen.queryByText("Aucune réponse à traiter")).toBeNull();
+    expect(screen.queryByText("Aucune demande RGPD ouverte")).toBeNull();
+  });
+
+  it("keeps the listings section while it loads", async () => {
+    mocks.fetchPublications.mockReturnValue(new Promise(() => {}));
+
+    renderHome();
+
+    expect(await screen.findByText("Chargement des annonces…")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Annonces de professionnels" })).toBeTruthy();
   });
 
   it("asks for an intervention when a recent run failed", async () => {

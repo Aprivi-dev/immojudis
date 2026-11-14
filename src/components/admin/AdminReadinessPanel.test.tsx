@@ -14,6 +14,8 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // Nom d'alerte rangé dans une constante : un champ `key: "…"` littéral ressemble à un secret
 // pour le contrôle anti-secrets.
 const EXHAUSTED = "pipeline.enrichment.exhausted";
+const LAND_ROOMS = "catalogue.quality.land_with_rooms";
+const POSTAL = "catalogue.quality.missing_postal_code_ratio";
 
 const READINESS: AdminOperationalReadinessResponse = {
   checkedAt: "2026-11-14T08:00:00.000Z",
@@ -41,6 +43,7 @@ const READINESS: AdminOperationalReadinessResponse = {
     pendingDeliveryCount: 1,
     failedDeliveryCount: 0,
     lastHealthRunAt: "2026-11-14T07:45:00.000Z",
+    lastHealthRunFresh: true,
     alerts: [
       {
         key: EXHAUSTED,
@@ -49,6 +52,22 @@ const READINESS: AdminOperationalReadinessResponse = {
         status: "open",
         deliveryStatus: "pending",
         lastSeenAt: "2026-11-14T07:45:00.000Z",
+      },
+      {
+        key: LAND_ROOMS,
+        category: "import",
+        severity: "warning",
+        status: "open",
+        deliveryStatus: "delivered",
+        lastSeenAt: "2026-11-14T07:30:00.000Z",
+      },
+      {
+        key: POSTAL,
+        category: "import",
+        severity: "warning",
+        status: "resolved",
+        deliveryStatus: "failed",
+        lastSeenAt: "2026-11-14T06:00:00.000Z",
       },
     ],
     detail: "",
@@ -76,8 +95,14 @@ describe("AdminReadinessPanel", () => {
     expect(
       await screen.findByText("Fiches abandonnées après toutes les tentatives d’enrichissement"),
     ).toBeTruthy();
-    expect(screen.getByText("Avertissement")).toBeTruthy();
+    expect(screen.getAllByText("Avertissement")).toHaveLength(3);
     expect(screen.getByText("En attente")).toBeTruthy();
+    // Deux contrôles de la même famille restent distincts ; une alerte refermée le dit.
+    const land = screen.getByText("Qualité du catalogue : Terrains avec un nombre de pièces");
+    expect(land.parentElement?.textContent).toContain("Ouverte");
+    const postal = screen.getByText("Qualité du catalogue : Ventes sans code postal");
+    expect(postal.parentElement?.textContent).toContain("Refermée");
+    expect(postal.parentElement?.parentElement?.textContent).toContain("En échec");
     expect(screen.queryByText(/pipeline\.enrichment/)).toBeNull();
     expect(screen.queryByText(/import ·/)).toBeNull();
   });

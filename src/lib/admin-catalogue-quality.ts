@@ -2,6 +2,7 @@ import { formatDateTime } from "@/lib/format/dates";
 import { formatPrice, formatPricePerM2, formatShareAsPercent } from "@/lib/format/numbers";
 import { finiteNumberFromNumberOrText as num } from "@/lib/finite-number";
 import { asRecord } from "@/lib/guards";
+import { CATALOGUE_QUALITY_LABELS } from "@/lib/catalogue-quality-labels";
 
 /**
  * Panneau « Contrôles qualité du catalogue » de /admin/quality : la sentinelle de qualité (migration
@@ -106,18 +107,6 @@ export type CatalogueQualityAlertRow = {
 
 export const CATALOGUE_QUALITY_SOURCE_NAME = "catalogue-quality";
 export const CATALOGUE_QUALITY_ALERT_PREFIX = "catalogue.quality.";
-
-/** Libellés, dans l'ordre d'affichage : les invariants, les seuils, puis les tendances. */
-const CATALOGUE_QUALITY_LABELS: Record<string, string> = {
-  bedrooms_ge_rooms: "Chambres ≥ pièces (plus d’une pièce)",
-  land_with_rooms: "Terrains avec un nombre de pièces",
-  licitor_lot_mismatch: "Lots Licitor discordants avec leur carte",
-  price_per_m2_implausible: "Prix au m² invraisemblable",
-  missing_postal_code_ratio: "Ventes sans code postal",
-  documents_incomplete: "Pièces jointes bloquées « incomplete »",
-  dwelling_without_surface_ratio: "Maisons et appartements sans surface",
-  occupancy_unknown_ratio: "Occupation inconnue",
-};
 
 const INVARIANTS = new Set(["bedrooms_ge_rooms", "land_with_rooms", "licitor_lot_mismatch"]);
 const TRENDS = new Set(["dwelling_without_surface_ratio", "occupancy_unknown_ratio"]);
