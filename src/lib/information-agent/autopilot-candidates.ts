@@ -171,6 +171,7 @@ export async function findAutopilotCandidates({
   limit,
   maxExamined = 25,
   env = process.env,
+  shouldStop = () => false,
 }: {
   settings: AutopilotSettings;
   now: Date;
@@ -178,12 +179,15 @@ export async function findAutopilotCandidates({
   limit: number;
   maxExamined?: number;
   env?: Readonly<Record<string, string | undefined>>;
+  /** Borne de temps du passage : vrai, plus aucune lecture de la file ni aucun examen n'est entamé. */
+  shouldStop?: () => boolean;
 }): Promise<AutopilotCandidateSearch> {
   const result: AutopilotCandidateSearch = { candidates: [], skipped: {}, examined: 0 };
   const skip = (code: string) => {
     result.skipped[code] = (result.skipped[code] ?? 0) + 1;
   };
-  const done = () => result.candidates.length >= limit || result.examined >= maxExamined;
+  const done = () =>
+    result.candidates.length >= limit || result.examined >= maxExamined || shouldStop();
   const checkAddresses = informationAgentAddressCheckEnabled(env);
 
   for (let offset = 0; offset < MAX_QUEUE_SCAN && !done(); offset += SALE_BATCH) {

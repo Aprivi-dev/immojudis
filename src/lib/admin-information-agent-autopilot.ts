@@ -22,6 +22,7 @@ import {
 import { asObject } from "@/lib/information-agent/mission-store";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminInformationAgentRpcFailure } from "@/lib/admin-information-agent-rpc-failure";
+import { ADMIN_ROUTE_TIMEOUT_MS } from "@/lib/admin-route-deadline";
 import {
   runInformationAgentAutopilotOnDemand,
   type AutopilotRunSummary,
@@ -86,6 +87,11 @@ const ON_DEMAND_REFUSALS: Record<string, string> = {
 };
 const ON_DEMAND_COOLDOWN_MESSAGE =
   "Un passage à la demande a déjà été lancé il y a moins de 10 minutes : réessayez plus tard.";
+/**
+ * Borne de temps du passage à la demande, comptée depuis le début de la requête : 20 s, soit 8 s de marge sous le
+ * délai des routes admin pour finir le candidat en cours, journaliser, rendre le bail et relire la vue.
+ */
+const ON_DEMAND_RUN_BUDGET_MS = ADMIN_ROUTE_TIMEOUT_MS - 8_000;
 
 function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
   if (summary.status === "skipped") {
@@ -110,8 +116,11 @@ function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
     };
   }
   const errors = Object.values(summary.errors).reduce((total, count) => total + count, 0);
+  const stopped = summary.stoppedByTimeBudget
+    ? `, arrêté au bout de ${ON_DEMAND_RUN_BUDGET_MS / 1000} s`
+    : "";
   return {
-    text: `Passage de simulation terminé : ${summary.examined} examinées, ${summary.prepared} préparées, ${summary.wouldSend} simulées${errors ? `, ${errors} en erreur` : ""}. Aucun envoi.`,
+    text: `Passage de simulation terminé : ${summary.examined} examinées, ${summary.prepared} préparées, ${summary.wouldSend} simulées${errors ? `, ${errors} en erreur` : ""}${stopped}. Aucun envoi.`,
   };
 }
 
@@ -182,15 +191,22 @@ export async function runAdminAutopilotAction({
   authToken,
   input,
   env = process.env,
+  startedAt = Date.now(),
 }: {
   authToken: string;
   input: AdminAutopilotAction;
   env?: Readonly<Record<string, string | undefined>>;
+  /** Début de la requête (ms) : la borne de temps du passage à la demande en part. */
+  startedAt?: number;
 }): Promise<AdminAutopilotActionResult> {
   const auth = await assertAdminAuth(authToken);
   if (input.action === "run_simulation_now") {
     const onDemandRun = onDemandRunResult(
-      await runInformationAgentAutopilotOnDemand({ adminId: auth.userId, reason: input.reason }),
+      await runInformationAgentAutopilotOnDemand({
+        adminId: auth.userId,
+        reason: input.reason,
+        deadline: new Date(startedAt + ON_DEMAND_RUN_BUDGET_MS),
+      }),
     );
     try {
       return { ...(await getAdminAutopilotView(authToken, { env })), onDemandRun };

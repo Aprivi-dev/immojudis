@@ -135,6 +135,8 @@ const EVENT_DETAIL_KEYS = new Set([
   "sent",
   // Passage lancé à la main (avec `actorId` et `reason`) : lu par `hasOnDemandAutopilotRunSince`.
   "manual",
+  // Passage à la demande arrêté par sa borne de temps.
+  "stopped_by_time_budget",
 ]);
 
 /** Filtre `details` : liste blanche de clés, « @ » neutralisé dans toute chaîne (aucune adresse dans une erreur de contrainte). */
