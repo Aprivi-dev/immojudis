@@ -122,7 +122,7 @@ export function CeilingPlanner({
         </div>
 
         {/* Les hypothèses visibles d'emblée : chaque choix recalcule le plafond en direct. */}
-        <div className="mt-5 grid gap-x-4 gap-y-4 rounded-lg border border-line-soft bg-white p-4 lg:grid-cols-3">
+        <div className="mt-5 grid gap-x-4 gap-y-4 rounded-lg border border-line-soft bg-white p-4 lg:grid-cols-2">
           <ProjectPicker project={hypotheses.project} onChoicesChange={onChoicesChange} />
           <ProfilePicker
             profiles={profilePlans}
@@ -372,7 +372,8 @@ function WorksPicker({
   const rows = useMemo(() => ceilingsByWorks(hypotheses), [hypotheses]);
   const selectedIndex = rows.findIndex((row) => row.key === hypotheses.works.key);
   return (
-    <div className="min-w-0">
+    // Toute la largeur sous le projet et la prudence : les quatre choix tiennent sur une ligne.
+    <div className="min-w-0 lg:col-span-2">
       <div className={PICKER_LEGEND}>Travaux</div>
       <div
         role="radiogroup"

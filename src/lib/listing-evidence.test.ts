@@ -93,7 +93,7 @@ describe("listing evidence and chronology", () => {
         source_description: "Visite le 3 septembre 2026 à 11h00.",
       }),
     );
-    expect(visits).toEqual(["10 septembre 2026 · 11:00"]);
+    expect(visits).toEqual(["10 septembre 2026 · 11 h 00"]);
   });
   it("flags the observed two-hour discrepancy without rewriting a sale date", () => {
     const input = sale({

@@ -21,7 +21,7 @@ describe("report schedule shared by PDF and web", () => {
     expect(rows.map((row) => row.label)).toEqual(["Ouverture", "Clôture"]);
     expect(rows[0].value).toContain("16 septembre 2026");
     expect(rows[1].value).toContain("17 septembre 2026");
-    expect(rows.every((row) => row.value.includes("15:00"))).toBe(true);
+    expect(rows.every((row) => row.value.includes("15 h 00"))).toBe(true);
   });
   it("does not invent an hour for an older date-only snapshot", () => {
     expect(reportSaleSchedule({ saleDate: "2026-09-16" })).toEqual([

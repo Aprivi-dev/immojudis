@@ -716,7 +716,7 @@ describe("FavoriteSales : « Mon planning »", () => {
     const visits = screen.getAllByTestId("planning-visits");
     expect(visits).toHaveLength(1);
     expect(visits[0]?.textContent).toContain("Visite annoncée :");
-    expect(visits[0]?.textContent).toContain("14:00");
+    expect(visits[0]?.textContent).toContain("14 h 00");
   });
 
   it("exporte toutes les audiences suivies en un fichier, dans l'ordre des dates", async () => {

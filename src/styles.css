@@ -102,13 +102,11 @@
   --radius: 0.625rem;
   /* Titres hors accueil : capitales de Manrope à la hauteur de celles de Cormorant (voir en tête). */
   --font-display-adjust: cap-height 0.63;
-  /* Accueil (maquette du 25/10/2026) : dégradé du titre, bandeau sombre du dernier écran. */
+  /* Accueil (maquette du 25/10/2026) : dégradé du titre, textes du bandeau du dernier écran. */
   --title-gradient-from: #000000;
   --title-gradient-to: #666666;
-  --band-dark: #131209;
   --band-dark-fg: #f5efe4;
   --band-dark-soft: #bdb4a4;
-  --band-dark-line: #313131;
   --gold-light-hover: #f1d9aa;
 
   /* Immojudis core */

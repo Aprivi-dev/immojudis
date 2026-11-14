@@ -94,7 +94,7 @@ export function ListingWorks({
       <div className={styles.inner}>
         <header className={styles.header}>
           <div>
-            <p className={styles.eyebrow}>04 / Travaux</p>
+            <p className={styles.eyebrow}>Travaux</p>
             <h2 id="listing-works-title" className={styles.title}>
               Travaux et état du bien
             </h2>
