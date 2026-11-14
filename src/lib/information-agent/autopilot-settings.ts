@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import {
+  AUTOPILOT_MANUAL_RUN_MARK,
   parseAutopilotStats,
   sharedStructureCounts,
   type AutopilotMode,
@@ -134,7 +135,7 @@ const EVENT_DETAIL_KEYS = new Set([
   "prepared",
   "would_send",
   "sent",
-  // Passage lancé à la main (avec `actorId` et `reason`) : lu par `lastOnDemandAutopilotRunAt`.
+  // Marque d'un passage lancé à la main (`AUTOPILOT_MANUAL_RUN_MARK`, avec `actorId` et `reason`).
   "manual",
   // Passage à la demande arrêté par sa borne de temps.
   "stopped_by_time_budget",
@@ -240,12 +241,16 @@ export async function loadPendingSimulatedDrafts({
   return { rows: data ?? [], total: count };
 }
 
-/** Date du dernier passage journalisé (évènement `run`), nulle s'il n'y en a jamais eu. */
+/**
+ * Date du dernier passage PLANIFIÉ journalisé (évènement `run` sans la marque d'un passage lancé à la main), nulle
+ * s'il n'y en a jamais eu. Un clic dans l'administration ne masque pas une tâche planifiée qui ne tourne plus.
+ */
 export async function loadLastAutopilotRunAt(): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_autopilot_events")
     .select("at")
     .eq("kind", "run")
+    .not("details", "cs", JSON.stringify(AUTOPILOT_MANUAL_RUN_MARK))
     .order("at", { ascending: false })
     .limit(1);
   if (error) throw error;
@@ -262,15 +267,15 @@ export type AutopilotEventRow = {
 };
 
 /**
- * Heure du dernier passage lancé à la main (`run` journalisé avec `manual`) depuis `since`, ou null. Une lecture
- * impossible est propagée (jamais un passage de plus).
+ * Heure du dernier passage lancé à la main (`run` journalisé avec `AUTOPILOT_MANUAL_RUN_MARK`) depuis `since`, ou
+ * null. Une lecture impossible est propagée (jamais un passage de plus).
  */
 export async function lastOnDemandAutopilotRunAt(since: Date): Promise<Date | null> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_autopilot_events")
     .select("at")
     .eq("kind", "run")
-    .eq("details->>manual", "true")
+    .contains("details", AUTOPILOT_MANUAL_RUN_MARK)
     .gte("at", since.toISOString())
     .order("at", { ascending: false })
     .limit(1);

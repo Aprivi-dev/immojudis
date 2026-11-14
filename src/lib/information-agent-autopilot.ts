@@ -24,6 +24,7 @@ import {
   type AutopilotReadiness,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
+  AUTOPILOT_MANUAL_RUN_MARK,
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
   AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
   autopilotBudgetDecision,
@@ -195,9 +196,10 @@ const AUTOPILOT_LEASE_SECONDS = 330;
  */
 const PENDING_REVIEW_LIMIT = 2 * AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS;
 /**
- * Durée maximale admise d'une étape du passage (page de la file, examen d'une vente, brouillon et aperçu d'un
- * candidat) : le contrôle DNS, borné, plus les lectures et écritures en base. La recherche d'adresse (15 s) n'a
- * jamais lieu pour le pilote (`createAdminInformationAgentDraft` la saute dès qu'un déclencheur est donné).
+ * Durée maximale admise d'une étape du passage (relecture d'un brouillon simulé en attente, page de la file, examen
+ * d'une vente, brouillon et aperçu d'un candidat) : le contrôle DNS, borné, plus les lectures et écritures en base.
+ * La recherche d'adresse (15 s) n'a jamais lieu pour le pilote (`createAdminInformationAgentDraft` la saute dès
+ * qu'un déclencheur est donné).
  */
 const AUTOPILOT_STEP_MAX_MS = MAIL_DOMAIN_CHECK_BUDGET_MS + 3_000;
 
@@ -548,8 +550,11 @@ export async function runAutopilotPass(
   const lease = await deps.claimLease();
   if (lease.kind === "busy") return finish("skipped", "busy");
 
+  // RÈGLE LIÉE : `clean_simulation_days` (migration 20261119100820) ne compte pas les envois simulés d'un passage à
+  // la main. Elle les reconnaît par la trace `run` de début, qui porte cette marque et le même `runId` et s'écrit
+  // avant eux ; les deux changent ensemble.
   const onDemandDetails: Record<string, string | boolean> = onDemand
-    ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason }
+    ? { ...AUTOPILOT_MANUAL_RUN_MARK, actorId: onDemand.adminId, reason: onDemand.reason }
     : {};
   try {
     if (onDemand) {

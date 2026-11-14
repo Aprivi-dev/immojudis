@@ -652,7 +652,7 @@ function autopilot(overrides: Record<string, unknown> = {}) {
         "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
-    runs: "Dernier passage : aucun · prochain passage : aucun (pilote éteint)",
+    runs: "Dernier passage planifié : aucun · prochain passage : aucun (pilote éteint)",
     readiness: { ready: false, checks: [] },
     ready: { count: 0, label: "Prêtes à valider (0 sur 10 au plus)", notice: null, items: [] },
     events: [],

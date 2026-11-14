@@ -6,6 +6,7 @@ import { formatNumericDateTime } from "@/lib/format/dates";
 import {
   AUTOPILOT_ART14_MAX_DAYS,
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
+  AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
   autopilotCaps,
   effectiveArt14MaxAgeDays,
   nextAutopilotRunAt,
@@ -20,7 +21,7 @@ export type AutopilotPreparedDraft = { missionId: string; saleId: string; label:
 export type AutopilotView = {
   mode: AutopilotSettings["mode"];
   modeLabel: string;
-  /** « Dernier passage : … · prochain passage : … », heure de Paris. */
+  /** « Dernier passage planifié : … · prochain passage : … », heure de Paris. */
   runs: string;
   /** Arrêté automatiquement (mode « off » posé par un seuil) ; le motif en clair est dans `notice`. */
   autoStopped: boolean;
@@ -98,7 +99,7 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   // Passage lancé à la main par un administrateur.
   on_demand_started: "passage à la demande lancé",
   not_simulation: "passage à la demande hors du mode Simulation",
-  on_demand_cooldown: "passage à la demande déjà lancé il y a moins de 10 minutes",
+  on_demand_cooldown: `passage à la demande déjà lancé il y a moins de ${AUTOPILOT_ON_DEMAND_COOLDOWN_MS / 60_000} minutes`,
   // Sélection : file, puis examen du candidat.
   not_class_a: "aucun contact unique dans l’annonce",
   role_not_lawyer: "destinataire autre qu’un avocat",
@@ -174,8 +175,11 @@ function codeText(code: unknown): string {
   return autopilotCodeLabel(value) ?? `motif non répertorié (${value})`;
 }
 
-/** « libellé (n) » pour chaque compte `<préfixe><code>` du journal d'un passage. */
-function countsByCode(record: Record<string, unknown>, prefix: string): string {
+/**
+ * « libellé (n) » pour chaque compte `<préfixe><code>` d'un passage : son journal (`skip_`, `error_`) ou le résumé
+ * rendu après un passage à la demande (préfixe vide).
+ */
+export function countsByCode(record: Record<string, unknown>, prefix: string): string {
   return Object.entries(record)
     .filter(([key, count]) => key.startsWith(prefix) && typeof count === "number" && count > 0)
     .map(([key, count]) => `${codeText(key.slice(prefix.length))} (${count})`)
@@ -235,7 +239,10 @@ function art14Label(settings: Pick<AutopilotSettings, "art14RuleEnabled" | "art1
   return `${rule} · délai d’information : ${delay} (réglable de 1 à ${AUTOPILOT_ART14_MAX_DAYS})`;
 }
 
-/** « Dernier passage : … · prochain passage : … » (P12). */
+/**
+ * « Dernier passage planifié : … · prochain passage : … » (P12). Un passage lancé à la main n'y compte pas
+ * (`loadLastAutopilotRunAt`) : la ligne dit si la tâche planifiée tourne.
+ */
 function runsLine(settings: AutopilotSettings, now: Date, lastRunAt: string | null): string {
   const next = nextAutopilotRunAt(settings, now);
   // Un arrêt automatique éteint aussi le pilote : il est nommé en premier, c'est lui qu'il faut lever.
@@ -246,7 +253,7 @@ function runsLine(settings: AutopilotSettings, now: Date, lastRunAt: string | nu
       : settings.mode === "off"
         ? `aucun (${codeText("disabled")})`
         : "aucun dans les 14 prochains jours";
-  return `Dernier passage : ${lastRunAt ? formatNumericDateTime(lastRunAt) : "aucun"} · prochain passage : ${nextText}`;
+  return `Dernier passage planifié : ${lastRunAt ? formatNumericDateTime(lastRunAt) : "aucun"} · prochain passage : ${nextText}`;
 }
 
 /**
@@ -283,7 +290,7 @@ export function buildAutopilotView({
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
   events: Array<{ at: string; kind: string; reason: string | null; details: unknown }>;
-  /** Date du dernier évènement `run` du journal. */
+  /** Date du dernier évènement `run` d'un passage planifié (`loadLastAutopilotRunAt`). */
   lastRunAt: string | null;
   /** Brouillons simulés en attente : leur nombre total et les plus récents. */
   prepared: { total: number; items: AutopilotPreparedDraft[] };

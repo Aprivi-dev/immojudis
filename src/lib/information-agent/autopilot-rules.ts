@@ -91,8 +91,9 @@ export type AutopilotStats = {
   manualPermanentBounces: number;
   wouldSendDays: number;
   /**
-   * Jours (Paris) depuis le début de la simulation avec au moins un envoi simulé ET aucun passage en erreur
-   * (`error_<code>` dans le journal d'un passage) : les seuls qui comptent pour la porte du mode réel.
+   * Jours (Paris) depuis le début de la simulation avec au moins un envoi simulé d'un passage planifié (pas d'un
+   * passage lancé à la main) ET aucun passage en erreur (`error_<code>` dans le journal d'un passage, quel qu'il
+   * soit) : les seuls qui comptent pour la porte du mode réel.
    */
   cleanSimulationDays: number;
   anomaliesSinceSimulation: number;
@@ -361,6 +362,15 @@ export type AutopilotRunGate = { ok: true } | { ok: false; code: string };
 
 /** Au plus un passage lancé à la main toutes les 10 minutes (journal : événement `run` avec `manual`). */
 export const AUTOPILOT_ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
+
+/**
+ * Marque d'un passage lancé à la main dans le détail de ses événements `run` (trace de début et de fin). Seule
+ * définition : l'exécuteur l'écrit ; `lastOnDemandAutopilotRunAt` (délai entre deux passages à la main) et
+ * `loadLastAutopilotRunAt` (« Dernier passage planifié ») la lisent. RÈGLE LIÉE : `clean_simulation_days` de
+ * `information_agent_autopilot_stats` (migration 20261119100820) écarte par `details ->> 'manual' = 'true'` les
+ * envois simulés d'un passage qui la porte ; les deux changent ensemble.
+ */
+export const AUTOPILOT_MANUAL_RUN_MARK = { manual: true } as const;
 
 /**
  * Garde de tête de passage : mode, arrêt, pause, plage horaire. Un passage lancé à la main par un administrateur
