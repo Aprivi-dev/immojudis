@@ -132,6 +132,28 @@ describe("plage d'envoi (Europe/Paris)", () => {
     expect(next("2026-11-03T09:31:00Z", { mode: "off" })).toBeNull();
     expect(next("2026-11-03T09:31:00Z", { autoStoppedAt: "2026-11-03T09:00:00Z" })).toBeNull();
   });
+
+  it("passage à la demande : simulation seulement, sans plage horaire ; pause et arrêt tiennent", () => {
+    const saturday = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris
+    const onDemand = { onDemand: true };
+    // La tâche planifiée garde sa plage horaire.
+    expect(autopilotRunGate(settings(), saturday)).toEqual({ ok: false, code: "outside_window" });
+    expect(autopilotRunGate(settings(), saturday, onDemand)).toEqual({ ok: true });
+    for (const mode of ["off", "live"] as const) {
+      for (const when of [saturday, NOW]) {
+        expect(autopilotRunGate(settings({ mode }), when, onDemand)).toEqual({
+          ok: false,
+          code: "not_simulation",
+        });
+      }
+    }
+    expect(
+      autopilotRunGate(settings({ pausedUntil: "2026-11-15T09:00:00Z" }), saturday, onDemand),
+    ).toEqual({ ok: false, code: "paused" });
+    expect(
+      autopilotRunGate(settings({ autoStoppedAt: "2026-11-14T10:00:00Z" }), saturday, onDemand),
+    ).toEqual({ ok: false, code: "auto_stopped" });
+  });
 });
 
 describe("phases et plafonds", () => {
@@ -422,6 +444,14 @@ describe("candidat du pilote", () => {
         "sale_too_soon",
       ],
       ["date de vente inconnue", { saleDate: null }, {}, "sale_too_soon"],
+      ["identité incomplète", { identityComplete: false }, {}, "identity_incomplete"],
+      ["brouillon d'un administrateur", { humanDraftExists: true }, {}, "admin_draft_exists"],
+      [
+        "adresse enregistrée il y a 31 jours, jamais informée",
+        { contactFirstRecordedAt: "2026-10-03T09:30:00Z" },
+        {},
+        "art14_window_expired",
+      ],
     ] as const)(
       "%s : écarté par la file avec le motif de la vérification complète",
       (_n, facts, s, code) => {
@@ -441,6 +471,33 @@ describe("candidat du pilote", () => {
           { allowLicitorDecoded: true },
         ),
       ).toEqual({ ok: true });
+    });
+
+    describe("article 14 dans la file", () => {
+      const old = { contactFirstRecordedAt: "2026-10-03T09:30:00Z" };
+      it("adresse enregistrée il y a 29 jours : non écartée", () => {
+        expect(early({ contactFirstRecordedAt: "2026-10-05T09:30:00Z" })).toBeNull();
+      });
+      it("déjà informée, ou envois précédents non lus : non écartée (la vérification complète décide)", () => {
+        expect(early({ ...old, alreadyInformed: true })).toBeNull();
+        expect(verdict({ ...old, alreadyInformed: true })).toEqual({ ok: true });
+        expect(early({ ...old, alreadyInformed: undefined })).toBeNull();
+      });
+      it("règle non désactivable et délai plafonné à 90 jours, comme la vérification complète (J9)", () => {
+        expect(early(old, { art14RuleEnabled: false })).toBe("art14_window_expired");
+        expect(verdict(old, { art14RuleEnabled: false })).toEqual({
+          ok: false,
+          code: "art14_window_expired",
+        });
+        // Adresse relevée il y a 125 jours : un délai enregistré de 365 jours reste plafonné à 90.
+        const veryOld = { contactFirstRecordedAt: "2026-07-01T10:00:00Z" };
+        expect(early(veryOld, { art14MaxAgeDays: 365 })).toBe("art14_window_expired");
+        expect(early(old, { art14MaxAgeDays: 90 })).toBeNull();
+      });
+      it("date inconnue du registre : non écartée, l'examen enregistre l'adresse avant de la lire", () => {
+        expect(early({ contactFirstRecordedAt: null })).toBeNull();
+        expect(early({ contactFirstRecordedAt: undefined })).toBeNull();
+      });
     });
   });
 });

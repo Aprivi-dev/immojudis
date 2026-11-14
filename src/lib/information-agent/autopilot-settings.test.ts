@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/client.server", () => {
   const query = {
     select: (...args: unknown[]) => (mocks.calls.push({ method: "select", args }), query),
+    eq: (...args: unknown[]) => (mocks.calls.push({ method: "eq", args }), query),
+    order: (...args: unknown[]) => (mocks.calls.push({ method: "order", args }), query),
     gte: (...args: unknown[]) => (mocks.calls.push({ method: "gte", args }), query),
     in: (...args: unknown[]) => (mocks.calls.push({ method: "in", args }), query),
     limit: (...args: unknown[]) => {
@@ -26,7 +28,11 @@ vi.mock("@/integrations/supabase/client.server", () => {
 });
 
 import { autopilotBudgetDecision, autopilotPhase } from "@/lib/information-agent/autopilot-rules";
-import { loadAutopilotStats } from "@/lib/information-agent/autopilot-settings";
+import {
+  lastOnDemandAutopilotRunAt,
+  loadAutopilotStats,
+  sanitizeAutopilotEventDetails,
+} from "@/lib/information-agent/autopilot-settings";
 
 // Adresses fictives : sous-domaine inexistant de `notaires.fr`, `example.test`.
 const NOW = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris
@@ -121,5 +127,40 @@ describe("compteurs du pilote : envois par structure sur un domaine partagé", (
         random: 0.5,
       }),
     ).toEqual({ ok: false, scope: "candidate", code: "structure_count_incomplete" });
+  });
+});
+
+describe("passages lancés à la main : journal", () => {
+  it("lit dans le journal le dernier passage `run` marqué « à la main » depuis la date donnée", async () => {
+    const since = new Date("2026-11-14T12:50:00Z");
+    mocks.rows = [];
+    expect(await lastOnDemandAutopilotRunAt(since)).toBeNull();
+    expect(mocks.calls).toEqual([
+      { method: "from", args: ["information_agent_autopilot_events"] },
+      { method: "select", args: ["at"] },
+      { method: "eq", args: ["kind", "run"] },
+      { method: "eq", args: ["details->>manual", "true"] },
+      { method: "gte", args: ["at", "2026-11-14T12:50:00.000Z"] },
+      { method: "order", args: ["at", { ascending: false }] },
+      { method: "limit", args: [1] },
+    ]);
+    mocks.rows = [{ at: "2026-11-14T12:56:00+00:00" }];
+    expect(await lastOnDemandAutopilotRunAt(since)).toEqual(new Date("2026-11-14T12:56:00Z"));
+  });
+
+  it("une lecture impossible du journal est propagée (jamais un passage de plus)", async () => {
+    mocks.error = new Error("base indisponible");
+    await expect(lastOnDemandAutopilotRunAt(NOW)).rejects.toThrow("base indisponible");
+  });
+
+  it("garde dans le journal la marque « à la main », l'administrateur et le motif", () => {
+    expect(
+      sanitizeAutopilotEventDetails({
+        manual: true,
+        actorId: "admin-2",
+        reason: "Premier passage demandé",
+        examined: 3,
+      }),
+    ).toEqual({ manual: true, actorId: "admin-2", reason: "Premier passage demandé", examined: 3 });
   });
 });

@@ -210,12 +210,15 @@ async function loadAdminInformationAgentRegistryContacts(
 }
 
 /**
- * Colonnes lues pour savoir si une adresse email est connue (blocs et descriptions, sans le reste), et la date de la
- * vente, que le tri préalable du pilote automatique lit dans cette même lecture (`autopilot-candidates.ts`).
+ * Colonnes lues pour savoir si une adresse email est connue (blocs et descriptions, sans le reste), plus la date de
+ * la vente et le lieu de l'identité du professionnel (tribunal, ville : `saleIdentityPlace`), que le tri préalable du
+ * pilote automatique lit dans cette même lecture (`autopilot-candidates.ts`).
  */
 const EMAIL_AVAILABILITY_SELECT = [
   "id",
   "sale_date",
+  "tribunal",
+  "city",
   "lawyer_name",
   "lawyer_contact",
   "description",

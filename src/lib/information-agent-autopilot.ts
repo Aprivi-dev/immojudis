@@ -25,6 +25,7 @@ import {
 } from "@/lib/information-agent/autopilot-readiness";
 import {
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
+  AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
   autopilotBudgetDecision,
   autopilotCaps,
   autopilotRunGate,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/information-agent/autopilot-rules";
 import { informationAgentCapStructure } from "@/lib/information-agent/contact-structure";
 import {
+  lastOnDemandAutopilotRunAt,
   loadAutopilotSettings,
   loadAutopilotStats,
   loadPendingSimulatedDrafts,
@@ -47,6 +49,7 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { asObject, cancelMission } from "@/lib/information-agent/mission-store";
+import { MAIL_DOMAIN_CHECK_BUDGET_MS } from "@/lib/information-agent/address-deliverability";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
 import {
   InformationAgentSentButUnrecordedError,
@@ -59,7 +62,8 @@ import { PublicApiError } from "@/lib/api-errors";
 
 /**
  * Pilote automatique de l'agent d'information : UN passage (appelé par `pg_cron` toutes les 10 minutes, via la
- * route `/api/cron/information-agent-autopilot`, seulement si le mode n'est pas « off »).
+ * route `/api/cron/information-agent-autopilot`, seulement si le mode n'est pas « off » ; ou lancé à la main par
+ * un administrateur, en simulation seulement : `runInformationAgentAutopilotOnDemand`).
  *
  * C'est le SEUL expéditeur automatisé de l'agent, et il n'envoie rien lui-même : il prépare le brouillon, rend
  * l'aperçu, puis appelle `runAdminInformationAgentAction` avec l'action `approve_and_send` et `trigger:
@@ -90,6 +94,10 @@ export type AutopilotRunSummary = {
    */
   errors: Record<string, number>;
   warnings: string[];
+  /** Passage à la demande arrêté par sa borne de temps (examen ou candidat non entamé). Jamais pour la tâche planifiée. */
+  stoppedByTimeBudget: boolean;
+  /** Passage à la demande refusé par le délai de 10 minutes (`on_demand_cooldown`) : temps restant ; null sinon. */
+  retryAfterMs: number | null;
 };
 
 export type PreparedAutopilotDraft = {
@@ -128,10 +136,13 @@ export type AutopilotDeps = {
   isAdmin: (userId: string | null) => Promise<boolean>;
   claimLease: () => Promise<CronLease>;
   releaseLease: (token: string) => Promise<void>;
+  /** Heure du dernier passage lancé à la main journalisé depuis `since`, ou null. */
+  lastOnDemandRunAt: (since: Date) => Promise<Date | null>;
   findCandidates: (
     settings: AutopilotSettings,
     now: Date,
     limit: number,
+    shouldStop: () => boolean,
   ) => Promise<AutopilotCandidateSearch>;
   prepareDraft: (
     candidate: AutopilotCandidate,
@@ -183,6 +194,19 @@ const AUTOPILOT_LEASE_SECONDS = 330;
  * du plafond ; seuls des brouillons antérieurs au lot B pourraient dépasser, ils seraient relus aux passages suivants.
  */
 const PENDING_REVIEW_LIMIT = 2 * AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS;
+/**
+ * Durée maximale admise d'une étape du passage (page de la file, examen d'une vente, brouillon et aperçu d'un
+ * candidat) : le contrôle DNS, borné, plus les lectures et écritures en base. La recherche d'adresse (15 s) n'a
+ * jamais lieu pour le pilote (`createAdminInformationAgentDraft` la saute dès qu'un déclencheur est donné).
+ */
+const AUTOPILOT_STEP_MAX_MS = MAIL_DOMAIN_CHECK_BUDGET_MS + 3_000;
+
+/**
+ * Passage lancé à la main : administrateur vérifié par le serveur (jamais une valeur du client), motif, et heure
+ * à laquelle le travail doit être fini (borne de la route qui l'appelle) : aucune étape n'est entamée si elle
+ * risque de la dépasser.
+ */
+export type AutopilotOnDemandRequest = { adminId: string; reason: string; finishBy: Date };
 
 /**
  * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
@@ -275,8 +299,9 @@ export function defaultAutopilotDeps(
     isAdmin: isActiveAdmin,
     claimLease: () => claimCronLease("information-agent-autopilot", AUTOPILOT_LEASE_SECONDS),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
-    findCandidates: (settings, now, limit) =>
-      findAutopilotCandidates({ settings, now, limit, env }),
+    lastOnDemandRunAt: lastOnDemandAutopilotRunAt,
+    findCandidates: (settings, now, limit, shouldStop) =>
+      findAutopilotCandidates({ settings, now, limit, env, shouldStop }),
     prepareDraft: prepareAutopilotDraft,
     preview: async (draft, settings, runId) => {
       const response = await previewAdminInformationAgentMission({
@@ -441,23 +466,28 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
     skipped: {},
     errors: {},
     warnings: [],
+    stoppedByTimeBudget: false,
+    retryAfterMs: null,
   };
 }
 
 /**
  * Brouillons simulés en attente qui comptent encore pour le plafond : chacun est relu comme à l'aperçu, et celui
  * dont la vente a changé est annulé (`draft_stale`) au lieu de bloquer la simulation jusqu'à une action humaine.
- * Une relecture ou une annulation impossible est une erreur du passage ; le brouillon reste compté.
+ * Une relecture ou une annulation impossible est une erreur du passage ; le brouillon reste compté. Une relecture
+ * est une étape au sens de la borne de temps (`shouldStop`) : les brouillons non relus restent comptés.
  */
 async function pendingAfterStaleReview(
   deps: AutopilotDeps,
   settings: AutopilotSettings,
   skip: (code: string) => void,
   runError: (code: string, error: unknown, saleId: string | null) => void,
+  shouldStop: () => boolean,
 ): Promise<number> {
   const { total, drafts } = await deps.listPendingSimulatedDrafts();
   let pending = total;
   for (const draft of drafts) {
+    if (shouldStop()) break;
     try {
       if (!(await deps.draftIsStale(draft))) continue;
       await deps.cancelDraft(draft.missionId, settings);
@@ -473,10 +503,32 @@ async function pendingAfterStaleReview(
   return pending;
 }
 
+/** Passage de la tâche planifiée (`pg_cron`), dans la plage horaire seulement. */
 export async function runInformationAgentAutopilot(
   overrides: Partial<AutopilotDeps> = {},
 ): Promise<AutopilotRunSummary> {
-  const deps = defaultAutopilotDeps(overrides);
+  return runAutopilotPass(defaultAutopilotDeps(overrides), null);
+}
+
+/**
+ * Passage de SIMULATION lancé à la main par un administrateur : le même passage que la tâche planifiée (bail,
+ * règles, bornes), sans exiger la plage horaire. Refusé (`not_simulation`) si le mode lu au début du passage n'est
+ * pas « simulation », et (`on_demand_cooldown`) si un autre a été lancé à la main il y a moins de 10 minutes.
+ */
+export async function runInformationAgentAutopilotOnDemand(
+  request: AutopilotOnDemandRequest,
+): Promise<AutopilotRunSummary> {
+  return runAutopilotPass(defaultAutopilotDeps(), request);
+}
+
+/**
+ * Le passage, dépendances injectées : pour les tests seulement. L'application passe par
+ * `runInformationAgentAutopilot` (tâche planifiée) ou `runInformationAgentAutopilotOnDemand` (administrateur).
+ */
+export async function runAutopilotPass(
+  deps: AutopilotDeps,
+  onDemand: AutopilotOnDemandRequest | null,
+): Promise<AutopilotRunSummary> {
   const runId = deps.newRunId();
   const now = deps.now();
   let settings = await deps.loadSettings();
@@ -488,7 +540,7 @@ export async function runInformationAgentAutopilot(
   };
 
   // 1. Mode, arrêt, pause, plage horaire : aucune lecture de candidat tant qu'une de ces portes est fermée.
-  const gate = autopilotRunGate(settings, now);
+  const gate = autopilotRunGate(settings, now, { onDemand: onDemand !== null });
   if (!gate.ok) return finish("skipped", gate.code);
   // Production seulement : un environnement de prévisualisation ne travaille jamais sur les vraies fiches.
   if (deps.env.VERCEL_ENV !== "production") return finish("skipped", "not_production");
@@ -496,7 +548,27 @@ export async function runInformationAgentAutopilot(
   const lease = await deps.claimLease();
   if (lease.kind === "busy") return finish("skipped", "busy");
 
+  const onDemandDetails: Record<string, string | boolean> = onDemand
+    ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason }
+    : {};
   try {
+    if (onDemand) {
+      // Lu sous le bail : deux demandes simultanées ne passent pas toutes les deux.
+      const last = await deps.lastOnDemandRunAt(
+        new Date(now.getTime() - AUTOPILOT_ON_DEMAND_COOLDOWN_MS),
+      );
+      if (last) {
+        summary.retryAfterMs = last.getTime() + AUTOPILOT_ON_DEMAND_COOLDOWN_MS - now.getTime();
+        return finish("skipped", "on_demand_cooldown");
+      }
+      // Trace posée dès maintenant (journal en ajout seul ; l'événement de fin la complète) : une exception ou un
+      // arrêt automatique la laisse, et le délai de 10 minutes s'applique quand même.
+      await deps.record("run", runId, {
+        mode: settings.mode,
+        code: "on_demand_started",
+        ...onDemandDetails,
+      });
+    }
     let stats = await deps.loadStats(now);
 
     // 2. Arrêts automatiques et alertes à la moitié des seuils.
@@ -553,22 +625,35 @@ export async function runInformationAgentAutopilot(
     // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement. En simulation, les brouillons simulés en
     //    attente sont d'abord relus (ceux que la vente a rendus caducs sont annulés, `draft_stale`), puis plafonnés :
     //    plafond atteint, aucune recherche, rien n'est préparé tant qu'un administrateur n'en a pas envoyé ou annulé.
-    const live = settings.mode === "live";
+    //    Un passage à la demande n'envoie jamais, quel que soit le mode relu (la garde de tête l'exige déjà) : il
+    //    suit le chemin de la simulation, purge et plafond compris.
+    const live = !onDemand && settings.mode === "live";
+    // Borne de temps du seul passage à la demande ; la tâche planifiée n'en a pas (`Infinity`). Une étape n'est
+    // entamée que si elle peut finir avant l'heure, même à sa durée maximale.
+    const finishBy = onDemand ? onDemand.finishBy.getTime() : Infinity;
+    const timeUp = () => {
+      if (deps.now().getTime() + AUTOPILOT_STEP_MAX_MS > finishBy) {
+        summary.stoppedByTimeBudget = true;
+      }
+      return summary.stoppedByTimeBudget;
+    };
     const wanted = live
       ? LIVE_PER_RUN
       : Math.min(
           SIMULATION_PER_RUN,
           AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS -
-            (await pendingAfterStaleReview(deps, settings, skip, runError)),
+            (await pendingAfterStaleReview(deps, settings, skip, runError, timeUp)),
         );
     const backlog = wanted <= 0;
     const search: AutopilotCandidateSearch = backlog
       ? { candidates: [], skipped: { simulated_backlog: 1 }, examined: 0 }
-      : await deps.findCandidates(settings, now, wanted);
+      : await deps.findCandidates(settings, now, wanted, timeUp);
     summary.examined = search.examined;
     for (const [code, count] of Object.entries(search.skipped)) skip(code, count);
 
     for (const candidate of search.candidates) {
+      // Le candidat en cours se termine ; le suivant n'est pas entamé une fois l'heure passée.
+      if (timeUp()) break;
       // Relecture de l'interrupteur et des compteurs avant CHAQUE envoi.
       settings = await deps.loadSettings();
       if (settings.mode !== summary.mode || settings.autoStoppedAt || settings.mode === "off") {
@@ -714,6 +799,8 @@ export async function runInformationAgentAutopilot(
 
     await deps.record("run", runId, {
       mode: settings.mode,
+      ...onDemandDetails,
+      ...(summary.stoppedByTimeBudget ? { stopped_by_time_budget: true } : {}),
       examined: summary.examined,
       prepared: summary.prepared,
       would_send: summary.wouldSend,
