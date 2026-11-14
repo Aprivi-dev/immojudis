@@ -1,6 +1,6 @@
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { isInFrance } from "@/lib/france-bounds";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatClock, formatDate, formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { publishedDay, sourceVisitExcerpt } from "./listing-evidence";
@@ -83,7 +83,11 @@ export function listingDate(value: string | null | undefined): string {
   // Human-readable visit slots have no timezone. Keep their published local time.
   const visit = /^(\d{4}-\d{2}-\d{2})\s+(?:à\s+)?(\d{1,2})[:h](\d{2})(.*)$/.exec(text);
   if (visit && Number(visit[2]) < 24 && Number(visit[3]) < 60) {
-    return `${listingDate(visit[1])} · ${visit[2].padStart(2, "0")}:${visit[3]}${visit[4]}`;
+    // Une plage publiée (« 14:00–15:00 ») garde sa fin, écrite elle aussi « 15 h 00 ».
+    const rest = visit[4].replace(/\b(\d{1,2})[:h](\d{2})\b/g, (_, hour: string, minute: string) =>
+      formatClock(hour, minute),
+    );
+    return `${listingDate(visit[1])} · ${formatClock(visit[2], visit[3])}${rest}`;
   }
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) {
     // Unzoned times are local to the sale, not the browser or build server.

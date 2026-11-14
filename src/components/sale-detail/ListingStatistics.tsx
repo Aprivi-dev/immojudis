@@ -704,7 +704,8 @@ export function ListingStatistics({
                 <span className={styles.kpiLabel}>Prochaine audience</span>
                 <strong className={styles.kpiValueSmall}>{formatDate(activity.nextSaleAt)}</strong>
                 <span className={styles.kpiNote}>
-                  {formatNumber(activity.upcomingSales)} vente(s) à venir
+                  {formatNumber(activity.upcomingSales)} vente
+                  {activity.upcomingSales > 1 ? "s" : ""} à venir
                 </span>
               </article>
               <article className={styles.kpiCard}>
@@ -1036,7 +1037,9 @@ export function ListingStatistics({
                     return (
                       <article key={hearing.date} className={styles.calendarItem}>
                         <div className={styles.calendarDate}>{formatDate(hearing.date)}</div>
-                        <strong>{formatNumber(hearing.sales)} vente(s)</strong>
+                        <strong>
+                          {formatNumber(hearing.sales)} vente{hearing.sales > 1 ? "s" : ""}
+                        </strong>
                         <div className={styles.progressTrack} aria-hidden="true">
                           <span className={styles.progressFill} style={{ width: `${share}%` }} />
                         </div>

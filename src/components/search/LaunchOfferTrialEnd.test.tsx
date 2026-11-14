@@ -38,7 +38,7 @@ describe("date de fin de l'essai au-dessus de la liste", () => {
 
     const note = await screen.findByTestId("launch-offer-trial-end");
     expect(note.textContent).toBe(
-      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14:05. Détails dans Mon compte",
+      "Essai gratuit de l’offre Analyse jusqu’au 1er novembre 2026 à 14 h 05. Détails dans Mon compte",
     );
     expect(note.textContent).not.toMatch(/reste|dernier|vite|profitez|abonn/i);
     expect(screen.getByRole("link", { name: "Détails dans Mon compte" }).getAttribute("href")).toBe(
@@ -58,7 +58,7 @@ describe("date de fin de l'essai au-dessus de la liste", () => {
     });
     renderNote();
     expect((await screen.findByTestId("launch-offer-trial-end")).textContent).toContain(
-      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14:05.",
+      "Essai gratuit prolongé jusqu’au 1er décembre 2026 à 14 h 05.",
     );
   });
 

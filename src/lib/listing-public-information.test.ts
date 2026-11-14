@@ -370,7 +370,7 @@ describe("getListingPublicInformation", () => {
     );
 
     expect(item(result, "sale_date")).toMatchObject({
-      value: "15 octobre 2026 à 09:30",
+      value: "15 octobre 2026 à 9 h 30",
       status: "reported",
       sources: [],
     });

@@ -70,8 +70,8 @@ export const LAUNCH_OFFER_VISITOR_TEXT = `Inscrivez-vous gratuitement : une fois
 let trialDateFormat: Intl.DateTimeFormat | null = null;
 
 /**
- * « 1er novembre 2026 à 14:05 », heure de Paris : copie de `formatDateTime` (`format/dates.ts`), y
- * compris sa règle du « 1er » (le test vérifie l'égalité). Copie gardée exprès : y importer
+ * « 1er novembre 2026 à 14 h 05 », heure de Paris : copie de `formatDateTime` (`format/dates.ts`), y
+ * compris sa règle du « 1er » et son heure « 14 h 05 » (le test vérifie l'égalité). Copie gardée exprès : y importer
  * `format/dates` change le découpage de Turbopack et alourdit le JavaScript client total d'environ
  * 69 ko (mesuré le 13/11/2026).
  */
@@ -88,7 +88,12 @@ export function signupTrialDateLabel(iso: string): string {
   });
   return trialDateFormat
     .formatToParts(time)
-    .map(({ type, value }) => (type === "day" && value === "1" ? "1er" : value))
+    .map(({ type, value }) => {
+      if (type === "day" && value === "1") return "1er";
+      if (type === "hour") return String(Number(value));
+      if (type === "literal" && value === ":") return " h ";
+      return value;
+    })
     .join("");
 }
 

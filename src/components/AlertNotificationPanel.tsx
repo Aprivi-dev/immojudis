@@ -10,6 +10,7 @@ import { updateAlertNotification } from "@/lib/client-api";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { PEPITE_ALERT_REASON, PEPITE_LABEL } from "@/lib/pepite-copy";
 import { formatPercent } from "@/lib/format/numbers";
+import { formatClock } from "@/lib/format/dates";
 import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
@@ -223,11 +224,18 @@ function NotificationItem({
 function formatNotificationDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: PARIS_TIME_ZONE,
-  }).format(date);
+  // « 5 nov. à 14 h 30 » : l'heure à la française, comme sur le reste du site.
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: PARIS_TIME_ZONE,
+    })
+      .formatToParts(date)
+      .map(({ type, value }) => [type, value]),
+  );
+  return `${parts.day} ${parts.month} à ${formatClock(parts.hour, parts.minute)}`;
 }

@@ -45,9 +45,13 @@ export function SiteFooter() {
   const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
+  // L'accueil finit sur un bandeau pleine largeur : la marge haute y laisserait une bande vide.
+  const endsOnBand = pathname === "/";
 
   return (
-    <footer className="mt-16 border-t border-border bg-card text-sm text-muted-foreground">
+    <footer
+      className={`${endsOnBand ? "" : "mt-16 "}border-t border-border bg-card text-sm text-muted-foreground`}
+    >
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
