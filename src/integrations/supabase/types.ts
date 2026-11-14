@@ -17882,6 +17882,10 @@ export type Database = {
         Returns: undefined;
       };
       sync_fact_registry_alerts: { Args: never; Returns: Json };
+      sync_information_agent_autopilot_silent_alert: {
+        Args: { p_active: boolean; p_details?: Json };
+        Returns: undefined;
+      };
       sync_information_agent_autopilot_warning: {
         Args: { p_active: boolean; p_code: string; p_details?: Json };
         Returns: undefined;

@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   deliverOperationalAlertNotifications: vi.fn(),
+  evaluateAutopilotSilence: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -11,6 +12,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 vi.mock("@/lib/operational-alerts", () => ({
   deliverOperationalAlertNotifications: mocks.deliverOperationalAlertNotifications,
 }));
+// Pilote muet : règle et écriture testées dans `autopilot-settings.test.ts`.
+vi.mock("@/lib/information-agent/autopilot-settings", () => ({
+  evaluateAutopilotSilence: mocks.evaluateAutopilotSilence,
+}));
 
 import { runMonitoredCron } from "@/lib/cron-jobs";
 import { runDataRetention } from "@/lib/data-retention-job";
@@ -18,9 +23,14 @@ import { operationalErrorMessage } from "@/lib/monitored-job.server";
 import { evaluateOperationalHealth } from "@/lib/operational-health-job";
 
 describe("operational cron errors", () => {
+  beforeEach(() => {
+    mocks.evaluateAutopilotSilence.mockResolvedValue({ silent: false, lastScheduledRunAt: null });
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     mocks.deliverOperationalAlertNotifications.mockReset();
+    mocks.evaluateAutopilotSilence.mockReset();
     mocks.rpc.mockReset();
     delete process.env.CRON_SECRET;
   });
@@ -86,6 +96,7 @@ describe("operational cron errors", () => {
       valuation: { ok: true },
       pipeline: { ok: true },
       informationAgent: { ok: true },
+      informationAgentAutopilot: { silent: false, lastScheduledRunAt: null },
       externalAlerts: {
         channel: "github_actions",
         configured: true,
@@ -98,6 +109,26 @@ describe("operational cron errors", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("evaluate_information_agent_health", {
       p_now: "2026-10-09T10:00:00.000Z",
     });
+    expect(mocks.evaluateAutopilotSilence).toHaveBeenCalledWith(
+      new Date("2026-10-09T10:00:00.000Z"),
+    );
+  });
+
+  it("fails when the autopilot silence evaluation fails, and still delivers the alerts", async () => {
+    mocks.rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: "github_actions",
+      configured: true,
+      claimed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    mocks.evaluateAutopilotSilence.mockRejectedValue(new Error("autopilot settings unreadable"));
+
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "autopilot settings unreadable",
+    );
+    expect(mocks.deliverOperationalAlertNotifications).toHaveBeenCalledTimes(1);
   });
 
   it("fails when any evaluation fails, the information-agent one included", async () => {

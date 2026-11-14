@@ -366,9 +366,9 @@ export const AUTOPILOT_ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
 /**
  * Marque d'un passage lancé à la main dans le détail de ses événements `run` (trace de début et de fin). Seule
  * définition : l'exécuteur l'écrit ; `lastOnDemandAutopilotRunAt` (délai entre deux passages à la main) et
- * `loadLastAutopilotRunAt` (« Dernier passage planifié ») la lisent. RÈGLE LIÉE : `clean_simulation_days` de
- * `information_agent_autopilot_stats` (migration 20261119100820) écarte par `details ->> 'manual' = 'true'` les
- * envois simulés d'un passage qui la porte ; les deux changent ensemble.
+ * `loadLastAutopilotRunAt` (« Dernier passage planifié », alerte du pilote muet) la lisent. RÈGLE LIÉE :
+ * `clean_simulation_days` de `information_agent_autopilot_stats` (migration 20261119100820) écarte par
+ * `details ->> 'manual' = 'true'` les envois simulés d'un passage qui la porte ; les deux changent ensemble.
  */
 export const AUTOPILOT_MANUAL_RUN_MARK = { manual: true } as const;
 
@@ -414,6 +414,40 @@ export function nextAutopilotRunAt(settings: AutopilotSettings, now: Date): Date
     if (gate.code === "disabled" || gate.code === "auto_stopped") return null;
   }
   return null;
+}
+
+/**
+ * Silence au-delà duquel le pilote est dit muet (alerte `information_agent.autopilot.silent`) : quatre créneaux de
+ * 10 minutes sans passage planifié.
+ */
+export const AUTOPILOT_SILENT_AFTER_MINUTES = 40;
+
+/**
+ * Pilote muet : depuis 40 minutes, la tâche planifiée aurait dû travailler à chaque créneau et aucun passage
+ * planifié n'a eu lieu. « Aurait dû » est la garde de tête du passage lui-même (`autopilotRunGate` : mode, arrêt
+ * automatique, pause, plage d'envoi à l'heure de Paris, changements d'heure compris), appliquée à chaque créneau des
+ * 40 dernières minutes : à l'ouverture de la plage, après la pause de midi ou la fin d'une pause, le délai part de
+ * la réouverture. Une simulation mise en route depuis moins de 40 minutes (`simulationStartedAt`, posé à la mise en
+ * route et à la réactivation) n'est pas muette non plus : les réglages ne disent pas autrement depuis quand le mode
+ * est actif. `lastScheduledRunAt` est le dernier passage PLANIFIÉ (`loadLastAutopilotRunAt`, qui écarte par
+ * `AUTOPILOT_MANUAL_RUN_MARK` les passages lancés à la main) : un clic dans l'administration ne fait pas taire
+ * l'alerte. Pilote éteint ou arrêté, en pause, plage fermée : jamais muet.
+ */
+export function isAutopilotSilent(
+  settings: AutopilotSettings,
+  lastScheduledRunAt: string | null,
+  now: Date,
+): boolean {
+  const since = now.getTime() - AUTOPILOT_SILENT_AFTER_MINUTES * 60_000;
+  if (lastScheduledRunAt && Date.parse(lastScheduledRunAt) >= since) return false;
+  const startedAt = settings.simulationStartedAt;
+  if (startedAt && Date.parse(startedAt) > since) return false;
+  if (!autopilotRunGate(settings, now).ok) return false;
+  const step = AUTOPILOT_RUN_EVERY_MINUTES * 60_000;
+  for (let at = Math.floor(since / step) * step; at < now.getTime(); at += step) {
+    if (!autopilotRunGate(settings, new Date(at)).ok) return false;
+  }
+  return true;
 }
 
 /**
