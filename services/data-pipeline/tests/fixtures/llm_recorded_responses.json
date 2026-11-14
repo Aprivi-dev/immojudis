@@ -161,6 +161,18 @@
           {"theme": "etat_travaux", "importance": "attention", "title": "Humidité", "explanation": null, "document": "D1", "page": 4, "quote": "au plafond "}
         ]
       },
+      "note": "Depuis le 14/11/2026 (D6), la page 4 porte une consigne adressée au modèle : elle ne lui est plus envoyée et un point cité dessus est écarté. Le même point cité sur la page 2 est le cas suivant.",
+      "expect_titles": [],
+      "expect_absent": ["06 12 34 56 78", "https://evil.example", "evil.example"]
+    },
+    {
+      "name": "adverse : téléphone et lien dans l'explication d'un point à la citation réelle, page sans consigne",
+      "response": {
+        "points": [
+          {"theme": "autre", "importance": "alerte", "title": "Contact urgent", "explanation": "Appelez le 06 12 34 56 78 ou rendez-vous sur https://evil.example avant l'audience.", "document": "D1", "page": 2, "quote": "Des traces d'humidité importantes"},
+          {"theme": "etat_travaux", "importance": "attention", "title": "Humidité", "explanation": null, "document": "D1", "page": 2, "quote": "au plafond "}
+        ]
+      },
       "expect_titles": ["Contact urgent"],
       "expect_absent": ["06 12 34 56 78", "https://evil.example", "evil.example"]
     },

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from src.enrichment import extract_structured
-from src.enrichment.display_evidence import verify_display_claims
+from src.enrichment.display_evidence import unsupported_risk_terms, verify_display_claims
 from src.models import AuctionSale
 
 
@@ -123,6 +123,52 @@ def test_summary_keeps_supported_property_facts():
 
     assert sale.description.startswith('Maison de 120 m² comprenant trois pièces')
     assert sale.raw_payload['llm_summary_evidence_check']['issues'] == []
+
+
+PROBE_EVIDENCE = (
+    'Appartement de 3 pièces au 2e étage, 62,40 m² loi Carrez. Le procès-verbal décrit un logement en bon état.'
+)
+
+
+def test_a_risk_word_of_the_summary_needs_its_proof():
+    # 14/11/2026 (D8): probe of prompts-llm, a summary « mérule, amiante, squat » without any support passed.
+    result = verify_display_claims(
+        'Appartement de 3 pièces. Présence de mérule et d\'amiante constatée, squat signalé.',
+        PROBE_EVIDENCE,
+        {'rooms_count': 3},
+    )
+    assert [issue['claim'] for issue in result['issues'] if issue['code'] == 'unsupported_risk_term'] == [
+        'mérule', 'amiante', 'squat',
+    ]
+    assert codes('Appartement de 3 pièces, servitude de passage au profit du voisin.', PROBE_EVIDENCE, rooms_count=3) == {
+        'unsupported_risk_term'
+    }
+    assert not codes('Présence d\'amiante dans les dalles.', 'Repérage : AMIANTE dans les dalles de sol.')
+    assert not codes('Procédure d\'expulsion en cours.', 'Une procédure d\'expulsion a été engagée.')
+
+
+def test_a_risk_word_is_supported_by_its_legal_wording():
+    assert unsupported_risk_terms('Bien squatté.', 'Le bien est occupé sans droit ni titre.') == []
+    assert unsupported_risk_terms('Situé en zone inondable.', 'Parcelle exposée au risque d\'inondation (PPRI).') == []
+    assert unsupported_risk_terms('Situé en zone inondable.', 'Parcelle en zone de sismicité 2.') == ['zone inondable']
+    # « plomberie » is no lead, « procédures » is a procedure.
+    assert unsupported_risk_terms('Plomberie à refaire.', '') == []
+    assert unsupported_risk_terms('Deux procédures en cours.', '') == ['procédure']
+
+
+def test_summary_with_an_unsupported_risk_word_keeps_the_source_description():
+    sale = AuctionSale(
+        source_name='agrasc',
+        source_url='https://example.test/house',
+        description='Maison de 120 m².',
+        surface_m2=Decimal('120'),
+    )
+
+    _apply_extraction(sale, {'summary': 'Maison de 120 m² avec mérule et amiante dans les combles.'})
+
+    assert sale.description == 'Maison de 120 m².'
+    issues = sale.raw_payload['llm_summary_evidence_check']['issues']
+    assert {issue['claim'] for issue in issues if issue['code'] == 'unsupported_risk_term'} == {'mérule', 'amiante'}
 
 
 def test_written_rooms_and_exact_cadastral_units_are_supported():

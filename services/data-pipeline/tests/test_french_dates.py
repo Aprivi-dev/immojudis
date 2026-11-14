@@ -68,7 +68,7 @@ def _probes(word: str) -> dict[str, object]:
         "normalize.parse_french_datetime": _iso(normalize.parse_french_datetime(f"3 {word} 2026")),
         "normalize._VISIT_DATE_PATTERN": bool(normalize._VISIT_DATE_PATTERN.search(f"samedi 3 {word} 2026 à 10h")),
         "display_consistency._dates": [_iso(day) for day in display_consistency._dates(f"le 3 {word} 2026")],
-        "display_evidence._dates": display_evidence._dates(f"le 3 {word} 2026"),
+        "display_evidence.written_dates": display_evidence.written_dates(f"le 3 {word} 2026"),
         "tension.decree_reference_date": _iso(tension.decree_reference_date(f"Décret n° 2025-1267 du 22 {word} 2025")),
         "pdf_offer_deadline._first_deadline": None if deadline is None else [_iso(deadline[0]), deadline[1]],
         "encheres_publiques_extraction.text_event_sale_date": encheres_publiques_extraction.text_event_sale_date(

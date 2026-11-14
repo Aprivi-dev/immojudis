@@ -17,7 +17,10 @@ import {
 import {
   GRAVE_SALE_STATUSES,
   SALE_CHANGE_REASON_SOURCE_ABSENCE,
+  SALE_CHANGE_REASON_UNSEEN_UNDATED,
   SOURCE_ABSENCE_LABEL,
+  UNSEEN_UNDATED_LABEL,
+  type SaleChangeReason,
 } from "@/lib/sale-change-display";
 import { systemAuthForUser } from "@/lib/system-auth";
 import type { AuctionSale } from "@/lib/types";
@@ -90,7 +93,7 @@ export type SaleChange = {
   currentValue: string | number | null;
   fingerprint: string;
   /** Motif connu du changement (retrait déduit de l'absence de l'annonce à la source). */
-  reason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE;
+  reason?: SaleChangeReason;
 };
 
 export type SaleChangeEventSummary = {
@@ -283,6 +286,25 @@ export async function monitorUserSaleChanges({
   const snapshotsByWatch = new Map(
     existingSnapshots.map((row) => [snapshotKey(row), normalizeSnapshot(row.snapshot)]),
   );
+  // Le marqueur du pipeline n'explique qu'un PASSAGE en statut inconnu : il n'est lu que pour une vente
+  // inconnue dont un instantané précédent avait un autre statut. Une vente inconnue de longue date (une
+  // cession de l'État, inconnue par défaut) ne coûte aucune lecture.
+  const becameUnknown = new Set(
+    watches
+      .filter((watch) => {
+        const previous = snapshotsByWatch.get(watchKey(watch)) ?? watch.baselineSnapshot;
+        return previous != null && cleanString(previous.status)?.toLowerCase() !== "unknown";
+      })
+      .map((watch) => watch.saleId),
+  );
+  const unseenUndated = await loadUnseenUndatedSaleIds(
+    sales
+      .filter(
+        (sale) =>
+          cleanString(sale.status)?.toLowerCase() === "unknown" && becameUnknown.has(sale.id),
+      )
+      .map((sale) => sale.id),
+  );
   const snapshotRows: SaleWatchSnapshotInsert[] = [];
   const eventRows: SaleChangeEventInsert[] = [];
   let baselineCount = 0;
@@ -317,7 +339,8 @@ export async function monitorUserSaleChanges({
     const current = buildSaleChangeSnapshot(sale);
 
     if (previous) {
-      const changes = detectSaleChanges({ previous, current, now });
+      const statusReason = unseenUndated.has(sale.id) ? SALE_CHANGE_REASON_UNSEEN_UNDATED : null;
+      const changes = detectSaleChanges({ previous, current, now, statusReason });
       eventRows.push(
         ...changes.map((change) =>
           buildSaleChangeEventInsert({
@@ -470,6 +493,12 @@ export function buildSaleChangeSnapshot(sale: AuctionSale): SaleChangeSnapshot {
   };
 }
 
+/** Libellé et gravité d'un changement de statut dont le motif est connu. */
+const STATUS_REASONS: Record<SaleChangeReason, { label: string; severity: SaleChangeSeverity }> = {
+  [SALE_CHANGE_REASON_SOURCE_ABSENCE]: { label: SOURCE_ABSENCE_LABEL, severity: "important" },
+  [SALE_CHANGE_REASON_UNSEEN_UNDATED]: { label: UNSEEN_UNDATED_LABEL, severity: "info" },
+};
+
 export function detectSaleChanges({
   previous,
   current,
@@ -480,11 +509,11 @@ export function detectSaleChanges({
   current: SaleChangeSnapshot;
   now?: Date;
   /**
-   * Motif du changement de statut quand il est déduit de l'absence de l'annonce à sa source : le
-   * changement est annoncé comme une annonce disparue à vérifier, pas comme un retrait, et n'est pas
-   * « urgent ».
+   * Motif du changement de statut quand il ne vient pas de la source elle-même : l'absence de l'annonce
+   * à sa source (annoncée comme une annonce disparue à vérifier, pas comme un retrait, et non « urgente »)
+   * ou une annonce sans date non revue depuis 14 jours (gravité faible).
    */
-  statusReason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE | null;
+  statusReason?: SaleChangeReason | null;
 }): SaleChange[] {
   const changes: SaleChange[] = [];
   addChangeIfDifferent(changes, {
@@ -513,8 +542,8 @@ export function detectSaleChanges({
     field: "status",
     previous,
     current,
-    summaryLabel: statusReason ? SOURCE_ABSENCE_LABEL : "Statut de la vente modifié",
-    severity: statusReason ? "important" : statusSeverity(current.status),
+    summaryLabel: statusReason ? STATUS_REASONS[statusReason].label : "Statut de la vente modifié",
+    severity: statusReason ? STATUS_REASONS[statusReason].severity : statusSeverity(current.status),
     reason: statusReason ?? undefined,
   });
   addChangeIfDifferent(changes, {
@@ -607,7 +636,7 @@ function addChangeIfDifferent(
     current: SaleChangeSnapshot;
     summaryLabel: string;
     severity: SaleChangeSeverity;
-    reason?: typeof SALE_CHANGE_REASON_SOURCE_ABSENCE;
+    reason?: SaleChangeReason;
   },
 ) {
   const previousValue = args.previous[args.field];
@@ -793,6 +822,36 @@ function withdrawnBySourceAbsence(
   const isObject =
     sourceAbsence !== null && typeof sourceAbsence === "object" && !Array.isArray(sourceAbsence);
   return status === "withdrawn" && isObject ? SALE_CHANGE_REASON_SOURCE_ABSENCE : null;
+}
+
+/**
+ * Parmi les ventes suivies du catalogue en statut inconnu, celles que le pipeline y a passées parce que, sans
+ * date d'audience, aucune collecte ne les avait revues depuis 14 jours (`raw_payload.unseen_undated`, posé par
+ * `app_private.mark_unseen_undated_sales`, et effacé dès que la collecte revoit l'annonce). Lecture avec le rôle
+ * de service : la vue du catalogue n'expose pas `raw_payload`.
+ */
+async function loadUnseenUndatedSaleIds(saleIds: string[]): Promise<Set<string>> {
+  const result = new Set<string>();
+  const ids = [...new Set(saleIds)].filter(Boolean);
+  for (let start = 0; start < ids.length; start += LEFT_CATALOGUE_BATCH_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("auction_sales")
+      .select("id,unseen_undated:raw_payload->unseen_undated")
+      .in("id", ids.slice(start, start + LEFT_CATALOGUE_BATCH_SIZE));
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const marker = row.unseen_undated;
+      if (
+        typeof row.id === "string" &&
+        marker !== null &&
+        typeof marker === "object" &&
+        !Array.isArray(marker)
+      ) {
+        result.add(row.id);
+      }
+    }
+  }
+  return result;
 }
 
 function buildSnapshotRow({

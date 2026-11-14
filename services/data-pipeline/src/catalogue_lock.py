@@ -20,13 +20,14 @@ checks then stop the writer with ``CatalogueLockLost``:
   (``ensure_catalogue_lock_held``); a progressive publication is skipped
   (``catalogue_lock_lost``);
 * ``src.document_backlog``: ``drain_sale`` before each pass and each projection
-  rewrite, and the run after each sale (``ensure_held``).
+  rewrite, and the run after each sale (``ensure_held``);
+* ``src.queued_runner``: ``run_enrichment_queue_batch`` before each claimed
+  batch (``ensure_catalogue_lock_held``, since 14/11/2026); the queue worker
+  (``python -m src.queued_runner``) then exits with ``LOCK_LOST_EXIT_CODE``.
 
-``src.queued_runner`` checks nothing itself. In the document backlog, a pass
-it runs can still write its checkpoint or its sale after a heartbeat failure
-that happens during that pass; the drain stops right after. The queue worker
-(``python -m src.queued_runner``) holds the lock for its whole run and never
-checks it.
+In the document backlog, a pass it runs can still write its checkpoint or its
+sale after a heartbeat failure that happens during that pass; the drain stops
+right after. Likewise, a batch the queue worker already claimed runs to its end.
 """
 
 from __future__ import annotations

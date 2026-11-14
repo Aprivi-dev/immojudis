@@ -10,6 +10,7 @@ from src.enrichment.display_consistency import consistency_issues
 from src.enrichment.display_facts import known_offer_amounts
 from src.enrichment.display_semantics import semantic_display_issues
 from src.french_dates import MONTH_NAMES, MONTH_NUMBERS
+from src.text_folding import strip_accents
 
 NUMBER = r"(?<![\w.,+])\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?"
 QUANTITIES = {
@@ -26,7 +27,13 @@ LABELLED_AMOUNT = re.compile(
     re.I,
 )
 SINGLE_ROOM_PREFIX = re.compile(r"\bd(?:e\s+|['’]\s*)$", re.I)
-PROMOTIONAL = re.compile(r"\b(?:exceptionnell?e?s?|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I)
+# « exceptionnel » is promotion in a listing, but a co-ownership minute writes « appel de fonds exceptionnel »: the
+# reading of the documents tolerates it where its own quote writes it (document_reading.title_rejection).
+_EXCEPTIONAL_WORD = r"exceptionnell?e?s?"
+EXCEPTIONAL = re.compile(rf"\b{_EXCEPTIONAL_WORD}\b", re.I)
+PROMOTIONAL = re.compile(
+    rf"\b(?:{_EXCEPTIONAL_WORD}|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I
+)
 PROMPT_INJECTION = re.compile(
     r"(?:"
     r"\b(?:ignorez?|ignorer|ignore|disregard|forget)\b[^.!?\n]{0,100}"
@@ -87,8 +94,43 @@ PUBLIC_SECRET = re.compile(
 DATES = re.compile(r"\b(?:(\d{1,2})/(\d{1,2})/(\d{4})|(\d{4})-(\d{2})-(\d{2})|"
                    r"(\d{1,2})\s+(" + '|'.join(MONTH_NAMES) + r")\s+(\d{4}))(?=\b|T)", re.I)
 
+# Mots de risque qu'un texte écrit par le modèle n'affirme que si sa preuve les écrit aussi (14/11/2026, D8 pour le
+# résumé public, D5 pour le titre d'un point de lecture). Chaque mot : sa forme dans le texte affirmé, puis ce qui
+# l'appuie dans la preuve, lus sur le texte sans accents ni majuscules. La preuve écrit le même mot, sauf deux
+# formulations juridiques : une zone inondable s'écrit souvent « risque d'inondation », un squat « occupant sans
+# droit ni titre ».
+_SQUAT = r"\bsquat\w*"
+RISK_TERMS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = tuple(
+    (label, re.compile(claimed), re.compile(proof))
+    for label, claimed, proof in (
+        ("mérule", r"\bmerules?\b", r"\bmerules?\b"),
+        ("amiante", r"\bamiante\b", r"\bamiante\b"),
+        ("plomb", r"\bplombs?\b", r"\bplombs?\b"),
+        ("termites", r"\btermites?\b", r"\btermites?\b"),
+        ("squat", _SQUAT, _SQUAT + r"|sans droit ni titre|occupation (?:illicite|sans (?:droit|titre))"),
+        ("péril", r"\bperils?\b", r"\bperils?\b"),
+        ("insalubrité", r"\binsalubr\w*", r"\binsalubr\w*"),
+        ("zone inondable", r"\bzones?\s+inondables?\b", r"\binond\w*"),
+        ("servitude", r"\bservitudes?\b", r"\bservitudes?\b"),
+        ("expulsion", r"\bexpuls\w*", r"\bexpuls\w*"),
+        ("préemption", r"\bpreempt\w*", r"\bpreempt\w*"),
+        ("procédure", r"\bprocedures?\b", r"\bprocedures?\b"),
+    )
+)
 
-def _dates(text: str) -> list[tuple[str, str]]:
+
+def _risk_folded(text: str) -> str:
+    return re.sub(r"\s+", " ", strip_accents(text).lower())
+
+
+def unsupported_risk_terms(text: str, evidence: str) -> list[str]:
+    """Risk words of ``text`` (labels of :data:`RISK_TERMS`) that ``evidence`` does not write."""
+    claimed, proof = _risk_folded(text or ""), _risk_folded(evidence or "")
+    return [label for label, claim, support in RISK_TERMS if claim.search(claimed) and not support.search(proof)]
+
+
+def written_dates(text: str) -> list[tuple[str, str]]:
+    """Dates written in ``text`` (« 12/03/2025 », « 2025-03-12 », « 12 mars 2025 ») with their ISO form, or 'invalid'."""
     result = []
     for m in DATES.finditer(text):
         try:
@@ -168,10 +210,10 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
                            'exact_land_unit_conversion': converted.group() if converted else None})
             if not supported:
                 issues.append({'code': 'unsupported_' + kind, 'claim': claim.group()})
-    supported_dates = {iso for _, iso in _dates(evidence)}
+    supported_dates = {iso for _, iso in written_dates(evidence)}
     if fields.get('sale_date'):
-        supported_dates.update(iso for _, iso in _dates(str(fields['sale_date'])))
-    for claim, value in _dates(text):
+        supported_dates.update(iso for _, iso in written_dates(str(fields['sale_date'])))
+    for claim, value in written_dates(text):
         if value == 'invalid' or value not in supported_dates:
             issues.append({'code': 'unsupported_date', 'claim': claim})
     for match in re.finditer(r"\d+(?:[.,]\d+)?[eE][+-]\d+\s*m[²2]", text):
@@ -191,6 +233,8 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
         r"(?:gros|importants?|n[ée]cessite|pr[ée]voir).{0,45}travaux|travaux.{0,30}[àa] pr[ée]voir", evidence, re.I
     ):
         issues.append({'code': 'works_conflict', 'claim': text})
+    for label in unsupported_risk_terms(text, evidence):
+        issues.append({'code': 'unsupported_risk_term', 'claim': label})
     issues.extend(semantic_display_issues(text, evidence, fields))
     issues.extend(consistency_issues(text, evidence, fields))
     for match in PROMOTIONAL.finditer(text):
@@ -210,6 +254,6 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
     for match in PUBLIC_SECRET.finditer(text):
         issues.append({'code': 'public_secret_reference', 'claim': match.group()})
     return {'status': 'issues_detected' if issues else 'checks_passed',
-            'scope': 'typed_numbers_dates_occupancy_works_absences_procedure_filler_promotional_language_'
+            'scope': 'typed_numbers_dates_occupancy_works_risk_terms_absences_procedure_filler_promotional_language_'
                      'prompt_injection_public_content_and_canonical_consistency',
             'semantic_completeness_certified': False, 'claims': claims, 'issues': issues}

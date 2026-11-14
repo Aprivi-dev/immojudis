@@ -23,6 +23,11 @@ export type DescribedSaleChange = {
   label: string;
   /** Previous and current value: « 120 000 € → 100 000 € ». `null` when there is nothing to add. */
   detail: string | null;
+  /**
+   * `false` for a change shown in « Mes favoris » only, never sent by email (weekly digest included).
+   * Absent: the change follows the usual email rules.
+   */
+  emailed?: false;
 };
 
 /**
@@ -46,7 +51,24 @@ function finiteNumber(value: unknown): number | null {
  */
 export const SALE_CHANGE_REASON_SOURCE_ABSENCE = "source_absence";
 export const SOURCE_ABSENCE_LABEL = "Annonce disparue de la source";
-export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’avocat poursuivant.";
+export const SOURCE_ABSENCE_DETAIL = "À vérifier auprès de l’organisateur de la vente.";
+
+/**
+ * Motif d'un passage en statut inconnu décidé par le pipeline (14/11/2026) : l'annonce, sans date d'audience,
+ * n'a été revue par aucune collecte depuis 14 jours (`raw_payload.unseen_undated`, posé par
+ * `app_private.mark_unseen_undated_sales`). Elle n'est plus présentée comme à venir ; ce n'est ni un retrait ni un
+ * report, d'où une gravité faible, et aucun email : ni alerte (le statut inconnu n'est pas grave), ni
+ * récapitulatif hebdomadaire (`emailed: false`, posé par `describeSaleChange`).
+ */
+export const SALE_CHANGE_REASON_UNSEEN_UNDATED = "unseen_undated";
+export const UNSEEN_UNDATED_LABEL = "Annonce non revue depuis 14 jours";
+export const UNSEEN_UNDATED_DETAIL =
+  "Elle n’est plus présentée comme à venir. À vérifier auprès de l’organisateur de la vente.";
+
+/** Motif connu d'un changement de statut qui ne vient pas de la source elle-même. */
+export type SaleChangeReason =
+  | typeof SALE_CHANGE_REASON_SOURCE_ABSENCE
+  | typeof SALE_CHANGE_REASON_UNSEEN_UNDATED;
 
 /** Vrai pour un changement de statut déduit de l'absence de l'annonce à la source. */
 export function isSourceAbsenceChange(
@@ -134,6 +156,15 @@ export function describeSaleChange(
           topic: "status",
           label: SOURCE_ABSENCE_LABEL,
           detail: SOURCE_ABSENCE_DETAIL,
+        };
+      }
+      if (event.changeSummary.reason === SALE_CHANGE_REASON_UNSEEN_UNDATED) {
+        return {
+          event,
+          topic: "status",
+          label: UNSEEN_UNDATED_LABEL,
+          detail: UNSEEN_UNDATED_DETAIL,
+          emailed: false,
         };
       }
       const known = typeof current === "string" ? STATUS_LABELS[current.toLowerCase()] : undefined;

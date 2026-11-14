@@ -1353,6 +1353,31 @@ plus longs. Avant de changer la taille en production, le workflow « Fact chunk 
 
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 
+### Repasser les lectures des pièces enregistrées, sans appel au modèle
+
+Une règle ajoutée à la lecture des pièces (`src/document_reading.py` : titre d'un point, page qui porte une
+consigne adressée au modèle, mots de risque) ne touche d'abord que les nouvelles lectures. Pour l'appliquer aux
+lectures déjà enregistrées sans relecture payante :
+
+```bash
+# D'abord à blanc : rien n'est écrit, la sortie liste chaque point qui serait retiré (vente, titre, raison).
+SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored --dry-run
+# Puis pour de bon.
+SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored
+```
+
+- aucun appel au modèle : les points enregistrés (citation, pièce, page) repassent par les contrôles actuels
+  (`revalidate_stored_readings`) ; un point qui n'y résiste plus est retiré, rien n'est ajouté ;
+- toutes les lectures terminées des ventes à venir sont repassées, par pages de 200 dans l'ordre de `sale_id` :
+  `--max-sales` est refusé avec cette option ;
+- une lecture qui perdrait tous ses points est laissée entière (`left_whole`) : `--allow-empty` l'écrit vide ;
+- une lecture dont le texte des pièces a changé depuis est laissée telle quelle : la prochaine lecture la refait ;
+- `updated_at` de la lecture ne bouge pas, et `DOCUMENT_READING_ENABLED` ne s'applique pas (il épargne le modèle) ;
+- sortie : un JSON (`selected`, `unchanged`, `updated` ou, à blanc, `would_update`, `points_removed`, `stale_text`,
+  `left_whole`, `dry_run`, et `removed` : chaque point retiré avec sa vente, son titre, sa raison et `applied`).
+
+Commande à lancer à la main ; elle n'est dans aucun workflow.
+
 ## Source Licitor
 
 > **Décodage des adresses email masquées par Cloudflare (usage interne).** Dans le code,
