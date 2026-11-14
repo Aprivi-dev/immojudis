@@ -77,7 +77,7 @@ describe("executeContractWithdrawal", () => {
 
     const result = await executeContractWithdrawal({
       auth,
-      input: { requestId: REQUEST_ID, refundMode: "prorata" },
+      input: { requestId: REQUEST_ID, refundMode: "prorata", confirm: true },
       now: new Date("2026-10-04T00:00:00.000Z"),
     });
 
@@ -109,7 +109,7 @@ describe("executeContractWithdrawal", () => {
 
     const result = await executeContractWithdrawal({
       auth,
-      input: { requestId: REQUEST_ID, refundMode: "full" },
+      input: { requestId: REQUEST_ID, refundMode: "full", confirm: true },
       // Two days later: Stripe's 24-hour idempotency key no longer protects the call.
       now: new Date("2026-10-06T00:00:00.000Z"),
     });
@@ -144,7 +144,10 @@ describe("executeContractWithdrawal", () => {
     );
 
     await expect(
-      executeContractWithdrawal({ auth, input: { requestId: REQUEST_ID, refundMode: "full" } }),
+      executeContractWithdrawal({
+        auth,
+        input: { requestId: REQUEST_ID, refundMode: "full", confirm: true },
+      }),
     ).rejects.toMatchObject({ status: 409, message: expect.stringContaining(message) });
     expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
     expect(mocks.refundsCreate).not.toHaveBeenCalled();

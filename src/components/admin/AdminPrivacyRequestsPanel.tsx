@@ -157,7 +157,10 @@ export function AdminPrivacyRequestsPanel() {
               professionalExport.isPending
             }
             onSave={(input) => mutation.mutate(input)}
-            onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
+            onWithdraw={(refundMode) =>
+              // Appelé par « Confirmer : résilier et rembourser » seulement.
+              withdrawal.mutate({ requestId: request.id, refundMode, confirm: true })
+            }
             onErase={(input) => erasure.mutate(input)}
             onExportProfessional={(requestId) => professionalExport.mutate(requestId)}
           />

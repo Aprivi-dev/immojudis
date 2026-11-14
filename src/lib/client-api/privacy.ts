@@ -42,9 +42,11 @@ export function updateAdminPrivacyRequest(
   });
 }
 
+/** `confirm: true` : envoyé seulement après la confirmation de l'administrateur (exigé par la route). */
 export function executeAdminContractWithdrawal(data: {
   requestId: string;
   refundMode: "prorata" | "full";
+  confirm: true;
 }): Promise<{ refundedCents: number; subscriptionCancelled: boolean }> {
   return apiRequest<{ refundedCents: number; subscriptionCancelled: boolean }>(
     "/api/admin/privacy-requests/withdrawal",

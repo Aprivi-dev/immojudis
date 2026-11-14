@@ -18,6 +18,11 @@ export const contractWithdrawalInputSchema = z.object({
    * consommation). `full`: refund everything (goodwill, or no use of the service).
    */
   refundMode: z.enum(["prorata", "full"]),
+  /**
+   * The operator confirmed on the compliance screen: the subscription is cancelled and the
+   * refund issued at once (same principle as `confirmEmail` for an erasure).
+   */
+  confirm: z.literal(true),
 });
 
 export type ContractWithdrawalInput = z.infer<typeof contractWithdrawalInputSchema>;
