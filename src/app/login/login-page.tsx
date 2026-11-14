@@ -45,7 +45,7 @@ import {
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
-import { rememberedSaleForSignup } from "@/lib/signup-return-sale";
+import { forgetSaleForSignup, rememberedSaleForSignup } from "@/lib/signup-return-sale";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
@@ -411,6 +411,8 @@ export function LoginPage() {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // La fiche notée a servi (la page la garde pour la redirection) : l'onglet l'oublie.
+        forgetSaleForSignup();
         toast.success("Connecté");
         return;
       }
@@ -436,6 +438,8 @@ export function LoginPage() {
         },
       });
       if (error) throw error;
+      // La fiche notée est partie dans le lien de confirmation : l'onglet l'oublie.
+      forgetSaleForSignup();
       // Formulaire envoyé, pas encore compte confirmé : `signup_confirmed` part à la confirmation
       // (`signup-confirmation.ts`). Une adresse déjà inscrite reçoit la même réponse « réussie » :
       // elle n'est pas comptée.

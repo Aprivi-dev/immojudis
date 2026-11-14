@@ -40,7 +40,7 @@ import {
   LAUNCH_OFFER_SIGNUP_LINE,
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
-import { rememberSaleForSignup } from "@/lib/signup-return-sale";
+import { rememberedSaleForSignup, rememberSaleForSignup } from "@/lib/signup-return-sale";
 import { LoginPage } from "./login-page";
 
 function fillName(first = "Claire", last = "Martin") {
@@ -309,6 +309,33 @@ describe("login page", () => {
       mocks.search = { mode: "investor" };
       expect(await signUpRedirectTo()).toBe(`/bienvenue?retour=${encodeURIComponent(SALE)}`);
       expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "direct" });
+      // Elle est partie dans le lien de confirmation : l'onglet l'oublie.
+      expect(rememberedSaleForSignup()).toBeUndefined();
+    });
+
+    it("efface la fiche notée après une connexion réussie, pas après un échec", async () => {
+      rememberSaleForSignup(SALE);
+      const login = async () => {
+        fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+          target: { value: "quelquun@example.test" },
+        });
+        fireEvent.change(screen.getByPlaceholderText("Votre mot de passe"), {
+          target: { value: "un-mot-de-passe-solide" },
+        });
+        const submit = screen
+          .getAllByRole("button", { name: "Se connecter" })
+          .find((button) => button.getAttribute("type") === "submit");
+        fireEvent.click(submit!);
+        await waitFor(() => expect(mocks.signIn).toHaveBeenCalled());
+      };
+      mocks.signIn.mockResolvedValueOnce({ error: new Error("Invalid login credentials") });
+      render(<LoginPage />);
+      await login();
+      await screen.findByRole("alert");
+      expect(rememberedSaleForSignup()).toBe(SALE);
+      mocks.signIn.mockResolvedValueOnce({ error: null });
+      await login();
+      await waitFor(() => expect(rememberedSaleForSignup()).toBeUndefined());
     });
 
     it("un `redirect` dans l'adresse l'emporte sur la fiche notée", async () => {
