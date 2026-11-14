@@ -28,7 +28,7 @@ const MODES = [
  *
  * Les boutons disent l’action qu’ils font, jamais l’état (P3, 14/11/2026). L’article 14 et l’AIPD sont à part,
  * dans « Conformité », et chaque action y demande une confirmation explicite (J9 : l’article 14 ne se désactive
- * plus, son délai va de 1 à 30 jours ; la base le refuse aussi).
+ * plus, son délai va de 1 à 90 jours depuis la décision du propriétaire du 14/11/2026 ; la base le refuse aussi).
  */
 export function AdminInformationAgentAutopilotPanel({
   onOpenDraft,
@@ -53,8 +53,8 @@ export function AdminInformationAgentAutopilotPanel({
   const view = query.data;
   const ready = reason.trim().length >= 8 && !run.isPending;
   const daysValue = Number(days);
-  // RÈGLE LIÉE : 1 à 30 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
-  const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 30;
+  // RÈGLE LIÉE : 1 à 90 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
+  const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 90;
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">

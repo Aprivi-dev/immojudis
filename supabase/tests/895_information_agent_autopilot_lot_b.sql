@@ -2,11 +2,11 @@
 --   * 20261119100800 : public.mark_information_agent_autopilot_simulated fusionne la marque « simulé » dans le
 --     metadata d'un brouillon du pilote, en une instruction, sans toucher aux autres clés ; refus contrôlés ;
 --     SECURITY INVOKER, exécutable par service_role seul (T8) ;
---   * 20261119100810 : la règle de l'article 14 ne se désactive plus et son délai va de 1 à 30 jours (J9) ; l'arrêt
---     d'urgence reste possible.
+--   * 20261119100810 : la règle de l'article 14 ne se désactive plus et son délai va de 1 à 90 jours (décision du
+--     propriétaire du 14/11/2026), valeur par défaut 90, ligne existante inchangée ; l'arrêt d'urgence reste possible.
 begin;
 
-select plan(18);
+select plan(20);
 
 -- Fixtures ---------------------------------------------------------------------------------------------------------
 insert into auth.users (id) values ('89500000-0000-4000-8000-0000000000a1');
@@ -86,25 +86,39 @@ select ok(
   'a refused call writes nothing'
 );
 
--- J9 : article 14 non désactivable, délai de 1 à 30 jours --------------------------------------------------------
+-- J9 : article 14 non désactivable ; délai de 1 à 90 jours (décision du propriétaire du 14/11/2026) ---------------
 select set_config('request.jwt.claims', '{"sub":"89500000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal2"}', true);
 
 select throws_ok(
   $$select public.update_information_agent_autopilot_settings('{"art14_rule_enabled": false}', 'Couper l''article 14')$$,
   '23514', null, 'the article 14 rule can no longer be switched off'
 );
+-- Décision du propriétaire du 14/11/2026 : 90 jours au plus. La ligne existante n'est pas modifiée par la migration
+-- (30, valeur posée par 20261110230000) ; seule la valeur par défaut de la colonne passe à 90.
+select ok(
+  (select art14_max_age_days = 30 from public.information_agent_autopilot_settings)
+  and (select column_default = '90' from information_schema.columns
+       where table_schema = 'public' and table_name = 'information_agent_autopilot_settings'
+         and column_name = 'art14_max_age_days'),
+  'the existing row keeps its 30 days; the column default becomes 90'
+);
 select throws_ok(
-  $$select public.update_information_agent_autopilot_settings('{"art14_max_age_days": 31}', 'Délai trop long')$$,
-  '23514', null, 'the article 14 delay cannot exceed 30 days'
+  $$select public.update_information_agent_autopilot_settings('{"art14_max_age_days": 91}', 'Délai trop long')$$,
+  '23514', null, 'the article 14 delay cannot exceed 90 days'
 );
 select throws_ok(
   $$select public.update_information_agent_autopilot_settings('{"art14_max_age_days": 0}', 'Délai trop court')$$,
   '23514', null, 'the article 14 delay is at least one day'
 );
 select ok(
+  (select art14_rule_enabled and art14_max_age_days = 90
+   from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 90}', 'Délai porté à 90 jours')),
+  'the owner can set the delay to 90 days through the settings function'
+);
+select ok(
   (select art14_rule_enabled and art14_max_age_days = 20
    from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 20, "art14_rule_enabled": true}', 'Délai réduit à 20 jours')),
-  'a delay within 1 to 30 days is applied, the rule stays on'
+  'a delay within 1 to 90 days is applied, the rule stays on'
 );
 select throws_ok(
   $$update public.information_agent_autopilot_settings set art14_rule_enabled = false$$,

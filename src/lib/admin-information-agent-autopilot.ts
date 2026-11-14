@@ -55,7 +55,7 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
         capTotalOverride: z.number().int().min(1).max(60).nullable().optional(),
         allowLicitorDecoded: z.boolean().optional(),
         // Article 14 (J9, 14/11/2026) : la règle ne se désactive plus ; seul « vrai » est admis, pour rétablir une
-        // valeur fausse antérieure à la contrainte de la base. Délai de 1 à 30 jours.
+        // valeur fausse antérieure à la contrainte de la base. Délai de 1 à 90 jours (décision du 14/11/2026).
         art14RuleEnabled: z.literal(true).optional(),
         art14MaxAgeDays: z.number().int().min(1).max(AUTOPILOT_ART14_MAX_DAYS).optional(),
         actingAdminId: z.string().guid().optional(),

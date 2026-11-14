@@ -33,7 +33,7 @@ function view(overrides: Record<string, unknown> = {}) {
       art14RuleEnabled: true,
       art14MaxAgeDays: 30,
       art14Label:
-        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 30)",
+        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
     readiness: {
@@ -203,11 +203,13 @@ describe("AdminInformationAgentAutopilotPanel", () => {
       target: { value: "Délai réduit après avis" },
     });
     const change = screen.getByRole("button", { name: "Modifier le délai de l’article 14" });
-    // Hors de 1 à 30 jours : le bouton reste grisé.
-    for (const value of ["31", "0", "abc"]) {
+    // Hors de 1 à 90 jours : le bouton reste grisé ; 90 est admis (décision du 14/11/2026).
+    for (const value of ["91", "0", "abc"]) {
       fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value } });
       expect((change as HTMLButtonElement).disabled, value).toBe(true);
     }
+    fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "90" } });
+    expect((change as HTMLButtonElement).disabled).toBe(false);
     fireEvent.change(screen.getByLabelText("Délai en jours"), { target: { value: "20" } });
     // Annulé : rien n'est envoyé.
     fireEvent.click(change);

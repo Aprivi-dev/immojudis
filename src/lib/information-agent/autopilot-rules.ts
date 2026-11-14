@@ -407,13 +407,14 @@ export const AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS = 10;
 // ---------------------------------------------------------------------------------------------------------
 const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
 /**
- * Délai d'information de l'article 14 (art. 14.3.a RGPD : « ne dépassant pas un mois »), réglable de 1 à ce nombre
- * de jours (J9, décision du 14/11/2026). RÈGLE LIÉE : contrainte `art14_max_age_days between 1 and 30` de
- * `information_agent_autopilot_settings` (migration 20261119100810).
+ * Délai d'information de l'article 14 : réglable de 1 à ce nombre de jours. 90 : décision du propriétaire du
+ * 14/11/2026, contre l'avis de juridique-rgpd (art. 14.3.a RGPD : information au plus tard un mois après le relevé),
+ * risque accepté par le propriétaire. RÈGLE LIÉE : contrainte `art14_max_age_days between 1 and 90` de
+ * `information_agent_autopilot_settings` (migration 20261119100810) et borne du panneau d'administration.
  */
-export const AUTOPILOT_ART14_MAX_DAYS = 30;
+export const AUTOPILOT_ART14_MAX_DAYS = 90;
 
-/** Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 30 jours (une valeur plus ancienne peut dépasser). */
+/** Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 90 jours (une valeur plus ancienne peut dépasser). */
 export function effectiveArt14MaxAgeDays(
   settings: Pick<AutopilotSettings, "art14MaxAgeDays">,
 ): number {
@@ -516,7 +517,7 @@ export function evaluateAutopilotCandidate(
   if (!facts.hasUnpublishedGap) return no("no_unpublished_gap");
   if (facts.humanDraftExists) return no("admin_draft_exists");
   if (facts.identityExcluded) return no("identity_excluded");
-  // Article 14 : toujours appliqué, délai plafonné à 30 jours même si la base porte encore une valeur plus ancienne.
+  // Article 14 : toujours appliqué, délai plafonné à 90 jours même si la base porte encore une valeur plus ancienne.
   if (!facts.alreadyInformed) {
     // Sans date de premier relevé, la règle ne peut pas être vérifiée : refus.
     if (!facts.contactFirstRecordedAt) return no("art14_unknown");

@@ -1036,7 +1036,7 @@ function autopilotFixture() {
       art14RuleEnabled: true,
       art14MaxAgeDays: 30,
       art14Label:
-        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 30)",
+        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
     runs: "Dernier passage : aucun · prochain passage : aucun (pilote éteint)",
