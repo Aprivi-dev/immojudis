@@ -62,6 +62,7 @@ export function buildInformationAgentLegalFooter({
   addressOrigin,
   saleReference = null,
   structureOpposition = null,
+  recipientKind = null,
   env = process.env,
   preview,
 }: {
@@ -71,6 +72,11 @@ export function buildInformationAgentLegalFooter({
   /** L'opposition de cette adresse vaudra pour toute sa structure (`missionRecipient().structureOpposition`). */
   structureOpposition?: InformationAgentFooterStructure | null;
   saleReference?: string | null;
+  /**
+   * Nature du destinataire du dossier (`sentRecipientKind`) : seule une réponse de l'avocat poursuivant
+   * (`source_lawyer`) est affichée sur la fiche avec la mention de source, et le pied l'annonce.
+   */
+  recipientKind?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
   preview?: { blockers: string[] };
 }): InformationAgentLegalFooter {
@@ -102,6 +108,7 @@ export function buildInformationAgentLegalFooter({
     automatedSearchSource: addressOrigin.searchSource,
     structureAddress: addressOrigin.structureAddress ?? null,
     structureOpposition: addressOrigin.courtRegistry ? null : structureOpposition,
+    lawyerReplyDisplay: recipientKind === "source_lawyer" && !addressOrigin.courtRegistry,
     aiProvider,
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: optOut,

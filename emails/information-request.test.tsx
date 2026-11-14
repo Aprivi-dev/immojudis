@@ -270,11 +270,38 @@ describe("renderInformationRequestEmail", () => {
       "Quelques points sur une annonce ; répondre est facultatif.",
     );
     expect(message.html).toContain(INFORMATION_REQUEST_PREHEADER);
-    const deposit = message.text.indexOf("Déposer des pièces pour ce dossier");
+    const deposit = message.text.indexOf(
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier",
+    );
     expect(deposit).toBeGreaterThan(message.text.indexOf("Répondre est facultatif."));
     expect(deposit).toBeLessThan(message.text.indexOf("Bien cordialement"));
-    expect(message.text).toContain("sur immojudis.com");
-    expect(message.text).toContain("Ce lien est propre à ce dossier.");
+    expect(message.text).toContain(
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.com : https://immojudis.com/contribuer/mission#secret-token\nCe lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    );
+  });
+
+  it("propose le dépôt en une ligne de texte : ni encadré doré, ni bouton, ni invitation aux pièces", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux",
+      bodyText: "Bonjour,\n\n- Le bien est-il libre ?\n\nRépondre est facultatif.",
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      contributionUrl: "https://immojudis.com/contribuer/mission#secret-token",
+    });
+    const flatHtml = message.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    expect(flatHtml).toContain(
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier , sur immojudis.com. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    );
+    // Un lien de texte, pas un bouton (classe `ej-btn-a`) dans un encadré.
+    expect(message.html).toMatch(
+      /<a href="https:\/\/immojudis\.com\/contribuer\/mission#secret-token"[^>]*>l’espace privé de ce dossier<\/a>/,
+    );
+    expect(message.html).not.toContain('class="ej-btn-a"');
+    for (const output of [message.html, message.text]) {
+      expect(output).not.toContain("Déposer des pièces");
+      expect(output).not.toContain("Des pièces trop lourdes");
+      expect(output).not.toContain("sans vérification par notre équipe");
+    }
   });
 
   it("garde le courrier lisible à 375 px : mots longs coupés, bouton en pleine largeur", async () => {
@@ -356,6 +383,9 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.",
     "Vos droits :",
     "accès, rectification, effacement et limitation du traitement. Pour les exercer sans créer de compte, écrivez à dpo@immojudis.test ou répondez à ce message. Vous pouvez aussi saisir la CNIL d’une réclamation (cnil.fr/plaintes).",
+    // J10 (texte retenu le 14/11/2026) : seulement dans un message à l'avocat poursuivant.
+    "Affichage sur la fiche :",
+    "Les informations que vous nous transmettez peuvent être affichées sur la fiche, sans votre nom, avec la mention « Source : avocat poursuivant, message du [date]. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. » Pour les faire retirer : répondez à cet email ou utilisez le lien « Ne plus être contacté ».",
     "Opposition :",
     "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.",
     "Politique de confidentialité et vos droits",
@@ -367,10 +397,14 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
   const lawyerTemplateSentences = [
     "Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal.",
     "Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :",
-    "Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.",
-    "Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.",
-    "Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
-    "Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.",
+    // C14, C13 et J15 (14/11/2026) : l'intérêt de l'avocat avant les questions, ni pièces ni procès-verbal.
+    "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.",
+    "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.",
+    // Le lien du HTML coupe la phrase (« dossier , sur ») une fois les balises retirées.
+    "Vous pouvez aussi répondre dans l’espace privé de ce dossier",
+    "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    "Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
+    "Merci par avance.",
     "Bien cordialement, L’équipe Immojudis",
   ];
 
@@ -385,7 +419,11 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
   ];
 
   it("courrier à un avocat : pied RGPD, opposition, origine et textes du modèle", async () => {
-    const automated: InformationAgentLegalFooter = { ...legalFooter, automatedSearch: true };
+    const automated: InformationAgentLegalFooter = {
+      ...legalFooter,
+      automatedSearch: true,
+      lawyerReplyDisplay: true,
+    };
     const { bodyText: body } = renderInformationAgentEmailContent({
       template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
       values,
@@ -451,6 +489,8 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
       expect(output).toContain("Madame, Monsieur,");
       expect(output).not.toContain("Pourquoi vous ?");
       expect(output).not.toContain("Quelques points à vérifier");
+      // La réponse d'un greffe n'est jamais attribuée à l'avocat poursuivant : pas d'annonce d'affichage.
+      expect(output).not.toContain("Affichage sur la fiche");
     }
     // L'origine du greffe n'est pas répétée en ouverture : elle figure une seule fois, dans « Vos données ».
     expect(message.text.match(/adresse de contact de votre juridiction/g)).toHaveLength(1);

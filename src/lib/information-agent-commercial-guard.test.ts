@@ -12,7 +12,12 @@ import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
+import { INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT } from "@/lib/information-agent-compliance";
 import { buildInformationRequestDraft } from "@/lib/information-agent/draft";
+import {
+  NOTARY_EMAIL_TEMPLATE,
+  STATE_SERVICE_EMAIL_TEMPLATE,
+} from "@/lib/information-agent/recipient-templates";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -92,6 +97,7 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
           "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/1), consultée le 14/10/2026.",
         addressOriginUrl: "https://www.licitor.com/annonce/1",
         automatedSearch: true,
+        lawyerReplyDisplay: true,
         aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
         privacyUrl: `${APP_URL}/privacy`,
         optOutUrl: `${APP_URL}/api/information-agent/opt-out?e=abc&t=def`,
@@ -105,12 +111,41 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
           ignore: ["Appartement T3 à Bordeaux"],
         }),
       ).toEqual([]);
+      // Les textes du lot C (14/11/2026) sont bien dans le message contrôlé.
+      expect(output).toContain("Une fiche exacte évite aux candidats");
+      expect(output).toContain("Rien n’est publié sans relecture par notre équipe.");
+      expect(output).toContain("Les informations que vous nous transmettez peuvent être affichées");
     }
     // Plus de présentation du service ni de lien vers le site : l'identité tient au pied du message.
     for (const output of [email.html, email.text]) {
       expect(output).not.toContain("Service indépendant d’aide à l’analyse");
       expect(output).not.toContain("Ventes immobilières aux enchères : tribunal, notaire, État");
       expect(output).not.toMatch(/>immojudis\.com</);
+    }
+  });
+
+  it("accepte chacun des nouveaux textes du lot C, seul ou dans les modèles du notaire et de l'État", () => {
+    const lotC = [
+      DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find((block) => block.id === "request_intro")!
+        .content,
+      DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find(
+        (block) => block.id === "reply_instructions",
+      )!.content,
+      DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.blocks.find((block) => block.id === "closing")!
+        .content,
+      INFORMATION_AGENT_QUESTIONS.sale_terms.question,
+      INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT,
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.example. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    ];
+    for (const text of lotC) {
+      expect(
+        findInformationAgentCommercialMentions(text, { appOrigin: APP_URL }),
+        text.slice(0, 60),
+      ).toEqual([]);
+    }
+    for (const template of [NOTARY_EMAIL_TEMPLATE, STATE_SERVICE_EMAIL_TEMPLATE]) {
+      const rendered = renderInformationAgentEmailContent({ template, values });
+      expect(findInformationAgentCommercialMentions(rendered.bodyText), template.name).toEqual([]);
     }
   });
 

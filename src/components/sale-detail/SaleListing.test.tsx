@@ -632,10 +632,11 @@ describe("SaleDetailHeading", () => {
 });
 
 describe("source « avocat poursuivant » sur la fiche des comptes", () => {
-  const MENTION =
-    "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
-  const DAY =
-    "Jour de la vente (sans l’heure) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+  // Texte retenu le 14/11/2026, suivi du lien vers la section des pièces.
+  const TAIL =
+    "avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier";
+  const MENTION = `Source : ${TAIL}`;
+  const DAY = `Source du jour de la vente (l’heure vient de l’annonce) : ${TAIL}`;
   const manual = (key: NonNullable<AuctionSale["lawyer_fact_sources"]>[number]["key"]) => ({
     key,
     receivedOn: "2026-11-12",
@@ -670,6 +671,10 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
     expect(mentions()).toEqual([MENTION, DAY, MENTION]);
     const occupancy = screen.getByText("Occupation").closest("div");
     expect(within(occupancy!).getByTestId("lawyer-fact-source")).toBeTruthy();
+    // « Où consulter le cahier » mène à la section 05 « Pièces du dossier ».
+    for (const link of screen.getAllByRole("link", { name: "Où consulter le cahier" })) {
+      expect(link.getAttribute("href")).toBe("#pieces");
+    }
     // Les icônes de source ne présentent jamais ces valeurs comme venant de l'annonce.
     expect(screen.queryByRole("button", { name: /annonce/i })).toBeNull();
     expect(screen.getAllByRole("button", { name: /Origine de l’information/ })).toHaveLength(3);
@@ -701,8 +706,11 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
   });
 
   it.each([
-    [{}, "Mise à prix"],
-    [{ ceilingWording: { label: "Offre plafond", byOffers: true } }, "Première offre possible"],
+    [{}, "de la mise à prix"],
+    [
+      { ceilingWording: { label: "Offre plafond", byOffers: true } },
+      "de la première offre possible",
+    ],
   ])("nomme le montant quand le panneau d'analyse le remplace (%#)", (props, label) => {
     render(
       <ListingOverview
@@ -711,9 +719,7 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
         {...props}
       />,
     );
-    expect(mentions()[0]).toBe(
-      `${label} : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.`,
-    );
+    expect(mentions()[0]).toBe(`Source ${label} : ${TAIL}`);
   });
 
   it("nomme le prix publié d'une cession de l'État dans le panneau d'analyse", () => {
@@ -728,7 +734,7 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
         lead={<div>Votre analyse</div>}
       />,
     );
-    expect(mentions()[0]).toMatch(/^Prix publié : information transmise/);
+    expect(mentions()[0]).toMatch(/^Source du prix publié : avocat poursuivant/);
   });
 
   it("dit sous le titre l'origine du type de bien et de la surface qu'il montre", () => {
@@ -737,9 +743,7 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
         sale={item({ lawyer_fact_sources: [manual("property_type"), manual("surface_m2")] })}
       />,
     );
-    expect(mentions()).toEqual([
-      "Type de bien et surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-les dans le cahier des conditions de vente.",
-    ]);
+    expect(mentions()).toEqual([`Source du type de bien et de la surface : ${TAIL}`]);
   });
 
   it("ne dit rien sous le titre de la page d'exemple ni sans réponse de l'avocat", () => {

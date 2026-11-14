@@ -43,7 +43,6 @@ import {
   assertInformationAgentContactAllowed,
   recordInformationAgentAdminAddressEntry,
 } from "@/lib/information-agent/contacts";
-import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { assertCourtRegistryFallbackLimits } from "@/lib/information-agent/court-registry";
 import {
   assertCourtRegistryFallbackOriginIntact,
@@ -61,7 +60,11 @@ import {
   assertInformationAgentPreviewFingerprint,
   buildInformationAgentLegalFooter,
 } from "@/lib/information-agent/message-guards";
-import { missionRecipient, missionSaleReference } from "@/lib/information-agent/mission-identity";
+import {
+  missionRecipient,
+  missionSaleReference,
+  sentRecipientKind,
+} from "@/lib/information-agent/mission-identity";
 import { assertInformationAgentQuestionsAllowed } from "@/lib/information-agent/recipient-questions";
 import { informationAgentAudienceInvitesDocuments } from "@/lib/information-agent/recipient-templates";
 import {
@@ -182,10 +185,7 @@ export async function approveAndSendMission({
   // An admin may replace a source-derived address while approving the draft.
   // Preserve the provenance only when the normalized address is unchanged;
   // otherwise the canonical case must record an explicit manual recipient.
-  const recipientKind =
-    normalizedEmail(input.recipientEmail) === normalizedEmail(mission.recipient_email)
-      ? mission.recipient_kind
-      : "manual_professional";
+  const recipientKind = sentRecipientKind(mission, input.recipientEmail);
 
   // Adresse saisie par un administrateur : source typée, date de relevé et auteur au registre.
   if (addressOrigin.kind === "admin_entry" && mission.sale_id) {
@@ -294,6 +294,7 @@ export async function approveAndSendMission({
       addressOrigin: addressOrigin.origin,
       saleReference: missionSaleReference(subscribedMission),
       structureOpposition: courtFallback ? null : recipient.structureOpposition,
+      recipientKind: edited.recipient_kind,
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,

@@ -337,10 +337,26 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
 
 type SurfaceObservation = { value: number; index: number; label: string | null };
 
+/**
+ * Nombre d'une surface, bâtie ou de terrain : groupé par milliers (« 1 250 », avec toute espace séparatrice
+ * `\p{Zs}` : ordinaire, fine, insécable) ou non, avec deux décimales au plus. Le groupement est essayé
+ * d'abord : sans lui, « 1 250 m² » était lu à partir de l'espace des milliers, soit 250.
+ */
+const SURFACE_NUMBER = String.raw`\d{1,3}(?:\p{Zs}\d{3})+(?:[.,]\d{1,2})?|\d{1,10}(?:[.,]\d{1,2})?`;
+
+function parseSurfaceNumber(raw: string): number {
+  return Number(raw.replace(/\p{Zs}/gu, "").replace(",", "."));
+}
+
 function extractSurfaceObservation(text: string): SurfaceObservation | null {
-  const labelledPattern =
-    /\b(surface(?:\s+(?:habitable|carrez|privative|utile|totale|au\s+sol))?)[^\d]{0,45}(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
-  const genericPattern = /(?<![\d.,])(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const labelledPattern = new RegExp(
+    String.raw`\b(surface(?:\s+(?:habitable|carrez|privative|utile|totale|au\s+sol))?)[^\d]{0,45}(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
+  const genericPattern = new RegExp(
+    String.raw`(?<![\d.,])(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
   const labelled: SurfaceObservation[] = [];
   for (const match of text.matchAll(labelledPattern)) {
     const rawValue = match[2];
@@ -358,7 +374,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
       hasExplicitUncertainty(trailingClause)
     )
       continue;
-    const value = Number(rawValue.replace(",", "."));
+    const value = parseSurfaceNumber(rawValue);
     if (Number.isFinite(value) && value > 0 && value <= 1_000_000) {
       labelled.push({
         value,
@@ -370,7 +386,7 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
 
   const generic: SurfaceObservation[] = [];
   for (const match of text.matchAll(genericPattern)) {
-    const value = Number((match[1] ?? "").replace(",", "."));
+    const value = parseSurfaceNumber(match[1] ?? "");
     const index = match.index ?? 0;
     if (
       !Number.isFinite(value) ||
@@ -415,11 +431,13 @@ function extractSurfaceObservation(text: string): SurfaceObservation | null {
 }
 
 function extractLandSurfaceObservation(text: string): { value: number; index: number } | null {
-  const pattern =
-    /\b(?:surface\s+(?:du|de\s+la)\s+terrain|terrain|parcelle|contenance)[^\d]{0,60}(\d{1,10}(?:[.,]\d{1,2})?)\s*m(?:²|2)(?![\p{L}\p{N}])/giu;
+  const pattern = new RegExp(
+    String.raw`\b(?:surface\s+(?:du|de\s+la)\s+terrain|terrain|parcelle|contenance)[^\d]{0,60}(${SURFACE_NUMBER})\s*m(?:²|2)(?![\p{L}\p{N}])`,
+    "giu",
+  );
   const observations: Array<{ value: number; index: number }> = [];
   for (const match of text.matchAll(pattern)) {
-    const value = Number((match[1] ?? "").replace(",", "."));
+    const value = parseSurfaceNumber(match[1] ?? "");
     if (Number.isFinite(value) && value > 0 && value <= 100_000_000) {
       observations.push({ value, index: match.index ?? 0 });
     }

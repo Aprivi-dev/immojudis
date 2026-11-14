@@ -83,6 +83,19 @@ describe("GET /api/information-agent/opt-out", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 
+  it("ne promet pas toute la structure sur une clé qui ne vaut pas pour l'adresse (messagerie partagée, gouv.fr)", async () => {
+    for (const [email, key] of [
+      ["cabinet.dupont@avocat.fr", "structure|domain|avocat.fr"],
+      ["ddfip33@dgfip.finances.gouv.fr", "structure|domain|gouv.fr"],
+      ["etude.martin@notaires.fr", "structure|domain|notaires.fr"],
+    ]) {
+      mocks.missionKeys = [key];
+      const html = await (await GET(new Request(signedUrl(email)))).text();
+      expect(html, email).toContain("Confirmer : ne plus me contacter");
+      expect(html, email).not.toContain("aucune adresse de cette structure");
+    }
+  });
+
   it("lecture d'information en panne : la page et son bouton s'affichent quand même, sans adresse au journal", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.readError = { code: "57014", message: `timeout while reading ${EMAIL}` };

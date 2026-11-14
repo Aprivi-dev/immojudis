@@ -272,6 +272,27 @@ describe("information agent inbound parsing", () => {
     expect(facts[2]?.proposedValue).toEqual({ value: "vacant" });
   });
 
+  it("reads a surface written with a thousands separator, not the group after the space", () => {
+    const surface = (text: string) =>
+      extractInformationAgentFacts(text).find((fact) => fact.factKey === "surface_m2")
+        ?.proposedValue;
+    const land = (text: string) =>
+      extractInformationAgentFacts(text).find((fact) => fact.factKey === "land_surface_m2")
+        ?.proposedValue;
+    // Espace ordinaire, espace fine (U+202F) et espace insécable (U+00A0) entre les milliers.
+    expect(surface("Surface habitable : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+    expect(surface("Surface habitable : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+    expect(surface("Surface habitable : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+    expect(surface("Surface habitable : 12 500 m².")).toEqual({ value: 12500, unit: "m2" });
+    expect(surface("Surface habitable : 250 m².")).toEqual({ value: 250, unit: "m2" });
+    expect(surface("Surface habitable : 1 250,5 m².")).toEqual({ value: 1250.5, unit: "m2" });
+    // Sans étiquette, près du nom du bien.
+    expect(surface("La maison fait 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+    expect(surface("Appartement T3 95 m².")).toEqual({ value: 95, unit: "m2" });
+    // Même lecture pour le terrain.
+    expect(land("Terrain : 1 250 m².")).toEqual({ value: 1250, unit: "m2" });
+  });
+
   it("rejects implausible numeric candidates", () => {
     expect(extractInformationAgentFacts("Surface annoncée : 9999999 m² et 999 pièces.")).toEqual(
       [],

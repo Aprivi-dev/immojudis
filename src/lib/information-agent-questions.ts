@@ -61,8 +61,9 @@ export const INFORMATION_AGENT_QUESTIONS = {
   },
   sale_terms: {
     label: "Modalités de vente",
+    // Une question, pas un rappel de la procédure à l'avocat qui la conduit (C14 du 14/11/2026).
     question:
-      "Pouvez-vous confirmer les modalités d’enchère, le montant et la forme de la garantie à remettre avant d’enchérir (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum, par chèque de banque ou caution bancaire), les frais annoncés et les délais applicables, dont celui de paiement du prix ?",
+      "Pouvez-vous confirmer le montant et la forme de la garantie à remettre pour enchérir, les frais annoncés et le délai de paiement du prix ?",
   },
   cadastre: {
     label: "Références cadastrales",

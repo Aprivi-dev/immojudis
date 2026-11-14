@@ -26,7 +26,9 @@ import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { LawyerFactSourceNote } from "@/components/sale-detail/LawyerFactSourceNote";
 import {
   LAWYER_DAY_LABEL,
+  LAWYER_PROPERTY_TYPE_LABEL,
   LAWYER_ROOMS_LABEL,
+  LAWYER_SURFACE_LABEL,
   lawyerSourceForDisplayedValue,
 } from "@/lib/lawyer-fact-sources";
 import { isPastParisDay } from "@/lib/paris-time";
@@ -94,6 +96,9 @@ const SalePublicSaleStepsLazy = dynamic(() =>
 const SalePublicChecksLazy = dynamic(() =>
   import("@/components/SalePublicChecks").then((module) => module.SalePublicChecks),
 );
+/** Son ancre : cible aussi du lien « Où consulter le cahier » des mentions de l'avocat poursuivant. */
+const PIECES_SECTION_ID = "pieces-et-verifications";
+const PIECES_SECTION_HREF = `#${PIECES_SECTION_ID}`;
 
 /** « Pour aller plus loin » et la suite de la recherche, en bas de fiche. */
 const SalePublicFurtherLazy = dynamic(() =>
@@ -397,9 +402,12 @@ export function SalePublicPreview({
   // Valeurs transmises par l'avocat poursuivant (même règle que la fiche des comptes) : une mention par
   // bloc, qui nomme les valeurs, plutôt que la même phrase sous chaque demi-colonne.
   const lawyerPropertyItems = [
-    { label: "Type de bien", source: lawyerSourceForDisplayedValue(preview, "property_type") },
     {
-      label: "Surface",
+      label: LAWYER_PROPERTY_TYPE_LABEL,
+      source: lawyerSourceForDisplayedValue(preview, "property_type"),
+    },
+    {
+      label: LAWYER_SURFACE_LABEL,
       source: lawyerSourceForDisplayedValue(preview, "surface", {
         surface: preview.app_surface_m2,
       }),
@@ -438,7 +446,7 @@ export function SalePublicPreview({
           </div>
         ) : null}
       </dl>
-      <LawyerFactSourceNote items={lawyerPropertyItems} />
+      <LawyerFactSourceNote items={lawyerPropertyItems} cahierHref={PIECES_SECTION_HREF} />
     </>
   );
   // Date de la vente, sous la mise à prix ; l'inscription la suit (P12 : le bouton reste en vue dans
@@ -463,6 +471,7 @@ export function SalePublicPreview({
               source: lawyerSourceForDisplayedValue(preview, "sale_date"),
             },
           ]}
+          cahierHref={PIECES_SECTION_HREF}
         />
         {pastDate ? (
           <span className={styles.pastDate} data-testid="past-sale-date">
@@ -574,11 +583,6 @@ export function SalePublicPreview({
         <p className={styles.price}>
           {price ? formatPrice(preview.starting_price_eur) : "À confirmer"}
         </p>
-        <LawyerFactSourceNote
-          items={[
-            { label: "", source: lawyerSourceForDisplayedValue(preview, "starting_price_eur") },
-          ]}
-        />
         <p className={styles.priceNote}>
           {state
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
@@ -587,6 +591,13 @@ export function SalePublicPreview({
             <span className={styles.num}> · {formatPricePerM2(startingPricePerM2)}</span>
           ) : null}
         </p>
+        {/* Après « Prix de départ, hors frais » : la nature du prix d'abord, sa source ensuite (P4). */}
+        <LawyerFactSourceNote
+          items={[
+            { label: "", source: lawyerSourceForDisplayedValue(preview, "starting_price_eur") },
+          ]}
+          cahierHref={PIECES_SECTION_HREF}
+        />
         {price && preview.market_gap_band && !pastDate ? (
           <MarketGapBandNote band={preview.market_gap_band} saleId={saleId} />
         ) : null}
@@ -665,7 +676,7 @@ export function SalePublicPreview({
     { id: "la-vente", label: "La vente", show: true },
     { id: "marche-local", label: "Marché local", show: showMarket },
     { id: "analyse", label: "Analyse", show: true },
-    { id: "pieces-et-verifications", label: "Pièces et vérifications", show: true },
+    { id: PIECES_SECTION_ID, label: "Pièces et vérifications", show: true },
     { id: "etre-prevenu", label: "Être prévenu", show: showAlert },
   ].filter((section) => section.show);
   const tocItems: SalePublicTocItem[] = sectionDefs.map((section, index) => ({
@@ -925,8 +936,8 @@ export function SalePublicPreview({
             </div>
 
             <NumberedSection
-              id="pieces-et-verifications"
-              number={numberOf("pieces-et-verifications")}
+              id={PIECES_SECTION_ID}
+              number={numberOf(PIECES_SECTION_ID)}
               title="Pièces et vérifications"
               titleId="public-checks-title"
             >

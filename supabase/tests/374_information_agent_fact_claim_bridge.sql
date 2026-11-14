@@ -103,10 +103,13 @@ select ok(
   'claim bridge requires an administrator reviewer even for direct service-role writes'
 );
 
+-- Depuis 20261119100900, la correspondance clé → champ est la fonction commune au pont et au noyau, qui rend nul
+-- pour un fait sans colonne comparable.
 select ok(
-  position('v_field_key := case new.fact_key' in pg_get_functiondef(
-    'app_private.bridge_accepted_information_agent_fact_claim()'::regprocedure
-  )) > 0,
+  position('v_field_key := app_private.information_agent_fact_registry_field(new.fact_key)'
+    in pg_get_functiondef('app_private.bridge_accepted_information_agent_fact_claim()'::regprocedure)) > 0
+  and app_private.information_agent_fact_registry_field('visit_information') is null
+  and app_private.information_agent_fact_registry_field('document') is null,
   'unsupported free-form evidence is not silently projected as a canonical fiche fact'
 );
 

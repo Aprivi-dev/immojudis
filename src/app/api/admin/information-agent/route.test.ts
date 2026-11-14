@@ -21,7 +21,10 @@ function builder(table: string) {
   const chain: Record<string, unknown> = {
     then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
   };
-  for (const method of ["select", "in", "eq", "is", "order"]) chain[method] = () => chain;
+  // `not`, `limit`, `overlaps` : lecture des retraits à faire après une opposition (lot C).
+  for (const method of ["select", "in", "eq", "is", "order", "not", "limit", "overlaps"]) {
+    chain[method] = () => chain;
+  }
   chain.range = (from: number, to: number) => {
     ranges.push([table, from, to]);
     return chain;
