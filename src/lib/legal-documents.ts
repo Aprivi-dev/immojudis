@@ -132,7 +132,7 @@ export const LEGAL_DOCUMENTS = {
   },
   privacy: {
     version: "2026-11-14.1",
-    sha256: "7b389ced4602f0f762d9bd21cd3712649c95d3f8816446fdd7537138c646fc46",
+    sha256: "24729b1cdb992e9540a875eda4ddcc1b1e11b2ee6e51ecb3feedd2e674efada8",
     effectiveDate: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
     path: "/privacy",
   },
