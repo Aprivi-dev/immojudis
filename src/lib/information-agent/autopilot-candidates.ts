@@ -35,8 +35,15 @@ import {
 import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
+  resolveInformationAgentListingContacts,
   selectInformationAgentContact,
+  type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contact-resolution";
+import { informationAgentNotarySendClosed } from "@/lib/information-agent/config";
+import {
+  informationAgentQuestionAudience,
+  informationAgentSaleAudience,
+} from "@/lib/information-agent/recipient-questions";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   personIdentityKeys,
@@ -49,7 +56,7 @@ import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
  * classe A), lue page par page. Chaque vente passe d'abord un tri SANS EXAMEN COÛTEUX, sur la lecture légère de
  * l'annonce et du registre interne (`loadInformationAgentContactSales`, celle de la classe de contact) : un contact
  * choisi seul par le résolveur (classe A), puis `autopilotQueueRefusal` (rôle, messagerie, adresse Licitor décodée
- * selon le réglage, date de la vente). Seules les ventes qui passent ce tri comptent parmi les `maxExamined` examens
+ * selon le réglage, date de la vente) et la garde des envois aux notaires (vente notariale). Seules les ventes qui passent ce tri comptent parmi les `maxExamined` examens
  * du passage : vérification candidat par candidat, `evaluateAutopilotCandidate` (règles pures) sur des faits lus
  * ici. Jamais de recherche réseau d'adresse, jamais de greffe : seulement l'avocat dont l'adresse figure dans
  * l'annonce de la vente.
@@ -111,6 +118,34 @@ function isLicitorRegistryAddress(sale: AdminInformationAgentSale, email: string
   );
 }
 
+/**
+ * La garde des envois aux notaires refusera ce candidat à l'aperçu : même prédicat que la garde
+ * (`informationAgentNotarySendClosed`, config.ts), sur le destinataire et la vente tels que le brouillon les
+ * enregistrera (`question_audience`, `sale_audience` : mêmes fonctions que `draft.ts`). Écarté d'avance, il ne
+ * compte ni parmi les examens du passage ni en rejet de politique (arrêt automatique).
+ */
+function notarySendWillBeRefused(
+  sale: AdminInformationAgentSale,
+  selected: InformationAgentContactCandidate,
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const { organizerType, sourceName } = resolveInformationAgentListingContacts(sale);
+  return informationAgentNotarySendClosed(
+    {
+      role: selected.role,
+      questionAudience: informationAgentQuestionAudience({
+        role: selected.role,
+        structureKind: selected.structureKind,
+        organizerType,
+        sourceName,
+      }),
+      saleAudience: informationAgentSaleAudience({ organizerType, sourceName }),
+      email: selected.email,
+    },
+    env,
+  );
+}
+
 /** Brouillon d'un administrateur (ou échec à reprendre) sur cette vente : le pilote ne le touche jamais. */
 async function humanDraftExists(saleId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin
@@ -168,18 +203,19 @@ export async function findAutopilotCandidates({
           skip("not_class_a");
           continue;
         }
-        const refusal = autopilotQueueRefusal(
-          {
-            recipientRole: selected.role,
-            consumerDomain: isConsumerMailAddress(selected.email),
-            observationChannel: isLicitorRegistryAddress(sale, selected.email)
-              ? INFORMATION_AGENT_PIPELINE_CHANNEL
-              : null,
-            saleDate: sale.sale_date ?? null,
-          },
-          settings,
-          now,
-        );
+        const refusal =
+          autopilotQueueRefusal(
+            {
+              recipientRole: selected.role,
+              consumerDomain: isConsumerMailAddress(selected.email),
+              observationChannel: isLicitorRegistryAddress(sale, selected.email)
+                ? INFORMATION_AGENT_PIPELINE_CHANNEL
+                : null,
+              saleDate: sale.sale_date ?? null,
+            },
+            settings,
+            now,
+          ) ?? (notarySendWillBeRefused(sale, selected, env) ? "notary_send_closed" : null);
         if (refusal) {
           skip(refusal);
           continue;
