@@ -79,6 +79,7 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
       : {};
   if (kind === "auto_stop" && reason) return AUTOPILOT_STOP_LABELS[reason] ?? reason;
   if (reason) return reason;
+  if (kind === "run" && record.code === "on_demand_started") return "";
   if (kind === "run") {
     const errors = Object.entries(record)
       .filter(([key, count]) => key.startsWith("error_") && typeof count === "number")
@@ -89,14 +90,19 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   return "";
 }
 
-/** Passage lancé à la main par un administrateur (`details.manual`, posé par l'exécuteur du pilote). */
-function isOnDemandRun(event: { kind: string; details: unknown }): boolean {
-  return (
-    event.kind === "run" &&
-    Boolean(event.details) &&
-    typeof event.details === "object" &&
-    (event.details as Record<string, unknown>).manual === true
-  );
+/**
+ * Passage lancé à la main par un administrateur (`details.manual`, posé par l'exécuteur du pilote) : sa trace de
+ * début (`on_demand_started`), puis son événement de fin. Null pour tout autre événement.
+ */
+function onDemandRunLabel(event: { kind: string; details: unknown }): string | null {
+  const details =
+    event.details && typeof event.details === "object"
+      ? (event.details as Record<string, unknown>)
+      : {};
+  if (event.kind !== "run" || details.manual !== true) return null;
+  return details.code === "on_demand_started"
+    ? "Passage à la demande lancé"
+    : "Passage à la demande";
 }
 
 const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
@@ -171,9 +177,7 @@ export function buildAutopilotView({
     ready: { count: prepared.length, items: prepared },
     events: events.map((event) => ({
       at: formatNumericDateTime(event.at),
-      label: isOnDemandRun(event)
-        ? "Passage à la demande"
-        : (EVENT_LABELS[event.kind] ?? event.kind),
+      label: onDemandRunLabel(event) ?? EVENT_LABELS[event.kind] ?? event.kind,
       detail: eventDetail(event.kind, event.reason, event.details),
     })),
   };

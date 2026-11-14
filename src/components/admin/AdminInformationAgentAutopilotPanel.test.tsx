@@ -5,13 +5,23 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminInformationAgentAutopilotPanel } from "./AdminInformationAgentAutopilotPanel";
 
-const mocks = vi.hoisted(() => ({ fetch: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  run: vi.fn(),
+  simulate: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastInfo: vi.fn(),
+}));
 
 vi.mock("@/lib/client-api", () => ({
   fetchAdminInformationAgentAutopilot: mocks.fetch,
   runAdminInformationAgentAutopilotActionClient: mocks.run,
+  runAdminInformationAgentAutopilotSimulationClient: mocks.simulate,
 }));
-vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({
+  toast: { success: mocks.toastSuccess, error: mocks.toastError, info: mocks.toastInfo },
+}));
 
 afterEach(() => {
   cleanup();
@@ -150,13 +160,13 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     expect(screen.queryByRole("button", { name: "Lancer un passage de simulation" })).toBeNull();
   });
 
-  it("mode Simulation : lance un passage avec le motif, puis affiche le résultat", async () => {
+  it("mode Simulation : lance un passage avec le motif, affiche le résultat, puis relit l'état", async () => {
     const simulation = { mode: "simulation", modeLabel: "Simulation (aucun envoi)" };
     mocks.fetch.mockResolvedValue(view(simulation));
-    mocks.run.mockResolvedValue({
-      ...view(simulation),
+    mocks.simulate.mockResolvedValue({
       onDemandRun: {
-        text: "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+        outcome: "finished",
+        text: "Passage de simulation terminé : 3 examinées, 1 préparée, 1 simulée. Aucun envoi.",
       },
     });
     renderPanel();
@@ -169,23 +179,43 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     expect((launch as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(launch);
 
-    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
-    expect(mocks.run.mock.calls[0][0]).toEqual({
-      action: "run_simulation_now",
-      reason: "Premier passage demandé",
-    });
+    await waitFor(() => expect(mocks.simulate).toHaveBeenCalledTimes(1));
+    expect(mocks.simulate.mock.calls[0][0]).toBe("Premier passage demandé");
+    expect(mocks.run).not.toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toBe(
-      "Passage de simulation terminé : 3 examinées, 1 préparées, 1 simulées. Aucun envoi.",
+      "Passage de simulation terminé : 3 examinées, 1 préparée, 1 simulée. Aucun envoi.",
     );
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("Passage de simulation terminé.");
+    // L'état du pilote est relu après le passage.
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(2));
     // Le motif se vide après l'action : le bouton redevient grisé, et l'écran dit pourquoi.
     expect((launch as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Saisissez un motif de 8 caractères au moins/)).toBeTruthy();
   });
 
+  it.each([
+    ["time_budget", "Passage de simulation arrêté par la borne de temps."],
+    ["interrupted", "Passage de simulation interrompu."],
+  ])("résultat %s : le toast le distingue d'un passage terminé", async (outcome, toastText) => {
+    mocks.fetch.mockResolvedValue(view({ mode: "simulation", modeLabel: "Simulation" }));
+    mocks.simulate.mockResolvedValue({ onDemandRun: { outcome, text: "Résultat du passage." } });
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText(/Motif du changement/), {
+      target: { value: "Premier passage demandé" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lancer un passage de simulation" }));
+
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith(toastText));
+  });
+
   it("un passage refusé affiche son motif à côté du bouton", async () => {
     mocks.fetch.mockResolvedValue(view({ mode: "simulation", modeLabel: "Simulation" }));
-    mocks.run.mockRejectedValue(
-      new Error("Un passage à la demande a déjà été lancé il y a moins de 10 minutes."),
+    mocks.simulate.mockRejectedValue(
+      Object.assign(
+        new Error("Un passage à la demande a déjà été lancé il y a moins de 10 minutes."),
+        { status: 429 },
+      ),
     );
     renderPanel();
 
@@ -195,6 +225,26 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Lancer un passage de simulation" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("il y a moins de 10 minutes");
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+  });
+
+  it("délai des routes admin dépassé (504) : une information, pas un refus, et l'état est relu", async () => {
+    mocks.fetch.mockResolvedValue(view({ mode: "simulation", modeLabel: "Simulation" }));
+    const message =
+      "Cette action admin a dépassé le délai de 30 secondes. Elle a pu aboutir malgré tout : actualisez la liste et vérifiez son état avant de la relancer.";
+    mocks.simulate.mockRejectedValue(Object.assign(new Error(message), { status: 504 }));
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText(/Motif du changement/), {
+      target: { value: "Premier passage demandé" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lancer un passage de simulation" }));
+
+    expect((await screen.findByRole("status")).textContent).toBe(message);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(mocks.toastInfo).toHaveBeenCalledWith(message);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(2));
   });
 
   it("dit que le pilote est indisponible plutôt que d'afficher un état inventé", async () => {

@@ -24,6 +24,7 @@ import {
   type AutopilotReadiness,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
+  AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
   autopilotBudgetDecision,
   autopilotCaps,
   autopilotRunGate,
@@ -33,7 +34,7 @@ import {
 } from "@/lib/information-agent/autopilot-rules";
 import { informationAgentCapStructure } from "@/lib/information-agent/contact-structure";
 import {
-  hasOnDemandAutopilotRunSince,
+  lastOnDemandAutopilotRunAt,
   loadAutopilotSettings,
   loadAutopilotStats,
   recordAutopilotAutoStop,
@@ -45,6 +46,7 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { asObject, cancelMission } from "@/lib/information-agent/mission-store";
+import { MAIL_DOMAIN_CHECK_BUDGET_MS } from "@/lib/information-agent/address-deliverability";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
 import {
   InformationAgentSentButUnrecordedError,
@@ -90,6 +92,8 @@ export type AutopilotRunSummary = {
   warnings: string[];
   /** Passage à la demande arrêté par sa borne de temps (examen ou candidat non entamé). Jamais pour la tâche planifiée. */
   stoppedByTimeBudget: boolean;
+  /** Passage à la demande refusé par le délai de 10 minutes (`on_demand_cooldown`) : temps restant ; null sinon. */
+  retryAfterMs: number | null;
 };
 
 export type PreparedAutopilotDraft = {
@@ -119,8 +123,8 @@ export type AutopilotDeps = {
   isAdmin: (userId: string | null) => Promise<boolean>;
   claimLease: () => Promise<CronLease>;
   releaseLease: (token: string) => Promise<void>;
-  /** Un passage lancé à la main a-t-il été journalisé depuis `since` ? */
-  hasOnDemandRunSince: (since: Date) => Promise<boolean>;
+  /** Heure du dernier passage lancé à la main journalisé depuis `since`, ou null. */
+  lastOnDemandRunAt: (since: Date) => Promise<Date | null>;
   findCandidates: (
     settings: AutopilotSettings,
     now: Date,
@@ -161,14 +165,19 @@ const KNOWN_WARNINGS = [
   "delayed_24h",
 ] as const;
 const SIMULATION_PER_RUN = 5;
-/** Au plus un passage lancé à la main toutes les 10 minutes (journal : `run` avec `manual`). */
-const ON_DEMAND_COOLDOWN_MS = 10 * 60_000;
+/**
+ * Durée maximale admise d'une étape du passage (page de la file, examen d'une vente, brouillon et aperçu d'un
+ * candidat) : le contrôle DNS, borné, plus les lectures et écritures en base. La recherche d'adresse (15 s) n'a
+ * jamais lieu pour le pilote (`createAdminInformationAgentDraft` la saute dès qu'un déclencheur est donné).
+ */
+const AUTOPILOT_STEP_MAX_MS = MAIL_DOMAIN_CHECK_BUDGET_MS + 3_000;
 
 /**
  * Passage lancé à la main : administrateur vérifié par le serveur (jamais une valeur du client), motif, et heure
- * après laquelle aucun examen ni aucun candidat n'est plus entamé (borne de la route qui l'appelle).
+ * à laquelle le travail doit être fini (borne de la route qui l'appelle) : aucune étape n'est entamée si elle
+ * risque de la dépasser.
  */
-export type AutopilotOnDemandRequest = { adminId: string; reason: string; deadline: Date };
+export type AutopilotOnDemandRequest = { adminId: string; reason: string; finishBy: Date };
 
 /**
  * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
@@ -261,7 +270,7 @@ export function defaultAutopilotDeps(
     isAdmin: isActiveAdmin,
     claimLease: () => claimCronLease("information-agent-autopilot", 600),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
-    hasOnDemandRunSince: hasOnDemandAutopilotRunSince,
+    lastOnDemandRunAt: lastOnDemandAutopilotRunAt,
     findCandidates: (settings, now, limit, shouldStop) =>
       findAutopilotCandidates({ settings, now, limit, env, shouldStop }),
     prepareDraft: prepareAutopilotDraft,
@@ -396,6 +405,7 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
     errors: {},
     warnings: [],
     stoppedByTimeBudget: false,
+    retryAfterMs: null,
   };
 }
 
@@ -413,12 +423,15 @@ export async function runInformationAgentAutopilot(
  */
 export async function runInformationAgentAutopilotOnDemand(
   request: AutopilotOnDemandRequest,
-  overrides: Partial<AutopilotDeps> = {},
 ): Promise<AutopilotRunSummary> {
-  return runAutopilotPass(defaultAutopilotDeps(overrides), request);
+  return runAutopilotPass(defaultAutopilotDeps(), request);
 }
 
-async function runAutopilotPass(
+/**
+ * Le passage, dépendances injectées : pour les tests seulement. L'application passe par
+ * `runInformationAgentAutopilot` (tâche planifiée) ou `runInformationAgentAutopilotOnDemand` (administrateur).
+ */
+export async function runAutopilotPass(
   deps: AutopilotDeps,
   onDemand: AutopilotOnDemandRequest | null,
 ): Promise<AutopilotRunSummary> {
@@ -441,13 +454,26 @@ async function runAutopilotPass(
   const lease = await deps.claimLease();
   if (lease.kind === "busy") return finish("skipped", "busy");
 
+  const onDemandDetails: Record<string, string | boolean> = onDemand
+    ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason }
+    : {};
   try {
-    // Lu sous le bail : deux demandes simultanées ne passent pas toutes les deux.
-    if (
-      onDemand &&
-      (await deps.hasOnDemandRunSince(new Date(now.getTime() - ON_DEMAND_COOLDOWN_MS)))
-    ) {
-      return finish("skipped", "on_demand_cooldown");
+    if (onDemand) {
+      // Lu sous le bail : deux demandes simultanées ne passent pas toutes les deux.
+      const last = await deps.lastOnDemandRunAt(
+        new Date(now.getTime() - AUTOPILOT_ON_DEMAND_COOLDOWN_MS),
+      );
+      if (last) {
+        summary.retryAfterMs = last.getTime() + AUTOPILOT_ON_DEMAND_COOLDOWN_MS - now.getTime();
+        return finish("skipped", "on_demand_cooldown");
+      }
+      // Trace posée dès maintenant (journal en ajout seul ; l'événement de fin la complète) : une exception ou un
+      // arrêt automatique la laisse, et le délai de 10 minutes s'applique quand même.
+      await deps.record("run", runId, {
+        mode: settings.mode,
+        code: "on_demand_started",
+        ...onDemandDetails,
+      });
     }
     let stats = await deps.loadStats(now);
 
@@ -485,11 +511,15 @@ async function runAutopilotPass(
     }
 
     // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement.
-    const live = settings.mode === "live";
-    // Borne de temps du seul passage à la demande ; la tâche planifiée n'en a pas (`Infinity`).
-    const deadline = onDemand ? onDemand.deadline.getTime() : Infinity;
+    // Un passage à la demande n'envoie jamais, quel que soit le mode relu (la garde de tête l'exige déjà).
+    const live = !onDemand && settings.mode === "live";
+    // Borne de temps du seul passage à la demande ; la tâche planifiée n'en a pas (`Infinity`). Une étape n'est
+    // entamée que si elle peut finir avant l'heure, même à sa durée maximale.
+    const finishBy = onDemand ? onDemand.finishBy.getTime() : Infinity;
     const timeUp = () => {
-      if (deps.now().getTime() >= deadline) summary.stoppedByTimeBudget = true;
+      if (deps.now().getTime() + AUTOPILOT_STEP_MAX_MS > finishBy) {
+        summary.stoppedByTimeBudget = true;
+      }
       return summary.stoppedByTimeBudget;
     };
     const search = await deps.findCandidates(settings, now, live ? 3 : SIMULATION_PER_RUN, timeUp);
@@ -655,7 +685,7 @@ async function runAutopilotPass(
 
     await deps.record("run", runId, {
       mode: settings.mode,
-      ...(onDemand ? { manual: true, actorId: onDemand.adminId, reason: onDemand.reason } : {}),
+      ...onDemandDetails,
       ...(summary.stoppedByTimeBudget ? { stopped_by_time_budget: true } : {}),
       examined: summary.examined,
       prepared: summary.prepared,
