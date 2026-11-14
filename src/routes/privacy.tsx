@@ -344,33 +344,36 @@ export function PrivacyPage({
               contacté » de chaque message ou à {legalValue(publisher.contactEmail)}. Votre
               opposition est enregistrée et vaut pour tous nos canaux. Elle vaut pour votre adresse
               et pour votre identité professionnelle : nous ne vous écrirons pas non plus à une
-              autre adresse. Faite depuis l’adresse de contact d’un cabinet ou d’une étude, elle
-              vaut pour toutes les adresses que nous pouvons rattacher avec certitude à cette
-              structure : celles du même nom de domaine, propre au cabinet ou à l’étude, ou, pour
-              une étude notariale, celles du même numéro d’office. Elle ne s’étend pas aux autres
-              adresses d’une messagerie partagée (par exemple avocat.fr, ou notaires.fr sans numéro
-              d’office). Pour un service de l’État, dont les adresses partagent le domaine gouv.fr,
-              elle vaut pour l’adresse du service, mais pas pour les adresses nominatives de ses
-              agents : chacun d’eux peut s’opposer de la même façon. Elle vaut aussi demande de
-              retrait des informations que vous nous avez transmises : nous les retirons de la fiche
-              dans le même délai. Les échanges déjà intervenus sont conservés jusqu’au terme indiqué
-              plus haut (12 ou 24 mois), seulement pour pouvoir répondre d’une réclamation, puis
-              supprimés. Seules votre adresse, votre identité professionnelle et la date de votre
-              opposition sont gardées au-delà, pour ne plus vous solliciter. Si vous nous répondez
-              que notre message ne vous concernait pas, votre identité professionnelle (fonction,
-              nom, barreau ou ville) est gardée 24 mois, pour qu’aucun message ne vous soit plus
-              préparé automatiquement, et un membre de l’équipe vérifiera avant toute nouvelle prise
-              de contact. Pour ne plus du tout être contacté, utilisez le lien « Ne plus être
-              contacté ». Vous pouvez aussi demander l’accès, la rectification ou l’effacement, et
-              saisir la CNIL. Pour exercer ces droits, écrivez à{" "}
-              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+              autre adresse. Faite depuis l’adresse de contact d’un cabinet, d’une étude ou d’un
+              service, elle vaut pour toutes les adresses que nous pouvons rattacher avec certitude
+              à cette structure : celles du même nom de domaine, pour un cabinet, une étude ou un
+              service doté de son propre nom de domaine, ou, pour une étude notariale, celles du
+              même numéro d’office. Elle ne s’étend pas aux autres adresses d’une messagerie
+              partagée (par exemple avocat.fr, ou notaires.fr sans numéro d’office). Pour un service
+              de l’État, dont les adresses partagent le domaine gouv.fr, elle vaut pour l’adresse du
+              service, mais pas pour les adresses nominatives de ses agents : chacun d’eux peut
+              s’opposer de la même façon. Elle vaut aussi demande de retrait des informations que
+              vous nous avez transmises : nous les retirons de la fiche dans le même délai. Les
+              échanges déjà intervenus sont conservés jusqu’au terme indiqué plus haut (12 ou 24
+              mois), seulement pour pouvoir répondre d’une réclamation, puis supprimés. Seules votre
+              adresse, votre identité professionnelle et la date de votre opposition sont gardées
+              au-delà, pour ne plus vous solliciter. Si vous nous répondez que notre message ne vous
+              concernait pas, votre identité professionnelle (fonction, nom, barreau ou ville) est
+              gardée 24 mois, pour qu’aucun message ne vous soit plus préparé automatiquement, et un
+              membre de l’équipe vérifiera avant toute nouvelle prise de contact. Pour ne plus du
+              tout être contacté, utilisez le lien « Ne plus être contacté ». Vous pouvez aussi
+              demander l’accès, la rectification ou l’effacement, et saisir la CNIL. Pour exercer
+              ces droits, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est
+              nécessaire.
             </p>
             <p className="mt-3">
               Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après
               validation manuelle de chaque message, écrire à l’adresse de contact du greffe du
-              tribunal concerné, tirée de son référentiel des tribunaux, pour demander l’identité de
-              l’avocat poursuivant ou les pièces publiques communicables. Nous envoyons au plus un
-              message par vente et, par tribunal, au plus {courtRegistryDailyCap} message
+              tribunal concerné, tirée de son référentiel des tribunaux, pour demander qui est
+              l’avocat poursuivant de la vente ou, à défaut, où et selon quelles modalités un
+              candidat acquéreur peut consulter le cahier des conditions de vente. Aucune pièce
+              n’est demandée au greffe. Nous envoyons au plus un message par vente et, par tribunal,
+              au plus {courtRegistryDailyCap} message
               {courtRegistryDailyCap > 1 ? "s" : ""} par jour, sans relance. Base légale : intérêt
               légitime. Conservation : 12 mois sans réponse, 24 mois après le dernier échange.
               Opposition : lien dans chaque message ou {legalValue(publisher.contactEmail)}.

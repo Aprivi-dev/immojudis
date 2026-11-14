@@ -456,6 +456,11 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après validation manuelle de chaque message, écrire à l’adresse de contact du greffe du tribunal concerné",
     );
+    // Même demande que `COURT_REGISTRY_QUESTION` (lot C du 14/11) : aucune pièce n'est demandée.
+    expect(text).toContain(
+      "pour demander qui est l’avocat poursuivant de la vente ou, à défaut, où et selon quelles modalités un candidat acquéreur peut consulter le cahier des conditions de vente. Aucune pièce n’est demandée au greffe.",
+    );
+    expect(text).not.toContain("pièces publiques communicables");
     expect(text).toContain(
       "Nous envoyons au plus un message par vente et, par tribunal, au plus 2 messages par jour, sans relance.",
     );
@@ -794,7 +799,7 @@ describe("politique de confidentialité", () => {
     );
     // Portée réelle des clés de structure (contact-structure.ts) : domaine propre ou numéro d'office.
     expect(text).toContain(
-      "Faite depuis l’adresse de contact d’un cabinet ou d’une étude, elle vaut pour toutes les adresses que nous pouvons rattacher avec certitude à cette structure : celles du même nom de domaine, propre au cabinet ou à l’étude, ou, pour une étude notariale, celles du même numéro d’office. Elle ne s’étend pas aux autres adresses d’une messagerie partagée (par exemple avocat.fr, ou notaires.fr sans numéro d’office). Pour un service de l’État, dont les adresses partagent le domaine gouv.fr, elle vaut pour l’adresse du service, mais pas pour les adresses nominatives de ses agents : chacun d’eux peut s’opposer de la même façon.",
+      "Faite depuis l’adresse de contact d’un cabinet, d’une étude ou d’un service, elle vaut pour toutes les adresses que nous pouvons rattacher avec certitude à cette structure : celles du même nom de domaine, pour un cabinet, une étude ou un service doté de son propre nom de domaine, ou, pour une étude notariale, celles du même numéro d’office. Elle ne s’étend pas aux autres adresses d’une messagerie partagée (par exemple avocat.fr, ou notaires.fr sans numéro d’office). Pour un service de l’État, dont les adresses partagent le domaine gouv.fr, elle vaut pour l’adresse du service, mais pas pour les adresses nominatives de ses agents : chacun d’eux peut s’opposer de la même façon.",
     );
     expect(text).not.toContain("elle vaut pour toutes les adresses de cette structure");
     expect(text).toContain(
