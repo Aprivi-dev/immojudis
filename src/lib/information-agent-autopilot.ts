@@ -24,6 +24,7 @@ import {
   type AutopilotReadiness,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
+  AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
   autopilotBudgetDecision,
   autopilotCaps,
   autopilotRunGate,
@@ -35,10 +36,12 @@ import { informationAgentCapStructure } from "@/lib/information-agent/contact-st
 import {
   loadAutopilotSettings,
   loadAutopilotStats,
+  loadPendingSimulatedDrafts,
   recordAutopilotAutoStop,
   recordAutopilotEvent,
   syncAutopilotWarning,
 } from "@/lib/information-agent/autopilot-settings";
+import { assertInformationAgentSaleCurrent } from "@/lib/information-agent/draft-checks";
 import {
   INFORMATION_AGENT_CANARY_ONLY_MESSAGE,
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
@@ -81,8 +84,9 @@ export type AutopilotRunSummary = {
   sent: number;
   skipped: Record<string, number>;
   /**
-   * Erreurs du passage, par code (`draft_error`, `cancel_failed`) : ni un candidat écarté, ni une erreur d'API.
-   * Journalisées dans l'évènement `run` (`error_<code>`) et signalées par l'alerte `run_errors`.
+   * Erreurs du passage, par code (`draft_error`, `cancel_failed`, `preview_error`, `mark_failed`) : ni un candidat
+   * écarté, ni une erreur d'API. Journalisées dans l'évènement `run` (`error_<code>`) et signalées par l'alerte
+   * `run_errors`.
    */
   errors: Record<string, number>;
   warnings: string[];
@@ -132,6 +136,8 @@ export type AutopilotDeps = {
   ) => Promise<AutopilotPreview>;
   cancelDraft: (missionId: string, settings: AutopilotSettings) => Promise<void>;
   markSimulated: (missionId: string) => Promise<void>;
+  /** Brouillons simulés en attente de validation (« Prêtes à valider »), pour le plafond de la simulation. */
+  countPendingSimulatedDrafts: () => Promise<number>;
   send: (
     draft: PreparedAutopilotDraft,
     fingerprint: string,
@@ -154,6 +160,13 @@ const KNOWN_WARNINGS = [
   "delayed_24h",
 ] as const;
 const SIMULATION_PER_RUN = 5;
+const LIVE_PER_RUN = 3;
+/**
+ * Bail du passage : `maxDuration = 300` de la route, plus 30 secondes de marge (T30, 14/11/2026). Un passage coupé
+ * par la plateforme ne tient plus la place du suivant, 10 minutes plus tard (avec 600 secondes, le bail expirait
+ * au moment même de ce passage).
+ */
+const AUTOPILOT_LEASE_SECONDS = 330;
 
 /**
  * Refus attendus d'un brouillon : les garde-fous de `createAdminInformationAgentDraft` refusent par une
@@ -244,7 +257,7 @@ export function defaultAutopilotDeps(
         ),
       }),
     isAdmin: isActiveAdmin,
-    claimLease: () => claimCronLease("information-agent-autopilot", 600),
+    claimLease: () => claimCronLease("information-agent-autopilot", AUTOPILOT_LEASE_SECONDS),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
     findCandidates: (settings, now, limit) =>
       findAutopilotCandidates({ settings, now, limit, env }),
@@ -267,17 +280,16 @@ export function defaultAutopilotDeps(
     },
     cancelDraft: (missionId, settings) =>
       cancelAutopilotDraft(settings.actingAdminId ?? "", missionId),
+    // Fusion faite par la base, en une instruction (T8) : aucune lecture préalable qui, en échec, ferait écraser
+    // `metadata` (le brouillon passerait pour celui d'un administrateur). Refus contrôlé si ce n'est plus un
+    // brouillon du pilote ; toute erreur remonte.
     markSimulated: async (missionId) => {
-      const { data } = await supabaseAdmin
-        .from("information_agent_missions")
-        .select("metadata")
-        .eq("id", missionId)
-        .maybeSingle();
-      await supabaseAdmin
-        .from("information_agent_missions")
-        .update({ metadata: { ...asObject(data?.metadata ?? null), autopilot_simulated: true } })
-        .eq("id", missionId);
+      const { error } = await supabaseAdmin.rpc("mark_information_agent_autopilot_simulated", {
+        p_mission_id: missionId,
+      });
+      if (error) throw error;
     },
+    countPendingSimulatedDrafts: async () => (await loadPendingSimulatedDrafts({ limit: 1 })).total,
     send: async (draft, fingerprint, settings, runId, checks) => {
       await runAdminInformationAgentAction({
         auth: actingAuth(settings.actingAdminId ?? ""),
@@ -304,9 +316,27 @@ export function defaultAutopilotDeps(
 }
 
 /**
+ * Brouillon réutilisé devenu caduc : la vente a changé depuis sa préparation (date ou mise à prix), ou n'est plus
+ * disponible. Même contrôle que l'aperçu (`assertInformationAgentSaleCurrent`) : son refus (409) n'est pas un rejet
+ * de politique, le brouillon est annulé et le candidat écarté `draft_stale` (T1, 14/11/2026). Le délai de 30 jours
+ * par destinataire, l'autre cause d'un tel refus, est appliqué dès la sélection.
+ */
+async function reusedDraftIsStale(
+  mission: Parameters<typeof assertInformationAgentSaleCurrent>[0],
+): Promise<boolean> {
+  try {
+    await assertInformationAgentSaleCurrent(mission);
+    return false;
+  } catch (error) {
+    if (error instanceof PublicApiError && error.status === 409) return true;
+    throw error;
+  }
+}
+
+/**
  * Brouillon du pilote pour un candidat : le brouillon du pilote est réutilisé s'il est à jour (même révision
- * du gabarit publié), sinon régénéré. Un brouillon d'administrateur n'est jamais touché (le candidat est
- * écarté en amont s'il en existe un).
+ * du gabarit publié, vente inchangée), sinon régénéré, ou annulé s'il est caduc. Un brouillon d'administrateur
+ * n'est jamais touché (le candidat est écarté en amont s'il en existe un).
  */
 export async function prepareAutopilotDraft(
   candidate: AutopilotCandidate,
@@ -331,6 +361,10 @@ export async function prepareAutopilotDraft(
       asObject(row.metadata).email_content_template_revision === template.revision,
   );
   if (current) {
+    if (await reusedDraftIsStale(current)) {
+      await cancelAutopilotDraft(adminId, current.id);
+      return { skip: "draft_stale" };
+    }
     return {
       missionId: current.id,
       recipientEmail: current.recipient_email,
@@ -441,9 +475,20 @@ export async function runInformationAgentAutopilot(
       }
     }
 
-    // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement.
+    // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement. En simulation, les brouillons simulés en
+    //    attente sont plafonnés : plafond atteint, aucune recherche, rien n'est préparé tant qu'un administrateur
+    //    n'en a pas envoyé ou annulé.
     const live = settings.mode === "live";
-    const search = await deps.findCandidates(settings, now, live ? 3 : SIMULATION_PER_RUN);
+    const wanted = live
+      ? LIVE_PER_RUN
+      : Math.min(
+          SIMULATION_PER_RUN,
+          AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS - (await deps.countPendingSimulatedDrafts()),
+        );
+    const search: AutopilotCandidateSearch =
+      wanted > 0
+        ? await deps.findCandidates(settings, now, wanted)
+        : { candidates: [], skipped: { simulated_backlog: 1 }, examined: 0 };
     summary.examined = search.examined;
     summary.skipped = { ...search.skipped };
     const skip = (code: string) => {
@@ -545,7 +590,13 @@ export async function runInformationAgentAutopilot(
         // Seuls les brouillons journalisés « aurait envoyé » pendant ce passage comptent : un brouillon déjà
         // simulé par un passage précédent reste en attente sans être recompté.
         if (!draft.alreadySimulated) {
-          await deps.markSimulated(draft.missionId);
+          try {
+            await deps.markSimulated(draft.missionId);
+          } catch (error) {
+            // Brouillon gardé sans marque ni évènement : le passage suivant le reprend et le marque.
+            runError("mark_failed", error, candidate.saleId);
+            continue;
+          }
           await deps.record("would_send", runId, {
             saleId: candidate.saleId,
             missionId: draft.missionId,

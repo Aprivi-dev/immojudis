@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   registry: vi.fn(),
   history: vi.fn(),
   excluded: vi.fn(),
+  pending: vi.fn(),
+  cooldown: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -39,6 +41,10 @@ vi.mock("@/lib/information-agent/autopilot-facts", () => ({
 }));
 vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   loadExcludedIdentityKeys: mocks.excluded,
+  loadPendingSimulatedDrafts: mocks.pending,
+}));
+vi.mock("@/lib/information-agent/recipient-cooldown", () => ({
+  assertInformationAgentRecipientCooldown: mocks.cooldown,
 }));
 vi.mock("@/lib/information-agent/contacts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/information-agent/contacts")>()),
@@ -48,6 +54,7 @@ vi.mock("@/lib/information-agent/contacts", async (importOriginal) => ({
 
 import { findAutopilotCandidates } from "@/lib/information-agent/autopilot-candidates";
 import type { AutopilotSettings } from "@/lib/information-agent/autopilot-rules";
+import { PublicApiError } from "@/lib/api-errors";
 
 const SALE_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = new Date("2026-11-03T09:30:00Z");
@@ -89,6 +96,8 @@ beforeEach(() => {
   mocks.allowed.mockResolvedValue(undefined);
   mocks.persist.mockResolvedValue(undefined);
   mocks.excluded.mockResolvedValue(new Set());
+  mocks.pending.mockResolvedValue({ rows: [], total: 0 });
+  mocks.cooldown.mockResolvedValue(undefined);
   mocks.registry.mockResolvedValue({
     firstRecordedAt: "2026-11-01T10:00:00Z",
     observedAt: "2026-11-01T10:00:00Z",
@@ -310,5 +319,80 @@ describe("file du pilote : les ventes refusées d'avance ne consomment pas les 2
         "me.durand@cabinet-durand.example.test",
       ]);
     });
+  });
+});
+
+describe("T1 (14/11/2026) : aucun brouillon caduc ne part en aperçu", () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const DUPONT = "me.dupont@cabinet-dupont.example.test";
+  /** Vente de Maître Dupont (même avocat, même adresse) ou d'un autre avocat. */
+  const saleOf = (n: number, lawyer: "dupont" | "autre") =>
+    sale({
+      id: id(n),
+      lawyer_name: lawyer === "dupont" ? "Maître Jean Dupont" : `Maître Paul Martin${n}`,
+      lawyer_contact:
+        lawyer === "dupont" ? DUPONT : `me.martin${n}@cabinet-martin-${n}.example.test`,
+    });
+
+  function queue(sales: Array<ReturnType<typeof sale>>) {
+    const byId = new Map(sales.map((item) => [item.id as string, item]));
+    mocks.rpc.mockResolvedValue({
+      data: { items: sales.map((item) => ({ id: item.id })) },
+      error: null,
+    });
+    mocks.sale.mockImplementation(async ({ saleId }: { saleId: string }) => byId.get(saleId));
+  }
+
+  it("envoi manuel à un avocat qui a 3 ventes candidates : ses autres ventes sont écartées avant tout brouillon", async () => {
+    // Ventes 1 à 3 : Maître Dupont. Le propriétaire a envoyé à la main le brouillon de la vente 1 (elle quitte
+    // la file) ; les ventes 2 et 3 ont un brouillon simulé en attente ; la vente 4 (Dupont) n'en a pas ; la
+    // vente 5 est celle d'un autre avocat.
+    queue([saleOf(2, "dupont"), saleOf(3, "dupont"), saleOf(4, "dupont"), saleOf(5, "autre")]);
+    mocks.pending.mockResolvedValue({
+      rows: [
+        { id: "draft-2", sale_id: id(2), created_at: "2026-11-16T08:30:00Z" },
+        { id: "draft-3", sale_id: id(3), created_at: "2026-11-16T08:30:00Z" },
+      ],
+      total: 2,
+    });
+    mocks.cooldown.mockImplementation(async ({ email }: { email: string }) => {
+      if (email === DUPONT) {
+        throw new PublicApiError("Ce destinataire a déjà été sollicité le 17/11/2026.", 409);
+      }
+    });
+
+    const result = await search();
+
+    expect(result.candidates.map((candidate) => candidate.saleId)).toEqual([id(5)]);
+    expect(result.skipped).toEqual({ simulated_draft_pending: 2, recipient_cooldown: 1 });
+    // Les ventes déjà simulées sont écartées par la file : ni examen, ni relevé enregistré.
+    expect(result.examined).toBe(2);
+    expect(mocks.persist).toHaveBeenCalledTimes(2);
+    expect(mocks.pending).toHaveBeenCalledWith(
+      expect.objectContaining({ saleIds: [id(2), id(3), id(4), id(5)] }),
+    );
+  });
+
+  it("délai de 30 jours : vérifié avec l'adresse et toutes les clés d'identité, comme à la création du brouillon", async () => {
+    mocks.sale.mockResolvedValue(
+      sale({
+        lawyer_name: "Maître Jean Dupont",
+        lawyer_contact: "contact@cabinet-durand.example.test",
+      }),
+    );
+    await search();
+    expect(mocks.cooldown).toHaveBeenCalledExactlyOnceWith({
+      email: "contact@cabinet-durand.example.test",
+      identityKeys: ["lawyer|bordeaux|dupont jean", "structure|domain|cabinet-durand.example.test"],
+      now: NOW,
+    });
+  });
+
+  it("une lecture impossible du délai de 30 jours remonte : elle n'écarte ni n'admet personne", async () => {
+    mocks.sale.mockResolvedValue(
+      sale({ lawyer_name: "Maître Jean Dupont", lawyer_contact: DUPONT }),
+    );
+    mocks.cooldown.mockRejectedValue(new Error("base indisponible"));
+    await expect(search()).rejects.toThrow("base indisponible");
   });
 });

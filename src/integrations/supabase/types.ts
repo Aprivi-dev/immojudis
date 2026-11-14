@@ -16168,6 +16168,10 @@ export type Database = {
         Args: { p_changes: Json; p_reason: string };
         Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
       };
+      mark_information_agent_autopilot_simulated: {
+        Args: { p_mission_id: string };
+        Returns: undefined;
+      };
       information_agent_indicators: {
         Args: { p_now?: string; p_since?: string };
         Returns: Json;

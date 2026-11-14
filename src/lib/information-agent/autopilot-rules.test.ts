@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTOPILOT_ART14_MAX_DAYS,
   autopilotBudgetDecision,
   autopilotCaps,
   autopilotPhase,
@@ -7,6 +8,7 @@ import {
   autopilotRunGate,
   evaluateAutopilotCandidate,
   evaluateAutopilotSafety,
+  nextAutopilotRunAt,
   parseAutopilotStats,
   type AutopilotCandidateFacts,
   type AutopilotSettings,
@@ -108,6 +110,27 @@ describe("plage d'envoi (Europe/Paris)", () => {
       code: "outside_window",
     });
     expect(autopilotRunGate(settings(), NOW)).toEqual({ ok: true });
+  });
+
+  it("prochain passage : prochain multiple de 10 minutes que le garde laisse passer (P12)", () => {
+    const next = (at: string, overrides: Partial<AutopilotSettings> = {}) =>
+      nextAutopilotRunAt(settings(overrides), new Date(at))?.toISOString() ?? null;
+    // Mardi 10 h 31 à Paris : 10 h 40.
+    expect(next("2026-11-03T09:31:00Z")).toBe("2026-11-03T09:40:00.000Z");
+    // Lundi 16/11, 8 h à Paris : rien avant le passage de 9 h 30.
+    expect(next("2026-11-16T07:00:00Z")).toBe("2026-11-16T08:30:00.000Z");
+    // Pause de midi : 14 h.
+    expect(next("2026-11-03T10:31:00Z")).toBe("2026-11-03T13:00:00.000Z");
+    // Vendredi soir : lundi 9 h 30 ; veille du 11 novembre (férié) : jeudi 9 h 30.
+    expect(next("2026-11-06T16:00:00Z")).toBe("2026-11-09T08:30:00.000Z");
+    expect(next("2026-11-10T16:00:00Z")).toBe("2026-11-12T08:30:00.000Z");
+    // Pause : premier passage après sa fin.
+    expect(next("2026-11-03T09:31:00Z", { pausedUntil: "2026-11-04T09:05:00Z" })).toBe(
+      "2026-11-04T09:10:00.000Z",
+    );
+    // Éteint ou arrêté automatiquement : aucun passage sans action d'un administrateur.
+    expect(next("2026-11-03T09:31:00Z", { mode: "off" })).toBeNull();
+    expect(next("2026-11-03T09:31:00Z", { autoStoppedAt: "2026-11-03T09:00:00Z" })).toBeNull();
   });
 });
 
@@ -360,10 +383,17 @@ describe("candidat du pilote", () => {
         verdict({ contactFirstRecordedAt: "2026-09-01T10:00:00Z", alreadyInformed: true }),
       ).toEqual({ ok: true });
     });
-    it("la règle est réglable : délai allongé, ou règle désactivée", () => {
+    it("la règle n'est plus désactivable et son délai ne dépasse jamais 30 jours (J9, 14/11/2026)", () => {
       const old = { contactFirstRecordedAt: "2026-09-01T10:00:00Z" };
-      expect(verdict(old, { art14MaxAgeDays: 90 })).toEqual({ ok: true });
-      expect(verdict(old, { art14RuleEnabled: false })).toEqual({ ok: true });
+      const expired = { ok: false, code: "art14_window_expired" };
+      // Une valeur antérieure à la contrainte de la base (90 jours, règle coupée) reste sans effet.
+      expect(verdict(old, { art14MaxAgeDays: 90 })).toEqual(expired);
+      expect(verdict(old, { art14RuleEnabled: false })).toEqual(expired);
+      const recent = { contactFirstRecordedAt: "2026-10-31T10:00:00Z" };
+      expect(verdict(recent, { art14MaxAgeDays: 90 })).toEqual({ ok: true });
+      // Un délai plus court, de 1 à 30 jours, s'applique.
+      expect(verdict(recent, { art14MaxAgeDays: 2 })).toEqual(expired);
+      expect(AUTOPILOT_ART14_MAX_DAYS).toBe(30);
     });
   });
 

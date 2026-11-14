@@ -4,7 +4,10 @@
  */
 import { formatNumericDateTime } from "@/lib/format/dates";
 import {
+  AUTOPILOT_ART14_MAX_DAYS,
+  AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
   autopilotCaps,
+  nextAutopilotRunAt,
   type AutopilotSettings,
   type AutopilotStats,
 } from "@/lib/information-agent/autopilot-rules";
@@ -16,6 +19,8 @@ export type AutopilotPreparedDraft = { missionId: string; saleId: string; label:
 export type AutopilotView = {
   mode: AutopilotSettings["mode"];
   modeLabel: string;
+  /** « Dernier passage : … · prochain passage : … », heure de Paris. */
+  runs: string;
   /** Arrêté automatiquement (mode « off » posé par un seuil) ; le motif en clair est dans `notice`. */
   autoStopped: boolean;
   /** Raison d'un arrêt automatique ou d'une pause, déjà rédigée ; null sinon. */
@@ -27,12 +32,19 @@ export type AutopilotView = {
     actingAdminId: string | null;
     capTotalOverride: number | null;
     allowLicitorDecoded: boolean;
+    /** Faux seulement pour une valeur antérieure à la contrainte de la base : l'écran propose de la rétablir. */
     art14RuleEnabled: boolean;
     art14MaxAgeDays: number;
+    /** État de la règle de l'article 14 et bornes du délai, déjà rédigés. */
+    art14Label: string;
     aipdLabel: string;
   };
   readiness: { ready: boolean; checks: Array<{ label: string; ok: boolean; detail: string }> };
-  ready: { count: number; items: AutopilotPreparedDraft[] };
+  /**
+   * Brouillons simulés en attente (`count` : tous, `items` : les plus récents, au plus le plafond), avec leur
+   * plafond (`label`) et, une fois atteint, ce qu'il faut faire pour que la simulation reprenne (`notice`).
+   */
+  ready: { count: number; label: string; notice: string | null; items: AutopilotPreparedDraft[] };
   events: Array<{ at: string; label: string; detail: string }>;
 };
 
@@ -66,6 +78,102 @@ const EVENT_LABELS: Record<string, string> = {
   wrong_recipient: "Mauvais destinataire",
 };
 
+/**
+ * Codes d'un passage du pilote : candidats écartés, refus, erreurs, gardes de tête (T31 et P12, 14/11/2026). Une
+ * ligne par code écrit dans `autopilot-rules.ts`, `autopilot-candidates.ts`, `autopilot-send-guard.ts` et
+ * `information-agent-autopilot.ts` : `autopilot-view.test.ts` relit ces fichiers et échoue sur un code sans libellé.
+ * Lexique commenté pour l'exploitation : `docs/runbooks/information-agent.md` (« Piloter le pilote »).
+ */
+const AUTOPILOT_CODE_LABELS: Record<string, string> = {
+  // Gardes de tête de passage.
+  disabled: "pilote éteint",
+  auto_stopped: "arrêt automatique, réactivation manuelle",
+  paused: "pilote en pause",
+  outside_window: "hors de la plage d’envoi",
+  not_production: "hors de la production",
+  busy: "un autre passage est en cours",
+  not_ready: "contrôle de préparation au mode réel non satisfait",
+  not_live: "pilote plus en mode réel",
+  // Sélection : file, puis examen du candidat.
+  not_class_a: "aucun contact unique dans l’annonce",
+  role_not_lawyer: "destinataire autre qu’un avocat",
+  consumer_domain: "messagerie grand public",
+  licitor_decoded_refused: "adresse Licitor décodée, non ouverte au pilote",
+  sale_too_soon: "vente dans moins de 10 jours",
+  notary_send_closed: "vente notariale, envois aux notaires fermés",
+  simulated_draft_pending: "brouillon simulé déjà en attente de validation",
+  contact_ambiguous: "contact ambigu",
+  address_invalid: "adresse invalide",
+  opposed: "opposition enregistrée",
+  court_registry_refused: "greffe, jamais sollicité par le pilote",
+  source_not_sale_listing: "adresse absente de l’annonce",
+  identity_incomplete: "identité incomplète (nom et barreau ou ville)",
+  address_stale: "adresse relevée il y a plus de 6 mois",
+  mx_invalid: "domaine sans messagerie",
+  no_unpublished_gap: "aucune information à demander",
+  admin_draft_exists: "brouillon d’un administrateur sur la vente",
+  identity_excluded: "identité exclue du pilote",
+  art14_unknown: "article 14 : date du premier relevé inconnue",
+  art14_window_expired: "article 14 : adresse relevée depuis plus longtemps que le délai",
+  reply_pause: "réponse reçue il y a moins de 90 jours",
+  silence_pause: "deux envois sans réponse en 6 mois",
+  recipient_cooldown: "destinataire déjà sollicité il y a moins de 30 jours",
+  // Plafonds.
+  simulated_backlog: "plafond des brouillons simulés en attente atteint",
+  cap_reached: "plafond du jour atteint",
+  hour_cap: "plafond de l’heure atteint",
+  interval: "intervalle entre deux envois",
+  shared_domain_cap: "plafond du domaine partagé atteint",
+  structure_count_incomplete: "compte par office ou service incomplet",
+  structure_unknown: "office ou service inconnu",
+  structure_cap: "plafond de l’office ou du service atteint",
+  domain_cap: "plafond du cabinet atteint",
+  domain_spacing: "même cabinet il y a moins de 15 minutes",
+  court_cap: "plafond du tribunal atteint",
+  approval_cap: "plafond de validations atteint",
+  // Brouillon, aperçu et envoi.
+  interrupted: "pilote coupé pendant le passage",
+  draft_refused: "brouillon refusé par les garde-fous",
+  draft_recipient_mismatch: "brouillon adressé à un autre destinataire",
+  draft_stale: "brouillon caduc (vente changée), annulé",
+  policy_rejected: "rejet de politique à l’aperçu",
+  content_rejected: "rejet de contenu à l’aperçu",
+  send_refused: "refusé au dernier contrôle avant l’envoi",
+  rate_limited: "limite de débit du fournisseur",
+  send_error: "erreur du fournisseur d’envoi",
+  // Erreurs du passage.
+  run_errors: "passage en erreur",
+  partial_after_send: "passage interrompu après un envoi",
+  draft_error: "erreur à la préparation du brouillon",
+  cancel_failed: "annulation d’un brouillon impossible",
+  preview_error: "aperçu impossible (panne passagère)",
+  mark_failed: "brouillon simulé non marqué",
+};
+
+/** Lecture d'une table sans remonter au prototype (`constructor`, `toString`…). */
+function own(table: Record<string, string>, key: string): string | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/** Libellé français d'un code du pilote (passage ou arrêt automatique) ; null s'il n'est pas répertorié. */
+export function autopilotCodeLabel(code: string): string | null {
+  return own(AUTOPILOT_CODE_LABELS, code) ?? own(AUTOPILOT_STOP_LABELS, code) ?? null;
+}
+
+/** Jamais un code brut à l'écran sans le dire : un code inconnu est signalé comme tel. */
+function codeText(code: unknown): string {
+  const value = String(code ?? "");
+  return autopilotCodeLabel(value) ?? `motif non répertorié (${value})`;
+}
+
+/** « libellé (n) » pour chaque compte `<préfixe><code>` du journal d'un passage. */
+function countsByCode(record: Record<string, unknown>, prefix: string): string {
+  return Object.entries(record)
+    .filter(([key, count]) => key.startsWith(prefix) && typeof count === "number" && count > 0)
+    .map(([key, count]) => `${codeText(key.slice(prefix.length))} (${count})`)
+    .join(", ");
+}
+
 const MODE_LABELS = {
   off: "Éteint",
   simulation: "Simulation (aucun envoi)",
@@ -77,16 +185,43 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
     details && typeof details === "object" && !Array.isArray(details)
       ? (details as Record<string, unknown>)
       : {};
-  if (kind === "auto_stop" && reason) return AUTOPILOT_STOP_LABELS[reason] ?? reason;
+  if (kind === "auto_stop" && reason) return codeText(reason);
   if (reason) return reason;
   if (kind === "run") {
-    const errors = Object.entries(record)
-      .filter(([key, count]) => key.startsWith("error_") && typeof count === "number")
-      .reduce((total, [, count]) => total + (count as number), 0);
-    return `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées${errors ? `, ${errors} en erreur` : ""}`;
+    if (record.code) return codeText(record.code);
+    const skipped = countsByCode(record, "skip_");
+    const errors = countsByCode(record, "error_");
+    return [
+      `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées`,
+      skipped ? `écartées : ${skipped}` : null,
+      errors ? `en erreur : ${errors}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
-  if (kind === "skip") return String(record.code ?? "");
+  if (kind === "skip") {
+    return record.reason
+      ? `${codeText(record.code)} : ${codeText(record.reason)}`
+      : codeText(record.code);
+  }
+  if (kind === "send_error") {
+    return record.status === 429 ? codeText("rate_limited") : codeText("send_error");
+  }
   return "";
+}
+
+/** « Dernier passage : … · prochain passage : … » (P12). */
+function runsLine(settings: AutopilotSettings, now: Date, lastRunAt: string | null): string {
+  const next = nextAutopilotRunAt(settings, now);
+  // Un arrêt automatique éteint aussi le pilote : il est nommé en premier, c'est lui qu'il faut lever.
+  const nextText = next
+    ? formatNumericDateTime(next.toISOString())
+    : settings.autoStoppedAt
+      ? `aucun (${codeText("auto_stopped")})`
+      : settings.mode === "off"
+        ? `aucun (${codeText("disabled")})`
+        : "aucun dans les 14 prochains jours";
+  return `Dernier passage : ${lastRunAt ? formatNumericDateTime(lastRunAt) : "aucun"} · prochain passage : ${nextText}`;
 }
 
 const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
@@ -99,6 +234,7 @@ export function buildAutopilotView({
   env,
   now,
   events,
+  lastRunAt,
   prepared,
 }: {
   settings: AutopilotSettings;
@@ -107,15 +243,17 @@ export function buildAutopilotView({
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
   events: Array<{ at: string; kind: string; reason: string | null; details: unknown }>;
-  prepared: AutopilotPreparedDraft[];
+  /** Date du dernier évènement `run` du journal. */
+  lastRunAt: string | null;
+  /** Brouillons simulés en attente : leur nombre total et les plus récents. */
+  prepared: { total: number; items: AutopilotPreparedDraft[] };
 }): AutopilotView {
   const caps = autopilotCaps(stats, settings, env, now);
   let notice: AutopilotView["notice"] = null;
   if (settings.autoStoppedAt) {
-    const reason = settings.autoStopReason ?? "";
     notice = {
       tone: "alert",
-      text: `Arrêt automatique le ${formatNumericDateTime(settings.autoStoppedAt)} : ${AUTOPILOT_STOP_LABELS[reason] ?? reason}. La réactivation est manuelle et journalisée.`,
+      text: `Arrêt automatique le ${formatNumericDateTime(settings.autoStoppedAt)} : ${codeText(settings.autoStopReason)}. La réactivation est manuelle et journalisée.`,
     };
   } else if (settings.pausedUntil && Date.parse(settings.pausedUntil) > now.getTime()) {
     notice = {
@@ -128,6 +266,7 @@ export function buildAutopilotView({
   return {
     mode: settings.mode,
     modeLabel: MODE_LABELS[settings.mode],
+    runs: runsLine(settings, now, lastRunAt),
     autoStopped: Boolean(settings.autoStoppedAt),
     notice,
     sentToday: `${stats.sentTodayTotal} sur ${caps.dayCap}`,
@@ -150,6 +289,11 @@ export function buildAutopilotView({
       allowLicitorDecoded: settings.allowLicitorDecoded,
       art14RuleEnabled: settings.art14RuleEnabled,
       art14MaxAgeDays: settings.art14MaxAgeDays,
+      art14Label: `${
+        settings.art14RuleEnabled
+          ? "appliqué à chaque candidat, non désactivable"
+          : "désactivé dans les réglages enregistrés (le pilote l’applique quand même) : à rétablir"
+      } · délai d’information : ${Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS)} jours (réglable de 1 à ${AUTOPILOT_ART14_MAX_DAYS})`,
       aipdLabel: settings.aipdAttestedAt
         ? `Attestée le ${formatNumericDateTime(settings.aipdAttestedAt)} (version ${settings.aipdVersion})`
         : "Non attestée",
@@ -158,7 +302,15 @@ export function buildAutopilotView({
       ready: readiness.ready,
       checks: readiness.checks.map(({ label, ok, detail }) => ({ label, ok, detail })),
     },
-    ready: { count: prepared.length, items: prepared },
+    ready: {
+      count: prepared.total,
+      label: `Prêtes à valider (${prepared.total} sur ${AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS} au plus)`,
+      notice:
+        prepared.total >= AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS
+          ? "Plafond atteint : la simulation ne prépare plus de brouillon. Envoyez ou annulez ceux que vous ne retenez pas pour qu’elle reprenne."
+          : null,
+      items: prepared.items,
+    },
     events: events.map((event) => ({
       at: formatNumericDateTime(event.at),
       label: EVENT_LABELS[event.kind] ?? event.kind,

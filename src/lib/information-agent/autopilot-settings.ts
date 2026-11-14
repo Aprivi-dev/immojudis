@@ -199,6 +199,51 @@ export async function loadExcludedIdentityKeys(keys: readonly string[]): Promise
   return new Set((data ?? []).map((row) => row.identity_key));
 }
 
+export type PendingSimulatedDrafts = {
+  /** Brouillons lus (au plus `limit`), du plus récent au plus ancien. */
+  rows: Array<{ id: string; sale_id: string | null; created_at: string }>;
+  /** Nombre total de brouillons simulés en attente (dans les ventes demandées, si `saleIds` est donné). */
+  total: number;
+};
+
+/**
+ * Brouillons simulés en attente de validation (« Prêtes à valider ») : brouillon (`draft`) du pilote
+ * (`metadata.trigger = autopilot`) marqué `autopilot_simulated` par `mark_information_agent_autopilot_simulated`.
+ * Seule définition, partagée par le plafond du passage, la sélection (vente déjà simulée) et l'écran. Une lecture
+ * impossible est propagée.
+ */
+export async function loadPendingSimulatedDrafts({
+  saleIds,
+  limit,
+}: {
+  saleIds?: readonly string[];
+  limit: number;
+}): Promise<PendingSimulatedDrafts> {
+  let query = supabaseAdmin
+    .from("information_agent_missions")
+    .select("id,sale_id,created_at", { count: "exact" })
+    .eq("status", "draft")
+    .eq("metadata->>trigger", "autopilot")
+    .eq("metadata->>autopilot_simulated", "true");
+  if (saleIds) query = query.in("sale_id", [...saleIds]);
+  const { data, error, count } = await query.order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  if (count == null) throw new Error("Pending simulated drafts count missing");
+  return { rows: data ?? [], total: count };
+}
+
+/** Date du dernier passage journalisé (évènement `run`), nulle s'il n'y en a jamais eu. */
+export async function loadLastAutopilotRunAt(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("at")
+    .eq("kind", "run")
+    .order("at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0]?.at ?? null;
+}
+
 export type AutopilotEventRow = {
   id: string;
   at: string;
