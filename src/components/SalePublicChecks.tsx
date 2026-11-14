@@ -4,6 +4,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { Badge } from "@/components/ui/primitives";
 import {
+  cahierConsultationLine,
   getSaleProcedure,
   saleVerificationExplanation,
   saleVerificationLabel,
@@ -32,6 +33,7 @@ export function SalePublicChecks({
   const verified = ["verified", "cross_checked"].includes(procedure.verificationStatus);
   const points = pointsToVerify(preview, { occupancyVisible: false });
   const documentCount = Math.max(0, preview.document_count ?? 0);
+  const cahier = cahierConsultationLine(procedure);
   return (
     <>
       <div className={styles.checks}>
@@ -58,6 +60,15 @@ export function SalePublicChecks({
         <SalePointsToVerify points={points} saleId={saleId} className={styles.points} />
       </div>
       <ul className={styles.docs} aria-label="Pièces et sources">
+        {/* Cible du lien « Où consulter le cahier » des mentions de l'avocat poursuivant : le cahier se
+            consulte sans compte (même ligne que la fiche des comptes, selon le type de vente). */}
+        {cahier ? (
+          <li>
+            <FileText aria-hidden />
+            <b>Cahier des conditions de vente</b>
+            <span>{cahier}</span>
+          </li>
+        ) : null}
         {documentCount > 0 ? (
           <li>
             <FileText aria-hidden />

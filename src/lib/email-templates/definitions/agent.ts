@@ -67,6 +67,8 @@ async function renderRequest(options: {
         ? null
         : "https://www.licitor.com/annonce/10/99/72/109972.html",
       courtRegistryDailyCap: options.court ? 3 : null,
+      // Avocat poursuivant : le pied annonce l'affichage de ses réponses sur la fiche (J10).
+      replyDisplay: options.court ? "court_registry" : "source_lawyer",
       aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
       privacyUrl: `${SAMPLE_APP_URL}/privacy`,
       optOutUrl: OPT_OUT_URL,

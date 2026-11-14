@@ -20,6 +20,8 @@ import type {
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import { decideAdminFactClaimClient, fetchAdminFactClaimDecisions } from "@/lib/client-api";
 import {
+  FACT_CLAIM_DECISIONS_SALE_PARAM,
+  FACT_CLAIM_DECISIONS_SECTION_ID,
   FACT_CLAIM_LOT_ATTACHMENTS,
   FACT_CLAIM_REJECT_REASONS,
   FACT_CLAIM_RESERVED_EVIDENCE_KINDS,
@@ -96,6 +98,17 @@ export function AdminFactClaimDecisionPanel() {
       setOffset(adminClampOffset(data.offset, data.limit, data.total));
     }
   }, [query.data]);
+  // Lien « Observations à décider » d'une vente (`factClaimDecisionsHref`) : la vente est lue dans l'adresse.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get(
+      FACT_CLAIM_DECISIONS_SALE_PARAM,
+    );
+    const match = requested ? UUID_IN_TEXT.exec(requested) : null;
+    if (!match) return;
+    setSaleInput(match[0]);
+    setSaleId(match[0].toLowerCase());
+    document.getElementById(FACT_CLAIM_DECISIONS_SECTION_ID)?.scrollIntoView?.({ block: "start" });
+  }, []);
 
   const decide = useMutation({
     mutationFn: decideAdminFactClaimClient,
@@ -135,6 +148,7 @@ export function AdminFactClaimDecisionPanel() {
 
   return (
     <section
+      id={FACT_CLAIM_DECISIONS_SECTION_ID}
       className="overflow-hidden rounded-xl border bg-white"
       aria-labelledby="fact-decision-title"
     >

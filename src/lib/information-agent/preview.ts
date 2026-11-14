@@ -43,7 +43,11 @@ import {
 } from "@/lib/information-agent/message-guards";
 import { assertInformationAgentQuestionsAllowed } from "@/lib/information-agent/recipient-questions";
 import { informationAgentAudienceInvitesDocuments } from "@/lib/information-agent/recipient-templates";
-import { missionRecipient, missionSaleReference } from "@/lib/information-agent/mission-identity";
+import {
+  missionRecipient,
+  missionSaleReference,
+  sentRecipientKind,
+} from "@/lib/information-agent/mission-identity";
 import { loadOwnedMission } from "@/lib/information-agent/mission-store";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import {
@@ -196,6 +200,7 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: addressOrigin.origin,
     saleReference: missionSaleReference(mission),
     structureOpposition: courtFallback ? null : missionTarget.structureOpposition,
+    recipientKind: sentRecipientKind(mission, recipient),
     env,
     preview: { blockers },
   });

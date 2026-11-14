@@ -368,7 +368,7 @@ function PrivacyRequestEditor({
           <p className="text-xs text-red-100">
             {request.userId
               ? "Exécuter l'effacement supprime définitivement le client Stripe, les données applicatives et le compte."
-              : "Exécuter l'effacement supprime définitivement les messages, dossiers et pièces de l'agent d'information liés à cette adresse, qui reste sur la liste des contacts à ne plus solliciter."}{" "}
+              : "Exécuter l'effacement supprime définitivement les messages, dossiers et pièces de l'agent d'information liés à cette adresse, qui reste sur la liste des contacts à ne plus solliciter. Traitez d'abord les « Retraits à faire » de cette adresse : après l'effacement, les valeurs affichées ne peuvent plus être listées."}{" "}
             Identité vérifiée requise ; action irréversible.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">

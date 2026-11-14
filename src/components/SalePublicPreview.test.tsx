@@ -1543,6 +1543,51 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     expect(
       within(docs).getByRole("link", { name: "Consulter Géorisques" }).getAttribute("href"),
     ).toBe("https://www.georisques.gouv.fr/");
+    // Vente notariale : pas de cahier des conditions de vente à consulter au greffe.
+    expect(docs.textContent).not.toContain("Cahier des conditions de vente");
+  });
+
+  it("dit, selon le type de vente, où consulter le cahier sans compte", () => {
+    const cahierLine = () =>
+      within(
+        within(screen.getByRole("region", { name: "Pièces et vérifications" })).getByRole("list", {
+          name: "Pièces et sources",
+        }),
+      )
+        .getAllByRole("listitem")
+        .find((item) => item.textContent?.startsWith("Cahier des conditions de vente"))
+        ?.textContent ?? null;
+    // Saisie immobilière confirmée : le greffe du juge de l'exécution ou l'avocat du créancier poursuivant.
+    renderFull({
+      sale_venue_type: "tribunal",
+      sale_legal_framework: "judicial_seizure",
+      document_count: 3,
+    });
+    expect(cahierLine()).toBe(
+      "Cahier des conditions de vente" +
+        "Consultable au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de l’avocat du créancier poursuivant",
+    );
+    cleanup();
+    // Autre vente au tribunal confirmée.
+    renderFull({ sale_venue_type: "tribunal", sale_legal_framework: "judicial_partition" });
+    expect(cahierLine()).toBe(
+      "Cahier des conditions de vente" +
+        "Consultable au greffe du tribunal judiciaire ou auprès de l’avocat poursuivant ; l’avis de vente indique où.",
+    );
+    cleanup();
+    // Type de vente non confirmé.
+    renderFull({ sale_venue_type: "tribunal", sale_verification_status: "pending" });
+    expect(cahierLine()).toBe(
+      "Cahier des conditions de vente" + "Le lieu de consultation figure dans l’avis de vente.",
+    );
+  });
+
+  it("dit, près des données clés, d'où viennent les données et ce qui seul fait foi", () => {
+    renderFull();
+    const synthesis = screen.getByRole("complementary", { name: "Synthèse de la vente" });
+    expect(synthesis.textContent).toContain(
+      "Les données de cette fiche viennent de l’annonce, des pièces ou de réponses de professionnels. Comme toute donnée de la fiche, elles sont à confirmer dans le cahier des conditions de vente (ou le cahier des charges d’une vente notariale) et les pièces officielles, qui seuls font foi.",
+    );
   });
 
   it("montre « Voir les N photos » seulement quand l'annonce en a d'autres", () => {
@@ -1613,8 +1658,9 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
 });
 
 describe("source « avocat poursuivant » sur la fiche publique", () => {
+  // Texte retenu le 14/11/2026, suivi du lien vers la section des pièces.
   const MENTION =
-    "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+    "Source : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier";
   const facts = {
     sale_venue_type: "tribunal" as SaleVenueType,
     property_type: "apartment",
@@ -1637,29 +1683,53 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
     });
     const mentions = screen.getAllByTestId("lawyer-fact-source").map((node) => node.textContent);
     expect(mentions).toEqual([
-      "Surface et nombre de pièces (sans les chambres) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-les dans le cahier des conditions de vente.",
+      "Source de la surface et du nombre de pièces (sans les chambres) : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier",
     ]);
   });
 
-  it("dit le texte validé sous la mise à prix, et borne la date au jour", () => {
+  it("dit le texte retenu après « Prix de départ, hors frais », et borne la date au jour", () => {
     renderPreview({
       ...facts,
       lawyer_fact_sources: [manual("starting_price_eur"), manual("sale_date")],
     });
-    const mentions = screen.getAllByTestId("lawyer-fact-source").map((node) => node.textContent);
+    const nodes = screen.getAllByTestId("lawyer-fact-source");
+    const mentions = nodes.map((node) => node.textContent);
     expect(mentions).toContain(MENTION);
     expect(mentions).toContain(
-      "Jour de la vente (sans l’heure) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+      "Source du jour de la vente (l’heure vient de l’annonce) : avocat poursuivant, message du 12/11/2026. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier",
     );
+    // P4 : la nature du prix d'abord, sa source ensuite.
+    const priceNote = screen.getByText(/^Prix de départ, hors frais/);
+    const priceMention = nodes.find((node) => node.textContent === MENTION)!;
+    expect(
+      priceNote.compareDocumentPosition(priceMention) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
-  it("dit « extraite automatiquement » pour une publication automatique", () => {
+  it("ouvre la définition des deux termes du glossaire et mène à la section des pièces", () => {
+    renderPreview({ ...facts, lawyer_fact_sources: [manual("starting_price_eur")] });
+    const mention = screen.getByTestId("lawyer-fact-source");
+    expect(
+      within(mention).getByRole("button", { name: "Définition : avocat poursuivant" }),
+    ).toBeTruthy();
+    expect(
+      within(mention).getByRole("button", {
+        name: "Définition : cahier des conditions de vente",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(mention).getByRole("link", { name: "Où consulter le cahier" }).getAttribute("href"),
+    ).toBe("#pieces-et-verifications");
+    expect(document.getElementById("pieces-et-verifications")).not.toBeNull();
+  });
+
+  it("dit « lu automatiquement » pour une publication automatique", () => {
     renderPreview({
       ...facts,
       lawyer_fact_sources: [{ key: "starting_price_eur", receivedOn: "2026-11-13", mode: "auto" }],
     });
     expect(screen.getByTestId("lawyer-fact-source").textContent).toBe(
-      "Information transmise par l’avocat poursuivant le 13/11/2026, extraite automatiquement, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+      "Source : avocat poursuivant, message du 13/11/2026, lu automatiquement. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche. Où consulter le cahier",
     );
   });
 
@@ -1673,7 +1743,9 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
       bedrooms_count: null,
       lawyer_fact_sources: [manual("land_surface_m2")],
     });
-    expect(screen.getByTestId("lawyer-fact-source").textContent).toMatch(/^Surface : information/);
+    expect(screen.getByTestId("lawyer-fact-source").textContent).toMatch(
+      /^Source de la surface : avocat poursuivant/,
+    );
   });
 
   it("ne dit rien sans réponse de l'avocat", () => {

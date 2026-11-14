@@ -1,5 +1,5 @@
-/* Mention « Information transmise par l'avocat poursuivant… » sous une valeur de la fiche. Texte
-   courant (ni couleur seule, ni icône seule), lisible sur mobile : il passe à la ligne librement. */
+/* Mention « Source : avocat poursuivant, message du … » sous une valeur de la fiche. Texte courant (ni
+   couleur seule, ni icône seule), lisible sur mobile : il passe à la ligne librement. */
 .mention {
   display: block;
   margin-top: 0.25rem;
@@ -8,4 +8,12 @@
   font-weight: 400;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+/* « Où consulter le cahier » : lien de texte vers la section des pièces de la page. */
+.cahierLink {
+  color: var(--gold-text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

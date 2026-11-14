@@ -12,8 +12,25 @@ import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
+import {
+  listInformationAgentPendingRegistryDecisions,
+  listInformationAgentWithdrawalTasks,
+} from "@/lib/admin-information-agent-withdrawals";
 import { asRecord as recordOrEmpty } from "@/lib/guards";
 import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { decideAdminFactClaim } from "@/lib/admin-fact-claim-decisions";
+import { translateFactClaimDatabaseError } from "@/lib/fact-claim-database-errors";
+import {
+  FACT_CLAIM_LOT_ATTACHMENTS,
+  type FactClaimLotAttachment,
+} from "@/lib/fact-claim-decisions";
+import {
+  INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE,
+  informationAgentFactRegistryField,
+  informationAgentOccupancyRefused,
+  type InformationAgentRegistryAcceptance,
+} from "@/lib/information-agent-registry-acceptance";
 
 export const adminInformationAgentReviewSchema = z.object({
   factId: z.string().guid(),
@@ -22,6 +39,18 @@ export const adminInformationAgentReviewSchema = z.object({
   /** "Caviardage vérifié": required to accept a document or a photo for publication. */
   redactionConfirmed: z.boolean().optional(),
   redactionVerifiedBy: z.string().trim().min(3).max(120).optional(),
+  /**
+   * Rattachement au lot de la décision du registre des pièces : exigé pour accepter un fait qui devient une
+   * observation du registre (`informationAgentFactRegistryField`).
+   */
+  lotAttachment: z
+    .enum(
+      Object.keys(FACT_CLAIM_LOT_ATTACHMENTS) as [
+        FactClaimLotAttachment,
+        ...FactClaimLotAttachment[],
+      ],
+    )
+    .optional(),
 });
 
 export type AdminInformationAgentReviewInput = z.output<typeof adminInformationAgentReviewSchema>;
@@ -134,8 +163,18 @@ export async function listAdminInformationAgentReview(
 
   // Simulation du moteur « publier ou relire » : rien en mode arrêt.
   const autoPublication = await loadAutoPublicationReviewAnnotations(facts);
+  // Tâches du registre (lot C) : valeurs d'un avocat opposé à retirer dans le mois, réponses acceptées sans
+  // décision au registre. Une lecture en échec ne fait pas tomber l'écran : la liste dit qu'elle est indisponible.
+  const [withdrawalTasks, pendingRegistryDecisions] = await Promise.all([
+    registryTaskList("withdrawal_tasks", () => listInformationAgentWithdrawalTasks()),
+    registryTaskList("pending_registry_decisions", () =>
+      listInformationAgentPendingRegistryDecisions(),
+    ),
+  ]);
 
   return {
+    withdrawalTasks,
+    pendingRegistryDecisions,
     cases: cases ?? [],
     facts,
     assets: assets ?? [],
@@ -147,6 +186,29 @@ export async function listAdminInformationAgentReview(
     messagesTotal,
     ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
   };
+}
+
+/** Une liste de tâches du registre, ou nul si sa lecture échoue (journalisé, sans rien relayer du message). */
+async function registryTaskList<T>(list: string, read: () => Promise<T[]>): Promise<T[] | null> {
+  try {
+    return await read();
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        scope: "admin.information-agent.review",
+        event: "registry_tasks_unavailable",
+        list,
+        code: databaseErrorCode(error),
+      }),
+    );
+    return null;
+  }
+}
+
+function databaseErrorCode(error: unknown): string | null {
+  return error && typeof error === "object" && "code" in error
+    ? String((error as { code: unknown }).code)
+    : null;
 }
 
 type FactSourceMessage = {
@@ -355,13 +417,28 @@ export type AdminInformationAgentReviewResponse = Awaited<
   ReturnType<typeof listAdminInformationAgentReview>
 >;
 
+export type AdminInformationAgentReviewResult = {
+  ok: true;
+  result: unknown;
+  /** Décision au registre des pièces après l'acceptation ; nul pour un rejet ou un fait hors registre. */
+  registry: InformationAgentRegistryAcceptance | null;
+};
+
+/**
+ * Relecture d'un fait extrait d'une réponse. Une pièce acceptée est publiée (dépôt préparé, chemin vérifié).
+ * Un fait qui devient une observation du registre des pièces (surface, terrain, pièces, occupation, mise à
+ * prix, date, type) est accepté en deux temps : le fait de l'agent (journal, observation créée par le pont),
+ * puis la décision d'acceptation au registre, au nom de l'administrateur connecté (`registry`). Si cette
+ * décision échoue, le fait reste accepté et la fiche garde la valeur de l'annonce : `registry.error` le dit, et
+ * l'observation attend sa décision dans « Observations à décider ».
+ */
 export async function reviewAdminInformationAgentFact({
   authToken,
   input,
 }: {
   authToken: string;
   input: AdminInformationAgentReviewInput;
-}) {
+}): Promise<AdminInformationAgentReviewResult> {
   const auth = await assertAdminAuth(authToken);
   if (input.decision === "accepted") {
     const publication = await stageApprovedEvidencePublication(input.factId, {
@@ -382,13 +459,15 @@ export async function reviewAdminInformationAgentFact({
           },
         );
         if (error) throw error;
-        return { ok: true, result: data };
+        return { ok: true, result: data, registry: null };
       } catch (error) {
         await abortFailedEvidencePublication(publication.factId, publication.publicPath);
         throw error;
       }
     }
   }
+  const registryAcceptance =
+    input.decision === "accepted" ? await registryAcceptanceOf(input) : null;
   const { data, error } = await supabaseAdmin.rpc("review_information_agent_fact_candidate", {
     p_reviewer_id: auth.userId,
     p_fact_id: input.factId,
@@ -396,8 +475,122 @@ export async function reviewAdminInformationAgentFact({
     p_notes: nullableRpcArg(input.notes || null),
   });
   if (error) throw error;
-  return { ok: true, result: data };
+  const registry = registryAcceptance
+    ? await recordRegistryAcceptance(auth, input.factId, registryAcceptance.lotAttachment)
+    : null;
+  return { ok: true, result: data, registry };
 }
+
+/**
+ * Avant toute écriture : le fait deviendra-t-il une observation du registre ? Si oui, le rattachement au lot
+ * est exigé, et une occupation que la fiche ne peut pas afficher est refusée (la base la refuse aussi).
+ */
+async function registryAcceptanceOf(
+  input: AdminInformationAgentReviewInput,
+): Promise<{ lotAttachment: FactClaimLotAttachment } | null> {
+  const { data: fact, error } = await supabaseAdmin
+    .from("information_agent_fact_candidates")
+    .select("fact_key,proposed_value")
+    .eq("id", input.factId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!fact || !informationAgentFactRegistryField(fact.fact_key)) return null;
+  if (informationAgentOccupancyRefused(fact.fact_key, recordOrEmpty(fact.proposed_value).value)) {
+    throw new PublicApiError(INFORMATION_AGENT_OCCUPANCY_REFUSED_MESSAGE, 409);
+  }
+  if (!input.lotAttachment) {
+    throw new PublicApiError(
+      "Indiquez le rattachement au lot avant d’accepter : seule une vente à un seul lot ou un lot identifié affiche la valeur.",
+      400,
+    );
+  }
+  return { lotAttachment: input.lotAttachment };
+}
+
+/**
+ * La décision d'acceptation au registre, écrite avec le client de la session (jeton de l'administrateur) :
+ * la base lit l'auteur dans le jeton. L'observation est celle que le pont vient de créer pour ce fait.
+ */
+async function recordRegistryAcceptance(
+  auth: SupabaseAuthContext,
+  factId: string,
+  lotAttachment: FactClaimLotAttachment,
+): Promise<InformationAgentRegistryAcceptance> {
+  // Le fait est déjà accepté : aucune erreur d'ici ne remonte en 500. Elle est rendue à l'écran, et la réponse
+  // apparaît dans « Réponses acceptées sans décision au registre ».
+  let claim: { id: string; auction_sale_id: string | null } | null;
+  try {
+    const lookup = await supabaseAdmin
+      .from("auction_fact_claims")
+      .select("id,auction_sale_id")
+      .eq("evidence_locator->>information_agent_fact_id", factId)
+      .maybeSingle();
+    if (lookup.error) throw lookup.error;
+    claim = lookup.data;
+  } catch (lookupError) {
+    console.warn(
+      JSON.stringify({
+        scope: "admin.information-agent.review",
+        event: "registry_claim_lookup_failed",
+        fact_id: factId,
+        code: databaseErrorCode(lookupError),
+      }),
+    );
+    return {
+      claimId: null,
+      saleId: null,
+      state: null,
+      error: "L’observation de cette réponse n’a pas pu être lue.",
+    };
+  }
+  if (!claim) {
+    return {
+      claimId: null,
+      saleId: null,
+      state: null,
+      error: "Aucune observation n’a été créée pour cette réponse.",
+    };
+  }
+  try {
+    const { result } = await decideAdminFactClaim({
+      auth,
+      input: { action: "accept", claimId: claim.id, lotAttachment },
+    });
+    return {
+      claimId: claim.id,
+      saleId: result.saleId ?? claim.auction_sale_id,
+      state: result.state,
+      error: null,
+    };
+  } catch (decisionError) {
+    const translated = translateFactClaimDatabaseError(decisionError);
+    console.warn(
+      JSON.stringify({
+        scope: "admin.information-agent.review",
+        event: "registry_acceptance_failed",
+        claim_id: claim.id,
+        code: databaseErrorCode(decisionError),
+      }),
+    );
+    return {
+      claimId: claim.id,
+      saleId: claim.auction_sale_id,
+      state: null,
+      error:
+        translated instanceof PublicApiError
+          ? translated.message
+          : "La décision n’a pas pu être enregistrée.",
+    };
+  }
+}
+
+/**
+ * Pièces jamais publiées (juridique-rgpd, 14/11/2026) : un procès-verbal descriptif ou un bail nomme les occupants
+ * ou le débiteur. Même liste que le noyau de publication (migration 20261119100900), qui reste juge.
+ */
+const UNPUBLISHABLE_DOCUMENT_KINDS = ["pv_huissier", "bail"] as const;
+const UNPUBLISHABLE_DOCUMENT_MESSAGE =
+  "Pièce non publiable : un procès-verbal descriptif ou un bail nomme les occupants ou le débiteur. Rejetez-la.";
 
 type StagedEvidencePublication = {
   factId: string;
@@ -455,11 +648,17 @@ async function stageApprovedEvidencePublication(
   }
   const { data: extraction, error: extractionError } = await supabaseAdmin
     .from("information_agent_evidence_extractions")
-    .select("status")
+    .select("status,document_kind")
     .eq("asset_id", asset.id)
     .single();
   if (extractionError || extraction?.status !== "completed") {
     throw new PublicApiError("L’analyse de la pièce doit être terminée avant sa publication.", 409);
+  }
+  if (
+    fact.fact_key === "document" &&
+    (UNPUBLISHABLE_DOCUMENT_KINDS as readonly unknown[]).includes(extraction.document_kind)
+  ) {
+    throw new PublicApiError(UNPUBLISHABLE_DOCUMENT_MESSAGE, 409);
   }
 
   // Mandatory human step: someone checked that personal data is redacted on the visible pages.

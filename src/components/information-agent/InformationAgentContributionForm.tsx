@@ -505,8 +505,8 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             Transmettre les informations demandées
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Utilisez ce formulaire pour envoyer une réponse, des liens ou des pièces utiles au
-            dossier. Une attestation de droit de transmission est demandée pour chaque dépôt.
+            Utilisez ce formulaire pour envoyer votre réponse et, si besoin, des liens. Une
+            attestation de droit de transmission est demandée pour chaque dépôt.
           </p>
         </header>
 
@@ -560,9 +560,9 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   {opposed ? null : (
                     <p className="mt-2 text-sm leading-relaxed">
                       Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
-                      sans cette vérification. Pour corriger ou retirer un envoi, répondez
-                      simplement à l’email reçu (référence {session.caseReference}). Vous pouvez
-                      fermer cette page.
+                      sans cette relecture. Pour corriger ou retirer un envoi, répondez simplement à
+                      l’email reçu (référence {session.caseReference}). Vous pouvez fermer cette
+                      page.
                     </p>
                   )}
                 </div>
@@ -614,8 +614,8 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     className="rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
                   >
                     Votre réponse et vos pièces sont lues par l’équipe Immojudis, avec l’aide d’un
-                    outil d’IA, puis vérifiées avant toute utilisation sur une fiche. Rien n’est
-                    publié sans cette vérification.
+                    outil d’IA, puis relues avant toute utilisation sur une fiche. Rien n’est publié
+                    sans cette relecture.
                   </p>
                   {error ? (
                     <p
@@ -724,6 +724,14 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   </Field>
 
                   <div>
+                    {/* Juridique-rgpd du 14/11/2026 (J15) : aucune pièce n'est demandée. */}
+                    <p
+                      id="files-warning"
+                      className="mb-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
+                    >
+                      Inutile de joindre des pièces. N’envoyez ni procès-verbal descriptif, ni bail,
+                      ni document qui nomme les occupants ou le débiteur.
+                    </p>
                     <label
                       className="block text-sm font-semibold text-foreground"
                       htmlFor="contribution-files"
@@ -766,7 +774,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         type="file"
                         multiple
                         accept={ACCEPTED_FILE_TYPES}
-                        {...fieldA11y("files", "files-help")}
+                        {...fieldA11y("files", "files-warning files-help")}
                         className="sr-only"
                         onChange={(event) => {
                           addFiles(Array.from(event.currentTarget.files ?? []));
@@ -840,8 +848,11 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     Immojudis ({legalValue(publisher.entityName)}) utilise ces informations pour
                     répondre à votre demande et vérifier les informations d’une vente, sur la base
                     de son intérêt légitime. Elles sont lues par l’équipe, avec l’aide d’un outil
-                    d’IA (prestataire établi aux États-Unis), puis vérifiées avant toute utilisation
-                    sur une fiche. Conservation : 12 à 24 mois. Vous pouvez vous opposer, demander
+                    d’IA (prestataire établi aux États-Unis), puis relues avant toute utilisation
+                    sur une fiche ; celles qui sont retenues peuvent être affichées sur la fiche
+                    publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant,
+                    certaines portent la mention de source décrite dans notre message, qui vous rend
+                    identifiable. Conservation : 12 à 24 mois. Vous pouvez vous opposer, demander
                     l’accès, la rectification ou l’effacement et saisir la CNIL :{" "}
                     <Link
                       href="/privacy"
