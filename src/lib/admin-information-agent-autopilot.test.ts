@@ -263,14 +263,14 @@ describe("panneau du pilote (serveur)", () => {
       now: new Date("2026-11-16T08:41:00Z"),
     });
     expect(view.runs).toBe(
-      "Dernier passage : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
+      "Dernier passage planifié : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
     );
     mocks.settings.mockResolvedValue({ ...settings, mode: "off" });
     mocks.lastRun.mockResolvedValue(null);
     expect(
       (await getAdminAutopilotView("token", { env: {}, now: new Date("2026-11-16T08:41:00Z") }))
         .runs,
-    ).toBe("Dernier passage : aucun · prochain passage : aucun (pilote éteint)");
+    ).toBe("Dernier passage planifié : aucun · prochain passage : aucun (pilote éteint)");
   });
 
   it("un passage en erreur se lit dans le journal du panneau", async () => {
@@ -605,7 +605,7 @@ describe("passage de simulation lancé à la main", () => {
     expect(response).toEqual({
       onDemandRun: {
         outcome: "finished",
-        text: "Passage de simulation terminé : 3 examinées, 1 préparée, 1 simulée. Aucun envoi.",
+        text: "Passage de simulation terminé : 3 examinées, 1 préparée, 1 simulée · écartées : aucun contact unique dans l’annonce (2). Aucun envoi.",
       },
     });
     expect(mocks.events).not.toHaveBeenCalled();
@@ -657,7 +657,7 @@ describe("passage de simulation lancé à la main", () => {
     // Examens à 0, 7 et 14 s (14 + 7 ≤ 23) ; à 21 s, le candidat trouvé n'est pas entamé.
     expect(response.onDemandRun).toEqual({
       outcome: "time_budget",
-      text: "Passage de simulation arrêté par la borne de temps : 3 examinées, 0 préparée, 0 simulée. Aucun envoi.",
+      text: "Passage de simulation arrêté par la borne de temps : 3 examinées, 0 préparée, 0 simulée · écartées : aucun contact unique dans l’annonce (2). Aucun envoi.",
     });
     expect(state.now.getTime()).toBeLessThanOrEqual(SATURDAY.getTime() + 23_000);
     expect(finalRuns(state)[0].details).toMatchObject({
@@ -705,6 +705,29 @@ describe("passage de simulation lancé à la main", () => {
       status: 409,
       message: expect.stringMatching(message),
     });
+  });
+
+  it("plafond des brouillons simulés ou erreurs : le résultat dit les motifs, rédigés comme dans le journal", async () => {
+    mocks.onDemand.mockResolvedValueOnce(
+      summary({ status: "ran", code: "simulated_backlog", skipped: { simulated_backlog: 1 } }),
+    );
+    expect((await simulate()).onDemandRun).toEqual({
+      outcome: "finished",
+      text: "Passage de simulation terminé : 0 examinée, 0 préparée, 0 simulée · écartées : plafond des brouillons simulés en attente atteint (1). Aucun envoi.",
+    });
+    mocks.onDemand.mockResolvedValueOnce(
+      summary({
+        status: "ran",
+        code: "run_errors",
+        examined: 2,
+        prepared: 1,
+        skipped: { draft_stale: 1 },
+        errors: { draft_error: 2, mark_failed: 1 },
+      }),
+    );
+    expect((await simulate()).onDemandRun.text).toBe(
+      "Passage de simulation terminé : 2 examinées, 1 préparée, 0 simulée · écartées : brouillon caduc (vente changée), annulé (1) · en erreur : erreur à la préparation du brouillon (2), brouillon simulé non marqué (1). Aucun envoi.",
+    );
   });
 
   it.each([

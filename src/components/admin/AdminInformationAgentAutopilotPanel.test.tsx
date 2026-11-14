@@ -33,7 +33,7 @@ function view(overrides: Record<string, unknown> = {}) {
   return {
     mode: "off",
     modeLabel: "Éteint",
-    runs: "Dernier passage : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
+    runs: "Dernier passage planifié : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
     notice: null,
     counters: [{ label: "Envois aujourd’hui (manuels inclus)", value: "2 sur 5" }],
     settings: {
@@ -273,7 +273,7 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     renderPanel();
     expect(
       await screen.findByText(
-        "Dernier passage : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
+        "Dernier passage planifié : 16/11/2026 09:40 · prochain passage : 16/11/2026 09:50",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Prêtes à valider (10 sur 10 au plus)")).toBeTruthy();

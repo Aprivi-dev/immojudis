@@ -17,13 +17,14 @@ import {
   loadPendingSimulatedDrafts,
   loadRecentAutopilotEvents,
 } from "@/lib/information-agent/autopilot-settings";
-import { AUTOPILOT_ON_DEMAND_COOLDOWN_MS } from "@/lib/information-agent/autopilot-rules";
 import {
   AUTOPILOT_ART14_MAX_DAYS,
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
+  AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
 } from "@/lib/information-agent/autopilot-rules";
 import {
   buildAutopilotView,
+  countsByCode,
   type AutopilotPreparedDraft,
   type AutopilotView,
 } from "@/lib/information-agent/autopilot-view";
@@ -140,8 +141,16 @@ function onDemandRunResult(summary: AutopilotRunSummary): AutopilotOnDemandRun {
       409,
     );
   }
-  const errors = Object.values(summary.errors).reduce((total, count) => total + count, 0);
-  const counts = `${counted(summary.examined, "examinée")}, ${counted(summary.prepared, "préparée")}, ${counted(summary.wouldSend, "simulée")}${errors ? `, ${errors} en erreur` : ""}`;
+  // Motifs écartés et erreurs rédigés comme dans le journal du panneau (plafond des brouillons simulés compris).
+  const skipped = countsByCode(summary.skipped, "");
+  const errors = countsByCode(summary.errors, "");
+  const counts = [
+    `${counted(summary.examined, "examinée")}, ${counted(summary.prepared, "préparée")}, ${counted(summary.wouldSend, "simulée")}`,
+    skipped ? `écartées : ${skipped}` : null,
+    errors ? `en erreur : ${errors}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // Arrêt ou pause automatique, ou mode changé pendant le passage.
   if (summary.status === "stopped" || summary.skipped.interrupted) {
     return {

@@ -989,6 +989,26 @@ describe("passage de simulation lancé à la main (demande du 14/11/2026)", () =
     });
   });
 
+  it("RÈGLE LIÉE (clean_simulation_days) : marque « à la main » et run_id des envois simulés, posés avant eux", async () => {
+    const journal: Array<{ kind: string; runId: string | null; manual: unknown }> = [];
+    const { deps } = harness(
+      {
+        ...simulation,
+        newRunId: () => "run-manuel",
+        record: async (kind, runId, details) => {
+          journal.push({ kind, runId, manual: details.manual });
+        },
+      },
+      SATURDAY,
+    );
+    await runAutopilotPass(deps, request);
+    expect(journal).toEqual([
+      { kind: "run", runId: "run-manuel", manual: true },
+      { kind: "would_send", runId: "run-manuel", manual: undefined },
+      { kind: "run", runId: "run-manuel", manual: true },
+    ]);
+  });
+
   it("mêmes bornes que la tâche planifiée : 5 brouillons recherchés au plus", async () => {
     const limits: number[] = [];
     const { deps } = harness(

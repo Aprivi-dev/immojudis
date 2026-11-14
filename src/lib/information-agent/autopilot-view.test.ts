@@ -179,7 +179,7 @@ describe("derniers événements : des libellés, jamais un code brut", () => {
     expect(result.events[0].detail).toBe("deux rejets de politique ou de contenu en 7 jours");
     expect(result.notice?.text).toContain("deux rejets de politique ou de contenu en 7 jours");
     expect(result.runs).toBe(
-      "Dernier passage : aucun · prochain passage : aucun (arrêt automatique, réactivation manuelle)",
+      "Dernier passage planifié : aucun · prochain passage : aucun (arrêt automatique, réactivation manuelle)",
     );
   });
 });

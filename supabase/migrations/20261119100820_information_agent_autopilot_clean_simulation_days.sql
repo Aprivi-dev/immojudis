@@ -9,12 +9,13 @@ set local statement_timeout = '60s';
 -- La porte du mode réel « 7 jours de simulation sans anomalie » comptait le temps écoulé depuis
 -- simulation_started_at : un pilote muet, arrêté par le plafond des brouillons simulés en attente ou en erreur la
 -- remplissait quand même. public.information_agent_autopilot_stats rend désormais aussi `clean_simulation_days` :
--- les jours (heure de Paris) depuis le début de la simulation qui ont au moins un évènement `would_send` ET aucun
--- passage en erreur (évènement `run` dont le détail porte une clé `error_<code>` : draft_error, cancel_failed,
--- preview_error, mark_failed, stale_check_failed). L'application exige 5 de ces jours en plus des 7 jours écoulés
--- (AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS, autopilot-readiness.ts). Une erreur de passage gâte la journée, elle ne
--- remet pas à zéro toute la simulation : `anomalies_since_simulation` (arrêts automatiques, erreurs d'envoi) ne
--- change pas.
+-- les jours (heure de Paris) depuis le début de la simulation qui ont au moins un évènement `would_send` d'un
+-- passage PLANIFIÉ ET aucun passage en erreur (évènement `run` dont le détail porte une clé `error_<code>` :
+-- draft_error, cancel_failed, preview_error, mark_failed, stale_check_failed). Les envois simulés d'un passage lancé
+-- à la main (trace `run` du même run_id avec `manual` vrai) ne comptent pas : des clics ne remplacent pas la tâche
+-- planifiée. L'application exige 5 de ces jours en plus des 7 jours écoulés (AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS,
+-- autopilot-readiness.ts). Une erreur de passage, à la main ou planifié, gâte la journée ; elle ne remet pas à zéro
+-- toute la simulation : `anomalies_since_simulation` (arrêts automatiques, erreurs d'envoi) ne change pas.
 --
 -- Reprise EN ENTIER de la dernière définition (20261119100500), mêmes droits et même search_path ; seul ajout, la
 -- clé `clean_simulation_days`. Aucune donnée modifiée.
@@ -127,12 +128,19 @@ begin
       from public.information_agent_autopilot_events e
       where e.kind = 'would_send'
         and e.at >= coalesce((select simulation_started_at from public.information_agent_autopilot_settings where singleton), p_now)),
-    -- Seul ajout : jours effectifs de simulation, avec au moins un envoi simulé ET aucun passage en erreur ce jour-là
-    -- (évènement `run` dont le détail porte une clé `error_<code>`). Mêmes jours de Paris, même début que ci-dessus.
+    -- Seul ajout : jours effectifs de simulation, avec au moins un envoi simulé d'un passage planifié ET aucun passage
+    -- en erreur ce jour-là (évènement `run` dont le détail porte une clé `error_<code>`, quel que soit le passage).
+    -- Mêmes jours de Paris, même début que ci-dessus.
     'clean_simulation_days', (select pg_catalog.count(distinct (e.at at time zone 'Europe/Paris')::date)
       from public.information_agent_autopilot_events e
       where e.kind = 'would_send'
         and e.at >= coalesce((select simulation_started_at from public.information_agent_autopilot_settings where singleton), p_now)
+        -- RÈGLE LIÉE : `AUTOPILOT_MANUAL_RUN_MARK` (autopilot-rules.ts). Un passage lancé à la main écrit sa trace
+        -- `run` de début, marquée `manual` et du même run_id, avant ses envois simulés : ceux-ci ne comptent pas.
+        and not exists (
+          select 1 from public.information_agent_autopilot_events m
+          where m.run_id = e.run_id and m.kind = 'run' and m.details ->> 'manual' = 'true'
+        )
         and not exists (
           select 1 from public.information_agent_autopilot_events r
           where r.kind = 'run'
@@ -157,7 +165,7 @@ revoke all on function public.information_agent_autopilot_stats(timestamptz) fro
 grant execute on function public.information_agent_autopilot_stats(timestamptz) to service_role;
 
 comment on function public.information_agent_autopilot_stats(timestamptz) is
-  'Compteurs du pilote automatique de l''agent d''information (plafonds, arrêts automatiques, contrôle de préparation). Les rejets de politique sur 7 jours et les erreurs d''API consécutives se comptent depuis la dernière réactivation journalisée après un arrêt automatique (mode « simulation » ou « live », before_values.auto_stopped vrai). clean_simulation_days : jours de Paris depuis le début de la simulation avec un envoi simulé et aucun passage en erreur. Aucune adresse. Réservée à service_role.';
+  'Compteurs du pilote automatique de l''agent d''information (plafonds, arrêts automatiques, contrôle de préparation). Les rejets de politique sur 7 jours et les erreurs d''API consécutives se comptent depuis la dernière réactivation journalisée après un arrêt automatique (mode « simulation » ou « live », before_values.auto_stopped vrai). clean_simulation_days : jours de Paris depuis le début de la simulation avec un envoi simulé d''un passage planifié (pas d''un passage lancé à la main) et aucun passage en erreur. Aucune adresse. Réservée à service_role.';
 
 notify pgrst, 'reload schema';
 

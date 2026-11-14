@@ -17,9 +17,10 @@ export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2099-01-01.0";
 const AUTOPILOT_MIN_MANUAL_SENDS = 30;
 const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
 /**
- * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé et sans
- * passage en erreur (`cleanSimulationDays`). 5 : les jours ouvrés d'une semaine, seuls jours de passage (lundi au
- * vendredi). Un pilote muet, plafonné ou en erreur ne remplit plus la porte en laissant passer le temps.
+ * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé par un
+ * passage PLANIFIÉ et sans passage en erreur, planifié ou lancé à la main (`cleanSimulationDays`). 5 : les jours
+ * ouvrés d'une semaine, seuls jours de passage (lundi au vendredi). Un pilote muet, plafonné ou en erreur ne remplit
+ * plus la porte en laissant passer le temps, ni des passages lancés à la main quand la tâche planifiée ne tourne pas.
  */
 export const AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS = 5;
 const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
