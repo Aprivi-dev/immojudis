@@ -95,6 +95,10 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   busy: "un autre passage est en cours",
   not_ready: "contrôle de préparation au mode réel non satisfait",
   not_live: "pilote plus en mode réel",
+  // Passage lancé à la main par un administrateur.
+  on_demand_started: "passage à la demande lancé",
+  not_simulation: "passage à la demande hors du mode Simulation",
+  on_demand_cooldown: "passage à la demande déjà lancé il y a moins de 10 minutes",
   // Sélection : file, puis examen du candidat.
   not_class_a: "aucun contact unique dans l’annonce",
   role_not_lawyer: "destinataire autre qu’un avocat",
@@ -191,6 +195,7 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
       : {};
   if (kind === "auto_stop" && reason) return codeText(reason);
   if (reason) return reason;
+  if (kind === "run" && record.code === "on_demand_started") return "";
   if (kind === "run") {
     if (record.code) return codeText(record.code);
     const skipped = countsByCode(record, "skip_");
@@ -242,6 +247,21 @@ function runsLine(settings: AutopilotSettings, now: Date, lastRunAt: string | nu
         ? `aucun (${codeText("disabled")})`
         : "aucun dans les 14 prochains jours";
   return `Dernier passage : ${lastRunAt ? formatNumericDateTime(lastRunAt) : "aucun"} · prochain passage : ${nextText}`;
+}
+
+/**
+ * Passage lancé à la main par un administrateur (`details.manual`, posé par l'exécuteur du pilote) : sa trace de
+ * début (`on_demand_started`), puis son événement de fin. Null pour tout autre événement.
+ */
+function onDemandRunLabel(event: { kind: string; details: unknown }): string | null {
+  const details =
+    event.details && typeof event.details === "object"
+      ? (event.details as Record<string, unknown>)
+      : {};
+  if (event.kind !== "run" || details.manual !== true) return null;
+  return details.code === "on_demand_started"
+    ? "Passage à la demande lancé"
+    : "Passage à la demande";
 }
 
 const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
@@ -333,7 +353,7 @@ export function buildAutopilotView({
     },
     events: events.map((event) => ({
       at: formatNumericDateTime(event.at),
-      label: EVENT_LABELS[event.kind] ?? event.kind,
+      label: onDemandRunLabel(event) ?? EVENT_LABELS[event.kind] ?? event.kind,
       detail: eventDetail(event.kind, event.reason, event.details),
     })),
   };

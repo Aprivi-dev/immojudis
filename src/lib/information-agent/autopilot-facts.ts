@@ -10,7 +10,10 @@ import type { AutopilotCandidateFacts } from "@/lib/information-agent/autopilot-
 const DAY_MS = 86_400_000;
 
 export type AutopilotRegistryFacts = {
-  /** Plus ancien `created_at` du contact au registre (toutes portées) : date du premier relevé (art. 14). Nul : absent. */
+  /**
+   * Plus ancien `created_at` du contact au registre (toutes portées) : date du premier relevé (art. 14). Nul : absent.
+   * RÈGLE LIÉE : le tri de la file la lit pour plusieurs adresses à la fois (`loadAutopilotFirstRecordedAt`).
+   */
   firstRecordedAt: string | null;
   /** Dernière date de relevé (`observed_at`) du contact pour cette vente. Nulle : absente (refus). */
   observedAt: string | null;
@@ -67,7 +70,88 @@ export async function loadAutopilotRegistryFacts(
   };
 }
 
-/** Envois et réponses précédents à cette adresse ou à cette identité (dossiers et missions). */
+/** Lignes lues au plus par lecture groupée du tri de la file (sous le plafond de lignes de l'API). */
+const GROUPED_READ_LIMIT = 500;
+/** Clés d'identité par lecture groupée des missions : borne la longueur de l'URL de la requête. */
+const IDENTITY_KEYS_PER_READ = 100;
+
+/**
+ * Premier enregistrement de plusieurs adresses, en UNE lecture : même définition que `firstRecordedAt` de
+ * `loadAutopilotRegistryFacts` (plus ancien `created_at` du contact au registre, toutes portées). Lignes triées de
+ * la plus ancienne : la date rendue pour une adresse est toujours son minimum, même si la limite coupe la lecture.
+ * Une adresse absente du résultat (inconnue du registre, ou coupée par la limite) est absente de la table rendue.
+ */
+export async function loadAutopilotFirstRecordedAt(
+  emails: readonly string[],
+): Promise<Map<string, string>> {
+  const first = new Map<string, string>();
+  if (!emails.length) return first;
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("normalized_email,created_at")
+    .in("normalized_email", [...new Set(emails)])
+    .order("created_at", { ascending: true })
+    .limit(GROUPED_READ_LIMIT);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    if (row.normalized_email && !first.has(row.normalized_email)) {
+      first.set(row.normalized_email, row.created_at);
+    }
+  }
+  return first;
+}
+
+/**
+ * Destinataires déjà informés, pour plusieurs à la fois : même définition que `alreadyInformed` de
+ * `loadAutopilotHistoryFacts` (un dossier envoyé à l'adresse, ou une mission envoyée à l'une des clés d'identité).
+ * Rendu dans l'ordre des destinataires. Nul quand une lecture atteint sa limite : un envoi a pu échapper à la
+ * lecture, et personne ne peut alors être dit « jamais informé ».
+ */
+export async function loadAutopilotAlreadyInformed(
+  recipients: ReadonlyArray<{ email: string; identityKeys: readonly string[] }>,
+): Promise<boolean[] | null> {
+  if (!recipients.length) return [];
+  const emails = [...new Set(recipients.map((recipient) => recipient.email))];
+  const keys = [...new Set(recipients.flatMap((recipient) => recipient.identityKeys))];
+  const keyChunks: string[][] = [];
+  for (let start = 0; start < keys.length; start += IDENTITY_KEYS_PER_READ) {
+    keyChunks.push(keys.slice(start, start + IDENTITY_KEYS_PER_READ));
+  }
+  const [cases, ...missions] = await Promise.all([
+    supabaseAdmin
+      .from("information_agent_cases")
+      .select("normalized_recipient_email")
+      .in("normalized_recipient_email", emails)
+      .not("sent_at", "is", null)
+      .limit(GROUPED_READ_LIMIT),
+    ...keyChunks.map((chunk) =>
+      supabaseAdmin
+        .from("information_agent_missions")
+        .select("recipient_identity_keys")
+        .overlaps("recipient_identity_keys", chunk)
+        .not("sent_at", "is", null)
+        .limit(GROUPED_READ_LIMIT),
+    ),
+  ]);
+  if (cases.error) throw cases.error;
+  for (const read of missions) if (read.error) throw read.error;
+  const reads = [cases.data ?? [], ...missions.map((read) => read.data ?? [])];
+  if (reads.some((rows) => rows.length >= GROUPED_READ_LIMIT)) return null;
+  const sentEmails = new Set((cases.data ?? []).map((row) => row.normalized_recipient_email));
+  const sentKeys = new Set(
+    missions.flatMap((read) => (read.data ?? []).flatMap((row) => row.recipient_identity_keys)),
+  );
+  return recipients.map(
+    (recipient) =>
+      sentEmails.has(recipient.email) || recipient.identityKeys.some((key) => sentKeys.has(key)),
+  );
+}
+
+/**
+ * Envois et réponses précédents à cette adresse ou à cette identité (dossiers et missions). RÈGLE LIÉE :
+ * `alreadyInformed` est lu pour plusieurs destinataires à la fois par le tri de la file
+ * (`loadAutopilotAlreadyInformed`).
+ */
 export async function loadAutopilotHistoryFacts(
   email: string,
   identityKeys: readonly string[],

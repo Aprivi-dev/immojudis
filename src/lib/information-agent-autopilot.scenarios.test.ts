@@ -69,6 +69,7 @@ import {
   defaultAutopilotDeps,
   AutopilotDraftCancelError,
   prepareAutopilotDraft,
+  runAutopilotPass,
   runInformationAgentAutopilot,
   type AutopilotDeps,
 } from "@/lib/information-agent-autopilot";
@@ -148,6 +149,8 @@ type Calls = {
   prepares: number;
   cancels: string[];
   released: number;
+  leases: number;
+  cooldownSince: Date[];
 };
 
 function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
@@ -158,6 +161,8 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     prepares: 0,
     cancels: [],
     released: 0,
+    leases: 0,
+    cooldownSince: [],
   };
   const deps: AutopilotDeps = {
     now: () => now,
@@ -168,9 +173,16 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     loadStats: async () => stats(),
     readiness: async () => ({ ready: true, checks: [] }),
     isAdmin: async () => true,
-    claimLease: async () => ({ kind: "held", token: "lease" }),
+    claimLease: async () => {
+      calls.leases += 1;
+      return { kind: "held", token: "lease" };
+    },
     releaseLease: async () => {
       calls.released += 1;
+    },
+    lastOnDemandRunAt: async (since) => {
+      calls.cooldownSince.push(since);
+      return null;
     },
     findCandidates: async () => ({ candidates: [candidate()], skipped: {}, examined: 1 }),
     prepareDraft: async () => {
@@ -934,6 +946,412 @@ describe("relecture de la PR #501 : simulation juste dès lundi", () => {
   });
 });
 
+describe("passage de simulation lancé à la main (demande du 14/11/2026)", () => {
+  const SATURDAY = new Date("2026-11-14T13:00:00Z"); // samedi 14 h à Paris, hors plage
+  const request = {
+    adminId: "admin-2",
+    reason: "Premier passage demandé",
+    // Le travail doit être fini 25 s après le début de la requête ; une étape dure au plus 7 s.
+    finishBy: new Date(SATURDAY.getTime() + 25_000),
+  };
+  const simulation = { loadSettings: async () => settings({ mode: "simulation" }) };
+  const runRecords = (calls: Calls) => calls.records.filter((record) => record.kind === "run");
+
+  it("accepté en simulation un samedi hors plage : même passage, aucun envoi, journalisé « à la main »", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    const summary = await runAutopilotPass(deps, request);
+    expect(summary).toMatchObject({ status: "ran", mode: "simulation", prepared: 1, wouldSend: 1 });
+    expect(summary.sent).toBe(0);
+    expect(calls.sends).toBe(0);
+    expect(mocks.runAction).not.toHaveBeenCalled();
+    expect(mocks.sendTrackedEmail).not.toHaveBeenCalled();
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+    expect(calls.leases).toBe(1);
+    expect(calls.released).toBe(1);
+    // Trace de début sous le bail, puis l'événement de fin qui la complète (journal en ajout seul).
+    expect(calls.records.map((record) => record.kind)).toEqual(["run", "would_send", "run"]);
+    const [started, finished] = runRecords(calls);
+    expect(started.details).toEqual({
+      mode: "simulation",
+      code: "on_demand_started",
+      manual: true,
+      actorId: "admin-2",
+      reason: "Premier passage demandé",
+    });
+    expect(finished.details).toMatchObject({
+      mode: "simulation",
+      manual: true,
+      actorId: "admin-2",
+      reason: "Premier passage demandé",
+      examined: 1,
+      prepared: 1,
+      would_send: 1,
+    });
+  });
+
+  it("mêmes bornes que la tâche planifiée : 5 brouillons recherchés au plus", async () => {
+    const limits: number[] = [];
+    const { deps } = harness(
+      {
+        ...simulation,
+        findCandidates: async (_settings, _now, limit) => {
+          limits.push(limit);
+          return { candidates: [], skipped: {}, examined: 0 };
+        },
+      },
+      SATURDAY,
+    );
+    await runAutopilotPass(deps, request);
+    expect(limits).toEqual([5]);
+  });
+
+  it.each(["off", "live"] as const)(
+    "mode %s : refusé avant tout bail, toute lecture de candidat et tout envoi",
+    async (mode) => {
+      for (const now of [SATURDAY, MONDAY_10H]) {
+        const findCandidates = vi.fn();
+        const { deps, calls } = harness(
+          { loadSettings: async () => settings({ mode }), findCandidates },
+          now,
+        );
+        expect(await runAutopilotPass(deps, request)).toMatchObject({
+          status: "skipped",
+          code: "not_simulation",
+          mode,
+        });
+        expect(calls.leases).toBe(0);
+        expect(findCandidates).not.toHaveBeenCalled();
+        expect(calls.sends).toBe(0);
+        expect(calls.records).toEqual([]);
+      }
+    },
+  );
+
+  it("un second passage à la demande dans les 10 minutes est refusé, sous le bail, avec le temps restant", async () => {
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        lastOnDemandRunAt: async (since) => {
+          calls.cooldownSince.push(since);
+          return new Date(SATURDAY.getTime() - 4 * 60_000);
+        },
+      },
+      SATURDAY,
+    );
+    expect(await runAutopilotPass(deps, request)).toMatchObject({
+      status: "skipped",
+      code: "on_demand_cooldown",
+      retryAfterMs: 6 * 60_000,
+    });
+    expect(calls.cooldownSince).toEqual([new Date(SATURDAY.getTime() - 10 * 60_000)]);
+    expect(calls.prepares).toBe(0);
+    expect(calls.records).toEqual([]);
+    expect(calls.released).toBe(1);
+  });
+
+  it("même verrou d'exécution unique : un passage en cours fait refuser le passage à la demande", async () => {
+    const { deps, calls } = harness(
+      { ...simulation, claimLease: async () => ({ kind: "busy" }) },
+      SATURDAY,
+    );
+    expect(await runAutopilotPass(deps, request)).toMatchObject({
+      status: "skipped",
+      code: "busy",
+    });
+    expect(calls.prepares).toBe(0);
+    expect(calls.records).toEqual([]);
+  });
+
+  it("une exception après le début laisse la trace « à la main » (le délai s'applique) et rend le bail", async () => {
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        loadStats: async () => {
+          throw new Error("base indisponible");
+        },
+      },
+      SATURDAY,
+    );
+    await expect(runAutopilotPass(deps, request)).rejects.toThrow("base indisponible");
+    expect(runRecords(calls).map((record) => record.details)).toEqual([
+      expect.objectContaining({ code: "on_demand_started", manual: true, actorId: "admin-2" }),
+    ]);
+    expect(calls.released).toBe(1);
+  });
+
+  it("un arrêt automatique pendant le passage laisse aussi la trace « à la main »", async () => {
+    const { deps, calls } = harness(
+      { ...simulation, loadStats: async () => stats({ unverifiedOpen: 1 }) },
+      SATURDAY,
+    );
+    expect(await runAutopilotPass(deps, request)).toMatchObject({
+      status: "stopped",
+      code: "unverified_send",
+    });
+    expect(calls.autoStops).toEqual([{ code: "unverified_send", pauseHours: undefined }]);
+    expect(runRecords(calls).map((record) => record.details.code)).toEqual(["on_demand_started"]);
+    expect(calls.released).toBe(1);
+  });
+
+  it("le mode passe en réel pendant le passage : interrompu, aucun envoi", async () => {
+    let reads = 0;
+    const { deps, calls } = harness(
+      {
+        loadSettings: async () => settings({ mode: reads++ === 0 ? "simulation" : "live" }),
+      },
+      SATURDAY,
+    );
+    const summary = await runAutopilotPass(deps, request);
+    expect(summary.skipped).toEqual({ interrupted: 1 });
+    expect(calls.sends).toBe(0);
+    expect(calls.prepares).toBe(0);
+  });
+
+  /** Horloge qui avance à chaque examen et à chaque brouillon (examens et brouillons lents). */
+  function slowClock(start: Date) {
+    let at = start.getTime();
+    return {
+      now: () => new Date(at),
+      advance: (ms: number) => {
+        at += ms;
+      },
+      at: () => at,
+    };
+  }
+
+  it("examens lents : aucun examen entamé s'il peut dépasser l'heure ; fini à temps, journalisé « arrêté », bail rendu", async () => {
+    const clock = slowClock(SATURDAY);
+    const examStarts: number[] = [];
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        // Chaque examen prend 3 s ; la recherche s'arrête quand la borne le dit.
+        findCandidates: async (_settings, _now, _limit, shouldStop) => {
+          let examined = 0;
+          while (examined < 25 && !shouldStop()) {
+            examStarts.push(clock.at());
+            examined += 1;
+            clock.advance(3_000);
+          }
+          return { candidates: [candidate()], skipped: {}, examined };
+        },
+      },
+      SATURDAY,
+    );
+    const summary = await runAutopilotPass(deps, request);
+    // Examens à 0, 3, … 18 s (18 + 7 ≤ 25) ; à 21 s, un examen de 7 s finirait après l'heure.
+    expect(examStarts.map((at) => (at - SATURDAY.getTime()) / 1000)).toEqual([
+      0, 3, 6, 9, 12, 15, 18,
+    ]);
+    expect(clock.at()).toBeLessThanOrEqual(request.finishBy.getTime());
+    expect(summary).toMatchObject({
+      status: "ran",
+      examined: 7,
+      prepared: 0,
+      wouldSend: 0,
+      stoppedByTimeBudget: true,
+    });
+    // Le candidat trouvé n'est pas entamé : l'heure est trop proche.
+    expect(calls.prepares).toBe(0);
+    expect(runRecords(calls).at(-1)?.details).toMatchObject({
+      manual: true,
+      examined: 7,
+      stopped_by_time_budget: true,
+    });
+    expect(calls.released).toBe(1);
+  });
+
+  it("brouillons lents : le candidat en cours se termine, le suivant n'est pas entamé s'il peut dépasser l'heure", async () => {
+    const clock = slowClock(SATURDAY);
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        findCandidates: async () => {
+          clock.advance(15_000);
+          return {
+            candidates: ["a", "b", "c"].map((saleId) =>
+              candidate({ saleId, domain: `${saleId}.test` }),
+            ),
+            skipped: {},
+            examined: 3,
+          };
+        },
+        // Chaque brouillon et son aperçu prennent 4 s : « a » entamé à 15 s, fini à 19 s ; « b » non entamé.
+        prepareDraft: async (item) => {
+          calls.prepares += 1;
+          clock.advance(4_000);
+          return draft({ missionId: `mission-${item.saleId}` });
+        },
+      },
+      SATURDAY,
+    );
+    const summary = await runAutopilotPass(deps, request);
+    expect(summary).toMatchObject({ prepared: 1, wouldSend: 1, stoppedByTimeBudget: true });
+    expect(calls.prepares).toBe(1);
+    expect(calls.records.map((record) => record.kind)).toEqual(["run", "would_send", "run"]);
+    expect(clock.at()).toBeLessThanOrEqual(request.finishBy.getTime());
+    expect(calls.released).toBe(1);
+  });
+
+  it("un passage qui finit avant la borne n'est pas marqué « arrêté »", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    const summary = await runAutopilotPass(deps, request);
+    expect(summary.stoppedByTimeBudget).toBe(false);
+    expect(runRecords(calls).at(-1)?.details).not.toHaveProperty("stopped_by_time_budget");
+  });
+
+  it("la tâche planifiée n'a pas de borne de temps nouvelle : examens et brouillons lents vont au bout", async () => {
+    const clock = slowClock(MONDAY_10H);
+    const { deps, calls } = harness(
+      {
+        ...simulation,
+        now: clock.now,
+        findCandidates: async (_settings, _now, _limit, shouldStop) => {
+          let examined = 0;
+          while (examined < 25 && !shouldStop()) {
+            examined += 1;
+            clock.advance(3_000);
+          }
+          return {
+            candidates: ["a", "b", "c"].map((saleId) =>
+              candidate({ saleId, domain: `${saleId}.test` }),
+            ),
+            skipped: {},
+            examined,
+          };
+        },
+        prepareDraft: async (item) => {
+          calls.prepares += 1;
+          clock.advance(60_000);
+          return draft({ missionId: `mission-${item.saleId}` });
+        },
+      },
+      MONDAY_10H,
+    );
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary).toMatchObject({
+      examined: 25,
+      prepared: 3,
+      wouldSend: 3,
+      stoppedByTimeBudget: false,
+    });
+  });
+
+  it("la tâche planifiée garde sa plage horaire et ne consulte pas le délai des passages à la demande", async () => {
+    const { deps, calls } = harness(simulation, SATURDAY);
+    expect(await runInformationAgentAutopilot(deps)).toMatchObject({
+      status: "skipped",
+      code: "outside_window",
+    });
+    expect(calls.leases).toBe(0);
+    const weekday = harness(simulation, MONDAY_10H);
+    await runInformationAgentAutopilot(weekday.deps);
+    expect(weekday.calls.cooldownSince).toEqual([]);
+    // Aucune trace de début, et l'événement de fin n'est pas marqué « à la main ».
+    expect(runRecords(weekday.calls)).toHaveLength(1);
+    expect(runRecords(weekday.calls)[0].details).not.toHaveProperty("manual");
+  });
+
+  describe("lot B : purge des caducs, plafond et marque « simulé » s'appliquent aussi", () => {
+    /** `n` brouillons simulés en attente, sur les ventes `s-0`, `s-1`… */
+    const pending = (n: number) => async () => ({
+      total: n,
+      drafts: Array.from({ length: n }, (_, index) => ({
+        missionId: `pending-${index}`,
+        saleId: `s-${index}`,
+        saleSnapshot: {},
+      })),
+    });
+
+    it("plafond atteint : aucune recherche ni brouillon, code simulated_backlog, journalisé « à la main »", async () => {
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { deps, calls } = harness(
+        { ...simulation, listPendingSimulatedDrafts: pending(10), findCandidates },
+        SATURDAY,
+      );
+      const summary = await runAutopilotPass(deps, request);
+      expect(summary).toMatchObject({
+        status: "ran",
+        code: "simulated_backlog",
+        skipped: { simulated_backlog: 1 },
+      });
+      expect(findCandidates).not.toHaveBeenCalled();
+      expect(calls.prepares).toBe(0);
+      expect(runRecords(calls).at(-1)?.details).toMatchObject({
+        manual: true,
+        skip_simulated_backlog: 1,
+      });
+    });
+
+    it("brouillons caducs annulés en tête du passage, places rendues, brouillon marqué par la base", async () => {
+      const findCandidates = vi.fn(async () => ({
+        candidates: [candidate()],
+        skipped: {},
+        examined: 1,
+      }));
+      const markSimulated = vi.fn(async (_missionId: string) => undefined);
+      const { deps, calls } = harness(
+        {
+          ...simulation,
+          listPendingSimulatedDrafts: pending(10),
+          draftIsStale: async (item) => ["s-0", "s-1"].includes(item.saleId ?? ""),
+          findCandidates,
+          markSimulated,
+        },
+        SATURDAY,
+      );
+      const summary = await runAutopilotPass(deps, request);
+      expect(calls.cancels).toEqual(["pending-0", "pending-1"]);
+      // 8 restent en attente : 2 places au plus.
+      expect(findCandidates).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        2,
+        expect.any(Function),
+      );
+      expect(summary).toMatchObject({ code: null, wouldSend: 1, skipped: { draft_stale: 2 } });
+      expect(markSimulated).toHaveBeenCalledExactlyOnceWith(draft().missionId);
+      expect(calls.sends).toBe(0);
+    });
+
+    it("borne de temps : aucune relecture d'un brouillon en attente entamée une fois l'heure passée, ils restent comptés", async () => {
+      const clock = slowClock(SATURDAY);
+      const reviewed: string[] = [];
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { deps, calls } = harness(
+        {
+          ...simulation,
+          now: clock.now,
+          listPendingSimulatedDrafts: pending(10),
+          // Chaque relecture prend 5 s et trouve le brouillon caduc : à 20 s, la suivante finirait après l'heure.
+          draftIsStale: async (item) => {
+            reviewed.push(item.missionId);
+            clock.advance(5_000);
+            return true;
+          },
+          findCandidates,
+        },
+        SATURDAY,
+      );
+      const summary = await runAutopilotPass(deps, request);
+      expect(reviewed).toEqual(["pending-0", "pending-1", "pending-2", "pending-3"]);
+      expect(calls.cancels).toHaveLength(4);
+      expect(summary).toMatchObject({ stoppedByTimeBudget: true, skipped: { draft_stale: 4 } });
+      // 6 brouillons comptés : 4 places, mais la recherche ne lit plus rien une fois l'heure passée.
+      expect(findCandidates).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        4,
+        expect.any(Function),
+      );
+      expect(clock.at()).toBeLessThanOrEqual(request.finishBy.getTime());
+      expect(calls.released).toBe(1);
+    });
+  });
+});
+
 describe("cas juridiques du cahier des charges", () => {
   it("J-greffe : le pilote refuse court_registry_fallback", () => {
     expect(verdict({ sourceKind: "court_registry_fallback" }).ok).toBe(false);
@@ -1282,14 +1700,24 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
       findCandidates,
     });
     expect((await runInformationAgentAutopilot(almost.deps)).code).toBeNull();
-    expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 2);
+    expect(findCandidates).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      2,
+      expect.any(Function),
+    );
 
     // Le mode réel ne crée aucun brouillon simulé : le plafond ne le concerne pas.
     const listPendingSimulatedDrafts = vi.fn(pending(10));
     const live = harness({ listPendingSimulatedDrafts, findCandidates });
     await runInformationAgentAutopilot(live.deps);
     expect(listPendingSimulatedDrafts).not.toHaveBeenCalled();
-    expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 3);
+    expect(findCandidates).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      3,
+      expect.any(Function),
+    );
   });
 
   it("plafond atteint mais brouillons caducs : annulés en tête de passage (draft_stale), la simulation reprend", async () => {
@@ -1305,7 +1733,12 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
     expect(calls.cancels).toEqual(["pending-0", "pending-1", "pending-2"]);
     expect(summary).toMatchObject({ status: "ran", code: null, skipped: { draft_stale: 3 } });
     // 7 restent en attente : 3 places, mais jamais plus de 5 par passage.
-    expect(findCandidates).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 3);
+    expect(findCandidates).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      3,
+      expect.any(Function),
+    );
     expect(calls.records.find((record) => record.kind === "run")?.details).toMatchObject({
       skip_draft_stale: 3,
     });
