@@ -3,6 +3,8 @@ import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft"
 import { informationAgentCreateSchema } from "@/lib/information-agent/schemas";
 import { INFORMATION_AGENT_NO_EMAIL_MESSAGE } from "@/lib/information-agent/email-address";
 import { DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE } from "@/lib/information-agent-email-template";
+import { assertInformationAgentNotarySendAllowed } from "@/lib/information-agent/config";
+import { missionRecipient } from "@/lib/information-agent/mission-identity";
 import type { AuctionSale } from "@/lib/types";
 
 const mocks = vi.hoisted(() => ({
@@ -459,6 +461,58 @@ describe("brouillon pour un notaire lu dans l'annonce", () => {
       metadata: { contact_identity: { role: null }, question_audience: "notary" },
     });
     expect(result.mission.bodyText).toContain("votre secret professionnel prime sur notre demande");
+  });
+
+  it("avocat d'une annonce de vente notariale : le modèle de l'avocat, et l'envoi reste fermé", async () => {
+    mocks.sale.mockResolvedValue({
+      ...notarySale,
+      lawyer_contact: null,
+      // Organisateur déclaré « avocat poursuivant » sur une annonce de `notaires` : le bloc avocat est un avocat.
+      information_agent_organizer_type: "pursuing_lawyer",
+      listing_contact_blocks: [
+        {
+          sourceName: "notaires",
+          sourceUrl: listingUrl,
+          officeCode: null,
+          contact: [],
+          manager: [],
+          lawyer: [
+            {
+              email: "me.durand@cabinet-durand.example.test",
+              name: "Maître Paul Durand",
+              field: "source_blocks.lawyer.email",
+              principal: true,
+              addressKind: "nominative",
+            },
+          ],
+        },
+      ],
+    } as never);
+    const result = await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
+    expect(result.mission.recipientEmail).toBe("me.durand@cabinet-durand.example.test");
+    expect(inserted).toMatchObject({
+      metadata: {
+        contact_identity: { role: "lawyer" },
+        question_audience: "lawyer",
+        sale_audience: "notary",
+      },
+    });
+    // Texte et questions de l'avocat (gabarit publié), jamais ceux du notaire.
+    expect(result.mission.bodyText).not.toContain("Ne nous transmettez rien d’autre");
+    expect(result.mission.bodyText).toContain("cahier des conditions de vente");
+    // La vente reste notariale pour la fermeture des envois.
+    const recipient = missionRecipient(
+      { ...inserted, id: "m", created_at: "2026-11-14T08:00:00Z" } as never,
+      null,
+      "me.durand@cabinet-durand.example.test",
+    );
+    expect(recipient).toMatchObject({ questionAudience: "lawyer", saleAudience: "notary" });
+    expect(() =>
+      assertInformationAgentNotarySendAllowed(
+        { ...recipient, email: "me.durand@cabinet-durand.example.test" },
+        {},
+      ),
+    ).toThrow("Envoi à un notaire fermé");
   });
 
   it("office opposé : une adresse saisie sur le domaine partagé garde l'office de la vente et est refusée", async () => {

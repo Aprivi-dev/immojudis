@@ -399,6 +399,39 @@ export type AutopilotCandidateFacts = {
 
 export type AutopilotCandidateVerdict = { ok: true } | { ok: false; code: string };
 
+function licitorDecodedRefused(
+  observationChannel: string | null,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded">,
+): boolean {
+  return observationChannel === "licitor_cloudflare_decoded" && !settings.allowLicitorDecoded;
+}
+
+function saleTooSoon(saleDate: string | null, now: Date): boolean {
+  const at = saleDate ? Date.parse(saleDate) : NaN;
+  return !Number.isFinite(at) || (at - now.getTime()) / DAY_MS < AUTOPILOT_MIN_DAYS_BEFORE_SALE;
+}
+
+/**
+ * Refus que la file permet de prononcer AVANT tout examen coûteux (registre, historique, opposition, DNS), avec les
+ * seules données de l'annonce : rôle et adresse du contact retenu, date de la vente, réglages en vigueur. Chaque refus
+ * rendu ici, `evaluateAutopilotCandidate` le prononcerait aussi (mêmes prédicats) : la file n'écarte jamais un candidat
+ * que la vérification complète aurait admis. Le code peut différer du premier motif de la vérification complète.
+ */
+export function autopilotQueueRefusal(
+  facts: Pick<
+    AutopilotCandidateFacts,
+    "recipientRole" | "consumerDomain" | "observationChannel" | "saleDate"
+  >,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded">,
+  now: Date,
+): string | null {
+  if (facts.recipientRole !== "lawyer") return "role_not_lawyer";
+  if (facts.consumerDomain) return "consumer_domain";
+  if (licitorDecodedRefused(facts.observationChannel, settings)) return "licitor_decoded_refused";
+  if (saleTooSoon(facts.saleDate, now)) return "sale_too_soon";
+  return null;
+}
+
 export function evaluateAutopilotCandidate(
   facts: AutopilotCandidateFacts,
   settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14RuleEnabled" | "art14MaxAgeDays">,
@@ -416,17 +449,14 @@ export function evaluateAutopilotCandidate(
   if (!facts.identityComplete) return no("identity_incomplete");
   if (facts.addressHygieneIssue) return no("address_invalid");
   if (facts.consumerDomain) return no("consumer_domain");
-  if (facts.observationChannel === "licitor_cloudflare_decoded" && !settings.allowLicitorDecoded) {
+  if (licitorDecodedRefused(facts.observationChannel, settings)) {
     return no("licitor_decoded_refused");
   }
   if (!(daysSince(facts.addressObservedAt) <= AUTOPILOT_ADDRESS_MAX_AGE_DAYS)) {
     return no("address_stale");
   }
   if (facts.mailDomain === "no_mail") return no("mx_invalid");
-  const saleDate = facts.saleDate ? Date.parse(facts.saleDate) : NaN;
-  if (!Number.isFinite(saleDate) || (saleDate - at) / DAY_MS < AUTOPILOT_MIN_DAYS_BEFORE_SALE) {
-    return no("sale_too_soon");
-  }
+  if (saleTooSoon(facts.saleDate, now)) return no("sale_too_soon");
   if (!facts.hasUnpublishedGap) return no("no_unpublished_gap");
   if (facts.humanDraftExists) return no("admin_draft_exists");
   if (facts.identityExcluded) return no("identity_excluded");

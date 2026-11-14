@@ -1,8 +1,9 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  classifyInformationAgentSaleContacts,
   loadAdminInformationAgentSale,
+  loadInformationAgentContactSales,
+  type AdminInformationAgentSale,
 } from "@/lib/admin-information-agent-sale";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
@@ -22,6 +23,7 @@ import {
   loadAutopilotRegistryFacts,
 } from "@/lib/information-agent/autopilot-facts";
 import {
+  autopilotQueueRefusal,
   evaluateAutopilotCandidate,
   type AutopilotSettings,
 } from "@/lib/information-agent/autopilot-rules";
@@ -33,8 +35,15 @@ import {
 import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
+  resolveInformationAgentListingContacts,
   selectInformationAgentContact,
+  type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contact-resolution";
+import { informationAgentNotarySendClosed } from "@/lib/information-agent/config";
+import {
+  informationAgentQuestionAudience,
+  informationAgentSaleAudience,
+} from "@/lib/information-agent/recipient-questions";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   personIdentityKeys,
@@ -44,9 +53,13 @@ import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
 
 /**
  * Candidats du pilote automatique. Point de départ : la file de l'agent (RPC `admin_information_agent_queue`,
- * classe A, vérifiée par le résolveur exact), puis une vérification candidat par candidat :
- * `evaluateAutopilotCandidate` (règles pures) sur des faits lus ici. Jamais de recherche réseau d'adresse,
- * jamais de greffe : seulement l'avocat dont l'adresse figure dans l'annonce de la vente.
+ * classe A), lue page par page. Chaque vente passe d'abord un tri SANS EXAMEN COÛTEUX, sur la lecture légère de
+ * l'annonce et du registre interne (`loadInformationAgentContactSales`, celle de la classe de contact) : un contact
+ * choisi seul par le résolveur (classe A), puis `autopilotQueueRefusal` (rôle, messagerie, adresse Licitor décodée
+ * selon le réglage, date de la vente) et la garde des envois aux notaires (vente notariale). Seules les ventes qui passent ce tri comptent parmi les `maxExamined` examens
+ * du passage : vérification candidat par candidat, `evaluateAutopilotCandidate` (règles pures) sur des faits lus
+ * ici. Jamais de recherche réseau d'adresse, jamais de greffe : seulement l'avocat dont l'adresse figure dans
+ * l'annonce de la vente.
  */
 export type AutopilotCandidate = {
   saleId: string;
@@ -66,6 +79,72 @@ export type AutopilotCandidateSearch = {
 };
 
 const SALE_BATCH = 100;
+/** Lecture légère par paquets de 50 identifiants, comme la classe de contact (`classifyInformationAgentSaleContacts`). */
+const CONTACT_SALES_CHUNK = 50;
+/**
+ * Ventes de la file lues au plus par passage : borne le coût d'une file dont la tête est refusée d'avance (10 pages,
+ * soit une lecture de la file et deux lectures légères par page). Les examens réels restent bornés par `maxExamined`.
+ */
+const MAX_QUEUE_SCAN = 1000;
+
+async function readQueuePage(offset: number): Promise<string[]> {
+  const { data, error } = await supabaseAdmin.rpc("admin_information_agent_queue", {
+    p_limit: SALE_BATCH,
+    p_offset: offset,
+    p_class: "A",
+  });
+  if (error) throw error;
+  return ((data as { items?: Array<{ id: string }> } | null)?.items ?? []).map((item) => item.id);
+}
+
+/** Contact que le résolveur choisit seul dans l'annonce (adresses mal formées écartées si le contrôle est actif). */
+function listingSelection(sale: AdminInformationAgentSale, checkAddresses: boolean) {
+  return selectInformationAgentContact(
+    discoverInformationAgentContacts(sale).filter(
+      (candidate) => !checkAddresses || !informationAgentAddressHygieneIssue(candidate.email),
+    ),
+  );
+}
+
+/**
+ * L'adresse figure dans `registry_contacts` de la vente. RÈGLE LIÉE : ces lignes sont lues avec le filtre
+ * `observation_channel = INFORMATION_AGENT_PIPELINE_CHANNEL` (`admin-information-agent-sale.ts`) ; une adresse du
+ * registre interne est donc une adresse Licitor décodée. Si ce filtre change, ce tri préalable change avec lui.
+ */
+function isLicitorRegistryAddress(sale: AdminInformationAgentSale, email: string): boolean {
+  const wanted = normalizedEmail(email);
+  return (sale.registry_contacts ?? []).some(
+    (contact) => normalizedEmail(contact.email) === wanted,
+  );
+}
+
+/**
+ * La garde des envois aux notaires refusera ce candidat à l'aperçu : même prédicat que la garde
+ * (`informationAgentNotarySendClosed`, config.ts), sur le destinataire et la vente tels que le brouillon les
+ * enregistrera (`question_audience`, `sale_audience` : mêmes fonctions que `draft.ts`). Écarté d'avance, il ne
+ * compte ni parmi les examens du passage ni en rejet de politique (arrêt automatique).
+ */
+function notarySendWillBeRefused(
+  sale: AdminInformationAgentSale,
+  selected: InformationAgentContactCandidate,
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const { organizerType, sourceName } = resolveInformationAgentListingContacts(sale);
+  return informationAgentNotarySendClosed(
+    {
+      role: selected.role,
+      questionAudience: informationAgentQuestionAudience({
+        role: selected.role,
+        structureKind: selected.structureKind,
+        organizerType,
+        sourceName,
+      }),
+      saleAudience: informationAgentSaleAudience({ organizerType, sourceName }),
+      email: selected.email,
+    },
+    env,
+  );
+}
 
 /** Brouillon d'un administrateur (ou échec à reprendre) sur cette vente : le pilote ne le touche jamais. */
 async function humanDraftExists(saleId: string): Promise<boolean> {
@@ -104,113 +183,133 @@ export async function findAutopilotCandidates({
   const skip = (code: string) => {
     result.skipped[code] = (result.skipped[code] ?? 0) + 1;
   };
-  const { data, error } = await supabaseAdmin.rpc("admin_information_agent_queue", {
-    p_limit: SALE_BATCH,
-    p_offset: 0,
-    p_class: "A",
-  });
-  if (error) throw error;
-  const queued = ((data as { items?: Array<{ id: string }> } | null)?.items ?? []).map(
-    (item) => item.id,
-  );
-  // Vérification exacte avec le résolveur du brouillon : seule la classe A reste.
-  const classes = await classifyInformationAgentSaleContacts(queued);
+  const done = () => result.candidates.length >= limit || result.examined >= maxExamined;
   const checkAddresses = informationAgentAddressCheckEnabled(env);
 
-  for (const saleId of queued) {
-    if (result.candidates.length >= limit || result.examined >= maxExamined) break;
-    if (classes.get(saleId) !== "A") {
-      skip("not_class_a");
-      continue;
-    }
-    result.examined += 1;
-    const sale = await loadAdminInformationAgentSale({ auth: { isAdmin: true }, saleId });
-    const listed = discoverInformationAgentContacts(sale).filter(
-      (candidate) => !checkAddresses || !informationAgentAddressHygieneIssue(candidate.email),
-    );
-    const selected = selectInformationAgentContact(listed);
-    if (!selected) {
-      skip("contact_ambiguous");
-      continue;
-    }
-    const email = normalizedEmail(selected.email);
-    if (!email) {
-      skip("address_invalid");
-      continue;
-    }
-    const oppositionKeys = recipientOppositionKeys({
-      role: selected.role,
-      name: selected.name ?? sale.lawyer_name,
-      place: saleIdentityPlace(sale),
-      email,
-      officeCode: selected.officeCode,
-      addressKind: selected.addressKind,
-    });
-    // Identité du professionnel seule : une clé de structure ne dit pas qui il est (règle « identité complète »).
-    const identityKeys = personIdentityKeys(oppositionKeys.identityKeys);
-    // Opposition (adresse et identité) vérifiée dès la sélection.
-    try {
-      await assertInformationAgentContactAllowed({
-        saleId,
-        email,
-        identityKeys: oppositionKeys.identityKeys,
-        checkKeys: oppositionKeys.checkKeys,
+  for (let offset = 0; offset < MAX_QUEUE_SCAN && !done(); offset += SALE_BATCH) {
+    const queued = await readQueuePage(offset);
+    for (let start = 0; start < queued.length && !done(); start += CONTACT_SALES_CHUNK) {
+      const chunk = queued.slice(start, start + CONTACT_SALES_CHUNK);
+      const { sales } = await loadInformationAgentContactSales({
+        auth: { isAdmin: true },
+        saleIds: chunk,
       });
-    } catch {
-      skip("opposed");
-      continue;
+      for (const saleId of chunk) {
+        if (done()) break;
+        const sale = sales.get(saleId);
+        // Classe A vérifiée avec le résolveur du brouillon : un contact choisi seul dans l'annonce.
+        const selected = sale ? listingSelection(sale, checkAddresses) : null;
+        if (!sale || !selected) {
+          skip("not_class_a");
+          continue;
+        }
+        const refusal =
+          autopilotQueueRefusal(
+            {
+              recipientRole: selected.role,
+              consumerDomain: isConsumerMailAddress(selected.email),
+              observationChannel: isLicitorRegistryAddress(sale, selected.email)
+                ? INFORMATION_AGENT_PIPELINE_CHANNEL
+                : null,
+              saleDate: sale.sale_date ?? null,
+            },
+            settings,
+            now,
+          ) ?? (notarySendWillBeRefused(sale, selected, env) ? "notary_send_closed" : null);
+        if (refusal) {
+          skip(refusal);
+          continue;
+        }
+        result.examined += 1;
+        const examined = await examineAutopilotSale(saleId, settings, now, checkAddresses);
+        if ("skip" in examined) skip(examined.skip);
+        else result.candidates.push(examined);
+      }
     }
-    // Relevé de l'adresse lue dans l'annonce : enregistré maintenant (comme à la création d'un brouillon), pour que
-    // la date de relevé et celle du premier enregistrement (art. 14) viennent du contact, jamais de la vente.
-    await persistInformationAgentContactObservations({ saleId, candidates: [selected] });
-    const [registry, history, excluded, humanDraft, claimRead] = await Promise.all([
-      loadAutopilotRegistryFacts(email, saleId),
-      loadAutopilotHistoryFacts(email, identityKeys, now),
-      loadExcludedIdentityKeys(identityKeys),
-      humanDraftExists(saleId),
-      readSaleFactClaims(saleId),
-    ]);
-    const facts = getFactReliabilitiesFromClaims(sale, claimRead.claims);
-    const gaps = detectInformationGaps(sale, facts, buildInformationAgentInventory(sale, facts));
-    const hygiene = checkAddresses ? informationAgentAddressHygieneIssue(email) : null;
-    const mailDomain = checkAddresses ? await checkMailDomain(mailDomainOf(email)) : "ok";
-    const verdict = evaluateAutopilotCandidate(
-      {
-        // Origine réelle de l'adresse : absente ou autre que l'annonce, refus (aucune valeur par défaut).
-        sourceKind: candidateSourceKind(selected, registry.originKinds),
-        recipientRole: selected.role,
-        selectedUnambiguously: true,
-        identityComplete: identityKeys.length > 0,
-        addressHygieneIssue: hygiene,
-        consumerDomain: isConsumerMailAddress(email),
-        observationChannel: registry.licitorDecoded ? INFORMATION_AGENT_PIPELINE_CHANNEL : null,
-        // Date de relevé du contact au registre : jamais un repli sur la date de la vente.
-        addressObservedAt: registry.observedAt,
-        mailDomain,
-        saleDate: sale.sale_date ?? null,
-        hasUnpublishedGap: gaps.length > 0,
-        humanDraftExists: humanDraft,
-        identityExcluded: [...excluded].length > 0,
-        contactFirstRecordedAt: registry.firstRecordedAt,
-        ...history,
-      },
-      settings,
-      now,
-    );
-    if (!verdict.ok) {
-      skip(verdict.code);
-      continue;
-    }
-    result.candidates.push({
-      saleId,
-      tribunalCode: sale.tribunal_code?.trim() || null,
-      email,
-      domain: mailDomainOf(email),
-      officeCode: selected.officeCode ?? null,
-      identityKeys,
-    });
+    if (queued.length < SALE_BATCH) break;
   }
   return result;
+}
+
+/** Examen complet d'une vente retenue par le tri préalable : lectures en base, puis `evaluateAutopilotCandidate`. */
+async function examineAutopilotSale(
+  saleId: string,
+  settings: AutopilotSettings,
+  now: Date,
+  checkAddresses: boolean,
+): Promise<AutopilotCandidate | { skip: string }> {
+  const sale = await loadAdminInformationAgentSale({ auth: { isAdmin: true }, saleId });
+  const selected = listingSelection(sale, checkAddresses);
+  if (!selected) return { skip: "contact_ambiguous" };
+  const email = normalizedEmail(selected.email);
+  if (!email) return { skip: "address_invalid" };
+  const oppositionKeys = recipientOppositionKeys({
+    role: selected.role,
+    name: selected.name ?? sale.lawyer_name,
+    place: saleIdentityPlace(sale),
+    email,
+    officeCode: selected.officeCode,
+    addressKind: selected.addressKind,
+  });
+  // Identité du professionnel seule : une clé de structure ne dit pas qui il est (règle « identité complète »).
+  const identityKeys = personIdentityKeys(oppositionKeys.identityKeys);
+  // Opposition (adresse et identité) vérifiée dès la sélection.
+  try {
+    await assertInformationAgentContactAllowed({
+      saleId,
+      email,
+      identityKeys: oppositionKeys.identityKeys,
+      checkKeys: oppositionKeys.checkKeys,
+    });
+  } catch {
+    return { skip: "opposed" };
+  }
+  // Relevé de l'adresse lue dans l'annonce : enregistré maintenant (comme à la création d'un brouillon), pour que
+  // la date de relevé et celle du premier enregistrement (art. 14) viennent du contact, jamais de la vente.
+  await persistInformationAgentContactObservations({ saleId, candidates: [selected] });
+  const [registry, history, excluded, humanDraft, claimRead] = await Promise.all([
+    loadAutopilotRegistryFacts(email, saleId),
+    loadAutopilotHistoryFacts(email, identityKeys, now),
+    loadExcludedIdentityKeys(identityKeys),
+    humanDraftExists(saleId),
+    readSaleFactClaims(saleId),
+  ]);
+  const facts = getFactReliabilitiesFromClaims(sale, claimRead.claims);
+  const gaps = detectInformationGaps(sale, facts, buildInformationAgentInventory(sale, facts));
+  const hygiene = checkAddresses ? informationAgentAddressHygieneIssue(email) : null;
+  const mailDomain = checkAddresses ? await checkMailDomain(mailDomainOf(email)) : "ok";
+  const verdict = evaluateAutopilotCandidate(
+    {
+      // Origine réelle de l'adresse : absente ou autre que l'annonce, refus (aucune valeur par défaut).
+      sourceKind: candidateSourceKind(selected, registry.originKinds),
+      recipientRole: selected.role,
+      selectedUnambiguously: true,
+      identityComplete: identityKeys.length > 0,
+      addressHygieneIssue: hygiene,
+      consumerDomain: isConsumerMailAddress(email),
+      observationChannel: registry.licitorDecoded ? INFORMATION_AGENT_PIPELINE_CHANNEL : null,
+      // Date de relevé du contact au registre : jamais un repli sur la date de la vente.
+      addressObservedAt: registry.observedAt,
+      mailDomain,
+      saleDate: sale.sale_date ?? null,
+      hasUnpublishedGap: gaps.length > 0,
+      humanDraftExists: humanDraft,
+      identityExcluded: [...excluded].length > 0,
+      contactFirstRecordedAt: registry.firstRecordedAt,
+      ...history,
+    },
+    settings,
+    now,
+  );
+  if (!verdict.ok) return { skip: verdict.code };
+  return {
+    saleId,
+    tribunalCode: sale.tribunal_code?.trim() || null,
+    email,
+    domain: mailDomainOf(email),
+    officeCode: selected.officeCode ?? null,
+    identityKeys,
+  };
 }
 
 /**

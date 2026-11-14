@@ -68,12 +68,11 @@ const LISTING_FIELD_QUESTION_TEXT: Record<
 };
 
 /**
- * Destinataire d'une demande. Le rôle établi du destinataire prime ; quand il ne l'est pas (adresse saisie
- * par l'administrateur, « contact de l'annonce », organisateur sans structure), c'est l'ORGANISATEUR DE LA
- * VENTE qui décide : sur une vente notariale ou une cession de l'État, la liste courte s'applique par
- * défaut, à qui que l'on écrive. Quand l'organisateur n'en dit rien, la SOURCE de l'annonce départage, comme
- * pour le rôle (`informationAgentSourceRole`) : une annonce de `notaires` est une vente notariale, une
- * annonce de `cessions_etat` une cession.
+ * Destinataire d'une demande. Le rôle établi du destinataire prime, avocat compris : un avocat reçoit le
+ * modèle de l'avocat, quelle que soit la vente (relecture du 14/11/2026). Quand le rôle n'est pas établi
+ * (adresse saisie par l'administrateur, « contact de l'annonce », organisateur sans structure), c'est la
+ * vente qui décide (`informationAgentSaleAudience`) : sur une vente notariale ou une cession de l'État, la
+ * liste courte s'applique par défaut, à qui que l'on écrive.
  */
 export function informationAgentQuestionAudience(recipient: {
   role: string | null | undefined;
@@ -86,13 +85,28 @@ export function informationAgentQuestionAudience(recipient: {
   if (recipient.role === "organizer" && recipient.structureKind === "state_service") {
     return "state_service";
   }
-  if (recipient.organizerType === "notary") return "notary";
-  if (recipient.organizerType === "state_service") return "state_service";
-  // Organisateur non déclaré, ou déclaré « avocat poursuivant » sur une source qui n'en publie pas.
-  const bySource = informationAgentSourceRole(recipient.sourceName);
+  if (recipient.role === "lawyer") return "lawyer";
+  return informationAgentSaleAudience(recipient) ?? "other";
+}
+
+/**
+ * Destinataire que la VENTE désigne, quel que soit le rôle de la personne à qui l'on écrit : l'ORGANISATEUR
+ * DE LA VENTE, et quand il n'en dit rien (organisateur non déclaré, ou déclaré « avocat poursuivant » sur une
+ * source qui n'en publie pas) la SOURCE de l'annonce, comme pour le rôle (`informationAgentSourceRole`) : une
+ * annonce de `notaires` est une vente notariale, une annonce de `cessions_etat` une cession. `null` : ni l'un
+ * ni l'autre. Enregistré avec le brouillon (`metadata.sale_audience`) : l'envoi à tout destinataire d'une
+ * vente notariale reste fermé par défaut (`assertInformationAgentNotarySendAllowed`), avocat compris.
+ */
+export function informationAgentSaleAudience(sale: {
+  organizerType: InformationAgentOrganizerType;
+  sourceName: string | null;
+}): "notary" | "state_service" | null {
+  if (sale.organizerType === "notary") return "notary";
+  if (sale.organizerType === "state_service") return "state_service";
+  const bySource = informationAgentSourceRole(sale.sourceName);
   if (bySource?.role === "notary") return "notary";
   if (bySource?.structureKind === "state_service") return "state_service";
-  return recipient.role === "lawyer" ? "lawyer" : "other";
+  return null;
 }
 
 function isInformationAgentQuestionAudience(

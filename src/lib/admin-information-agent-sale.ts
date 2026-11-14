@@ -209,9 +209,13 @@ async function loadAdminInformationAgentRegistryContacts(
   }));
 }
 
-/** Colonnes lues pour savoir si une adresse email est connue (blocs et descriptions, sans le reste). */
+/**
+ * Colonnes lues pour savoir si une adresse email est connue (blocs et descriptions, sans le reste), et la date de la
+ * vente, que le tri préalable du pilote automatique lit dans cette même lecture (`autopilot-candidates.ts`).
+ */
 const EMAIL_AVAILABILITY_SELECT = [
   "id",
+  "sale_date",
   "lawyer_name",
   "lawyer_contact",
   "description",
