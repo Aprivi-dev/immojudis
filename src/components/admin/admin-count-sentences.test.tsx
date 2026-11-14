@@ -5,8 +5,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Phrases de comptage des listes Avocats et Conformité : une réponse sans `total` ne doit plus
-// afficher « sur undefined » (même garde que la pagination, `adminKnownTotal`).
+// Phrases de comptage des listes Avocats et Conformité : une réponse sans `total` ne dit plus « sur »
+// (même règle que la pagination, `adminKnownTotal`), et jamais « sur undefined ».
 const mocks = vi.hoisted(() => ({ referrals: vi.fn(), privacy: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({
   fetchAdminLawyerReferralRequests: mocks.referrals,
@@ -38,19 +38,19 @@ function renderPanel(panel: ReactElement) {
 }
 
 describe("phrases de comptage sans total", () => {
-  it("Avocats : « 0 demande récente affichée sur 0 », sans « undefined »", async () => {
+  it("Avocats : « 0 demande récente affichée. », sans « sur undefined »", async () => {
     mocks.referrals.mockResolvedValue({ requests: [], lawyers: [] });
     const { container } = renderPanel(<AdminLawyerReferralRequestsPanel />);
 
-    expect(await screen.findByText(/affichée sur 0\./)).toBeTruthy();
-    expect(container.textContent).not.toMatch(/undefined|NaN/);
+    expect(await screen.findByText(/0 demande récente affichée\. /)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/undefined|NaN|affichée sur/);
   });
 
-  it("Conformité : « 0 demande récente affichée sur 0 », sans « undefined »", async () => {
+  it("Conformité : « 0 demande récente affichée. », sans « sur undefined »", async () => {
     mocks.privacy.mockResolvedValue({ requests: [] });
     const { container } = renderPanel(<AdminPrivacyRequestsPanel />);
 
-    expect(await screen.findByText(/affichée sur 0\./)).toBeTruthy();
-    expect(container.textContent).not.toMatch(/undefined|NaN/);
+    expect(await screen.findByText(/0 demande récente affichée\. /)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/undefined|NaN|affichée sur/);
   });
 });
