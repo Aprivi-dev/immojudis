@@ -64,6 +64,19 @@ describe("buildValuePreview", () => {
     expect(preview.highEur).toBe(230_000);
   });
 
+  it("ne cite pas de prix au m² quand la surface de l'estimation est présumée (D17)", () => {
+    const preview = build(
+      estimate({
+        actionable: true,
+        estimatedValueEur: 200_000,
+        subjectSurfaceM2: 20,
+        subjectSurfaceEstimated: true,
+      }),
+      50_000,
+    );
+    expect(preview).toMatchObject({ discountNotSignificant: true, startingPricePerM2: null });
+  });
+
   it("ne donne pas de pourcentage pour une mise à prix à plus de 150 % de la valeur", () => {
     const preview = build(
       estimate({ actionable: true, estimatedValueEur: 100_000, subjectSurfaceM2: 40 }),

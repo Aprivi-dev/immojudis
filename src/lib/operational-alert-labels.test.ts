@@ -80,6 +80,11 @@ describe("describeOperationalAlert", () => {
       label: "Pilote de l’Agent IA : dernier passage en erreur",
       place: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
     });
+    // Pilote muet (évalué par la santé opérationnelle) : on agit sur la page du pilote.
+    expect(describeOperationalAlert("information_agent.autopilot.silent")).toEqual({
+      label: "Pilote de l’Agent IA muet : aucun passage planifié dans la plage d’envoi",
+      place: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
+    });
     // Clé réelle, lue par sa famille : le module ne nomme pas la table privée des loyers.
     expect(describeOperationalAlert("reference.anil_rents.stale")).toEqual({
       label: "Référentiel externe (loyers, zonage) à actualiser",

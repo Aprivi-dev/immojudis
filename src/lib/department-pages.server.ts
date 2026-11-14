@@ -64,9 +64,11 @@ function saleRows(
 }
 
 /**
- * Lit toutes les pages de la liste publique, de la plus proche audience à la plus lointaine. Quand
- * le total annoncé par la fonction publique dépasse ce qui a pu être lu (au plus MAX_PAGES pages),
- * le catalogue est tronqué : l'écart est journalisé, sans bloquer la page.
+ * Lit toutes les pages d'une liste publique : tout le catalogue, le filtre d'une page par type ou les
+ * seules ventes reportées. L'ordre est celui de la fonction publique, qui place les ventes
+ * géolocalisées d'abord, même triée par date : ce n'est pas celui des audiences (voir
+ * `compareSalesByDate`). Quand le total annoncé dépasse ce qui a pu être lu (au plus MAX_PAGES
+ * pages), la lecture est tronquée : l'écart est journalisé avec `scope`, sans bloquer la page.
  */
 export async function readAllPublicSales(
   read: Reader,

@@ -20,9 +20,10 @@ const PILOT_SOURCES = [
 
 /**
  * Valeurs de données que les mêmes formes d'écriture rendent sans être des motifs : origine d'une adresse
- * (`candidateSourceKind`) et canal d'observation (garde de l'envoi). Elles ne s'affichent jamais seules.
+ * (`candidateSourceKind`), canal d'observation (garde de l'envoi) et état du pilote pour l'alerte du pilote muet
+ * (`autopilotSilence`, jamais écrit au journal). Elles ne s'affichent jamais seules.
  */
-const DATA_VALUES = ["sale_listing", "licitor_cloudflare_decoded"];
+const DATA_VALUES = ["sale_listing", "licitor_cloudflare_decoded", "silent", "active", "unknown"];
 
 /** Codes écrits en toutes lettres : refus, motifs écartés, erreurs, arrêts, gardes de tête. */
 function codesWrittenByThePilot(): string[] {

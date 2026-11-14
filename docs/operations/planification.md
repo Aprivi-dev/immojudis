@@ -1,6 +1,7 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 11 novembre 2026 (contrôle quotidien du registre des pièces ; auparavant, le 10 novembre :
+Mis à jour le 14 novembre 2026 (surveillance du pilote automatique de l'agent ; auparavant, le 11 novembre :
+contrôle quotidien du registre des pièces ; auparavant, le 10 novembre :
 analyse des réponses de l'agent déclenchée à la réception ;
 auparavant, le 31 octobre : cadences réelles des tâches `pg_cron` et seuils de `cron.stale` alignés dessus,
 `sale-results` et `weekly-digest` supervisées ; auparavant : règle de répartition entre les trois planificateurs,
@@ -61,7 +62,7 @@ reste silencieuse.
 | Purge des ventes                                                                                                    | Supabase `pg_cron` | tick toutes les 5 min, passage toutes les 15 min                             | `/api/cron/sale-retention`              | oui                                                  | 35 min                        |
 | Pré-calcul des valorisations                                                                                        | Supabase `pg_cron` | tick toutes les 5 min, passage si dossier dû, sinon 1 h                      | `/api/cron/precompute-valuations`       | non (déclenchement géré par la file de valorisation) | —                             |
 | Réponses de l'agent (lecture seule, n'envoie aucun e-mail)                                                          | Supabase `pg_cron` | tick toutes les 2 min, passage si message dû, sinon 8 min                    | `/api/cron/information-agent-inbound`   | oui                                                  | 25 min                        |
-| Pilote automatique de l'agent (désactivé par défaut ; envoi réel bloqué)                                            | Supabase `pg_cron` | toutes les 10 min, appel HTTP seulement si le mode n'est pas « off »         | `/api/cron/information-agent-autopilot` | non (le pilote n'a pas de cadence de rattrapage)     | 20 min                        |
+| Pilote automatique de l'agent (désactivé par défaut ; envoi réel bloqué)                                            | Supabase `pg_cron` | toutes les 10 min, appel HTTP seulement si le mode n'est pas « off »         | `/api/cron/information-agent-autopilot` | oui : alerte du pilote muet (voir plus bas)          | 40 min de plage sans passage  |
 
 ### Cadences réelles des tâches `pg_cron` et seuils de `cron.stale`
 
@@ -86,6 +87,18 @@ de la fenêtre (le début enregistré d'un passage suit de quelques secondes le 
 `sale-pepites`) gardent 3 h, les tâches quotidiennes de Vercel 27 h, `data-retention` 8 jours. Le seuil de
 `operational-health` est aussi dans `src/lib/health-status.ts` (`HEALTH_OPERATIONAL_MAX_AGE_MINUTES`, 65) :
 changer l'un change l'autre. Si l'on change une garde (`cron_dispatch_due`), refaire ce calcul.
+
+Le pilote automatique de l'agent n'est pas dans `cron.stale` : il ne travaille que dans sa plage d'envoi (lundi au
+vendredi hors jours fériés, 9 h 30-11 h 30 et 14 h-16 h 30, heure de Paris), et un passage arrêté par sa garde (hors
+plage, en pause, hors production) compte comme un succès dans `operational_job_runs`. Sa surveillance est l'alerte
+`information_agent.autopilot.silent` (migration `20261119101100`), évaluée par `operational-health` à chacun de ses
+passages (toutes les 30 minutes). Elle s'ouvre quand la garde du pilote le laisse travailler (mode autre que « off »,
+ni pause ni arrêt automatique, plage ouverte) et que 40 minutes de plage ouverte se sont cumulées depuis le dernier
+passage planifié, nuits, pause de midi et jours fériés exclus. Un passage lancé à la main ne compte pas (même règle
+que « Dernier passage planifié »). Plage fermée, rien n'est écrit : l'alerte garde son état, sans se dire résolue
+chaque midi et chaque soir. Elle ne se referme qu'après un passage planifié, ou quand le pilote est éteint, arrêté
+automatiquement ou en pause, et deux heures plus tard seulement (comme toute alerte d'exploitation). Conduite à
+tenir : `docs/runbooks/information-agent.md`, « Si aucun passage n'a lieu ».
 
 La complétude des annonces est recalculée par lots de 300 ventes (variable
 `LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ

@@ -40,6 +40,7 @@ import {
   LAUNCH_OFFER_SIGNUP_LINE,
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
+import { rememberedSaleForSignup, rememberSaleForSignup } from "@/lib/signup-return-sale";
 import { LoginPage } from "./login-page";
 
 function fillName(first = "Claire", last = "Martin") {
@@ -52,6 +53,7 @@ beforeEach(() => {
   mocks.launch = { active: false, pending: false };
   mocks.checkoutOpen = false;
   vi.clearAllMocks();
+  window.sessionStorage.clear();
 });
 afterEach(cleanup);
 
@@ -281,6 +283,96 @@ describe("login page", () => {
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
     expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "simulateur" });
+  });
+
+  describe("« S'inscrire » de l'en-tête : la fiche consultée dans l'onglet (sessionStorage)", () => {
+    const SALE = "/sales/0f8c3b9e-6a1d-4c2e-9b7a-2d5e8f1a3c4b";
+
+    async function signUpRedirectTo(): Promise<string> {
+      mocks.signUp.mockResolvedValue({ error: null });
+      render(<LoginPage />);
+      fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+        target: { value: "nouvel.utilisateur@example.test" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+        target: { value: "un-mot-de-passe-solide" },
+      });
+      fillName();
+      fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+      await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
+      const target = new URL(mocks.signUp.mock.calls[0][0].options.emailRedirectTo);
+      return `${target.pathname}${target.search}`;
+    }
+
+    it("sans `redirect`, ramène à la fiche notée, par la première recherche ; l'entrée reste « direct »", async () => {
+      rememberSaleForSignup(SALE);
+      mocks.search = { mode: "investor" };
+      expect(await signUpRedirectTo()).toBe(`/bienvenue?retour=${encodeURIComponent(SALE)}`);
+      expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "direct" });
+      // Elle est partie dans le lien de confirmation : l'onglet l'oublie.
+      expect(rememberedSaleForSignup()).toBeUndefined();
+    });
+
+    it("efface la fiche notée après une connexion réussie, pas après un échec", async () => {
+      rememberSaleForSignup(SALE);
+      const login = async () => {
+        fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+          target: { value: "quelquun@example.test" },
+        });
+        fireEvent.change(screen.getByPlaceholderText("Votre mot de passe"), {
+          target: { value: "un-mot-de-passe-solide" },
+        });
+        const submit = screen
+          .getAllByRole("button", { name: "Se connecter" })
+          .find((button) => button.getAttribute("type") === "submit");
+        fireEvent.click(submit!);
+        await waitFor(() => expect(mocks.signIn).toHaveBeenCalled());
+      };
+      mocks.signIn.mockResolvedValueOnce({ error: new Error("Invalid login credentials") });
+      render(<LoginPage />);
+      await login();
+      await screen.findByRole("alert");
+      expect(rememberedSaleForSignup()).toBe(SALE);
+      mocks.signIn.mockResolvedValueOnce({ error: null });
+      await login();
+      await waitFor(() => expect(rememberedSaleForSignup()).toBeUndefined());
+    });
+
+    it("un `redirect` dans l'adresse l'emporte sur la fiche notée", async () => {
+      rememberSaleForSignup(SALE);
+      mocks.search = { mode: "investor", redirect: "/alertes" };
+      expect(await signUpRedirectTo()).toBe("/alertes");
+    });
+
+    it.each([
+      "https://evil.example/phish",
+      "//evil.example/phish",
+      "/\\evil.example/phish",
+      "javascript:alert(1)",
+      "/login?redirect=%2Fcompte",
+    ])("refuse une adresse notée qui n'est pas une page du site : %s", async (stored) => {
+      rememberSaleForSignup(stored);
+      mocks.search = { mode: "investor" };
+      expect(await signUpRedirectTo()).toBe("/bienvenue");
+    });
+
+    it("un paramètre `redirect` présent mais refusé ne fait pas reprendre la fiche notée", async () => {
+      rememberSaleForSignup(SALE);
+      mocks.search = { mode: "investor", redirect: "https://evil.example/phish" };
+      expect(await signUpRedirectTo()).toBe("/bienvenue");
+    });
+
+    it("le changement de mode ne recopie pas la fiche notée dans l'adresse", () => {
+      rememberSaleForSignup(SALE);
+      render(<LoginPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Créer un compte" }));
+      expect(mocks.replace).toHaveBeenLastCalledWith("/login?mode=investor");
+    });
+
+    it("sans fiche notée, l'inscription mène où elle menait", async () => {
+      mocks.search = { mode: "investor" };
+      expect(await signUpRedirectTo()).toBe("/bienvenue");
+    });
   });
 
   it("shows a French error inside the form instead of the raw Supabase message", async () => {

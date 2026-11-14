@@ -143,6 +143,24 @@ describe("sales statistics", () => {
     });
   });
 
+  it("n'invente pas de prix au m² : un studio sans surface publiée n'entre pas dans la médiane (D17)", () => {
+    const summary = buildSalesStatisticsSummary([
+      makeSale({ id: "mesuree", starting_price_eur: 100_000, app_surface_m2: 50 }),
+      // 20 m² présumés : 100 000 / 20 = 5 000 €/m² serait inventé (médiane 3 500 au lieu de 2 000).
+      makeSale({
+        id: "studio",
+        property_type: "studio",
+        title: "Studio",
+        starting_price_eur: 100_000,
+        app_surface_m2: null,
+        habitable_surface_m2: null,
+        carrez_surface_m2: null,
+      }),
+    ]);
+    expect(summary.medianPricePerM2).toBe(2_000);
+    expect(summary.medianPriceEur).toBe(100_000);
+  });
+
   it("dit si l'échantillon a atteint le plafond de lecture", () => {
     expect(buildSalesStatisticsSummary([makeSale()], true).capped).toBe(true);
     expect(buildSalesStatisticsSummary([]).sampleSize).toBe(0);

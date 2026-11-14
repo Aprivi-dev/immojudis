@@ -71,7 +71,11 @@ export const SALE_LANDING_KEYS: readonly SaleLandingKey[] = [
  * Vrai quand la page est proposée. Les pages d'un type de vente suivent l'interrupteur des ventes
  * notariales et de l'État (`NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED`, `sale-types.ts`), comme les
  * filtres de la recherche. Une page masquée reste consultable, puisque ses ventes restent au
- * catalogue, mais aucun lien n'y mène, le sitemap ne la liste pas et elle est en `noindex, follow`.
+ * catalogue, mais la navigation du site (pied de page, index des départements, liens entre ces
+ * pages) ne la propose plus, le sitemap ne la liste pas et elle est en `noindex, follow`. Trois
+ * articles des ressources y renvoient encore, par un lien écrit dans leur texte : « Bien vendu par un
+ * notaire… » et « Ventes notariales et ventes domaniales… » vers `/encheres-notariales`, « Ventes
+ * domaniales… » vers `/ventes-immobilieres-etat`.
  */
 export function isSaleLandingVisible(page: Pick<SaleLandingPage, "search">): boolean {
   const { saleType } = page.search;

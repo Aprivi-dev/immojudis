@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { evaluateAutopilotSilence } from "@/lib/information-agent/autopilot-settings";
 import { operationalErrorMessage } from "@/lib/monitored-job.server";
 import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
 
@@ -15,6 +16,9 @@ export async function evaluateOperationalHealth(
     // Progression de l'agent d'information (mission en envoi, réponse en file, exécution bloquée),
     // évaluation séparée de evaluate_operational_health.
     supabaseAdmin.rpc("evaluate_information_agent_health", args),
+    // Pilote de l'agent muet : la règle est en TypeScript (plage d'envoi à l'heure de Paris, passages
+    // planifiés seulement), seule l'alerte est écrite en base.
+    evaluateAutopilotSilence(now).then((data) => ({ data, error: null })),
   ]);
   // Deliver incidents even when an independent evaluator fails.
   const delivery = await deliverOperationalAlertNotifications();
@@ -40,6 +44,7 @@ export async function evaluateOperationalHealth(
     valuation: data[1],
     pipeline: data[2],
     informationAgent: data[3],
+    informationAgentAutopilot: data[4],
     externalAlerts: delivery,
   };
 }
