@@ -72,6 +72,11 @@ describe("describeOperationalAlert", () => {
     expect(describeOperationalAlert("information_agent.autopilot.warning.nouveau").label).toBe(
       "Pilote de l’Agent IA proche d’un seuil d’arrêt",
     );
+    // Un passage en erreur n'approche d'aucun seuil d'arrêt : libellé propre, même endroit.
+    expect(describeOperationalAlert("information_agent.autopilot.warning.run_errors")).toEqual({
+      label: "Pilote de l’Agent IA : dernier passage en erreur",
+      place: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
+    });
     // Clé réelle, lue par sa famille : le module ne nomme pas la table privée des loyers.
     expect(describeOperationalAlert("reference.anil_rents.stale")).toEqual({
       label: "Référentiel externe (loyers, zonage) à actualiser",

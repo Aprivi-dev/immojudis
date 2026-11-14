@@ -326,6 +326,11 @@ describe("AdminInformationAgentWorkspace : bandeau de synthèse", () => {
     renderWorkspace();
     const banner = await screen.findByRole("region", { name: "Synthèse de l’agent" });
     await waitFor(() => expect(within(banner).getByText("Réel")).toBeTruthy());
+    // Des messages partent vers des tiers : couleur d'alerte, jamais celle d'une réussite (P11).
+    expect(within(banner).getByText("Réel").className).toContain("text-danger");
+    expect(within(banner).getByRole("button", { name: "Arrêt d’urgence" }).className).toContain(
+      "admin-button-danger",
+    );
 
     for (const name of ["Envois", "Réponses", "Pilote", "Réglages"]) {
       fireEvent.click(tab(new RegExp(name)));
@@ -643,10 +648,13 @@ function autopilot(overrides: Record<string, unknown> = {}) {
       allowLicitorDecoded: false,
       art14RuleEnabled: true,
       art14MaxAgeDays: 30,
+      art14Label:
+        "appliqué à chaque candidat, non désactivable · délai d’information : 30 jours (réglable de 1 à 90)",
       aipdLabel: "Non attestée",
     },
+    runs: "Dernier passage : aucun · prochain passage : aucun (pilote éteint)",
     readiness: { ready: false, checks: [] },
-    ready: { count: 0, items: [] },
+    ready: { count: 0, label: "Prêtes à valider (0 sur 10 au plus)", notice: null, items: [] },
     events: [],
     ...overrides,
   };
