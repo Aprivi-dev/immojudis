@@ -617,6 +617,10 @@ Reprise proposée, à faire valider puis passer par le propriétaire comme rattr
 sa procédure), jamais dans une migration : réécrire `label` de ces lignes avec le même libellé neutre (expéditeur,
 jour de réception du message, type tiré de `information_agent_evidence_extractions.document_kind`).
 
-**Banc d’évaluation à rejouer.** Les nouveaux textes changent la demande que 63 cas du jeu citent mot pour mot, et la
-lecture de « 1 250 m² » (T10) change l’étape des règles (cas F5-23). Rejouer le banc (section « Jeu d’évaluation »)
-après avoir mis à jour la demande citée dans ces cas, par qa-modeles.
+**Banc d’évaluation rejoué (14/11/2026, accord du propriétaire).** Les nouveaux textes changent la demande que 63 cas
+du jeu citent mot pour mot : la citation a été mise à jour dans ces 63 cas, sans toucher à aucune vérité de terrain,
+puis le banc a été rejoué (section « Jeu d’évaluation »). Seul le cas F5-23 change de résultat, par la lecture de
+« 1 250 m² » (T10) : `modele_ideal`, état attendu, passe de 57 publications dont 40 fausses (couverture 17 sur 90) à 58
+dont 40 fausses (18 sur 90) ; `suiveur` reste à 58 dont 41 fausses (17 sur 90), F5-23 y restant non confirmé par la
+lecture sémantique ; `regles_seules` et l’état réel restent à 0. Les publications fausses sont les mêmes, toutes des
+défauts connus.

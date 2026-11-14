@@ -3641,7 +3641,22 @@
      "lot_unidentified": false
     }
    ],
-   "candidates": []
+   "candidates": [
+    {
+     "id": "F5-23-fact-001",
+     "message_id": "F5-23-message",
+     "fact_key": "land_surface_m2",
+     "proposed_value": {
+      "value": 1250,
+      "unit": "m2"
+     },
+     "display_value": "Terrain : 1 250 m²",
+     "status": "pending",
+     "evidence_asset_id": null,
+     "source_page": null,
+     "metadata": {}
+    }
+   ]
   },
   "F5-24": {
    "messages": [

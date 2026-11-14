@@ -4185,7 +4185,22 @@
    ]
   },
   "F5-23": {
-   "candidates": [],
+   "candidates": [
+    {
+     "display_value": "Terrain : 1 250 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F5-23-fact-001",
+     "message_id": "F5-23-message",
+     "metadata": {},
+     "proposed_value": {
+      "unit": "m2",
+      "value": 1250
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
    "semantic": [
     {
      "asset": "corps",
@@ -7394,7 +7409,7 @@
  "essai": null,
  "format": "information_agent_evaluation_worker_stage_v2",
  "modele_reel": false,
- "rules_stage_sha256": "7eb8711c84c7a471fd896a5e0c1b26008e5b11675f7f122b8beedca0ec35b4e4",
+ "rules_stage_sha256": "8f791e59a813604922557cf4bf32dc6d94a722c8dc3efd562a001c7890b296fb",
  "semantic_processor_version": "semantic_evidence_v3",
  "source": null,
  "system_prompt_sha256": "0f02626b4449ccacc4981510773ad717382734d835843eed795d323a78b8eb82"
