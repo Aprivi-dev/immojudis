@@ -352,10 +352,12 @@ describe("contenu propre à chaque page", () => {
     const guide = screen.getByRole("region", { name: step });
     expect(within(guide).getAllByRole("listitem")).toHaveLength(5);
     expect(guide.textContent).toContain("avocat inscrit au barreau du tribunal compétent");
-    // Même formulation que le guide des ventes judiciaires (lexique « Garantie pour enchérir »).
+    // Texte de juridique-rgpd (relecture de la PR #513) : R. 322-41 s'applique aussi, par renvoi, en
+    // licitation et en liquidation judiciaire, comme le dit le lexique du guide (« Garantie pour enchérir »).
     expect(guide.textContent).toContain(
-      "de la mise à prix, avec un minimum de 3\u202f000\u00a0€ en saisie immobilière (art. R. 322-41 du Code des procédures civiles d’exécution)",
+      "de la mise à prix, avec un minimum de 3\u202f000\u00a0€ (art. R. 322-41 du Code des procédures civiles d’exécution, appliqué aussi en licitation et en liquidation judiciaire)",
     );
+    expect(guide.textContent).not.toContain("en saisie immobilière (art. R. 322-41");
     expect(guide.textContent).toContain(
       "l’État vend par adjudication publique ou cession amiable, le plus souvent sur appel d’offres, et de gré à gré dans des cas limités ; les biens confisqués sont vendus par l’AGRASC.",
     );

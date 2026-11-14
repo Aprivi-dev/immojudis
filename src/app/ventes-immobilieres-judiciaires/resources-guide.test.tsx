@@ -142,6 +142,17 @@ describe("guide des ventes immobilières judiciaires", () => {
     });
   });
 
+  describe("garantie pour enchérir (R. 322-41)", () => {
+    it("ne la réserve pas à la saisie immobilière : le lexique dit le renvoi en licitation et en liquidation", () => {
+      const { container } = render(<ResourcesPage />);
+      const text = plain(container.textContent ?? "");
+      expect(text).toContain(
+        "10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41 du CPCE, applicable aussi, par renvoi, en licitation et en liquidation judiciaire). Elle est restituée à l’enchérisseur qui ne gagne pas.",
+      );
+      expect(text).not.toContain("3 000 € en saisie immobilière");
+    });
+  });
+
   describe("frise de la procédure", () => {
     it("est une liste ordonnée de 5 étapes, dans l'ordre de la procédure", () => {
       render(<ResourcesPage />);
@@ -168,7 +179,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(plain(item.querySelector("a")!.textContent ?? "")).toBe("Remettre la garantie");
       const step = plain(item.querySelector("p")!.textContent ?? "");
       expect(step).toBe(
-        "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
+        "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
       );
       expect(step).not.toMatch(/consign/i);
     });
