@@ -1856,7 +1856,8 @@ function functionSignature(schema, name, argumentText) {
 //    aucun droit pour anon, authenticated ni public (accès par le rôle de service seulement) ;
 // 2. toute route `src/app/api/cron/*/route.ts` s'authentifie (`runMonitoredCron(` ou
 //    `cronRequestAuthorized(`) ;
-// 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton et appelle un garde administrateur ;
+// 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton et appelle un garde administrateur,
+//    avant toute lecture du corps ou des paramètres ;
 // 3. `admin-signups.ts` appelle `assertAdminAuth` avant toute lecture ;
 // 4. `app_private.signup_trial_ends_at` ne lit jamais `user_metadata` (modifiable par la personne).
 {
@@ -1916,14 +1917,31 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
-  // 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton (`bearerTokenFromRequest(`) ET appelle
-  //    un garde administrateur : un `requireAdmin(`, `assertAdmin…(` ou `!auth.isAdmin` dans la route
-  //    elle-même ou dans un module `@/lib/...` qu'elle importe. Une nouvelle route sans garde échoue ici.
-  //    Contrôle statique : il ne prouve pas que le garde passe avant toute lecture (voir les tests de
-  //    routes et `token-before-body.test.ts`), il empêche d'en oublier un.
+  // 2 bis. chaque gestionnaire `adminRoute(` d'une route `src/app/api/admin/**/route.ts` :
+  //    - soit déclare `guard: "admin"` : l'aide vérifie le jeton puis le rôle avant le gestionnaire
+  //      (l'ordre de l'aide elle-même est contrôlé ci-dessous) ;
+  //    - soit lit le jeton (`bearerTokenFromRequest(`) et la route appelle un garde administrateur
+  //      (`requireAdmin(`, `assertAdmin…(` ou `!auth.isAdmin`) elle-même ou dans un module `@/lib/...`
+  //      qu'elle importe ; s'il lit le corps ou les paramètres, ce garde est écrit dans le gestionnaire
+  //      AVANT la première lecture (audit du 14/11/2026, D1 et D8).
+  //    Contrôle textuel, complété par `token-before-body.test.ts` qui l'exécute route par route.
   {
     const adminGuard =
       /\b(?:requireAdmin|assertAdmin\w*|requireAdminContext)\(|!\s*[\w.]+\.isAdmin\b/;
+    const declaresGuard = /\bguard:\s*"admin"/;
+    const readsRequest =
+      /\brequest\.(?:json|text|formData|arrayBuffer|blob)\(|\brequest\.url\b|\bsearchParams\b/;
+    const helperPath = "src/lib/admin-route-deadline.ts";
+    const helper = await readFile(new URL(`../${helperPath}`, import.meta.url), "utf8");
+    const guardedBranch = helper.slice(Math.max(0, helper.search(/\bif\s*\(\s*!guard\s*\)/)));
+    const tokenAt = guardedBranch.search(/\bbearerTokenFromRequest\(request\)/);
+    const roleAt = guardedBranch.search(/\bawait assertAdminAuth\(authToken\)/);
+    const handlerAt = guardedBranch.search(/\bhandler\(request,\s*\{\s*\.\.\.route,\s*auth\b/);
+    if (!(tokenAt >= 0 && roleAt > tokenAt && handlerAt > roleAt)) {
+      failures.push(
+        `${helperPath}: adminRoute({ guard: "admin" }) must read the token, then await assertAdminAuth(authToken), before calling the handler`,
+      );
+    }
     const adminRoutes = [];
     const walkAdmin = async (directory) => {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -1939,12 +1957,36 @@ function functionSignature(schema, name, argumentText) {
         routeUrl.pathname.indexOf("/src/app/api/admin/") + 1,
       );
       const source = await readFile(routeUrl, "utf8");
-      if (!/\bbearerTokenFromRequest\(/.test(source)) {
-        failures.push(`${routePath} does not read the bearer token (bearerTokenFromRequest)`);
+      const starts = [...source.matchAll(/\badminRoute(?:<[^>]*>)?\(/g)].map(
+        (match) => match.index,
+      );
+      const handlers = starts.map((start, index) => source.slice(start, starts[index + 1]));
+      if (handlers.length === 0) {
+        failures.push(`${routePath} has no adminRoute( handler to check`);
         continue;
+      }
+      const unguarded = handlers.filter((handler) => !declaresGuard.test(handler));
+      if (unguarded.length === 0) continue;
+      if (unguarded.some((handler) => !/\bbearerTokenFromRequest\(/.test(handler))) {
+        failures.push(
+          `${routePath} has a handler that neither declares guard: "admin" nor reads the bearer token (bearerTokenFromRequest)`,
+        );
+        continue;
+      }
+      for (const handler of unguarded) {
+        const readAt = handler.search(readsRequest);
+        const guardAt = handler.search(adminGuard);
+        if (readAt >= 0 && !(guardAt >= 0 && guardAt < readAt)) {
+          failures.push(
+            `${routePath} reads the body or the query before the administrator guard: declare guard: "admin" in adminRoute options`,
+          );
+          break;
+        }
       }
       let guarded = adminGuard.test(source);
       for (const imported of guarded ? [] : source.matchAll(/from\s+"@\/lib\/([^"]+)"/g)) {
+        // L'aide `adminRoute` ne garde que les gestionnaires qui déclarent `guard: "admin"`.
+        if (imported[1] === "admin-route-deadline") continue;
         for (const candidate of [`${imported[1]}.ts`, `${imported[1]}/index.ts`]) {
           try {
             const library = await readFile(

@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { adminTrialExtensionInputSchema, extendAdminSignupTrials } from "@/lib/admin-signups";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
@@ -11,10 +10,12 @@ export const maxDuration = 30;
  * d'infrastructure.
  */
 export const POST = adminRoute(
-  { scope: "admin.signups.extend-trial", fallbackMessage: "Erreur admin prolongation d'essai" },
-  async (request) => {
-    // Le jeton d'abord : sans session, la réponse est 401, que le corps soit valide ou non.
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.signups.extend-trial",
+    fallbackMessage: "Erreur admin prolongation d'essai",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminTrialExtensionInputSchema.parse(await request.json());
     return extendAdminSignupTrials({ authToken, input });
   },

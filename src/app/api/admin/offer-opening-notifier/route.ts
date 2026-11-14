@@ -19,9 +19,12 @@ export const GET = adminRoute(
 
 /** `{ action: "test" }` : envoi d'essai à l'administrateur ; `{ action: "send", confirm: true }` : un lot. */
 export const POST = adminRoute(
-  { scope: "admin.offer-opening-notifier.send", fallbackMessage: "Envoi non effectué" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.offer-opening-notifier.send",
+    fallbackMessage: "Envoi non effectué",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = offerOpeningNotifierActionSchema.parse(await request.json());
     if (input.action === "test") return sendOfferOpeningTest({ authToken });
     return sendOfferOpeningBatch({ authToken, limit: input.limit });

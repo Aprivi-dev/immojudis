@@ -23,9 +23,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.auto-publication.write",
     fallbackMessage: "Publication automatique non modifiée",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminAutoPublicationActionSchema.parse(await request.json());
     return runAdminAutoPublicationAction({ authToken, input });
   },

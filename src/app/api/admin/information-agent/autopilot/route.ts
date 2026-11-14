@@ -23,9 +23,9 @@ export const POST = adminRoute(
   {
     scope: "admin.information-agent.autopilot.write",
     fallbackMessage: "Pilote automatique non modifié",
+    guard: "admin",
   },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  async (request, { authToken }) => {
     const input = adminAutopilotActionSchema.parse(await request.json());
     return runAdminAutopilotAction({ authToken, input });
   },
