@@ -96,17 +96,19 @@ describe("AdminFactClaimDecisionPanel : affichage", () => {
     expect(mocks.list).toHaveBeenCalledWith({ saleId: undefined, offset: 0, limit: 50 });
   });
 
-  it("dit dans le titre, le bouton et l'aide que l'acceptation met à jour la fiche", async () => {
+  it("dit dans le titre, le bouton et l'aide que l'acceptation peut mettre à jour la fiche", async () => {
     renderPanel();
 
     expect(
       await screen.findByRole("heading", {
-        name: "Observations à décider, avec effet sur la fiche",
+        name: "Observations à décider, qui peuvent modifier la fiche",
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/^Accepter une observation met à jour la fiche/)).toBeTruthy();
     expect(
-      await screen.findByRole("button", { name: "Accepter et mettre à jour la fiche" }),
+      screen.getByText(/^Une observation acceptée peut remplacer la valeur affichée sur la fiche/),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Accepter" })).toBeNull();
   });
@@ -155,7 +157,11 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
       "à décider",
       null,
       "À décider",
-      ["Accepter et mettre à jour la fiche", "Rejeter l’observation", "Enregistrer une opposition"],
+      [
+        "Accepter (peut mettre à jour la fiche)",
+        "Rejeter l’observation",
+        "Enregistrer une opposition",
+      ],
     ],
     [
       "acceptée",
@@ -167,13 +173,13 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
       "rejetée",
       { decision: "rejected", reasonCode: "other" },
       "Dernière décision : rejetée",
-      ["Accepter et mettre à jour la fiche", "Enregistrer une opposition"],
+      ["Accepter (peut mettre à jour la fiche)", "Enregistrer une opposition"],
     ],
     [
       "retirée",
       { decision: "withdrawn", reasonCode: "entry_error" },
       "Dernière décision : retirée",
-      ["Accepter et mettre à jour la fiche", "Enregistrer une opposition"],
+      ["Accepter (peut mettre à jour la fiche)", "Enregistrer une opposition"],
     ],
     [
       "autorisation retirée",
@@ -239,7 +245,7 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
     renderPanel();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Accepter et mettre à jour la fiche" }),
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
     );
     const confirm = screen.getByRole("button", { name: "Confirmer l’acceptation" });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
@@ -278,7 +284,7 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
     renderPanel();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Accepter et mettre à jour la fiche" }),
+      await screen.findByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
     );
     fireEvent.change(screen.getByLabelText("Rattachement au lot (obligatoire)"), {
       target: { value: "unknown" },

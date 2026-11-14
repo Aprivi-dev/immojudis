@@ -189,14 +189,14 @@ test.describe("admin information agent", () => {
 
     await page.goto("/admin/agent-ia?onglet=reponses");
     const panel = page.getByRole("region", {
-      name: "Observations à décider, avec effet sur la fiche",
+      name: "Observations à décider, qui peuvent modifier la fiche",
     });
     await expect(panel.getByText("À décider", { exact: true })).toBeVisible();
     await expect(panel.getByText("Libre", { exact: true })).toBeVisible();
     await expect(panel.getByText("Occupé", { exact: true })).toBeVisible();
     // Le registre peut remplacer la valeur de la fiche : son bouton le dit.
     await expect(
-      panel.getByRole("button", { name: "Accepter et mettre à jour la fiche" }),
+      panel.getByRole("button", { name: "Accepter (peut mettre à jour la fiche)" }),
     ).toBeVisible();
 
     await panel.getByRole("button", { name: "Enregistrer une opposition" }).click();
@@ -258,14 +258,14 @@ test.describe("admin information agent", () => {
     await expect(reviewPanel.getByText("dpe.pdf", { exact: true })).toHaveCount(0);
 
     await expect(
-      page.getByRole("heading", { name: "Faits à vérifier, sans effet sur la fiche" }),
+      page.getByRole("heading", { name: "Faits à vérifier, valeur inchangée" }),
     ).toBeVisible();
     const claimsPanel = page.getByRole("region", {
-      name: "Faits à vérifier, sans effet sur la fiche",
+      name: "Faits à vérifier, valeur inchangée",
     });
     // Vérifier un fait ne touche pas la fiche : le bouton le dit, sans « Accepter » ambigu.
     await expect(
-      claimsPanel.getByRole("button", { name: "Marquer vérifié (la fiche ne change pas)" }),
+      claimsPanel.getByRole("button", { name: "Confirmer la valeur (inchangée)" }),
     ).toBeVisible();
     await expect(claimsPanel.getByRole("button", { name: "Accepter", exact: true })).toHaveCount(0);
     await claimsPanel.getByRole("button", { name: "Rejeter", exact: true }).click();
@@ -445,7 +445,7 @@ test.describe("admin information agent", () => {
       }),
     ).toHaveText([
       "Informations à contrôler",
-      "Faits à vérifier, sans effet sur la fiche",
+      "Faits à vérifier, valeur inchangée",
       "Messages non rattachés",
     ]);
 
