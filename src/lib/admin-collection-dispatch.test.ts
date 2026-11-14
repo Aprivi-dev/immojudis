@@ -61,6 +61,10 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     });
     mocks.select.mockReturnValue({
       eq: () => ({
+        // Collectes en file ou en cours pour la même source : aucune.
+        in: () => ({
+          gte: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
+        }),
         limit: () =>
           Promise.resolve({
             data: [
@@ -87,7 +91,11 @@ describe("manual collection includes cloud sources in the existing workflow", ()
   it.each(["all", "licitor", "cessions_etat"])(
     "dispatches %s once with the tracked run id",
     async (source) => {
-      const result = await startAdminScroll("admin-token", { source, mode: "collect" });
+      const result = await startAdminScroll("admin-token", {
+        confirm: true,
+        source,
+        mode: "collect",
+      });
       expect(result.dispatched).toBe(true);
       expect(fetch).toHaveBeenCalledTimes(1);
       const [, options] = vi.mocked(fetch).mock.calls[0];
@@ -111,7 +119,11 @@ describe("manual collection includes cloud sources in the existing workflow", ()
       vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 })),
     );
 
-    const result = await startAdminScroll("admin-token", { source: "all", mode: "collect" });
+    const result = await startAdminScroll("admin-token", {
+      confirm: true,
+      source: "all",
+      mode: "collect",
+    });
 
     expect(result).toMatchObject({
       ok: false,
@@ -127,7 +139,11 @@ describe("manual collection includes cloud sources in the existing workflow", ()
   it("keeps a dispatch timeout ambiguous instead of claiming it can be retried safely", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("request timed out")));
 
-    const result = await startAdminScroll("admin-token", { source: "all", mode: "collect" });
+    const result = await startAdminScroll("admin-token", {
+      confirm: true,
+      source: "all",
+      mode: "collect",
+    });
 
     expect(result).toMatchObject({ ok: false, dispatched: false, dispatchMode: "github_actions" });
     expect(result.run.status).toBe("queued");
@@ -156,7 +172,11 @@ describe("manual collection includes cloud sources in the existing workflow", ()
       vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 })),
     );
 
-    const result = await startAdminScroll("admin-token", { source: "all", mode: "collect" });
+    const result = await startAdminScroll("admin-token", {
+      confirm: true,
+      source: "all",
+      mode: "collect",
+    });
 
     expect(result.run.status).toBe("running");
     expect(result.run.finishedAt).toBeNull();
@@ -166,6 +186,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
   it("refuses the removed AI description backfill mode", async () => {
     await expect(
       startAdminScroll("admin-token", {
+        confirm: true,
         source: "all",
         mode: "llm_backfill",
         limit: 7,
@@ -183,6 +204,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     vi.stubEnv("SCROLL_WEBHOOK_SECRET", "webhook-secret");
 
     const result = await startAdminScroll("admin-token", {
+      confirm: true,
       source: "licitor",
       mode: "collect",
     });
@@ -210,7 +232,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
       vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 502 })),
     );
 
-    const result = await startAdminScroll("admin-token", { source: "all" });
+    const result = await startAdminScroll("admin-token", { confirm: true, source: "all" });
 
     expect(result).toMatchObject({
       ok: false,
@@ -225,7 +247,11 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     vi.stubEnv("GITHUB_SCROLL_TOKEN", "");
     vi.stubEnv("IMMOJUDIS_GITHUB_ACTIONS_TOKEN", "legacy-dispatch-test-token");
 
-    const result = await startAdminScroll("admin-token", { source: "all", mode: "collect" });
+    const result = await startAdminScroll("admin-token", {
+      confirm: true,
+      source: "all",
+      mode: "collect",
+    });
 
     expect(result.dispatched).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -238,6 +264,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
   it("rejects unknown launch fields before creating a queued run", async () => {
     await expect(
       startAdminScroll("admin-token", {
+        confirm: true,
         source: "all",
         mode: "collect",
         unexpected: true,
@@ -254,7 +281,7 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     vi.stubEnv("SCROLL_WEBHOOK_URL", "");
     vi.stubEnv("IMMOJUDIS_SCROLL_WEBHOOK_URL", "");
 
-    await expect(startAdminScroll("admin-token", { source: "all" })).rejects.toThrow(
+    await expect(startAdminScroll("admin-token", { confirm: true, source: "all" })).rejects.toThrow(
       "Aucun runner de collecte n'est configuré",
     );
     expect(mocks.insert).not.toHaveBeenCalled();

@@ -28,6 +28,15 @@ import {
   PipelineStat,
   useAdminRefresh,
 } from "@/components/admin/admin-ui";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import {
   DASHBOARD_QUERY_KEY,
@@ -56,6 +65,8 @@ export function AdminOperationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<OperationsTab>("collections");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  // Collecte à lancer après confirmation (bouton « Lancer » ou « Relancer » d'un run).
+  const [pendingLaunch, setPendingLaunch] = useState<AdminRunRequest | null>(null);
 
   const runsQuery = useQuery({
     queryKey: DASHBOARD_RUNS_QUERY_KEY,
@@ -78,8 +89,9 @@ export function AdminOperationsPage() {
   ]);
 
   const startMutation = useMutation({
-    mutationFn: (request?: AdminRunRequest) =>
-      startAdminScrollRequest({ data: request ?? { source, mode: "collect" } }),
+    // Appelée seulement depuis la confirmation : le serveur exige `confirm: true`.
+    mutationFn: (request: AdminRunRequest) =>
+      startAdminScrollRequest({ data: { ...request, confirm: true } }),
     onSuccess: async (result) => {
       toast.success(result.message);
       await queryClient.invalidateQueries({ queryKey: DASHBOARD_RUNS_QUERY_KEY });
@@ -141,10 +153,47 @@ export function AdminOperationsPage() {
         onTabChange={setActiveTab}
         startMutationPending={startMutation.isPending}
         onStart={(requestedSource) =>
-          startMutation.mutate({ source: requestedSource ?? source, mode: "collect" })
+          setPendingLaunch({ source: requestedSource ?? source, mode: "collect" })
         }
-        onRestart={(request) => startMutation.mutate(request)}
+        onRestart={setPendingLaunch}
       />
+      <Dialog
+        open={pendingLaunch !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingLaunch(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lancer une collecte ?</DialogTitle>
+            <DialogDescription>
+              Source :{" "}
+              {SOURCE_OPTIONS.find((option) => option.value === pendingLaunch?.source)?.label ??
+                pendingLaunch?.source}
+              . La demande part tout de suite vers le runner de collecte. Une seule collecte à la
+              fois par source : une seconde demande est refusée tant que la première est en file ou
+              en cours.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <DialogClose asChild>
+              <button type="button" className="admin-button-secondary">
+                Annuler
+              </button>
+            </DialogClose>
+            <button
+              type="button"
+              className="admin-button-primary"
+              onClick={() => {
+                if (pendingLaunch) startMutation.mutate(pendingLaunch);
+                setPendingLaunch(null);
+              }}
+            >
+              Lancer la collecte
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }
