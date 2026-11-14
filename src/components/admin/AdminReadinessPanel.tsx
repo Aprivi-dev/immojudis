@@ -15,6 +15,7 @@ import {
   describeOperationalAlert,
   operationalAlertNotificationLabel,
   operationalAlertSeverityLabel,
+  operationalAlertStateLabel,
 } from "@/lib/operational-alert-labels";
 import { adminReadinessQuery } from "@/components/admin/admin-readiness-query";
 import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
@@ -152,7 +153,8 @@ export function AdminReadinessPanel() {
                 <div className="min-w-0">
                   <div className="text-foreground">{describeOperationalAlert(alert.key).label}</div>
                   <div className="mt-1 text-muted-foreground">
-                    Dernier signal le {formatCompactDateTime(alert.lastSeenAt)}
+                    {operationalAlertStateLabel(alert.status)} · dernier signal le{" "}
+                    {formatCompactDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
                 <span className="text-foreground">

@@ -62,6 +62,8 @@ export type OperationalHealthReadiness = {
   pendingDeliveryCount: number | null;
   failedDeliveryCount: number | null;
   lastHealthRunAt: string | null;
+  /** Dernière mesure de santé de moins de 30 minutes (la surveillance tourne). */
+  lastHealthRunFresh: boolean;
   alerts: OperationalAlertSummary[];
   detail: string;
 };
@@ -345,6 +347,7 @@ async function readOperationalHealthReadiness(
       from public.operational_alerts
       where status = 'open' or notification_status in ('pending', 'processing', 'failed')
       order by
+        case status when 'open' then 0 else 1 end,
         case severity when 'critical' then 0 else 1 end,
         last_seen_at desc
       limit 20
@@ -388,6 +391,7 @@ async function readOperationalHealthReadiness(
       pendingDeliveryCount,
       failedDeliveryCount,
       lastHealthRunAt,
+      lastHealthRunFresh: lastRunFresh,
       alerts: alertRows.map((alert) => ({
         key: alert.alert_key,
         category: alert.category,
@@ -471,6 +475,7 @@ function unavailableOperationalHealth(detail: string): OperationalHealthReadines
     pendingDeliveryCount: null,
     failedDeliveryCount: null,
     lastHealthRunAt: null,
+    lastHealthRunFresh: false,
     alerts: [],
     detail,
   };

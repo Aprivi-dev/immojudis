@@ -27,6 +27,11 @@ export function AdminOperationalAlerts() {
   return (
     <AdminPanel className="p-5">
       <AdminSectionHeading title="Alertes ouvertes" />
+      {query.isError && query.data ? (
+        <p className="mt-3 text-sm text-amber-800" role="status">
+          Actualisation impossible : la liste date du dernier chargement réussi.
+        </p>
+      ) : null}
       {query.isPending ? (
         <p className="mt-3 text-sm text-brand-navy/60" role="status">
           Chargement des alertes…

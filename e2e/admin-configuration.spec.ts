@@ -263,7 +263,7 @@ test.describe("admin configuration", () => {
 
     await expect(page.getByRole("heading", { name: "Vue d’ensemble", exact: true })).toBeVisible();
     await expect(page.getByText("Aucune alerte ni échec récent", { exact: true })).toHaveCount(0);
-    expect(await page.locator("body").innerText()).not.toContain("Vérifié à l’instant");
+    expect(await page.locator("body").innerText()).not.toContain("Exécutions vérifiées");
 
     state.releaseDashboard();
     await expect(page.getByText("Aucune alerte ni échec récent", { exact: true })).toBeVisible();
@@ -284,7 +284,8 @@ test.describe("admin configuration", () => {
     // Sans annonce en attente, pas de section Publications ; les cartes qui répétaient le menu sont parties.
     await expect(page.getByRole("heading", { name: "Annonces de professionnels" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Vues de l’administration" })).toHaveCount(0);
-    await page.waitForLoadState("networkidle");
+    // Les liens de l'accueil sont préchargés par Next : attendre les requêtes d'API, pas le réseau entier.
+    await expect.poll(() => new Set(state.adminRequests).size).toBe(7);
     expect(state.dashboardSections).toEqual(["runs"]);
     expect([...new Set(state.adminRequests)].sort()).toEqual([
       "/api/admin/dashboard",
@@ -394,7 +395,7 @@ test.describe("admin configuration", () => {
       await page.setViewportSize(size);
       await page.goto("/admin");
       await expect(page.getByText("2 messages non rattachés en attente")).toBeVisible();
-      await page.waitForLoadState("networkidle");
+      await expect(page.getByText("Aucune demande RGPD ouverte")).toBeVisible();
       await page.screenshot({ path: `${dir}/accueil-${label}.png`, fullPage: true });
       await page.goto("/admin/operations");
       await expect(page.getByRole("row", { name: /test-source/ })).toBeVisible();
@@ -796,6 +797,7 @@ function readinessPayload(openAlerts = false) {
       pendingDeliveryCount: 0,
       failedDeliveryCount: 0,
       lastHealthRunAt: "2026-09-19T09:00:00.000Z",
+      lastHealthRunFresh: true,
       alerts: openAlerts ? PRODUCTION_OPEN_ALERTS : [],
       detail: "CI",
     },

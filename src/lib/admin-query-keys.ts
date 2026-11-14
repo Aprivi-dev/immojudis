@@ -14,5 +14,9 @@ export const PIPELINE_QUERY_KEY = ["admin-pipeline"] as const;
  * des services.
  */
 export const READINESS_QUERY_KEY = ["admin-readiness"] as const;
+/** Demandes RGPD : vue Conformité et accueil (la première page est la même requête). */
+export const PRIVACY_REQUESTS_QUERY_KEY = ["admin-privacy-requests"] as const;
+/** Annonces des professionnels : vue Publications et compteur de l'accueil. */
+export const PUBLICATION_REQUESTS_QUERY_KEY = ["admin-publication-requests"] as const;
 /** Abonnements : vue Clients, rafraîchie aussi par la prolongation d'essais des inscriptions. */
 export const SUBSCRIPTIONS_QUERY_KEY = ["admin-subscriptions"] as const;
