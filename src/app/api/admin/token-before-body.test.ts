@@ -1,8 +1,19 @@
+import { readdirSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AuthRequiredError } from "@/lib/api-errors";
 
+// Toute lecture de la base par le client de service, avant ou à la place de la garde, fait échouer
+// le test : la réponse attendue (401, 403, 400) ne peut venir que de la garde ou de la validation.
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: vi.fn(), rpc: vi.fn(), auth: { admin: {} } },
+  supabaseAdmin: new Proxy(
+    {},
+    {
+      get: (_target, property) => {
+        throw new Error(`supabaseAdmin.${String(property)} lu avant la garde administrateur`);
+      },
+    },
+  ),
 }));
 
 /**
@@ -266,4 +277,98 @@ describe("routes admin : le jeton et le rôle avant le corps et les paramètres"
       expect((await send(route, "jeton-admin")).status).toBe(400);
     },
   );
+});
+
+/**
+ * Relecture de sécurité de la PR #502 : la liste ci-dessus est fixe. Ici, chaque `route.ts` du
+ * dossier est trouvé par lecture du disque et chaque méthode HTTP qu'il exporte est appelée sans
+ * jeton, avec un jeton refusé et avec un compte ordinaire. Une nouvelle route ou une nouvelle
+ * méthode est donc couverte sans qu'on pense à l'ajouter.
+ */
+const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+const ADMIN_DIRECTORY = join(process.cwd(), "src", "app", "api", "admin");
+
+function routeFiles(directory: string): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = join(directory, entry);
+    if (statSync(path).isDirectory()) return routeFiles(path);
+    return entry === "route.ts" ? [path] : [];
+  });
+}
+
+const DISCOVERED = routeFiles(ADMIN_DIRECTORY).map((file) => ({
+  file,
+  path: relative(ADMIN_DIRECTORY, file).split(sep).slice(0, -1).join("/"),
+}));
+
+async function discoveredHandlers() {
+  const handlers: Array<{
+    name: string;
+    method: string;
+    path: string;
+    handler: (
+      request: Request,
+      context: { params: Promise<Record<string, string>> },
+    ) => Promise<Response>;
+  }> = [];
+  for (const { file, path } of DISCOVERED) {
+    const module = (await import(file)) as Record<string, unknown>;
+    for (const method of HTTP_METHODS) {
+      if (typeof module[method] !== "function") continue;
+      handlers.push({
+        name: `${path} ${method}`,
+        method,
+        path,
+        handler: module[method] as (typeof handlers)[number]["handler"],
+      });
+    }
+  }
+  return handlers;
+}
+
+async function call(
+  { method, path, handler }: Awaited<ReturnType<typeof discoveredHandlers>>[number],
+  token: string | null,
+): Promise<Response> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers.authorization = `Bearer ${token}`;
+  // Segments dynamiques (`[id]`) : une valeur quelconque, que la garde doit refuser avant de lire.
+  const params = Object.fromEntries(
+    [...path.matchAll(/\[([^\]]+)\]/g)].map(([, name]) => [name, "x"]),
+  );
+  const url = `https://example.test/api/admin/${path.replace(/\[([^\]]+)\]/g, "x")}?n=1`;
+  const hasBody = method !== "GET" && method !== "HEAD";
+  return handler(
+    new Request(url, {
+      method,
+      headers,
+      body: hasBody ? JSON.stringify(INVALID_BODY) : undefined,
+    }),
+    { params: Promise.resolve(params) },
+  );
+}
+
+describe("toutes les routes admin trouvées sur le disque : la garde avant tout", () => {
+  it("trouve les routes et leurs méthodes", async () => {
+    expect(DISCOVERED.length).toBeGreaterThanOrEqual(40);
+    expect((await discoveredHandlers()).length).toBeGreaterThanOrEqual(60);
+  });
+
+  it("chaque méthode refuse 401 sans jeton, 401 avec un jeton refusé, 403 pour un compte ordinaire", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const statuses: Record<string, number[]> = {};
+    for (const route of await discoveredHandlers()) {
+      statuses[route.name] = [
+        (await call(route, null)).status,
+        (await call(route, "jeton-falsifie")).status,
+        (await call(route, "jeton-utilisateur")).status,
+      ];
+    }
+    const unexpected = Object.entries(statuses).filter(
+      ([, [none, refused, ordinary]]) => none !== 401 || refused !== 401 || ordinary !== 403,
+    );
+    expect(unexpected).toEqual([]);
+  });
 });

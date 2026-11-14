@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminReferencedLawyerInputSchema,
   listAdminReferencedLawyers,
@@ -11,8 +10,12 @@ import { adminRoute } from "@/lib/admin-route-deadline";
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "admin.lawyers.read", fallbackMessage: "Avocats référencés indisponibles" },
-  async (request) => listAdminReferencedLawyers(bearerTokenFromRequest(request)),
+  {
+    scope: "admin.lawyers.read",
+    fallbackMessage: "Avocats référencés indisponibles",
+    guard: "admin",
+  },
+  async (_request, { authToken }) => listAdminReferencedLawyers(authToken),
 );
 
 export const POST = adminRoute(
