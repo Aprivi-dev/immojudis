@@ -6,12 +6,64 @@ import {
   operationalHealthItem,
 } from "@/lib/admin-readiness";
 
+const db = vi.hoisted(() => ({
+  queries: [] as string[],
+  latestSuccessAt: null as string | null,
+}));
+
+/** Base simulée : rend des lignes selon la requête et garde le texte de chaque requête. */
+vi.mock("postgres", () => ({
+  default: () =>
+    Object.assign(
+      (strings: TemplateStringsArray) => {
+        const text = strings.join("?");
+        db.queries.push(text);
+        if (text.includes("from cron.job")) {
+          return Promise.resolve([{ schedule: "*/15 * * * *", active: true }]);
+        }
+        if (text.includes("from public.operational_job_runs") && text.includes("max(")) {
+          return Promise.resolve([{ latest_at: db.latestSuccessAt }]);
+        }
+        return Promise.resolve([]);
+      },
+      { end: () => Promise.resolve() },
+    ),
+}));
+
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: vi.fn().mockResolvedValue({ isAdmin: true }),
 }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("operational health from the database", () => {
+  async function readOperations() {
+    vi.stubEnv("SUPABASE_DB_URL", "postgres://readiness.test/db");
+    db.queries = [];
+    return (await getAdminOperationalReadiness("admin-jwt")).operations;
+  }
+
+  it("dates the monitoring from its last SUCCESSFUL run, never from a failing one", async () => {
+    db.latestSuccessAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    expect((await readOperations()).lastHealthRunFresh).toBe(true);
+    const latest = db.queries.find((query) => query.includes("from public.operational_job_runs"));
+    expect(latest).toContain("status = 'success'");
+
+    db.latestSuccessAt = new Date(Date.now() - 45 * 60_000).toISOString();
+    expect((await readOperations()).lastHealthRunFresh).toBe(false);
+    db.latestSuccessAt = null;
+    expect((await readOperations()).lastHealthRunFresh).toBe(false);
+  });
+
+  it("lists the open alerts first, so the 20-row limit never hides them", async () => {
+    await readOperations();
+    const alerts = db.queries.find((query) => query.includes("limit 20")) ?? "";
+    const order = alerts.slice(alerts.indexOf("order by"));
+    expect(order.indexOf("case status when 'open' then 0 else 1 end")).toBeGreaterThan(-1);
+    expect(order.indexOf("case status when 'open'")).toBeLessThan(order.indexOf("case severity"));
+  });
 });
 
 describe("operational alert summary", () => {

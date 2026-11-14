@@ -285,10 +285,11 @@ test.describe("admin configuration", () => {
     // Sans annonce en attente, pas de section Publications ; les cartes qui répétaient le menu sont parties.
     await expect(page.getByRole("heading", { name: "Annonces de professionnels" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Vues de l’administration" })).toHaveCount(0);
-    // Les liens de l'accueil sont préchargés par Next : attendre les requêtes d'API, pas le réseau entier.
-    await expect.poll(() => new Set(state.adminRequests).size).toBe(7);
+    // Les liens de l'accueil sont préchargés par Next : attendre les requêtes d'API, pas le réseau
+    // entier. Une liste et non un ensemble : une requête envoyée deux fois fait échouer le test.
+    await expect.poll(() => state.adminRequests.length).toBeGreaterThanOrEqual(7);
     expect(state.dashboardSections).toEqual(["runs"]);
-    expect([...new Set(state.adminRequests)].sort()).toEqual([
+    expect([...state.adminRequests].sort()).toEqual([
       "/api/admin/dashboard",
       "/api/admin/information-agent",
       "/api/admin/information-agent/autopilot",
