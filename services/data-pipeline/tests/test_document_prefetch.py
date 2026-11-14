@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -117,6 +117,69 @@ def test_a_failing_preparation_never_stops_the_drain() -> None:
     prefetcher.wait_for("a")
     prefetcher.close()
     assert prefetcher.prepared == 0
+
+
+class _Process:
+    def __init__(self, pid: int, *, busy: bool) -> None:
+        self.pid, self.busy, self.terminated = pid, busy, False
+        self.joins: list[float | None] = []
+
+    def join(self, timeout: float | None = None) -> None:
+        self.joins.append(timeout)
+
+    def is_alive(self) -> bool:
+        return self.busy and not self.terminated
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+
+class _OverdueExecutor:
+    """Its preparations run and never end; it lists its processes like ``ProcessPoolExecutor``."""
+
+    def __init__(self, processes: list[_Process]) -> None:
+        self._processes = {process.pid: process for process in processes}
+        self.shutdowns: list[tuple[bool, bool]] = []
+
+    def submit(self, fn, *args):
+        future: Future = Future()
+        future.set_running_or_notify_cancel()
+        return future
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        self.shutdowns.append((wait, cancel_futures))
+
+
+def test_a_preparation_past_the_deadline_stops_the_pool_instead_of_waiting_for_it() -> None:
+    # 14/11/2026 (D20): close() used to wait (shutdown(wait=True)) for a preparation still running at the deadline.
+    busy, idle = _Process(101, busy=True), _Process(102, busy=False)
+    executor = _OverdueExecutor([busy, idle])
+    now = [0.0]
+    prefetcher = prefetch.DocumentPrefetcher(
+        ["a", "b"], workers=2, deadline=10.0, executor_factory=lambda workers, delay: executor,
+        prefetch=lambda url, remaining: {}, clock=lambda: now[0],
+    )
+    prefetcher.start()
+    now[0] = 11.0  # the drain reached its deadline while "a" was still being prepared
+
+    prefetcher.wait_for("a")
+
+    assert executor.shutdowns == [(False, True)]
+    assert busy.terminated and not idle.terminated
+    assert busy.joins[0] is not None and busy.joins[0] <= prefetch.STOP_GRACE_SECONDS
+    assert prefetcher.stats["errors"] == 1
+    prefetcher.wait_for("b")  # nothing left to wait for
+    prefetcher.close()
+    assert executor.shutdowns == [(False, True)]
+
+
+def test_the_process_pool_still_lists_its_processes() -> None:
+    # The stop above reads ProcessPoolExecutor._processes (no public way before Python 3.14).
+    executor = prefetch._process_executor(1, 0.0)
+    try:
+        assert isinstance(executor._processes, dict)
+    finally:
+        executor.shutdown(wait=True)
 
 
 def test_no_worker_means_no_executor() -> None:

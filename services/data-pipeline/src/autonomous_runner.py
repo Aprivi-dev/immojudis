@@ -33,7 +33,7 @@ from src.enrichment_queue_limits import (
     ENRICHMENT_MAX_JOBS_ENV,
 )
 from src.run_finalizer import register_run
-from src.source_absence import withdraw_missing_sales
+from src.source_absence import mark_unseen_undated_sales, withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.sources.licitor import SOURCE_BUDGET_ENV as LICITOR_SOURCE_BUDGET_ENV
 from src.sources.petites_affiches import SOURCE_BUDGET_ENV as PETITES_AFFICHES_SOURCE_BUDGET_ENV
@@ -419,19 +419,32 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
     # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
     if inventory_complete and not denied:
         _withdraw_missing_sales(db_url, run_id, source, connect=connect)
+    # Après chaque passage, réussi ou non : la règle ne lit que la date de la dernière collecte qui a vu la vente.
+    _mark_unseen_undated_sales(db_url, run_id, source, connect=connect)
 
 
 def _withdraw_missing_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
     """Retire les ventes absentes des deux derniers inventaires complets (src.source_absence)."""
-    result = withdraw_missing_sales(db_url, source, connect=connect)
+    _record_source_absence(db_url, run_id, 'source_absence', withdraw_missing_sales(db_url, source, connect=connect),
+                           connect=connect)
+
+
+def _mark_unseen_undated_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
+    """Ventes à venir sans date que la source ne montre plus : statut inconnu (src.source_absence)."""
+    _record_source_absence(db_url, run_id, 'unseen_undated_sales',
+                           mark_unseen_undated_sales(db_url, source, connect=connect), connect=connect)
+
+
+def _record_source_absence(db_url: str, run_id: str, key: str, result: dict[str, Any] | None, *,
+                           connect: Callable[[str], Any]) -> None:
     if result is None:
         return
     try:
         with connect(db_url) as db:
             db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
-                where id=%s""", (Jsonb({'source_absence': result}), run_id))
+                where id=%s""", (Jsonb({key: result}), run_id))
     except Exception as exc:  # le compte rendu du run est secondaire
-        print(f'Source absence summary not recorded: {type(exc).__name__}')
+        print(f'Source absence summary ({key}) not recorded: {type(exc).__name__}')
 
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:

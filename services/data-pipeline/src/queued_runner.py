@@ -10,6 +10,12 @@ from urllib.parse import urlsplit
 
 from src.admission import is_expired
 from src.cadastre import enrich_cadastre_sales
+from src.catalogue_lock import (
+    LOCK_LOST_EXIT_CODE,
+    CatalogueLockLost,
+    catalogue_writer_lock,
+    ensure_catalogue_lock_held,
+)
 from src.config import PDF_TEXTS_DIR, SOURCE_NAMES, EncheresPubliquesAccessNotAuthorized, load_settings
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.dpe import enrich_dpe_sales
@@ -558,6 +564,9 @@ def run_enrichment_queue_batch(
     provider_clients: dict[str, object] | None = None,
     claimed_jobs: list[dict[str, object]] | None = None,
 ) -> int:
+    # Before each batch (14/11/2026, D19): once the heartbeat of the catalogue writer lock failed, the worker claims
+    # nothing more and stops with ``CatalogueLockLost`` (no-op when this process holds no lock).
+    ensure_catalogue_lock_held()
     jobs = _claim_enrichment_queue_jobs(limit=limit, family=family) if claimed_jobs is None else list(claimed_jobs)
     if claimed_jobs is not None:
         _record_worker_claimed_job_ids(jobs)
@@ -1550,9 +1559,16 @@ def _run_as_script() -> int:
     return main()
 
 
-if __name__ == "__main__":
-    from src.catalogue_lock import catalogue_writer_lock
+def run_with_catalogue_lock() -> int:
+    """The queue worker writes sales like the pipeline does: it shares its lock, and fails when the lock is lost."""
+    try:
+        with catalogue_writer_lock(label="enrichment queue worker"):
+            return _run_as_script()
+    except CatalogueLockLost as exc:
+        LOGGER.error("Enrichment worker stopped: %s", exc)
+        print(f"::error title=Verrou du catalogue perdu::{exc}", flush=True)
+        return LOCK_LOST_EXIT_CODE
 
-    # The queue worker writes sales like the pipeline does; share its lock.
-    with catalogue_writer_lock(label="enrichment queue worker"):
-        sys.exit(_run_as_script())
+
+if __name__ == "__main__":
+    sys.exit(run_with_catalogue_lock())

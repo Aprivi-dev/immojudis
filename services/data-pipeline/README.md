@@ -1353,6 +1353,25 @@ plus longs. Avant de changer la taille en production, le workflow « Fact chunk 
 
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 
+### Repasser les lectures des pièces enregistrées, sans appel au modèle
+
+Une règle ajoutée à la lecture des pièces (`src/document_reading.py` : titre d'un point, page qui porte une
+consigne adressée au modèle, mots de risque) ne touche d'abord que les nouvelles lectures. Pour l'appliquer aux
+lectures déjà enregistrées sans relecture payante :
+
+```bash
+SUPABASE_DB_URL=… python -m src.document_reading --revalidate-stored --max-sales 500
+```
+
+- aucun appel au modèle : les points enregistrés (citation, pièce, page) repassent par les contrôles actuels
+  (`revalidate_stored_readings`) ; un point qui n'y résiste plus est retiré, rien n'est ajouté ;
+- `--max-sales` borne le nombre de lectures repassées (1 à 500), ventes à venir d'abord ;
+- une lecture dont le texte des pièces a changé depuis est laissée telle quelle : la prochaine lecture la refait ;
+- `updated_at` de la lecture ne bouge pas, et `DOCUMENT_READING_ENABLED` ne s'applique pas (il épargne le modèle) ;
+- sortie : un compte JSON (`selected`, `unchanged`, `updated`, `points_removed`, `stale_text`).
+
+Commande à lancer à la main ; elle n'est dans aucun workflow.
+
 ## Source Licitor
 
 > **Décodage des adresses email masquées par Cloudflare (usage interne).** Dans le code,

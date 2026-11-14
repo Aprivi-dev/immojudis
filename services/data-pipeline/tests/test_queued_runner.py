@@ -2879,3 +2879,48 @@ def test_a_job_is_finished_only_for_the_attempt_this_worker_claimed(monkeypatch)
         ("job-1", {"succeeded": True, "attempt_count": 2, "locked_at": "2026-11-12T08:00:00+00:00"}),
         ("job-2", {"succeeded": False, "error_message": "boom"}),
     ]
+
+
+class _LockSession:
+    """A lock session that grants the catalogue writer lock at once."""
+
+    autocommit = False
+
+    def execute(self, statement, parameters=()):
+        return SimpleNamespace(fetchone=lambda: (True,))
+
+    def close(self) -> None:
+        pass
+
+
+def test_the_worker_claims_no_batch_once_its_catalogue_lock_may_be_lost(monkeypatch) -> None:
+    # 14/11/2026 (D19): the queue worker held the lock for its whole run and never checked it.
+    from src.catalogue_lock import CatalogueLockLost, catalogue_writer_lock
+
+    claims: list[str | None] = []
+    monkeypatch.setattr(
+        queued_runner, "_claim_enrichment_queue_jobs", lambda *, limit, family: claims.append(family) or []
+    )
+
+    with catalogue_writer_lock("postgresql://example/db", connect=lambda url: _LockSession(), heartbeat_seconds=0) as lock:
+        assert queued_runner.run_enrichment_queue_batch(limit=1, family="enrichment") == 0
+        lock.mark_lost()
+        with pytest.raises(CatalogueLockLost):
+            queued_runner.run_enrichment_queue_batch(limit=1, family="source_detail")
+
+    assert claims == ["enrichment"]
+
+
+def test_the_worker_exits_with_a_failure_code_when_its_lock_is_lost(monkeypatch, capsys) -> None:
+    from src.catalogue_lock import LOCK_LOST_EXIT_CODE, CatalogueLockLost
+
+    def lost() -> int:
+        raise CatalogueLockLost("heartbeat failed")
+
+    monkeypatch.setattr(queued_runner, "catalogue_writer_lock", lambda **kwargs: nullcontext())
+    monkeypatch.setattr(queued_runner, "_run_as_script", lost)
+
+    assert queued_runner.run_with_catalogue_lock() == LOCK_LOST_EXIT_CODE != 0
+    assert "Verrou du catalogue perdu" in capsys.readouterr().out
+    monkeypatch.setattr(queued_runner, "_run_as_script", lambda: 0)
+    assert queued_runner.run_with_catalogue_lock() == 0
