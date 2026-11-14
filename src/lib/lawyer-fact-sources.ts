@@ -115,12 +115,19 @@ function frenchDay(receivedOn: string): string {
 }
 
 /**
- * Mention affichée sous une seule valeur (texte validé le 10/11/2026). Le mode automatique ajoute
- * « extraite automatiquement ». Ni nom d'avocat, ni extrait du message.
+ * Texte de la mention, retenu par le propriétaire le 14/11/2026 (conflit A de l'état des lieux) : « Source :
+ * avocat poursuivant, message du … À confirmer dans le cahier des conditions de vente, comme toute donnée de
+ * la fiche. » `day` est le jour de réception (JJ/MM/AAAA) ; le pied de l'email aux avocats cite ce même texte
+ * avec « [date] » (`information-agent-compliance.ts`), pour annoncer exactement ce que la fiche affichera. Le
+ * mode automatique ajoute « lu automatiquement ». Ni nom d'avocat, ni extrait du message.
  */
+export function lawyerFactMentionText(day: string, automatic = false): string {
+  return `Source : avocat poursuivant, message du ${day}${automatic ? ", lu automatiquement" : ""}. À confirmer dans le cahier des conditions de vente, comme toute donnée de la fiche.`;
+}
+
+/** Mention affichée sous une seule valeur. */
 export function lawyerFactMention(source: Pick<LawyerFactSource, "receivedOn" | "mode">): string {
-  const automatic = source.mode === "auto" ? ", extraite automatiquement" : "";
-  return `Information transmise par l’avocat poursuivant le ${frenchDay(source.receivedOn)}${automatic}, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.`;
+  return lawyerFactMentionText(frenchDay(source.receivedOn), source.mode === "auto");
 }
 
 /** Valeurs de la fiche qui peuvent porter la mention. */
@@ -196,21 +203,35 @@ export function lawyerSourceForDisplayedValue(
   }
 }
 
-/** Libellés qui bornent la mention à ce que l'avocat a transmis. */
-export const LAWYER_DAY_LABEL = "Jour de la vente (sans l’heure)";
-export const LAWYER_ROOMS_LABEL = "Nombre de pièces (sans les chambres)";
+/**
+ * Libellés d'une valeur dans la mention d'un bloc, avec leur article (« la surface ») : la phrase devient
+ * « Source de la surface : avocat poursuivant… ». Les deux derniers bornent la mention à ce que l'avocat a
+ * transmis : le jour de la vente (l'heure affichée vient de l'annonce), le nombre de pièces sans les chambres.
+ */
+export const LAWYER_PROPERTY_TYPE_LABEL = "le type de bien";
+export const LAWYER_SURFACE_LABEL = "la surface";
+export const LAWYER_DAY_LABEL = "le jour de la vente (l’heure vient de l’annonce)";
+export const LAWYER_ROOMS_LABEL = "le nombre de pièces (sans les chambres)";
 
 export type LawyerNoteItem = { label: string; source: LawyerFactSource | null };
 
+/** « de » devant un libellé à article : « du type de bien », « de la surface », « des chambres ». */
+function ofLabel(label: string): string {
+  if (label.startsWith("le ")) return `du ${label.slice(3)}`;
+  if (label.startsWith("les ")) return `des ${label.slice(4)}`;
+  return `de ${label}`;
+}
+
 function joinLabels(labels: string[]): string {
-  if (labels.length < 2) return labels[0] ?? "";
-  return `${labels.slice(0, -1).join(", ")} et ${labels.at(-1)!.toLocaleLowerCase("fr-FR")}`;
+  const parts = labels.map(ofLabel);
+  if (parts.length < 2) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} et ${parts.at(-1)}`;
 }
 
 /**
  * Texte de la mention d'un bloc : une phrase par jour de réception et mode, qui nomme les valeurs
- * concernées (« Surface et mise à prix : information transmise… Vérifiez-les… »). Une seule valeur sans
- * libellé (`label: ""`) garde le texte validé tel quel.
+ * concernées (« Source du type de bien et de la surface : avocat poursuivant, message du … »). Une seule
+ * valeur sans libellé (`label: ""`) garde le texte retenu tel quel (« Source : avocat poursuivant… »).
  */
 export function lawyerNoteSentences(items: readonly LawyerNoteItem[]): string[] {
   const groups = new Map<string, { source: LawyerFactSource; labels: string[] }>();
@@ -223,8 +244,6 @@ export function lawyerNoteSentences(items: readonly LawyerNoteItem[]): string[] 
   }
   return [...groups.values()].map(({ source, labels }) => {
     const mention = lawyerFactMention(source);
-    if (!labels.length) return mention;
-    const sentence = `${joinLabels(labels)} : ${mention.charAt(0).toLocaleLowerCase("fr-FR")}${mention.slice(1)}`;
-    return labels.length > 1 ? sentence.replace("Vérifiez-la", "Vérifiez-les") : sentence;
+    return labels.length ? mention.replace(/^Source :/, `Source ${joinLabels(labels)} :`) : mention;
   });
 }

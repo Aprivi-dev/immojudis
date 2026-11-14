@@ -11,6 +11,7 @@ import { asRecord, asRecordOrNull } from "@/lib/guards";
 import type { AdminPageQuery } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { NotFoundError } from "@/lib/api-errors";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { isUuid } from "@/lib/uuid";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
@@ -253,7 +254,7 @@ async function grantWithNote({
     p_granted_by: grantedBy,
     p_plan_code: input.planCode,
     p_status: input.status,
-    p_current_period_end: input.currentPeriodEnd,
+    p_current_period_end: nullableRpcArg(input.currentPeriodEnd),
     p_metadata: payload.metadata ?? {},
     p_note: input.note ?? undefined,
   });

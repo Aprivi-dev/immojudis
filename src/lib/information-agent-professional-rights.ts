@@ -270,7 +270,9 @@ export type ProfessionalErasureReport = {
  * documents déjà publiés après validation humaine ne sont pas retirés ici), dossiers
  * partagés et demandes dont il est le destinataire (messages, pièces, informations extraites et files
  * d'analyse en cascade), messages reçus de lui sans dossier ouvert, lignes du journal des emails qui lui
- * ont été envoyés, fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
+ * ont été envoyés, fiches du registre propres à une vente, traces de ses réponses dans les fiches des ventes
+ * (`raw_payload.information_agent_verified_facts`, qui portent la mention de source). L'adresse est ensuite
+ * inscrite à la liste d'opposition (elle seule reste,
  * normalisée) : sans cela, la prochaine collecte de l'annonce la recréerait et l'agent pourrait de
  * nouveau la solliciter. Idempotent : relancé après un échec partiel, il reprend où il s'est arrêté.
  */
@@ -358,6 +360,22 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     .eq("to_address", email);
   if (emailLogError) throw erasureFailure("email_send_log", emailLogError);
   deletedRows["email_send_log"] = emailLogCount ?? 0;
+
+  // 2 quinquies. Traces de ses réponses dans les fiches (raw_payload.information_agent_verified_facts : date,
+  //    destinataire, valeur transmise) : la mention « Source : avocat poursuivant » disparaît avec elles. Avant
+  //    la suppression des dossiers, qui emporte les faits. Les valeurs affichées ne changent pas : leur retrait
+  //    passe par le registre des pièces (runbook de l'agent, section du lot C).
+  const rewrittenSales = await inChunks(caseIds, async (chunk) => {
+    const { data, error } = await supabaseAdmin.rpc("forget_information_agent_verified_facts", {
+      p_case_ids: chunk,
+    });
+    if (error) throw erasureFailure("auction_sales.raw_payload", error);
+    return [data ?? 0];
+  });
+  deletedRows["auction_sales.information_agent_verified_facts"] = rewrittenSales.reduce(
+    (total, count) => total + count,
+    0,
+  );
 
   // 3. Dossiers (messages, pièces, informations extraites, tâches d'analyse en cascade), puis demandes.
   deletedRows["information_agent_cases"] = await deleteByIds("information_agent_cases", caseIds);

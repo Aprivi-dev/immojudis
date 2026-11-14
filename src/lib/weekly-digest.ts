@@ -265,7 +265,7 @@ export async function buildDigestContent({
     events.filter((event) => Date.parse(event.detectedAt) >= since.getTime()),
     new Set(followedVisible.map((sale) => sale.id)),
     { now, hiddenTopics: () => MASKED_TOPICS },
-  );
+  ).filter((change) => change.emailed !== false);
   const changes: WeeklyDigestSaleItem[] = [];
   for (const change of changed.slice(0, MAX_CHANGES)) {
     const row = await calendarOf(change.event.saleId);

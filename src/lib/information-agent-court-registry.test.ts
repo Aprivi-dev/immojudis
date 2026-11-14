@@ -273,7 +273,7 @@ describe("brouillon pour une vente au tribunal sans aucun avocat : le greffe de 
     });
     expect(result.mission.bodyText.startsWith("Madame, Monsieur,")).toBe(true);
     expect(result.mission.bodyText).toContain(`- ${COURT_REGISTRY_QUESTION}`);
-    expect(result.mission.subject).toContain("avocat poursuivant ou pièces publiques");
+    expect(result.mission.subject).toContain("avocat poursuivant et consultation du cahier");
     // Aucune des questions posées à un avocat.
     for (const forbidden of ["mise à prix", "garantie", "occupé", "visite", "DPE", "Carrez"]) {
       expect(result.mission.bodyText).not.toContain(forbidden);
@@ -546,17 +546,21 @@ describe("message au greffe", () => {
     questions: `- ${COURT_REGISTRY_QUESTION}`,
   };
 
-  it("demande l'avocat poursuivant ou les pièces publiques, sans nom de personne ni question d'avocat", () => {
+  it("demande l'avocat poursuivant ou où consulter le cahier, sans nom de personne ni question d'avocat", () => {
     const rendered = renderInformationAgentEmailContent({
       template: COURT_REGISTRY_EMAIL_TEMPLATE,
       values,
     });
     expect(rendered.subject).toBe(
-      "Maison à Agen, audience du 14/09/2026 : avocat poursuivant ou pièces publiques",
+      "Maison à Agen, audience du 14/09/2026 : avocat poursuivant et consultation du cahier",
     );
     expect(rendered.bodyText.startsWith("Madame, Monsieur,")).toBe(true);
     expect(rendered.bodyText).toContain("l’avocat poursuivant");
-    expect(rendered.bodyText).toContain("pièces publiques");
+    // Aucune pièce demandée (juridique-rgpd du 14/11/2026) : où et comment consulter le cahier.
+    expect(rendered.bodyText).toContain(
+      "où et selon quelles modalités un candidat acquéreur peut consulter le cahier des conditions de vente",
+    );
+    expect(rendered.bodyText).not.toContain("procès-verbal descriptif");
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).not.toContain("85 000");
     expect(rendered.bodyText).not.toMatch(/Bonjour|Maître/);
@@ -597,7 +601,7 @@ describe("aperçu et envoi d'une demande au greffe", () => {
       recipient_name: null,
       reply_to_email: null,
       recipient_identity_keys: [],
-      subject: "Maison à Agen, date à confirmer : avocat poursuivant ou pièces publiques",
+      subject: "Maison à Agen, date à confirmer : avocat poursuivant et consultation du cahier",
       body_text: `Madame, Monsieur,\n\n- ${COURT_REGISTRY_QUESTION}`,
       question_keys: ["documents"],
       missing_information: ["documents"],
@@ -616,7 +620,7 @@ describe("aperçu et envoi d'une demande au greffe", () => {
     missionId: MISSION_ID,
     recipientEmail: COURT_EMAIL,
     recipientName: "Prénom Nom du greffier",
-    subject: "Maison à Agen, date à confirmer : avocat poursuivant ou pièces publiques",
+    subject: "Maison à Agen, date à confirmer : avocat poursuivant et consultation du cahier",
     bodyText: `Madame, Monsieur,\n\n- ${COURT_REGISTRY_QUESTION}`,
   };
 
@@ -856,7 +860,7 @@ describe("vente relue à l'aperçu et à l'envoi d'une demande au greffe", () =>
     missionId: MISSION_ID,
     recipientEmail: COURT_EMAIL,
     recipientName: null,
-    subject: "Maison à Agen, date à confirmer : avocat poursuivant ou pièces publiques",
+    subject: "Maison à Agen, date à confirmer : avocat poursuivant et consultation du cahier",
     bodyText: `Madame, Monsieur,\n\n- ${COURT_REGISTRY_QUESTION}`,
   };
 

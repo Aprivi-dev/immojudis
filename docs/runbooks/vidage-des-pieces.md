@@ -208,6 +208,18 @@ gh variable set DOCUMENT_BACKLOG_PREFETCH_WORKERS --body 0
 Chaque processus multiplie le délai par hôte (`PDF_HOST_MIN_DELAY_SECONDS`) par le nombre de processus.
 Le rythme cumulé vers un même site ne dépend donc pas de ce réglage.
 
+## Point connu : OCR orphelin après l'arrêt d'un processus de lecture en avance
+
+Suivi ouvert le 14/11/2026 (état des lieux, D20), non corrigé. Une fois l'échéance du vidage passée,
+`DocumentPrefetcher.close()` arrête les processus de lecture en avance encore vivants après
+`STOP_GRACE_SECONDS` (10 s). Un `tesseract` lancé par l'un d'eux (`src/pdf_ocr.py`, `subprocess.run`) n'est
+pas arrêté avec lui : le délai de `subprocess.run` est tenu par le processus arrêté. L'orphelin vit le temps
+de l'OCR de sa page, et le runner GitHub tue les processus restants en fin de job.
+
+Correction prévue : lancer `tesseract` avec `start_new_session=True` et arrêter son groupe de processus quand
+le processus de lecture reçoit SIGTERM, ou lui faire recevoir la mort de son parent (`PR_SET_PDEATHSIG`, Linux).
+Une demi-douzaine de tests simulent `subprocess.run` et seraient à reprendre.
+
 ## Retour à la normale
 
 1. Supprimer la variable (`gh variable delete DOCUMENT_BACKLOG_PREFETCH_WORKERS`) ou la remettre à `3`.

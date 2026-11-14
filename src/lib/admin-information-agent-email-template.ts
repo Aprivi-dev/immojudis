@@ -254,6 +254,8 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
       email: null,
       addressOrigin: exampleOrigin,
       saleReference: "Appartement T3 à Bordeaux — Tribunal judiciaire de Bordeaux",
+      // Le modèle des professionnels part à l'avocat poursuivant : son pied annonce l'affichage des réponses.
+      recipientKind: "source_lawyer",
       preview: { blockers: [] },
     }),
   });

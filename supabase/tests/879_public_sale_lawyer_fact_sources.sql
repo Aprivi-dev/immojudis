@@ -5,7 +5,7 @@
 --     ni objet, ni identifiant de fait ;
 --   * une clé n'est rendue que si la valeur affichée est encore celle transmise ;
 --   * les faits acceptés avant la migration (sans publication_mode ni received_at) sont rendus en « manual »
---     avec la date de réception du message ; le mode « auto » est déjà lisible ;
+--     avec la date de réception du message ; depuis le lot C, une entrée « auto » sans observation n'a aucune mention ;
 --   * une vente hors du catalogue public ne rend rien ;
 --   * seule la réponse à un dossier adressé à l'avocat poursuivant (recipient_kind = 'source_lawyer') lui est
 --     attribuée ; sans cette information, aucune mention (échec fermé) ;
@@ -41,6 +41,9 @@ select ok(
 );
 
 -- Jeu d'essai ----------------------------------------------------------------------------------------------------
+-- Lot C : retenue coupée, le noyau écrit la fiche (branche de repli) ; le chemin réel est couvert par 900.
+update public.auction_fact_fields set hold_enabled = false where hold_enabled;
+
 insert into auth.users (id) values ('87900000-0000-4000-8000-0000000000a1');
 insert into public.user_profiles (user_id, email, user_role) values
   ('87900000-0000-4000-8000-0000000000a1', 'source-admin-879@example.test', 'admin')
@@ -151,6 +154,30 @@ begin
 end;
 $$;
 
+-- Lot C : la mention exige une observation acceptée au journal du registre. Le pont est un déclencheur différé ;
+-- l'administrateur, connecté, accepte ensuite les observations des faits 1, 2, 3 et 6.
+set constraints all immediate;
+set constraints all deferred;
+create temporary table claims on commit drop as
+  select claim.evidence_locator->>'information_agent_fact_id' as fact_id, claim.id as claim_id
+  from public.auction_fact_claims claim
+  where claim.evidence_locator->>'information_agent_fact_id' in (
+    '87900000-5000-4000-8000-000000000001', '87900000-5000-4000-8000-000000000002',
+    '87900000-5000-4000-8000-000000000003', '87900000-5000-4000-8000-000000000006'
+  );
+grant select on claims to authenticated;
+create temporary table decisions (result jsonb) on commit drop;
+grant insert on decisions to authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"87900000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal2"}',
+  true
+);
+set local role authenticated;
+insert into decisions
+select public.accept_auction_fact_claim(claims.claim_id, 'single_lot') from claims;
+reset role;
+
 -- Le comportement ------------------------------------------------------------------------------------------------
 select results_eq(
   $$select fact_key, received_on, publication_mode
@@ -190,6 +217,20 @@ set raw_payload = jsonb_set(
   )
 )
 where id = '87900000-1000-4000-8000-000000000001';
+-- Lot C : son observation (créée par le pont à la validation du statut) est acceptée par l'administrateur.
+set constraints all immediate;
+set constraints all deferred;
+insert into claims
+select claim.evidence_locator->>'information_agent_fact_id', claim.id
+from public.auction_fact_claims claim
+where claim.evidence_locator->>'information_agent_fact_id' = '87900000-5000-4000-8000-000000000005';
+set local role authenticated;
+insert into decisions
+select public.accept_auction_fact_claim(claims.claim_id, 'single_lot')
+from claims
+where claims.fact_id = '87900000-5000-4000-8000-000000000005';
+reset role;
+select set_config('request.jwt.claims', '', true);
 select ok(
   exists (
     select 1 from public.get_public_sale_lawyer_fact_sources('87900000-1000-4000-8000-000000000001')
@@ -220,16 +261,16 @@ set raw_payload = raw_payload || jsonb_build_object(
 )
 where id = '87900000-1000-4000-8000-000000000001';
 select ok(
-  exists (
+  not exists (
     select 1 from public.get_public_sale_lawyer_fact_sources('87900000-1000-4000-8000-000000000001')
-    where fact_key in ('land_surface_m2') and received_on = '2026-11-13' and publication_mode = 'auto'
+    where fact_key in ('land_surface_m2')
   ),
-  'the auto mode is already readable'
+  'an automatic entry has no observation accepted in the registry, hence never a mention'
 );
 select is(
   (select array_agg(fact_key order by fact_key)
      from public.get_public_sale_lawyer_fact_sources('87900000-1000-4000-8000-000000000001')),
-  array['land_surface_m2', 'occupancy_status', 'property_type', 'surface_m2'],
+  array['occupancy_status', 'property_type', 'surface_m2'],
   'malformed values, unknown modes, unreadable dates and keys without a displayed column are ignored without error'
 );
 
@@ -291,7 +332,7 @@ set local role anon;
 select is(
   (select count(*)::integer
      from public.get_public_sale_lawyer_fact_sources('87900000-1000-4000-8000-000000000001')),
-  3,
+  2,
   'a signed-out visitor reads the projection'
 );
 select throws_ok(

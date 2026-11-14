@@ -333,4 +333,22 @@ describe("AccountPage : mise en page et couleurs de la charte (repasse design n�
     expect(removal.className).toContain("min-h-11");
     expect(container.innerHTML).not.toMatch(/\b(?:text|bg|border)-(?:red|amber|emerald)-\d/);
   });
+
+  it("renvoie à la politique de confidentialité depuis « Mes données » et le profil d’investisseur", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue(status());
+    renderPage();
+
+    for (const heading of ["Mes données", "Mon profil d’investisseur"]) {
+      const card = within(
+        (await screen.findByRole("heading", { name: heading })).closest("section")!,
+      );
+      expect(
+        card.getByRole("link", { name: "politique de confidentialité" }).getAttribute("href"),
+      ).toBe("/privacy");
+    }
+    expect(screen.getByText(/seul notre hébergeur, Supabase, la stocke/)).toBeTruthy();
+  });
 });

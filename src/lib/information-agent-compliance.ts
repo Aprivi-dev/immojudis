@@ -6,6 +6,7 @@
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import type { InformationAgentStructureKind } from "@/lib/information-agent/contact-structure";
 import type { InformationAgentAiProvider } from "@/lib/information-agent-ai-provider";
+import { lawyerFactMentionText } from "@/lib/lawyer-fact-sources";
 import { sourceLabel } from "@/lib/sale-source-links";
 
 export const INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS = 30;
@@ -40,6 +41,14 @@ export type InformationAgentLegalFooter = {
   structureAddress?: InformationAgentFooterStructure | null;
   /** L'opposition de cette adresse vaudra pour toute sa structure : le pied le dit, avec le mot de la structure. */
   structureOpposition?: InformationAgentFooterStructure | null;
+  /**
+   * Ce que deviennent les réponses sur la fiche publique (J10 et relecture juridique-rgpd du 14/11/2026) :
+   *  - `source_lawyer` : avocat poursuivant, la mention de source le rend identifiable ;
+   *  - `professional` : notaire, service de l'État, professionnel saisi à la main, sans nom ni qualité ;
+   *  - `court_registry` : un greffe, dont la réponse sert seulement à trouver l'avocat poursuivant.
+   * Absent : aucune section (aperçu d'un modèle sans destinataire).
+   */
+  replyDisplay?: InformationAgentReplyDisplay | null;
   /** Prestataire d'IA qui lit les réponses (art. 14(1)(e)), tiré de la configuration. */
   aiProvider: InformationAgentAiProvider;
   privacyUrl: string;
@@ -136,6 +145,8 @@ export type InformationAgentAddressOrigin = {
  * brouillon ne sait pas laquelle (adresse saisie par l'administrateur, contact de l'annonce).
  */
 export type InformationAgentFooterStructure = InformationAgentStructureKind | "unknown";
+
+export type InformationAgentReplyDisplay = "source_lawyer" | "professional" | "court_registry";
 
 type StructureWords = {
   /** « de votre cabinet » */
@@ -367,13 +378,23 @@ export function informationAgentLegalFooterSections(
       label: "Vos droits :",
       text: `${informationAgentRightsStatement(footer.contactEmail)} ${INFORMATION_AGENT_COMPLAINT_STATEMENT}`,
     },
-    {
-      label: "Opposition :",
-      text: footer.structureOpposition
-        ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${informationAgentStructureObjectionScopeStatement(footer.structureOpposition)}`
-        : INFORMATION_AGENT_OBJECTION_STATEMENT,
-    },
   );
+  if (footer.replyDisplay) {
+    sections.push({
+      label: "Affichage sur la fiche :",
+      text: INFORMATION_AGENT_REPLY_DISPLAY_STATEMENTS[footer.replyDisplay],
+    });
+  }
+  const scope = informationAgentObjectionScopeStatement({
+    structureOpposition: footer.structureOpposition ?? null,
+    structureAddress: footer.structureAddress ?? null,
+  });
+  sections.push({
+    label: "Opposition :",
+    text: scope
+      ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${scope}`
+      : INFORMATION_AGENT_OBJECTION_STATEMENT,
+  });
   return sections;
 }
 
@@ -419,17 +440,37 @@ function informationAgentStructureDataCategoriesStatement(
 
 /**
  * Portée de l'opposition faite depuis l'adresse générique d'une structure, quand celle-ci n'est pas connue
- * (page de confirmation de l'opposition, structure `unknown` du pied).
+ * (page de confirmation de l'opposition, structure `unknown` du pied). Affichée seulement quand l'adresse porte
+ * une clé de structure qui vaut pour elle (`informationAgentStructureKeyHolds`) : sans elle, l'opposition ne
+ * vaut que pour l'adresse, et rien de plus n'est promis.
  */
 export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT = `Si vous vous opposez depuis l’adresse de contact ${STRUCTURE_WORDS.unknown.any}, nous n’écrirons plus à aucune adresse ${STRUCTURE_WORDS.unknown.that}.`;
 
-/** La même portée, avec le mot de la structure du destinataire (cabinet, étude, service). */
-function informationAgentStructureObjectionScopeStatement(
-  structure: InformationAgentFooterStructure,
-): string {
-  if (structure === "unknown") return INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT;
-  const words = STRUCTURE_WORDS[structure];
-  return `Si vous vous opposez depuis l’adresse de contact ${words.yours}, nous n’écrirons plus à aucune adresse ${words.that}.`;
+/**
+ * Portée de l'opposition, avec le mot de la structure du destinataire (relecture juridique-rgpd du 14/11/2026),
+ * pour le pied du message et la page de confirmation de l'opposition :
+ *  - une clé de structure tient pour l'adresse (`structureOpposition`, quel que soit le type de structure, qu'une
+ *    personne soit nommée ou non) : l'opposition vaut pour toute la structure ;
+ *  - sinon, l'adresse générique d'une structure (`structureAddress`) : l'opposition vaut pour cette adresse
+ *    seule, et la phrase le dit ;
+ *  - sinon (personne nommée, sans clé qui tienne) : aucune phrase, l'opposition générale suffit.
+ */
+function informationAgentObjectionScopeStatement({
+  structureOpposition,
+  structureAddress,
+}: {
+  structureOpposition: InformationAgentFooterStructure | null;
+  structureAddress: InformationAgentFooterStructure | null;
+}): string | null {
+  if (structureOpposition) {
+    const words = STRUCTURE_WORDS[structureOpposition];
+    return `Si vous vous opposez depuis l’adresse de contact ${words.yours}, nous n’écrirons plus à aucune adresse ${words.that}.`;
+  }
+  if (structureAddress) {
+    const words = STRUCTURE_WORDS[structureAddress];
+    return `Si vous vous opposez depuis l’adresse de contact ${words.yours}, nous n’écrirons plus à cette adresse ; les autres adresses ${words.that} ne sont pas concernées.`;
+  }
+  return null;
 }
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
@@ -469,6 +510,21 @@ function informationAgentRightsStatement(contactEmail: string): string {
 /** Droit d'opposition formulé clairement et séparément (art. 21(4) RGPD). */
 export const INFORMATION_AGENT_OBJECTION_STATEMENT =
   "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.";
+
+/**
+ * Affichage des réponses sur la fiche publique (J10 et relecture juridique-rgpd du 14/11/2026, textes repris mot pour
+ * mot). Pour l'avocat poursuivant, la mention citée est celle que la fiche affichera (`lawyerFactMentionText`), la
+ * date restant à venir : les deux textes changent ensemble.
+ */
+export const INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT = `Les informations que vous nous transmettez peuvent être affichées sur la fiche publique de cette vente, sans votre nom ; certaines y portent la mention « ${lawyerFactMentionText("[date]")} » La fiche reprenant le nom de l’avocat poursuivant donné par l’annonce, cette mention vous rend identifiable. Pour les faire retirer, au plus tard un mois après votre demande : répondez à cet email ou utilisez le lien « Ne plus être contacté ».`;
+
+const INFORMATION_AGENT_REPLY_DISPLAY_STATEMENTS: Record<InformationAgentReplyDisplay, string> = {
+  source_lawyer: INFORMATION_AGENT_LAWYER_REPLY_DISPLAY_STATEMENT,
+  professional:
+    "Les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
+  court_registry:
+    "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite, ou à indiquer aux candidats où consulter le cahier.",
+};
 
 /** Droit de réclamation (art. 14(2)(e) RGPD). */
 const INFORMATION_AGENT_COMPLAINT_STATEMENT =

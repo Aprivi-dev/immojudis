@@ -26,13 +26,14 @@ export const INFORMATION_AGENT_QUESTIONS = {
   },
   documents: {
     label: "Pièces du dossier",
+    // Où les consulter, pas une transmission (juridique-rgpd du 14/11/2026, J15) : la question ne nomme pas le
+    // procès-verbal descriptif, qui nomme les occupants.
     question:
-      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?",
+      "Où et comment le cahier des conditions de vente et ses annexes, dont les diagnostics, peuvent-ils être consultés (lieu, horaires ou lien de consultation), et à quelle date ou dans quelle version ?",
   },
   photos: {
     label: "Photos complémentaires",
-    question:
-      "Pourriez-vous transmettre des photos complémentaires que vous êtes autorisé à partager, en précisant leur date approximative et les pièces ou annexes qu’elles montrent ?",
+    question: "Des photos du bien sont-elles consultables, et où ?",
   },
   visit: {
     label: "Visites",
@@ -41,8 +42,8 @@ export const INFORMATION_AGENT_QUESTIONS = {
   },
   occupancy: {
     label: "Occupation",
-    question:
-      "Le bien est-il actuellement libre, occupé ou loué ? Si le bien est loué, pouvez-vous préciser le loyer connu et signaler toute évolution récente ?",
+    // Ni qui occupe ni le loyer : la fiche ne dit que libre, occupé ou loué (juridique-rgpd du 14/11/2026).
+    question: "Selon le cahier des conditions de vente, le bien est-il libre, occupé ou loué ?",
   },
   surface: {
     label: "Surface",
@@ -61,8 +62,9 @@ export const INFORMATION_AGENT_QUESTIONS = {
   },
   sale_terms: {
     label: "Modalités de vente",
+    // Une question, pas un rappel de la procédure à l'avocat qui la conduit (C14 du 14/11/2026).
     question:
-      "Pouvez-vous confirmer les modalités d’enchère, le montant et la forme de la garantie à remettre avant d’enchérir (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum, par chèque de banque ou caution bancaire), les frais annoncés et les délais applicables, dont celui de paiement du prix ?",
+      "Pouvez-vous confirmer le montant et la forme de la garantie à remettre pour enchérir, les frais annoncés et le délai de paiement du prix ?",
   },
   cadastre: {
     label: "Références cadastrales",
@@ -207,19 +209,14 @@ export function informationAgentQuestionContext(
   };
 }
 
-/** Libellé exact d'une question : les pièces et la date sont nommées selon la fiche. */
+/**
+ * Libellé exact d'une question : la date est nommée selon la fiche. Les pièces manquantes ne sont pas nommées : la
+ * question demande où consulter le cahier et ses annexes (juridique-rgpd du 14/11/2026, J15).
+ */
 export function informationAgentQuestionText(
   key: InformationAgentQuestionKey,
   context?: InformationAgentQuestionContext,
 ): string {
-  if (key === "documents" && context?.missingDocuments.length) {
-    const names = context.missingDocuments.map((entry) => MISSING_DOCUMENT_NAMES[entry]);
-    const list =
-      names.length > 1
-        ? `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`
-        : names[0];
-    return `Pourriez-vous nous transmettre ${list}, ou nous indiquer où les consulter, en précisant leur date ou leur version si elle est connue ?`;
-  }
   if (key === "sale_date" && context) {
     if (context.judicial) {
       return `Pouvez-vous confirmer la date et l’heure de l’audience d’adjudication${

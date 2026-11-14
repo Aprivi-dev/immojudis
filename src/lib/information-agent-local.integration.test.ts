@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 import { POST as prepareUploadRoute } from "@/app/api/information-agent/contributions/[missionId]/upload/route";
 import { POST as submitContributionRoute } from "@/app/api/information-agent/contributions/[missionId]/submit/route";
+import { reviewAdminInformationAgentFact } from "@/lib/admin-information-agent";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 import {
   processInformationAgentInboundWebhook,
@@ -24,6 +25,7 @@ const RESEND_WEBHOOK_SECRET = `whsec_${Buffer.from("local-resend-webhook-secret"
 const RESEND_EMAIL_ID = "resend-local-email-1";
 const RESEND_ATTACHMENT_ID = "resend-local-attachment-1";
 const LOCAL_RESEND_ATTACHMENT_HOST = "attachments.example.test";
+const ADMIN_PASSWORD = "local-integration-password-123!";
 const VALID_PDF_BYTES = Buffer.from(
   "JVBERi0xLjcKJcK1wrYKCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nL1BhZ2VzIDIgMCBSPj4KZW5kb2JqCgoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvQ291bnQgMS9LaWRzWzQgMCBSXT4+CmVuZG9iagoKMyAwIG9iago8PC9Gb250PDwvaGVsdiA1IDAgUj4+Pj4KZW5kb2JqCgo0IDAgb2JqCjw8L1R5cGUvUGFnZS9NZWRpYUJveFswIDAgNTk1IDg0Ml0vUm90YXRlIDAvUmVzb3VyY2VzIDMgMCBSL1BhcmVudCAyIDAgUi9Db250ZW50c1s2IDAgUl0+PgplbmRvYmoKCjUgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvVHlwZTEvQmFzZUZvbnQvSGVsdmV0aWNhL0VuY29kaW5nL1dpbkFuc2lJbmNvZGluZz4+CmVuZGJqagoKNiAwIG9iago8PC9MZW5ndGggMTM5L0ZpbHRlci9GbGF0ZURlY29kZT4+CnN0cmVhbQp42iVNMQ4CMQzb84r8gCRtk6uEGE5iYUPqhhjQXU8MMLDwftxDURLbkR360NxIWVDKYRwh3N50ePbXl1W5bXw7lhQlzN3VkxcTn4DMa+R9L0NLD/SUMq5rMhNbwcFCvHoZvkh/dTihdKAFyJA8MvOYSNzwa8e+wTU+iyuUCt5P93ahc6Mr/QC+DCjjCmVuZHN0cmVhbQplbmRvYmoKCnhyZWYKMCA3CjAwMDAwMDAwMDAgMDAwMDEgZiAKMDAwMDAwMDE2IDAwMDAwIG4gCjAwMDAwMDA2MiAwMDAwIG4gCjAwMDAwMDExNCAwMDAwMCBuIAowMDAwMDAxNTUgMDAwMDAgbiAKMDAwMDAwMjYyIDAwMDAwIG4gCjAwMDAwMDM1MSAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNy9Sb290IDEgMCBSL0lEWzwxRkZEM0EyM0MyQjZDMjkxRkMyOTIyM0MyOEJDMkIxPjw3NDE3QTE3QTUzMjY5MjMyNEJCQTUzRDk4NDM2MTQ3Mz5dPj4Kc3RhcnR4cmVmCjU1OQolJUVPRgo=",
   "base64",
@@ -56,6 +58,7 @@ type LocalResendFixture = {
 
 let admin: LocalClient;
 let userId: string;
+let userEmail: string;
 let saleId: string;
 let missionId: string;
 let caseId: string;
@@ -168,10 +171,10 @@ describeLocal("information-agent local integration", () => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const userEmail = `information-agent-${randomUUID()}@example.test`;
+    userEmail = `information-agent-${randomUUID()}@example.test`;
     const { data: createdUser, error: userError } = await admin.auth.admin.createUser({
       email: userEmail,
-      password: "local-integration-password-123!",
+      password: ADMIN_PASSWORD,
       email_confirm: true,
       // Le déclencheur d'inscription (20261110110000) exige un prénom et un nom pour tout compte email.
       user_metadata: { first_name: "Test", last_name: "Integration" },
@@ -470,18 +473,34 @@ describeLocal("information-agent local integration", () => {
     }
     expect(surfaceFact.status).toBe("pending");
 
-    const accepted = await admin.rpc("review_information_agent_fact_candidate", {
-      p_reviewer_id: userId,
-      p_fact_id: surfaceFact.id,
-      p_decision: "accepted",
-      p_notes: "Local integration review of the simulated provider response.",
+    // Lot C (migration 20261119100900) : « Accepter et mettre à jour la fiche » fait deux choses, comme l'écran :
+    // l'acceptation du fait, puis la décision de l'administrateur au registre des pièces, avec SON jeton. La
+    // projection écrit alors la surface sur la fiche et la tient contre la collecte.
+    const sessionClient = createClient<Database>(localEnv().url, localEnv().publishableKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     });
-    if (accepted.error) throw accepted.error;
-    expect(accepted.data).toMatchObject({ status: "accepted", sale_id: saleId });
+    const { data: signedIn, error: signInError } = await sessionClient.auth.signInWithPassword({
+      email: userEmail,
+      password: ADMIN_PASSWORD,
+    });
+    if (signInError || !signedIn.session) {
+      throw signInError ?? new Error("Local administrator session missing.");
+    }
+    const accepted = await reviewAdminInformationAgentFact({
+      authToken: signedIn.session.access_token,
+      input: {
+        factId: surfaceFact.id,
+        decision: "accepted",
+        notes: "Local integration review of the simulated provider response.",
+        lotAttachment: "single_lot",
+      },
+    });
+    expect(accepted.result).toMatchObject({ status: "accepted", sale_id: saleId });
+    expect(accepted.registry).toMatchObject({ saleId, state: "held", error: null });
 
     const { data: saleAfterReview, error: saleAfterReviewError } = await admin
       .from("auction_sales")
-      .select("surface_m2,app_surface_m2,surface_source,raw_payload")
+      .select("surface_m2,app_surface_m2,app_surface_kind,surface_source,raw_payload")
       .eq("id", saleId)
       .single();
     if (saleAfterReviewError || !saleAfterReview) {
@@ -489,7 +508,30 @@ describeLocal("information-agent local integration", () => {
     }
     expect(Number(saleAfterReview.surface_m2)).toBe(84);
     expect(Number(saleAfterReview.app_surface_m2)).toBe(84);
-    expect(saleAfterReview.surface_source).toBe("information_agent_verified");
+    // Libellés neutres de la projection du registre : jamais l'origine de la pièce.
+    expect(saleAfterReview.surface_source).toBe("fact_registry");
+    expect(saleAfterReview.app_surface_kind).toBe("built");
+    // Provenance : la trace de la réponse dans raw_payload (lue par la mention de source) et la décision au journal
+    // du registre, au nom de l'administrateur. Destinataire saisi à la main : jamais attribué à l'avocat poursuivant.
+    expect(saleAfterReview.raw_payload).toMatchObject({
+      information_agent_verified_facts: {
+        surface_m2: {
+          fact_id: surfaceFact.id,
+          value: { value: 84 },
+          source: "professional_email",
+          publication_mode: "manual",
+          recipient_kind: "manual_professional",
+        },
+      },
+    });
+    const { data: registryDecisions, error: registryDecisionsError } = await admin
+      .from("auction_fact_claim_decisions")
+      .select("decision,actor_kind,actor_id,lot_attachment")
+      .eq("claim_id", accepted.registry?.claimId ?? "");
+    if (registryDecisionsError) throw registryDecisionsError;
+    expect(registryDecisions).toEqual([
+      { decision: "accepted", actor_kind: "admin", actor_id: userId, lot_attachment: "single_lot" },
+    ]);
 
     const duplicate = await processInformationAgentInboundWebhook({
       request: webhookRequest(webhookPayload, "local-svix-id-duplicate"),
