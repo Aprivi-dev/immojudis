@@ -815,7 +815,7 @@ describe("politique de confidentialité", () => {
     // La promesse « sans nom » ne couvre plus les pièces, dont seul le libellé est neutre.
     expect(text).not.toContain("sans le nom de la personne qui les a transmises");
     expect(text).toContain(
-      "une pièce transmise est publiée sous un libellé neutre (qualité de l’expéditeur, date de réception et type de pièce) ; son contenu est publié tel qu’il a été transmis.",
+      "une pièce transmise est publiée sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part) ; son contenu est publié tel qu’il a été transmis.",
     );
     expect(text).not.toMatch(/masqu\w+ (?:les|des) noms/);
     expect(text).toContain(
