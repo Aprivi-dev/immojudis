@@ -17,7 +17,8 @@ import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
  * - une clé du mode attendu par le déploiement (C3, 14/11) : réel en production Vercel, test en
  *   preview ou en développement. Une clé de test en production ferait obtenir Analyse avec la carte
  *   de test de Stripe, sans payer ; une clé réelle sur un preview encaisserait de vrais paiements
- *   sur une base de test ;
+ *   sur une base de test. Sur Vercel, une clé dont le mode ne se lit pas (ni `sk_` ni `rk_` suivi de
+ *   `live_` ou `test_`) ferme aussi la garde : en production, seul le mode réel l'ouvre ;
  * - l'identité légale publiée (`NEXT_PUBLIC_LEGAL_*`) ;
  * - le canal de confirmation contractuelle (Resend, expéditeur, `SITE_URL`) ;
  * - l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN` (C2, 14/11) : il ferme le checkout sans
@@ -35,7 +36,10 @@ export type AnalysisCheckoutReadiness = {
   open: boolean;
   /** Variables d'environnement absentes ou invalides. */
   missing: string[];
-  /** La clé Stripe n'est pas du mode attendu par ce déploiement (voir `expectedStripeKeyMode`). */
+  /**
+   * La clé Stripe n'est pas du mode attendu par ce déploiement, ou son mode ne se lit pas (voir
+   * `expectedStripeKeyMode`). Clé absente : elle est dans `missing`, pas ici.
+   */
   keyModeMismatch: boolean;
   /** La vente est fermée par `STRIPE_ANALYSIS_SALES_OPEN`, que la configuration soit complète ou non. */
   salesClosed: boolean;
@@ -100,7 +104,9 @@ export function analysisCheckoutReadiness(
   ];
   const keyMode = stripeKeyMode(config.stripe.secretKey);
   const expectedMode = expectedStripeKeyMode(env);
-  const keyModeMismatch = Boolean(keyMode && expectedMode && keyMode !== expectedMode);
+  const keyModeMismatch = Boolean(
+    config.stripe.secretKey && expectedMode && keyMode !== expectedMode,
+  );
   const salesClosed = !analysisSalesOpen(env);
   return {
     open: missing.length === 0 && !keyModeMismatch && !salesClosed,
@@ -118,7 +124,7 @@ export function assertAnalysisCheckoutOpen(
   const problems = [
     ...readiness.missing,
     ...(readiness.keyModeMismatch
-      ? ["STRIPE_SECRET_KEY (mode de la clé différent de celui du déploiement)"]
+      ? ["STRIPE_SECRET_KEY (mode de la clé inconnu ou différent de celui du déploiement)"]
       : []),
   ];
   if (problems.length > 0) {

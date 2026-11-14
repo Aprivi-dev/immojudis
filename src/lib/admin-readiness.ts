@@ -144,7 +144,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
         : checkoutReadiness.missing.length > 0
           ? "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, le secret du webhook, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle."
           : checkoutReadiness.keyModeMismatch
-            ? "La clé Stripe n’est pas du mode de ce déploiement (clé de test en production, ou clé réelle hors production) : le checkout est suspendu."
+            ? "La clé Stripe n’est pas du mode de ce déploiement (clé de test en production, clé réelle hors production, ou clé de forme inconnue) : le checkout est suspendu."
             : "La vente Analyse est fermée par STRIPE_ANALYSIS_SALES_OPEN : le checkout est suspendu ; les abonnés gardent leur accès, le webhook et le rapprochement continuent.",
       action: checkoutReadiness.open
         ? null

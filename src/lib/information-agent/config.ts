@@ -12,8 +12,19 @@ export const INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE =
 export const INFORMATION_AGENT_CANARY_ONLY_MESSAGE =
   "Envoi limité à l'adresse de test du fournisseur pendant l'essai canari.";
 
+/**
+ * L'envoi de l'agent est-il ouvert ? Seule la valeur exacte `true` de
+ * `INFORMATION_AGENT_OUTBOUND_ENABLED` l'ouvre. Seule lecture de la règle : l'envoi, la préparation du
+ * pilote et l'avertissement de second facteur de l'administration la partagent.
+ */
+export function informationAgentOutboundEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true";
+}
+
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
-  if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
+  if (!informationAgentOutboundEnabled(env)) {
     throw new PublicApiError(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE, 409);
   }
 }

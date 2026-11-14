@@ -141,11 +141,11 @@ function PageContent() {
             objectif de construction, pas une garantie. Elle situe des ventes comparables ; elle ne
             dit pas à quel prix ce bien se vendra. Cette proportion n’est pas encore vérifiée, sur
             des ventes mises de côté, pour la fourchette tirée des seules ventes comparables. Pour
-            le modèle statistique, une porte d’activation mesure cette proportion avant toute mise
-            en service, sur les ventes les plus récentes, mises de côté pendant son entraînement :
-            un modèle dont l’intervalle en contient moins de {VALUATION_MODEL_MIN_COVERAGE_PCT} %
-            n’est pas mis en service, et un modèle activé sans cette mesure n’est pas utilisé pour
-            l’estimation.
+            le modèle statistique, une porte d’activation mesure, sur les ventes les plus récentes
+            mises de côté, la part qui tombe dans l’intervalle du modèle seul, avant combinaison
+            avec les ventes comparables. Un modèle dont cette mesure manque ou reste sous{" "}
+            {VALUATION_MODEL_MIN_COVERAGE_PCT} % n’est pas utilisé pour l’estimation. La fourchette
+            combinée n’est pas encore vérifiée.
           </p>
         </Section>
 

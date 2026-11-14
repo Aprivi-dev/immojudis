@@ -182,10 +182,15 @@ describe("/api/sale-analysis-sets/[id]/share", () => {
     );
   });
 
-  it("neither shares nor unshares a set of another account", async () => {
-    for (const response of [await call(POST, "POST", OTHER), await call(DELETE, "DELETE", OTHER)]) {
-      expect(response.ok).toBe(false);
+  it("neither shares nor unshares a set of another account: 404, as for a missing set", async () => {
+    for (const response of [
+      await call(POST, "POST", OTHER),
+      await call(DELETE, "DELETE", OTHER),
+      await call(POST, "POST", "7f9b1d3e-5a7c-4e9f-8b1d-3e5a7c9e1f05"),
+    ]) {
+      expect(response.status).toBe(404);
       expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect((await response.json()).error).toBe("Analyse multi-biens introuvable.");
     }
     expect(mocks.db.queries.filter((query) => query.action === "update")).toEqual([]);
     expect(mocks.db.rows("user_sale_analysis_sets", { id: OTHER })[0]).toMatchObject({

@@ -4,12 +4,12 @@
  * A production deployment must not go out with the legal notice left on its
  * "À renseigner" fallback, with the admin second factor optional, with a
  * canonical origin that is only the throw-away `VERCEL_URL`, or with a Stripe
- * test key.
+ * key that is not a live one.
  *
  * `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` turns the legal and MFA errors into loud
  * warnings, so a deployment is not blocked before the owner has the values. A
  * missing or unusable canonical origin (see `blockingLaunchProblems`) and a Stripe
- * test key (see `stripeKeyModeProblems`) always block.
+ * key that is not a live one (see `stripeKeyModeProblems`) always block.
  */
 
 /** Keep in sync with REQUIRED_PUBLISHER_FIELDS in src/lib/legal-documents.ts (tested). */
@@ -109,14 +109,21 @@ export function stripeKeyMode(key) {
 }
 
 /**
- * A test key on the production build (C3, 14/11): Analyse would be obtained with Stripe's test
- * card, without paying. Not covered by the launch escape hatch: it is a wrong value, not a missing
- * one. An absent key is not a problem here (the checkout then stays closed on its own).
+ * The production build requires a live key (C3, 14/11), as the checkout guard does at run time. A
+ * test key would let Analyse be obtained with Stripe's test card, without paying; a key whose mode
+ * cannot be read (neither `sk_` nor `rk_` followed by `live_` or `test_`) is refused as well. Not
+ * covered by the launch escape hatch: it is a wrong value, not a missing one. An absent key is not a
+ * problem here (the checkout then stays closed on its own).
  */
 export function stripeKeyModeProblems(env) {
-  if (stripeKeyMode(env.STRIPE_SECRET_KEY) !== "test") return [];
+  const key = String(env.STRIPE_SECRET_KEY ?? "").trim();
+  if (!key) return [];
+  const mode = stripeKeyMode(key);
+  if (mode === "live") return [];
   return [
-    "STRIPE_SECRET_KEY est une clé de test (sk_test_… ou rk_test_…) : en production, l'offre Analyse s'obtiendrait avec la carte de test de Stripe, sans payer. Poser la clé du mode réel (sk_live_…).",
+    mode === "test"
+      ? "STRIPE_SECRET_KEY est une clé de test (sk_test_… ou rk_test_…) : en production, l'offre Analyse s'obtiendrait avec la carte de test de Stripe, sans payer. Poser la clé du mode réel (sk_live_…)."
+      : "STRIPE_SECRET_KEY n'a pas la forme d'une clé Stripe du mode réel (sk_live_… ou rk_live_…) : son mode ne se lit pas. Poser la clé du mode réel.",
   ];
 }
 
@@ -266,7 +273,7 @@ export function evaluateProductionLaunchConfig(env) {
         : []),
       ...(stripeProblems.length
         ? [
-            `[env] La clé Stripe de test ne peut pas être contournée par ${ESCAPE_HATCH} : poser la clé du mode réel dans Vercel (cible Production).`,
+            `[env] Une clé Stripe qui n'est pas du mode réel ne peut pas être contournée par ${ESCAPE_HATCH} : poser la clé du mode réel dans Vercel (cible Production).`,
           ]
         : []),
       ...(blocking.length
