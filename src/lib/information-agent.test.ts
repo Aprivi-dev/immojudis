@@ -7,6 +7,8 @@ import {
   informationAgentAppOrigin,
 } from "@/lib/information-agent/config";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
+import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
+import { missionFromRow } from "@/lib/information-agent/mission-store";
 import {
   assertUnverifiedSendWithinIdempotencyWindow,
   InformationAgentSentButUnrecordedError,
@@ -187,6 +189,7 @@ describe("supervised information agent", () => {
     "record_fails",
     "already_sent",
     "approval_cap",
+    "autopilot_not_live",
     "timeout",
   ] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
@@ -360,6 +363,19 @@ describe("supervised information agent", () => {
           // Plafond atteint dans la fonction d'approbation (atomique) : son texte n'est jamais repris.
           return { data: null, error: { code: "53400", message: "Plafond de 30 validations" } };
         }
+        if (
+          name === "approve_information_agent_mission_admin" &&
+          scenario === "autopilot_not_live"
+        ) {
+          // Filet SQL de la garde des missions : pilote coupé entre sa relecture et l'approbation.
+          return {
+            data: null,
+            error: {
+              code: "23514",
+              message: "Autopilot send refused: the autopilot is not in live mode.",
+            },
+          };
+        }
         if (name === "approve_information_agent_mission_admin") {
           return {
             data: [
@@ -438,6 +454,12 @@ describe("supervised information agent", () => {
         } else if (scenario === "approval_cap") {
           await expect(operation).rejects.toBeInstanceOf(AdminDailyApprovalCapError);
           await expect(operation).rejects.toMatchObject({ status: 409 });
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          return;
+        } else if (scenario === "autopilot_not_live") {
+          // Un arrêt, pas une erreur d'API : l'exécuteur du pilote le journalise à part (M3).
+          await expect(operation).rejects.toBeInstanceOf(AutopilotSendRefusedError);
+          await expect(operation).rejects.toMatchObject({ refusal: "not_live", status: 409 });
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           return;
         } else if (scenario === "timeout") {
@@ -876,6 +898,37 @@ describe("supervised information agent", () => {
         input: { saleId: "11111111-1111-4111-8111-111111111111" },
       }),
     ).rejects.toThrow(AdminRequiredError);
+  });
+});
+
+describe("origine d'une mission rendue à la liste des envois", () => {
+  it.each([
+    [{ trigger: "autopilot" }, "autopilot"],
+    [{ trigger: "manual" }, "manual"],
+    [{}, null],
+    [{ trigger: "inconnu" }, null],
+  ] as const)("metadata %j : trigger %s", (metadata, trigger) => {
+    const row = {
+      id: "22222222-2222-4222-8222-222222222222",
+      case_id: null,
+      sale_id: null,
+      status: "sent",
+      recipient_kind: "source_lawyer",
+      recipient_name: null,
+      recipient_email: "cabinet@example.test",
+      subject: "Objet",
+      body_text: "Corps",
+      question_keys: [],
+      missing_information: [],
+      failure_reason: null,
+      approved_at: null,
+      sent_at: null,
+      replied_at: null,
+      created_at: "2026-11-14T08:00:00Z",
+      updated_at: "2026-11-14T08:00:00Z",
+      metadata,
+    };
+    expect(missionFromRow(row as never).trigger).toBe(trigger);
   });
 });
 

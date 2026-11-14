@@ -550,10 +550,9 @@ export async function getAdminPepites(
  * Arrêt d'urgence : « Suspendre les pépites » repasse le mode de « on » à « shadow » (ou « off »), jamais
  * l'inverse (`suspend_sale_pepites`, migration 20261104100000). L'ouverture se fait par une migration dédiée.
  * Jeton et rôle administrateur vérifiés avant l'appel ; l'administrateur est consigné dans la base.
+ * Le mode est toujours demandé explicitement : un appel sans mode est refusé (audit du 14/11/2026, D4).
  */
-export const adminPepitesSuspendSchema = z
-  .object({ mode: z.enum(["shadow", "off"]).default("shadow") })
-  .strict();
+export const adminPepitesSuspendSchema = z.object({ mode: z.enum(["shadow", "off"]) }).strict();
 export type AdminPepitesSuspendInput = z.input<typeof adminPepitesSuspendSchema>;
 
 /**
@@ -581,7 +580,7 @@ function expirePepiteCaches(): void {
 
 export async function suspendAdminPepites(
   authToken: string,
-  input: AdminPepitesSuspendInput = {},
+  input: AdminPepitesSuspendInput,
 ): Promise<{ mode: AdminPepitesResponse["mode"] }> {
   const auth = await assertAdminAuth(authToken);
   const { mode } = adminPepitesSuspendSchema.parse(input);

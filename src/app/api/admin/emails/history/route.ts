@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { listEmailHistory } from "@/lib/admin-emails/history";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { PublicApiError } from "@/lib/api-errors";
@@ -29,9 +27,12 @@ const searchSchema = z
  * tracé sans adresse.
  */
 export const GET = adminRoute(
-  { scope: "admin.emails.history.read", fallbackMessage: "Historique des emails indisponible" },
-  async (request) => {
-    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
+  {
+    scope: "admin.emails.history.read",
+    fallbackMessage: "Historique des emails indisponible",
+    guard: "admin",
+  },
+  async (request, { auth }) => {
     const params = new URL(request.url).searchParams;
     if (params.has("address")) {
       throw new PublicApiError("L’adresse se cherche en POST, jamais dans l’URL.", 400);
@@ -48,9 +49,12 @@ export const GET = adminRoute(
 
 /** Liste avec ou sans adresse, paramètres dans le corps JSON. */
 export const POST = adminRoute(
-  { scope: "admin.emails.history.search", fallbackMessage: "Historique des emails indisponible" },
-  async (request) => {
-    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
+  {
+    scope: "admin.emails.history.search",
+    fallbackMessage: "Historique des emails indisponible",
+    guard: "admin",
+  },
+  async (request, { auth }) => {
     if (new URL(request.url).search) {
       throw new PublicApiError("Aucun paramètre dans l’URL : tout passe par le corps.", 400);
     }

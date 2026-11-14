@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import {
   adminCatalogueReadinessActionSchema,
   adminCatalogueReadinessQuerySchema,
@@ -11,19 +10,26 @@ import { adminRoute } from "@/lib/admin-route-deadline";
 export const maxDuration = 30;
 
 export const GET = adminRoute(
-  { scope: "admin.catalogue-readiness.read", fallbackMessage: "Maturité catalogue indisponible" },
-  async (request) => {
+  {
+    scope: "admin.catalogue-readiness.read",
+    fallbackMessage: "Maturité catalogue indisponible",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminCatalogueReadinessQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    return getAdminCatalogueReadinessOverview(bearerTokenFromRequest(request), input);
+    return getAdminCatalogueReadinessOverview(authToken, input);
   },
 );
 
 export const PATCH = adminRoute(
-  { scope: "admin.catalogue-readiness.write", fallbackMessage: "Maturité catalogue indisponible" },
-  async (request) => {
-    const authToken = bearerTokenFromRequest(request);
+  {
+    scope: "admin.catalogue-readiness.write",
+    fallbackMessage: "Maturité catalogue indisponible",
+    guard: "admin",
+  },
+  async (request, { authToken }) => {
     const input = adminCatalogueReadinessActionSchema.parse(await request.json());
     return runAdminCatalogueReadinessAction({ authToken, input });
   },

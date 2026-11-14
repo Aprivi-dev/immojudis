@@ -1,4 +1,3 @@
-import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { getAdminSaleFeedbackBySale } from "@/lib/admin-sale-signal-feedback";
 
@@ -10,6 +9,10 @@ export const maxDuration = 30;
  * Administrateur seulement, jamais mis en cache. Aucun compte dans la réponse.
  */
 export const GET = adminRoute(
-  { scope: "admin.sale-feedback.read", fallbackMessage: "Retours par vente indisponibles" },
-  async (request) => getAdminSaleFeedbackBySale(bearerTokenFromRequest(request)),
+  {
+    scope: "admin.sale-feedback.read",
+    fallbackMessage: "Retours par vente indisponibles",
+    guard: "admin",
+  },
+  async (_request, { authToken }) => getAdminSaleFeedbackBySale(authToken),
 );

@@ -52,6 +52,7 @@ import {
   INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE,
   informationAgentQuestionAudience,
   informationAgentQuestionTextFor,
+  informationAgentSaleAudience,
   isInformationAgentQuestionAllowed,
   type InformationAgentQuestionAudience,
 } from "@/lib/information-agent/recipient-questions";
@@ -431,6 +432,12 @@ export async function createAdminInformationAgentDraft({
           sale_office_code: resolution.officeCode,
         },
         question_audience: questionAudience,
+        // Ce que la vente désigne (vente notariale, cession) : l'envoi reste fermé pour tout destinataire d'une
+        // vente notariale, même un avocat qui reçoit le modèle de l'avocat (config.ts).
+        sale_audience: informationAgentSaleAudience({
+          organizerType: resolution.organizerType,
+          sourceName: resolution.sourceName,
+        }),
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,
         address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,

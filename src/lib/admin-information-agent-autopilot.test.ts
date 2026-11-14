@@ -154,6 +154,75 @@ describe("panneau du pilote (serveur)", () => {
     expect(view.readiness.ready).toBe(false);
   });
 
+  it("rend chaque brouillon prêt à valider avec sa mission et sa vente, pour l'ouvrir", async () => {
+    const rows: Record<string, unknown[]> = {
+      information_agent_missions: [
+        {
+          id: "m-2",
+          sale_id: "s-1",
+          metadata: { trigger: "autopilot", autopilot_simulated: true },
+        },
+        {
+          id: "m-1",
+          sale_id: "s-2",
+          metadata: { trigger: "autopilot", autopilot_simulated: true },
+        },
+      ],
+      auction_sales: [
+        { id: "s-1", title: "Appartement Bordeaux", city: "Bordeaux" },
+        { id: "s-2", title: null, city: "Lyon" },
+      ],
+    };
+    mocks.from.mockImplementation((table: string) => {
+      const query: Record<string, unknown> = {};
+      for (const name of ["select", "eq", "order", "limit", "in"]) query[name] = () => query;
+      query.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: rows[table] ?? [], error: null }).then(resolve);
+      return query;
+    });
+    const view = await getAdminAutopilotView("token", {
+      env: {},
+      now: new Date("2026-11-03T09:30:00Z"),
+    });
+    expect(view.ready).toEqual({
+      count: 2,
+      items: [
+        { missionId: "m-2", saleId: "s-1", label: "Appartement Bordeaux" },
+        { missionId: "m-1", saleId: "s-2", label: "Lyon" },
+      ],
+    });
+    expect(JSON.stringify(view.ready)).not.toContain("@");
+  });
+
+  it("un passage en erreur se lit dans le journal du panneau", async () => {
+    mocks.events.mockResolvedValue([
+      {
+        id: "e1",
+        at: "2026-11-03T09:30:00Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { examined: 5, prepared: 2, would_send: 1, sent: 0, error_draft_error: 2 },
+      },
+      {
+        id: "e2",
+        at: "2026-11-03T09:20:00Z",
+        kind: "run",
+        action: "run",
+        reason: null,
+        details: { examined: 3, prepared: 1, would_send: 1, sent: 0 },
+      },
+    ]);
+    const view = await getAdminAutopilotView("token", {
+      env: {},
+      now: new Date("2026-11-03T09:30:00Z"),
+    });
+    expect(view.events.map((event) => event.detail)).toEqual([
+      "5 examinées, 2 préparées, 1 simulées, 0 envoyées, 2 en erreur",
+      "3 examinées, 1 préparées, 1 simulées, 0 envoyées",
+    ]);
+  });
+
   it("compte par structure incomplet : l'écran le dit au lieu d'échouer", async () => {
     const at = { env: {}, now: new Date("2026-11-03T09:30:00Z") };
     mocks.stats.mockResolvedValue({
@@ -220,6 +289,34 @@ describe("panneau du pilote (serveur)", () => {
       p_reason: undefined,
     });
     expect(mocks.readiness).toHaveBeenCalledTimes(1); // seulement pour recomposer la vue
+  });
+
+  it("arrêt d'urgence enregistré mais état non relu : le dit, jamais « Arrêt impossible »", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // L'arrêt passe ; la relecture de l'état qui suit échoue (base momentanément indisponible).
+    mocks.settings.mockRejectedValue(new Error("lecture impossible"));
+    const stop = runAdminAutopilotAction({
+      authToken: "token",
+      input: { action: "emergency_stop" },
+      env: {},
+    });
+    await expect(stop).rejects.toBeInstanceOf(PublicApiError);
+    await expect(stop).rejects.toMatchObject({
+      message: expect.stringContaining("Arrêt enregistré, état non relu"),
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("stop_information_agent_autopilot", {
+      p_reason: undefined,
+    });
+    logged.mockRestore();
+  });
+
+  it("un arrêt d'urgence refusé par la base reste une erreur de l'arrêt", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "panne" } });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(
+      runAdminAutopilotAction({ authToken: "token", input: { action: "emergency_stop" }, env: {} }),
+    ).rejects.not.toMatchObject({ message: expect.stringContaining("Arrêt enregistré") });
+    logged.mockRestore();
   });
 
   it("traduit les réglages en colonnes et les journalise avec leur motif", async () => {

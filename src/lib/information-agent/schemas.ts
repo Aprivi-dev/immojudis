@@ -135,6 +135,12 @@ export type InformationAgentMission = {
    * l'adresse n'est pas l'une de celles que le brouillon a proposées.
    */
   recipientProfile?: InformationAgentRecipientProfile | null;
+  /**
+   * `metadata.trigger` : `autopilot` pour une mission du pilote (posé dès son brouillon), `manual` pour un envoi
+   * validé par un administrateur ; `null` quand la marque manque (brouillon d'administrateur pas encore validé,
+   * envoi antérieur au pilote), donc une mission manuelle.
+   */
+  trigger?: "autopilot" | "manual" | null;
 };
 
 export type InformationAgentFact = {

@@ -82,8 +82,9 @@ export function reviewAdminPublicationRequest(
   });
 }
 
+/** `confirm: true` : envoyé seulement après la confirmation de l'administrateur (exigé par la route). */
 export function startAdminScrollRequest(args: {
-  data: { source: AdminScrollSource; mode?: AdminScrollMode; limit?: number };
+  data: { source: AdminScrollSource; mode?: AdminScrollMode; limit?: number; confirm: true };
 }): Promise<StartScrollResult> {
   return apiRequest<StartScrollResult>("/api/admin/scroll", { method: "POST", body: args.data });
 }

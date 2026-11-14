@@ -10,9 +10,14 @@ import {
 } from "@/lib/information-agent/autopilot-rules";
 import type { AutopilotReadiness } from "@/lib/information-agent/autopilot-readiness";
 
+/** Brouillon préparé par le pilote en simulation, que l'administrateur peut ouvrir pour le valider. */
+export type AutopilotPreparedDraft = { missionId: string; saleId: string; label: string };
+
 export type AutopilotView = {
   mode: AutopilotSettings["mode"];
   modeLabel: string;
+  /** Arrêté automatiquement (mode « off » posé par un seuil) ; le motif en clair est dans `notice`. */
+  autoStopped: boolean;
   /** Raison d'un arrêt automatique ou d'une pause, déjà rédigée ; null sinon. */
   notice: { tone: "alert" | "warn"; text: string } | null;
   counters: Array<{ label: string; value: string }>;
@@ -27,7 +32,7 @@ export type AutopilotView = {
     aipdLabel: string;
   };
   readiness: { ready: boolean; checks: Array<{ label: string; ok: boolean; detail: string }> };
-  ready: { count: number; items: string[] };
+  ready: { count: number; items: AutopilotPreparedDraft[] };
   events: Array<{ at: string; label: string; detail: string }>;
 };
 
@@ -75,7 +80,10 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   if (kind === "auto_stop" && reason) return AUTOPILOT_STOP_LABELS[reason] ?? reason;
   if (reason) return reason;
   if (kind === "run") {
-    return `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées`;
+    const errors = Object.entries(record)
+      .filter(([key, count]) => key.startsWith("error_") && typeof count === "number")
+      .reduce((total, [, count]) => total + (count as number), 0);
+    return `${record.examined ?? 0} examinées, ${record.prepared ?? 0} préparées, ${record.would_send ?? 0} simulées, ${record.sent ?? 0} envoyées${errors ? `, ${errors} en erreur` : ""}`;
   }
   if (kind === "skip") return String(record.code ?? "");
   return "";
@@ -99,7 +107,7 @@ export function buildAutopilotView({
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
   events: Array<{ at: string; kind: string; reason: string | null; details: unknown }>;
-  prepared: string[];
+  prepared: AutopilotPreparedDraft[];
 }): AutopilotView {
   const caps = autopilotCaps(stats, settings, env, now);
   let notice: AutopilotView["notice"] = null;
@@ -120,6 +128,7 @@ export function buildAutopilotView({
   return {
     mode: settings.mode,
     modeLabel: MODE_LABELS[settings.mode],
+    autoStopped: Boolean(settings.autoStoppedAt),
     notice,
     sentToday: `${stats.sentTodayTotal} sur ${caps.dayCap}`,
     counters: [

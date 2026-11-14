@@ -3,12 +3,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminAutopilotEmergencyStop } from "@/components/admin/AdminAutopilotEmergencyStop";
 import { toast } from "@/lib/toast";
 import {
   AUTOPILOT_QUERY_KEY as QUERY_KEY,
   autopilotQuery,
 } from "@/components/admin/information-agent-queries";
 import { runAdminInformationAgentAutopilotActionClient } from "@/lib/client-api";
+import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-view";
 
 const BTN = "admin-button-secondary";
 const MODES = [
@@ -20,9 +22,14 @@ const MODES = [
 /**
  * Pilote automatique : interrupteur à trois états, compteurs, contrôle de préparation, brouillons prêts à
  * valider, derniers événements et arrêt d’urgence. Désactivé par défaut. Tout arrive mis en forme par le
- * serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est journalisé.
+ * serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est journalisé. Un brouillon prêt
+ * à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`), là où il se valide.
  */
-export function AdminInformationAgentAutopilotPanel() {
+export function AdminInformationAgentAutopilotPanel({
+  onOpenDraft,
+}: {
+  onOpenDraft?: (draft: AutopilotPreparedDraft) => void;
+}) {
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [cap, setCap] = useState("");
@@ -84,14 +91,7 @@ export function AdminInformationAgentAutopilotPanel() {
                 {label}
               </button>
             ))}
-            <button
-              type="button"
-              className="admin-button-primary"
-              disabled={run.isPending || view.mode === "off"}
-              onClick={() => run.mutate({ action: "emergency_stop" })}
-            >
-              Arrêt d’urgence
-            </button>
+            <AdminAutopilotEmergencyStop mode={view.mode} />
           </div>
           <dl className="grid gap-x-6 sm:grid-cols-2">
             {view.counters.map((counter) => (
@@ -184,7 +184,19 @@ export function AdminInformationAgentAutopilotPanel() {
             <p className="font-medium">Prêtes à valider ({view.ready.count})</p>
             <ul className="mt-1 list-inside list-disc text-brand-navy/70">
               {view.ready.items.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item.missionId}>
+                  {onOpenDraft ? (
+                    <button
+                      type="button"
+                      className="text-left font-medium text-gold-text underline"
+                      onClick={() => onOpenDraft(item)}
+                    >
+                      {item.label}
+                    </button>
+                  ) : (
+                    item.label
+                  )}
+                </li>
               ))}
             </ul>
           </div>

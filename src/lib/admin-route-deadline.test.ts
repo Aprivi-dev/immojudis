@@ -7,9 +7,17 @@ import {
   ADMIN_TIMEOUT_CODE,
   AdminRouteTimeoutError,
   adminDeadlineSignal,
+  adminRoute,
   throwIfAdminDeadlineExceeded,
   withAdminDeadline,
 } from "@/lib/admin-route-deadline";
+import { AuthRequiredError } from "@/lib/api-errors";
+
+const sessions = vi.hoisted(() => ({ requireAuth: vi.fn() }));
+vi.mock("@/integrations/supabase/auth-middleware", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/integrations/supabase/auth-middleware")>()),
+  requireSupabaseAuthContext: sessions.requireAuth,
+}));
 
 const neverResolves = () => new Promise<Response>(() => {});
 
@@ -115,6 +123,65 @@ describe("withAdminDeadline", () => {
   it("exposes no deadline outside an admin route", () => {
     expect(adminDeadlineSignal()).toBeUndefined();
     expect(() => throwIfAdminDeadlineExceeded()).not.toThrow();
+  });
+});
+
+describe('adminRoute({ guard: "admin" })', () => {
+  const url = "https://example.test/api/admin/x";
+  const body = JSON.stringify({ n: "importe quoi" });
+
+  beforeEach(() => {
+    sessions.requireAuth.mockReset();
+    sessions.requireAuth.mockImplementation(async (token: string) => {
+      if (token === "jeton-refuse") throw new AuthRequiredError("Unauthorized: Invalid token");
+      return { userId: "u1", isAdmin: token === "jeton-admin" };
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("passe la session vérifiée de l'administrateur et son jeton au gestionnaire", async () => {
+    const handler = vi.fn(
+      async (_request: Request, route: { auth: object; authToken: string }) => ({
+        userId: (route.auth as { userId: string }).userId,
+        authToken: route.authToken,
+      }),
+    );
+    const POST = adminRoute({ scope: "t", fallbackMessage: "f", guard: "admin" }, handler);
+
+    const response = await POST(
+      new Request(url, { method: "POST", headers: { authorization: "Bearer jeton-admin" }, body }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ userId: "u1", authToken: "jeton-admin" });
+    expect(sessions.requireAuth).toHaveBeenCalledWith("jeton-admin");
+  });
+
+  it.each([
+    ["sans jeton", {}, 401],
+    ["avec un jeton refusé", { authorization: "Bearer jeton-refuse" }, 401],
+    ["d'un compte non administrateur", { authorization: "Bearer jeton-utilisateur" }, 403],
+  ])("refuse une requête %s sans appeler le gestionnaire", async (_case, headers, status) => {
+    const handler = vi.fn(async (request: Request) => request.json());
+    const POST = adminRoute({ scope: "t", fallbackMessage: "f", guard: "admin" }, handler);
+
+    const response = await POST(new Request(url, { method: "POST", headers, body }));
+
+    expect(response.status).toBe(status);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("exige la garde : une route admin sans `guard` ne compile pas, et reste gardée", async () => {
+    // @ts-expect-error `guard: "admin"` est obligatoire (contrôlé par `tsc`).
+    const GET = adminRoute({ scope: "t", fallbackMessage: "f" }, async () => ({ ok: true }));
+
+    expect((await GET(new Request(url))).status).toBe(401);
+    expect(
+      (await GET(new Request(url, { headers: { authorization: "Bearer jeton-utilisateur" } })))
+        .status,
+    ).toBe(403);
   });
 });
 

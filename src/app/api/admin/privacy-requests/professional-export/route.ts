@@ -1,8 +1,4 @@
 import { z } from "zod";
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
 import { adminRoute } from "@/lib/admin-route-deadline";
 import { exportProfessionalPrivacyData } from "@/lib/privacy-requests";
 
@@ -19,9 +15,9 @@ export const GET = adminRoute(
   {
     scope: "api.admin.privacy_requests.professional_export",
     fallbackMessage: "Export impossible.",
+    guard: "admin",
   },
-  async (request) => {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  async (request, { auth }) => {
     const { requestId } = querySchema.parse({
       requestId: new URL(request.url).searchParams.get("requestId"),
     });

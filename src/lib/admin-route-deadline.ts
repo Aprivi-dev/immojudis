@@ -1,6 +1,11 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { NextResponse } from "next/server";
+import {
+  type SupabaseAuthContext,
+  bearerTokenFromRequest,
+} from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { type ApiRouteContext, type ApiRouteOptions, apiRoute } from "@/lib/api-route";
 import { resolveRequestId } from "@/lib/request-id";
 
@@ -114,13 +119,33 @@ export function withAdminDeadline<Args extends [Request, ...unknown[]]>(
   };
 }
 
+/** Contexte d'une route admin gardée : la session vérifiée de l'administrateur et son jeton. */
+export type AdminGuardedRouteContext<Params> = ApiRouteContext<Params> & {
+  auth: SupabaseAuthContext;
+  /** Pour les modules qui reprennent la garde eux-mêmes (`assertAdminAuth(authToken)`). */
+  authToken: string;
+};
+
+type AdminRouteHandler<Context> = (request: Request, route: Context) => Promise<Response | object>;
+
 /**
- * Route `/api/admin/*` : l'enveloppe commune (`apiRoute`) sous le délai des routes admin. La garde
- * administrateur reste dans le module appelé (`assertAdminAuth`).
+ * Route `/api/admin/*` : l'enveloppe commune (`apiRoute`) sous le délai des routes admin, gardée.
+ *
+ * `guard: "admin"`, obligatoire : le jeton est vérifié puis le rôle administrateur exigé AVANT le
+ * gestionnaire, donc avant toute lecture du corps, des paramètres ou de la base (401 sans session
+ * valide, 403 pour un compte ordinaire, quelle que soit la requête). Le gestionnaire reçoit la
+ * session (`auth`) et le jeton (`authToken`) ; la garde des modules appelés reste en place. La forme
+ * des routes est contrôlée par `scripts/check-security-invariants.mjs` (2 bis).
  */
 export function adminRoute<Params = Record<string, never>>(
-  options: ApiRouteOptions,
-  handler: (request: Request, route: ApiRouteContext<Params>) => Promise<Response | object>,
+  options: ApiRouteOptions & { guard: "admin" },
+  handler: AdminRouteHandler<AdminGuardedRouteContext<Params>>,
 ) {
-  return withAdminDeadline(apiRoute(options, handler));
+  return withAdminDeadline(
+    apiRoute<Params>(options, async (request, route) => {
+      const authToken = bearerTokenFromRequest(request);
+      const auth = await assertAdminAuth(authToken);
+      return handler(request, { ...route, auth, authToken });
+    }),
+  );
 }

@@ -33,6 +33,8 @@ type AgentMockState = {
   template: Record<string, unknown>;
   /** Messages non rattachés simulés (nombre) ; leur texte ne contient jamais d'adresse du bandeau. */
   unroutedTotal: number;
+  /** L'état du pilote automatique ne se lit pas (panne de la route) : le bandeau le dit. */
+  autopilotUnavailable: boolean;
   /** Aperçu qui signale « Origine de l'adresse inconnue » (aucune page publique citée). */
   originUnknown: boolean;
   /** Taille simulée des listes longues (pagination 50 par page) ; null = une seule ligne. */
@@ -141,16 +143,37 @@ test.describe("admin information agent", () => {
     const state = await prepareAdminInformationAgentPage(page);
 
     await page.goto("/admin/agent-ia?onglet=pilote");
-    await expect(page.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
-    await expect(page.getByText("Éteint", { exact: true }).first()).toBeVisible();
+    const panel = page.getByRole("region", { name: "Pilote automatique" });
+    await expect(panel.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
+    await expect(panel.getByText("Éteint", { exact: true }).first()).toBeVisible();
     // Le bandeau de synthèse dit la même chose, en un mot.
-    await expect(
-      page.getByRole("region", { name: "Synthèse de l’agent" }).getByText("Arrêté"),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
+    await expect(banner.getByText("Éteint", { exact: true })).toBeVisible();
+    // Un arrêt d'urgence dans le bandeau et un dans le panneau : le pilote est connu éteint, rien à arrêter.
+    await expect(banner.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
     // Changer de mode exige un motif : rien ne part sans.
-    await expect(page.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    expect(
+      state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
+    ).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("keeps the emergency stop of the summary banner active when the autopilot state cannot be read", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.autopilotUnavailable = true;
+
+    await page.goto("/admin/agent-ia?onglet=pilote");
+    await expect(page.getByText("Pilote indisponible.")).toBeVisible();
+    const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
+    await expect(banner.getByText("indisponible").first()).toBeVisible();
+    // État inconnu : l'arrêt d'urgence reste possible, en un clic.
+    await expect(banner.getByRole("button", { name: "Arrêt d’urgence" })).toBeEnabled();
+    expect(await banner.innerText()).not.toContain("@");
     expect(
       state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
     ).toBe(false);
@@ -430,7 +453,7 @@ test.describe("admin information agent", () => {
     await expect(tabs.getByRole("tab", { name: "Réponses (3)" })).toBeVisible();
     await expect(tabs.getByRole("tab", { name: "À contacter (1)" })).toBeVisible();
     const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
-    await expect(banner).toContainText("Arrêté");
+    await expect(banner).toContainText("Éteint");
     await expect(banner).toContainText("0 sur 5");
     await expect(banner.locator("dd").nth(2)).toHaveText("1");
     await expect(banner.locator("dd").nth(3)).toHaveText("2");
@@ -607,6 +630,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     sourceRefresh: sourceRefreshFixture(null),
     template: templateFixture(),
     unroutedTotal: 0,
+    autopilotUnavailable: false,
     originUnknown: false,
     longListTotal: null,
     requestedOffsets: { claims: [], missions: [], review: [], catalogue: [] },
@@ -795,6 +819,13 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       path === "/api/admin/information-agent/autopilot" &&
       (method === "GET" || method === "POST")
     ) {
+      if (method === "GET" && state.autopilotUnavailable) {
+        await route.fulfill({
+          status: 503,
+          json: { ok: false, error: "Pilote automatique indisponible", code: "INTERNAL_ERROR" },
+        });
+        return;
+      }
       await route.fulfill({ status: 200, json: autopilotFixture() });
       return;
     }
