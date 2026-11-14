@@ -60,6 +60,11 @@ export function AdminInformationAgentWorkspace() {
   const [visited, setVisited] = useState<ReadonlySet<AgentTabId>>(() => new Set());
   const [selection, setSelection] = useState<InformationRequestSelection | null>(null);
   const [openRequest, setOpenRequest] = useState<OpenMissionRequest | null>(null);
+  // Mission ouverte depuis « Envois » ou « Pilote » : l'éditeur passe au-dessus de la file jusqu'à
+  // « Fermer » ou au prochain clic dans la file. Sous la file, il était repoussé hors de l'écran quand
+  // la file arrivait après le défilement, et le bouton d'une autre vente prenait sa place (incident
+  // du 14/11/2026).
+  const [editorFirst, setEditorFirst] = useState(false);
 
   function show(id: AgentTabId) {
     setTab(id);
@@ -97,7 +102,18 @@ export function AdminInformationAgentWorkspace() {
   function openMission(mission: InformationAgentMission) {
     setSelection(null);
     setOpenRequest((previous) => ({ mission, nonce: (previous?.nonce ?? 0) + 1 }));
+    setEditorFirst(true);
     select("a-contacter");
+  }
+
+  function prepareFromQueue(next: InformationRequestSelection) {
+    setEditorFirst(false);
+    setSelection(next);
+  }
+
+  function closeEditor() {
+    setEditorFirst(false);
+    setSelection(null);
   }
 
   /**
@@ -120,6 +136,21 @@ export function AdminInformationAgentWorkspace() {
     "a-contacter": summary.contactable.value,
     reponses: summary.replies,
   };
+
+  // Clés fixes : changer l'ordre déplace les deux panneaux sans les remonter (brouillon en cours et
+  // page de la file conservés).
+  const queue = (
+    <AdminCatalogueReadinessPanel key="file" onPrepareInformationRequest={prepareFromQueue} />
+  );
+  const editor = (
+    <AdminInformationAgentMissionsPanel
+      key="editeur"
+      selection={selection}
+      onClose={closeEditor}
+      openRequest={openRequest}
+      active={tab === "a-contacter"}
+    />
+  );
 
   function panel(id: AgentTabId, content: ReactNode) {
     return (
@@ -183,18 +214,7 @@ export function AdminInformationAgentWorkspace() {
           Chargement de l’espace de travail…
         </p>
       ) : null}
-      {panel(
-        "a-contacter",
-        <>
-          <AdminCatalogueReadinessPanel onPrepareInformationRequest={setSelection} />
-          <AdminInformationAgentMissionsPanel
-            selection={selection}
-            onClose={() => setSelection(null)}
-            openRequest={openRequest}
-            active={tab === "a-contacter"}
-          />
-        </>,
-      )}
+      {panel("a-contacter", editorFirst ? [editor, queue] : [queue, editor])}
       {panel("envois", <AdminInformationAgentMissionsList onOpenMission={openMission} />)}
       {panel(
         "reponses",

@@ -513,6 +513,28 @@ describe("AdminInformationAgentMissionsPanel", () => {
   const subjectValue = () =>
     (screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value;
 
+  it("ouverture demandée : défile vers l'éditeur une fois le brouillon affiché, pas avant", async () => {
+    // Avant le rendu du brouillon, la page peut être trop courte pour amener l'éditeur en haut de
+    // l'écran : le brouillon s'affichait ensuite sous le bas de l'écran.
+    const draftShownAtScroll: boolean[] = [];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: () =>
+        draftShownAtScroll.push(screen.queryByRole("heading", { name: /Brouillon pour/ }) !== null),
+    });
+    try {
+      const { open } = openFromList(mission("draft"));
+      await screen.findByRole("heading", { name: "Brouillon pour cabinet@example.test" });
+      expect(draftShownAtScroll).toEqual([true]);
+
+      open({ ...mission("sent"), recipientEmail: "autre@example.test" }, 2);
+      await screen.findByRole("heading", { name: "Brouillon pour autre@example.test" });
+      expect(draftShownAtScroll).toEqual([true, true]);
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+    }
+  });
+
   it("liste des envois : le bouton est désactivé pendant la régénération, et un double clic ne crée qu'un brouillon", async () => {
     let resolve: (value: unknown) => void = () => undefined;
     mocks.create.mockReturnValue(new Promise((done) => (resolve = done)));
