@@ -366,11 +366,11 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
   //    la suppression des dossiers, qui emporte les faits. Les valeurs affichées ne changent pas : leur retrait
   //    passe par le registre des pièces (runbook de l'agent, section du lot C).
   const rewrittenSales = await inChunks(caseIds, async (chunk) => {
-    const { data, error } = await callErasureRpc("forget_information_agent_verified_facts", {
+    const { data, error } = await supabaseAdmin.rpc("forget_information_agent_verified_facts", {
       p_case_ids: chunk,
     });
     if (error) throw erasureFailure("auction_sales.raw_payload", error);
-    return [typeof data === "number" ? data : 0];
+    return [data ?? 0];
   });
   deletedRows["auction_sales.information_agent_verified_facts"] = rewrittenSales.reduce(
     (total, count) => total + count,
@@ -386,15 +386,6 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
 
   return { deletedRows, storageObjectsQueued: queue.size, oppositionRecorded: true };
 }
-
-type ErasureRpc = (
-  functionName: string,
-  args: Record<string, unknown>,
-) => Promise<{ data: unknown; error: unknown }>;
-
-/** Fonction de la migration 20261119100900, pas encore dans les types générés. */
-const callErasureRpc: ErasureRpc = (functionName, args) =>
-  (supabaseAdmin.rpc as unknown as ErasureRpc).call(supabaseAdmin, functionName, args);
 
 async function deleteByIds(
   table: "information_agent_cases" | "information_agent_missions",

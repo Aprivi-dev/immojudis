@@ -112,33 +112,6 @@ export type Database = {
           },
         ];
       };
-      admin_email_access_log: {
-        Row: {
-          admin_user_id: string;
-          id: string;
-          occurred_at: string;
-          row_count: number | null;
-          scope: string;
-          target_id: string | null;
-        };
-        Insert: {
-          admin_user_id: string;
-          id?: string;
-          occurred_at?: string;
-          row_count?: number | null;
-          scope: string;
-          target_id?: string | null;
-        };
-        Update: {
-          admin_user_id?: string;
-          id?: string;
-          occurred_at?: string;
-          row_count?: number | null;
-          scope?: string;
-          target_id?: string | null;
-        };
-        Relationships: [];
-      };
       adjudication_price_statistics_build_reviews: {
         Row: {
           build_id: string;
@@ -358,6 +331,33 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      admin_email_access_log: {
+        Row: {
+          admin_user_id: string;
+          id: string;
+          occurred_at: string;
+          row_count: number | null;
+          scope: string;
+          target_id: string | null;
+        };
+        Insert: {
+          admin_user_id: string;
+          id?: string;
+          occurred_at?: string;
+          row_count?: number | null;
+          scope: string;
+          target_id?: string | null;
+        };
+        Update: {
+          admin_user_id?: string;
+          id?: string;
+          occurred_at?: string;
+          row_count?: number | null;
+          scope?: string;
+          target_id?: string | null;
+        };
+        Relationships: [];
       };
       anil_rents: {
         Row: {
@@ -1007,9 +1007,15 @@ export type Database = {
           attempt_count: number;
           documents: Json;
           error_code: string | null;
+          failed_attempts: number;
+          failed_error_code: string | null;
+          failed_input_fingerprint: string | null;
+          failed_prompt_version: string | null;
+          failed_text_at: string | null;
           generated_at: string;
           input_fingerprint: string;
           input_truncated: boolean;
+          last_failed_at: string | null;
           model: string | null;
           points: Json;
           prompt_version: string;
@@ -1022,9 +1028,15 @@ export type Database = {
           attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
+          failed_attempts?: number;
+          failed_error_code?: string | null;
+          failed_input_fingerprint?: string | null;
+          failed_prompt_version?: string | null;
+          failed_text_at?: string | null;
           generated_at?: string;
           input_fingerprint: string;
           input_truncated?: boolean;
+          last_failed_at?: string | null;
           model?: string | null;
           points?: Json;
           prompt_version: string;
@@ -1037,9 +1049,15 @@ export type Database = {
           attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
+          failed_attempts?: number;
+          failed_error_code?: string | null;
+          failed_input_fingerprint?: string | null;
+          failed_prompt_version?: string | null;
+          failed_text_at?: string | null;
           generated_at?: string;
           input_fingerprint?: string;
           input_truncated?: boolean;
+          last_failed_at?: string | null;
           model?: string | null;
           points?: Json;
           prompt_version?: string;
@@ -6152,6 +6170,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      cron_lease: {
+        Row: {
+          claimed_at: string | null;
+          leased_until: string | null;
+          name: string;
+          token: string | null;
+        };
+        Insert: {
+          claimed_at?: string | null;
+          leased_until?: string | null;
+          name: string;
+          token?: string | null;
+        };
+        Update: {
+          claimed_at?: string | null;
+          leased_until?: string | null;
+          name?: string;
+          token?: string | null;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;
@@ -6768,10 +6807,148 @@ export type Database = {
         };
         Relationships: [];
       };
-      information_agent_internal_domains: {
-        Row: { added_at: string; domain: string };
-        Insert: { added_at?: string; domain: string };
-        Update: { added_at?: string; domain?: string };
+      information_agent_auto_publication_decisions: {
+        Row: {
+          case_id: string;
+          decided_at: string;
+          fact_id: string;
+          fact_key: string;
+          id: string;
+          mode: string;
+          outcome: string;
+          policy_version: string;
+          reasons: string[];
+          sale_id: string;
+        };
+        Insert: {
+          case_id: string;
+          decided_at?: string;
+          fact_id: string;
+          fact_key: string;
+          id?: string;
+          mode: string;
+          outcome: string;
+          policy_version: string;
+          reasons?: string[];
+          sale_id: string;
+        };
+        Update: {
+          case_id?: string;
+          decided_at?: string;
+          fact_id?: string;
+          fact_key?: string;
+          id?: string;
+          mode?: string;
+          outcome?: string;
+          policy_version?: string;
+          reasons?: string[];
+          sale_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_decisions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      information_agent_auto_publication_mode_changes: {
+        Row: {
+          actor_id: string;
+          changed_at: string;
+          emergency_stop: boolean;
+          id: string;
+          new_mode: string;
+          previous_mode: string;
+        };
+        Insert: {
+          actor_id: string;
+          changed_at?: string;
+          emergency_stop?: boolean;
+          id?: string;
+          new_mode: string;
+          previous_mode: string;
+        };
+        Update: {
+          actor_id?: string;
+          changed_at?: string;
+          emergency_stop?: boolean;
+          id?: string;
+          new_mode?: string;
+          previous_mode?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_auto_publication_settings: {
+        Row: {
+          mode: string;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          mode?: string;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          mode?: string;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
         Relationships: [];
       };
       information_agent_autopilot_events: {
@@ -6814,9 +6991,21 @@ export type Database = {
         Relationships: [];
       };
       information_agent_autopilot_exclusions: {
-        Row: { created_at: string; identity_key: string; reason: string };
-        Insert: { created_at?: string; identity_key: string; reason: string };
-        Update: { created_at?: string; identity_key?: string; reason?: string };
+        Row: {
+          created_at: string;
+          identity_key: string;
+          reason: string;
+        };
+        Insert: {
+          created_at?: string;
+          identity_key: string;
+          reason: string;
+        };
+        Update: {
+          created_at?: string;
+          identity_key?: string;
+          reason?: string;
+        };
         Relationships: [];
       };
       information_agent_autopilot_settings: {
@@ -7689,24 +7878,6 @@ export type Database = {
           },
         ];
       };
-      information_agent_identity_oppositions: {
-        Row: {
-          created_at: string;
-          identity_key: string;
-          opposed_at: string;
-        };
-        Insert: {
-          created_at?: string;
-          identity_key: string;
-          opposed_at?: string;
-        };
-        Update: {
-          created_at?: string;
-          identity_key?: string;
-          opposed_at?: string;
-        };
-        Relationships: [];
-      };
       information_agent_fact_publications: {
         Row: {
           actor_id: string | null;
@@ -7812,90 +7983,21 @@ export type Database = {
           },
         ];
       };
-      information_agent_auto_publication_decisions: {
+      information_agent_identity_oppositions: {
         Row: {
-          case_id: string;
-          decided_at: string;
-          fact_id: string;
-          fact_key: string;
-          id: string;
-          mode: string;
-          outcome: string;
-          policy_version: string;
-          reasons: string[];
-          sale_id: string;
+          created_at: string;
+          identity_key: string;
+          opposed_at: string;
         };
         Insert: {
-          case_id: string;
-          decided_at?: string;
-          fact_id: string;
-          fact_key: string;
-          id?: string;
-          mode: string;
-          outcome: string;
-          policy_version: string;
-          reasons?: string[];
-          sale_id: string;
+          created_at?: string;
+          identity_key: string;
+          opposed_at?: string;
         };
         Update: {
-          case_id?: string;
-          decided_at?: string;
-          fact_id?: string;
-          fact_key?: string;
-          id?: string;
-          mode?: string;
-          outcome?: string;
-          policy_version?: string;
-          reasons?: string[];
-          sale_id?: string;
-        };
-        Relationships: [];
-      };
-      information_agent_auto_publication_mode_changes: {
-        Row: {
-          actor_id: string;
-          changed_at: string;
-          emergency_stop: boolean;
-          id: string;
-          new_mode: string;
-          previous_mode: string;
-        };
-        Insert: {
-          actor_id: string;
-          changed_at?: string;
-          emergency_stop?: boolean;
-          id?: string;
-          new_mode: string;
-          previous_mode: string;
-        };
-        Update: {
-          actor_id?: string;
-          changed_at?: string;
-          emergency_stop?: boolean;
-          id?: string;
-          new_mode?: string;
-          previous_mode?: string;
-        };
-        Relationships: [];
-      };
-      information_agent_auto_publication_settings: {
-        Row: {
-          mode: string;
-          singleton: boolean;
-          updated_at: string;
-          updated_by: string | null;
-        };
-        Insert: {
-          mode?: string;
-          singleton?: boolean;
-          updated_at?: string;
-          updated_by?: string | null;
-        };
-        Update: {
-          mode?: string;
-          singleton?: boolean;
-          updated_at?: string;
-          updated_by?: string | null;
+          created_at?: string;
+          identity_key?: string;
+          opposed_at?: string;
         };
         Relationships: [];
       };
@@ -7961,6 +8063,21 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      information_agent_internal_domains: {
+        Row: {
+          added_at: string;
+          domain: string;
+        };
+        Insert: {
+          added_at?: string;
+          domain: string;
+        };
+        Update: {
+          added_at?: string;
+          domain?: string;
+        };
+        Relationships: [];
       };
       information_agent_messages: {
         Row: {
@@ -8267,6 +8384,30 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      information_agent_roundtrip_attestations: {
+        Row: {
+          admin_id: string;
+          at: string;
+          case_id: string | null;
+          id: string;
+          message_id: string | null;
+        };
+        Insert: {
+          admin_id: string;
+          at?: string;
+          case_id?: string | null;
+          id?: string;
+          message_id?: string | null;
+        };
+        Update: {
+          admin_id?: string;
+          at?: string;
+          case_id?: string | null;
+          id?: string;
+          message_id?: string | null;
+        };
+        Relationships: [];
       };
       information_agent_unrouted_messages: {
         Row: {
@@ -10374,6 +10515,216 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      sale_document_photo_scans: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          document_url: string;
+          id: string;
+          images: number | null;
+          last_attempt_at: string | null;
+          pages: number | null;
+          photos_stored: number;
+          reason: string | null;
+          sale_id: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          document_url: string;
+          id?: string;
+          images?: number | null;
+          last_attempt_at?: string | null;
+          pages?: number | null;
+          photos_stored?: number;
+          reason?: string | null;
+          sale_id: string;
+          status: string;
+          updated_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          document_url?: string;
+          id?: string;
+          images?: number | null;
+          last_attempt_at?: string | null;
+          pages?: number | null;
+          photos_stored?: number;
+          reason?: string | null;
+          sale_id?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photo_scans_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      sale_document_photos: {
+        Row: {
+          created_at: string;
+          document_url: string;
+          height: number;
+          id: string;
+          image_sha256: string;
+          page_number: number;
+          path_1600: string;
+          path_640: string;
+          position: number;
+          public_url: string;
+          sale_id: string;
+          status: string;
+          updated_at: string;
+          width: number;
+        };
+        Insert: {
+          created_at?: string;
+          document_url: string;
+          height: number;
+          id?: string;
+          image_sha256: string;
+          page_number: number;
+          path_1600: string;
+          path_640: string;
+          position: number;
+          public_url: string;
+          sale_id: string;
+          status?: string;
+          updated_at?: string;
+          width: number;
+        };
+        Update: {
+          created_at?: string;
+          document_url?: string;
+          height?: number;
+          id?: string;
+          image_sha256?: string;
+          page_number?: number;
+          path_1600?: string;
+          path_640?: string;
+          position?: number;
+          public_url?: string;
+          sale_id?: string;
+          status?: string;
+          updated_at?: string;
+          width?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_document_photos_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       sale_flood_risk_lease: {
         Row: {
@@ -14296,52 +14647,6 @@ export type Database = {
           updated_at: string | null;
           value_jsonb: Json | null;
         };
-        Insert: {
-          artifact_extraction_id?: string | null;
-          auction_sale_id?: string | null;
-          captured_at?: string | null;
-          claim_id?: string | null;
-          confidence_score?: number | null;
-          conflict_group?: string | null;
-          created_at?: string | null;
-          evidence_kind?: string | null;
-          evidence_locator?: Json | null;
-          fact_status?: string | null;
-          field_key?: string | null;
-          is_publishable?: never;
-          lot_id?: string | null;
-          raw_artifact_id?: string | null;
-          resolution_note?: string | null;
-          resolved_at?: string | null;
-          source_id?: string | null;
-          source_record_id?: string | null;
-          source_url?: string | null;
-          updated_at?: string | null;
-          value_jsonb?: Json | null;
-        };
-        Update: {
-          artifact_extraction_id?: string | null;
-          auction_sale_id?: string | null;
-          captured_at?: string | null;
-          claim_id?: string | null;
-          confidence_score?: number | null;
-          conflict_group?: string | null;
-          created_at?: string | null;
-          evidence_kind?: string | null;
-          evidence_locator?: Json | null;
-          fact_status?: string | null;
-          field_key?: string | null;
-          is_publishable?: never;
-          lot_id?: string | null;
-          raw_artifact_id?: string | null;
-          resolution_note?: string | null;
-          resolved_at?: string | null;
-          source_id?: string | null;
-          source_record_id?: string | null;
-          source_url?: string | null;
-          updated_at?: string | null;
-          value_jsonb?: Json | null;
-        };
         Relationships: [
           {
             foreignKeyName: "auction_fact_claims_artifact_extraction_id_fkey";
@@ -15144,13 +15449,22 @@ export type Database = {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
       };
+      admin_offer_opening_interviewees: {
+        Args: { p_limit?: number };
+        Returns: Json;
+      };
+      admin_offer_opening_survey_summary: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       admin_pepite_independence_sales: { Args: never; Returns: Json };
-      admin_offer_opening_interviewees: { Args: { p_limit?: number }; Returns: Json };
-      admin_offer_opening_survey_summary: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_activation: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
-      admin_pilotage_unlock_threshold: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_unlock_threshold: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       admin_sale_signal_feedback_by_sale: {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
@@ -15159,6 +15473,17 @@ export type Database = {
         Args: { p_now?: string };
         Returns: Json;
       };
+      admin_signup_usage: {
+        Args: never;
+        Returns: {
+          ceilings: number;
+          favorites: number;
+          sheets_served: number;
+          trial_ends_at: string;
+          unlocks: number;
+          user_id: string;
+        }[];
+      };
       anil_department_medians: {
         Args: { p_departments: string[] };
         Returns: {
@@ -15166,19 +15491,8 @@ export type Database = {
           department_code: string;
           rent_per_m2: number;
           segment: string;
-          source_updated_on: string | null;
+          source_updated_on: string;
           vintage: number;
-        }[];
-      };
-      admin_signup_usage: {
-        Args: never;
-        Returns: {
-          ceilings: number;
-          favorites: number;
-          sheets_served: number;
-          trial_ends_at: string | null;
-          unlocks: number;
-          user_id: string;
         }[];
       };
       apply_reviewed_auction_notice_court_assignment: {
@@ -15241,16 +15555,43 @@ export type Database = {
           usage_count: number;
         }[];
       };
-      attest_information_agent_roundtrip: {
-        Args: { p_admin_id: string };
-        Returns: string;
-      };
       attach_analyse_checkout_customer: {
         Args: {
           p_checkout_token: string;
           p_stripe_customer_id: string;
           p_user_id: string;
         };
+        Returns: string;
+      };
+      attest_information_agent_aipd: {
+        Args: { p_reason: string; p_version: string };
+        Returns: {
+          acting_admin_id: string | null;
+          aipd_attested_at: string | null;
+          aipd_version: string | null;
+          allow_licitor_decoded: boolean;
+          art14_max_age_days: number;
+          art14_rule_enabled: boolean;
+          auto_stop_reason: string | null;
+          auto_stopped_at: string | null;
+          cap_total_override: number | null;
+          live_allowed: boolean;
+          mode: string;
+          paused_until: string | null;
+          simulation_started_at: string | null;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_autopilot_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      attest_information_agent_roundtrip: {
+        Args: { p_admin_id: string };
         Returns: string;
       };
       auction_all_source_freshness: {
@@ -15306,7 +15647,10 @@ export type Database = {
         };
         Returns: boolean;
       };
-      check_fact_registry_consistency: { Args: { p_limit?: number }; Returns: Json };
+      check_fact_registry_consistency: {
+        Args: { p_limit?: number };
+        Returns: Json;
+      };
       claim_auction_enrichment_jobs: {
         Args: { p_limit?: number };
         Returns: {
@@ -15480,6 +15824,10 @@ export type Database = {
         };
       };
       claim_autonomous_pipeline_run: { Args: never; Returns: Json };
+      claim_cron_lease: {
+        Args: { p_name: string; p_ttl_seconds: number };
+        Returns: string;
+      };
       claim_information_agent_evidence_extractions: {
         Args: { p_limit?: number };
         Returns: {
@@ -15545,7 +15893,6 @@ export type Database = {
         Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
-      claim_cron_lease: { Args: { p_name: string; p_ttl_seconds: number }; Returns: string };
       claim_operational_alert_notifications: {
         Args: { p_limit?: number; p_now?: string };
         Returns: {
@@ -15560,7 +15907,10 @@ export type Database = {
           severity: string;
         }[];
       };
-      claim_sale_flood_risk_lease: { Args: { p_ttl_seconds: number }; Returns: string };
+      claim_sale_flood_risk_lease: {
+        Args: { p_ttl_seconds: number };
+        Returns: string;
+      };
       claim_sale_reminder: {
         Args: {
           p_key: string;
@@ -15599,7 +15949,10 @@ export type Database = {
         };
         Returns: string;
       };
-      clear_auction_sale_readiness_override: { Args: { p_sale_id: string }; Returns: Json };
+      clear_auction_sale_readiness_override: {
+        Args: { p_sale_id: string };
+        Returns: Json;
+      };
       commune_code_aliases: {
         Args: { p_codes: string[] };
         Returns: {
@@ -15786,6 +16139,17 @@ export type Database = {
         Returns: Json;
       };
       evaluate_operational_health: { Args: { p_now?: string }; Returns: Json };
+      extend_trial_with_note: {
+        Args: {
+          p_ends_at: string;
+          p_expected_updated_at?: string;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
       finalize_llm_request: {
         Args: {
           p_error_message?: string;
@@ -15809,6 +16173,10 @@ export type Database = {
           p_summary?: Json;
         };
         Returns: undefined;
+      };
+      forget_information_agent_verified_facts: {
+        Args: { p_case_ids: string[] };
+        Returns: number;
       };
       geometry: { Args: { "": string }; Returns: unknown };
       geometry_above: {
@@ -15908,7 +16276,10 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
-      get_commune_market_trends: { Args: { p_insee_codes: string[] }; Returns: Json };
+      get_commune_market_trends: {
+        Args: { p_insee_codes: string[] };
+        Returns: Json;
+      };
       get_court_auction_scenarios: {
         Args: {
           p_court_code: string;
@@ -15928,7 +16299,6 @@ export type Database = {
         Returns: Json;
       };
       get_launch_offer_status: { Args: never; Returns: boolean };
-      get_trial_end_notice_queue: { Args: { p_limit?: number; p_now?: string }; Returns: Json };
       get_merged_sale_target: { Args: { p_sale_id: string }; Returns: string };
       get_offer_opening_queue: {
         Args: { p_limit?: number; p_now?: string };
@@ -16025,6 +16395,15 @@ export type Database = {
           upcoming_count: number;
         }[];
       };
+      get_public_tribunal_directory: {
+        Args: never;
+        Returns: {
+          canonical_name: string;
+          city: string;
+          code: string;
+          department: string;
+        }[];
+      };
       get_public_tribunal_price_figures: {
         Args: never;
         Returns: {
@@ -16033,15 +16412,6 @@ export type Database = {
           min_starting_price_eur: number;
           priced_count: number;
           tribunal_code: string;
-        }[];
-      };
-      get_public_tribunal_directory: {
-        Args: never;
-        Returns: {
-          canonical_name: string;
-          city: string;
-          code: string;
-          department: string;
         }[];
       };
       get_public_tribunal_sales: {
@@ -16073,9 +16443,16 @@ export type Database = {
       get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
       get_signup_trial: {
         Args: { p_user_id: string };
-        Returns: { ends_at: string; gate_open: boolean }[];
+        Returns: {
+          ends_at: string;
+          gate_open: boolean;
+        }[];
       };
       get_signup_trial_end: { Args: { p_user_id: string }; Returns: string };
+      get_trial_end_notice_queue: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {
@@ -16111,73 +16488,31 @@ export type Database = {
           granted: boolean;
         }[];
       };
+      grant_manual_subscription: {
+        Args: {
+          p_current_period_end: string;
+          p_granted_by: string;
+          p_metadata: Json;
+          p_note?: string;
+          p_plan_code: string;
+          p_status: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       has_analysis_access: { Args: never; Returns: boolean };
-      attest_information_agent_aipd: {
-        Args: { p_reason: string; p_version: string };
-        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
-      };
-      information_agent_autopilot_stats: { Args: { p_now?: string }; Returns: Json };
-      purge_information_agent_autopilot: { Args: { p_now?: string }; Returns: Json };
-      record_information_agent_autopilot_auto_stop: {
-        Args: { p_details?: Json; p_pause_hours?: number; p_reason: string };
-        Returns: undefined;
-      };
-      record_information_agent_autopilot_event: {
-        Args: { p_details?: Json; p_kind: string; p_run_id?: string };
-        Returns: undefined;
-      };
-      record_information_agent_autopilot_exclusions: {
-        Args: { p_identity_keys: string[]; p_reason?: string };
+      increment_property_report_share_view: {
+        Args: { p_report_id: string };
         Returns: number;
       };
-      set_information_agent_internal_domain: {
-        Args: { p_domain: string; p_enabled: boolean; p_reason: string };
-        Returns: undefined;
-      };
-      set_information_agent_autopilot_mode: {
-        Args: { p_mode: string; p_reason: string };
-        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
-      };
-      stop_information_agent_autopilot: {
-        Args: { p_reason?: string };
-        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
-      };
-      set_information_agent_auto_publication_mode: {
-        Args: { p_mode: string };
-        Returns: Database["public"]["Tables"]["information_agent_auto_publication_settings"]["Row"];
-      };
-      stop_information_agent_auto_publication: {
-        Args: never;
-        Returns: Database["public"]["Tables"]["information_agent_auto_publication_settings"]["Row"];
-      };
-      record_information_agent_auto_publication_decision: {
-        Args: {
-          p_fact_id: string;
-          p_fact_key: string;
-          p_outcome: string;
-          p_policy_version: string;
-          p_reasons: string[];
-        };
-        Returns: boolean;
-      };
-      sync_information_agent_autopilot_warning: {
-        Args: { p_active: boolean; p_code: string; p_details?: Json };
-        Returns: undefined;
-      };
-      update_information_agent_autopilot_settings: {
-        Args: { p_changes: Json; p_reason: string };
-        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
-      };
-      mark_information_agent_autopilot_simulated: {
-        Args: { p_mission_id: string };
-        Returns: undefined;
+      information_agent_autopilot_stats: {
+        Args: { p_now?: string };
+        Returns: Json;
       };
       information_agent_indicators: {
         Args: { p_now?: string; p_since?: string };
         Returns: Json;
       };
-      increment_property_report_share_view: { Args: { p_report_id: string }; Returns: number };
-      user_id_for_email: { Args: { p_email: string }; Returns: string | null };
       is_admin: { Args: never; Returns: boolean };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
@@ -16208,7 +16543,15 @@ export type Database = {
       };
       longtransactionsenabled: { Args: never; Returns: boolean };
       mark_elapsed_auction_sales: { Args: never; Returns: number };
+      mark_information_agent_autopilot_simulated: {
+        Args: { p_mission_id: string };
+        Returns: undefined;
+      };
       observe_autonomous_pipeline: { Args: { p_now?: string }; Returns: Json };
+      oppose_auction_fact_claim: {
+        Args: { p_claim_id: string; p_reason_code?: string };
+        Returns: Json;
+      };
       pipeline_usage_summary: { Args: never; Returns: Json };
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
@@ -16275,6 +16618,10 @@ export type Database = {
       };
       purge_expired_auction_sales: {
         Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
+      purge_information_agent_autopilot: {
+        Args: { p_now?: string };
         Returns: Json;
       };
       purge_launch_offer_end_notices: {
@@ -16374,6 +16721,28 @@ export type Database = {
         };
         Returns: string;
       };
+      record_information_agent_auto_publication_decision: {
+        Args: {
+          p_fact_id: string;
+          p_fact_key: string;
+          p_outcome: string;
+          p_policy_version: string;
+          p_reasons: string[];
+        };
+        Returns: boolean;
+      };
+      record_information_agent_autopilot_auto_stop: {
+        Args: { p_details?: Json; p_pause_hours?: number; p_reason: string };
+        Returns: undefined;
+      };
+      record_information_agent_autopilot_event: {
+        Args: { p_details?: Json; p_kind: string; p_run_id?: string };
+        Returns: undefined;
+      };
+      record_information_agent_autopilot_exclusions: {
+        Args: { p_identity_keys: string[]; p_reason?: string };
+        Returns: number;
+      };
       record_sale_signal_feedback: {
         Args: {
           p_reason?: string;
@@ -16401,38 +16770,30 @@ export type Database = {
           recorded: boolean;
         }[];
       };
-      release_analyse_checkout: {
-        Args: { p_checkout_token: string; p_user_id: string };
-        Returns: boolean;
-      };
-      release_cron_lease: { Args: { p_name: string; p_token: string }; Returns: boolean };
-      release_sale_flood_risk_lease: { Args: { p_token: string }; Returns: boolean };
-      extend_trial_with_note: {
+      record_trial_extension: {
         Args: {
           p_ends_at: string;
-          p_expected_updated_at?: string;
           p_granted_by: string;
-          p_metadata: Json;
           p_note: string;
           p_user_id: string;
         };
         Returns: string;
       };
-      grant_manual_subscription: {
-        Args: {
-          p_current_period_end: string | null;
-          p_granted_by: string;
-          p_metadata: Json;
-          p_note?: string;
-          p_plan_code: string;
-          p_status: string;
-          p_user_id: string;
-        };
-        Returns: undefined;
+      reject_auction_fact_claim: {
+        Args: { p_claim_id: string; p_reason_code: string };
+        Returns: Json;
       };
-      record_trial_extension: {
-        Args: { p_ends_at: string; p_granted_by: string; p_note: string; p_user_id: string };
-        Returns: string;
+      release_analyse_checkout: {
+        Args: { p_checkout_token: string; p_user_id: string };
+        Returns: boolean;
+      };
+      release_cron_lease: {
+        Args: { p_name: string; p_token: string };
+        Returns: boolean;
+      };
+      release_sale_flood_risk_lease: {
+        Args: { p_token: string };
+        Returns: boolean;
       };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
@@ -16444,6 +16805,7 @@ export type Database = {
           skipped_count: number;
         }[];
       };
+      reproject_fact_registry_drift: { Args: never; Returns: Json };
       reserve_analyse_checkout: {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
@@ -16489,15 +16851,6 @@ export type Database = {
             };
             Returns: string;
           };
-      oppose_auction_fact_claim: {
-        Args: { p_claim_id: string; p_reason_code?: string };
-        Returns: Json;
-      };
-      reject_auction_fact_claim: {
-        Args: { p_claim_id: string; p_reason_code: string };
-        Returns: Json;
-      };
-      reproject_fact_registry_drift: { Args: never; Returns: Json };
       review_auction_fact_claim: {
         Args: {
           p_claim_id: string;
@@ -16832,6 +17185,52 @@ export type Database = {
       set_catalogue_source_withdrawal: {
         Args: { p_reason?: string; p_source: string; p_withdrawn: boolean };
         Returns: Json;
+      };
+      set_information_agent_auto_publication_mode: {
+        Args: { p_mode: string };
+        Returns: {
+          mode: string;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_auto_publication_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_information_agent_autopilot_mode: {
+        Args: { p_mode: string; p_reason: string };
+        Returns: {
+          acting_admin_id: string | null;
+          aipd_attested_at: string | null;
+          aipd_version: string | null;
+          allow_licitor_decoded: boolean;
+          art14_max_age_days: number;
+          art14_rule_enabled: boolean;
+          auto_stop_reason: string | null;
+          auto_stopped_at: string | null;
+          cap_total_override: number | null;
+          live_allowed: boolean;
+          mode: string;
+          paused_until: string | null;
+          simulation_started_at: string | null;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_autopilot_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_information_agent_internal_domain: {
+        Args: { p_domain: string; p_enabled: boolean; p_reason: string };
+        Returns: undefined;
       };
       set_launch_offer: { Args: { p_active: boolean }; Returns: boolean };
       set_launch_offer_end: {
@@ -17423,6 +17822,48 @@ export type Database = {
         Args: { p_fact_id: string; p_public_path: string; p_public_url: string };
         Returns: Json;
       };
+      stop_information_agent_auto_publication: {
+        Args: never;
+        Returns: {
+          mode: string;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_auto_publication_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      stop_information_agent_autopilot: {
+        Args: { p_reason?: string };
+        Returns: {
+          acting_admin_id: string | null;
+          aipd_attested_at: string | null;
+          aipd_version: string | null;
+          allow_licitor_decoded: boolean;
+          art14_max_age_days: number;
+          art14_rule_enabled: boolean;
+          auto_stop_reason: string | null;
+          auto_stopped_at: string | null;
+          cap_total_override: number | null;
+          live_allowed: boolean;
+          mode: string;
+          paused_until: string | null;
+          simulation_started_at: string | null;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_autopilot_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       subscribe_information_agent_mission: {
         Args: { p_mission_id: string; p_user_id: string };
         Returns: {
@@ -17441,9 +17882,17 @@ export type Database = {
         Returns: undefined;
       };
       sync_fact_registry_alerts: { Args: never; Returns: Json };
+      sync_information_agent_autopilot_warning: {
+        Args: { p_active: boolean; p_code: string; p_details?: Json };
+        Returns: undefined;
+      };
       sync_sale_communes: {
         Args: never;
-        Returns: { n_changed: number; n_with_code: number; n_written: number }[];
+        Returns: {
+          n_changed: number;
+          n_with_code: number;
+          n_written: number;
+        }[];
       };
       tribunal_outcome_graph_past_hearings: {
         Args: {
@@ -17471,6 +17920,43 @@ export type Database = {
       };
       unlock_sale: { Args: { p_sale_id: string }; Returns: Json };
       unlockrows: { Args: { "": string }; Returns: number };
+      update_information_agent_autopilot_settings: {
+        Args: { p_changes: Json; p_reason: string };
+        Returns: {
+          acting_admin_id: string | null;
+          aipd_attested_at: string | null;
+          aipd_version: string | null;
+          allow_licitor_decoded: boolean;
+          art14_max_age_days: number;
+          art14_rule_enabled: boolean;
+          auto_stop_reason: string | null;
+          auto_stopped_at: string | null;
+          cap_total_override: number | null;
+          live_allowed: boolean;
+          mode: string;
+          paused_until: string | null;
+          simulation_started_at: string | null;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "information_agent_autopilot_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      updategeometrysrid: {
+        Args: {
+          catalogn_name: string;
+          column_name: string;
+          new_srid_in: number;
+          schema_name: string;
+          table_name: string;
+        };
+        Returns: string;
+      };
       upsert_user_alert_matches: {
         Args: { p_rows: Json };
         Returns: {
@@ -17484,17 +17970,14 @@ export type Database = {
           sale_id: string;
           user_id: string;
         }[];
-      };
-      updategeometrysrid: {
-        Args: {
-          catalogn_name: string;
-          column_name: string;
-          new_srid_in: number;
-          schema_name: string;
-          table_name: string;
+        SetofOptions: {
+          from: "*";
+          to: "user_alert_matches";
+          isOneToOne: false;
+          isSetofReturn: true;
         };
-        Returns: string;
       };
+      user_id_for_email: { Args: { p_email: string }; Returns: string };
       withdraw_auction_fact_claim: {
         Args: { p_claim_id: string; p_reason_code: string };
         Returns: Json;
