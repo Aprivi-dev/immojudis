@@ -86,8 +86,8 @@ from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
 from src.sources.listing_characteristics import restore_known_detail_blocks
 from src.sources.notaires import scrape_notaires_aquitaine_result
+from src.sources.notaires_extraction import known_listing_contact, redecide_known_contact
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
-from src.sources.professional_contact import clear_email
 from src.sources.vench import scrape_vench_aquitaine_result
 from src.stage_watchdog import arm_from_env, track_stage
 from src.storage.supabase_client import (
@@ -1107,37 +1107,17 @@ def _hydrate_known_unchanged_sales(
         if not (known := known_details.get(source_url)):
             continue
         _backfill_raw_sale_from_known_detail(sale, known)
-        _keep_known_notaires_contact_email(sale, known)
         restore_known_detail_blocks(sale, known_details)  # every source keeps the blocks of its stored detail
+        if sale.get("source_name") == "notaires":
+            # Never the stored contact as is: the notaires rule decides it again (D9, 14/11/2026), for the columns,
+            # the contact block of the facts and the display block. After the restore above, which puts them back.
+            sale["lawyer_name"], sale["lawyer_contact"] = known_listing_contact(sale, known)
+            redecide_known_contact(sale)
         _restore_known_detail_gallery(sale, known)
         # A list card carries the short text: the stored detail keeps its full description (notaires, 30/10/2026).
         if len(str(known.get("description") or "")) > len(str(sale.get("description") or "")):
             sale["description"] = known["description"]
     return skipped
-
-
-def _keep_known_notaires_contact_email(sale: dict[str, object], known: dict[str, object]) -> None:
-    """Unchanged notaires card: add the e-mail address of the stored detail to the phone of the card.
-
-    A notaires card carries the phone alone, the detail « phone | e-mail ». Backfill fills empty fields only, so
-    the card's phone replaced the detail's contact at every collection that skipped the detail page: on
-    11/11/2026, 26 of the 202 notaires sales still had the e-mail address the source publishes. The phone stays
-    the card's (the current one); only the address comes from the stored detail. Notaires only (the one source
-    whose card carries a contact poorer than its detail), and only for a card whose detail was skipped as
-    unchanged: a failed detail read keeps the card as it is and is read again at the next collection. The
-    address is read by the common extractor (``clear_email``).
-    """
-    if sale.get("source_name") != "notaires" or not sale.get("_known_unchanged"):
-        return
-    if known.get("source_url") != sale.get("source_url"):
-        # Merged sale whose stored row comes from another source: its contact is not this card's detail.
-        return
-    card_contact = str(sale.get("lawyer_contact") or "").strip()
-    if clear_email(card_contact):
-        return
-    address = clear_email(known.get("lawyer_contact"))
-    if address:
-        sale["lawyer_contact"] = " | ".join(part for part in (card_contact, address) if part)
 
 
 def _restore_known_detail_gallery(sale: dict[str, object], known: dict[str, object]) -> None:

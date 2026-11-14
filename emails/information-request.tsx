@@ -6,7 +6,6 @@ import {
   type InformationAgentLegalFooter,
 } from "../src/lib/information-agent-compliance";
 import {
-  emailButton,
   emailLayout,
   emailLink,
   emailPanel,
@@ -26,7 +25,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v12";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v14";
 
 /** Aperçu de la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 export const INFORMATION_REQUEST_PREHEADER =
@@ -47,7 +46,9 @@ const e = escapeEmailHtml;
  * Les textes (corps du modèle, pied juridique de `information-agent-compliance.ts`, phrase d'origine)
  * ne sont ni réécrits ni abrégés : seuls leur place et leur mise en page changent. Cadre commun
  * (logo, carte, mode sombre) : `emailLayout()`. Pas de lien vers le site, hors opposition, dépôt
- * privé et politique de confidentialité (garde `information-agent-commercial-guard.ts`).
+ * privé et politique de confidentialité (garde `information-agent-commercial-guard.ts`). Le dépôt
+ * privé est une ligne de texte après les consignes de réponse : ni encadré doré ni bouton, qui
+ * évoqueraient un hameçonnage, et aucune invitation à joindre des pièces (C13 et J15 du 14/11/2026).
  */
 export function buildInformationRequestParts(props: InformationRequestEmailProps): {
   html: string;
@@ -105,8 +106,8 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
 
 /** Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. */
 const NOTICE_LINES = [
-  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe vérifie les informations avant toute mise à jour de la fiche.",
-  "Merci de ne transmettre que des pièces que vous êtes autorisé à partager.",
+  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+  "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
 ] as const;
 
 const POLICY_LABEL = "Politique de confidentialité et vos droits";
@@ -197,24 +198,25 @@ function depositHost(contributionUrl: string): string {
   }
 }
 
-const DEPOSIT_LABEL = "Déposer des pièces pour ce dossier";
+const DEPOSIT_LINK_TEXT = "l’espace privé de ce dossier";
 const DEPOSIT_NOTE =
-  "Ce lien est propre à ce dossier. Rien n’est publié sans vérification par notre équipe.";
+  "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.";
 
-function depositIntro(contributionUrl: string): string {
-  const host = depositHost(contributionUrl);
-  return `Des pièces trop lourdes pour un email ? Déposez-les dans l’espace privé de ce dossier${
-    host ? `, sur ${host}` : ""
-  }. Aucun compte ni mot de passe ne vous sera demandé.`;
+/** « Vous pouvez aussi répondre dans <lien>, sur immojudis.com », lien et hôte déjà mis en forme. */
+function depositSentence(link: string, host: string): string {
+  return `Vous pouvez aussi répondre dans ${link}${host ? `, sur ${host}` : ""}`;
 }
 
 function depositHtml(contributionUrl: string): string {
-  return emailPanel(
-    emailParagraph(e(depositIntro(contributionUrl))) +
-      emailButton(contributionUrl, DEPOSIT_LABEL) +
-      emailParagraph(e(DEPOSIT_NOTE), { tone: "muted", size: "caption", marginBottom: 16 }),
-    "gold",
+  const link = emailLink(contributionUrl, e(DEPOSIT_LINK_TEXT));
+  return emailParagraph(
+    `${depositSentence(link, e(depositHost(contributionUrl)))}. ${e(DEPOSIT_NOTE)}`,
   );
+}
+
+function depositText(contributionUrl: string): string {
+  const sentence = depositSentence(DEPOSIT_LINK_TEXT, depositHost(contributionUrl));
+  return `${sentence} : ${contributionUrl}\n${DEPOSIT_NOTE}`;
 }
 
 /** Pied juridique : sections de l'art. 14 dans un encadré, opposition dans un encadré doré à part. */
@@ -271,17 +273,9 @@ function textVersion({
     } else {
       out.push(block.lines.join("\n"));
     }
-    if (contributionUrl && index === depositIndex) {
-      out.push(
-        depositIntro(contributionUrl),
-        `${DEPOSIT_LABEL} : ${contributionUrl}`,
-        DEPOSIT_NOTE,
-      );
-    }
+    if (contributionUrl && index === depositIndex) out.push(depositText(contributionUrl));
   });
-  if (contributionUrl && blocks.length === 0) {
-    out.push(depositIntro(contributionUrl), `${DEPOSIT_LABEL} : ${contributionUrl}`, DEPOSIT_NOTE);
-  }
+  if (contributionUrl && blocks.length === 0) out.push(depositText(contributionUrl));
   if (legalFooter?.optOutUrl) out.push(`${OPT_OUT_LABEL} : ${legalFooter.optOutUrl}`);
   out.push("—", `Référence de suivi : ${caseReference}\nAdresse de réponse : ${replyTo}`);
   if (legalFooter) {

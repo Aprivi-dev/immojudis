@@ -382,6 +382,45 @@ describe("buildDigestContent", () => {
     expect((await buildDigestContent({ store, userId: USER, now: TUESDAY })).changes).toEqual([]);
   });
 
+  it("ne reprend pas un changement défini comme sans email, et garde les changements « info » habituels", async () => {
+    const { store } = makeStore({
+      events: {
+        [USER]: [
+          // Annonce sans date non revue depuis 14 jours (marqueur du pipeline) : visible dans « Mes favoris » seulement.
+          change({
+            id: "non-revue",
+            eventKind: "status_changed",
+            severity: "info",
+            fingerprint: "status_changed:status:upcoming:unknown",
+            summaryLabel: "Annonce non revue depuis 14 jours",
+            changeSummary: {
+              field: "status",
+              previousValue: "upcoming",
+              currentValue: "unknown",
+              reason: "unseen_undated",
+            },
+            detectedAt: "2026-11-01T07:00:00.000Z",
+          }),
+          // Une hausse de la mise à prix est de gravité « info » : elle figure au récapitulatif, comme avant.
+          change({
+            id: "hausse",
+            severity: "info",
+            fingerprint: "price-up",
+            changeSummary: {
+              field: "startingPriceEur",
+              previousValue: 100000,
+              currentValue: 120000,
+            },
+            detectedAt: "2026-11-01T06:00:00.000Z",
+          }),
+        ],
+      },
+    });
+    const content = await buildDigestContent({ store, userId: USER, now: TUESDAY });
+    expect(content.changes.map((item) => item.label)).toEqual(["Mise à prix augmentée"]);
+    expect(content.changesMore).toBe(0);
+  });
+
   it("limite chaque rubrique et compte le reste", async () => {
     const sales: FollowedSale[] = Array.from({ length: MAX_AUDIENCES + 3 }, (_, index) => ({
       id: `22222222-0000-4000-8000-${String(index).padStart(12, "0")}`,

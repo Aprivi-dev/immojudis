@@ -8,6 +8,7 @@ import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
   INFORMATION_AGENT_EMAIL_VARIABLES,
 } from "@/lib/information-agent-email-template";
+import { factClaimDecisionsHref } from "@/lib/fact-claim-decisions";
 import { AdminInformationAgentWorkspace } from "./AdminInformationAgentWorkspace";
 
 const mocks = vi.hoisted(() => ({
@@ -166,6 +167,18 @@ describe("AdminInformationAgentWorkspace : onglets", () => {
     expect(
       screen.getByRole("heading", { name: "Suivi des envois et de la réception" }),
     ).toBeTruthy();
+  });
+
+  it("ouvre « Observations à décider » sur la vente d'un lien du registre (factClaimDecisionsHref)", async () => {
+    const saleId = "11111111-1111-4111-8111-111111111111";
+    window.history.replaceState(null, "", `/admin/agent-ia${factClaimDecisionsHref(saleId)}`);
+    mocks.review.mockResolvedValue(review(3));
+    renderWorkspace();
+
+    expect(await screen.findByRole("tab", { name: /Réponses/, selected: true })).toBeTruthy();
+    await waitFor(() =>
+      expect(mocks.decisions).toHaveBeenLastCalledWith(expect.objectContaining({ saleId })),
+    );
   });
 
   it("charge un onglet à sa première visite seulement, sans requête en boucle", async () => {

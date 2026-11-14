@@ -5,9 +5,13 @@ import { DetailSection, WhenNear } from "@/components/sale-detail/SaleDetailLayo
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SaleDocumentsSection } from "@/components/sale-detail/SaleDetailSections";
 import type { SaleAccessMode } from "@/lib/query-keys";
+import { cahierConsultationLine, getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 
-/** Section 05 de la fiche, « Pièces du dossier » : la liste des pièces et leur lecture. */
+/**
+ * Section 05 de la fiche, « Pièces du dossier » : où consulter le cahier (cible du lien « Où consulter le cahier »
+ * des mentions de l'avocat poursuivant, même ligne que la fiche publique), la liste des pièces et leur lecture.
+ */
 export function SaleDetailPiecesSection({
   saleId,
   sale,
@@ -30,8 +34,14 @@ export function SaleDetailPiecesSection({
   access: SaleAccessMode;
   userKey: string | undefined;
 }) {
+  const cahier = cahierConsultationLine(getSaleProcedure(sale));
   return (
     <DetailSection id="pieces">
+      {cahier ? (
+        <p className="text-sm leading-relaxed text-brand-navy/75">
+          <b className="font-semibold text-brand-navy">Cahier des conditions de vente</b> : {cahier}
+        </p>
+      ) : null}
       <SaleDocumentsSection
         sale={sale}
         open={documentsOpen}

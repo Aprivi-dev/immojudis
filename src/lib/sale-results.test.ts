@@ -282,7 +282,7 @@ describe("detectSaleResultsForUser", () => {
     const [result] = await detectSaleResultsForUser({ store, userId: USER, now: NOW });
     expect(result.kind).toBe("withdrawn");
     expect(result.item.headline).toBe("La vente que vous suivez : annonce disparue de la source");
-    expect(result.item.detail).toBe("À vérifier auprès de l’avocat poursuivant.");
+    expect(result.item.detail).toBe("À vérifier auprès de l’organisateur de la vente.");
     expect(`${result.item.headline} ${result.item.detail}`).not.toMatch(/retir|annul/i);
     expect(result.payload).toEqual({
       origin: "status_event",

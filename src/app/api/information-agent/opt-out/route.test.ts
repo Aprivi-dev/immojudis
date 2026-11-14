@@ -83,6 +83,19 @@ describe("GET /api/information-agent/opt-out", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 
+  it("ne promet pas toute la structure sur une clé qui ne vaut pas pour l'adresse (messagerie partagée, gouv.fr)", async () => {
+    for (const [email, key] of [
+      ["cabinet.dupont@avocat.fr", "structure|domain|avocat.fr"],
+      ["ddfip33@dgfip.finances.gouv.fr", "structure|domain|gouv.fr"],
+      ["etude.martin@notaires.fr", "structure|domain|notaires.fr"],
+    ]) {
+      mocks.missionKeys = [key];
+      const html = await (await GET(new Request(signedUrl(email)))).text();
+      expect(html, email).toContain("Confirmer : ne plus me contacter");
+      expect(html, email).not.toContain("aucune adresse de cette structure");
+    }
+  });
+
   it("lecture d'information en panne : la page et son bouton s'affichent quand même, sans adresse au journal", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.readError = { code: "57014", message: `timeout while reading ${EMAIL}` };
@@ -121,6 +134,24 @@ describe("GET /api/information-agent/opt-out", () => {
 });
 
 describe("POST /api/information-agent/opt-out", () => {
+  it("annonce la date à laquelle les informations transmises seront retirées des fiches (28 jours)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T10:00:00Z"));
+    try {
+      const response = await POST(new Request(signedUrl(), { method: "POST" }));
+      const html = await response.text();
+      expect(html).toContain(
+        "Les informations que vous nous aviez transmises seront retirées de nos fiches au plus tard le 18/12/2026.",
+      );
+      expect(mocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ opposed_at: "2026-11-20T10:00:00.000Z" }),
+        { onConflict: "scope_sale_id,normalized_email" },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("enregistre l'opposition globale de l'adresse normalisée et propose l'accès aux données", async () => {
     const response = await POST(new Request(signedUrl(), { method: "POST" }));
     const html = await response.text();

@@ -4,10 +4,11 @@ import {
   INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
   informationAgentAddressKind,
   informationAgentOfficeCodeFor,
+  informationAgentStructureKeyHolds,
   isInformationAgentStructureKind,
-  isInformationAgentStructureKey,
   type InformationAgentAddressKind,
 } from "@/lib/information-agent/contact-structure";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   recipientOppositionKeys,
   type InformationAgentRecipientOppositionKeys,
@@ -31,6 +32,20 @@ export function saleIdentityPlace(sale: Pick<AuctionSale, "tribunal" | "city">):
 
 function metadataText(value: Json | undefined): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Nature du destinataire enregistrée à l'envoi : celle du brouillon tant que l'adresse n'a pas changé ; une
+ * adresse remplacée à l'approbation est celle d'un professionnel saisi à la main. L'aperçu la lit de la même
+ * façon que l'envoi : le pied du message en dépend (affichage des réponses de l'avocat poursuivant).
+ */
+export function sentRecipientKind(
+  mission: Pick<MissionRow, "recipient_email" | "recipient_kind">,
+  recipientEmail: string,
+): MissionRow["recipient_kind"] {
+  return normalizedEmail(recipientEmail) === normalizedEmail(mission.recipient_email)
+    ? mission.recipient_kind
+    : "manual_professional";
 }
 
 /**
@@ -108,7 +123,13 @@ export function missionRecipient(
     role,
     addressKind,
     structureAddress: addressKind === "generic" && !name?.trim() ? structure : null,
-    structureOpposition: keys.identityKeys.some(isInformationAgentStructureKey) ? structure : null,
+    // Promesse « toute la structure » du pied : seulement avec une clé qui vaut pour cette adresse, que la
+    // personne soit nommée ou non (relecture juridique-rgpd du 14/11/2026, ronde 3).
+    structureOpposition: keys.identityKeys.some((key) =>
+      informationAgentStructureKeyHolds(key, email),
+    )
+      ? structure
+      : null,
     questionAudience: metadata.question_audience,
     saleAudience: metadata.sale_audience,
   };

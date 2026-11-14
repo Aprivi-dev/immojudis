@@ -133,8 +133,12 @@ export function AccountPage() {
         </p>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           Donnée financière personnelle : elle n’est visible que de vous, jamais envoyée par email
-          ni partagée. Elle est effacée avec votre compte, ou dès que vous cliquez sur « Effacer mon
-          profil ».
+          ni communiquée à des tiers (seul notre hébergeur, Supabase, la stocke). Elle est effacée
+          avec votre compte, ou dès que vous cliquez sur « Effacer mon profil ». Voir la{" "}
+          <Link href="/privacy" className="text-gold-text underline">
+            politique de confidentialité
+          </Link>
+          .
         </p>
         {user ? <InvestorProfileForm userId={user.id} /> : null}
       </Card>
@@ -230,6 +234,13 @@ export function AccountPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Demandez l’accès, la rectification ou l’effacement de vos données, ou exercez votre droit
           de rétractation.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Ce que nous faisons de vos données, dont votre profil d’investisseur, est expliqué dans la{" "}
+          <Link href="/privacy" className="text-gold-text underline">
+            politique de confidentialité
+          </Link>
+          .
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href="/mes-droits" className={buttonClasses()}>

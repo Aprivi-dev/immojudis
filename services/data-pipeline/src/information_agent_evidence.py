@@ -936,30 +936,27 @@ def _rooms_facts(text: str, page: int) -> list[EvidenceFact]:
 
 
 def _occupancy_facts(text: str, page: int) -> list[EvidenceFact]:
+    # Qui occupe et pourquoi ne s'affichent jamais (la fiche dit libre, occupé ou loué) : « occupé par le
+    # propriétaire » et « squatté » se lisent « occupé ».
+    owner_pattern = r"\boccup[eé]\s+par\s+(?:le|la|les)\s+propri[eé]taire"
+    plain_occupied_pattern = r"\boccup[eé]\b"
     patterns = (
         ("vacant", r"\b(?:libre de toute occupation|libre|vacant|inoccup[eé])\b"),
         ("rented", r"\b(?:lou[eé]|location|bail en cours|locataire)\b"),
-        ("owner_occupied", r"\boccup[eé]\s+par\s+(?:le|la|les)\s+propri[eé]taire"),
-        ("squatted", r"\b(?:squat|occupant sans droit ni titre)\b"),
-        ("occupied", r"\boccup[eé]\b"),
+        ("occupied", owner_pattern),
+        ("occupied", r"\b(?:squat|occupant sans droit ni titre)\b"),
+        ("occupied", plain_occupied_pattern),
     )
     labels = {
         "vacant": "Libre / vacant",
         "rented": "Loué",
-        "owner_occupied": "Occupé par le propriétaire",
-        "squatted": "Occupé sans droit ni titre",
         "occupied": "Occupé",
     }
-    owner_spans = [
-        match.span()
-        for value, pattern in patterns
-        if value == "owner_occupied"
-        for match in re.finditer(pattern, text, re.IGNORECASE)
-    ]
+    owner_spans = [match.span() for match in re.finditer(owner_pattern, text, re.IGNORECASE)]
     facts: list[EvidenceFact] = []
     for value, pattern in patterns:
         for match in re.finditer(pattern, text, re.IGNORECASE):
-            if value == "occupied" and any(
+            if pattern == plain_occupied_pattern and any(
                 start <= match.start() < end or start < match.end() <= end
                 for start, end in owner_spans
             ):

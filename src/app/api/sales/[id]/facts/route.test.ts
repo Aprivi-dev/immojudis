@@ -126,8 +126,10 @@ describe("sale fact reliability route", () => {
     });
     expect(JSON.stringify(payload)).not.toContain("private.example");
     expect(JSON.stringify(payload)).not.toContain("secret-artifact-id");
+    // Identifiant et provenance de l'observation sont lus côté serveur, pour écarter une observation de l'agent
+    // dont la décision au registre ne tient pas ; ils ne sont jamais rendus.
     expect(claimQuery.select).toHaveBeenCalledWith(
-      "field_key,fact_status,value_jsonb,confidence_score,captured_at",
+      "claim_id,field_key,fact_status,value_jsonb,confidence_score,captured_at,evidence_locator",
     );
     expect(mocks.assertPublicationVisible).toHaveBeenCalledWith(saleId);
   });

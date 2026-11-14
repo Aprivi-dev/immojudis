@@ -3,6 +3,7 @@ import { extractInformationAgentFacts } from "./fact-extraction";
 import {
   classifyInformationAgentReplyIntent,
   detectInformationAgentContactOptOut,
+  detectInformationAgentWithdrawalRequest,
   detectPossibleInformationAgentContactOptOut,
 } from "./reply-intent";
 import { isAutomaticReply, replyMentionsLot } from "./reply-signals";
@@ -103,6 +104,27 @@ describe("possible opposition : drapeau de relecture sans opposition", () => {
   ])("signale : %s", (reply) => {
     expect(detectPossibleInformationAgentContactOptOut(reply), reply).toBe(true);
     expect(detectInformationAgentContactOptOut(reply), reply).toBe(false);
+  });
+
+  it.each([
+    "Merci de retirer de votre fiche les informations que je vous ai transmises.",
+    "Je vous demande la suppression de mes informations.",
+    "Ne publiez plus ma réponse.",
+    "Merci de ne pas mentionner notre cabinet sur votre site.",
+  ])("signale une demande de retrait de ce qui est affiché : %s", (reply) => {
+    expect(detectInformationAgentWithdrawalRequest(reply), reply).toBe(true);
+    expect(detectPossibleInformationAgentContactOptOut(reply), reply).toBe(true);
+    expect(detectInformationAgentContactOptOut(reply), reply).toBe(false);
+  });
+
+  it("ne prend pas une réponse ordinaire pour une demande de retrait", () => {
+    for (const reply of [
+      "La surface est de 84 m². Le bien est libre.",
+      "Le cahier des conditions de vente est consultable au greffe.",
+      "Je ne peux pas vous transmettre les diagnostics.",
+    ]) {
+      expect(detectInformationAgentWithdrawalRequest(reply), reply).toBe(false);
+    }
   });
 
   it("ne signale ni une réponse ordinaire ni une opposition explicite (déjà enregistrée)", () => {
@@ -276,7 +298,7 @@ describe("occupation : le présent, pas le passé", () => {
   it("l'état actuel reste lu", () => {
     expect(occupancy("Le bien est loué jusqu'au 30 juin 2026.")).toEqual(["rented"]);
     expect(occupancy("Le bien est loué.")).toEqual(["rented"]);
-    expect(occupancy("Le logement est occupé par le propriétaire.")).toEqual(["owner_occupied"]);
+    expect(occupancy("Le logement est occupé par le propriétaire.")).toEqual(["occupied"]);
     expect(occupancy("Le bien est libre.")).toEqual(["vacant"]);
   });
 

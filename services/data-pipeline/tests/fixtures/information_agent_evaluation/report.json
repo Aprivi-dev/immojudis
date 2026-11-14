@@ -11,7 +11,7 @@
    "cas_joues": 215,
    "cas_non_joues": [],
    "etat_attendu": {
-    "publications": 57,
+    "publications": 58,
     "publications_fausses": {
      "total": 40,
      "defauts_connus": 40,
@@ -672,8 +672,8 @@
     },
     "couverture": {
      "valeurs_publiables": 90,
-     "publiees_justes": 17,
-     "taux": 0.189,
+     "publiees_justes": 18,
+     "taux": 0.2,
      "par_famille": {
       "1": {
        "publiables": 30,
@@ -693,7 +693,7 @@
       },
       "5": {
        "publiables": 17,
-       "publiees_justes": 0
+       "publiees_justes": 1
       },
       "6": {
        "publiables": 2,
@@ -1145,14 +1145,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "do_not_publish_requested"
-      ]
-     },
-     {
-      "case_id": "F5-23",
-      "field": "land_surface_m2",
-      "motifs": [
-       "semantic_not_confirmed",
-       "semantic_only_body"
       ]
      },
      {
@@ -1967,9 +1959,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "reply_in_review",
-       "semantic_not_confirmed",
-       "semantic_only_body"
+       "reply_in_review"
       ]
      },
      {
@@ -2732,7 +2722,9 @@
      {
       "case_id": "F5-23",
       "field": "land_surface_m2",
-      "motifs": []
+      "motifs": [
+       "semantic_not_confirmed"
+      ]
      },
      {
       "case_id": "F5-24",
@@ -3593,7 +3585,11 @@
      {
       "case_id": "F5-23",
       "field": "land_surface_m2",
-      "motifs": []
+      "motifs": [
+       "case_not_replied",
+       "reply_in_review",
+       "semantic_not_confirmed"
+      ]
      },
      {
       "case_id": "F5-24",
@@ -4871,7 +4867,9 @@
      {
       "case_id": "F5-23",
       "field": "land_surface_m2",
-      "motifs": []
+      "motifs": [
+       "semantic_not_confirmed"
+      ]
      },
      {
       "case_id": "F5-24",
@@ -5658,7 +5656,11 @@
      {
       "case_id": "F5-23",
       "field": "land_surface_m2",
-      "motifs": []
+      "motifs": [
+       "case_not_replied",
+       "reply_in_review",
+       "semantic_not_confirmed"
+      ]
      },
      {
       "case_id": "F5-24",
