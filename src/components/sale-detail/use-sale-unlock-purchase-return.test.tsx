@@ -3,11 +3,13 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   parseSalePurchaseReturn,
+  rememberCreditsBeforePurchase,
   SALE_PURCHASE_POLL_DELAYS_MS,
   useSalePurchaseReturn,
   withoutSalePurchaseReturn,
 } from "./use-sale-unlock-purchase-return";
 
+const base = { saleId: "vente-1", credits: 0 };
 const total = SALE_PURCHASE_POLL_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
 
 function visit(search: string) {
@@ -19,6 +21,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  window.sessionStorage.clear();
   visit("");
 });
 
@@ -41,7 +44,8 @@ describe("retour du paiement d'une vente à l'unité", () => {
     const refetch = vi.fn().mockResolvedValue({ data: { unlocked: false } });
     const onConfirmed = vi.fn();
     const { result, rerender } = renderHook(
-      ({ unlocked }) => useSalePurchaseReturn({ enabled: true, unlocked, refetch, onConfirmed }),
+      ({ unlocked }) =>
+        useSalePurchaseReturn({ ...base, enabled: true, unlocked, refetch, onConfirmed }),
       { initialProps: { unlocked: false } },
     );
 
@@ -67,7 +71,7 @@ describe("retour du paiement d'une vente à l'unité", () => {
     const refetch = vi.fn().mockResolvedValue({ data: { unlocked: false } });
     const onConfirmed = vi.fn();
     const { result } = renderHook(() =>
-      useSalePurchaseReturn({ enabled: true, unlocked: false, refetch, onConfirmed }),
+      useSalePurchaseReturn({ ...base, enabled: true, unlocked: false, refetch, onConfirmed }),
     );
 
     await act(async () => {
@@ -89,7 +93,13 @@ describe("retour du paiement d'une vente à l'unité", () => {
       .mockRejectedValueOnce(new Error("réseau"))
       .mockResolvedValue({ data: { unlocked: false } });
     const { result } = renderHook(() =>
-      useSalePurchaseReturn({ enabled: true, unlocked: false, refetch, onConfirmed: vi.fn() }),
+      useSalePurchaseReturn({
+        ...base,
+        enabled: true,
+        unlocked: false,
+        refetch,
+        onConfirmed: vi.fn(),
+      }),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SALE_PURCHASE_POLL_DELAYS_MS[0]);
@@ -105,7 +115,13 @@ describe("retour du paiement d'une vente à l'unité", () => {
     visit("?unlock_checkout=cancelled");
     const refetch = vi.fn();
     const { result } = renderHook(() =>
-      useSalePurchaseReturn({ enabled: true, unlocked: false, refetch, onConfirmed: vi.fn() }),
+      useSalePurchaseReturn({
+        ...base,
+        enabled: true,
+        unlocked: false,
+        refetch,
+        onConfirmed: vi.fn(),
+      }),
     );
     expect(result.current).toBeNull();
     expect(window.location.search).toBe("");
@@ -118,12 +134,89 @@ describe("retour du paiement d'une vente à l'unité", () => {
   it("sans retour de paiement, ne relit rien", async () => {
     const refetch = vi.fn();
     const { result } = renderHook(() =>
-      useSalePurchaseReturn({ enabled: true, unlocked: false, refetch, onConfirmed: vi.fn() }),
+      useSalePurchaseReturn({
+        ...base,
+        enabled: true,
+        unlocked: false,
+        refetch,
+        onConfirmed: vi.fn(),
+      }),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(total);
     });
     expect(result.current).toBeNull();
     expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it("paiement devenu un crédit : le dit dès la relecture qui le constate, sans message de secours", async () => {
+    rememberCreditsBeforePurchase("vente-1", 0);
+    visit("?unlock_checkout=success");
+    const refetch = vi.fn().mockResolvedValue({ data: { unlocked: false, credits: 1 } });
+    const onConfirmed = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ credits }) =>
+        useSalePurchaseReturn({
+          ...base,
+          credits,
+          enabled: true,
+          unlocked: false,
+          refetch,
+          onConfirmed,
+        }),
+      { initialProps: { credits: 0 } },
+    );
+    expect(result.current).toBe("pending");
+    // The marker is read once, then forgotten: a reload does not replay it.
+    expect(window.sessionStorage.length).toBe(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SALE_PURCHASE_POLL_DELAYS_MS[0]);
+    });
+    rerender({ credits: 1 });
+    expect(result.current).toBe("credited");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(total);
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(onConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("un crédit déjà présent avant le paiement ne compte pas comme un achat devenu crédit", async () => {
+    rememberCreditsBeforePurchase("vente-1", 1);
+    visit("?unlock_checkout=success");
+    const refetch = vi.fn().mockResolvedValue({ data: { unlocked: false, credits: 1 } });
+    const { result } = renderHook(() =>
+      useSalePurchaseReturn({
+        ...base,
+        credits: 1,
+        enabled: true,
+        unlocked: false,
+        refetch,
+        onConfirmed: vi.fn(),
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(total);
+    });
+    expect(result.current).toBe("delayed");
+  });
+
+  it("sans repère d'avant paiement, ne conclut jamais à un crédit", async () => {
+    visit("?unlock_checkout=success");
+    const refetch = vi.fn().mockResolvedValue({ data: { unlocked: false, credits: 1 } });
+    const { result } = renderHook(() =>
+      useSalePurchaseReturn({
+        ...base,
+        credits: 1,
+        enabled: true,
+        unlocked: false,
+        refetch,
+        onConfirmed: vi.fn(),
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(total);
+    });
+    expect(result.current).toBe("delayed");
   });
 });

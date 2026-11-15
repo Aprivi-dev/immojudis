@@ -996,6 +996,10 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
       fireEvent.click(pay);
 
       await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.test/s"));
+      // The credits before leaving for Stripe, to recognise a purchase turned into a credit.
+      expect(window.sessionStorage.getItem(`immojudis:achat-vente:credits-avant:${saleId}`)).toBe(
+        "0",
+      );
       expect(mocks.startCheckout).toHaveBeenCalledWith({
         saleId,
         consent: expect.objectContaining({
@@ -1140,6 +1144,27 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
       "/contact",
     );
     expect(bodyText()).not.toMatch(/débloquée/);
+  });
+
+  it("back from the payment, turned into a credit: says so at once, without the fallback", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent({ credits: 1, unlockable: false })}
+        unlocked={false}
+        purchaseReturn="credited"
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("sale-purchase-return").textContent).toBe(
+      "Paiement reçu. Cette vente n’était plus disponible : votre achat est devenu un crédit pour débloquer une autre vente.",
+    );
+    expect(screen.getByRole("status").textContent).toContain("devenu un crédit");
+    expect(screen.getByRole("link", { name: "Choisir une autre vente" }).getAttribute("href")).toBe(
+      "/sales",
+    );
+    expect(screen.queryByRole("button", { name: "Recharger la page" })).toBeNull();
+    expect(bodyText()).not.toMatch(/débloquée|rembours/);
   });
 
   it("back from the payment, confirmed: the unlocked card takes the focus", () => {

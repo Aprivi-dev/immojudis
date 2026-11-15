@@ -1557,7 +1557,9 @@ describe("the free unlock on the sale page", () => {
     cleanup();
 
     renderFree(unlockStatus({ used: 1, remaining: 0 }));
-    expect(screen.queryByRole("link", { name: "Débloquer cette vente avec mon crédit" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Débloquer cette vente avec mon crédit" }),
+    ).toBeNull();
   });
 
   it("opens the calculation tab once the unlock succeeded, and keeps the confirmation", async () => {
