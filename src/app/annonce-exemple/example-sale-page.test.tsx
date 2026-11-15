@@ -71,20 +71,20 @@ describe("ExampleSalePage", () => {
     expect(block.textContent).not.toMatch(/offre Analyse|abonn|€/i);
   });
 
-  it("rappelle le calcul sur les ventes réelles : 3 par mois sans l'essai", () => {
+  it("rappelle le calcul sur une vente réelle, celle que l'on débloque, sans l'essai", () => {
     mocks.auth = { user: null, loading: false };
     render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     expect(screen.getByTestId("example-next-steps").textContent).toContain(
-      "Avec un compte gratuit, ce calcul sur 3 ventes réelles par mois. Sans carte bancaire.",
+      "Avec un compte gratuit, ce calcul sur une vente réelle, celle que vous débloquez. Sans carte bancaire.",
     );
   });
 
-  it("essai ouvert : toutes les ventes qui ont un plafond pendant 7 jours, puis 3 par mois", () => {
+  it("essai ouvert : toutes les ventes qui ont un plafond pendant 7 jours, puis la vente débloquée", () => {
     mocks.auth = { user: null, loading: false };
     mocks.launch = { active: true, pending: false };
     const { unmount } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     expect(screen.getByTestId("example-next-steps").textContent).toContain(
-      "Avec un compte gratuit, ce calcul sur les ventes réelles (ventes au tribunal, ventes notariales à la bougie et ventes notariales interactives) : sur toutes pendant 7 jours, puis sur 3 par mois. Sans carte bancaire.",
+      "Avec un compte gratuit, ce calcul sur les ventes réelles (ventes au tribunal, ventes notariales à la bougie et ventes notariales interactives) : sur toutes pendant 7 jours, puis sur la vente que vous débloquez. Sans carte bancaire.",
     );
     unmount();
     // Seul le tribunal ouvert : la phrase ne promet pas le calcul aux ventes notariales.
@@ -93,7 +93,7 @@ describe("ExampleSalePage", () => {
     );
     const block = screen.getByTestId("example-next-steps");
     expect(block.textContent).toContain(
-      "Avec un compte gratuit, ce calcul sur les ventes réelles (ventes au tribunal) : sur toutes pendant 7 jours, puis sur 3 par mois. Sans carte bancaire.",
+      "Avec un compte gratuit, ce calcul sur les ventes réelles (ventes au tribunal) : sur toutes pendant 7 jours, puis sur la vente que vous débloquez. Sans carte bancaire.",
     );
     expect(block.textContent).not.toContain("notariales");
   });

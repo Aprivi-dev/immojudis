@@ -71,14 +71,14 @@ describe("page Comment ça marche", () => {
     expect(document.body.textContent).not.toMatch(/sponsoris/i);
   });
 
-  it("ne dit plus que l'enchère plafond est réservée à Analyse : le compte gratuit l'ouvre sur 3 ventes au tribunal", () => {
+  it("ne dit plus que l'enchère plafond est réservée à Analyse : le compte gratuit l'ouvre sur une vente au tribunal", () => {
     const { container } = render(<Page />);
     const step = within(screen.getByRole("list", { name: "Les trois étapes" })).getAllByRole(
       "listitem",
     )[2]!;
     const text = step.textContent ?? "";
     expect(text).toContain(
-      "Le compte gratuit l’ouvre sur 3 ventes au tribunal par mois (déblocages) ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal.",
+      "Le compte gratuit l’ouvre sur une vente au tribunal, celle que vous débloquez ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal.",
     );
     expect(text).not.toContain("Avec l’offre Analyse, le simulateur chiffre");
     expect(container.textContent).not.toMatch(/se fixe avec l’offre Analyse/);

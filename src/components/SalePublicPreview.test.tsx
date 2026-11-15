@@ -78,7 +78,7 @@ describe("SalePublicPreview", () => {
     );
     const intro = (view: typeof closed) =>
       view.container.querySelector("[class*=tierFree]")?.textContent ?? "";
-    expect(intro(closed)).toContain("3 déblocages par mois");
+    expect(intro(closed)).toContain("le déblocage d’une vente, qui ouvre pour cette vente");
     expect(intro(closed)).not.toContain("déblocages de ventes");
     expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
     expect(intro(closed)).not.toContain("statistiques du tribunal");
@@ -1121,7 +1121,7 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
     expect(block.textContent).not.toContain(FREE_ACCESS_LINE);
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).toContain("Essai gratuit de 7 jours");
-    expect(teaser.textContent).not.toContain("3 déblocages par mois");
+    expect(teaser.textContent).not.toContain("une vente débloquée");
     expect(teaser.textContent).not.toContain("Offre Analyse");
   });
 
@@ -1129,15 +1129,15 @@ describe("essai gratuit à l'inscription sur la fiche publique", () => {
     render(withOffer({ active: false, pending: false }));
     expect(screen.getByTestId("public-signup-line").textContent).toBe(FREE_ACCESS_LINE);
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
-    expect(teaser.textContent).toContain("Offre Analyse, ou 3 déblocages par mois");
+    expect(teaser.textContent).toContain("Offre Analyse, ou une vente débloquée");
   });
 
   it("rendu serveur : l'état est inconnu, le HTML ne promet ni quota ni offre", () => {
     // Le magasin annonce « offre active », mais le serveur ne lit pas l'état : il rend « inconnu ».
     const html = renderToString(withOffer({ active: true, pending: false }));
-    // Le quota de l'étiquette d'accès (« Offre Analyse, ou 3 déblocages par mois ») dépend de l'état ;
-    // la description fixe de l'offre Découverte (« Et 3 déblocages par mois, chacun ouvrant… ») n'en dépend pas.
-    expect(html).not.toContain("ou 3 déblocages par mois");
+    // Le quota de l'étiquette d'accès (« Offre Analyse, ou une vente débloquée ») dépend de l'état ;
+    // la description fixe de l'offre Découverte (« Et le déblocage d’une vente… ») n'en dépend pas.
+    expect(html).not.toContain("ou une vente débloquée");
     expect(html).not.toContain("offre de lancement");
     expect(html).toContain("Gratuit, sans carte bancaire");
     expect(html).toContain("Selon votre compte");
@@ -1271,7 +1271,7 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     });
   });
 
-  it("n'emploie qu'une formulation pour le déblocage : « N déblocages par mois »", async () => {
+  it("n'emploie qu'une formulation pour le déblocage : « le déblocage d’une vente »", async () => {
     pepiteMocks.pepite.mockReturnValue(null);
     render(
       <SalePublicPreview
@@ -1281,7 +1281,8 @@ describe("SalePublicPreview : repère « Pépite »", () => {
       />,
     );
     const text = document.body.textContent ?? "";
-    expect(text).toContain("3 déblocages par mois");
+    expect(text).toContain("le déblocage d’une vente");
+    expect(text).not.toContain("déblocages par mois");
     expect(text).not.toContain("en débloquant la vente");
     expect(text).not.toContain("déblocages de ventes");
     expect(screen.getByRole("region", { name: "L’analyse de cette vente" }).textContent).toContain(

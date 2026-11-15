@@ -207,7 +207,7 @@ describe("onboarding /bienvenue", () => {
     );
   });
 
-  it("ne promet plus « 3 déblocages par mois » comme acquis au dernier pas pendant l'essai du compte", () => {
+  it("ne promet pas le déblocage du compte gratuit comme acquis au dernier pas pendant l'essai du compte", () => {
     mocks.launch = { active: true, pending: false };
     renderOnboarding({
       plan: "analyse",
@@ -219,9 +219,9 @@ describe("onboarding /bienvenue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
+      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, votre compte gratuit comprendra le déblocage d’une vente.",
     );
-    expect(text).not.toContain("Avec 3 déblocages par mois");
+    expect(text).not.toContain("Votre compte gratuit vous permet de débloquer");
   });
 });
 
@@ -281,11 +281,11 @@ describe("page Mon compte", () => {
     expect(text).toContain("Ce qui reste gratuit");
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
     expect(text).toContain("1 alerte avec un email récapitulatif par semaine");
-    expect(text).toContain(`${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`);
+    expect(text).toContain("une vente à débloquer");
     expect(text).toContain("« Mon dossier »");
     expect(text).toContain("Ce qui demandera l’offre Analyse");
     expect(text).toContain(
-      `le plafond chiffré sans limite mensuelle (compte gratuit : ${PLAN_LIMITS.decouverte.monthlyUnlocks} ventes par mois)`,
+      "le plafond chiffré sur toutes les ventes (compte gratuit : une vente débloquée)",
     );
     expect(text).toContain(
       `jusqu’à ${PLAN_LIMITS.analyse.watchedZones} alertes, chaque jour (compte gratuit : ${PLAN_LIMITS.decouverte.watchedZones}, chaque semaine)`,

@@ -223,12 +223,12 @@ describe("login page", () => {
     expect(formText).toContain("sans carte bancaire");
   });
 
-  it("dit ce qui reste après les 7 jours d'essai : 3 déblocages, 1 alerte, 10 favoris", () => {
+  it("dit ce qui reste après les 7 jours d'essai : une vente à débloquer, 1 alerte, 10 favoris", () => {
     mocks.search = { mode: "investor" };
     mocks.launch = { active: true, pending: false };
     render(<LoginPage />);
     expect(screen.getByTestId("login-after-trial").textContent).toBe(
-      "Après les 7 jours, votre compte reste gratuit en Découverte : 3 déblocages par mois, 1 alerte et 10 favoris.",
+      "Après les 7 jours, votre compte reste gratuit en Découverte : une vente à débloquer, 1 alerte et 10 favoris.",
     );
   });
 
@@ -576,7 +576,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec 3 déblocages par mois : un déblocage ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
+      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente. Il comprend le déblocage d’une vente : il ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
     );
     // Formule sobre du plafond, en attendant l'arbitrage sur « l'enchère à ne pas dépasser ».
     expect(screen.getByTestId("login-reason").textContent).not.toContain("ne pas dépasser");
@@ -594,7 +594,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : 3 déblocages par mois (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
+      "Gratuit : une vente à débloquer (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");
