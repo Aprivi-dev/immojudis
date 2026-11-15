@@ -1,5 +1,6 @@
 import {
   FLOOD_LEGAL_EFFECTIVE_DATE,
+  FREE_UNLOCK_EFFECTIVE_DATE,
   PEPITE_LEGAL_EFFECTIVE_DATE,
   PEPITE_TERMS_EFFECTIVE_DATE,
   PRIVACY_COMPLETION_EFFECTIVE_DATE,
@@ -28,6 +29,13 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     /** Versions plus récentes que la précédente mais déjà remplacées, archivées elles aussi. */
     earlier: [
       {
+        version: "2026-11-10.1",
+        sha256: "6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc",
+        effectiveDate: "10 novembre 2026",
+        applicableUntil: FREE_UNLOCK_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/conditions-generales-2026-11-10.1.tsx.txt",
+      },
+      {
         version: "2026-10-26.1",
         sha256: "745ef0eacc7edc8dd02a63e36f6a0f0f9a18b07eeef2644abec806d4b0fd83e0",
         effectiveDate: PEPITE_LEGAL_EFFECTIVE_DATE,
@@ -54,13 +62,20 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     ],
   },
   privacy: {
-    version: "2026-11-01.3",
-    sha256: "7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824",
-    effectiveDate: PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
-    applicableUntil: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/privacy-2026-11-01.3.tsx.txt",
+    version: "2026-11-14.1",
+    sha256: "19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25",
+    effectiveDate: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
+    applicableUntil: FREE_UNLOCK_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-11-14.1.tsx.txt",
     /** Versions plus anciennes, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-11-01.3",
+        sha256: "7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824",
+        effectiveDate: PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
+        applicableUntil: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/privacy-2026-11-01.3.tsx.txt",
+      },
       {
         version: "2026-11-01.2",
         sha256: "5ae544af26146742c9be3bc585baa596397425c098addf38914c2b6da42c2e6b",

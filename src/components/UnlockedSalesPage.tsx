@@ -8,7 +8,11 @@ import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { UNLOCKED_SALES_PATH, saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
-import { unlockUsageLine, type UnlockedSaleSummary } from "@/lib/sale-unlocks";
+import {
+  UNLOCK_CALL_TO_ACTION_LABEL,
+  unlockUsageLine,
+  type UnlockedSaleSummary,
+} from "@/lib/sale-unlocks";
 
 function saleLine(sale: UnlockedSaleSummary): string {
   const place = [sale.city, sale.department].filter(Boolean).join(" · ");
@@ -77,8 +81,8 @@ export function UnlockedSalesPage() {
       ) : sales.length === 0 ? (
         <Card className="text-sm">
           <p className="text-muted-foreground">
-            Vous n’avez encore débloqué aucune vente en ligne. Ouvrez une fiche, puis choisissez «
-            Débloquer cette vente ».
+            Vous n’avez encore débloqué aucune vente en ligne. Ouvrez une fiche, puis choisissez «{" "}
+            {UNLOCK_CALL_TO_ACTION_LABEL} ».
           </p>
           <Link
             href="/sales"

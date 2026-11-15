@@ -15,14 +15,14 @@ import { PLAN_LIMITS } from "@/lib/plans";
 
 export const FREE_SALE_UNLOCKS = PLAN_LIMITS.decouverte.saleUnlocks;
 
-/** Ce que le compte gratuit permet de débloquer, en quelques mots (« Une vente à débloquer : … »). */
-export const FREE_UNLOCK_TEXT = "une vente à débloquer";
+/** Ce que le compte gratuit permet de débloquer, en tête d'une liste (« Une vente à débloquer : … »). */
+export const FREE_UNLOCK_LABEL = "Une vente à débloquer";
 
 /**
  * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Les offres
  * expliquent ce que le déblocage ouvre.
  */
-export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${FREE_UNLOCK_TEXT}`;
+export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${FREE_UNLOCK_LABEL.toLowerCase()}`;
 
 /**
  * `FREE_ACCESS_LINE`, ou la mention de l'offre de lancement quand elle est active : un compte

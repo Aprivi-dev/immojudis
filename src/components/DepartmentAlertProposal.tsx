@@ -44,9 +44,8 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
             Choisissez votre département : l’alerte vous prévient, dans votre compte, des nouvelles
             ventes référencées dans ce département. L’email récapitulatif est facultatif : il n’est
             activé que si vous cochez la case prévue à cet effet (décochée par défaut) ; il est
-            hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse, essai gratuit
-            compris. Si vous l’avez déjà activé dans votre compte, il s’applique aussi à cette
-            alerte.
+            hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse. Si vous l’avez
+            déjà activé dans votre compte, il s’applique aussi à cette alerte.
           </p>
           <div className="grid max-w-sm gap-1">
             <label htmlFor={selectId} className="text-sm font-semibold">

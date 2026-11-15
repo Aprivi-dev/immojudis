@@ -21,7 +21,7 @@ import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
 import type { PlanEntitlements } from "@/lib/plans";
-import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
@@ -44,12 +44,12 @@ function accessSentence(
 ): string | null {
   if (!plan) return null;
   if (trialRunning(plan, now) && plan.trialEndsAt) {
-    return `Votre essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours court jusqu’au ${signupTrialDateLabel(plan.trialEndsAt)} : votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez ${MONTHLY_UNLOCKS_TEXT}.`;
+    return `Votre essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours court jusqu’au ${signupTrialDateLabel(plan.trialEndsAt)} : votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, votre compte gratuit comprendra le déblocage d’une vente.`;
   }
   if (plan.hasAnalysisAccess) {
     return "Votre compte a l’offre Analyse : elle ouvre toutes les ventes (contenu selon la vente).";
   }
-  const unlocks = `Avec ${MONTHLY_UNLOCKS_TEXT}, vous ouvrez le détail d’une vente (${unlockHighlights}). L’offre Analyse les ouvre toutes.`;
+  const unlocks = `Votre compte gratuit vous permet de débloquer une vente (${unlockHighlights}). L’offre Analyse les ouvre toutes.`;
   if (plan.trialEndedAt) {
     return `Votre essai gratuit s’est terminé le ${signupTrialDateLabel(plan.trialEndedAt)} : votre compte est revenu à l’offre Découverte. ${unlocks}`;
   }

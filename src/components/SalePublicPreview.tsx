@@ -57,7 +57,7 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
-import { freeAccessLine, MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { freeAccessLine } from "@/lib/sale-unlocks";
 import { getSaleProcedure, lawyerRequirementLabel, saleVenueLabel } from "@/lib/sale-procedure";
 import {
   saleHeadline,
@@ -561,7 +561,7 @@ export function SalePublicPreview({
       ? {
           label: ceilingTerms.ceilingSimulationLabel,
           width: "medium",
-          tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+          tier: "Offre Analyse, ou une vente débloquée",
           visibleWith: "l’offre Analyse, ou avec un déblocage",
           offerAware: true,
         }

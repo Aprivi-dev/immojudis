@@ -8,7 +8,6 @@ import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { loginPathWithRedirect } from "@/lib/navigation";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { pageMetadata } from "@/lib/page-metadata";
 
 export const metadata: Metadata = pageMetadata({
@@ -22,7 +21,7 @@ const STEPS = [
   {
     icon: UserPlus,
     title: "Créez votre compte gratuit",
-    text: `Le compte Découverte est gratuit et ne demande pas de carte bancaire. Il ouvre la fiche de chaque vente (adresse, photos, description, occupation, visites, risques de la commune et fourchette de valeur) et les alertes par email : un récapitulatif hebdomadaire avec le compte gratuit, quotidien avec l’offre Analyse. Les pièces du dossier s’ouvrent vente par vente avec les déblocages mensuels du compte gratuit (${MONTHLY_SALE_UNLOCKS} ventes par mois), et pour toutes les ventes avec l’offre Analyse, qui ajoute aussi les ventes comparables.`,
+    text: `Le compte Découverte est gratuit et ne demande pas de carte bancaire. Il ouvre la fiche de chaque vente (adresse, photos, description, occupation, visites, risques de la commune et fourchette de valeur) et les alertes par email : un récapitulatif hebdomadaire avec le compte gratuit, quotidien avec l’offre Analyse. Les pièces du dossier s’ouvrent pour une vente, celle que vous débloquez avec le compte gratuit, et pour toutes les ventes avec l’offre Analyse, qui ajoute aussi les ventes comparables.`,
     links: [
       { href: loginPathWithRedirect(undefined), label: "Créer mon compte gratuit" },
       { href: "/offres", label: "Voir les offres" },
@@ -44,7 +43,7 @@ const STEPS = [
   {
     icon: BadgeEuro,
     title: "Fixez votre plafond",
-    text: `Le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Le compte gratuit l’ouvre sur ${MONTHLY_SALE_UNLOCKS} ventes au tribunal par mois (déblocages) ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal. Fixez la limite avant l’audience, puis tenez-vous-y. Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente.`,
+    text: `Le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Le compte gratuit l’ouvre sur une vente au tribunal, celle que vous débloquez ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal. Fixez la limite avant l’audience, puis tenez-vous-y. Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente.`,
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
       { href: "/simulateur-frais-encheres", label: "Simuler les frais" },
