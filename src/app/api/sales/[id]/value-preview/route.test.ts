@@ -104,8 +104,11 @@ describe("GET /api/sales/[id]/value-preview", () => {
     mocks.saleFeatureDoor.mockResolvedValue("unlock");
     const { from, rpc } = accountSeeing({ v_auction_sales_unlocked: true });
 
-    const body = await (await call()).json();
+    const response = await call();
+    const body = await response.json();
 
+    // The right can end (unlock returned, sale withdrawn): the browser keeps no copy.
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
     expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
     expect(body).toMatchObject({

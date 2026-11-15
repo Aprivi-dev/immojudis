@@ -80,14 +80,77 @@ import {
   listPropertyReports,
   savePropertyReport,
 } from "@/lib/property-reports";
+import { buildReportSnapshot } from "@/lib/property-report/analysis";
+import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
 import { buildPlanEntitlements } from "@/lib/property-report/entitlements";
+import { reportToPdfLines } from "@/lib/property-report/pdf";
 import { reportSourceFingerprint } from "@/lib/property-report/source-integrity";
+import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
+import { getSaleProcedure } from "@/lib/sale-procedure";
+import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 const SOURCE_URL = "https://source-privee.example/annonce/42";
 const request = new Request("https://immojudis.com/api/property-reports", { method: "POST" });
 const DISCOVERY = buildPlanEntitlements("decouverte");
 const ANALYSIS = buildPlanEntitlements("analyse");
+
+/**
+ * `sale_procedure` comme l'écrit le pipeline (`_case_sources`, `_facts`) : l'entrée `listing` porte
+ * l'URL et le nom de la source, les pièces recopient le nom de la source, les faits et l'horaire
+ * recopient l'URL de l'annonce.
+ */
+const exampleProcedure = (EXAMPLE_SALE.source_blocks as Record<string, unknown>)
+  .sale_procedure as Record<string, unknown>;
+const exampleVerification = exampleProcedure.verification as Record<string, unknown>;
+const pipelineProcedure = {
+  ...exampleProcedure,
+  rules: {
+    ...(exampleProcedure.rules as Record<string, unknown>),
+    payment_deadline_source_url: SOURCE_URL,
+  },
+  sale_session: {
+    opens_at: "2026-12-01T10:00:00+01:00",
+    closes_at: "2026-12-01T12:00:00+01:00",
+    source_url: SOURCE_URL,
+  },
+  verification: {
+    ...exampleVerification,
+    case_sources: [
+      {
+        kind: "listing",
+        label: "SOURCE-NOM-PRIVE",
+        source_name: "SOURCE-NOM-PRIVE",
+        url: SOURCE_URL,
+      },
+      {
+        kind: "document",
+        label: "Cahier des conditions de vente",
+        source_name: "SOURCE-NOM-PRIVE",
+        url: "https://pieces.example/ccv.pdf",
+        document_type: "ccv",
+      },
+      {
+        kind: "kind-inconnu",
+        label: "Autre",
+        source_name: "AUTRE-PRIVE",
+        url: "https://autre.example",
+      },
+      ...(exampleVerification.case_sources as unknown[]).filter(
+        (source) => (source as { kind?: string }).kind === "official_reference",
+      ),
+    ],
+    facts: [
+      {
+        key: "venue_type",
+        value: "tribunal",
+        status: "verified",
+        evidence: [],
+        source_url: SOURCE_URL,
+      },
+    ],
+  },
+};
 
 /**
  * Une vente portant tout ce que le déblocage n'ouvre pas : `buildReportSnapshot` doit le retirer à
@@ -106,6 +169,8 @@ const saleWithClosedFields = {
   source_url: SOURCE_URL,
   source_urls: [SOURCE_URL],
   raw_payload: { brut: "DONNEE-BRUTE" },
+  sale_procedure: pipelineProcedure,
+  source_blocks: { ...EXAMPLE_SALE.source_blocks, sale_procedure: pipelineProcedure },
 } as unknown as AuctionSale;
 
 const auth = {
@@ -119,6 +184,8 @@ const auth = {
 
 const CLOSED = [
   SOURCE_URL,
+  "AUTRE-PRIVE",
+  "autre.example",
   "SOURCE-NOM-PRIVE",
   "NOTE-RISQUE-INTERNE",
   "RISQUE-PRIVE",
@@ -265,6 +332,28 @@ describe("rapport d'une vente débloquée par un compte Découverte", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
 
+  it("stores no urban planning excerpt taken from the raw payload or another source", async () => {
+    mocks.urbanPlanning.mockResolvedValue([
+      signal({ signalKey: "doc", sourceKind: "pdf", excerpt: "Zone UB du PLU" }),
+      signal({
+        signalKey: "raw",
+        sourceKind: "source_payload",
+        sourceName: "Données source",
+        excerpt: "EXTRAIT-BRUT-PRIVE",
+      }),
+    ]);
+
+    await savePropertyReport({
+      auth,
+      input: { saleId, reportKind: "opportunity" } as never,
+      request,
+    });
+
+    const text = JSON.stringify(mocks.upsert.mock.calls[0][0]);
+    expect(text).toContain("Zone UB du PLU");
+    expect(text).not.toContain("EXTRAIT-BRUT-PRIVE");
+  });
+
   describe("a saved report, by its identifier", () => {
     const unlockSnapshot = { door: "unlock", plan: "decouverte", analysis: {} };
     const report = (snapshot: Record<string, unknown>) => ({
@@ -378,5 +467,76 @@ describe("rapport d'une vente débloquée par un compte Découverte", () => {
         enablePropertyReportShare({ auth, reportId: "report-1", origin: "https://immojudis.com" }),
       ).rejects.toThrow("stop after the right");
     });
+  });
+});
+
+function signal(fields: Partial<StructuredUrbanPlanningSignal>): StructuredUrbanPlanningSignal {
+  return {
+    signalKey: "signal",
+    signalKind: "zoning",
+    label: "Zonage",
+    status: "documented",
+    priority: "medium",
+    sourceName: "Règlement",
+    sourceKind: "document",
+    documentUrl: null,
+    documentLabel: null,
+    documentType: null,
+    pageNumber: null,
+    excerpt: "Zone",
+    action: null,
+    confidence: 0.8,
+    updatedAt: null,
+    ...fields,
+  };
+}
+
+describe("the listing source inside sale_procedure, through an unlock", () => {
+  const snapshot = (door: "plan" | "unlock") =>
+    buildReportSnapshot({
+      sale: saleWithClosedFields,
+      marketEstimate: null,
+      activeComparables: { scopeLabel: "", sales: [] },
+      cadastreParcels: [],
+      dpeDiagnostics: [],
+      urbanPlanningSignals: [],
+      valuationBacktest: null,
+      ceilingSnapshot: buildCeilingSnapshot(
+        saleWithClosedFields,
+        null,
+        {},
+        DEFAULT_OPEN_FEE_REGIMES,
+        null,
+      ),
+      plan: door === "plan" ? ANALYSIS : DISCOVERY,
+      door,
+    });
+
+  it("is in the fixture: the offer's report shows it (the procedure parses)", () => {
+    expect(getSaleProcedure(saleWithClosedFields).procedure).not.toBeNull();
+    expect(JSON.stringify(snapshot("plan"))).toContain(SOURCE_URL);
+  });
+
+  it("never reaches the snapshot nor the PDF of an unlocked sale", () => {
+    const built = snapshot("unlock");
+    expectNothingClosed(built);
+    // The case documents and the official reference stay.
+    const text = JSON.stringify(built);
+    expect(text).toContain("https://pieces.example/ccv.pdf");
+    expect(text).toContain("data.gouv.fr");
+
+    const lines = reportToPdfLines(
+      {
+        id: "report-1",
+        title: "Rapport",
+        report_snapshot: built,
+        ceiling_snapshot: {},
+        updated_at: "2026-11-15T10:00:00Z",
+      } as never,
+      DISCOVERY,
+      DEFAULT_OPEN_FEE_REGIMES,
+      "unlock",
+    );
+    expectNothingClosed(lines);
   });
 });

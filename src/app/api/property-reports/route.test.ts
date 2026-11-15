@@ -127,6 +127,15 @@ describe("/api/property-reports", () => {
     }
   });
 
+  it("answers 400 to a malformed sale filter, before reading any report", async () => {
+    for (const query of ["?saleId=pas-un-uuid", "?saleId="]) {
+      const response = await call(GET, "GET", { query });
+      expect(response.status).toBe(400);
+      expectNoStore(response);
+    }
+    expect(mocks.db.queries.map((query) => query.table)).not.toContain("saved_property_reports");
+  });
+
   it("answers 403 to an account without saved reports, without reading any report", async () => {
     mocks.requireAuth.mockResolvedValue({
       userId: "user-1",

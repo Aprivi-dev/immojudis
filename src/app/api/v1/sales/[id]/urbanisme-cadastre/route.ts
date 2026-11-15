@@ -7,6 +7,7 @@ import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlementVia, getSaleForDoor } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { urbanPlanningSignalsForDoor } from "@/lib/property-report/entitlements";
 import { getCadastralParcels, getUrbanPlanningSignals } from "@/lib/property-report/repository";
 
 const paramsSchema = z.object({ id: z.string().guid() });
@@ -47,10 +48,13 @@ export const GET = apiRoute<{ id: string }>(
     const { id: saleId } = paramsSchema.parse(params);
     // The enrichment rows are found by the sale's key, read on the server and never returned.
     const { enrichmentKey } = await getSaleForDoor(auth, saleId, door);
-    const [cadastralParcels, urbanPlanningSignals] = await Promise.all([
+    const [cadastralParcels, signals] = await Promise.all([
       getCadastralParcels(enrichmentKey),
       getUrbanPlanningSignals(enrichmentKey),
     ]);
+    // Through an unlock, only the signals read in what the sale already serves (pieces, title,
+    // description): never an excerpt of the raw payload or of another source.
+    const urbanPlanningSignals = urbanPlanningSignalsForDoor(signals, door);
 
     return { cadastralParcels, urbanPlanningSignals };
   },

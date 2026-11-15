@@ -46,8 +46,15 @@ export const GET = apiRoute<{ id: string }>(
         access: "full",
         ...buildValuePreview(estimate, sale.starting_price_eur, sale.occupancy_status),
       };
+      // Through an unlock, not kept by the browser either: the right can end (unlock returned, sale
+      // withdrawn) and a kept copy would still show the figures.
       return NextResponse.json(body, {
-        headers: { "cache-control": "private, max-age=300, stale-while-revalidate=3600" },
+        headers: {
+          "cache-control":
+            door === "plan"
+              ? "private, max-age=300, stale-while-revalidate=3600"
+              : "private, no-store",
+        },
       });
     }
     const body: ValuePreviewResponse = {
