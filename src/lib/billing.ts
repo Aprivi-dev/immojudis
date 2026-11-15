@@ -1,11 +1,9 @@
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database } from "@/integrations/supabase/types";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { nullableRpcArg } from "@/lib/rpc-args";
-import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   type CheckoutConsent,
   recordCommercialAcceptance,
@@ -39,14 +37,42 @@ import {
   ANALYSIS_TRIAL_DAYS,
   resolveAnalysisOfferLabel,
   STRIPE_CHECKOUT_TRIAL_OFFERED,
+  VAT_EXEMPTION_INVOICE_MENTION,
 } from "@/lib/analysis-offer";
 import { asJson } from "@/lib/supabase-json";
+import {
+  type BillingSessionResponse,
+  createStripeCustomer,
+  getStripe,
+  getUserSubscription,
+  isStripeMissingOrCancelled,
+  resolveBillingOrigin,
+  stripeObjectId,
+  stripeSecretKey,
+} from "@/lib/billing-stripe";
+import {
+  handleSaleUnlockCheckoutCompleted,
+  handleSaleUnlockCheckoutExpired,
+  isSaleUnlockCharge,
+  isSaleUnlockCheckoutSession,
+  recordSaleUnlockChargeState,
+} from "@/lib/billing-sale-unlock";
+import {
+  abandonUnitPurchaseDeduction,
+  prepareUnitPurchaseDeduction,
+  releaseUnitPurchaseDeductionOf,
+  settleUnitPurchaseDeductionOf,
+  type UnitPurchaseDeduction,
+  unitPurchaseDeductionSessionFields,
+} from "@/lib/billing-unit-deduction";
 
-type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
-
-export type BillingSessionResponse = {
-  url: string;
-};
+// Socle Stripe (`billing-stripe.ts`) : ces noms restent importables depuis `billing.ts`.
+export {
+  getStripe,
+  resolveBillingOrigin,
+  stripeCustomerIdempotencyKey,
+} from "@/lib/billing-stripe";
+export type { BillingSessionResponse };
 
 export type StripeWebhookResult = {
   eventId: string;
@@ -58,7 +84,6 @@ export type StripeWebhookResult = {
 type StripePaymentLifecycleState = "disputed" | "dispute_lost" | "cleared" | "refunded";
 type StripeReconciledPlanStatus = "active" | "paused" | "cancelled" | "expired";
 
-const STRIPE_API_VERSION = "2026-06-24.dahlia";
 /** Legacy one-time access (30 days) retained for validating historical webhooks. */
 export const ANALYSIS_ACCESS_DAYS = 30;
 
@@ -72,38 +97,14 @@ function resolveAnalysisPriceId(): string {
   );
 }
 
-let stripeClient: Stripe | undefined;
-
 const ANALYSIS_ALREADY_ATTACHED_MESSAGE =
   "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.";
-
-function stripeSecretKey(): string {
-  const key = serverEnv().stripe.secretKey;
-  if (!key) throw new ConfigurationError("Stripe n'est pas configuré: STRIPE_SECRET_KEY manquant.");
-  return key;
-}
 
 function stripeWebhookSecret(): string {
   const secret = serverEnv().stripe.webhookSecret;
   if (!secret)
     throw new ConfigurationError("Stripe webhook non configuré: STRIPE_WEBHOOK_SECRET manquant.");
   return secret;
-}
-
-export function getStripe(): Stripe {
-  if (!stripeClient) {
-    stripeClient = new Stripe(stripeSecretKey(), {
-      apiVersion: STRIPE_API_VERSION,
-      maxNetworkRetries: 2,
-      typescript: true,
-    });
-  }
-
-  return stripeClient;
-}
-
-export function resolveBillingOrigin(requestOrigin?: string | null): string {
-  return resolveSiteOrigin(process.env, requestOrigin || "http://localhost:3000")!;
 }
 
 export async function createPlanCheckoutSession({
@@ -153,6 +154,8 @@ export async function createPlanCheckoutSession({
   const acceptanceId = randomUUID();
 
   let session: Stripe.Checkout.Session | null = null;
+  let deductionReserved = false;
+  let deduction: UnitPurchaseDeduction | null = null;
   try {
     // The account reservation must already exist before Customer creation. The
     // RPC-backed attach below then merges the customer id while retaining this
@@ -176,6 +179,12 @@ export async function createPlanCheckoutSession({
     const billingModel = trialAvailable
       ? ANALYSIS_BILLING_MODEL
       : ANALYSIS_SUBSCRIPTION_BILLING_MODEL;
+    // Premier abonnement (aucun abonnement dans l'historique Stripe du client, même lecture que
+    // l'essai) : les achats à l'unité récents sont déduits du premier mois.
+    if (subscriptionHistory.length === 0) {
+      deductionReserved = true;
+      deduction = await prepareUnitPurchaseDeduction(stripe, auth.userId, reservationToken);
+    }
 
     session = await stripe.checkout.sessions.create(
       buildAnalysisCheckoutSessionParams({
@@ -189,6 +198,7 @@ export async function createPlanCheckoutSession({
         offerCode,
         billingModel,
         expiresAt: checkoutExpiresAt,
+        deduction,
       }),
     );
 
@@ -225,6 +235,10 @@ export async function createPlanCheckoutSession({
     }
     if (canReleaseReservation) {
       await releaseAnalyseCheckout(auth.userId, reservationToken).catch(() => undefined);
+      // La déduction a pu être réservée sans que son bon soit créé : on la rend dans tous les cas.
+      if (deductionReserved) {
+        await abandonUnitPurchaseDeduction(stripe, reservationToken, deduction);
+      }
     }
     throw error;
   }
@@ -263,6 +277,9 @@ async function reclaimAbandonedCheckout(
       continue;
     }
     await releaseAnalyseCheckout(auth.userId, token).catch(() => undefined);
+    // Sans cela, la déduction resterait réservée par l'ancien checkout jusqu'à son webhook
+    // d'expiration, et le nouveau checkout n'en porterait aucune.
+    await releaseUnitPurchaseDeductionOf(stripe, session).catch(() => undefined);
     reclaimed = true;
   }
   return reclaimed;
@@ -323,6 +340,7 @@ export function buildAnalysisCheckoutSessionParams({
   offerCode = ANALYSIS_OFFER_CODE,
   billingModel = ANALYSIS_BILLING_MODEL,
   expiresAt,
+  deduction = null,
 }: {
   appOrigin: string;
   customerId: string;
@@ -334,8 +352,11 @@ export function buildAnalysisCheckoutSessionParams({
   offerCode?: string;
   billingModel?: string;
   expiresAt?: number;
+  /** Achats à l'unité déduits du premier mois : seule remise de la session (ni code promo ni autre bon). */
+  deduction?: UnitPurchaseDeduction | null;
 }): Stripe.Checkout.SessionCreateParams {
   const recurringPriceId = priceId ?? resolveAnalysisPriceId();
+  const deductionFields = unitPurchaseDeductionSessionFields(deduction);
   const offerLabel = resolveAnalysisOfferLabel();
   return {
     mode: "subscription",
@@ -370,6 +391,7 @@ export function buildAnalysisCheckoutSessionParams({
     success_url: `${appOrigin}/offres?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appOrigin}/offres?checkout=cancelled`,
     ...(expiresAt ? { expires_at: expiresAt } : {}),
+    ...(deductionFields.discounts ? { discounts: deductionFields.discounts } : {}),
     metadata: {
       user_id: userId,
       plan_code: "analyse",
@@ -379,6 +401,7 @@ export function buildAnalysisCheckoutSessionParams({
       offer_label: offerLabel,
       ...(reservationToken ? { checkout_reservation_token: reservationToken } : {}),
       ...(acceptanceId ? { commercial_acceptance_id: acceptanceId } : {}),
+      ...deductionFields.metadata,
     },
   };
 }
@@ -708,18 +731,8 @@ export function stripeAccessPeriodEndIso(
   return stripeCurrentPeriodEndIso(subscription);
 }
 
-/**
- * Régime de TVA retenu le 09/11/2026 : franchise en base (art. 293 B du CGI). Mention imprimée en pied
- * de chaque facture Stripe ; à doubler dans le tableau de bord Stripe (pied de facture par défaut) pour
- * les clients créés hors de ce code.
- */
-export const VAT_EXEMPTION_INVOICE_MENTION = "TVA non applicable, art. 293 B du CGI";
-
-export function stripeCustomerIdempotencyKey(userId: string): string {
-  const normalizedUserId = userId.trim();
-  if (!normalizedUserId) throw new Error("Stripe customer: user id is missing.");
-  return `immojudis-customer-${normalizedUserId}`;
-}
+// Défini avec les autres constantes de l'offre : la confirmation de l'achat à l'unité le cite aussi.
+export { VAT_EXEMPTION_INVOICE_MENTION };
 
 async function ensureStripeCustomer(
   auth: SupabaseAuthContext,
@@ -728,21 +741,7 @@ async function ensureStripeCustomer(
   const subscription = await getUserSubscription(auth);
   if (subscription?.stripe_customer_id) return subscription.stripe_customer_id;
 
-  const stripe = getStripe();
-  const customer = await stripe.customers.create(
-    {
-      email: typeof auth.claims.email === "string" ? auth.claims.email : undefined,
-      // Franchise en base de TVA : mention obligatoire sur chaque facture émise par Stripe.
-      invoice_settings: { footer: VAT_EXEMPTION_INVOICE_MENTION },
-      metadata: {
-        user_id: auth.userId,
-        source: "immojudis",
-      },
-    },
-    {
-      idempotencyKey: stripeCustomerIdempotencyKey(auth.userId),
-    },
-  );
+  const customer = await createStripeCustomer(getStripe(), auth);
   const { data, error } = await supabaseAdmin.rpc("attach_analyse_checkout_customer", {
     p_checkout_token: reservationToken,
     p_stripe_customer_id: customer.id,
@@ -755,23 +754,16 @@ async function ensureStripeCustomer(
   return data;
 }
 
-async function getUserSubscription(auth: SupabaseAuthContext): Promise<UserSubscriptionRow | null> {
-  const { data, error } = await auth.supabase
-    .from("user_subscriptions")
-    .select("*")
-    .eq("user_id", auth.userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
   event: Stripe.Event,
 ): Promise<boolean> {
   const userId = session.metadata?.user_id || session.client_reference_id;
   if (!userId) return false;
+
+  if (isSaleUnlockCheckoutSession(session)) {
+    return handleSaleUnlockCheckoutCompleted(session, event);
+  }
 
   if (session.mode === "payment") {
     if (session.payment_status !== "paid") return false;
@@ -816,6 +808,10 @@ async function handleCheckoutCompleted(
 
   if (session.mode !== "subscription") return false;
 
+  // Le bon de réduction des achats à l'unité a servi : la déduction réservée est acquise. Une erreur
+  // de la base fait rejouer l'événement (la synchronisation qui suit est idempotente).
+  await settleUnitPurchaseDeductionOf(session);
+
   const subscriptionValue = session.subscription;
   const subscription =
     typeof subscriptionValue === "string"
@@ -847,10 +843,12 @@ async function handleCheckoutCompleted(
 }
 
 async function handleCheckoutExpired(session: Stripe.Checkout.Session): Promise<boolean> {
+  if (isSaleUnlockCheckoutSession(session)) return handleSaleUnlockCheckoutExpired(session);
   const userId = session.metadata?.user_id || session.client_reference_id;
   const reservationToken = session.metadata?.checkout_reservation_token;
   if (!userId || !reservationToken) return false;
   await releaseAnalyseCheckout(userId, reservationToken);
+  await releaseUnitPurchaseDeductionOf(getStripe(), session);
   return true;
 }
 
@@ -898,6 +896,10 @@ async function completeStripeWebhookEvent(
 
 async function handleChargeRefunded(charge: Stripe.Charge, event: Stripe.Event): Promise<boolean> {
   if (!stripeRefundRequiresAccessRevocation(charge.amount, charge.amount_refunded)) return false;
+  // Aiguillage d'abord : un paiement unitaire ne touche jamais l'abonnement, et inversement.
+  if (await isSaleUnlockCharge(charge)) {
+    return recordSaleUnlockChargeState(charge, "refunded", event);
+  }
   const userId = await stripeUserIdFromPaymentObject(charge);
   const paymentIntentId = stripeObjectId(charge.payment_intent);
   if (!userId || !paymentIntentId) return false;
@@ -920,6 +922,10 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
     typeof dispute.charge === "string"
       ? await getStripe().charges.retrieve(dispute.charge)
       : dispute.charge;
+  if (await isSaleUnlockCharge(charge)) {
+    const state = stripeDisputeStatusToPaymentState(dispute.status);
+    return recordSaleUnlockChargeState(charge, state === "cleared" ? "paid" : state, event);
+  }
   const userId = await stripeUserIdFromPaymentObject(charge);
   const paymentIntentId = stripeObjectId(charge.payment_intent);
   if (!userId || !paymentIntentId) return false;
@@ -1074,16 +1080,6 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<bool
     nextAttemptAt: invoice.next_payment_attempt,
   });
   return true;
-}
-
-function isStripeMissingOrCancelled(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const { code, message } = error as { code?: unknown; message?: unknown };
-  return (
-    code === "resource_missing" ||
-    (typeof message === "string" &&
-      /already.*cancel|cancel.*subscription|no such subscription/i.test(message))
-  );
 }
 
 async function cancelStripeSubscriptionForUser(userId: string): Promise<void> {
@@ -1452,15 +1448,6 @@ async function findUserIdForSubscription(
     .maybeSingle();
   if (byCustomer.error) throw byCustomer.error;
   return byCustomer.data?.user_id ?? null;
-}
-
-function stripeObjectId(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === "string") return value;
-  if (typeof value === "object" && "id" in value && typeof value.id === "string") {
-    return value.id;
-  }
-  return null;
 }
 
 function unixToIso(value: number | null | undefined): string | null {

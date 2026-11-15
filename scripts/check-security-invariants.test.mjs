@@ -960,3 +960,57 @@ $$;`;
     );
   });
 });
+
+describe("invariants de sécurité : achat d'une vente à l'unité", () => {
+  it("refuse une lecture de sale_unlock_purchases accordée au compte", () => {
+    const result = runInvariants({
+      "99990101000000_open_purchases.sql":
+        "grant select on table public.sale_unlock_purchases to authenticated;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "99990101000000_open_purchases.sql grants a right on public.sale_unlock_purchases to a browser role",
+    );
+  });
+
+  it("refuse grant_purchased_sale_unlock accordé au compte", () => {
+    const result = runInvariants({
+      "99990101000000_open_grant.sql":
+        "grant execute on function public.grant_purchased_sale_unlock(uuid, uuid, uuid, text, text, integer, text, text, timestamptz) to authenticated;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.grant_purchased_sale_unlock is granted to a browser role (service_role only)",
+    );
+  });
+
+  it("refuse une redéfinition de grant_purchased_sale_unlock qui n'est plus SECURITY DEFINER", () => {
+    const result = runInvariants({
+      "99990101000000_invoker_grant.sql": `
+create or replace function public.grant_purchased_sale_unlock(p_purchase_id uuid)
+returns boolean
+language sql
+security invoker
+set search_path = ''
+as $$
+  select true;
+$$;
+`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.grant_purchased_sale_unlock is not a SECURITY DEFINER function with an empty search_path",
+    );
+  });
+
+  it("refuse redeem_sale_unlock_credit ouvert à anon", () => {
+    const result = runInvariants({
+      "99990101000000_anon_redeem.sql":
+        "grant execute on function public.redeem_sale_unlock_credit(uuid) to anon;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "public.redeem_sale_unlock_credit is granted to public or anon",
+    );
+  });
+});

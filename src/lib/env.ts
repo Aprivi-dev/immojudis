@@ -112,6 +112,9 @@ const SERVER_KEYS = [
   "STRIPE_ANALYSIS_PRICE_ID",
   "STRIPE_ANALYSIS_LEGACY_PRICE_IDS",
   "STRIPE_ANALYSIS_SALES_OPEN",
+  "STRIPE_ANALYSIS_PRODUCT_ID",
+  "STRIPE_SALE_UNLOCK_PRICE_ID",
+  "STRIPE_SALE_UNLOCK_SALES_OPEN",
   "REPLICATE_API_TOKEN",
   "LLM_PROMPT_VERSION",
   "RESEND_API_KEY",
@@ -294,6 +297,15 @@ export function serverEnv(source?: EnvSource) {
       legacyAnalysisPriceIds: env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS,
       /** Interrupteur de vente, tel quel : `analysisSalesOpen` (absent : vente ouverte). */
       analysisSalesOpen: env.STRIPE_ANALYSIS_SALES_OPEN,
+      /**
+       * Produit Stripe de l'offre Analyse (facultatif) : restreint le bon de réduction des achats à
+       * l'unité à ce produit. Absent : le bon vaut pour toute la session d'abonnement.
+       */
+      analysisProductId: env.STRIPE_ANALYSIS_PRODUCT_ID,
+      /** Price de l'achat d'une vente à l'unité, tel quel : `saleUnlockPriceId` en vérifie la forme. */
+      saleUnlockPriceId: env.STRIPE_SALE_UNLOCK_PRICE_ID,
+      /** Interrupteur de l'achat à l'unité, tel quel : `saleUnlockSalesOpen` (absent : fermé). */
+      saleUnlockSalesOpen: env.STRIPE_SALE_UNLOCK_SALES_OPEN,
     },
     replicateApiToken: env.REPLICATE_API_TOKEN,
     llmPromptVersion: env.LLM_PROMPT_VERSION,

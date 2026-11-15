@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { analysisOfferOpen } from "@/lib/analysis-offer-open";
-import { fetchBillingOffer } from "@/lib/client-billing";
+import { fetchBillingOffer, type BillingOfferResponse } from "@/lib/client-billing";
+import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
 
 /**
  * What the page knows about the Analyse offer.  `loading` and `error` are kept
  * apart from a closed offer: a slow or failed request must never read as
  * "subscriptions are not open".
  */
+/** L'achat d'une vente à l'unité tel que la page peut le proposer : prix affiché et montant. */
+export type SaleUnlockPurchase = Pick<BillingOfferResponse["saleUnlock"], "label" | "amountCents">;
+
 export type BillingOfferState =
   | { status: "loading" }
   | { status: "error" }
@@ -19,12 +23,34 @@ export type BillingOfferState =
       open: boolean;
       trialAvailable: boolean;
       label: string | null;
+      /**
+       * Achat d'une vente à l'unité, seulement quand il peut vraiment se faire (ouvert sur le serveur,
+       * identité légale publiée, montant lisible) ; `null` sinon : rien ne le propose.
+       */
+      saleUnlock: SaleUnlockPurchase | null;
+      /** Ce que le serveur déduirait du premier mois d'abonnement (compte connecté) ; 0 sinon. */
+      firstMonthDeductionCents: number;
     };
 
 export type BillingOfferSource = {
   offer: BillingOfferState;
   reload: () => void;
 };
+
+/** L'achat à l'unité se propose : ouvert, éditeur identifié (comme l'abonnement), montant lisible. */
+function openSaleUnlockPurchase(response: BillingOfferResponse): SaleUnlockPurchase | null {
+  // Une réponse d'avant l'achat à l'unité (cache du CDN pendant un déploiement) n'a pas ces champs.
+  const offer = response.saleUnlock as BillingOfferResponse["saleUnlock"] | undefined;
+  if (offer?.open !== true || !legalPublisherConfigurationStatus().ready) return null;
+  const label = typeof offer.label === "string" ? offer.label.trim() : "";
+  if (!label || !Number.isInteger(offer.amountCents) || offer.amountCents <= 0) return null;
+  return { label, amountCents: offer.amountCents };
+}
+
+function firstMonthDeduction(response: BillingOfferResponse): number {
+  const cents: unknown = response.firstMonthDeductionCents;
+  return typeof cents === "number" && Number.isInteger(cents) && cents > 0 ? cents : 0;
+}
 
 /**
  * Reads the public offer once. /offres calls it once and hands the result to `BillingActions`,
@@ -54,6 +80,8 @@ export function useBillingOffer(enabled = true): BillingOfferSource {
           open: analysisOfferOpen(response),
           trialAvailable: response.trialAvailable !== false,
           label: response.label ?? null,
+          saleUnlock: openSaleUnlockPurchase(response),
+          firstMonthDeductionCents: firstMonthDeduction(response),
         });
       })
       .catch(() => {

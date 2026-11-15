@@ -4,9 +4,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import type { SaleUnlockStatus } from "@/lib/sale-unlocks";
 
-const mocks = vi.hoisted(() => ({ checkoutOpen: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  checkoutOpen: vi.fn(),
+  purchase: null as { label: string; amountCents: number } | null,
+}));
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
+}));
+// The spent-unlock links read the subscription and the purchase of a single sale in one go.
+vi.mock("@/hooks/use-sale-unlock-purchase-offer", () => ({
+  useSaleUnlockPurchaseOffer: () => {
+    const open = mocks.checkoutOpen();
+    return open === null
+      ? { status: "loading" }
+      : {
+          status: "ready",
+          analysisOpen: open,
+          analysisLabel: "59 € TTC / mois",
+          analysisCents: 5900,
+          purchase: mocks.purchase,
+          firstMonthDeductionCents: 0,
+        };
+  },
 }));
 vi.mock("@/components/OfferOpeningRequest", () => ({
   OfferOpeningRequest: () => <button type="button">Me prévenir de l’ouverture</button>,
@@ -26,6 +45,7 @@ const status = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => 
 });
 
 beforeEach(() => {
+  mocks.purchase = null;
   mocks.checkoutOpen.mockReset();
   mocks.checkoutOpen.mockReturnValue(true);
   Element.prototype.scrollIntoView = vi.fn();
@@ -102,6 +122,33 @@ describe("UnlockCallToAction in a paid preview", () => {
     // The request is loaded on demand.
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Voir l’offre Analyse" })).toBeNull();
+  });
+
+  it("with a credit left, makes « Débloquer cette vente avec mon crédit » the main link", () => {
+    renderPreview(status({ used: 1, remaining: 0, credits: 1 }));
+
+    const credit = screen.getByRole("link", { name: "Débloquer cette vente avec mon crédit" });
+    expect(credit.getAttribute("href")).toBe(`#${UNLOCK_PANEL_ID}`);
+    expect(screen.queryByText("Votre compte gratuit a déjà débloqué une vente.")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Acheter/ })).toBeNull();
+  });
+
+  it("once the purchase is open, adds « Acheter cette vente » to the card after the offer", () => {
+    mocks.purchase = { label: "19 €", amountCents: 1900 };
+    renderPreview(status({ used: 1, remaining: 0 }));
+
+    const links = screen.getAllByRole("link").map((link) => link.textContent);
+    const buy = screen.getByRole("link", { name: "Acheter cette vente : 19 €" });
+    expect(buy.getAttribute("href")).toBe(`#${UNLOCK_PANEL_ID}`);
+    expect(links.indexOf("Voir l’offre Analyse")).toBeLessThan(
+      links.indexOf("Acheter cette vente : 19 €"),
+    );
+  });
+
+  it("never mentions a purchase while it is closed", () => {
+    renderPreview(status({ used: 1, remaining: 0 }));
+    expect(screen.queryByRole("link", { name: /Acheter/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/à l’unité|19/);
   });
 
   it("keeps the single link to the offer when the page has no unlock card", () => {

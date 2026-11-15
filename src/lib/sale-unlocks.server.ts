@@ -3,12 +3,17 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
-import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/lib/sale-unlocks";
+import type {
+  SaleUnlockResult,
+  SaleUnlockSource,
+  SaleUnlockStatus,
+  UnlockedSaleSummary,
+} from "@/lib/sale-unlocks";
 import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 
 /**
- * Le déblocage du compte gratuit côté serveur. Tout passe par les RPC `unlock_sale` et
- * `get_sale_unlock_status` avec le client de l'utilisateur : la base identifie le compte par
+ * Le déblocage du compte gratuit côté serveur. Tout passe par les RPC `unlock_sale`,
+ * `redeem_sale_unlock_credit` et `get_sale_unlock_status` avec le client de l'utilisateur : la base identifie le compte par
  * `auth.uid()`, applique le quota du compte (`app_private.free_sale_unlock_limit()`) sous verrou et
  * ne lit que ses propres lignes. Aucun appel Stripe sur ce chemin.
  */
@@ -23,6 +28,10 @@ const rpcStatusSchema = z.object({
   limit: z.number().int().nullable(),
   used: z.number().int().nonnegative(),
   remaining: z.number().int().nonnegative().nullable(),
+  // Absent tant que la migration de l'achat à l'unité n'est pas appliquée.
+  credits: z.number().int().nonnegative().optional(),
+  // Même tolérance : absente d'une base pas encore migrée, et une valeur inconnue vaut « inconnu ».
+  source: z.string().nullable().optional(),
   // La base a envoyé `period_start` et `period_end` tant que le quota était mensuel : un objet zod
   // non strict ignore ces clés, une base pas encore migrée reste donc lisible.
 });
@@ -33,6 +42,7 @@ const rpcResultSchema = rpcStatusSchema.extend({
 });
 
 function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
+  const source = saleUnlockSource(row.source);
   return {
     saleId: row.sale_id ?? null,
     unlocked: row.unlocked,
@@ -41,7 +51,16 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
     limit: row.limit,
     used: row.used,
     remaining: row.remaining,
+    credits: row.credits ?? 0,
+    // Présente seulement quand la base la donne (vente débloquée, base migrée).
+    ...(source ? { source } : {}),
   };
+}
+
+const SALE_UNLOCK_SOURCES: readonly string[] = ["free", "purchase", "credit"];
+
+function saleUnlockSource(value: string | null | undefined): SaleUnlockSource | null {
+  return value && SALE_UNLOCK_SOURCES.includes(value) ? (value as SaleUnlockSource) : null;
 }
 
 /** Lit la réponse JSON de `get_sale_unlock_status`. */
@@ -142,15 +161,39 @@ export async function unlockSale(
   saleId: string,
 ): Promise<SaleUnlockResult> {
   const { data, error } = await auth.supabase.rpc("unlock_sale", { p_sale_id: saleId });
-  if (error) {
-    if (error.code === "P0001" && error.details === "sale_unlock_quota_reached") {
-      throw new SaleUnlockQuotaError(await getSaleUnlockStatus(auth, saleId));
-    }
-    if (error.code === "P0002") {
-      throw new PublicApiError("Vente introuvable ou plus en ligne.", 404);
-    }
-    if (error.code === "42501") throw new AuthRequiredError("Unauthorized: Connexion requise.");
-    throw error;
-  }
+  if (error) throw await unlockFailure(auth, saleId, error, "sale_unlock_quota_reached");
   return parseSaleUnlockResult(data);
+}
+
+/**
+ * Débloque une vente en ligne avec un crédit du compte (un achat à l'unité payé dont la vente a été
+ * retirée ou n'était plus débloquable). Même réponse que `unlockSale`, avec les crédits restants ;
+ * sans crédit : `SaleUnlockQuotaError`.
+ */
+export async function redeemSaleUnlockCredit(
+  auth: SupabaseAuthContext,
+  saleId: string,
+): Promise<SaleUnlockResult> {
+  const { data, error } = await auth.supabase.rpc("redeem_sale_unlock_credit", {
+    p_sale_id: saleId,
+  });
+  if (error) throw await unlockFailure(auth, saleId, error, "sale_unlock_no_credit");
+  return parseSaleUnlockResult(data);
+}
+
+/** Erreur d'un déblocage : quota (ou crédit) épuisé, vente introuvable, session absente. */
+async function unlockFailure(
+  auth: SupabaseAuthContext,
+  saleId: string,
+  error: { code?: string; details?: string | null },
+  quotaDetail: string,
+): Promise<unknown> {
+  if (error.code === "P0001" && error.details === quotaDetail) {
+    return new SaleUnlockQuotaError(await getSaleUnlockStatus(auth, saleId));
+  }
+  if (error.code === "P0002") {
+    return new PublicApiError("Vente introuvable ou plus en ligne.", 404);
+  }
+  if (error.code === "42501") return new AuthRequiredError("Unauthorized: Connexion requise.");
+  return error;
 }

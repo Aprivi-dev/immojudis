@@ -18,7 +18,7 @@ import { accountLinksFor } from "@/lib/navigation";
 import { LAUNCH_OFFER_ACCOUNT_TEXT, signupTrialStatusText } from "@/lib/launch-offer";
 import { hasLiveStripeSubscription } from "@/lib/plans";
 import * as queryKeys from "@/lib/query-keys";
-import { unlockUsageLine } from "@/lib/sale-unlocks";
+import { unlockCreditsLine, unlockUsageLine } from "@/lib/sale-unlocks";
 
 const TOGGLE_CLASS =
   "mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm";
@@ -203,7 +203,12 @@ export function AccountPage() {
               </p>
             ) : unlockStatus ? (
               unlockStatus.analysisAccess ? null : (
-                <p>{unlockUsageLine(unlockStatus)}</p>
+                <>
+                  <p>{unlockUsageLine(unlockStatus)}</p>
+                  {unlockCreditsLine(unlockStatus) ? (
+                    <p data-testid="account-unlock-credits">{unlockCreditsLine(unlockStatus)}</p>
+                  ) : null}
+                </>
               )
             ) : (
               <p>Chargement de votre déblocage…</p>

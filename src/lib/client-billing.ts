@@ -18,6 +18,13 @@ export type BillingOfferResponse = {
   trialDays: 7;
   trialAvailable?: boolean;
   label: string;
+  /** Achat du déblocage d'une vente à l'unité : ouvert ou non, libellé (« 19 € ») et montant. */
+  saleUnlock: { open: boolean; label: string; amountCents: number };
+  /**
+   * Compte connecté : montant des achats à l'unité qui serait déduit du premier mois d'abonnement
+   * Analyse s'il souscrivait maintenant (0 sinon, et toujours 0 pour un visiteur).
+   */
+  firstMonthDeductionCents: number;
 };
 
 export async function fetchBillingOffer(): Promise<BillingOfferResponse> {

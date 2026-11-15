@@ -36,6 +36,33 @@ export const ANALYSIS_SUBSCRIPTION_BILLING_MODEL = "subscription_recurring" as c
 export const DEFAULT_ANALYSIS_OFFER_LABEL = "59 € TTC / mois";
 
 /**
+ * Achat du déblocage d'une vente à l'unité (lot 3, décision du 15/11/2026) : 19 € TTC, paiement
+ * unique, un seul prix et sans pack. Source unique du montant : le Price Stripe est contrôlé contre
+ * lui (`resolveConfiguredSaleUnlockPrice`), le webhook n'accorde rien pour un autre montant et les
+ * textes affichent `SALE_UNLOCK_PRICE_LABEL`. La base fixe la même valeur
+ * (`app_private.sale_unlock_purchase_amount_cents()`, comparée par un test).
+ */
+export const SALE_UNLOCK_PRICE_CENTS = 1_900 as const;
+export const SALE_UNLOCK_CURRENCY = "eur" as const;
+export const SALE_UNLOCK_PRICE_LABEL = "19 €";
+/** Code d'offre enregistré avec l'acceptation commerciale de l'achat à l'unité. */
+export const SALE_UNLOCK_OFFER_CODE = "sale_unlock_unit" as const;
+/**
+ * Les achats à l'unité payés depuis moins de 30 jours sont déduits du premier mois d'abonnement
+ * Analyse, dans la limite du prix de ce mois (`ANALYSIS_RECURRING_PRICE_CENTS`). Le calcul est fait
+ * par la base (`reserve_unit_purchase_deduction`) ; la durée sert ici à l'aperçu de `/api/billing/offer`.
+ */
+export const UNIT_PURCHASE_DEDUCTION_WINDOW_DAYS = 30 as const;
+
+/**
+ * Régime de TVA retenu le 09/11/2026 : franchise en base (art. 293 B du CGI). Mention imprimée en pied
+ * de chaque facture Stripe (abonnement et achat à l'unité) et rappelée dans la confirmation de l'achat
+ * à l'unité ; à doubler dans le tableau de bord Stripe (pied de facture par défaut) pour les clients
+ * créés hors de ce code.
+ */
+export const VAT_EXEMPTION_INVOICE_MENTION = "TVA non applicable, art. 293 B du CGI";
+
+/**
  * Le prix s'adresse à des consommateurs : le libellé public dit « TTC ». Un libellé configuré sans
  * ce sigle (« 59 € / mois ») est refusé au profit du libellé approuvé.
  */

@@ -56,7 +56,17 @@ export type SaleUnlockStatus = {
   limit: number | null;
   used: number;
   remaining: number | null;
+  /**
+   * Crédits de déblocage disponibles : un achat à l'unité payé dont la vente a été retirée, ou
+   * n'était plus débloquable au paiement. Absent d'une base pas encore migrée : zéro.
+   */
+  credits?: number;
+  /** Comment cette vente a été débloquée ; absent ou `null` : inconnu, ou vente non débloquée. */
+  source?: SaleUnlockSource | null;
 };
+
+/** Ce qui a ouvert une vente : le déblocage du compte gratuit, un achat à l'unité, un crédit. */
+export type SaleUnlockSource = "free" | "purchase" | "credit";
 
 export type SaleUnlockResult = SaleUnlockStatus & {
   /** La vente était déjà débloquée : rien n'a été consommé. */
@@ -75,6 +85,8 @@ export type UnlockedSaleSummary = {
   startingPriceEur: number | null;
   saleDate: string | null;
   status: string | null;
+  /** Comment la vente a été débloquée, quand le serveur le sait. */
+  source?: SaleUnlockSource | null;
 };
 
 /** Réponse de `GET /api/sale-unlocks` : le déblocage du compte et les ventes débloquées en ligne. */
@@ -188,4 +200,21 @@ export function unlockQuotaReachedText({ analysisOpen = false }: { analysisOpen?
 /** « Déblocage du compte gratuit : utilisé » ou « disponible » (Mon compte, ventes débloquées). */
 export function unlockUsageLine(status: Pick<SaleUnlockStatus, "remaining">): string {
   return `Déblocage du compte gratuit : ${(status.remaining ?? 0) > 0 ? "disponible" : "utilisé"}`;
+}
+
+/** « 1 crédit de déblocage disponible », « 2 crédits… » ; `null` sans crédit (Mon compte). */
+export function unlockCreditsLine(status: Pick<SaleUnlockStatus, "credits">): string | null {
+  const credits = status.credits ?? 0;
+  if (credits <= 0) return null;
+  return credits > 1
+    ? `${credits} crédits de déblocage disponibles`
+    : "1 crédit de déblocage disponible";
+}
+
+/** Comment une vente de « Mes ventes débloquées » a été ouverte ; `null` quand ce n'est pas connu. */
+export function unlockSourceLabel(source: SaleUnlockSource | null | undefined): string | null {
+  if (source === "free") return "Débloquée avec le compte gratuit";
+  if (source === "purchase") return "Achetée";
+  if (source === "credit") return "Débloquée avec un crédit";
+  return null;
 }

@@ -5,6 +5,7 @@ import {
   getSaleUnlockStatus,
   hasUnlockedSale,
   listUnlockedSales,
+  redeemSaleUnlockCredit,
   SaleUnlockQuotaError,
   unlockSale,
 } from "@/lib/sale-unlocks.server";
@@ -174,5 +175,58 @@ describe("listUnlockedSales", () => {
     const failure = { code: "XX000", message: "boom" };
     const { auth } = authWithView({ data: null, error: failure });
     await expect(listUnlockedSales(auth)).rejects.toBe(failure);
+  });
+});
+
+describe("unit purchase credits and unlock source", () => {
+  it("reads the source of the unlock, and leaves it out when the database does not send it", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValue({ data: { ...rpcStatus, source: "purchase" }, error: null });
+    expect(await getSaleUnlockStatus(authWith(rpc), saleId)).toMatchObject({ source: "purchase" });
+
+    const legacy = vi.fn().mockResolvedValue({ data: rpcStatus, error: null });
+    expect(await getSaleUnlockStatus(authWith(legacy), saleId)).not.toHaveProperty("source");
+
+    const unknown = vi
+      .fn()
+      .mockResolvedValue({ data: { ...rpcStatus, source: "gift" }, error: null });
+    expect(await getSaleUnlockStatus(authWith(unknown), saleId)).not.toHaveProperty("source");
+  });
+
+  it("redeems a credit through the caller's own client and returns the credits left", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { ...rpcStatus, credits: 0, already_unlocked: false, consumed: true },
+      error: null,
+    });
+
+    const result = await redeemSaleUnlockCredit(authWith(rpc), saleId);
+
+    expect(rpc).toHaveBeenCalledWith("redeem_sale_unlock_credit", { p_sale_id: saleId });
+    expect(result).toMatchObject({ unlocked: true, consumed: true, credits: 0 });
+  });
+
+  it("reports a missing credit like an exhausted quota, with the state of the account", async () => {
+    const rpc = vi.fn(async (name: string) =>
+      name === "redeem_sale_unlock_credit"
+        ? { data: null, error: { code: "P0001", details: "sale_unlock_no_credit", message: "x" } }
+        : { data: { ...rpcStatus, unlocked: false, credits: 0 }, error: null },
+    );
+
+    const error = await redeemSaleUnlockCredit(authWith(rpc), saleId).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(SaleUnlockQuotaError);
+    expect((error as SaleUnlockQuotaError).status.credits).toBe(0);
+  });
+
+  it("answers 404 when the credit cannot open a sale that is no longer online", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "P0002", message: "Vente introuvable ou plus en ligne." },
+    });
+
+    await expect(redeemSaleUnlockCredit(authWith(rpc), saleId)).rejects.toBeInstanceOf(
+      PublicApiError,
+    );
   });
 });
