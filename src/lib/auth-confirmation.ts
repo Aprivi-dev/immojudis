@@ -1,4 +1,5 @@
 import { decodeURIComponentSafe as decodeOnce } from "@/lib/safe-decode-uri";
+import { sameSitePath } from "@/lib/navigation";
 /**
  * Lien des emails d'authentification (`/auth/confirmer`), lu côté navigateur.
  *
@@ -70,32 +71,21 @@ export function parseAuthLink(search: string): AuthLink | null {
 export function postConfirmationPath(link: AuthLink, origin: string): string {
   if (link.type === "recovery") return PASSWORD_RESET_PATH;
   if (!link.redirectTo) return DEFAULT_AFTER_CONFIRMATION_PATH;
-  return sameSitePath(link.redirectTo, origin) ?? DEFAULT_AFTER_CONFIRMATION_PATH;
+  return sameSiteDestination(link.redirectTo, origin) ?? DEFAULT_AFTER_CONFIRMATION_PATH;
 }
 
 /**
- * Chemin (`pathname + search + hash`) d'une adresse du site, ou `null`. Les contrôles portent sur le
- * résultat NORMALISÉ par `URL` (`/.//evil`, `/a/..//evil`, `/%2e//evil`, `/./\evil` deviennent
- * `//evil`, que `router.replace` lirait comme un autre site), jamais sur la chaîne brute : le chemin
- * doit commencer par UN seul `/`, et résolu contre l'origine il doit y rester. La page de
- * confirmation elle-même est refusée (boucle), sans tenir compte de la casse ni des `/` multiples.
+ * Chemin d'une adresse du site (voir `sameSitePath`), ou `null`. La page de confirmation elle-même
+ * est refusée (boucle), sans tenir compte de la casse ni des `/` multiples.
  */
-function sameSitePath(candidate: string, origin: string): string | null {
-  try {
-    const base = new URL(origin).origin;
-    const target = new URL(candidate, base);
-    if (target.origin !== base) return null;
-    const path = `${target.pathname}${target.search}${target.hash}`;
-    if (!/^\/(?![/\\])/.test(path)) return null;
-    if (new URL(path, base).origin !== base) return null;
-    const flat = target.pathname.toLowerCase().replace(/\/{2,}/g, "/");
-    if (flat === AUTH_CONFIRMATION_PATH || flat.startsWith(`${AUTH_CONFIRMATION_PATH}/`)) {
-      return null;
-    }
-    return path;
-  } catch {
+function sameSiteDestination(candidate: string, origin: string): string | null {
+  const path = sameSitePath(candidate, origin);
+  if (!path) return null;
+  const flat = new URL(path, origin).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+  if (flat === AUTH_CONFIRMATION_PATH || flat.startsWith(`${AUTH_CONFIRMATION_PATH}/`)) {
     return null;
   }
+  return path;
 }
 
 /** Page d'échec d'un lien de mot de passe : celle que `PasswordRecovery` sait afficher. */

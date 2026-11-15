@@ -32,6 +32,7 @@ import {
 import {
   loginPageMode,
   loginReason,
+  sameSitePath,
   searchParamsToRecord,
   type LoginPageMode,
   type LoginReason,
@@ -996,6 +997,7 @@ function isExistingAccountResponse(
   return Array.isArray(identities) && identities.length === 0;
 }
 
+/** Une page du site autre que `/login` (règle commune : `sameSitePath`), ou `undefined`. */
 function safeRedirect(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   if (
@@ -1005,13 +1007,9 @@ function safeRedirect(value: unknown): string | undefined {
   )
     return undefined;
   const base = "http://immojudis.local";
-  try {
-    const url = new URL(value, base);
-    if (url.origin !== base || url.pathname === "/login") return undefined;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return undefined;
-  }
+  const path = sameSitePath(value, base);
+  if (!path || new URL(path, base).pathname === "/login") return undefined;
+  return path;
 }
 
 function ModeButton({
