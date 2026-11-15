@@ -115,7 +115,8 @@ export const PRIVACY_EMAIL_LOG_EFFECTIVE_DATE = "1er novembre 2026";
  * verrouillé, et le texte (« à ce jour, chaque message est relu et validé par un membre de l'équipe ») ne vaut que
  * tant qu'il l'est.
  */
-export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "16 novembre 2026";
+// Mise en ligne réelle : le 15/11/2026.
+export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "15 novembre 2026";
 
 /**
  * Offre gratuite : un seul déblocage de vente, plus d'essai (décision du propriétaire du 15/11/2026).
@@ -143,7 +144,8 @@ export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "16 novembre 2026";
  * Date de la mise en ligne prévue ; à décaler à la date réelle si elle diffère (elle n'entre pas
  * dans l'empreinte du texte).
  */
-export const FREE_UNLOCK_EFFECTIVE_DATE = "16 novembre 2026";
+// Mise en ligne réelle : le 15/11/2026.
+export const FREE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
 
 export const LEGAL_DOCUMENTS = {
   legal: {
