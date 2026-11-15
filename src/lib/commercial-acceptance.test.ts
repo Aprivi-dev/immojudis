@@ -269,6 +269,26 @@ describe("achat d'une vente à l'unité : acceptation et confirmation", () => {
     expect(text).not.toMatch(/crédit/);
   });
 
+  it("n'envoie pas une seconde fois une confirmation déjà envoyée (webhook rejoué)", async () => {
+    mocks.from.mockImplementation((name: string) =>
+      name === "commercial_confirmation_deliveries"
+        ? { ...table({ data: { status: "sent", attempt_count: 1 } }), upsert: mocks.upsert }
+        : table({ data: null }),
+    );
+
+    const outcome = await sendCommercialConfirmation({
+      acceptanceId: ACCEPTANCE_ID,
+      checkoutSessionId: "cs_unit",
+      userId: "11111111-1111-4111-8111-111111111111",
+      paidAt: "2026-11-15T10:00:00.000Z",
+      saleUnlockOutcome: "unlocked",
+    });
+
+    expect(outcome).toBe("sent");
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+
   it("relance sans l'issue connue : la confirmation explique les deux issues", async () => {
     await sendCommercialConfirmation({
       acceptanceId: ACCEPTANCE_ID,

@@ -4,7 +4,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { createSaleUnlockCheckoutSession } from "@/lib/billing";
+import { createSaleUnlockCheckoutSession } from "@/lib/billing-sale-unlock";
 import { apiRoute } from "@/lib/api-route";
 import { saleUnlockConsentSchema } from "@/lib/commercial-acceptance";
 import { enforceUserRateLimit } from "@/lib/rate-limit";

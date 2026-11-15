@@ -250,12 +250,13 @@ describe("rapprochement des achats à l'unité", () => {
     ]);
   });
 
-  it("signale un achat déduit du premier mois puis remboursé ou perdu en litige", () => {
+  it("signale un achat déduit du premier mois puis remboursé, contesté ou perdu en litige", () => {
     const discrepancies = compareSaleUnlockPurchases({
       paidSessions: [],
       purchases: [
         purchase({ id: "refunded", state: "refunded", deducted_checkout_session_id: "cs_sub" }),
         purchase({ id: "lost", state: "dispute_lost", deducted_checkout_session_id: "cs_sub" }),
+        purchase({ id: "disputed", state: "disputed", deducted_checkout_session_id: "cs_sub" }),
         purchase({ id: "kept", state: "paid", deducted_checkout_session_id: "cs_sub" }),
         purchase({ id: "plain", state: "refunded" }),
       ],
@@ -264,7 +265,9 @@ describe("rapprochement des achats à l'unité", () => {
     expect(discrepancies.map((item) => item.kind)).toEqual([
       "sale_unlock_deducted_then_refunded",
       "sale_unlock_deducted_then_refunded",
+      "sale_unlock_deducted_then_refunded",
     ]);
+    expect(discrepancies[2]?.detail).toMatch(/contesté/);
     expect(discrepancies[0]).toMatchObject({ userId: "user-1", stripeSubscriptionId: null });
   });
 });

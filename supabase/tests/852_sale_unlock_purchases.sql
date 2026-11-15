@@ -1,15 +1,16 @@
 -- Achat d'une vente à l'unité (20261122100000) : réservation, paiement idempotent, crédit (vente retirée ou
 -- plus débloquable au paiement), remboursement, litige, déduction du premier mois d'abonnement, purge des
--- 24 mois, et fermeture de la table aux rôles du navigateur.
+-- 24 mois, suppression d'une vente retirée, et fermeture de la table aux rôles du navigateur.
 -- État de base : l'interrupteur de l'essai est coupé (20261120100000) ; le compte abonné a une fin de période
 -- future.
 begin;
 
-select plan(62);
+select plan(73);
 
 -- Fixtures -------------------------------------------------------------------------------------------------
 -- 01 gratuit, déblocage gratuit utilisé (vente 0) ; 02 autre compte gratuit ; 03 abonné Analyse ;
--- 04 gratuit, déblocage gratuit disponible ; 05 et 06 déduction ; 07 purge des 24 mois.
+-- 04 gratuit, déblocage gratuit disponible ; 05 et 06 déduction ; 07 purge des 24 mois ; 08 à 10 suppression
+-- de ventes.
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
   created_at, updated_at, raw_app_meta_data, raw_user_meta_data
@@ -19,12 +20,12 @@ select
   '00000000-0000-0000-0000-000000000000',
   'authenticated', 'authenticated', 'unit-purchase-' || i || '@purchase852.example.test', '',
   now(), now(), now(), '{}'::jsonb, '{}'::jsonb
-from generate_series(1, 7) i;
+from generate_series(1, 10) i;
 
 insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
 values ('c8520000-0000-4000-8000-000000000003', 'analyse', 'active', now() + interval '30 days');
 
--- Ventes 0 à 5 en ligne ; vente 6 retirée dès le départ.
+-- Ventes 0 à 5 et 7 à 9 en ligne ; vente 6 retirée dès le départ.
 insert into public.auction_sales (id, source_name, source_url, title, status, sale_date)
 select
   ('c8520000-1000-4000-8000-' || lpad(i::text, 12, '0'))::uuid,
@@ -33,7 +34,7 @@ select
   'Unit purchase title ' || i,
   case when i = 6 then 'withdrawn' else 'upcoming' end,
   '2099-01-01 12:00:00Z'::timestamptz
-from generate_series(0, 6) i;
+from generate_series(0, 9) i;
 
 insert into public.user_sale_unlocks (user_id, sale_id)
 values ('c8520000-0000-4000-8000-000000000001', 'c8520000-1000-4000-8000-000000000000');
@@ -437,53 +438,165 @@ select is(
 );
 select is(
   public.reserve_unit_purchase_deduction('c8520000-0000-4000-8000-000000000005', 'token-852-aaaaaaaa', now()),
-  5900,
-  'the deduction is capped at 5 900 cents'
+  5700,
+  'oldest first, only the purchases whose running total fits under 5 900 cents are reserved'
 );
 select is(
   public.reserve_unit_purchase_deduction('c8520000-0000-4000-8000-000000000005', 'token-852-bbbbbbbb', now()),
-  0,
-  'purchases reserved by a live token are not reserved twice'
+  1900,
+  'purchases reserved by a live token are not reserved twice; the one left out by the cap stays available'
 );
 select is(
   public.release_unit_purchase_deduction('token-852-aaaaaaaa'),
-  4,
+  3,
   'release gives the reservation back'
 );
 select is(
   public.reserve_unit_purchase_deduction('c8520000-0000-4000-8000-000000000005', 'token-852-bbbbbbbb', now()),
-  5900,
-  'released purchases can be reserved again'
+  5700,
+  'the same token recomputes its reservation over the released purchases'
 );
 select is(
   public.reserve_unit_purchase_deduction(
     'c8520000-0000-4000-8000-000000000005', 'token-852-cccccccc', now() + interval '32 minutes'
   ),
-  5900,
+  5700,
   'a reservation older than 31 minutes is no longer live'
 );
 select is(
   public.settle_unit_purchase_deduction('token-852-cccccccc', 'cs_analyse_852'),
-  5900,
-  'settle deducts the reserved purchases'
+  5700,
+  'settle deducts the reserved purchases and returns their sum'
 );
 select is(
   public.reserve_unit_purchase_deduction(
     'c8520000-0000-4000-8000-000000000005', 'token-852-dddddddd', now() + interval '40 minutes'
   ),
-  0,
-  'nothing is left to deduct after settle'
+  1900,
+  'after settle, only the purchase left out by the cap remains to deduct'
 );
 select is(
   public.settle_unit_purchase_deduction('token-852-cccccccc', 'cs_analyse_852'),
-  5900,
+  5700,
   'settle replayed answers the same'
 );
 select is(
   app_private.sale_unlock_credits_available('c8520000-0000-4000-8000-000000000005'),
-  0,
-  'a deducted purchase is no longer a credit'
+  1,
+  'deducted purchases are no longer credits; the one left out by the cap still is'
 );
+
+-- Remboursement entre la réservation et le règlement : l'achat n'est pas déduit, la somme le montre.
+select public.record_sale_unlock_payment_state('pi_852_61', 'refunded', 'evt_852_r61', 10);
+select is(
+  public.settle_unit_purchase_deduction('token-852-66666666', 'cs_analyse_856'),
+  0,
+  'settle returns only the purchases still paid: the caller sees the gap with the discount'
+);
+select ok(
+  (select deducted_checkout_session_id is null from public.sale_unlock_purchases
+    where payment_intent_id = 'pi_852_61'),
+  'a purchase refunded after its reservation is not marked deducted'
+);
+
+-- Compte devenu abonné pendant que sa session était ouverte : crédit, pas de déblocage -----------------
+insert into public.user_sale_unlocks (user_id, sale_id)
+values ('c8520000-0000-4000-8000-000000000002', 'c8520000-1000-4000-8000-000000000000');
+insert into ids
+select 'p4', reservation.purchase_id
+from public.reserve_sale_unlock_purchase(
+  'c8520000-0000-4000-8000-000000000002', 'c8520000-1000-4000-8000-000000000003'
+) reservation;
+insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
+values ('c8520000-0000-4000-8000-000000000002', 'analyse', 'active', now() + interval '30 days');
+
+select is(
+  (
+    select grant_row::text
+    from public.grant_purchased_sale_unlock(
+      (select id from ids where name = 'p4'), 'c8520000-0000-4000-8000-000000000002',
+      'c8520000-1000-4000-8000-000000000003', 'cs_852_4', 'pi_852_4', 1900, 'eur', 'evt_852_g4', now()
+    ) grant_row
+  ),
+  '(t,credit)',
+  'an account that became Analyse before the payment gets a credit'
+);
+select ok(
+  not exists (
+    select 1 from public.user_sale_unlocks
+    where user_id = 'c8520000-0000-4000-8000-000000000002'
+      and sale_id = 'c8520000-1000-4000-8000-000000000003'
+  )
+  and app_private.sale_unlock_credits_available('c8520000-0000-4000-8000-000000000002') = 1,
+  'no unlock row is written, the purchase is one credit'
+);
+select is(
+  public.reserve_unit_purchase_deduction('c8520000-0000-4000-8000-000000000002', 'token-852-22222222', now()),
+  1900,
+  'that credit can be deducted from a first month'
+);
+select is(
+  public.settle_unit_purchase_deduction('token-852-22222222', 'cs_analyse_852_2'),
+  1900,
+  'the deduction is settled'
+);
+select is(
+  app_private.sale_unlock_credits_available('c8520000-0000-4000-8000-000000000002'),
+  0,
+  'once deducted, it is no longer a credit'
+);
+
+-- Suppression d'une vente retirée : ce que le retrait a rendu reste rendu --------------------------------
+-- 08 achète la vente 7 ; 09 a débloqué gratuitement la vente 8 ; 10 a débloqué gratuitement la vente 9.
+insert into public.user_sale_unlocks (user_id, sale_id) values
+  ('c8520000-0000-4000-8000-000000000008', 'c8520000-1000-4000-8000-000000000000'),
+  ('c8520000-0000-4000-8000-000000000009', 'c8520000-1000-4000-8000-000000000008'),
+  ('c8520000-0000-4000-8000-000000000010', 'c8520000-1000-4000-8000-000000000009');
+insert into ids
+select 'p8', reservation.purchase_id
+from public.reserve_sale_unlock_purchase(
+  'c8520000-0000-4000-8000-000000000008', 'c8520000-1000-4000-8000-000000000007'
+) reservation;
+select * from public.grant_purchased_sale_unlock(
+  (select id from ids where name = 'p8'), 'c8520000-0000-4000-8000-000000000008',
+  'c8520000-1000-4000-8000-000000000007', 'cs_852_8', 'pi_852_8', 1900, 'eur', 'evt_852_g8', now()
+);
+update public.auction_sales set status = 'withdrawn'
+where id in ('c8520000-1000-4000-8000-000000000007', 'c8520000-1000-4000-8000-000000000008');
+-- La base exige le rattachement au graphe des issues avant toute suppression de fiche (comme la purge).
+select count(*) from public.bridge_auction_sales_to_outcome_graph();
+delete from public.auction_sales
+where id in (
+  'c8520000-1000-4000-8000-000000000007', 'c8520000-1000-4000-8000-000000000008',
+  'c8520000-1000-4000-8000-000000000009'
+);
+
+select ok(
+  (select count(*) from public.user_sale_unlocks where purchase_id = (select id from ids where name = 'p8')) = 0
+  and app_private.sale_unlock_credits_available('c8520000-0000-4000-8000-000000000008') = 1,
+  'a bought sale withdrawn then deleted leaves its purchase a credit'
+);
+select is(
+  app_private.sale_unlocks_used('c8520000-0000-4000-8000-000000000009'),
+  0,
+  'a free unlock of a sale withdrawn then deleted stays given back'
+);
+select ok(
+  app_private.sale_unlocks_used('c8520000-0000-4000-8000-000000000010') = 1
+  and (select count(*) from public.user_sale_unlocks
+        where user_id = 'c8520000-0000-4000-8000-000000000010' and sale_id is null) = 1,
+  'a sale deleted while not withdrawn gives nothing back: its row is detached and keeps counting'
+);
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'c8520000-0000-4000-8000-000000000008';
+select is(
+  (public.redeem_sale_unlock_credit('c8520000-1000-4000-8000-000000000005') ->> 'consumed')::boolean,
+  true,
+  'that credit opens another sale'
+);
+set local "request.jwt.claim.sub" = 'c8520000-0000-4000-8000-000000000001';
+reset role;
 
 -- 24 mois --------------------------------------------------------------------------------------------------
 insert into public.sale_unlock_purchases (

@@ -209,16 +209,24 @@ export async function reserveUnitPurchaseDeduction(
   return Math.min(amount, ANALYSIS_RECURRING_PRICE_CENTS);
 }
 
-/** Checkout d'abonnement payé : la déduction réservée est acquise. */
+/**
+ * Checkout d'abonnement payé : la déduction réservée est acquise. Rend ce que la base a réellement
+ * réglé pour cette session (achats encore payés), plafonné au prix du premier mois.
+ */
 export async function settleUnitPurchaseDeduction(
   token: string,
   checkoutSessionId: string,
-): Promise<void> {
-  const { error } = await supabaseAdmin.rpc("settle_unit_purchase_deduction", {
+): Promise<number> {
+  const { data, error } = await supabaseAdmin.rpc("settle_unit_purchase_deduction", {
     p_token: token,
     p_checkout_session_id: checkoutSessionId,
   });
   if (error) throw rpcFailure(error, "Unit purchase deduction settlement failed.");
+  return z
+    .number()
+    .int()
+    .nonnegative()
+    .parse(data ?? 0);
 }
 
 /** Checkout d'abonnement expiré ou abandonné : la déduction réservée est rendue. */

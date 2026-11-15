@@ -38,8 +38,7 @@ Les mêmes réglages, avec leurs commentaires, sont dans `.env.example`.
 ## Achat d'une vente à l'unité (lot 3, 15/11/2026)
 
 Aucune n'est requise pour le build (`scripts/lib/launch-config.mjs` n'émet que des avertissements) : sans elles,
-l'achat reste fermé et `GET /api/billing/offer` répond `saleUnlock.open: false`. Elles ne figurent pas encore dans
-`.env.example` (hors du périmètre du lot). Procédure : `docs/runbooks/ouverture-paiements.md`, § 8.
+l'achat reste fermé et `GET /api/billing/offer` répond `saleUnlock.open: false`. Elles figurent aussi dans `.env.example`. Procédure : `docs/runbooks/ouverture-paiements.md`, § 8.
 
 | Variable                        | Lue dans                                                   | Valeur et effet                                                                                                                                                                                                                                                                     |
 | ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

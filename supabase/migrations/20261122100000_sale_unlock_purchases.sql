@@ -29,7 +29,9 @@
 --      déblocage « vivant » n'utilise (aucune ligne user_sale_unlocks de cet achat dont la vente n'est pas
 --      « withdrawn » ; une ligne détachée d'une vente purgée reste vivante). Règle unique :
 --      app_private.sale_unlock_credit_purchases. Vente achetée puis retirée : l'achat redevient un crédit,
---      que public.redeem_sale_unlock_credit utilise pour débloquer une autre vente. Un achat ne porte
+--      que public.redeem_sale_unlock_credit utilise pour débloquer une autre vente. La suppression d'une
+--      vente retirée (purge) efface ses lignes de déblocage (app_private.release_unlocks_of_withdrawn_sale) :
+--      le crédit reste, et le déblocage gratuit d'une vente retirée reste rendu. Un achat ne porte
 --      jamais plus d'un déblocage vivant : le crédit utilisé efface la ligne morte (vente retirée) de l'achat.
 --    * 24 MOIS : un déblocage acheté ou par crédit de plus de 24 mois n'ouvre plus la vente (comme un
 --      gratuit) et la purge le supprime ; la ligne d'achat reste. Il ne redevient pas un crédit : un crédit
@@ -39,8 +41,11 @@
 --      un litige gagné rétablit « paid » ; « refunded » (remboursement total) et « dispute_lost » sont
 --      définitifs et suppriment le déblocage de l'achat (ou éteignent son crédit).
 --    * DÉDUCTION : les achats « paid » des 30 derniers jours, non déduits, sont déduits du premier mois
---      d'abonnement Analyse, dans la limite de app_private.unit_purchase_deduction_cap_cents() (5 900).
---      Un achat déduit garde son déblocage mais n'est plus un crédit.
+--      d'abonnement Analyse : du plus ancien au plus récent, tant que le cumul tient sous
+--      app_private.unit_purchase_deduction_cap_cents() (5 900) ; un achat qui dépasserait le plafond reste
+--      non déduit. Le règlement ne déduit que les achats encore « paid » et rend la somme réellement
+--      déduite. Un achat déduit garde son déblocage mais n'est plus un crédit.
+--    * Un compte devenu abonné Analyse avant le paiement reçoit un crédit, pas de déblocage.
 --    * Un achat ne consomme jamais le déblocage gratuit : sale_unlocks_used ne compte que source = 'free'.
 --      release_sale_unlock refuse une ligne achetée ou par crédit (« not_free »).
 -- 4. Prix : une seule source côté base, app_private.sale_unlock_purchase_amount_cents() (1 900) et
@@ -59,7 +64,8 @@
 -- valeur par défaut de la colonne, sans update.
 --
 -- Verrous : création d'une table ; ajout de deux colonnes à user_sale_unlocks et remplacement de deux
--- contraintes de commercial_acceptances (verrous brefs, tables petites) ; redéfinition de fonctions.
+-- contraintes de commercial_acceptances (verrous brefs, tables petites) ; création d'un déclencheur sur
+-- auction_sales (verrou SHARE ROW EXCLUSIVE bref) ; redéfinition de fonctions.
 begin;
 
 set local lock_timeout = '5s';
@@ -754,7 +760,8 @@ comment on function public.expire_sale_unlock_purchase(text) is
 -- and answers the same (granted = the purchase is paid, outcome = what it gave).  Refuses (23514, detail
 -- sale_unlock_purchase_mismatch) a purchase of another account, another sale, another session, an amount
 -- or a currency different from the reservation, or a session / payment intent already recorded for
--- another purchase.  A purchase whose sale was deleted (sale_id null) becomes a credit.
+-- another purchase.  A purchase whose sale was deleted (sale_id null), or paid by an account that has the
+-- Analyse access by then, becomes a credit.
 create or replace function public.grant_purchased_sale_unlock(
   p_purchase_id uuid,
   p_user_id uuid,
@@ -860,7 +867,10 @@ begin
       detail = 'sale_unlock_purchase_mismatch';
   end if;
 
+  -- An account that became Analyse while its Checkout was open already reads every sale: the payment
+  -- leaves a credit (usable once the subscription ends, or deducted from a later first month).
   if v_purchase.sale_id is not null
+    and not app_private.has_active_analysis_access(p_user_id)
     and app_private.sale_is_unlockable(v_purchase.sale_id)
     and not exists (
       select 1
@@ -998,9 +1008,11 @@ comment on function public.record_sale_unlock_payment_state(text, text, text, bi
 -- 7. Déduction du premier mois d'abonnement -----------------------------------------------------------------
 
 -- Reserves for the Analyse checkout p_token the paid purchases of the last 30 days that are not deducted
--- and not reserved by another live token (a reservation lives 31 minutes, like reserve_analyse_checkout).
--- Returns what to take off the first month, capped by unit_purchase_deduction_cap_cents().  Calling again
--- with the same token renews the reservation and answers the same sum.
+-- and not reserved by another live token (a reservation lives 31 minutes, like reserve_analyse_checkout),
+-- oldest first, as long as their running total stays within unit_purchase_deduction_cap_cents(): a
+-- purchase that would exceed the cap is not reserved and stays available (credit, later deduction).
+-- Returns the sum reserved (never above the cap).  Calling again with the same token renews the
+-- reservation.
 create or replace function public.reserve_unit_purchase_deduction(
   p_user_id uuid,
   p_token text,
@@ -1022,19 +1034,37 @@ begin
     pg_catalog.hashtextextended('user_sale_unlocks:' || p_user_id::text, 0)
   );
 
+  -- The previous reservation of the same token is recomputed from scratch.
+  update public.sale_unlock_purchases purchase
+  set deduction_reserved_token = null,
+      deduction_reserved_at = null
+  where purchase.user_id = p_user_id
+    and purchase.deduction_reserved_token = p_token
+    and purchase.deducted_checkout_session_id is null;
+
+  with eligible as (
+    select
+      purchase.id,
+      pg_catalog.sum(purchase.amount_cents) over (
+        order by purchase.paid_at, purchase.id
+      ) as running_total
+    from public.sale_unlock_purchases purchase
+    where purchase.user_id = p_user_id
+      and purchase.state = 'paid'
+      and purchase.deducted_checkout_session_id is null
+      and purchase.paid_at > p_now - interval '30 days'
+      and purchase.paid_at <= p_now
+      and (
+        purchase.deduction_reserved_token is null
+        or purchase.deduction_reserved_at <= p_now - interval '31 minutes'
+      )
+  )
   update public.sale_unlock_purchases purchase
   set deduction_reserved_token = p_token,
       deduction_reserved_at = p_now
-  where purchase.user_id = p_user_id
-    and purchase.state = 'paid'
-    and purchase.deducted_checkout_session_id is null
-    and purchase.paid_at > p_now - interval '30 days'
-    and purchase.paid_at <= p_now
-    and (
-      purchase.deduction_reserved_token is null
-      or purchase.deduction_reserved_token = p_token
-      or purchase.deduction_reserved_at <= p_now - interval '31 minutes'
-    );
+  from eligible
+  where purchase.id = eligible.id
+    and eligible.running_total <= app_private.unit_purchase_deduction_cap_cents();
 
   select coalesce(pg_catalog.sum(purchase.amount_cents), 0)::integer
     into v_total
@@ -1044,7 +1074,7 @@ begin
     and purchase.deducted_checkout_session_id is null
     and purchase.state = 'paid';
 
-  return least(v_total, app_private.unit_purchase_deduction_cap_cents());
+  return v_total;
 end;
 $$;
 
@@ -1054,10 +1084,13 @@ grant execute on function public.reserve_unit_purchase_deduction(uuid, text, tim
   to service_role;
 
 comment on function public.reserve_unit_purchase_deduction(uuid, text, timestamptz) is
-  'Reserves for an Analyse checkout the paid unit purchases of the last 30 days (not deducted, not reserved by another live token) and returns the amount to deduct from the first month, capped at unit_purchase_deduction_cap_cents(). service_role only.';
+  'Reserves for an Analyse checkout the paid unit purchases of the last 30 days (not deducted, not reserved by another live token), oldest first while their running total stays within unit_purchase_deduction_cap_cents(), and returns the sum reserved (the amount to deduct from the first month). service_role only.';
 
--- The Analyse checkout p_token was paid: its reserved purchases are deducted (marked with the session).
--- Returns the amount deducted for that session, capped; replaying answers the same.
+-- The Analyse checkout p_token was paid: its reserved purchases that are STILL paid are deducted (marked
+-- with the session); a reserved purchase refunded or disputed in between is not marked.  Returns the sum of
+-- the purchases deducted for that session: lower than the amount reserved (and granted as a discount)
+-- when a purchase was refunded, disputed or taken by another token meanwhile; the caller compares both.
+-- Replaying answers the same.
 create or replace function public.settle_unit_purchase_deduction(
   p_token text,
   p_checkout_session_id text
@@ -1087,7 +1120,7 @@ begin
   from public.sale_unlock_purchases purchase
   where purchase.deducted_checkout_session_id = p_checkout_session_id;
 
-  return least(v_total, app_private.unit_purchase_deduction_cap_cents());
+  return v_total;
 end;
 $$;
 
@@ -1096,7 +1129,7 @@ revoke all on function public.settle_unit_purchase_deduction(text, text)
 grant execute on function public.settle_unit_purchase_deduction(text, text) to service_role;
 
 comment on function public.settle_unit_purchase_deduction(text, text) is
-  'Marks the purchases reserved by p_token as deducted from the Analyse Checkout Session p_checkout_session_id and returns the amount deducted for that session (capped). Idempotent. service_role only.';
+  'Marks the purchases reserved by p_token that are still paid as deducted from the Analyse Checkout Session p_checkout_session_id and returns the sum actually deducted for that session (to compare with the discount granted). Idempotent. service_role only.';
 
 -- The Analyse checkout p_token was abandoned or failed: its reservation is given back.  Returns the number
 -- of purchases released.
@@ -1130,7 +1163,45 @@ grant execute on function public.release_unit_purchase_deduction(text) to servic
 comment on function public.release_unit_purchase_deduction(text) is
   'Gives back the deduction reservation of an abandoned Analyse checkout; returns the number of purchases released. service_role only.';
 
--- 8. Preuve d'acceptation commerciale -----------------------------------------------------------------------
+-- 8. Suppression d'une vente retirée -------------------------------------------------------------------------
+
+-- A withdrawn sale gives its unlocks back (free unlock available again, bought unlock turned into a credit)
+-- through sale_is_withdrawn, which reads the sale.  Once the sale is deleted (retention purge
+-- public.purge_expired_auction_sales, empty listing cleanup), the row would be detached (sale_id null) and
+-- count again as a used free unlock or a live bought unlock: the account would lose what the withdrawal
+-- gave back.  Before a withdrawn sale is deleted, its unlock rows are therefore deleted, whatever their
+-- source: the free unlock stays given back, the purchase stays a credit.  A sale deleted while not
+-- withdrawn is unchanged (its rows are detached and keep counting until their 24 months).
+-- Same kind of ordinary "before delete" trigger as auction_sales_carry_sale_unlocks (20261023110000),
+-- which fires first (name order) and moves the unlocks of a merged duplicate to the sale kept: those
+-- unlocks are not given back.  Every production deletion of a sale is a plain DELETE that fires it.
+create or replace function app_private.release_unlocks_of_withdrawn_sale()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if old.status = 'withdrawn' then
+    delete from public.user_sale_unlocks unlock_row
+    where unlock_row.sale_id = old.id;
+  end if;
+  return old;
+end;
+$$;
+
+revoke all on function app_private.release_unlocks_of_withdrawn_sale()
+  from public, anon, authenticated;
+
+drop trigger if exists auction_sales_release_withdrawn_unlocks on public.auction_sales;
+create trigger auction_sales_release_withdrawn_unlocks
+before delete on public.auction_sales
+for each row execute function app_private.release_unlocks_of_withdrawn_sale();
+
+comment on function app_private.release_unlocks_of_withdrawn_sale() is
+  'Before a withdrawn sale is deleted, deletes its unlock rows so that the withdrawal keeps giving them back: the free unlock stays available, a bought or credit unlock leaves its purchase a credit.';
+
+-- 9. Preuve d'acceptation commerciale -----------------------------------------------------------------------
 
 alter table public.commercial_acceptances
   drop constraint if exists commercial_acceptances_purpose_check,

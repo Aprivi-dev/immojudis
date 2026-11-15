@@ -276,8 +276,32 @@ session) : un remboursement ou un litige d'achat ne touche **jamais** l'abonneme
 | 6   | Souscription Analyse ensuite | Le premier mois porte la remise des achats des 30 derniers jours (au plus 59 €), pas les suivants                                               |
 | 7   | Interrupteur retiré          | Bouton d'achat absent, `POST /api/billing/sale-unlock-checkout` en 503                                                                          |
 
+### Avant de rembourser un achat à l'unité
+
+Un achat payé depuis moins de 30 jours a pu être **déduit du premier mois** d'un abonnement Analyse : le
+rembourser donnerait au client la remise et le remboursement. Avant tout remboursement d'un achat (Stripe →
+Paiement → Rembourser), vérifier en lecture seule :
+
+```sql
+select id, state, paid_at, deducted_checkout_session_id
+from public.sale_unlock_purchases
+where payment_intent_id = '<pi_…>';
+```
+
+- `deducted_checkout_session_id` vide : rembourser normalement.
+- `deducted_checkout_session_id` posé : l'achat a déjà servi de remise. Ne pas rembourser l'achat seul ;
+  décider (propriétaire) entre ne rien rembourser, ou rembourser l'achat et récupérer la remise (remboursement
+  partiel de la première facture d'abonnement réduit d'autant, ou facture complémentaire). Noter la décision
+  dans la demande du client.
+
+Un litige ouvert sur un achat déduit est signalé de la même façon par le rapprochement (ci-dessous) : le
+traiter avec la même règle.
+
 ### Rapprochement
 
 `/api/cron/billing-reconciliation` signale, quand le Price de l'achat est posé : `sale_unlock_paid_without_purchase`
 (session payée chez Stripe depuis plus de 2 heures, sans achat payé en base : rejouer l'événement depuis Stripe →
-Webhooks) et `sale_unlock_deducted_then_refunded` (achat déduit d'un premier mois puis remboursé : décision humaine).
+Webhooks) et `sale_unlock_deducted_then_refunded` (achat déduit d'un premier mois puis remboursé, contesté ou
+perdu en litige : décision humaine, voir ci-dessus). Au paiement d'un premier mois, le webhook journalise aussi
+`unit_deduction_settlement_mismatch` (journaux Vercel, préfixe `[billing]`) quand la base a réglé moins d'achats
+que le bon appliqué (achat remboursé ou contesté entre le checkout et le paiement) : même décision humaine.

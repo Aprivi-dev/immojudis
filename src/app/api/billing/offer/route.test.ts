@@ -20,6 +20,8 @@ vi.mock("@/lib/analysis-checkout-readiness", () => ({
 }));
 vi.mock("@/lib/billing", () => ({
   resolveAnalysisCheckoutAvailability: mocks.availability,
+}));
+vi.mock("@/lib/billing-unit-deduction", () => ({
   previewFirstMonthDeductionCents: mocks.deduction,
 }));
 vi.mock("@/lib/sale-unlock-checkout-readiness", () => ({
