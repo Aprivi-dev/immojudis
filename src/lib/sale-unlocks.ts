@@ -271,6 +271,10 @@ export const SALE_PURCHASE_PENDING_TEXT = "Paiement reçu. L’ouverture de la v
 export const SALE_PURCHASE_DELAYED_TEXT =
   "Paiement reçu, mais l’ouverture de la vente n’est pas encore confirmée. Rechargez la page dans quelques minutes. Si la vente n’est toujours pas ouverte, écrivez-nous depuis la page Contact en indiquant cette vente.";
 
+/** Retour du paiement : la vente n'était plus disponible, l'achat est devenu un crédit. */
+export const SALE_PURCHASE_CREDITED_TEXT =
+  "Paiement reçu. Cette vente n’était plus disponible : votre achat est devenu un crédit pour débloquer une autre vente.";
+
 /** Un montant en centimes, écrit comme un prix : « 19 € », « 40,50 € ». */
 export function formatEuroCents(cents: number): string {
   return new Intl.NumberFormat("fr-FR", {

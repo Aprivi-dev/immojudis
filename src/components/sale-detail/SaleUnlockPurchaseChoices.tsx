@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Badge, Button, buttonClasses } from "@/components/ui/primitives";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import type { SaleUnlockPurchaseOfferState } from "@/hooks/use-sale-unlock-purchase-offer";
+import { rememberCreditsBeforePurchase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { saleUnlockCheckoutRefusalCode, startSaleUnlockCheckout } from "@/lib/client-billing";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
@@ -30,11 +31,14 @@ type ReadyOffer = Extract<SaleUnlockPurchaseOfferState, { status: "ready" }> & {
  */
 export function SaleUnlockPurchaseChoices({
   saleId,
+  credits,
   offer,
   onConflict,
   onAnnounce,
 }: {
   saleId: string;
+  /** Crédits du compte avant le paiement : au retour, un crédit de plus dit que l'achat en est devenu un. */
+  credits: number;
   offer: ReadyOffer;
   /** Le serveur a refusé l'achat (409) : le message à montrer ; la fiche relit la situation. */
   onConflict: (text: string) => void;
@@ -103,6 +107,7 @@ export function SaleUnlockPurchaseChoices({
           withdrawalWaiverAcknowledged: true,
         },
       });
+      rememberCreditsBeforePurchase(saleId, credits);
       window.location.assign(url);
     } catch (failure) {
       const code = saleUnlockCheckoutRefusalCode(failure);
