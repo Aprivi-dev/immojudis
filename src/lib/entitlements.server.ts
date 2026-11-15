@@ -34,7 +34,7 @@ const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
   savedReports: null,
   reportEditing: "full",
   favoriteSales: null,
-  monthlyUnlocks: null,
+  saleUnlocks: null,
   watchedZones: null,
   saleAnalysisSets: null,
   saleAnalysisItems: null,

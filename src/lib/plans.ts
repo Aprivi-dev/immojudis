@@ -52,11 +52,12 @@ export type PlanLimits = {
   /** Favoris du compte gratuit : égal à `app_private.free_favorite_limit()` en base (un test les compare). */
   favoriteSales: number | null;
   /**
-   * Ventes qu'un compte peut débloquer par mois civil (heure de Paris). Source unique du
-   * chiffre : les textes (offres, CGV, fiche) et la base de données (`monthly_sale_unlock_limit`)
-   * le reprennent, un test les compare. `null` : pas de déblocage à faire (accès complet).
+   * Ventes qu'un compte peut débloquer en tout, sans remise à zéro (un déblocage rendu, vente
+   * retirée avant d'avoir lieu, redevient disponible). Source unique du chiffre : les textes
+   * (offres, CGV, fiche) et la base de données (`app_private.free_sale_unlock_limit()`) le
+   * reprennent, un test les compare. `null` : pas de déblocage à faire (accès complet).
    */
-  monthlyUnlocks: number | null;
+  saleUnlocks: number | null;
   watchedZones: number | null;
   saleAnalysisSets: number | null;
   saleAnalysisItems: number | null;
@@ -159,7 +160,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: 0,
     reportEditing: "limited",
     favoriteSales: 10,
-    monthlyUnlocks: 3,
+    saleUnlocks: 1,
     watchedZones: 1,
     saleAnalysisSets: 1,
     saleAnalysisItems: 3,
@@ -172,7 +173,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: null,
     reportEditing: "full",
     favoriteSales: null,
-    monthlyUnlocks: null,
+    saleUnlocks: null,
     watchedZones: 25,
     saleAnalysisSets: 20,
     saleAnalysisItems: 12,
