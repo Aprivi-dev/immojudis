@@ -1,6 +1,6 @@
 /**
- * Phrase du déblocage du compte gratuit déjà utilisé : la réponse 409 de `POST /api/sales/[id]/unlock` et
- * l'erreur qu'en tire le client. Module à part plutôt que dans `sale-unlocks.ts` : ce dernier est
+ * Phrase du déblocage du compte gratuit déjà utilisé : la réponse 409 de
+ * `POST /api/sales/[id]/unlock` et l'erreur qu'en tire le client. Module à part plutôt que dans `sale-unlocks.ts` : ce dernier est
  * chargé par des pages qui ne débloquent rien (l'annonce d'exemple), qui recevraient la phrase.
  */
 export const SALE_UNLOCK_QUOTA_MESSAGE = "Votre compte gratuit a déjà débloqué une vente.";
