@@ -1,6 +1,5 @@
-import { useBillingOffer } from "@/hooks/use-billing-offer";
+import { useBillingOffer, type SaleUnlockPurchase } from "@/hooks/use-billing-offer";
 import { analysisOfferLabelAmountsCents, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import type { SaleUnlockPurchaseOffer } from "@/lib/sale-unlocks";
 
 /**
  * Ce que la fiche peut proposer à un compte gratuit dont le déblocage a servi : l'abonnement (s'il se
@@ -19,7 +18,7 @@ export type SaleUnlockPurchaseOfferState =
       /** Prix mensuel lu dans ce libellé, en centimes ; `null` s'il ne s'y lit pas. */
       analysisCents: number | null;
       /** L'achat à l'unité ; `null` tant qu'il n'est pas ouvert. */
-      purchase: Pick<SaleUnlockPurchaseOffer, "label" | "amountCents"> | null;
+      purchase: SaleUnlockPurchase | null;
       firstMonthDeductionCents: number;
     };
 

@@ -11,10 +11,7 @@ import { SaleUnlockPurchaseChoices } from "@/components/sale-detail/SaleUnlockPu
 import type { SalePurchaseReturnPhase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
-import {
-  resolveAnalysisOfferLabel,
-  type SaleUnlockPurchaseRefusalCode,
-} from "@/lib/analysis-offer";
+import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { analysisSubscriptionTerms } from "@/lib/analysis-subscription-terms";
 import { UNLOCKED_SALES_PATH } from "@/lib/navigation";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
@@ -309,7 +306,7 @@ export function SaleUnlockPanel({
   // through the same route and the same two-step confirmation.
   const withCredit = exhausted && (current.credits ?? 0) > 0;
 
-  function refusePurchase(_code: SaleUnlockPurchaseRefusalCode, text: string) {
+  function refusePurchase(text: string) {
     setNotice(text);
     setLive(text);
     onStatusStale?.();
@@ -482,7 +479,7 @@ function ExhaustedNotice({
   onAnnounce,
 }: {
   saleId: string;
-  onConflict: (code: SaleUnlockPurchaseRefusalCode, text: string) => void;
+  onConflict: (text: string) => void;
   onAnnounce: (text: string) => void;
 }) {
   const offer = useSaleUnlockPurchaseOffer();

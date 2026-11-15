@@ -3,13 +3,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { analysisOfferOpen } from "@/lib/analysis-offer-open";
 import { fetchBillingOffer, type BillingOfferResponse } from "@/lib/client-billing";
 import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
-import type { SaleUnlockPurchaseOffer } from "@/lib/sale-unlocks";
 
 /**
  * What the page knows about the Analyse offer.  `loading` and `error` are kept
  * apart from a closed offer: a slow or failed request must never read as
  * "subscriptions are not open".
  */
+/** L'achat d'une vente à l'unité tel que la page peut le proposer : prix affiché et montant. */
+export type SaleUnlockPurchase = Pick<BillingOfferResponse["saleUnlock"], "label" | "amountCents">;
+
 export type BillingOfferState =
   | { status: "loading" }
   | { status: "error" }
@@ -25,7 +27,7 @@ export type BillingOfferState =
        * Achat d'une vente à l'unité, seulement quand il peut vraiment se faire (ouvert sur le serveur,
        * identité légale publiée, montant lisible) ; `null` sinon : rien ne le propose.
        */
-      saleUnlock: Pick<SaleUnlockPurchaseOffer, "label" | "amountCents"> | null;
+      saleUnlock: SaleUnlockPurchase | null;
       /** Ce que le serveur déduirait du premier mois d'abonnement (compte connecté) ; 0 sinon. */
       firstMonthDeductionCents: number;
     };
@@ -35,28 +37,18 @@ export type BillingOfferSource = {
   reload: () => void;
 };
 
-/**
- * PROVISOIRE : les deux champs que la zone B ajoute à la réponse de `GET /api/billing/offer`. À
- * retirer quand `BillingOfferResponse` (`src/lib/client-billing.ts`) les déclare.
- */
-type OfferWithSaleUnlock = BillingOfferResponse & {
-  saleUnlock?: SaleUnlockPurchaseOffer | null;
-  firstMonthDeductionCents?: number | null;
-};
-
 /** L'achat à l'unité se propose : ouvert, éditeur identifié (comme l'abonnement), montant lisible. */
-function openSaleUnlockPurchase(
-  response: OfferWithSaleUnlock,
-): Pick<SaleUnlockPurchaseOffer, "label" | "amountCents"> | null {
-  const offer = response.saleUnlock;
+function openSaleUnlockPurchase(response: BillingOfferResponse): SaleUnlockPurchase | null {
+  // Une réponse d'avant l'achat à l'unité (cache du CDN pendant un déploiement) n'a pas ces champs.
+  const offer = response.saleUnlock as BillingOfferResponse["saleUnlock"] | undefined;
   if (offer?.open !== true || !legalPublisherConfigurationStatus().ready) return null;
   const label = typeof offer.label === "string" ? offer.label.trim() : "";
   if (!label || !Number.isInteger(offer.amountCents) || offer.amountCents <= 0) return null;
   return { label, amountCents: offer.amountCents };
 }
 
-function firstMonthDeduction(response: OfferWithSaleUnlock): number {
-  const cents = response.firstMonthDeductionCents;
+function firstMonthDeduction(response: BillingOfferResponse): number {
+  const cents: unknown = response.firstMonthDeductionCents;
   return typeof cents === "number" && Number.isInteger(cents) && cents > 0 ? cents : 0;
 }
 

@@ -1,5 +1,4 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -8,6 +7,7 @@ import {
   type SaleUnlockPurchaseRefusalCode,
   UNIT_PURCHASE_DEDUCTION_WINDOW_DAYS,
 } from "@/lib/analysis-offer";
+import type { SaleUnlockCheckoutRefusal } from "@/lib/client-billing";
 
 /**
  * Achat du déblocage d'une vente à l'unité : les appels à la base (lot 3, 15/11/2026). La base
@@ -15,22 +15,10 @@ import {
  * module ne fait que l'appeler avec le client de service. Aucun appel Stripe ici : la session et le
  * webhook sont dans `billing.ts`.
  *
- * Les fonctions et la table viennent de la migration `20261122100000_sale_unlock_purchases.sql` et ne
- * figurent pas encore dans les types générés (`src/integrations/supabase/types.ts`) : elles sont
- * appelées à travers `untypedAdmin` et leurs réponses sont lues par zod. Une fois les types régénérés,
- * `untypedAdmin` peut céder la place à `supabaseAdmin`.
+ * Fonctions et table : migration `20261122100000_sale_unlock_purchases.sql`.
  */
 
 type RpcError = { message?: string; code?: string; details?: string | null };
-
-/** Le client de service sans les types générés, pour les fonctions et la table pas encore typées. */
-function untypedAdmin(): SupabaseClient {
-  return supabaseAdmin as unknown as SupabaseClient;
-}
-
-function callRpc(name: string, args: Record<string, unknown>) {
-  return untypedAdmin().rpc(name, args);
-}
 
 function rpcFailure(error: RpcError, fallback: string): Error {
   return new Error(error.message || fallback);
@@ -46,14 +34,17 @@ const REFUSAL_MESSAGES: Record<SaleUnlockPurchaseRefusalCode, string> = {
   sale_not_unlockable: "Cette vente n’est plus débloquable.",
 };
 
-/** Refus de la base, rendu en 409 `{ error, code }` par la route. */
+/** Refus de la base, rendu en 409 par la route avec `refusal` pour corps. */
 export class SaleUnlockPurchaseRefusedError extends Error {
   readonly code: SaleUnlockPurchaseRefusalCode;
+  /** Corps du 409 : message écrit pour le client et code du refus. */
+  readonly refusal: SaleUnlockCheckoutRefusal;
 
   constructor(code: SaleUnlockPurchaseRefusalCode) {
     super(REFUSAL_MESSAGES[code]);
     this.name = "SaleUnlockPurchaseRefusedError";
     this.code = code;
+    this.refusal = { error: REFUSAL_MESSAGES[code], code };
   }
 }
 
@@ -65,7 +56,7 @@ function refusalCode(error: RpcError): SaleUnlockPurchaseRefusalCode | null {
 }
 
 const reservationSchema = z.object({
-  purchase_id: z.string().uuid(),
+  purchase_id: z.string().guid(),
   existing_session_id: z.string().nullable(),
 });
 
@@ -77,7 +68,7 @@ export async function reserveSaleUnlockPurchase(
   userId: string,
   saleId: string,
 ): Promise<{ purchaseId: string; existingSessionId: string | null }> {
-  const { data, error } = await callRpc("reserve_sale_unlock_purchase", {
+  const { data, error } = await supabaseAdmin.rpc("reserve_sale_unlock_purchase", {
     p_user_id: userId,
     p_sale_id: saleId,
   });
@@ -99,7 +90,7 @@ export async function attachSaleUnlockCheckout(
   checkoutSessionId: string,
   commercialAcceptanceId: string,
 ): Promise<boolean> {
-  const { data, error } = await callRpc("attach_sale_unlock_checkout", {
+  const { data, error } = await supabaseAdmin.rpc("attach_sale_unlock_checkout", {
     p_purchase_id: purchaseId,
     p_checkout_session_id: checkoutSessionId,
     p_commercial_acceptance_id: commercialAcceptanceId,
@@ -142,7 +133,7 @@ export async function grantPurchasedSaleUnlock(args: {
   eventId: string;
   paidAt: string;
 }): Promise<SaleUnlockGrant> {
-  const { data, error } = await callRpc("grant_purchased_sale_unlock", {
+  const { data, error } = await supabaseAdmin.rpc("grant_purchased_sale_unlock", {
     p_purchase_id: args.purchaseId,
     p_user_id: args.userId,
     p_sale_id: args.saleId,
@@ -168,7 +159,7 @@ export async function grantPurchasedSaleUnlock(args: {
  * le compte peut réserver de nouveau. Vrai quand un achat a été expiré.
  */
 export async function expireSaleUnlockPurchase(checkoutSessionId: string): Promise<boolean> {
-  const { data, error } = await callRpc("expire_sale_unlock_purchase", {
+  const { data, error } = await supabaseAdmin.rpc("expire_sale_unlock_purchase", {
     p_checkout_session_id: checkoutSessionId,
   });
   if (error) throw rpcFailure(error, "Sale unlock purchase expiry failed.");
@@ -184,7 +175,7 @@ export async function recordSaleUnlockPaymentState(args: {
   eventId: string;
   eventCreated: number;
 }): Promise<boolean> {
-  const { data, error } = await callRpc("record_sale_unlock_payment_state", {
+  const { data, error } = await supabaseAdmin.rpc("record_sale_unlock_payment_state", {
     p_payment_intent_id: args.paymentIntentId,
     p_state: args.state,
     p_event_id: args.eventId,
@@ -204,7 +195,7 @@ export async function reserveUnitPurchaseDeduction(
   token: string,
   now: Date,
 ): Promise<number> {
-  const { data, error } = await callRpc("reserve_unit_purchase_deduction", {
+  const { data, error } = await supabaseAdmin.rpc("reserve_unit_purchase_deduction", {
     p_user_id: userId,
     p_token: token,
     p_now: now.toISOString(),
@@ -223,7 +214,7 @@ export async function settleUnitPurchaseDeduction(
   token: string,
   checkoutSessionId: string,
 ): Promise<void> {
-  const { error } = await callRpc("settle_unit_purchase_deduction", {
+  const { error } = await supabaseAdmin.rpc("settle_unit_purchase_deduction", {
     p_token: token,
     p_checkout_session_id: checkoutSessionId,
   });
@@ -232,7 +223,7 @@ export async function settleUnitPurchaseDeduction(
 
 /** Checkout d'abonnement expiré ou abandonné : la déduction réservée est rendue. */
 export async function releaseUnitPurchaseDeduction(token: string): Promise<void> {
-  const { error } = await callRpc("release_unit_purchase_deduction", { p_token: token });
+  const { error } = await supabaseAdmin.rpc("release_unit_purchase_deduction", { p_token: token });
   if (error) throw rpcFailure(error, "Unit purchase deduction release failed.");
 }
 
@@ -251,7 +242,7 @@ export async function previewUnitPurchaseDeductionCents(
   now: Date = new Date(),
 ): Promise<number> {
   const since = new Date(now.getTime() - UNIT_PURCHASE_DEDUCTION_WINDOW_DAYS * 86_400_000);
-  const { data, error } = await untypedAdmin()
+  const { data, error } = await supabaseAdmin
     .from("sale_unlock_purchases")
     .select("amount_cents")
     .eq("user_id", userId)

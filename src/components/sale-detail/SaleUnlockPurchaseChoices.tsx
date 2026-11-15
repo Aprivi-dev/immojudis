@@ -4,18 +4,16 @@ import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge, Button, buttonClasses } from "@/components/ui/primitives";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
-import { startSaleUnlockCheckout } from "@/components/sale-detail/sale-unlock-checkout-request";
 import type { SaleUnlockPurchaseOfferState } from "@/hooks/use-sale-unlock-purchase-offer";
+import { saleUnlockCheckoutRefusalCode, startSaleUnlockCheckout } from "@/lib/client-billing";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
-  isSaleUnlockPurchaseRefusalCode,
   SALE_PURCHASE_CONSENT_MISSING_TEXT,
   SALE_PURCHASE_CREDIT_REMINDER,
   SALE_PURCHASE_IMMEDIATE_ACCESS_TEXT,
   SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
   saleUnlockPurchaseChoiceTexts,
 } from "@/lib/sale-unlocks";
-import type { SaleUnlockPurchaseRefusalCode } from "@/lib/analysis-offer";
 import { userMessage } from "@/lib/user-messages";
 
 type ReadyOffer = Extract<SaleUnlockPurchaseOfferState, { status: "ready" }> & {
@@ -39,7 +37,7 @@ export function SaleUnlockPurchaseChoices({
   saleId: string;
   offer: ReadyOffer;
   /** Le serveur a refusé l'achat (409) : le message à montrer ; la fiche relit la situation. */
-  onConflict: (code: SaleUnlockPurchaseRefusalCode, text: string) => void;
+  onConflict: (text: string) => void;
   /** Texte à annoncer aux lecteurs d'écran (région `aria-live` de la carte). */
   onAnnounce: (text: string) => void;
 }) {
@@ -107,10 +105,10 @@ export function SaleUnlockPurchaseChoices({
       });
       window.location.assign(url);
     } catch (failure) {
-      const { status, code } = (failure ?? {}) as { status?: unknown; code?: unknown };
-      if (status === 409 && isSaleUnlockPurchaseRefusalCode(code)) {
+      const code = saleUnlockCheckoutRefusalCode(failure);
+      if (code) {
         setStep("idle");
-        onConflict(code, SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS[code]);
+        onConflict(SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS[code]);
         return;
       }
       setStep("consent");
