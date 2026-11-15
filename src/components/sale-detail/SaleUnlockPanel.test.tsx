@@ -901,7 +901,11 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     expect(headings).toEqual(["Toutes les ventes pendant un mois : 59 €", "Cette vente : 19 €"]);
     const text = bodyText();
     expect(text).toContain("Recommandée");
-    expect(text).toContain("Sans engagement, soit le prix de trois ventes à l’unité.");
+    expect(text).toContain(
+      "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
+    );
+    // 3 × 19 € = 57 € ne dépasse pas 59 € ; 4 × 19 € = 76 € le dépasse.
+    expect(text).not.toContain("trois ventes");
     expect(text).toContain(
       "Paiement unique. L’analyse complète de cette vente, tant qu’elle est en ligne (24 mois au plus).",
     );
@@ -930,7 +934,7 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     expect(text).not.toContain("Si vous vous abonnez dans les 30 jours");
   });
 
-  it("writes no amount by hand: another price changes every text, and the comparison only if true", () => {
+  it("writes no amount by hand: another price changes every text, and the exact threshold", () => {
     openPurchase("25 €", 2500);
     mocks.analysisLabel = "99 € TTC / mois";
     render(
@@ -943,9 +947,10 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     const text = bodyText();
     expect(text).toContain("Acheter cette vente : 25 €");
     expect(text).toContain("ces 25 € sont déduits");
-    // 3 × 25 € = 75 € : far from 99 €, the sentence is not shown.
-    expect(text).not.toContain("trois ventes");
-    expect(text).toContain("Sans engagement.");
+    // 3 × 25 € = 75 € ≤ 99 € < 4 × 25 € = 100 € : four sales.
+    expect(text).toContain(
+      "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
+    );
     expect(text).not.toMatch(/19 €|59 €/);
   });
 

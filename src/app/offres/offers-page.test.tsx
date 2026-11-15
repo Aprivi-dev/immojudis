@@ -731,7 +731,7 @@ describe("page Offres : achat d'une vente à l'unité", () => {
     expect(line.textContent).toBe("Vente supplémentaire à l’unité : 19 €");
     expect(line.closest("article")?.getAttribute("aria-labelledby")).toBe("offre-Découverte");
     expect(screen.getByTestId("offers-sale-purchase-note").textContent).toBe(
-      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de trois ventes, l’abonnement revient moins cher.",
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de quatre ventes, l’abonnement revient moins cher.",
     );
     const table = screen.getByRole("table", {
       name: "Comparaison des offres Découverte et Analyse",
@@ -740,7 +740,7 @@ describe("page Offres : achat d'une vente à l'unité", () => {
     expect(plain(row.closest("tr")?.textContent)).toContain("19 €");
   });
 
-  it("le prix suit l'offre lue, et la comparaison avec trois ventes n'est dite que si elle est vraie", async () => {
+  it("le prix suit l'offre lue, et le seuil de la comparaison suit l'arithmétique des prix", async () => {
     mocks.offer.mockResolvedValue({
       configured: true,
       trialAvailable: true,
@@ -751,8 +751,9 @@ describe("page Offres : achat d'une vente à l'unité", () => {
     expect((await screen.findByTestId("offers-sale-purchase-line")).textContent).toBe(
       "Vente supplémentaire à l’unité : 12 €",
     );
+    // 4 × 12 € = 48 € ≤ 59 € < 5 × 12 € = 60 €.
     expect(screen.getByTestId("offers-sale-purchase-note").textContent).toBe(
-      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité.",
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de cinq ventes, l’abonnement revient moins cher.",
     );
   });
 

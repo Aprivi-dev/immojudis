@@ -282,18 +282,41 @@ export function formatEuroCents(cents: number): string {
 }
 
 /**
- * Règle de vérité des phrases qui rapprochent l'abonnement de trois ventes à l'unité : trois achats
- * coûtent au moins le prix d'un mois d'abonnement, à 5 % près. Fausse dès qu'un montant manque.
+ * Le plus petit nombre de ventes à l'unité dont le total dépasse strictement le prix d'un mois
+ * d'abonnement : à partir de là, l'abonnement revient moins cher (19 € et 59 € : 4, car 3 × 19 € =
+ * 57 €). `null` quand un montant manque ou n'est pas un prix positif : aucune comparaison n'est dite.
  */
-export function threeSalesMatchSubscription({
+export function subscriptionCheaperFrom({
   unitCents,
   subscriptionCents,
 }: {
   unitCents: number;
   subscriptionCents: number | null;
-}): boolean {
-  if (!(unitCents > 0) || subscriptionCents == null || !(subscriptionCents > 0)) return false;
-  return 3 * unitCents >= subscriptionCents * 0.95;
+}): number | null {
+  if (!Number.isFinite(unitCents) || unitCents <= 0) return null;
+  if (subscriptionCents == null || !Number.isFinite(subscriptionCents) || subscriptionCents <= 0) {
+    return null;
+  }
+  return Math.floor(subscriptionCents / unitCents) + 1;
+}
+
+const NUMBER_WORDS = ["deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+
+/** « À partir de quatre ventes » : de deux à dix en lettres, au-delà en chiffres. */
+function fromSalesText(count: number): string {
+  if (count === 1) return "À partir d’une vente";
+  return `À partir de ${NUMBER_WORDS[count - 2] ?? String(count)} ventes`;
+}
+
+/** La phrase de comparaison, ou `null` quand le seuil ne se calcule pas. */
+function cheaperFromSentence(
+  prices: { unitCents: number; subscriptionCents: number | null },
+  unitWording: string,
+): string | null {
+  const count = subscriptionCheaperFrom(prices);
+  return count == null
+    ? null
+    : `${fromSalesText(count)}${unitWording}, l’abonnement revient moins cher.`;
 }
 
 /** Les textes des deux choix de la fiche (abonnement, puis cette vente). */
@@ -331,12 +354,12 @@ export function saleUnlockPurchaseChoiceTexts({
   const deduction = Math.max(0, firstMonthDeductionCents);
   return {
     subscriptionTitle: `Toutes les ventes pendant un mois : ${monthly ?? subscriptionLabel}`,
-    subscriptionText: threeSalesMatchSubscription({
-      unitCents: unit.amountCents,
-      subscriptionCents,
-    })
-      ? "Sans engagement, soit le prix de trois ventes à l’unité."
-      : "Sans engagement.",
+    subscriptionText: [
+      "Sans engagement.",
+      cheaperFromSentence({ unitCents: unit.amountCents, subscriptionCents }, " à l’unité"),
+    ]
+      .filter(Boolean)
+      .join(" "),
     subscriptionDeduction:
       deduction > 0 && subscriptionCents != null && monthly
         ? `Vos achats à l’unité des 30 derniers jours sont déduits : ${formatEuroCents(
@@ -366,8 +389,8 @@ export function salePurchaseOfferLine(label: string): string {
 }
 
 /**
- * Sous les cartes de /offres, achat ouvert. La seconde phrase suit la même règle de vérité que la
- * fiche (`threeSalesMatchSubscription`).
+ * Sous les cartes de /offres, achat ouvert. La seconde phrase suit le même calcul que la fiche
+ * (`subscriptionCheaperFrom`).
  */
 export function salePurchaseOffersNote({
   unitCents,
@@ -377,7 +400,6 @@ export function salePurchaseOffersNote({
   subscriptionCents: number | null;
 }): string {
   const first = "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité.";
-  return threeSalesMatchSubscription({ unitCents, subscriptionCents })
-    ? `${first} À partir de trois ventes, l’abonnement revient moins cher.`
-    : first;
+  const comparison = cheaperFromSentence({ unitCents, subscriptionCents }, "");
+  return comparison ? `${first} ${comparison}` : first;
 }

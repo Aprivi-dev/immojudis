@@ -8,7 +8,7 @@ import {
   salePurchaseOfferLine,
   salePurchaseOffersNote,
   saleUnlockPurchaseChoiceTexts,
-  threeSalesMatchSubscription,
+  subscriptionCheaperFrom,
   unlockCreditsLine,
   unlockSourceLabel,
 } from "@/lib/sale-unlocks";
@@ -22,13 +22,39 @@ describe("achat d'une vente à l'unité : textes", () => {
     expect(plain(formatEuroCents(0))).toBe("0 €");
   });
 
-  it("ne rapproche trois ventes de l'abonnement que si c'est vrai, à 5 % près", () => {
-    expect(threeSalesMatchSubscription({ unitCents: 1900, subscriptionCents: 5900 })).toBe(true);
-    // 3 × 18,68 € = 56,04 € < 95 % de 59 € (56,05 €).
-    expect(threeSalesMatchSubscription({ unitCents: 1868, subscriptionCents: 5900 })).toBe(false);
-    expect(threeSalesMatchSubscription({ unitCents: 2500, subscriptionCents: 9900 })).toBe(false);
-    expect(threeSalesMatchSubscription({ unitCents: 1900, subscriptionCents: null })).toBe(false);
-    expect(threeSalesMatchSubscription({ unitCents: 0, subscriptionCents: 5900 })).toBe(false);
+  it("calcule à partir de combien de ventes l'abonnement revient strictement moins cher", () => {
+    const from = (unitCents: number, subscriptionCents: number | null) =>
+      subscriptionCheaperFrom({ unitCents, subscriptionCents });
+    expect(from(1900, 5900)).toBe(4);
+    expect(from(2000, 6000)).toBe(4);
+    expect(from(3000, 5900)).toBe(2);
+    for (const unit of [0, -1900, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(from(unit, 5900)).toBeNull();
+    }
+    expect(from(1900, null)).toBeNull();
+    expect(from(1900, 0)).toBeNull();
+  });
+
+  it("n'affiche jamais une phrase que l'arithmétique des prix contredit", () => {
+    const words = ["deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+    for (const unitCents of [500, 999, 1200, 1900, 2000, 2500, 3000, 5900, 7000]) {
+      for (const subscriptionCents of [2900, 5900, 6000, 9900]) {
+        const sentence = saleUnlockPurchaseChoiceTexts({
+          unit: { label: "x", amountCents: unitCents },
+          subscriptionLabel: "x",
+          subscriptionCents,
+          firstMonthDeductionCents: 0,
+        }).subscriptionText;
+        const match = /À partir (?:d’une vente|de (\S+) ventes) à l’unité/.exec(sentence);
+        expect(match, sentence).not.toBeNull();
+        const count = match![1] == null ? 1 : words.indexOf(match![1]) + 2 || Number(match![1]);
+        // Le total de `count` ventes dépasse le mois ; celui de `count - 1` ne le dépasse pas.
+        expect(count * unitCents, sentence).toBeGreaterThan(subscriptionCents);
+        expect((count - 1) * unitCents, sentence).toBeLessThanOrEqual(subscriptionCents);
+        const note = salePurchaseOffersNote({ unitCents, subscriptionCents });
+        expect(note).toContain(sentence.replace("Sans engagement. ", "").replace(" à l’unité", ""));
+      }
+    }
   });
 
   it("compose les deux choix à partir des montants reçus, jamais écrits à la main", () => {
@@ -39,7 +65,9 @@ describe("achat d'une vente à l'unité : textes", () => {
       firstMonthDeductionCents: 0,
     });
     expect(plain(texts.subscriptionTitle)).toBe("Toutes les ventes pendant un mois : 59 €");
-    expect(texts.subscriptionText).toBe("Sans engagement, soit le prix de trois ventes à l’unité.");
+    expect(texts.subscriptionText).toBe(
+      "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
+    );
     expect(texts.subscriptionDeduction).toBeNull();
     expect(texts.saleTitle).toBe("Cette vente : 19 €");
     expect(texts.saleDeduction).toBe(
@@ -83,12 +111,16 @@ describe("achat d'une vente à l'unité : textes", () => {
     expect(texts.subscriptionDeduction).toBeNull();
   });
 
-  it("donne une ligne et une phrase pour /offres, la seconde phrase seulement si elle est vraie", () => {
+  it("donne une ligne et une phrase pour /offres, la comparaison seulement si elle se calcule", () => {
     expect(salePurchaseOfferLine("19 €")).toBe("Vente supplémentaire à l’unité : 19 €");
     expect(salePurchaseOffersNote({ unitCents: 1900, subscriptionCents: 5900 })).toBe(
-      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de trois ventes, l’abonnement revient moins cher.",
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de quatre ventes, l’abonnement revient moins cher.",
     );
-    expect(salePurchaseOffersNote({ unitCents: 1000, subscriptionCents: 5900 })).toBe(
+    // 59 € / 5 € : 12 ventes, écrit en chiffres au-delà de dix.
+    expect(salePurchaseOffersNote({ unitCents: 500, subscriptionCents: 5900 })).toBe(
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de 12 ventes, l’abonnement revient moins cher.",
+    );
+    expect(salePurchaseOffersNote({ unitCents: 1900, subscriptionCents: null })).toBe(
       "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité.",
     );
   });
