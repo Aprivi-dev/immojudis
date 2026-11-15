@@ -861,14 +861,16 @@ if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
 // Saved reports (20261121100000): an unlock opens the account's own saved report of the unlocked
-// sale, nothing wider. The last definition of the restrictive policy must be exactly « Analyse access
+// sale, built through the unlock door, nothing wider. The last definition of the restrictive policy must be exactly « Analyse access
 // or unlocked sale », never dropped afterwards, and every other policy of the table must stay limited
 // to the owner (the restrictive policy is ANDed with them). The first definition (20260710083858) is
 // dynamic SQL, out of reach of this scan: it is replaced by the static one.
 const normalizePolicy = (sql) =>
   sql.replace(/\s+/g, " ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim().toLowerCase();
+// The unlock branch also requires a snapshot built through the unlock door: an older row of the same
+// sale (saved during a trial, with the Analyse access) carries the investment score and the sources.
 const savedReportsUnlockCondition =
-  "((select public.has_analysis_access()) or app_private.current_user_unlocked_sale(sale_id))";
+  "((select public.has_analysis_access()) or (app_private.current_user_unlocked_sale(sale_id) and (report_snapshot ->> 'door') = 'unlock'))";
 const expectedSavedReportsPolicy = normalizePolicy(
   `create policy analysis_access_required on public.saved_property_reports as restrictive for all to authenticated using ${savedReportsUnlockCondition} with check ${savedReportsUnlockCondition};`,
 );
@@ -893,7 +895,7 @@ for (const statement of savedReportsPolicyStatements) {
 const savedReportsRestriction = lastSavedReportsPolicy.get("analysis_access_required");
 if (!savedReportsRestriction || savedReportsRestriction.sql !== expectedSavedReportsPolicy) {
   failures.push(
-    "saved_property_reports: the last analysis_access_required is not « Analyse access or unlocked sale », restrictive, for authenticated",
+    "saved_property_reports: the last analysis_access_required is not « Analyse access, or unlocked sale with an unlock-door snapshot », restrictive, for authenticated",
   );
 }
 for (const [policy, statement] of lastSavedReportsPolicy) {

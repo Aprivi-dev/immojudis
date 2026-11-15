@@ -1,5 +1,7 @@
 -- Rapport enregistré ouvert par le déblocage de sa vente (20261121100000).
---   * un compte gratuit lit son rapport d'une vente qu'il a débloquée, pas celui d'une vente non débloquée ;
+--   * un compte gratuit lit son rapport d'une vente qu'il a débloquée, construit par la porte déblocage
+--     (report_snapshot.door = 'unlock') ; pas un autre rapport de la même vente sans cette porte (par
+--     exemple enregistré pendant un essai), ni celui d'une vente non débloquée ;
 --   * il ne lit jamais le rapport d'un autre compte, même sur une vente qu'il a débloquée ;
 --   * un abonné Analyse lit les siens, et seulement les siens ;
 --   * property_report_exports n'est pas ouverte à un déblocage.
@@ -7,7 +9,7 @@
 -- Analyse ; l'abonné a une fin de période future (une ligne sans fin n'ouvre rien, test 850).
 begin;
 
-select plan(12);
+select plan(13);
 
 -- 01 et 02 comptes gratuits ; 03 abonné Analyse
 insert into auth.users (
@@ -48,19 +50,24 @@ values
   ('c8110000-0000-4000-8000-000000000001', 'c8110000-1000-4000-8000-000000000001', now()),
   ('c8110000-0000-4000-8000-000000000002', 'c8110000-1000-4000-8000-000000000001', now());
 
--- Rapports écrits par le serveur : a1 (A, s1), a2 (A, s2), b1 (B, s1), c1 (abonné, s1), c2 (abonné, s2)
-insert into public.saved_property_reports (id, user_id, sale_id, title, report_kind)
+-- Rapports écrits par le serveur. Porte déblocage (door = 'unlock') : a1 (A, s1), a2 (A, s2), b1 (B, s1).
+-- Sans cette porte : a3 (A, s1, enregistré pendant un essai : score et sources dans l'aperçu), c1 et c2
+-- (abonné, s1 et s2).
+insert into public.saved_property_reports (id, user_id, sale_id, title, report_kind, report_snapshot)
 values
   ('c8110000-2000-4000-8000-0000000000a1', 'c8110000-0000-4000-8000-000000000001',
-   'c8110000-1000-4000-8000-000000000001', 'A on s1', 'bid_ceiling'),
+   'c8110000-1000-4000-8000-000000000001', 'A on s1', 'bid_ceiling', '{"door": "unlock"}'::jsonb),
   ('c8110000-2000-4000-8000-0000000000a2', 'c8110000-0000-4000-8000-000000000001',
-   'c8110000-1000-4000-8000-000000000002', 'A on s2', 'bid_ceiling'),
+   'c8110000-1000-4000-8000-000000000002', 'A on s2', 'bid_ceiling', '{"door": "unlock"}'::jsonb),
+  ('c8110000-2000-4000-8000-0000000000a3', 'c8110000-0000-4000-8000-000000000001',
+   'c8110000-1000-4000-8000-000000000001', 'A on s1 during a trial', 'market',
+   '{"door": "plan", "investmentScore": 72}'::jsonb),
   ('c8110000-2000-4000-8000-0000000000b1', 'c8110000-0000-4000-8000-000000000002',
-   'c8110000-1000-4000-8000-000000000001', 'B on s1', 'bid_ceiling'),
+   'c8110000-1000-4000-8000-000000000001', 'B on s1', 'bid_ceiling', '{"door": "unlock"}'::jsonb),
   ('c8110000-2000-4000-8000-0000000000c1', 'c8110000-0000-4000-8000-000000000003',
-   'c8110000-1000-4000-8000-000000000001', 'Analyse on s1', 'bid_ceiling'),
+   'c8110000-1000-4000-8000-000000000001', 'Analyse on s1', 'bid_ceiling', '{}'::jsonb),
   ('c8110000-2000-4000-8000-0000000000c2', 'c8110000-0000-4000-8000-000000000003',
-   'c8110000-1000-4000-8000-000000000002', 'Analyse on s2', 'bid_ceiling');
+   'c8110000-1000-4000-8000-000000000002', 'Analyse on s2', 'bid_ceiling', '{}'::jsonb);
 
 -- Structure -------------------------------------------------------------------------------------------
 select is(
@@ -72,10 +79,11 @@ select is(
 );
 select ok(
   (select qual like '%current_user_unlocked_sale(sale_id)%' and qual like '%has_analysis_access()%'
+     and qual like '%''door''%' and qual like '%''unlock''%'
    from pg_catalog.pg_policies
    where schemaname = 'public' and tablename = 'saved_property_reports'
      and policyname = 'analysis_access_required'),
-  'the saved reports policy opens the Analyse access or the unlocked sale'
+  'the saved reports policy opens the Analyse access, or the unlocked sale through the unlock door'
 );
 select ok(
   (select qual not like '%current_user_unlocked_sale%'
@@ -102,6 +110,12 @@ select is(
    where id = 'c8110000-2000-4000-8000-0000000000a2'),
   0::bigint,
   'a free account does not read its report of a sale it did not unlock'
+);
+select is(
+  (select count(*) from public.saved_property_reports
+   where id = 'c8110000-2000-4000-8000-0000000000a3'),
+  0::bigint,
+  'a free account does not read a report of its unlocked sale that the unlock door did not build'
 );
 select is(
   (select count(*) from public.saved_property_reports
@@ -134,7 +148,7 @@ select is(
     'c8110000-2000-4000-8000-0000000000c1',
     'c8110000-2000-4000-8000-0000000000c2'
   ]::uuid[],
-  'a subscriber reads its reports, unlocked sale or not'
+  'a subscriber reads its reports, whatever their door'
 );
 select is(
   (select count(*) from public.saved_property_reports
