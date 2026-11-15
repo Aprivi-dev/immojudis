@@ -50,8 +50,9 @@ describe("filtre « rendement minimal »", () => {
 
     expect(screen.getByText("Rendement brut min. à la mise à prix")).toBeTruthy();
     const note = screen.getByText(/Rendement brut calculé sur la mise à prix/);
+    // Le rendement d'un studio ou d'un T1 sans surface publiée est calculé sur 20 m² présumés : l'aide le dit.
     expect(note.textContent).toBe(
-      "Rendement brut calculé sur la mise à prix, avec un repère de loyer départemental (indicatif). La fiche, les alertes, les exports et les statistiques utilisent la carte des loyers de l’ANIL (par commune, charges comprises) : une même vente peut donc donner deux chiffres différents.",
+      "Rendement brut calculé sur la mise à prix, avec un repère de loyer départemental (indicatif). La fiche, les alertes, les exports et les statistiques utilisent la carte des loyers de l’ANIL (par commune, charges comprises) : une même vente peut donc donner deux chiffres différents. Un studio ou un appartement d'une pièce sans surface publiée compte pour une surface provisoire de 20 m².",
     );
     // La mention de la Licence Ouverte n'apparaît qu'à côté de ce qui vient réellement de l'ANIL.
     expect(document.querySelector("[data-rent-source-notice]")).toBeNull();

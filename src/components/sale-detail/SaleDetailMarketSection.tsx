@@ -115,7 +115,7 @@ export function SaleDetailMarketSection({
           <RentalMarketBlockLazy
             sale={displaySale}
             startingPriceEur={startingPrice}
-            surfaceM2={getSaleSurface(displaySale).value}
+            surface={getSaleSurface(displaySale)}
             reference={rentReference}
             tension={housingTension}
           />

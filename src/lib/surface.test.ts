@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  getDisplaySurface,
-  getMarketValuationSurfaces,
-  getSaleSurface,
-  STUDIO_ESTIMATED_SURFACE_M2,
-} from "./surface";
+import { STUDIO_ESTIMATED_SURFACE_M2 } from "./presumed-surface";
+import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "./surface";
 
 describe("getSaleSurface", () => {
   it("prefers app surface over habitable and carrez surfaces", () => {

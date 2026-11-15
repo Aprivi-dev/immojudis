@@ -111,6 +111,36 @@ describe("saved alert management", () => {
     expect(screen.getByText(/n’est envoyé que si vous l’avez activé/)).toBeTruthy();
   });
 
+  it("dit qu'une surface présumée compte pour les critères de surface minimale et de rendement", async () => {
+    const note =
+      "Un studio ou un appartement d'une pièce sans surface publiée compte pour une surface provisoire de 20 m².";
+    const alertWith = (id: string, criteria: Record<string, unknown>) => ({
+      id,
+      name: `Alerte ${id}`,
+      is_active: true,
+      alert_frequency: "daily",
+      city: "Bordeaux",
+      department: "33",
+      dpe_classes: [],
+      advanced_criteria: {},
+      ...criteria,
+    });
+    state.list.mockResolvedValue([
+      alertWith("surface", { min_surface_m2: 15 }),
+      alertWith("rendement", { min_yield_pct: 6 }),
+      alertWith("prix", { max_price_eur: 150000 }),
+    ]);
+    setup();
+    await screen.findByText("Alerte prix");
+    expect(screen.getAllByText(note)).toHaveLength(2);
+    for (const name of ["Alerte surface", "Alerte rendement"]) {
+      expect(screen.getByRole("article", { name }).textContent).toContain(note);
+    }
+    expect(screen.getByRole("article", { name: "Alerte prix" }).textContent).not.toContain(
+      "surface provisoire",
+    );
+  });
+
   it("change la fréquence et réserve le quotidien à l'offre Analyse", async () => {
     const weeklyAlert = async (id: string) => [
       {

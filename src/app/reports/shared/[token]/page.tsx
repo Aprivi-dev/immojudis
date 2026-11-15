@@ -32,6 +32,7 @@ import {
   normalizeNearbyCategoryLabels,
   normalizeStringList,
   opportunityScoreLabel,
+  reportPresumedSurfaceNote,
 } from "@/lib/property-report/serialization";
 import {
   activeComparableLines,
@@ -129,6 +130,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   const opportunityScore = numberValue(opportunity.score);
   const rentabilityScoreValue = numberValue(rentabilityScore.score);
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
+  const presumedSurfaceNote = reportPresumedSurfaceNote(sale);
   const rentReference = reportRentReference(opportunity.rentReference);
   const legalAttentionPoints = Array.isArray(analysis.legalAttentionPoints)
     ? analysis.legalAttentionPoints
@@ -509,6 +511,12 @@ export default async function SharedReportPage({ params }: PageParams) {
         ) : null}
 
         <section className="grid gap-4 border-b border-border py-5 sm:grid-cols-2">
+          {/* Valeur estimée, écart et rendement calculés sur une surface présumée : dit avant les chiffres. */}
+          {presumedSurfaceNote ? (
+            <p className="text-sm leading-relaxed text-muted-foreground sm:col-span-2">
+              {presumedSurfaceNote}
+            </p>
+          ) : null}
           <SharedMetric
             label="Score d'opportunité"
             value={

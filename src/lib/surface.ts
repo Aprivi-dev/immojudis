@@ -1,9 +1,6 @@
 import { formatSurface } from "@/lib/format";
+import { STUDIO_ESTIMATED_SURFACE_M2 } from "@/lib/presumed-surface";
 import { propertyFamily, type PropertyFamily } from "@/lib/property-type-family";
-
-// Surface provisoire retenue pour les très petits logements sans surface publiée :
-// les studios et les appartements 1 pièce (T1). À confirmer avant d'enchérir.
-export const STUDIO_ESTIMATED_SURFACE_M2 = 20;
 
 type SurfaceSaleLike = {
   title?: string | null;
