@@ -121,7 +121,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
       expect(time!.textContent).toBe(formatNumericDate(structured.dateModified!));
-      expect(time!.textContent).toBe("28/10/2026");
+      expect(time!.textContent).toBe("14/11/2026");
     });
 
     it("est une date AAAA-MM-JJ valide, pas postérieure à aujourd'hui", () => {
