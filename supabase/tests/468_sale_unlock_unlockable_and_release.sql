@@ -1,11 +1,12 @@
--- "3 déblocages par mois": `unlockable` in the status, the 24-month limit (also in unlock_sale_at,
--- 20261025160000) and the release of an unlock (20261025130000 and 20261025130100).
+-- Déblocage du compte gratuit: `unlockable` in the status, the 24-month limit (also in unlock_sale_at,
+-- 20261025160000) and the release of an unlock (20261025130000, 20261025130100; since 20261120100000
+-- one unlock in all and release_sale_unlock(uuid) without the month rule).
 begin;
 -- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
 -- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
 update app_private.launch_offer set active = false where singleton;
 
-select plan(20);
+select plan(21);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -30,7 +31,8 @@ select
   case when i = 3 then now() - interval '30 days' else '2099-01-01 12:00:00Z'::timestamptz end
 from generate_series(1, 4) i;
 
--- s1 unlocked 23 months ago (still valid), s2 unlocked 25 months ago (over the limit).
+-- s1 unlocked 23 months ago (still valid, so it holds the single unlock), s2 unlocked 25 months ago
+-- (over the limit, it no longer counts).
 insert into public.user_sale_unlocks (id, user_id, sale_id, unlocked_at)
 values
   ('c4640000-2000-4000-8000-000000000001', 'c4640000-0000-4000-8000-000000000001',
@@ -45,10 +47,14 @@ select ok(
   'the unlockable helper is callable by an account, not by anon'
 );
 select ok(
-  has_function_privilege('service_role', 'app_private.release_sale_unlock(uuid, timestamptz)', 'EXECUTE')
-  and not has_function_privilege('authenticated', 'app_private.release_sale_unlock(uuid, timestamptz)', 'EXECUTE')
-  and not has_function_privilege('anon', 'app_private.release_sale_unlock(uuid, timestamptz)', 'EXECUTE'),
+  has_function_privilege('service_role', 'app_private.release_sale_unlock(uuid)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'app_private.release_sale_unlock(uuid)', 'EXECUTE')
+  and not has_function_privilege('anon', 'app_private.release_sale_unlock(uuid)', 'EXECUTE'),
   'only service_role can release an unlock'
+);
+select hasnt_function(
+  'app_private', 'release_sale_unlock', array['uuid', 'timestamp with time zone'],
+  'the release with a reception date (month rule) is gone'
 );
 
 -- A signed-in Découverte account -----------------------------------------------------------------
@@ -107,21 +113,16 @@ select is(
   1::bigint,
   'and keeps the original unlock date'
 );
-select is(
-  public.unlock_sale('c4640000-1000-4000-8000-000000000002') ->> 'already_unlocked',
-  'false',
-  'unlocking again a sale unlocked 25 months ago is a new unlock, not an idempotent answer'
+select throws_ok(
+  $$select public.unlock_sale('c4640000-1000-4000-8000-000000000002')$$,
+  'P0001',
+  'Vous avez déjà utilisé le déblocage de votre compte gratuit.',
+  'while the unlock of 23 months ago counts, the sale unlocked 25 months ago cannot be unlocked again'
 );
 select is(
-  (select count(*) from public.user_sale_unlocks
-   where sale_id = 'c4640000-1000-4000-8000-000000000002' and unlocked_at > now() - interval '1 day'),
-  1::bigint,
-  'the expired row was replaced by a single new row of this month'
-);
-select is(
-  (public.get_sale_unlock_status('c4640000-1000-4000-8000-000000000002') ->> 'used')::integer,
+  (public.get_sale_unlock_status() ->> 'used')::integer,
   1,
-  'which consumed one unlock of the current month, and opens the sale again'
+  'the unlock of 23 months ago counts, the one of 25 months ago does not'
 );
 reset role;
 
@@ -133,33 +134,39 @@ select is(
 );
 select is(
   app_private.release_sale_unlock('c4640000-2000-4000-8000-000000000001') ->> 'outcome',
-  'past_month',
-  'an unlock of a past month is not given back (terms, article 2)'
+  'released',
+  'an unlock is given back whatever its date: no month rule any more'
 );
 select is(
   (select count(*) from public.user_sale_unlocks where id = 'c4640000-2000-4000-8000-000000000001'),
-  1::bigint,
-  'and the row is left as it was'
-);
-
-insert into public.user_sale_unlocks (id, user_id, sale_id, unlocked_at)
-values ('c4640000-2000-4000-8000-000000000004', 'c4640000-0000-4000-8000-000000000001',
-        'c4640000-1000-4000-8000-000000000004', now());
-select is(
-  app_private.release_sale_unlock('c4640000-2000-4000-8000-000000000004') ->> 'outcome',
-  'released',
-  'an unlock of the current month is given back'
-);
-select is(
-  (select count(*) from public.user_sale_unlocks where id = 'c4640000-2000-4000-8000-000000000004'),
   0::bigint,
-  'the row is gone, so the unlock no longer counts in the month'
+  'the row is gone, so the unlock no longer counts'
 );
 select is(
-  app_private.release_sale_unlock('c4640000-2000-4000-8000-000000000004') ->> 'outcome',
+  app_private.release_sale_unlock('c4640000-2000-4000-8000-000000000001') ->> 'outcome',
   'not_found',
   'releasing twice is harmless'
 );
+
+-- After the release: the single unlock is available again ----------------------------------------
+set local role authenticated;
+select is(
+  public.unlock_sale('c4640000-1000-4000-8000-000000000002') ->> 'already_unlocked',
+  'false',
+  'unlocking again a sale unlocked 25 months ago is a new unlock, not an idempotent answer'
+);
+select is(
+  (select count(*) from public.user_sale_unlocks
+   where sale_id = 'c4640000-1000-4000-8000-000000000002' and unlocked_at > now() - interval '1 day'),
+  1::bigint,
+  'the expired row was replaced by a single new row'
+);
+select is(
+  (public.get_sale_unlock_status('c4640000-1000-4000-8000-000000000002') ->> 'used')::integer,
+  1,
+  'which consumed the single unlock'
+);
+reset role;
 
 select * from finish();
 rollback;

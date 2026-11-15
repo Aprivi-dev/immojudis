@@ -17,7 +17,7 @@ describe("offerComparisonRows", () => {
     expect(row("ceiling").decouverte).toEqual({
       included: false,
       limited: true,
-      text: "3 déblocages par mois",
+      text: "1 vente débloquée",
     });
     expect(row("ceiling").analyse).toEqual({ included: true, text: "Inclus" });
     expect(row("catalogue").decouverte.included).toBe(true);
@@ -48,9 +48,9 @@ describe("offerComparisonRows", () => {
     expect(row("alerts").decouverte.text).toBe("1 alerte, email hebdomadaire");
     expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");
     expect(row("unlocks").decouverte.text).toBe(
-      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`,
+      `${PLAN_LIMITS.decouverte.saleUnlocks} vente débloquée`,
     );
-    expect(row("unlocks").decouverte.text).toBe("3 déblocages par mois");
+    expect(row("unlocks").decouverte.text).toBe("1 vente débloquée");
     expect(row("unlocks").analyse.text).toMatch(/^Illimités/);
   });
 
@@ -76,16 +76,16 @@ describe("offerComparisonRows", () => {
     ]);
     for (const candidate of opened) {
       expect(candidate.decouverte.text, candidate.id).not.toBe("Non inclus");
-      expect(candidate.decouverte.text, candidate.id).toMatch(/^3 déblocages par mois/);
+      expect(candidate.decouverte.text, candidate.id).toMatch(/^1 vente débloquée/);
       expect(candidate.decouverte.limited, candidate.id).toBe(true);
       // Fermé dans l'offre : la coche « inclus » reste réservée à ce que l'offre donne vraiment.
       expect(candidate.decouverte.included, candidate.id).toBe(false);
       expect(candidate.analyse.included, candidate.id).toBe(true);
     }
-    expect(row("statistics").decouverte.text).toBe("3 déblocages par mois (tribunal de la vente)");
+    expect(row("statistics").decouverte.text).toBe("1 vente débloquée (tribunal de la vente)");
     // L'onglet Travaux reste fermé sur une vente débloquée : le budget travaux n'est pas promis.
     expect(row("scenarios").decouverte.text).toBe(
-      "3 déblocages par mois (hors budget travaux détaillé)",
+      "1 vente débloquée (hors budget travaux détaillé)",
     );
   });
 
@@ -103,7 +103,7 @@ describe("offerComparisonRows", () => {
     expect(row("documents").decouverte).toEqual({
       included: false,
       limited: true,
-      text: "3 déblocages par mois",
+      text: "1 vente débloquée",
     });
   });
 

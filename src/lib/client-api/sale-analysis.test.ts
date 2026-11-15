@@ -17,11 +17,9 @@ const status: SaleUnlockStatus = {
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 3,
+  limit: 1,
+  used: 1,
   remaining: 0,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
 };
 const fetchMock = vi.fn();
 

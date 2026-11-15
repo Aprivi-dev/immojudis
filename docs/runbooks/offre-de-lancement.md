@@ -1,5 +1,35 @@
 # Essai gratuit de 7 jours à l'inscription (ex-offre de lancement)
 
+> **L'essai est arrêté pour tous depuis la migration `20261120100000_free_account_single_sale_unlock.sql`**
+> (décision du propriétaire du 15/11/2026, prise en connaissance des articles 2, 13 et 14 des CGU). Les
+> essais en cours ont pris fin à l'application de la migration ; aucun nouveau compte n'a d'essai.
+>
+> Ce que fait la migration, en production, à son application :
+>
+> - elle coupe l'interrupteur (`app_private.launch_offer.active = false`) puis recule sa date de coupure
+>   (`closed_at`) au 01/01/2026. Comme un compte ne garde son essai après une coupure que s'il a confirmé
+>   son adresse **avant** `closed_at` (`app_private.launch_offer_confirmed_before_close`), plus aucun essai
+>   ne court ;
+> - elle termine maintenant les prolongations d'essai accordées par l'administrateur encore en cours
+>   (`user_subscriptions.current_period_end = now()` pour les lignes `trialing` reconnues par
+>   `app_private.is_admin_trial_extension`, donc sans abonnement Stripe). Aucun abonnement Stripe n'est
+>   modifié ;
+> - le compte gratuit passe en même temps à **un déblocage de vente en tout** (voir
+>   `docs/runbooks/restituer-un-deblocage.md`).
+>
+> L'interrupteur se comporte désormais ainsi :
+>
+> - tant que personne n'y touche, il reste coupé avec `closed_at` au 01/01/2026 : aucun essai ;
+> - le **rétablir** (bouton ou `active = true`) rouvrirait l'essai de 7 jours à tous les comptes confirmés
+>   depuis moins de 7 jours : à ne faire que sur nouvelle décision du propriétaire ;
+> - le couper de nouveau après un rétablissement écrit `closed_at = now()` (déclencheur
+>   `launch_offer_track_closing`) : les essais alors en cours continueraient. Pour les fermer aussi, reculer
+>   `closed_at` à la main comme le fait la migration
+>   (`update app_private.launch_offer set closed_at = timestamptz '2026-01-01 00:00:00+00' where singleton;`,
+>   interrupteur déjà coupé).
+>
+> La suite de ce document décrit le mécanisme et son historique ; elle n'est plus la règle en vigueur.
+
 Ce document a deux parties :
 
 1. **Essai de 7 jours (actuel)** : la règle en vigueur depuis le 25/10/2026, l'interrupteur, ce que voient les
@@ -98,8 +128,8 @@ juridique.
 
 ## Ce que voient les comptes quand l'essai se termine (ou est coupé)
 
-- Le compte **redevient Découverte** : 10 favoris, 1 alerte avec email hebdomadaire, 3 déblocages de ventes par
-  mois, pas d'export, de rapport PDF, d'estimation détaillée ni de comparables.
+- Le compte **redevient Découverte** : 10 favoris, 1 alerte avec email hebdomadaire, 1 déblocage de vente en
+  tout (depuis `20261120100000`), pas d'export, de rapport PDF, d'estimation détaillée ni de comparables.
 - **Aucune notification** n'est envoyée par la fin d'un essai ni par la coupure.
 - `/offres` et l'accueil présentent l'offre payante fermée tant que le paiement n'est pas ouvert : bouton
   « Me prévenir de l'ouverture » (avec les trois questions facultatives de la liste d'attente) et le tarif
@@ -114,7 +144,7 @@ juridique.
     s'abonne ;
   - les liens de partage de rapports d'un compte gratuit cessent de répondre (`shareOwnerKeepsSavedReports`).
 - Les déblocages de ventes pris pendant l'essai ne comptent pas : un compte Analyse n'en consomme pas. Après
-  l'essai, le compteur du mois repart de zéro.
+  l'essai, le compte a son déblocage unique.
 
 ## Prolonger l'essai de comptes choisis
 

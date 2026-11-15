@@ -73,7 +73,7 @@ export function fetchSaleUnlocksOverview(): Promise<SaleUnlocksOverview> {
   return apiRequest<SaleUnlocksOverview>("/api/sale-unlocks");
 }
 
-/** The monthly quota is spent: carries the counter so the page can explain it. */
+/** The free unlock is spent elsewhere: carries the account state so the page can explain it. */
 export class SaleUnlockQuotaReachedError extends Error {
   readonly status: SaleUnlockStatus;
 

@@ -28,7 +28,8 @@ export const GET = apiRoute<{ id: string }>(
       bucketKey: "sale-passages",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
+    // Analyse, or a Découverte account that unlocked this very sale (« déblocage du compte gratuit
+    // »).
     const door = await saleFeatureDoor(auth, "property.saleHistory", saleId);
     const full = door !== null;
     const sale = await readSaleThroughDoor<{ starting_price_eur: number | null }>(

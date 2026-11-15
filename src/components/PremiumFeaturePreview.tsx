@@ -4,6 +4,7 @@ import Link from "next/link";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 
 const PRIMARY_LINK_CLASS =
@@ -34,6 +35,8 @@ export function PremiumFeaturePreview({
   compact?: boolean;
 }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
+  // L'essai à l'inscription n'est cité que s'il est ouvert.
+  const trialOpen = useLaunchOffer().active;
   if (compact) {
     return (
       <section
@@ -80,9 +83,9 @@ export function PremiumFeaturePreview({
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
       {checkoutOpen === true ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          L’offre Analyse est offerte pendant {ANALYSIS_TRIAL_DAYS} jours à l’inscription, puis
-          proposée sur abonnement mensuel, prélevé chaque mois jusqu’à résiliation, résiliable à
-          tout moment.
+          {trialOpen
+            ? `L’offre Analyse est offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, puis proposée sur abonnement mensuel, prélevé chaque mois jusqu’à résiliation, résiliable à tout moment.`
+            : "L’offre Analyse est proposée sur abonnement mensuel, prélevé chaque mois jusqu’à résiliation, résiliable à tout moment."}
         </p>
       ) : checkoutOpen === false ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

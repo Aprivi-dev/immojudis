@@ -459,17 +459,15 @@ it("offers access to the selected listing when its public preview is absent", as
   expect(screen.queryByText("Introuvable")).toBeNull();
 });
 
-describe("« 3 déblocages par mois » on the sale page", () => {
+describe("the free unlock on the sale page", () => {
   const status = (unlocked: boolean) => ({
     saleId: "sale",
     unlocked,
     unlockable: true,
     analysisAccess: false,
-    limit: 3,
+    limit: 1,
     used: unlocked ? 1 : 0,
-    remaining: unlocked ? 2 : 3,
-    periodStart: "2026-09-30T22:00:00.000Z",
-    resetsAt: "2026-10-31T23:00:00.000Z",
+    remaining: unlocked ? 0 : 1,
   });
   const renderPage = () =>
     render(
@@ -488,7 +486,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     renderPage();
 
     await screen.findByText("Offre Découverte");
-    expect(screen.getByTestId("remaining").textContent).toBe("3");
+    expect(screen.getByTestId("remaining").textContent).toBe("1");
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true, unlocked: false });
     expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
@@ -528,7 +526,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     renderPage();
 
     const alert = await screen.findByRole("alert", {}, { timeout: 5000 });
-    expect(alert.textContent).toContain("État de vos déblocages indisponible");
+    expect(alert.textContent).toContain("État de votre déblocage indisponible");
     expect(mocks.unlockStatus).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Offre Découverte")).toBeTruthy();
     expect(screen.getByTestId("remaining").textContent).toBe("inconnu");

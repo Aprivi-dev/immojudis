@@ -53,9 +53,9 @@ describe("plan matrix", () => {
     expect(PLAN_LIMITS.decouverte.saleAnalysisItems).toBe(3);
   });
 
-  it("grants three sale unlocks a month to Découverte, none to count for Analyse", () => {
-    expect(PLAN_LIMITS.decouverte.monthlyUnlocks).toBe(3);
-    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
+  it("grants a single sale unlock in all to Découverte, none to count for Analyse", () => {
+    expect(PLAN_LIMITS.decouverte.saleUnlocks).toBe(1);
+    expect(PLAN_LIMITS.analyse.saleUnlocks).toBeNull();
   });
 
   it("opens exactly the five elements of the unlocked page, and no autonomous estimate", () => {

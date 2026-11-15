@@ -5,8 +5,10 @@ Copie exacte du code source des versions précédentes des pages juridiques, ext
 | Document | Version | Empreinte (SHA-256) | Applicable |
 | --- | --- | --- | --- |
 | Conditions générales | `2026-10-25.1` | `45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c` | du 25 octobre 2026 au 1er décembre 2026 pour les comptes existants |
+| Conditions générales | `2026-11-10.1` | `6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc` | pour les comptes créés à partir de sa mise en ligne (10 novembre 2026), jusqu'à la version `2026-11-15.1` (un seul déblocage pour le compte gratuit, fin de l'essai gratuit) |
 | Mentions légales | `2026-07-29.1` | `c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9` | du 29 juillet au 26 octobre 2026 |
 | Mentions légales | `2026-10-26.1` | `d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46` | le 26 octobre 2026, jusqu'à la version `2026-10-26.2` (paragraphe « Données publiques réutilisées ») |
+| Politique de confidentialité | `2026-11-14.1` | `19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25` | du 15 novembre 2026 jusqu'à la version `2026-11-15.1` (déblocage de vente sans compteur mensuel, essai gratuit plus proposé) |
 | Politique de confidentialité | `2026-11-01.3` | `7bafa3d9a9cfed003fc49c50eb2759ceef8f8b6aa395e157538fe245b5cd6824` | du 1er novembre 2026 jusqu'à la version `2026-11-14.1` (professionnels contactés, informations affichées sur la fiche, photos tirées des pièces, profil d'investisseur, garanties de transfert) |
 | Politique de confidentialité | `2026-11-01.2` | `5ae544af26146742c9be3bc585baa596397425c098addf38914c2b6da42c2e6b` | le 1er novembre 2026, jusqu'à la version `2026-11-01.3` (journal des emails envoyés) |
 | Politique de confidentialité | `2026-11-01.1` | `45fa8eb7d62a3a19333a88516fdcfff4e1678a288f4eab7b9b3d07773c5d18b9` | le 1er novembre 2026, jusqu'à la version `2026-11-01.2` (messages écrits à l'adresse de réponse sans dossier ouvert) |

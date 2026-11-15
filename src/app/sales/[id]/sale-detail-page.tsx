@@ -144,8 +144,8 @@ function SaleDetailContent({
     refetch: retryEntitlements,
   } = useAccessPlanQuery(authLoading ? null : session?.user.id);
   const discovery = Boolean(session) && entitlementsData?.plan.hasAnalysisAccess !== true;
-  // « 3 déblocages par mois » : un compte Découverte peut avoir débloqué cette vente. Sans réponse
-  // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
+  // « déblocage du compte gratuit » : un compte Découverte peut avoir débloqué cette vente. Sans
+  // réponse (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
   const unlockEnabled = discovery && !authLoading && Boolean(entitlementsData);
   const queryClient = useQueryClient();
   // The unlock status is the account's own, and it only decides the view for a Discovery account:
@@ -450,7 +450,7 @@ function SaleDetailContent({
           role="alert"
           className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3"
         >
-          <p className="font-medium">État de vos déblocages indisponible</p>
+          <p className="font-medium">État de votre déblocage indisponible</p>
           <p>
             Si vous avez déjà débloqué cette vente, elle apparaîtra de nouveau dès que l’état sera
             relu.

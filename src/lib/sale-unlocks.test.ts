@@ -6,65 +6,65 @@ import { parseSaleUnlockResult, parseSaleUnlockStatus } from "@/lib/sale-unlocks
 import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   FREE_ACCESS_LINE,
-  MONTHLY_SALE_UNLOCKS,
-  remainingUnlocksLine,
-  unlockConfirmationText,
+  FREE_SALE_UNLOCKS,
+  FREE_UNLOCK_LABEL,
+  FREE_UNLOCK_TEXT,
+  UNLOCK_CALL_TO_ACTION_LABEL,
+  UNLOCK_CHOICE_TEXT,
+  UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
+  UNLOCK_QUOTA_REACHED_TITLE,
   unlockHighlightsInlineText,
   unlockHighlightsText,
-  unlockCallToActionLabel,
   unlockedItemsText,
   unlockQuotaReachedText,
-  unlockQuotaReachedTitle,
-  unlockQuotaResetLine,
   unlockUsageLine,
 } from "@/lib/sale-unlocks";
+import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 
 const rpcStatus = {
   sale_id: "11111111-1111-4111-8111-111111111111",
   unlocked: false,
   analysis_access: false,
-  limit: 3,
-  used: 1,
-  remaining: 2,
-  period_start: "2026-09-30T22:00:00+00:00",
-  period_end: "2026-10-31T23:00:00+00:00",
+  limit: 1,
+  used: 0,
+  remaining: 1,
 };
 
-describe("single source of the monthly quota", () => {
+const SINGLE_UNLOCK_MIGRATION = "20261120100000_free_account_single_sale_unlock.sql";
+
+describe("single source of the free unlock", () => {
   it("takes the number of unlocks from PLAN_LIMITS", () => {
-    expect(MONTHLY_SALE_UNLOCKS).toBe(PLAN_LIMITS.decouverte.monthlyUnlocks);
-    expect(MONTHLY_SALE_UNLOCKS).toBe(3);
+    expect(FREE_SALE_UNLOCKS).toBe(PLAN_LIMITS.decouverte.saleUnlocks);
   });
 
-  it("builds the free-access line from the quota, not from a typed number", () => {
-    expect(FREE_ACCESS_LINE).toBe(
-      `Gratuit, sans carte bancaire · ${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`,
-    );
-    expect(FREE_ACCESS_LINE).toBe("Gratuit, sans carte bancaire · 3 déblocages par mois");
+  it("writes « une vente » in full words only while the free account unlocks one sale", () => {
+    // The visible texts say « une vente », « n’en comprend qu’un » : a new number needs new texts.
+    expect(FREE_SALE_UNLOCKS).toBe(1);
+    expect(FREE_UNLOCK_TEXT).toBe("une vente à débloquer");
+    expect(FREE_UNLOCK_LABEL).toBe("Une vente à débloquer");
   });
 
-  it("matches the constant of the database migration", () => {
-    const migration = readFileSync(
-      resolve("supabase/migrations/20261023100000_discovery_sale_unlocks.sql"),
-      "utf8",
-    );
-    const limit =
-      /function app_private\.monthly_sale_unlock_limit\(\)[\s\S]*?select\s+(\d+)\s*;/.exec(
-        migration,
-      )?.[1];
-    expect(Number(limit)).toBe(PLAN_LIMITS.decouverte.monthlyUnlocks);
+  it("builds the free-access line from the same words", () => {
+    expect(FREE_ACCESS_LINE).toBe(`Gratuit, sans carte bancaire · ${FREE_UNLOCK_TEXT}`);
+    expect(FREE_ACCESS_LINE).toBe("Gratuit, sans carte bancaire · une vente à débloquer");
   });
 
-  it("keeps the Paris calendar month and the idempotent, serialized unlock in the database", () => {
-    const migration = readFileSync(
-      resolve("supabase/migrations/20261023100000_discovery_sale_unlocks.sql"),
-      "utf8",
-    );
-    expect(migration).toMatch(/at time zone 'Europe\/Paris'/);
+  it("matches the limit of the database migration", () => {
+    const migration = readFileSync(resolve("supabase/migrations", SINGLE_UNLOCK_MIGRATION), "utf8");
+    const limit = /function app_private\.free_sale_unlock_limit\(\)[\s\S]*?select\s+(\d+)\s*;/.exec(
+      migration,
+    )?.[1];
+    expect(Number(limit)).toBe(PLAN_LIMITS.decouverte.saleUnlocks);
+  });
+
+  it("keeps the idempotent, serialized unlock in the database", () => {
+    const migration = readFileSync(resolve("supabase/migrations", SINGLE_UNLOCK_MIGRATION), "utf8");
     expect(migration).toMatch(/pg_advisory_xact_lock/);
-    expect(migration).toMatch(/security definer[\s\S]*?set search_path = ''/);
+    expect(migration).toMatch(
+      /function app_private\.unlock_sale_at\([\s\S]*?security definer\s*set search_path = ''/,
+    );
   });
 });
 
@@ -92,10 +92,10 @@ describe("migrations of the unlock follow-ups", () => {
     );
   });
 
-  it("only lets the service role release an unlock", () => {
-    const migration = read("20261025130100_sale_unlock_24_months_and_release.sql");
+  it("only lets the service role release an unlock, which no longer takes a date", () => {
+    const migration = read(SINGLE_UNLOCK_MIGRATION);
     expect(migration).toMatch(
-      /revoke all on function app_private\.release_sale_unlock\(uuid, timestamptz\)\s*from public, anon, authenticated;\s*grant execute on function app_private\.release_sale_unlock\(uuid, timestamptz\) to service_role;/,
+      /revoke all on function app_private\.release_sale_unlock\(uuid\)\s*from public, anon, authenticated;\s*grant execute on function app_private\.release_sale_unlock\(uuid\) to service_role;/,
     );
   });
 });
@@ -107,12 +107,21 @@ describe("unlock status parsing", () => {
       unlocked: false,
       unlockable: true,
       analysisAccess: false,
-      limit: 3,
-      used: 1,
-      remaining: 2,
-      periodStart: "2026-09-30T22:00:00.000Z",
-      resetsAt: "2026-10-31T23:00:00.000Z",
+      limit: 1,
+      used: 0,
+      remaining: 1,
     });
+  });
+
+  it("ignores the monthly period keys a database not yet migrated still sends", () => {
+    const legacy = {
+      ...rpcStatus,
+      period_start: "2026-09-30T22:00:00+00:00",
+      period_end: "2026-10-31T23:00:00+00:00",
+    };
+    expect(parseSaleUnlockStatus(legacy)).toEqual(parseSaleUnlockStatus(rpcStatus));
+    expect(parseSaleUnlockStatus(legacy)).not.toHaveProperty("periodStart");
+    expect(parseSaleUnlockStatus(legacy)).not.toHaveProperty("resetsAt");
   });
 
   it("reads « unlockable » from the database, and assumes « yes » when it does not send it", () => {
@@ -125,8 +134,8 @@ describe("unlock status parsing", () => {
     const result = parseSaleUnlockResult({
       ...rpcStatus,
       unlocked: true,
-      used: 2,
-      remaining: 1,
+      used: 1,
+      remaining: 0,
       already_unlocked: false,
       consumed: true,
     });
@@ -142,7 +151,7 @@ describe("unlock status parsing", () => {
       remaining: null,
     });
     expect(status.limit).toBeNull();
-    expect(remainingUnlocksLine(status)).toBeNull();
+    expect(status.remaining).toBeNull();
   });
 
   it("refuses a malformed answer", () => {
@@ -152,8 +161,6 @@ describe("unlock status parsing", () => {
 });
 
 describe("texts of the unlock", () => {
-  const status = parseSaleUnlockStatus(rpcStatus);
-
   it("lists what an unlock opens, without promising what the page does not show", () => {
     expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: true })).toBe(
       "l’enchère plafond, la lecture des pièces, l’historique de la vente, les statistiques du tribunal et les pièces du dossier",
@@ -208,17 +215,18 @@ describe("texts of the unlock", () => {
     );
   });
 
-  it("states the remaining unlocks with the monthly total", () => {
-    expect(remainingUnlocksLine(status)).toBe("Il vous reste 2 déblocages sur 3 ce mois-ci.");
-    expect(remainingUnlocksLine({ ...status, remaining: 1 })).toBe(
-      "Il vous reste 1 déblocage sur 3 ce mois-ci.",
+  it("states the single unlock of the free account, and asks to choose the sale", () => {
+    expect(UNLOCK_CALL_TO_ACTION_LABEL).toBe("Débloquer cette vente avec mon compte gratuit");
+    expect(UNLOCK_CHOICE_TEXT).toBe(
+      "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.",
     );
   });
 
-  it("says before the click that the unlock is final and when the counter restarts", () => {
-    expect(unlockConfirmationText(status)).toBe(
-      "Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre.",
+  it("says before the click that the unlock is final, and when it is given back", () => {
+    expect(UNLOCK_CONFIRMATION_TEXT).toBe(
+      "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
     );
+    expect(UNLOCK_CONFIRMATION_TEXT).not.toMatch(/mois|compteur|remis/);
   });
 
   it("cites each highlight of the free account in the full list of what an unlock opens", () => {
@@ -240,63 +248,25 @@ describe("texts of the unlock", () => {
     }
   });
 
-  it("labels the main link of a paid preview with the remaining unlocks", () => {
-    expect(unlockCallToActionLabel(status)).toBe("Débloquer cette vente (il vous reste 2 sur 3)");
-    expect(unlockCallToActionLabel({ ...status, remaining: 1 })).toBe(
-      "Débloquer cette vente (il vous reste 1 sur 3)",
-    );
+  it("sums up the unlock on the account page", () => {
+    expect(unlockUsageLine({ remaining: 1 })).toBe("Déblocage du compte gratuit : disponible");
+    expect(unlockUsageLine({ remaining: 0 })).toBe("Déblocage du compte gratuit : utilisé");
+    expect(unlockUsageLine({ remaining: null })).toBe("Déblocage du compte gratuit : utilisé");
   });
 
-  it("tells when the spent unlocks come back, with the elision of « octobre »", () => {
-    expect(unlockQuotaResetLine(status)).toBe(
-      "Vos 3 déblocages d’octobre reviennent le 1er novembre.",
-    );
-    expect(
-      unlockQuotaResetLine({
-        limit: 3,
-        periodStart: "2026-10-31T23:00:00.000Z",
-        resetsAt: "2026-11-30T23:00:00.000Z",
-      }),
-    ).toBe("Vos 3 déblocages de novembre reviennent le 1er décembre.");
+  it("titles a spent unlock without a month, and says the same in the 409 message", () => {
+    expect(UNLOCK_QUOTA_REACHED_TITLE).toBe("Votre compte gratuit a déjà débloqué une vente");
+    expect(SALE_UNLOCK_QUOTA_MESSAGE).toBe(`${UNLOCK_QUOTA_REACHED_TITLE}.`);
   });
 
-  it("sums up the month on the account page", () => {
-    expect(unlockUsageLine(status)).toBe(
-      "Déblocages ce mois-ci : 1 sur 3 utilisés. Remis à 3 le 1er novembre.",
+  it("explains how to open the sale: Analyse only when it can be bought, no promise otherwise", () => {
+    expect(unlockQuotaReachedText({ analysisOpen: true })).toBe(
+      "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes.",
     );
-    expect(unlockUsageLine({ ...status, used: 5 })).toContain("3 sur 3 utilisés");
-  });
-
-  it("titles an exhausted quota with the sales of the Paris month", () => {
-    expect(unlockQuotaReachedTitle({ ...status, used: 3 })).toBe(
-      "Vos 3 ventes d’octobre sont débloquées",
+    expect(unlockQuotaReachedText()).toBe(
+      "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.",
     );
-    expect(unlockQuotaReachedTitle({ limit: 3, periodStart: "2026-10-31T23:00:00.000Z" })).toBe(
-      "Vos 3 ventes de novembre sont débloquées",
-    );
-    // The figure is the one of the account (`PLAN_LIMITS` by default), never written by hand.
-    expect(unlockQuotaReachedTitle({ ...status, used: 0, limit: null })).toBe(
-      `Vos ${MONTHLY_SALE_UNLOCKS} ventes d’octobre sont débloquées`,
-    );
-    expect(unlockQuotaReachedTitle({ ...status, used: 1, limit: 1 })).toBe(
-      "Votre vente d’octobre est débloquée",
-    );
-    // A limit changed during the month: the title says what was really unlocked.
-    expect(unlockQuotaReachedTitle({ ...status, used: 3, limit: 5 })).toBe(
-      "Vos 3 ventes d’octobre sont débloquées",
-    );
-  });
-
-  it("explains how to open the sale: the reset date, and Analyse only when it can be bought", () => {
-    expect(unlockQuotaReachedText(status, { analysisOpen: true })).toBe(
-      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
-    );
-    expect(unlockQuotaReachedText(status)).toBe(
-      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
-    );
-    expect(
-      unlockQuotaReachedText({ resetsAt: "2026-11-30T23:00:00.000Z" }, { analysisOpen: false }),
-    ).toBe("Vous pourrez la débloquer le 1er décembre avec le compte gratuit.");
+    expect(unlockQuotaReachedText({ analysisOpen: false })).not.toMatch(/passez|souscri/);
   });
 });
 

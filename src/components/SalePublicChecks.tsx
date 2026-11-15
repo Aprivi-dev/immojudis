@@ -26,7 +26,7 @@ export function SalePublicChecks({
 }: {
   preview: AuctionSale;
   saleId: string;
-  /** Le déblocage mensuel est proposé pour cette vente (régime de frais ouvert). */
+  /** Le déblocage du compte gratuit est proposé pour cette vente (régime de frais ouvert). */
   unlockOffered: boolean;
 }) {
   const procedure = getSaleProcedure(preview);

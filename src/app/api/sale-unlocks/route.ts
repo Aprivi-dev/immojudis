@@ -9,9 +9,9 @@ import type { SaleUnlocksOverview } from "@/lib/sale-unlocks";
 import { getSaleUnlockStatus, listUnlockedSales } from "@/lib/sale-unlocks.server";
 
 /**
- * « 3 déblocages par mois » vus du compte : où il en est ce mois-ci (utilisés, remise à zéro) et
- * la liste des ventes qu'il a débloquées et qui sont toujours en ligne. Sert la page Mon compte,
- * « Mes ventes débloquées » et la pastille « Débloquée » des résultats. Lecture seule : rien n'est
+ * Le déblocage du compte gratuit vu du compte : utilisé ou disponible, et la liste des ventes qu'il
+ * a débloquées et qui sont toujours en ligne. Sert la page Mon compte, « Mes ventes débloquées » et
+ * la pastille « Débloquée » des résultats. Lecture seule : rien n'est
  * consommé, et seules les lignes du compte connecté sont lisibles.
  */
 export const GET = apiRoute(

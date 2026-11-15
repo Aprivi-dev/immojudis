@@ -3,15 +3,16 @@
 import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import {
+  FREE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
   legalValue,
   publicLegalPublisher,
   type LegalPublisher,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { FREE_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 
 /** Notice given before the free-offer benefits are changed or withdrawn for the future. */
 const FREE_BENEFIT_NOTICE_DAYS = 30;
@@ -43,11 +44,13 @@ export function TermsPage() {
             Conditions générales d’utilisation et de vente
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-            Version {LEGAL_DOCUMENTS.terms.version}, applicable à compter du{" "}
-            {LEGAL_DOCUMENTS.terms.effectiveDate} aux comptes existants, et dès l’inscription pour
-            les comptes créés à partir de sa mise en ligne. La version précédente (
-            {PREVIOUS_LEGAL_DOCUMENTS.terms.version}) reste applicable aux comptes existants
-            jusqu’au {LEGAL_DOCUMENTS.terms.effectiveDate} ; elle est communiquée sur demande à{" "}
+            Version {LEGAL_DOCUMENTS.terms.version}, applicable dès l’inscription pour les comptes
+            créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui
+            concerne l’offre Découverte et son déblocage, et l’article 13 s’appliquent à compter du{" "}
+            {FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du{" "}
+            {LEGAL_DOCUMENTS.terms.effectiveDate}. Jusqu’à cette date, la version précédente (
+            {PREVIOUS_LEGAL_DOCUMENTS.terms.version}) reste applicable aux comptes existants pour
+            ces autres stipulations ; elle est communiquée sur demande à{" "}
             {legalValue(publisher.contactEmail)}.
           </p>
         </header>
@@ -75,45 +78,43 @@ export function TermsPage() {
               Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit les
               informations essentielles accessibles après création d’un compte : l’accès aux fiches
               des ventes, {PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum, une alerte avec
-              un email hebdomadaire et, chaque mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un
-              déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre
-              Analyse lorsque cette vente les comporte : l’enchère plafond ou l’offre plafond
-              chiffrée, selon la vente, la lecture des pièces, l’historique de la vente, les
-              statistiques du tribunal compétent pour cette vente et les pièces du dossier. Les
-              autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports
-              enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les
-              alertes avancées et la mise en relation avec un avocat référencé, restent réservées à
-              cette offre. Le déblocage est consommé quand vous le confirmez, après affichage du
-              nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est
-              déjà débloquée. Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni
-              si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la
-              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
-              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
-              déblocage est restitué sur simple demande adressée à{" "}
-              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Le
-              déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin
-              de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
-              déblocages non utilisés ne sont pas reportés. Le compteur est remis à{" "}
-              {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
-              débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
-              dans la limite de 24 mois après le déblocage, et tant que votre compte existe. Les
-              déblocages sont personnels (article 9). Pendant un abonnement Analyse ou l’essai
-              gratuit de l’article 13, aucun déblocage n’est consommé. À la fin de l’abonnement ou
-              de l’essai, le compte revient à Découverte : les ventes que vous aviez déjà débloquées
-              restent accessibles ; les autres ventes consultées pendant l’abonnement ou l’essai
-              redeviennent soumises aux déblocages.
+              un email hebdomadaire et {FREE_SALE_UNLOCKS} déblocage de vente en tout, qui ne se
+              renouvelle pas chaque mois. Un déblocage ouvre, pour une vente de votre choix, les
+              éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère
+              plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces,
+              l’historique de la vente, les statistiques du tribunal compétent pour cette vente et
+              les pièces du dossier. Les autres fonctions de l’offre Analyse, notamment l’export PDF
+              ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les
+              ventes comparables, les alertes avancées et la mise en relation avec un avocat
+              référencé, restent réservées à cette offre. Pour consulter ces éléments sur d’autres
+              ventes, il faut souscrire à l’offre Analyse. Le déblocage est consommé quand vous le
+              confirmez, après affichage du nombre restant ; il n’est pas consommé en cas d’erreur
+              technique, ni si la vente est déjà débloquée. Il est rendu automatiquement si la vente
+              est retirée avant d’avoir lieu, par la juridiction, le notaire ou la source. Si
+              Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui
+              lui est imputable (par exemple une erreur de publication ou la suspension d’une source
+              décidée par Immojudis), le déblocage est rendu sur simple demande adressée à{" "}
+              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Il n’est
+              pas rendu si la vente est reportée ou adjugée. Une vente débloquée reste consultable
+              avec ces éléments tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois
+              après le déblocage, et tant que votre compte existe. Passé ce délai de 24 mois, le
+              déblocage n’est plus conservé et un déblocage redevient disponible. Le déblocage est
+              personnel (article 9). Pendant un abonnement Analyse, aucun déblocage n’est consommé.
+              À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez
+              déjà débloquées restent accessibles ; les autres ventes consultées pendant
+              l’abonnement redeviennent soumises au déblocage.
             </p>
             <p className="mt-3">
-              Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous
-              prévenant au moins {FREE_BENEFIT_NOTICE_DAYS} jours à l’avance par un message dans
-              l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà
+              Immojudis peut modifier ou supprimer le déblocage du compte gratuit pour l’avenir, en
+              vous prévenant au moins {FREE_BENEFIT_NOTICE_DAYS} jours à l’avance par un message
+              dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà
               débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà
               consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez
               fermer votre compte gratuitement depuis{" "}
               <Link to="/mes-droits" className="text-gold underline">
                 Mes droits
               </Link>
-              . Ce délai ne s’applique pas à l’essai gratuit à l’inscription, régi par l’article 13.
+              .
             </p>
             <p className="mt-3">
               Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
@@ -125,8 +126,7 @@ export function TermsPage() {
               mois. Vous pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation
               prend effet à la fin de la période mensuelle en cours. Le prix est prélevé
               automatiquement à la souscription, puis chaque mois à la même date, jusqu’à la
-              résiliation. L’abonnement ne comprend pas de période d’essai : l’essai gratuit est
-              proposé à l’inscription, sans carte bancaire (article 13). Le tarif applicable est
+              résiliation. L’abonnement ne comprend pas de période d’essai. Le tarif applicable est
               présenté avant la confirmation de la souscription.
             </p>
             <p className="mt-3">
@@ -205,12 +205,10 @@ export function TermsPage() {
 
           <TermsSection title="6. Droit de rétractation">
             <p className="mb-3">
-              L’essai gratuit à l’inscription (article 13) est sans paiement : aucun montant n’est
-              dû, et vous pouvez demander la fermeture de votre compte à tout moment, gratuitement,
-              depuis Mes droits. Le droit de rétractation ci-dessous s’applique à l’abonnement
-              Analyse : le délai de 14 jours court à compter de la conclusion de l’abonnement, et le
-              service fourni pendant l’essai gratuit n’est pas pris en compte dans le montant
-              éventuellement dû en cas de rétractation.
+              L’offre Découverte est sans paiement : aucun montant n’est dû, et vous pouvez demander
+              la fermeture de votre compte à tout moment, gratuitement, depuis Mes droits. Le droit
+              de rétractation ci-dessous s’applique à l’abonnement Analyse : le délai de 14 jours
+              court à compter de la conclusion de l’abonnement.
             </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
@@ -261,10 +259,10 @@ export function TermsPage() {
               Le client maintient ses accès confidentiels et fournit des informations exactes. Les
               déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent. Sont
               interdits l’accès automatisé abusif, le contournement des quotas, notamment la
-              création de plusieurs comptes pour multiplier les déblocages ou obtenir plusieurs fois
-              l’essai gratuit, la redistribution massive des données, l’atteinte aux droits de tiers
-              et l’utilisation frauduleuse. Un accès peut être suspendu de manière proportionnée en
-              cas de fraude ou d’atteinte grave, sans priver le consommateur de ses droits légaux.
+              création de plusieurs comptes pour multiplier les déblocages, la redistribution
+              massive des données, l’atteinte aux droits de tiers et l’utilisation frauduleuse. Un
+              accès peut être suspendu de manière proportionnée en cas de fraude ou d’atteinte
+              grave, sans priver le consommateur de ses droits légaux.
             </p>
           </TermsSection>
 
@@ -342,37 +340,14 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="13. Essai gratuit à l’inscription">
+          <TermsSection title="13. Fin de l’essai gratuit à l’inscription">
             <p>
-              À l’inscription, un compte gratuit bénéficie de l’offre Analyse, sans paiement et sans
-              carte bancaire, pendant {ANALYSIS_TRIAL_DAYS} jours à compter de la confirmation de
-              son adresse email. L’essai n’est proposé qu’une fois par personne : il est réservé au
-              premier compte confirmé d’une même adresse email (les variantes d’écriture d’une même
-              boîte, par exemple avec un suffixe après « + » ou avec des points pour les adresses
-              Gmail, sont considérées comme la même adresse) et n’est pas ouvert aux adresses
-              jetables. Cette vérification est automatique ; si vous pensez qu’elle est erronée,
-              écrivez à {legalValue(publisher.contactEmail)}. L’essai peut être retiré plus tôt,
-              sans préavis, en cas d’abus (notamment la création de plusieurs comptes ou l’usage
-              d’adresses jetables pour obtenir plusieurs essais) ou d’impératif technique ou
-              juridique. Immojudis peut cesser de proposer l’essai aux nouveaux comptes.
-            </p>
-            <p className="mt-3">
-              Cet article est spécial à l’essai : il s’applique à la place du délai de prévenance de{" "}
-              {FREE_BENEFIT_NOTICE_DAYS} jours de l’article 2, qui continue de s’appliquer aux
-              déblocages mensuels de l’offre Découverte.
-            </p>
-            <p className="mt-3">
-              À la fin de l’essai, le compte revient à l’offre Découverte, sans frais, sans paiement
-              automatique et sans suppression des données. Vos données (favoris, alertes, rapports
-              enregistrés) restent conservées tant que votre compte existe et dans les durées de la
-              politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse.
-              Pour conserver l’offre Analyse, il faut y souscrire (articles 3 et 4) : aucun
-              abonnement ne commence sans confirmation dans Stripe.
-            </p>
-            <p className="mt-3">
-              Cet essai remplace l’offre de lancement à compter du 25 octobre 2026. Les comptes qui
-              en bénéficiaient suivent la même règle : leurs avantages prennent fin{" "}
-              {ANALYSIS_TRIAL_DAYS} jours après la confirmation de leur adresse email.
+              L’essai gratuit de l’offre Analyse à l’inscription n’est plus proposé depuis le{" "}
+              {FREE_UNLOCK_EFFECTIVE_DATE}, date d’entrée en vigueur de cet article. Les comptes qui
+              en bénéficiaient à cette date sont revenus à l’offre Découverte, sans frais, sans
+              paiement automatique et sans suppression des données. Leurs données (favoris, alertes,
+              rapports enregistrés) restent conservées dans les conditions de la politique de
+              confidentialité.
             </p>
           </TermsSection>
 
@@ -381,10 +356,10 @@ export function TermsPage() {
               Immojudis peut modifier les présentes conditions pour tenir compte de l’évolution du
               service, du droit ou de contraintes techniques. Les titulaires de compte en sont
               informés par email ou par message dans l’application au moins{" "}
-              {FREE_BENEFIT_NOTICE_DAYS} jours avant l’entrée en vigueur, sauf pour l’essai gratuit
-              (article 13) et sauf obligation légale ou impératif de sécurité. Une modification
-              n’est jamais appliquée à un abonnement en cours sans l’accord du client. Le titulaire
-              peut fermer son compte gratuitement avant l’entrée en vigueur.
+              {FREE_BENEFIT_NOTICE_DAYS} jours avant l’entrée en vigueur, sauf obligation légale ou
+              impératif de sécurité. Une modification n’est jamais appliquée à un abonnement en
+              cours sans l’accord du client. Le titulaire peut fermer son compte gratuitement avant
+              l’entrée en vigueur.
             </p>
           </TermsSection>
         </div>

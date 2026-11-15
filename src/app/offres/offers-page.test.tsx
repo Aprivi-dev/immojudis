@@ -88,7 +88,7 @@ describe("page Offres", () => {
     expect(questions).toEqual([
       "Comment résilier ?",
       "Y a-t-il un essai gratuit ?",
-      "Comment fonctionnent les 3 déblocages par mois ?",
+      "Comment fonctionne le déblocage du compte gratuit ?",
       "Puis-je être remboursé ?",
       "Quelle est la couverture géographique ?",
       "En quoi est-ce différent d’un avocat ?",
@@ -227,31 +227,30 @@ describe("page Offres", () => {
     expect(mocks.offer).toHaveBeenCalledTimes(2);
   });
 
-  it("annonce les déblocages mensuels avec le chiffre de plans.ts et leur limite", () => {
-    const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
+  it("annonce le déblocage d'une seule vente, sans quota mensuel", () => {
+    expect(PLAN_LIMITS.decouverte.saleUnlocks).toBe(1);
     const { container } = render(<OffersPage />);
     const text = container.textContent ?? "";
 
     expect(
       screen.getByText(
-        new RegExp(
-          `^${n} déblocages par mois : l’enchère plafond ou l’offre plafond, la lecture des pièces`,
-        ),
+        /^Une vente à débloquer : l’enchère plafond ou l’offre plafond, la lecture des pièces/,
       ),
     ).toBeTruthy();
     expect(text).toContain(
-      `elle comprend ${n} déblocages par mois, chacun ouvrant, pour une vente, l’enchère plafond ou l’offre plafond`,
+      "elle comprend le déblocage d’une vente, qui ouvre pour cette vente l’enchère plafond ou l’offre plafond",
     );
+    expect(text).not.toMatch(/déblocages par mois|par mois en détail|ventes chiffrées par mois/);
     // Never the names the owner excluded.
     expect(text).not.toMatch(
       /analyses? (complètes? )?gratuites?|essai gratuit des? (déblocages|ventes)/i,
     );
   });
 
-  it("répond à la question sur les déblocages : périmètre, remise à zéro à Paris, ce qui reste à Analyse", () => {
+  it("répond à la question sur le déblocage : périmètre, une seule vente, restitution, ce qui reste à Analyse", () => {
     const { container } = render(<OffersPage />);
     const answer = Array.from(container.querySelectorAll("details")).find((node) =>
-      node.querySelector("summary")?.textContent?.includes("déblocages par mois"),
+      node.querySelector("summary")?.textContent?.includes("déblocage du compte gratuit"),
     )?.textContent;
 
     expect(answer).toContain(
@@ -260,23 +259,25 @@ describe("page Offres", () => {
     expect(answer).toContain(
       "les statistiques du tribunal de cette vente et les pièces du dossier",
     );
-    expect(answer).toContain("le 1er du mois à 00 h 00, heure de Paris");
-    expect(answer).toContain("ne sont pas reportés");
+    expect(answer).toContain("Votre compte Découverte comprend le déblocage d’une vente");
+    expect(answer).toContain("il vous est rendu si la vente est retirée avant d’avoir lieu");
+    expect(answer).toContain("Pour ouvrir d’autres ventes, il faut l’offre Analyse.");
+    expect(answer).not.toMatch(/1er du mois|heure de Paris|reportés|chaque mois/);
     expect(answer).toContain("tant qu’elle est en ligne");
     expect(answer).toContain("Aucune carte bancaire n’est demandée");
     expect(answer).toContain("L’export PDF ou CSV, les rapports enregistrés");
-    expect(answer).toContain("lorsque la vente les comporte");
+    expect(answer).toContain("lorsqu’elle les comporte");
     expect(answer).toContain("dans la limite de 24 mois après le déblocage");
     expect(answer).toContain("l’estimation détaillée et les ventes comparables restent réservés");
   });
 
-  it("montre dans le comparatif « 3 déblocages par mois » plutôt que « Non inclus »", () => {
+  it("montre dans le comparatif « 1 vente débloquée » plutôt que « Non inclus »", () => {
     render(<OffersPage />);
     const table = screen.getByRole("table", { name: /Comparaison des offres/ });
     const ceiling = within(table).getByRole("rowheader", {
       name: /Enchère plafond ou offre plafond chiffrée/,
     }).parentElement!;
-    expect(ceiling.textContent).toContain("3 déblocages par mois");
+    expect(ceiling.textContent).toContain("1 vente débloquée");
     expect(ceiling.textContent).not.toContain("Non inclus");
     const pdf = within(table).getByRole("rowheader", {
       name: /Rapport PDF du scénario/,
@@ -366,7 +367,7 @@ describe("page Offres", () => {
       Array.from(container.querySelectorAll("details")).find((node) =>
         node.querySelector("summary")?.textContent?.includes(question),
       )!.textContent;
-    const unlocks = answer("déblocages par mois");
+    const unlocks = answer("déblocage du compte gratuit");
     expect(unlocks).toContain("qui suivent la confirmation de l’adresse email");
     expect(unlocks).toContain("sont aussi ouverts au compte gratuit");
     expect(unlocks).toContain("redeviennent réservés à Analyse ensuite");
@@ -509,26 +510,26 @@ describe("page Offres", () => {
     ).toBe(signup);
   });
 
-  it("dit ce que chaque offre chiffre : 3 ventes par mois, ou toutes", () => {
+  it("dit ce que chaque offre chiffre : une vente, ou toutes", () => {
     render(<OffersPage />);
     expect(
       screen.getByRole("heading", {
         level: 2,
-        name: "3 ventes chiffrées par mois, ou sans limite.",
+        name: "Une vente chiffrée avec le compte gratuit, toutes avec Analyse.",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Deux offres, un prix clair")).toBeNull();
     expect(screen.getByRole("article", { name: "Découverte" }).textContent).toContain(
-      "Pour repérer les ventes et chiffrer, chaque mois, les 3 qui vous intéressent le plus.",
+      "Pour repérer les ventes et chiffrer celle qui vous intéresse le plus.",
     );
     expect(screen.getByRole("article", { name: "Analyse" }).textContent).toContain(
       "Le plafond des ventes au tribunal ou chez le notaire, avant de choisir celles qui méritent une visite.",
     );
     // Sous les deux cartes, la phrase pour qui étudie beaucoup de ventes.
     expect(screen.getByTestId("offers-heavy-use-note").textContent).toBe(
-      "Vous étudiez plus de 3 ventes par mois, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à 25 alertes, export CSV.",
+      "Vous étudiez plusieurs ventes, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à 25 alertes, export CSV.",
     );
-    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
+    expect(PLAN_LIMITS.analyse.saleUnlocks).toBeNull();
   });
 
   it("décrit l'offre Analyse par les seules ventes au tribunal quand le notarial est fermé", () => {

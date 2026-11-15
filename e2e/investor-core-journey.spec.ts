@@ -105,12 +105,16 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       json: {
         configured: true,
         trialDays: 7,
-        // Le checkout n'ajoute plus d'essai : l'essai gratuit est accordé à l'inscription.
+        // Le checkout n'ajoute pas d'essai (`STRIPE_CHECKOUT_TRIAL_OFFERED`).
         trialAvailable: false,
         label: "59 € / mois",
       },
     });
   });
+  // L'essai gratuit à l'inscription n'est plus proposé : son interrupteur est coupé.
+  await page.route("**/api/launch-offer*", (route) =>
+    route.fulfill({ status: 200, json: { active: false } }),
+  );
   await page.route("**/api/billing/checkout", async (route) => {
     journey.push("payment");
     await route.fulfill({ status: 200, json: { url: "/offres?checkout=success" } });
@@ -157,12 +161,12 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   expect(reportId).toBe("report-e2e");
 
   await page.goto("/offres");
-  // « 3 déblocages par mois » : la limite est annoncée avec l'offre gratuite, et le comparatif ne
-  // dit pas « Non inclus » pour ce qu'un déblocage ouvre.
+  // Le déblocage d'une vente est annoncé avec l'offre gratuite, et le comparatif ne dit pas
+  // « Non inclus » pour ce qu'un déblocage ouvre.
   // Les régimes de frais sont tous ouverts par défaut : le déblocage ouvre « l’enchère plafond ou
   // l’offre plafond » (ventes notariales interactives).
   await expect(
-    page.getByText(/^3 déblocages par mois : l[’']enchère plafond ou l[’']offre plafond/),
+    page.getByText(/^Une vente à débloquer : l[’']enchère plafond ou l[’']offre plafond/),
   ).toBeVisible();
   // Tableau au-delà de 640 px, liste en dessous : seule la forme visible est trouvée.
   await expect(
@@ -171,7 +175,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       .or(
         page.getByRole("listitem").filter({ hasText: "Enchère plafond ou offre plafond chiffrée" }),
       )
-      .getByText("3 déblocages par mois"),
+      .getByText("1 vente débloquée"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Souscrire à Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();

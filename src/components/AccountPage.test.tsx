@@ -26,11 +26,9 @@ const status = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => 
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 2,
-  remaining: 1,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
+  limit: 1,
+  used: 1,
+  remaining: 0,
   ...overrides,
 });
 
@@ -54,18 +52,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("AccountPage unlocks", () => {
-  it("shows the month so far, the reset date and the way to the unlocked sales", async () => {
+  it("says whether the free unlock is used, and the way to the unlocked sales", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
     });
     mocks.overview.mockResolvedValue({ status: status(), sales: [] });
     renderPage();
 
-    expect(
-      await screen.findByText(
-        "Déblocages ce mois-ci : 2 sur 3 utilisés. Remis à 3 le 1er novembre.",
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText("Déblocage du compte gratuit : utilisé")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/ce mois-ci|Remis à/);
     expect(screen.getByRole("link", { name: "Mes ventes débloquées" }).getAttribute("href")).toBe(
       "/compte/ventes-debloquees",
     );
@@ -79,7 +74,7 @@ describe("AccountPage unlocks", () => {
     renderPage();
 
     expect(
-      await screen.findByText("Le suivi de vos déblocages est indisponible pour le moment."),
+      await screen.findByText("Le suivi de votre déblocage est indisponible pour le moment."),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mes ventes débloquées" })).toBeTruthy();
   });
@@ -162,9 +157,9 @@ describe("AccountPage unlocks", () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
     });
-    mocks.overview.mockResolvedValue({ status: status({ used: 0, remaining: 3 }), sales: [] });
+    mocks.overview.mockResolvedValue({ status: status({ used: 0, remaining: 1 }), sales: [] });
     renderPage();
-    expect(await screen.findByText(/0 sur 3 utilisés/)).toBeTruthy();
+    expect(await screen.findByText("Déblocage du compte gratuit : disponible")).toBeTruthy();
     expect(screen.getByText("Actions")).toBeTruthy();
   });
 
@@ -176,7 +171,7 @@ describe("AccountPage unlocks", () => {
     renderPage();
 
     const space = within(await screen.findByRole("region", { name: "Mon espace" }));
-    await screen.findByText(/2 sur 3 utilisés/);
+    await screen.findByText("Déblocage du compte gratuit : utilisé");
     const hrefs = space.getAllByRole("link").map((link) => link.getAttribute("href"));
     expect(hrefs).toEqual(["/favoris", "/alertes", "/compte/ventes-debloquees", "/comparaisons"]);
     expect(space.getByRole("link", { name: "Mes favoris" })).toBeTruthy();

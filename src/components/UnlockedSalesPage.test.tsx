@@ -16,11 +16,9 @@ const overview = (sales: SaleUnlocksOverview["sales"]): SaleUnlocksOverview => (
     unlocked: false,
     unlockable: true,
     analysisAccess: false,
-    limit: 3,
-    used: 2,
-    remaining: 1,
-    periodStart: "2026-09-30T22:00:00.000Z",
-    resetsAt: "2026-10-31T23:00:00.000Z",
+    limit: 1,
+    used: 1,
+    remaining: 0,
   },
   sales,
 });
@@ -39,7 +37,7 @@ beforeEach(() => mocks.overview.mockReset());
 afterEach(cleanup);
 
 describe("UnlockedSalesPage", () => {
-  it("lists the unlocked sales, each linking to its sheet, with the month's counter", async () => {
+  it("lists the unlocked sales, each linking to its sheet, with the state of the free unlock", async () => {
     mocks.overview.mockResolvedValue(
       overview([
         {
@@ -74,9 +72,7 @@ describe("UnlockedSalesPage", () => {
     );
     expect(list.textContent).toContain("Mise à prix à confirmer");
     expect(screen.getByRole("link", { name: "Vente sans titre" })).toBeTruthy();
-    expect(
-      screen.getByText("Déblocages ce mois-ci : 2 sur 3 utilisés. Remis à 3 le 1er novembre."),
-    ).toBeTruthy();
+    expect(screen.getByText("Déblocage du compte gratuit : utilisé")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Retour à Mon compte" }).getAttribute("href")).toBe(
       "/compte",
     );

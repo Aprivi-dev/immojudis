@@ -15,8 +15,8 @@ import { getSaleUnlockStatus, SaleUnlockQuotaError, unlockSale } from "@/lib/sal
 const saleIdSchema = z.string().guid();
 
 /**
- * « 3 déblocages par mois » (offre Découverte). Où en est le compte ce mois-ci, et cette vente
- * est-elle débloquée ? Lecture seule : rien n'est consommé.
+ * Le déblocage du compte gratuit (offre Découverte, une vente). Le compte l'a-t-il utilisé, et
+ * cette vente est-elle débloquée ? Lecture seule : rien n'est consommé.
  */
 export const GET = apiRoute<{ id: string }>(
   { scope: "sale-unlock-status", fallbackMessage: "Déblocage indisponible." },
@@ -36,7 +36,7 @@ export const GET = apiRoute<{ id: string }>(
 /**
  * Débloque cette vente pour le compte connecté : enchère plafond, lecture des pièces, historique,
  * statistiques du tribunal de la vente et pièces officielles, tant qu'elle est en ligne. Le quota
- * du mois de Paris est appliqué par la base, sous verrou par compte. Idempotent : une vente déjà
+ * du compte est appliqué par la base, sous verrou par compte. Idempotent : une vente déjà
  * débloquée ne consomme rien. Un compte Analyse n'a rien à débloquer. Aucun appel Stripe.
  */
 export const POST = apiRoute<{ id: string }>(
@@ -55,7 +55,7 @@ export const POST = apiRoute<{ id: string }>(
     } catch (error) {
       if (!(error instanceof SaleUnlockQuotaError)) throw error;
       await recordAccountProductEvent(auth.userId, { type: "quota_reached", quota: "unlocks" });
-      // Le client lit `code` et `status` pour afficher le quota du mois : corps propre à ce 409.
+      // Le client lit `code` et `status` pour expliquer le refus : corps propre à ce 409.
       const body: SaleUnlockQuotaReachedResponse = {
         error: SALE_UNLOCK_QUOTA_MESSAGE,
         code: "unlock_quota_reached",

@@ -8,13 +8,13 @@ const analysis = PLAN_LIMITS.analyse;
 describe("ce qui demandera l’offre Analyse à la fin de l’essai", () => {
   it("met le plafond et les alertes en tête, avec les chiffres de `PLAN_LIMITS`", () => {
     expect(LAUNCH_OFFER_END_NEEDS_ANALYSIS).toEqual([
-      `le plafond chiffré sans limite mensuelle (compte gratuit : ${free.monthlyUnlocks} ventes par mois)`,
+      "le plafond chiffré sur toutes les ventes (compte gratuit : une vente débloquée)",
       `jusqu’à ${analysis.watchedZones} alertes, chaque jour (compte gratuit : ${free.watchedZones}, chaque semaine)`,
       "l’estimation détaillée et les ventes comparables",
       "le rapport PDF et l’export CSV",
       "les pièces du dossier et leur lecture sur toutes les ventes (compte gratuit : vos ventes débloquées)",
     ]);
-    expect(LAUNCH_OFFER_END_NEEDS_ANALYSIS.join(" ")).toContain("3 ventes par mois");
+    expect(free.saleUnlocks).toBe(1);
     expect(LAUNCH_OFFER_END_NEEDS_ANALYSIS.join(" ")).toContain("jusqu’à 25 alertes");
   });
 
@@ -38,6 +38,6 @@ describe("ce qui demandera l’offre Analyse à la fin de l’essai", () => {
       expect(analyse[feature], feature).toBe("included");
     }
     expect(free.pdfExportsPerMonth).toBe(0);
-    expect(analysis.monthlyUnlocks).toBeNull();
+    expect(analysis.saleUnlocks).toBeNull();
   });
 });

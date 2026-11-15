@@ -1,10 +1,11 @@
--- "3 déblocages par mois": a Découverte account unlocks one sale at a time, three per Paris month.
+-- Déblocage du compte gratuit (20261023100000, puis 20261120100000) : a Découverte account unlocks one
+-- sale in all (no monthly reset); an unlock counts for 24 months at most.
 begin;
 -- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
 -- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
 update app_private.launch_offer set active = false where singleton;
 
-select plan(66);
+select plan(68);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -87,7 +88,7 @@ values
 
 -- Structure and constants ----------------------------------------------------------------------
 select has_table('public', 'user_sale_unlocks', 'unlocked sales are stored');
-select is(app_private.monthly_sale_unlock_limit(), 3, 'the database quota is three unlocks a month');
+select is(app_private.free_sale_unlock_limit(), 1, 'the database quota is one unlock in all');
 select ok(
   not has_table_privilege('authenticated', 'public.user_sale_unlocks', 'INSERT')
   and not has_table_privilege('authenticated', 'public.user_sale_unlocks', 'UPDATE')
@@ -107,7 +108,7 @@ select ok(
   'only the public wrapper is callable by an account; the clock-injecting function is not'
 );
 
--- Paris month ----------------------------------------------------------------------------------
+-- Paris month (only feeds the legacy keys period_start / period_end since 20261120100000) ---------
 select is(
   (select period_start from app_private.sale_unlock_period('2026-10-31T23:30:00Z')),
   '2026-10-31T23:00:00Z'::timestamptz,
@@ -151,14 +152,14 @@ select is(
 );
 select is(
   (select public.get_sale_unlock_status('c4600000-1000-4000-8000-000000000001') ->> 'remaining')::integer,
-  3,
-  'three unlocks are available at the start of the month'
+  1,
+  'one unlock is available'
 );
 
 select is(
   (select public.unlock_sale('c4600000-1000-4000-8000-000000000001') ->> 'remaining')::integer,
-  2,
-  'the first unlock leaves two'
+  0,
+  'the first unlock leaves none'
 );
 select is(
   (select (public.unlock_sale('c4600000-1000-4000-8000-000000000001') ->> 'consumed')::boolean),
@@ -242,20 +243,22 @@ select is(
   'the documents and risks of a sale that was not unlocked stay hidden'
 );
 
-select lives_ok(
+select throws_ok(
   $$select public.unlock_sale('c4600000-1000-4000-8000-000000000002')$$,
-  'a second sale can be unlocked'
+  'P0001',
+  'Vous avez déjà utilisé le déblocage de votre compte gratuit.',
+  'a second sale is refused: one unlock in all'
 );
 select is(
-  (select public.unlock_sale('c4600000-1000-4000-8000-000000000003') ->> 'remaining')::integer,
+  (select public.get_sale_unlock_status() ->> 'remaining')::integer,
   0,
-  'the third unlock leaves none'
+  'the refusal consumed nothing and no unlock is left'
 );
 select throws_ok(
   $$select public.unlock_sale('c4600000-1000-4000-8000-000000000004')$$,
   'P0001',
-  'Vous avez utilisé tous vos déblocages de ce mois-ci.',
-  'the fourth unlock of the month is refused'
+  'Vous avez déjà utilisé le déblocage de votre compte gratuit.',
+  'any other sale is refused as well'
 );
 select is(
   (select count(*) from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000004'),
@@ -366,7 +369,7 @@ select is(
 );
 select is(
   (select public.get_sale_unlock_status() ->> 'used')::integer,
-  3,
+  1,
   'the credit of a sale that left the catalogue is not given back'
 );
 reset role;
@@ -374,7 +377,7 @@ reset role;
 -- Purging a sale does not give the credit back either -----------------------------------------
 -- Catalogue retention only deletes rows that already carry their Outcome Graph bridge.
 do $$ begin perform public.bridge_auction_sales_to_outcome_graph(); end $$;
-delete from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000002';
+delete from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000001';
 select is(
   (select count(*) from public.user_sale_unlocks
     where user_id = 'c4600000-0000-4000-8000-000000000001' and sale_id is null),
@@ -460,23 +463,27 @@ select is(
 );
 delete from public.user_sale_unlocks where user_id = 'c4600000-0000-4000-8000-000000000003';
 
--- Paris month change, clock injected ---------------------------------------------------------------
+-- No monthly reset; a new unlock after 24 months, clock injected -----------------------------------
 set local "request.jwt.claim.sub" = 'c4600000-0000-4000-8000-000000000004';
 select lives_ok(
-  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000003', '2026-10-10T10:00:00Z');
-    select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000004', '2026-10-20T10:00:00Z');
-    select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000005', '2026-10-31T22:30:00Z')$$,
-  'three unlocks are made during October'
+  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000003', '2026-10-10T10:00:00Z')$$,
+  'the account uses its unlock in October'
 );
 select throws_ok(
-  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000007', '2026-10-31T22:59:00Z')$$,
+  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000004', '2026-10-31T23:30:00Z')$$,
   'P0001',
-  'Vous avez utilisé tous vos déblocages de ce mois-ci.',
-  '31/10 22:59 UTC (23:59 in Paris) is still October: refused'
+  'Vous avez déjà utilisé le déblocage de votre compte gratuit.',
+  '31/10 23:30 UTC is 1 November in Paris: no monthly reset, refused'
+);
+select throws_ok(
+  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000004', '2028-10-09T10:00:00Z')$$,
+  'P0001',
+  'Vous avez déjà utilisé le déblocage de votre compte gratuit.',
+  'a day before its 24 months the unlock still counts: refused'
 );
 select lives_ok(
-  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000007', '2026-10-31T23:30:00Z')$$,
-  '31/10 23:30 UTC is 1 November 00:30 in Paris: the counter has restarted'
+  $$select app_private.unlock_sale_at('c4600000-1000-4000-8000-000000000004', '2028-10-11T10:00:00Z')$$,
+  'after its 24 months the unlock no longer counts: a new unlock is available'
 );
 reset role;
 
@@ -486,8 +493,8 @@ update public.user_sale_unlocks set unlocked_at = '2026-10-15T10:00:00Z'
 where user_id = 'c4600000-0000-4000-8000-000000000001';
 select is(
   (select count(*) from public.user_sale_unlocks where user_id = 'c4600000-0000-4000-8000-000000000001'),
-  3::bigint,
-  'the first account holds its three October unlocks (one detached from its purged sale)'
+  1::bigint,
+  'the first account holds its single October unlock, detached from its purged sale'
 );
 select lives_ok(
   $$select public.run_data_retention('2026-12-01T00:00:00Z'::timestamptz)$$,
@@ -496,17 +503,22 @@ select lives_ok(
 select is(
   (select count(*) from public.user_sale_unlocks
     where user_id = 'c4600000-0000-4000-8000-000000000001' and sale_id is null),
-  0::bigint,
-  'an unlock detached from its sale is removed once its month is over'
-);
-select is(
-  (select count(*) from public.user_sale_unlocks where user_id = 'c4600000-0000-4000-8000-000000000001'),
-  2::bigint,
-  'the unlocks still attached to an existing sale are kept'
+  1::bigint,
+  'an unlock detached from its sale is kept after its month: it counts until its 24 months'
 );
 select lives_ok(
-  $$select app_private.purge_sale_unlocks('2029-12-01T00:00:00Z'::timestamptz)$$,
-  'the purge accepts a clock three years later'
+  $$select app_private.purge_sale_unlocks('2028-10-14T00:00:00Z'::timestamptz)$$,
+  'the purge runs the day before the 24 months of the detached unlock'
+);
+select is(
+  (select count(*) from public.user_sale_unlocks
+    where user_id = 'c4600000-0000-4000-8000-000000000001' and sale_id is null),
+  1::bigint,
+  'the detached unlock is still kept before its 24 months'
+);
+select lives_ok(
+  $$select app_private.purge_sale_unlocks('2031-01-01T00:00:00Z'::timestamptz)$$,
+  'the purge accepts a clock years later'
 );
 select is(
   (select count(*) from public.user_sale_unlocks
