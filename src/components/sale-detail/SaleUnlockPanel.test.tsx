@@ -75,7 +75,9 @@ describe("SaleUnlockPanel", () => {
       screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
     ).toBeTruthy();
     // No countdown, no scarcity, no month: the free account comprises one unlock, and says so.
-    expect(document.body.textContent).not.toMatch(/dernière chance|plus que|vite|expire|ce mois|par mois|chaque mois/i);
+    expect(document.body.textContent).not.toMatch(
+      /dernière chance|plus que|vite|expire|ce mois|par mois|chaque mois/i,
+    );
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 

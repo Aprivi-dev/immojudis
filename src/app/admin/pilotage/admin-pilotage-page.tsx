@@ -768,8 +768,8 @@ function ActivationCard({ activation }: { activation: AdminActivation | null }) 
  * Part des comptes Découverte qui atteignent 3 déblocages dans le mois : la mesure à lire avant
  * toute décision sur le prix ou sur un pass (n° 97). Le seuil est celui que compte la base
  * (`admin_pilotage_unlock_threshold`, écrit en dur dans sa migration) : un test vérifie l'accord.
- * C'était le quota mensuel du compte gratuit ; depuis que ce compte ne débloque plus qu'une vente en
- * tout (`PLAN_LIMITS.decouverte.saleUnlocks`), il ne le suit plus.
+ * C'était le quota mensuel du compte gratuit ; depuis que ce compte ne débloque plus qu'une vente
+ * en tout (`PLAN_LIMITS.decouverte.saleUnlocks`), il ne le suit plus.
  */
 export const UNLOCK_THRESHOLD = 3;
 
@@ -781,8 +781,8 @@ function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null 
       <p className="mt-1 text-sm text-brand-navy/70">
         Parmi les comptes Découverte (adresse confirmée, sans accès Analyse ni essai en cours) :
         ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les{" "}
-        {UNLOCK_THRESHOLD} déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour les deux
-        mois. Administrateurs exclus.
+        {UNLOCK_THRESHOLD} déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour
+        les deux mois. Administrateurs exclus.
       </p>
       <p className="mt-2 text-sm">
         <span className="text-brand-navy/70">Comptes Découverte aujourd’hui : </span>

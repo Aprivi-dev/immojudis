@@ -28,7 +28,9 @@ describe("DepartmentAlertProposal", () => {
     const text = document.body.textContent ?? "";
     expect(text).toContain("L’email récapitulatif est facultatif");
     expect(text).toContain("que si vous cochez la case");
-    expect(text).toContain("hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse");
+    expect(text).toContain("hebdomadaire avec l’offre Découverte, quotidien avec l’offre Analyse.");
+    // L'essai à l'inscription est fermé : le texte, affiché sans condition, ne l'annonce pas.
+    expect(text).not.toContain("essai");
     expect(text).toContain("Si vous l’avez déjà activé dans votre compte");
     expect(screen.queryByRole("checkbox")).toBeNull();
   });

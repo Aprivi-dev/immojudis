@@ -70,7 +70,8 @@ function ExampleFictionNotice() {
 /**
  * Fin de l'exemple, pour un visiteur : le même calcul sur les ventes réelles. Avec l'essai, sur toutes
  * les ventes qui ont un plafond (`open` : les régimes de frais ouverts ; jamais les ventes domaniales)
- * pendant l'essai, puis sur la vente débloquée ; sans l'essai (ou état non lu), la vente débloquée seule.
+ * pendant l'essai, puis sur la vente débloquée ; sans l'essai (ou état non lu), la vente débloquée
+ * seule.
  */
 function exampleNextStepsText(trialOpen: boolean, open?: readonly FeeRegimeKey[]): string {
   return trialOpen
