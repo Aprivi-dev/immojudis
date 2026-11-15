@@ -7,7 +7,7 @@ import { apiRoute } from "@/lib/api-route";
 import { readSaleThroughDoor, saleFeatureDoor } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import type { SalePassagesResponse } from "@/lib/sale-passages";
+import { salePassagesTeaser, type SalePassagesResponse } from "@/lib/sale-passages";
 import { getSalePassages } from "@/lib/sale-passages.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
@@ -16,7 +16,8 @@ const saleIdSchema = z.string().guid();
 /**
  * « Historique de la vente ». Analyse, or a sale the account unlocked: the full
  * timeline and the earlier passages of the property. Other signed-in accounts:
- * the counts only, as an invitation to the offer. The sale must be visible to the caller first.
+ * the counts and whether the starting price went down (never by how much), as an invitation to
+ * the offer. The sale must be visible to the caller first.
  */
 export const GET = apiRoute<{ id: string }>(
   { scope: "sale-passages", fallbackMessage: "Historique de la vente indisponible." },
@@ -50,7 +51,7 @@ export const GET = apiRoute<{ id: string }>(
         metadata: { view: "passages", previous_passages: passages.summary.previousPassageCount },
       });
     } else {
-      body = { access: "teaser", summary: passages.summary };
+      body = salePassagesTeaser(passages);
     }
     return body;
   },

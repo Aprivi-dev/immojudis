@@ -4,8 +4,9 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/entitlements.server";
-import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
+import { ForbiddenError } from "@/lib/api-errors";
+import { assertFeatureEntitlementVia, getSaleForDoor } from "@/lib/entitlements.server";
+import { getCadastralParcels } from "@/lib/property-report/repository";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { landLocationInputFromSale } from "@/lib/land-report-input";
 import { getCachedLandReport } from "@/lib/land-report";
@@ -31,27 +32,39 @@ export const GET = apiRoute<{ id: string }>(
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const { id } = paramsSchema.parse(params);
     const query = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
-    // Les droits sont indépendants : contrôlés ensemble, avant toute lecture de la vente.
-    const [plan] = await Promise.all([
-      assertFeatureEntitlement(
+    // Les droits sont indépendants : contrôlés ensemble, avant toute lecture de la vente. L'offre, ou
+    // le déblocage de cette vente par un compte Découverte, les ouvre tous les trois.
+    const [{ plan, door }] = await Promise.all([
+      assertFeatureEntitlementVia(
         auth,
         "property.urbanPlanning",
         "L’analyse du PLU et des risques est réservée à l’offre Analyse.",
+        { saleId: id },
       ),
-      assertFeatureEntitlement(
+      assertFeatureEntitlementVia(
         auth,
         "property.cadastralAnalysis",
         "L’analyse cadastrale est réservée à l’offre Analyse.",
+        { saleId: id },
       ),
       query.format === "pdf"
-        ? assertFeatureEntitlement(
+        ? assertFeatureEntitlementVia(
             auth,
             "property.pdfExport",
             "L’export PDF est réservé à l’offre Analyse.",
+            { saleId: id },
           )
         : null,
     ]);
-    const sale = await getSale(auth.supabase, id);
+    // Une nouvelle interrogation des services de l'État (jusqu'à 180 s) reste à l'offre : le
+    // déblocage ouvre le dossier tel qu'il est en cache ou calculé une première fois.
+    if (door === "unlock" && query.refresh === "1") {
+      throw new ForbiddenError(
+        "L’actualisation du dossier du terrain est réservée à l’offre Analyse : le dossier de cette vente reste consultable sans actualisation.",
+      );
+    }
+    // La clé des tables d'enrichissement (cadastre) est lue par le serveur et n'est jamais renvoyée.
+    const { sale, enrichmentKey } = await getSaleForDoor(auth, id, door);
     await enforceUserRateLimit({
       userId: auth.userId,
       context: api,
@@ -67,7 +80,7 @@ export const GET = apiRoute<{ id: string }>(
       operation: "landReport",
       launchOffer: plan.launchOffer === true,
     });
-    const parcels = await getCadastralParcels(sale.source_url);
+    const parcels = await getCadastralParcels(enrichmentKey);
     const report = await getCachedLandReport(landLocationInputFromSale(sale, parcels), {
       refresh: query.refresh === "1",
     });

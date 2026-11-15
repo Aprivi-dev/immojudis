@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { DEFAULT_OPEN_FEE_REGIMES } from "@/lib/fee-regime-open";
@@ -18,7 +19,6 @@ import { formatPrice } from "@/lib/format";
 const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
-import { ceilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { SaleUnlockStatus } from "@/lib/sale-unlocks";
 import {
@@ -137,6 +137,7 @@ vi.mock("next/dynamic", () => ({
       lockedAction,
       mapLocation,
       loadStructuredUrbanism,
+      officialLandRefresh,
       enabled,
     }: {
       mapLocation?: Pick<
@@ -144,6 +145,7 @@ vi.mock("next/dynamic", () => ({
         "address" | "postal_code" | "city" | "latitude" | "longitude"
       >;
       loadStructuredUrbanism?: boolean;
+      officialLandRefresh?: boolean;
       enabled?: boolean;
       payload?: PepitePayload;
       userCeilingEur?: number | null;
@@ -167,11 +169,17 @@ vi.mock("next/dynamic", () => ({
       // Onglet Quartier : le vrai bloc urbanisme et cadastre ; les risques de la commune, rien.
       if (mapLocation !== undefined && sale) {
         return (
-          <UrbanismeSection
-            sale={sale}
-            mapLocation={mapLocation}
-            loadStructuredUrbanism={loadStructuredUrbanism}
-          />
+          <div
+            data-testid="urbanism"
+            data-structured={String(Boolean(loadStructuredUrbanism))}
+            data-land-refresh={String(Boolean(officialLandRefresh))}
+          >
+            <UrbanismeSection
+              sale={sale}
+              mapLocation={mapLocation}
+              loadStructuredUrbanism={loadStructuredUrbanism}
+            />
+          </div>
         );
       }
       if (enabled !== undefined) return null;
@@ -1175,6 +1183,7 @@ describe("integrated listing", () => {
     mocks.authUser = { id: "user-1" };
     // Le serveur juge l'écart montrable sur l'occupation brute (« libre ») ; la relecture IA la bloque.
     mocks.fetchValuePreview.mockResolvedValue({
+      access: "full",
       available: true,
       lowEur: 215_000,
       highEur: 247_000,
@@ -1282,28 +1291,44 @@ describe("integrated listing", () => {
     );
   });
 
-  it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {
+  it("shows a free account the level of the gap and the facts found, never the range nor a percentage", async () => {
     mocks.authUser = { id: "free-account" };
     mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 180_000,
-      highEur: 220_000,
-      discountPct: 32,
-      reliability: "medium",
+      access: "teaser",
+      band: "under",
+      comparables: { count: 12, radiusM: 500 },
     });
-    renderDetail("discovery", undefined, true, true);
+    // A vacant property: the level of the gap is situated, not withheld.
+    const vacant = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    const { container } = renderDetail("discovery", vacant, true, true);
+
+    const reference = await screen.findByTestId("market-reference");
+    expect(reference.textContent).toContain(
+      "Mise à prix inférieure à la fourchette des ventes comparables",
+    );
     selectTab("Prix et plafond");
-    expect(
-      screen.getByRole("heading", {
-        name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
-      }),
-    ).toBeTruthy();
-    expect(
-      (await screen.findByText(/environ 32 % sous la valeur estimée/)).getAttribute("role"),
-    ).toBe("status");
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toContain("Repère marché");
+    expect(trio.textContent).not.toContain("Valeur estimée");
+    expect(screen.getByTestId("comparables-teaser").textContent).toContain(
+      "12 ventes comparables trouvées dans un rayon de 500 m",
+    );
+    // No range, no percentage of gap, anywhere on the page: the starting price is the only amount
+    // next to a « Repère marché ».
+    const text = (container.textContent ?? "").replace(/\s+/g, " ");
+    // (The percentages of the deposit and of the overbid are rules of the sale, not a gap.)
+    expect(text).not.toMatch(
+      /\d+ % (sous|au-dessus)|sous la valeur estimée|Écart non significatif/,
+    );
+    expect(text).not.toMatch(/€ – \d/);
+    expect(text).not.toContain("Fourchette indicative");
+    expect(screen.queryByRole("heading", { name: /Les comparables et les travaux/ })).toBeNull();
+
     selectTab("Travaux");
     expect(
-      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Estimez vos travaux avec un déblocage ou l’offre Analyse",
+      }),
     ).toBeTruthy();
     expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
@@ -1316,6 +1341,16 @@ describe("integrated listing", () => {
     expect(mocks.fetchMarket).not.toHaveBeenCalled();
     expect(mocks.fetchAiReviewProjections).not.toHaveBeenCalled();
     expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+  });
+
+  it("shows no comparables line to a free account when their count is unknown", async () => {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({ access: "teaser", band: null, comparables: null });
+    renderDetail("discovery");
+    selectTab("Prix et plafond");
+    expect(await screen.findByText("Pas encore d’estimation")).toBeTruthy();
+    expect(screen.queryByTestId("comparables-teaser")).toBeNull();
+    expect(screen.queryByTestId("market-reference")).toBeNull();
   });
 
   it.each(["notary", "state", "unknown"] as const)(
@@ -1436,6 +1471,18 @@ describe("integrated listing", () => {
   });
 });
 
+/** The value preview of a sale whose data is open (Analyse, unlocked sale). */
+const UNLOCKED_VALUE_PREVIEW = {
+  available: true,
+  lowEur: 215_000,
+  highEur: 247_000,
+  discountPct: 59,
+  discountNotSignificant: false,
+  startingPricePerM2: null,
+  reliability: "forte",
+  gapWithheld: null,
+};
+
 describe("the free unlock on the sale page", () => {
   const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
     saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
@@ -1453,7 +1500,7 @@ describe("the free unlock on the sale page", () => {
     sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale,
   ) {
     mocks.authUser = { id: "free-account" };
-    mocks.fetchValuePreview.mockResolvedValue({ available: false });
+    mocks.fetchValuePreview.mockResolvedValue({ access: "teaser", band: null, comparables: null });
     return render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -1470,12 +1517,13 @@ describe("the free unlock on the sale page", () => {
     mocks.authUser = { id: "free-account" };
     mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
     mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
-    // An unlock receives the ceiling projection of the estimate, nothing more.
+    // An unlocked sale receives the detailed estimate, as Analyse does for every sale.
     mocks.fetchMarket.mockResolvedValue({
       status: "ready",
-      estimate: ceilingMarketEstimate(estimate),
+      estimate,
       computedAt: "2026-10-12T08:00:00.000Z",
     });
+    mocks.fetchValuePreview.mockResolvedValue({ access: "full", ...UNLOCKED_VALUE_PREVIEW });
     return render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -1537,7 +1585,7 @@ describe("the free unlock on the sale page", () => {
     renderFree(unlockStatus(), notarialSale(null));
 
     expect(
-      screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
+      screen.getByText(/l’enchère plafond ou l’offre plafond, l’estimation détaillée/),
     ).toBeTruthy();
     // The hero teaser names both terms too.
     expect(
@@ -1614,13 +1662,15 @@ describe("the free unlock on the sale page", () => {
     expect(statistics?.getAttribute("data-upcoming-listings")).toBe("false");
   });
 
-  it("asks nothing more than the five elements need: no fact reliability, no forecast", () => {
+  it("reads the forecast of the hearing of an unlocked sale, but never the reliability of the facts", () => {
     renderUnlocked();
 
     expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
     selectTab("Prix et plafond");
-    expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
-    expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
+    const summary = screen.getByText("Perspective d’adjudication");
+    expect(mocks.forecast).toHaveBeenLastCalledWith(EXAMPLE_SALE_RECORDS.bordeaux.sale.id, false);
+    fireEvent.click(summary);
+    expect(mocks.forecast).toHaveBeenLastCalledWith(EXAMPLE_SALE_RECORDS.bordeaux.sale.id, true);
   });
 
   it("says a whole number of sales on an unlocked sale, never the effective sample (D4)", async () => {
@@ -1636,24 +1686,104 @@ describe("the free unlock on the sale page", () => {
     expect(document.body.textContent).not.toMatch(/5[.,]3 ventes/);
   });
 
-  it("keeps the exports, the saved reports and the Analyse-only blocks closed on an unlocked sale", () => {
-    renderUnlocked();
+  it("shows every block about an unlocked sale as for a subscriber, and keeps the workspace closed", async () => {
+    const { container } = renderUnlocked();
 
-    // Aperçu: no risk evidence panel, only the generic « Points à vérifier » card.
-    expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
-    // Marché et comparables: no market evidence.
+    // Aperçu: the points read in the documents, as for Analyse.
+    expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
+    // Prix: the range of the value and the scale of the subscriber.
+    selectTab("Prix et plafond");
+    await waitFor(() => expect(screen.getByTestId("price-scale")).toBeTruthy());
+    expect(screen.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
+    // Marché et comparables: the detailed estimate, its comparables, urbanism and the land file.
     selectTab("Quartier");
-    expect(document.getElementById("market")).toBeNull();
-    // Travaux stays a preview of the Analyse offer.
+    await waitFor(() => expect(container.querySelector("#market")).not.toBeNull());
+    expect(screen.getByTestId("market-sentence")).toBeTruthy();
+    const urbanism = screen.getByTestId("urbanism");
+    expect(urbanism.getAttribute("data-structured")).toBe("true");
+    // Forcing a new read of the official sources stays with the subscription.
+    expect(urbanism.getAttribute("data-land-refresh")).toBe("false");
+    // Travaux: the works of the listing instead of the preview of the offer.
     selectTab("Travaux");
     expect(
-      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
-    ).toBeTruthy();
-    // Démarches: no report save/export, no work file.
+      screen.queryByRole("heading", {
+        name: "Estimez vos travaux avec un déblocage ou l’offre Analyse",
+      }),
+    ).toBeNull();
+    // Démarches: the report of this sale; the work file stays with the subscription.
     selectTab("Démarches");
-    expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
-    expect(screen.queryByText("Conserver votre analyse")).toBeNull();
-    expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+    expect(screen.getByText("Conserver votre analyse")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export PDF" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ouvrir le dossier de travail" })).toBeNull();
+    // The reliability of the facts and the tribunal's other upcoming sales stay closed.
+    expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+    selectTab("Statistiques");
+    expect(container.querySelector("#stats-overview")?.getAttribute("data-upcoming-listings")).toBe(
+      "false",
+    );
+  });
+
+  it("keeps the land refresh and the workspace for the subscriber", () => {
+    mocks.authUser = { id: "analysis-account" };
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    selectTab("Quartier");
+    expect(screen.getByTestId("urbanism").getAttribute("data-land-refresh")).toBe("true");
+  });
+
+  it("reads the open value again once the sale is unlocked, instead of the cached level of gap", async () => {
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
+    mocks.fetchMarket.mockResolvedValue({
+      status: "ready",
+      estimate: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+      computedAt: "2026-10-12T08:00:00.000Z",
+    });
+    mocks.fetchValuePreview
+      .mockResolvedValueOnce({ access: "teaser", band: "under", comparables: null })
+      .mockResolvedValue({ access: "full", ...UNLOCKED_VALUE_PREVIEW });
+    mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 1, remaining: 0 }));
+    // As the sale page does: once unlocked, the unlocked view replaces the free one.
+    function SalePage() {
+      const [unlocked, setUnlocked] = useState(false);
+      return unlocked ? (
+        <UnlockedSaleDetailView
+          sale={sale}
+          unlockStatus={unlockStatus({ unlocked: true, used: 1, remaining: 0 })}
+          justUnlocked
+        />
+      ) : (
+        <FreeSaleDetailView
+          sale={sale}
+          unlockStatus={unlockStatus()}
+          onSaleUnlocked={() => setUnlocked(true)}
+        />
+      );
+    }
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SalePage />
+      </QueryClientProvider>,
+    );
+
+    const before = await screen.findByTestId("market-reference");
+    expect(before.getAttribute("data-band")).toBe("under");
+    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("market-reference").textContent).toMatch(/215.000/),
+    );
+    expect(mocks.fetchValuePreview).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchMarket).toHaveBeenCalled();
+    window.history.replaceState(null, "", "/");
   });
 
   it("offers « Mon dossier » (free storage) to a signed-in account, with the ceiling of the calculator", async () => {
@@ -1833,14 +1963,17 @@ describe("the free unlock on the sale page", () => {
     expect(screen.getByText(/l’enchère plafond est une simulation/)).toBeTruthy();
   });
 
-  it("does not load the market estimate for an unlocked notary sale: no bid ceiling there", () => {
-    renderUnlocked({
+  it("loads the market estimate of an unlocked notary sale for its market blocks, without ceiling", async () => {
+    const { container } = renderUnlocked({
       ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
       sale_venue_type: "notary",
       sale_procedure: null,
       source_blocks: null,
     } as AuctionSale);
-    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+    expect(mocks.fetchMarket).toHaveBeenCalled();
     expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
+    selectTab("Prix et plafond");
+    expect(container.querySelector("#calculation")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
   });
 });

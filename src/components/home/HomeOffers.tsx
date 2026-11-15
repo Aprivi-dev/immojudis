@@ -17,7 +17,7 @@ const discoveryFeatures = (unlockHighlights: string) =>
   [
     "Accès aux annonces, sur la carte et en liste",
     "Informations essentielles de chaque vente",
-    `${FREE_UNLOCK_LABEL} : ${unlockHighlights}`,
+    `${FREE_UNLOCK_LABEL}, qui ouvre ${unlockHighlights}`,
     `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   ] as const;
 

@@ -58,7 +58,7 @@ describe("queryKeys", () => {
       "dep",
     ]);
     expect(queryKeys.saleAnalysisSets("u1")).toEqual(["sale-analysis-sets", "u1"]);
-    expect(queryKeys.valuePreview("s1")).toEqual(["value-preview", "s1"]);
+    expect(queryKeys.valuePreview("s1", "discovery")).toEqual(["value-preview", "s1", "discovery"]);
     expect(queryKeys.lawyerQuestions("s1", "analysis", "u1")).toEqual([
       "lawyer-questions",
       "s1",
@@ -90,6 +90,7 @@ describe("queryKeys", () => {
         access,
         "u1",
       ]);
+      expect(queryKeys.valuePreview("s1", access)).toEqual(["value-preview", "s1", access]);
       expect(queryKeys.auctionScenarios("s1", access, "u1")).toEqual([
         "auction-scenarios",
         "s1",
@@ -100,6 +101,10 @@ describe("queryKeys", () => {
     // The teaser of a locked sale and the reading of the same sale once unlocked never share an entry.
     expect(queryKeys.documentReading("s1", "discovery", "u1")).not.toEqual(
       queryKeys.documentReading("s1", "unlocked", "u1"),
+    );
+    // Unlocking a sale opens the value range: the free account's band is never served afterwards.
+    expect(queryKeys.valuePreview("s1", "discovery")).not.toEqual(
+      queryKeys.valuePreview("s1", "unlocked"),
     );
     // Nor do two accounts share an entry.
     expect(queryKeys.documentReading("s1", "unlocked", "u1")).not.toEqual(

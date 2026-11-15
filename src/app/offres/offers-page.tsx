@@ -103,9 +103,10 @@ const unlockedItems = (open?: readonly FeeRegimeKey[]) =>
   unlockedItemsText({ ceiling: ceilingTermWithArticleText(open), statistics: true });
 
 const discoveryFeatures = (open?: readonly FeeRegimeKey[]) => [
-  `${FREE_UNLOCK_LABEL} : ${unlockedItems(open)}, pour la vente choisie`,
+  `${FREE_UNLOCK_LABEL} : ${unlockedItems(open)}`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
-  "Fourchette de valeur estimée et écart avec la mise à prix",
+  // La fourchette et l'écart chiffré ne sont plus gratuits (décision du 15/11/2026).
+  "Niveau d’écart avec le marché et aperçu chiffré de l’analyse (nombre de ventes comparables, de points relevés dans les pièces, de passages)",
   `Une alerte avec un email récapitulatif par semaine, ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   "Simulateur de financement, risques de la commune et annuaire des avocats",
 ];
@@ -191,16 +192,18 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
     answer: ({ launchActive, ceilingWithArticle }) => (
       <>
         Votre compte Découverte comprend le déblocage d’une vente : choisissez celle qui vous
-        intéresse le plus. Pour cette vente, vous voyez, lorsqu’elle les comporte,{" "}
-        {ceilingWithArticle}, la lecture des pièces, l’historique de la vente, les statistiques du
-        tribunal de cette vente et les pièces du dossier. Le déblocage est définitif ; il vous est
-        rendu si la vente est retirée avant d’avoir lieu. Une vente débloquée reste accessible tant
-        qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage. Pour
-        ouvrir d’autres ventes, il faut l’offre Analyse. Aucune carte bancaire n’est demandée et
-        rien ne devient payant automatiquement.{" "}
+        intéresse le plus. Pour cette vente, vous avez l’analyse complète, c’est-à-dire tout ce que
+        l’offre Analyse donne sur une vente, lorsqu’elle les comporte : {ceilingWithArticle},
+        l’estimation détaillée et les ventes comparables, le budget travaux détaillé, la lecture des
+        pièces, l’historique de la vente, les statistiques du tribunal de cette vente, l’urbanisme
+        et le cadastre, les pièces du dossier, le rapport enregistré et le rapport PDF. Le déblocage
+        est définitif ; il vous est rendu si la vente est retirée avant d’avoir lieu. Une vente
+        débloquée reste accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24
+        mois après le déblocage. Pour ouvrir d’autres ventes, il faut l’offre Analyse. Aucune carte
+        bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
         {launchActive
-          ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite.`
-          : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}
+          ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’analyse complète de toutes les ventes, l’export CSV et les alertes avancées sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite, sauf pour la vente débloquée.`
+          : "L’export CSV, les alertes avancées, le partage d’un rapport par lien et les statistiques des autres tribunaux restent réservés à Analyse."}
       </>
     ),
   },

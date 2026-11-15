@@ -83,12 +83,32 @@ describe("MarketReference", () => {
     render(
       <MarketReference startingPrice={95_000} preview={null} signupHref="/login?reason=fiche" />,
     );
-    expect(
-      screen
-        .getByRole("link", { name: "Créez un compte gratuit pour la voir" })
-        .getAttribute("href"),
-    ).toBe("/login?reason=fiche");
+    expect(screen.getByRole("link", { name: "Créez un compte gratuit" }).getAttribute("href")).toBe(
+      "/login?reason=fiche",
+    );
     expect(screen.queryByText(/215/)).toBeNull();
+  });
+
+  it("gives a free account the level of the gap only, with no amount", () => {
+    const { container } = render(
+      <MarketReference startingPrice={95_000} preview={null} band="under" />,
+    );
+    const block = screen.getByTestId("market-reference");
+    expect(block.getAttribute("data-band")).toBe("under");
+    expect(block.textContent).toContain(
+      "Mise à prix inférieure à la fourchette des ventes comparables",
+    );
+    expect(block.textContent).toContain("la mise à prix est volontairement basse");
+    expect(screen.getByRole("link", { name: "Comment est calculé ce repère ?" })).toBeTruthy();
+    expect(container.textContent).not.toMatch(/€|\d+ %/);
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("says why the gap is not situated, without the note on the starting price", () => {
+    render(<MarketReference startingPrice={95_000} preview={null} band="occupancy_unknown" />);
+    const block = screen.getByTestId("market-reference");
+    expect(block.textContent).toContain("Occupation du bien non précisée");
+    expect(block.textContent).not.toContain("volontairement basse");
   });
 
   it("shows nothing without an estimate", () => {
@@ -237,6 +257,27 @@ describe("PriceSummaryCard", () => {
     expect(screen.getByRole("region", { name: "Le prix" }).textContent).toContain(
       "fourchette indicative, ventes comparables",
     );
+  });
+
+  it("shows a free account the level of the gap in place of the range, without amount", () => {
+    render(
+      <PriceSummaryCard
+        startLabel="Mise à prix"
+        startingPrice={95_000}
+        value={{ kind: "band", band: "near" }}
+        valueWithheld={null}
+        ceilingLabel="Enchère plafond (simulation)"
+        ceiling={{ kind: "locked", action: <span>Avec l’offre Analyse</span> }}
+        detailHref={null}
+      />,
+    );
+
+    const card = screen.getByRole("region", { name: "Le prix" });
+    expect(card.textContent).toContain("Repère marché");
+    expect(card.textContent).toContain("Mise à prix dans la fourchette des ventes comparables");
+    expect(card.textContent).not.toContain("Valeur estimée");
+    // The starting price is the only amount.
+    expect(card.textContent?.match(/€/g)).toHaveLength(1);
   });
 
   it("keeps the locked ceiling and the visitor's value behind their offers", () => {

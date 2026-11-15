@@ -10,7 +10,7 @@ vi.mock("@/lib/property-reports", () => ({ exportPropertyReportPdf: mocks.export
 import { POST } from "./route";
 const request = () =>
   new Request("http://localhost/api/property-reports/fixture/export", { method: "POST" });
-const params = { params: Promise.resolve({ id: "fixture" }) };
+const params = { params: Promise.resolve({ id: "51515151-5151-4515-8515-515151515151" }) };
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.auth.mockResolvedValue({ userId: "user" });

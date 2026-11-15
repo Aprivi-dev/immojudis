@@ -26,10 +26,14 @@ export const GET = apiRoute<{ id: string }>(
       bucketKey: "v1.sale-outcome-graph",
       ...RATE_LIMIT_POLICIES.compute,
     });
+    // Analyse, or a Découverte account that unlocked this very sale (« déblocage du compte gratuit
+    // »). The identifier is validated after the entitlement, as before; an invalid one simply cannot
+    // match an unlock.
     await assertFeatureEntitlement(
       auth,
       "property.outcomeGraph",
       "Prévision Outcome Graph réservée à l’offre Analyse.",
+      { saleId: paramsSchema.safeParse(params).data?.id },
     );
     const { id: saleId } = paramsSchema.parse(params);
     const forecast = await getOutcomeGraphForecastForSale(saleId);

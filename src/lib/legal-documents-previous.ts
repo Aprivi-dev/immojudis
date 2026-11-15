@@ -1,6 +1,7 @@
 import {
   FLOOD_LEGAL_EFFECTIVE_DATE,
   FREE_UNLOCK_EFFECTIVE_DATE,
+  FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   PEPITE_LEGAL_EFFECTIVE_DATE,
   PEPITE_TERMS_EFFECTIVE_DATE,
   PRIVACY_COMPLETION_EFFECTIVE_DATE,
@@ -28,6 +29,13 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     archive: "docs/legal-archives/conditions-generales-2026-10-25.1.tsx.txt",
     /** Versions plus récentes que la précédente mais déjà remplacées, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-11-15.1",
+        sha256: "52e3b866e3de65f04d363e72353491309a65c14c0e2c0b540a73d8f92df6c32b",
+        effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+        applicableUntil: FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/conditions-generales-2026-11-15.1.tsx.txt",
+      },
       {
         version: "2026-11-10.1",
         sha256: "6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc",

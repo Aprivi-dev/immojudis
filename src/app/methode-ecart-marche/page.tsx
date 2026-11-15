@@ -183,8 +183,8 @@ function PageContent() {
             une fourchette volontairement large. Cette fourchette n’est pas celle des ventes
             comparables : c’est une marge fixe autour de la valeur (au moins 28 %, davantage si la
             surface est incertaine). Elle n’est pas jugée fiable :{" "}
-            <strong>aucun écart en pourcentage n’en est tiré</strong>, ni dans l’aperçu d’un compte
-            gratuit ni dans les alertes sur la décote.
+            <strong>aucun écart en pourcentage n’en est tiré</strong>, ni sur la fiche ni dans les
+            alertes sur la décote.
           </p>
         </Section>
 
@@ -273,7 +273,9 @@ function PageContent() {
             ne dit rien.
           </p>
           <p>
-            Le pourcentage, la valeur estimée et la fourchette restent réservés aux comptes. Ce
+            Avec un compte gratuit, la fiche donne aussi un niveau d’écart, sans chiffre. Le
+            pourcentage, la valeur estimée et la fourchette s’affichent pour la vente débloquée avec
+            le compte gratuit (une vente en tout) et pour toutes les ventes avec l’offre Analyse. Ce
             repère est indicatif : la mise à prix est un prix de départ, et il ne remplace ni une
             visite ni l’avis d’un professionnel.
           </p>

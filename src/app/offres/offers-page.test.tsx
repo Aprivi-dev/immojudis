@@ -234,12 +234,17 @@ describe("page Offres", () => {
 
     expect(
       screen.getByText(
-        /^Une vente à débloquer : l’enchère plafond ou l’offre plafond, la lecture des pièces/,
+        /^Une vente à débloquer : l’analyse complète de la vente \(l’enchère plafond ou l’offre plafond, l’estimation détaillée et les ventes comparables, la lecture des pièces/,
       ),
     ).toBeTruthy();
     expect(text).toContain(
-      "elle comprend le déblocage d’une vente, qui ouvre pour cette vente l’enchère plafond ou l’offre plafond",
+      "elle comprend le déblocage d’une vente, qui ouvre pour cette vente l’analyse complète de la vente (l’enchère plafond ou l’offre plafond",
     );
+    // La fourchette et l'écart chiffré ne sont plus gratuits : la carte Découverte dit ce qui l'est.
+    expect(text).toContain(
+      "Niveau d’écart avec le marché et aperçu chiffré de l’analyse (nombre de ventes comparables, de points relevés dans les pièces, de passages)",
+    );
+    expect(text).not.toContain("Fourchette de valeur estimée et écart avec la mise à prix");
     expect(text).not.toMatch(/déblocages par mois|par mois en détail|ventes chiffrées par mois/);
     // Never the names the owner excluded.
     expect(text).not.toMatch(
@@ -254,10 +259,10 @@ describe("page Offres", () => {
     )?.textContent;
 
     expect(answer).toContain(
-      "l’enchère plafond ou l’offre plafond, la lecture des pièces, l’historique de la vente",
+      "vous avez l’analyse complète, c’est-à-dire tout ce que l’offre Analyse donne sur une vente",
     );
     expect(answer).toContain(
-      "les statistiques du tribunal de cette vente et les pièces du dossier",
+      "l’enchère plafond ou l’offre plafond, l’estimation détaillée et les ventes comparables, le budget travaux détaillé, la lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente, l’urbanisme et le cadastre, les pièces du dossier, le rapport enregistré et le rapport PDF",
     );
     expect(answer).toContain("Votre compte Découverte comprend le déblocage d’une vente");
     expect(answer).toContain("il vous est rendu si la vente est retirée avant d’avoir lieu");
@@ -265,10 +270,11 @@ describe("page Offres", () => {
     expect(answer).not.toMatch(/1er du mois|heure de Paris|reportés|chaque mois/);
     expect(answer).toContain("tant qu’elle est en ligne");
     expect(answer).toContain("Aucune carte bancaire n’est demandée");
-    expect(answer).toContain("L’export PDF ou CSV, les rapports enregistrés");
+    expect(answer).toContain(
+      "L’export CSV, les alertes avancées, le partage d’un rapport par lien et les statistiques des autres tribunaux restent réservés à Analyse.",
+    );
     expect(answer).toContain("lorsqu’elle les comporte");
     expect(answer).toContain("dans la limite de 24 mois après le déblocage");
-    expect(answer).toContain("l’estimation détaillée et les ventes comparables restent réservés");
   });
 
   it("montre dans le comparatif « 1 vente débloquée » plutôt que « Non inclus »", () => {
@@ -279,10 +285,10 @@ describe("page Offres", () => {
     }).parentElement!;
     expect(ceiling.textContent).toContain("1 vente débloquée");
     expect(ceiling.textContent).not.toContain("Non inclus");
-    const pdf = within(table).getByRole("rowheader", {
-      name: /Rapport PDF du scénario/,
+    const csv = within(table).getByRole("rowheader", {
+      name: /Export CSV des résultats de recherche/,
     }).parentElement!;
-    expect(pdf.textContent).toContain("Non inclus");
+    expect(csv.textContent).toContain("Non inclus");
   });
 
   it("ne promet le plafond « pour toutes les ventes » que pour celles dont un régime de frais est ouvert", () => {
@@ -300,7 +306,7 @@ describe("page Offres", () => {
     const { container } = render(<OffersPage openFeeRegimes={["tribunal"]} />);
     const text = container.textContent ?? "";
     expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();
-    expect(text).toContain("l’enchère plafond, la lecture des pièces");
+    expect(text).toContain("l’enchère plafond, l’estimation détaillée et les ventes comparables");
     expect(text).toContain("Enchère plafond (ventes au tribunal) chiffrée");
     expect(text).not.toContain("offre plafond");
     expect(text).not.toContain("ventes notariales");
@@ -309,7 +315,9 @@ describe("page Offres", () => {
   it("n'ouvre à l'offre plafond que le régime interactif quand la bougie est fermée", () => {
     const { container } = render(<OffersPage openFeeRegimes={["tribunal", "notary_online"]} />);
     const text = container.textContent ?? "";
-    expect(text).toContain("l’enchère plafond ou l’offre plafond, la lecture des pièces");
+    expect(text).toContain(
+      "l’enchère plafond ou l’offre plafond, l’estimation détaillée et les ventes comparables",
+    );
     expect(text).toContain("ventes notariales interactives");
     expect(text).not.toContain("ventes notariales à la bougie");
   });
@@ -402,7 +410,7 @@ describe("page Offres", () => {
     expect(list.className).toContain("sm:hidden");
     const item = within(list)
       .getAllByRole("listitem")
-      .find((node) => node.textContent?.includes("Rapport PDF du scénario"))!;
+      .find((node) => node.textContent?.includes("Export CSV des résultats de recherche"))!;
     expect(item.textContent).toContain("Découverte : Non inclus");
     expect(item.textContent).toContain("Analyse : Inclus");
     const table = screen.getByRole("table", { name: /Comparaison des offres/ });

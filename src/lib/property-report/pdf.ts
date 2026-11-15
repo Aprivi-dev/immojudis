@@ -10,7 +10,7 @@ import {
 import { PROPERTY_TAX_NOT_COUNTED } from "@/lib/bid-ceiling-engine";
 import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
-import { sanitizeReportSnapshotForPlan } from "./entitlements";
+import { featureOpenFor, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { reportWording } from "./report-wording";
 import { RENT_SOURCE_URL, rentSourceNotice } from "@/lib/rent-source-notice";
 import { reportRentReference } from "./rent-notice";
@@ -20,7 +20,8 @@ import {
   financingDossierLines,
 } from "./financing-dossier";
 import type { SavedReportRow } from "../property-reports";
-import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
+import type { SaleFeatureDoor } from "@/lib/entitlements.server";
+import type { PlanEntitlements } from "@/lib/plans";
 import {
   formatReportPercent,
   formatRenovationBudgetRange,
@@ -128,11 +129,13 @@ export function reportToPdfLines(
   plan: PlanEntitlements,
   /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux qui sont définis. */
   regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
+  /** Comment la vente est ouverte : l'offre, ou le déblocage de cette vente (toutes les sections). */
+  door: SaleFeatureDoor = "plan",
 ): string[] {
   // Un rapport enregistré avant le durcissement du filtre peut encore porter un nom de particulier :
   // le PDF refiltre à la lecture, comme le lien partagé.
   const snapshot = redactPersonalData(
-    sanitizeReportSnapshotForPlan(asRecord(report.report_snapshot), plan),
+    sanitizeReportSnapshotForPlan(asRecord(report.report_snapshot), plan, door),
   );
   const traceability = asRecord(snapshot.sourceTraceability);
   const sourceTrace = normalizeSourceTrace(traceability.entries);
@@ -260,12 +263,12 @@ export function reportToPdfLines(
     audienceReadinessAnalysis.checklist,
   );
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
-  const canShowSoldComparables = featureIncluded(plan.plan, "property.soldComparables");
-  const canShowSaleHistory = featureIncluded(plan.plan, "property.saleHistory");
-  const canShowUrbanPlanning = featureIncluded(plan.plan, "property.urbanPlanning");
-  const canShowStreetFacade = featureIncluded(plan.plan, "property.streetFacade");
-  const canShowNeighborhood = featureIncluded(plan.plan, "property.neighborhoodAnalysis");
-  const canShowActiveComparables = featureIncluded(plan.plan, "property.activeComparables");
+  const canShowSoldComparables = featureOpenFor(plan, door, "property.soldComparables");
+  const canShowSaleHistory = featureOpenFor(plan, door, "property.saleHistory");
+  const canShowUrbanPlanning = featureOpenFor(plan, door, "property.urbanPlanning");
+  const canShowStreetFacade = featureOpenFor(plan, door, "property.streetFacade");
+  const canShowNeighborhood = featureOpenFor(plan, door, "property.neighborhoodAnalysis");
+  const canShowActiveComparables = featureOpenFor(plan, door, "property.activeComparables");
 
   return [
     `Plan: ${plan.label}`,

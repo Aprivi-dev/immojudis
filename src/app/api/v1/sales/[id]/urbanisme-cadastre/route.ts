@@ -4,14 +4,11 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/entitlements.server";
+import { assertFeatureEntitlementVia, getSaleForDoor } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import {
-  getCadastralParcels,
-  getSale,
-  getUrbanPlanningSignals,
-} from "@/lib/property-report/repository";
+import { urbanPlanningSignalsForDoor } from "@/lib/property-report/entitlements";
+import { getCadastralParcels, getUrbanPlanningSignals } from "@/lib/property-report/repository";
 
 const paramsSchema = z.object({ id: z.string().guid() });
 
@@ -30,23 +27,34 @@ export const GET = apiRoute<{ id: string }>(
       bucketKey: "v1.sale-urbanisme-cadastre",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    await assertFeatureEntitlement(
+    // Analyse, or a Découverte account that unlocked this very sale (« déblocage du compte gratuit
+    // »). The identifier is validated after the entitlements, as before; an invalid one simply
+    // cannot match an unlock. Both rights open through the same door (the offer has both or neither,
+    // an unlock opens both).
+    const unlockSaleId = paramsSchema.safeParse(params).data?.id;
+    await assertFeatureEntitlementVia(
       auth,
       "property.cadastralAnalysis",
       "Les données cadastrales sont réservées à l’offre Analyse.",
+      { saleId: unlockSaleId },
     );
-    await assertFeatureEntitlement(
+    const { door } = await assertFeatureEntitlementVia(
       auth,
       "property.urbanPlanning",
       "Les données d’urbanisme sont réservées à l’offre Analyse.",
+      { saleId: unlockSaleId },
     );
 
     const { id: saleId } = paramsSchema.parse(params);
-    const sale = await getSale(auth.supabase, saleId);
-    const [cadastralParcels, urbanPlanningSignals] = await Promise.all([
-      getCadastralParcels(sale.source_url),
-      getUrbanPlanningSignals(sale.source_url),
+    // The enrichment rows are found by the sale's key, read on the server and never returned.
+    const { enrichmentKey } = await getSaleForDoor(auth, saleId, door);
+    const [cadastralParcels, signals] = await Promise.all([
+      getCadastralParcels(enrichmentKey),
+      getUrbanPlanningSignals(enrichmentKey),
     ]);
+    // Through an unlock, only the signals read in what the sale already serves (pieces, title,
+    // description): never an excerpt of the raw payload or of another source.
+    const urbanPlanningSignals = urbanPlanningSignalsForDoor(signals, door);
 
     return { cadastralParcels, urbanPlanningSignals };
   },

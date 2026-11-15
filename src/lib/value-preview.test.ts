@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketEstimate } from "@/lib/market.server";
-import { buildValuePreview } from "./value-preview";
+import { buildValuePreview, valuePreviewComparables } from "./value-preview";
 
 const estimate = (fields: Partial<MarketEstimate>) => fields as MarketEstimate;
 
@@ -164,5 +164,22 @@ describe("buildValuePreview", () => {
         gapWithheld: null,
       });
     });
+  });
+});
+
+describe("valuePreviewComparables", () => {
+  it("gives the size and the radius of the stored estimate's sample, nothing else", () => {
+    expect(
+      valuePreviewComparables(
+        estimate({ sampleSize: 14, radiusM: 600, estimatedValueEur: 201_400 }),
+      ),
+    ).toEqual({ count: 14, radiusM: 600 });
+  });
+
+  it("gives nothing when either is missing", () => {
+    expect(valuePreviewComparables(null)).toBeNull();
+    expect(valuePreviewComparables(estimate({ sampleSize: 14 }))).toBeNull();
+    expect(valuePreviewComparables(estimate({ radiusM: 600 }))).toBeNull();
+    expect(valuePreviewComparables(estimate({ sampleSize: Number.NaN, radiusM: 600 }))).toBeNull();
   });
 });

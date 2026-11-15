@@ -29,7 +29,12 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
-vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/entitlements.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/entitlements.server")>()),
+  assertFeatureEntitlement: mocks.entitlement,
+  // value-preview : aucune porte ouverte, la vente est lue dans la vue du compte gratuit.
+  saleFeatureDoor: async () => null,
+}));
 vi.mock("@/lib/sale-analysis-sets", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sale-analysis-sets")>()),
   updateSaleAnalysisSet: mocks.updateSet,

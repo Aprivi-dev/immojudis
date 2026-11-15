@@ -58,12 +58,24 @@ describe("plan matrix", () => {
     expect(PLAN_LIMITS.analyse.saleUnlocks).toBeNull();
   });
 
-  it("opens exactly the five elements of the unlocked page, and no autonomous estimate", () => {
+  it("opens the whole Analyse offer of the sale page, for the unlocked sale", () => {
     expect([...SALE_UNLOCK_FEATURES].sort()).toEqual([
+      "property.activeComparables",
       "property.advancedBidScenarios",
       "property.bidCeiling",
+      "property.cadastralAnalysis",
       "property.documentReading",
+      "property.nearbyServices",
+      "property.neighborhoodAnalysis",
+      "property.outcomeGraph",
+      "property.pdfExport",
+      "property.reportEditing",
       "property.saleHistory",
+      "property.savedReports",
+      "property.soldComparables",
+      "property.streetFacade",
+      "property.urbanPlanning",
+      "property.valueEstimate",
       "sales.statistics",
     ]);
   });
@@ -73,20 +85,21 @@ describe("plan matrix", () => {
       expect(featureIncluded("decouverte", feature)).toBe(false);
       expect(isSaleUnlockFeature(feature)).toBe(true);
     }
-    // Exports, saved reports and the other Analyse rights are never opened by an unlock.
+    // What stays with the subscription: other sales, the DPE explorer, alerts, CSV, favourites,
+    // lawyer referrals. Sharing a report by link is checked on the offer alone.
     for (const feature of [
-      "property.pdfExport",
+      "dpe.latest",
+      "dpe.filters",
+      "dpe.map",
       "sales.csvExport",
-      "property.savedReports",
-      "property.reportEditing",
-      "property.valueEstimate",
-      "property.outcomeGraph",
-      "property.soldComparables",
-      "property.activeComparables",
-      "property.urbanPlanning",
-      "property.cadastralAnalysis",
+      "sales.favorites",
+      "sales.multiPropertyAnalysis",
+      "alerts.advanced",
       "alerts.realtimeChanges",
+      "alerts.watchedZones",
+      "data.onDemandRefresh",
       "workspace.collaboration",
+      "workspace.audienceTracking",
       "sales.apiAccess",
       "lawyers.referrals",
     ] as const) {

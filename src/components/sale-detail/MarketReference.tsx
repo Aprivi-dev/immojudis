@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { formatPrice } from "@/lib/format";
 import { describeMarketGap } from "@/lib/market-gap";
+import {
+  MARKET_GAP_BAND_LABELS,
+  MARKET_GAP_BAND_METHOD_LABEL,
+  MARKET_GAP_BAND_METHOD_PATH,
+  MARKET_GAP_BAND_STARTING_PRICE_NOTE,
+  type MarketGapBand,
+  type PublicMarketGapBand,
+} from "@/lib/market-gap-band";
 import type { ValuePreview } from "@/lib/value-preview";
 import styles from "./SaleOverview.module.css";
 
@@ -16,17 +24,24 @@ export function marketReferenceScale(startingPrice: number, low: number, high: n
   return { start: at(startingPrice), low: at(low), high: at(high) };
 }
 
+/** Le niveau situe la mise à prix (sous, dans, au-dessus de la fourchette), au lieu d'en dire la raison. */
+export function isMarketGapPosition(band: PublicMarketGapBand): band is MarketGapBand {
+  return band === "under" || band === "near" || band === "above";
+}
+
 /**
  * « Repère marché » du haut de la fiche : la fourchette de valeur estimée du bien (ventes
  * comparables DVF), lue sur le même aperçu de valeur que le panneau de prix (`/api/value-preview`). La barre qui place la
  * mise à prix n'apparaît que quand l'écart est montrable : jamais pour un bien occupé ou
  * d'occupation inconnue (la valeur s'appuie sur des ventes de biens libres), ni pour un écart
- * aberrant. Ces cas gardent la phrase de `describeMarketGap`. Un visiteur voit l'invitation à créer
- * un compte, comme dans le panneau de prix.
+ * aberrant. Ces cas gardent la phrase de `describeMarketGap`. Un compte gratuit, sur une vente qu'il
+ * n'a pas débloquée, ne lit que le niveau d'écart (`band`), sans montant. Un visiteur voit
+ * l'invitation à créer un compte, comme dans le panneau de prix.
  */
 export function MarketReference({
   startingPrice,
   preview,
+  band = null,
   loading = false,
   signupHref = null,
   startLabel = "La mise à prix",
@@ -35,6 +50,8 @@ export function MarketReference({
   /** Le nom du prix de départ en début de phrase (« La première offre possible »…). */
   startLabel?: string;
   preview: ValuePreview | null;
+  /** Compte gratuit, vente non débloquée : le niveau d'écart seul, à la place de la fourchette. */
+  band?: PublicMarketGapBand | null;
   loading?: boolean;
   /** Visiteur : lien d'inscription à la place de la fourchette. */
   signupHref?: string | null;
@@ -44,8 +61,9 @@ export function MarketReference({
       <div className={styles.marketReference}>
         <p className={styles.eyebrow}>Repère marché</p>
         <p className={styles.lockNote}>
-          La fourchette de valeur estimée du bien est réservée aux comptes.{" "}
-          <Link href={signupHref}>Créez un compte gratuit pour la voir</Link>
+          La fourchette de valeur estimée du bien est réservée à l’offre Analyse et aux ventes
+          débloquées. <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la
+          vente.
         </p>
       </div>
     );
@@ -58,7 +76,24 @@ export function MarketReference({
       </div>
     );
   }
-  if (!preview?.available || preview.lowEur == null || preview.highEur == null) return null;
+  if (!preview?.available || preview.lowEur == null || preview.highEur == null) {
+    if (!band) return null;
+    return (
+      <div className={styles.marketReference} data-testid="market-reference" data-band={band}>
+        <p className={styles.eyebrow}>Repère marché</p>
+        <p className={styles.marketRange}>{MARKET_GAP_BAND_LABELS[band]}</p>
+        <p className={styles.muted}>
+          {isMarketGapPosition(band) ? `${MARKET_GAP_BAND_STARTING_PRICE_NOTE} ` : null}
+          <Link
+            href={MARKET_GAP_BAND_METHOD_PATH}
+            className="font-semibold text-gold-text underline underline-offset-4"
+          >
+            {MARKET_GAP_BAND_METHOD_LABEL}
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   const low = preview.lowEur;
   const high = preview.highEur;

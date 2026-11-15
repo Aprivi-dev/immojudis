@@ -28,6 +28,7 @@ import {
 } from "@/lib/sale-publication-guard";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToAnalysis } from "@/lib/dpe-diagnostic-row";
 import { NotFoundError } from "@/lib/api-errors";
+import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import {
   comparisonScopes,
   filterComparisonScope,
@@ -52,9 +53,14 @@ export async function getSale(supabase: SupabaseClient, saleId: string): Promise
   return appSaleRowToAuctionSale(data);
 }
 
+/**
+ * The sales still on offer around `sale`, read with the account's session in `view`: the full view
+ * for the offer, the redacted catalogue (`DISCOVERY_VIEW`) for the unlock of one sale.
+ */
 export async function getActiveComparableSales(
   supabase: SupabaseClient,
   sale: AuctionSale,
+  view: typeof DETAIL_VIEW | typeof DISCOVERY_VIEW,
 ): Promise<ActiveComparableSales> {
   const scopes = comparisonScopes({
     city: sale.city,
@@ -69,6 +75,7 @@ export async function getActiveComparableSales(
   for (const scope of scopes) {
     const rows = await queryActiveComparableSales({
       supabase,
+      view,
       sale,
       scope,
       nowIso,
@@ -258,12 +265,14 @@ export async function getValuationBacktestForReport(
 
 async function queryActiveComparableSales({
   supabase,
+  view,
   sale,
   scope,
   nowIso,
   limit,
 }: {
   supabase: SupabaseClient;
+  view: typeof DETAIL_VIEW | typeof DISCOVERY_VIEW;
   sale: AuctionSale;
   scope: ComparisonScope;
   nowIso: string;
@@ -271,7 +280,7 @@ async function queryActiveComparableSales({
 }): Promise<AppSaleRow[]> {
   const query = filterComparisonScope(
     supabase
-      .from("v_auction_sales_app")
+      .from(view as typeof DETAIL_VIEW)
       .select("*")
       .not("id", "is", null)
       .or(
@@ -314,6 +323,24 @@ export async function getReport(
   if (!data) throw new NotFoundError("Rapport introuvable.");
   await assertSalePublicationVisible(data.sale_id);
   return data;
+}
+
+/** The sale of an owned report, as the session reads it; absent: « introuvable ». */
+export async function getReportSaleId(
+  supabase: SupabaseClient,
+  userId: string,
+  reportId: string,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("saved_property_reports")
+    .select("sale_id")
+    .eq("id", reportId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new NotFoundError("Rapport introuvable.");
+  return data.sale_id;
 }
 
 export async function getExistingReportId(

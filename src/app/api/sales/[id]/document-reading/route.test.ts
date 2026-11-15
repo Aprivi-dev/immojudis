@@ -109,6 +109,7 @@ describe("GET /api/sales/[id]/document-reading", () => {
       access: "teaser",
       pointCount: 1,
       alertCount: 1,
+      occupationCount: 1,
       themes: ["occupation"],
     });
     expect(JSON.stringify(body)).not.toContain("occupé par");

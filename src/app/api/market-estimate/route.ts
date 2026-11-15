@@ -9,7 +9,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { PublicApiError } from "@/lib/api-errors";
 import { assertFeatureEntitlementVia, readSaleThroughDoor } from "@/lib/entitlements.server";
-import { featureIncluded } from "@/lib/plans";
+import { featureOpenFor } from "@/lib/property-report/entitlements";
 import { ceilingMarketContext } from "@/lib/market-estimate-ceiling";
 import {
   estimateSaleValueWithEnteredSurface,
@@ -56,16 +56,16 @@ export const POST = apiRoute(
     });
     const { saleId, enteredSurface } = requestSchema.parse(await request.json());
     // One read of the plan: the bid-ceiling right opens the reference value (the offer, or a
-    // Découverte account that unlocked this very sale, « déblocage du compte gratuit »), reduced to
-    // what the ceiling reads. The detailed estimate (range, quartiles, comparables) stays with the
-    // offer that includes it.
+    // Découverte account that unlocked this very sale, « déblocage du compte gratuit »). The detailed
+    // estimate (range, quartiles, comparables) is served when the same door opens it too; otherwise
+    // the value is reduced to what the ceiling reads.
     const { plan, door } = await assertFeatureEntitlementVia(
       auth,
       "property.bidCeiling",
       "Estimation de marché réservée à l’offre Analyse.",
       { saleId },
     );
-    const detailed = door === "plan" && featureIncluded(plan.plan, "property.valueEstimate");
+    const detailed = featureOpenFor(plan, door, "property.valueEstimate");
     // Same visibility rule as the sale page: readable by this user in the view of its door
     // (published and ready), not merely present in auction_sales.
     await readSaleThroughDoor(auth, saleId, door, "id");
