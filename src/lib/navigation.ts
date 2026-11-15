@@ -104,6 +104,11 @@ export function loginReason(value: unknown): LoginReason | undefined {
  * Adresse de connexion qui ramène la personne sur la page d'où elle vient. Elle ouvre par défaut
  * « Créer un compte » (`mode=investor`) : un visiteur qui touche un cœur ou une cloche n'a pas
  * encore de compte. `reason` explique l'action qui a déclenché le détour.
+ *
+ * RÈGLE LIÉE : `returnTo` est transmis tel quel, sans validation. `/login` valide TOUJOURS son
+ * `redirect` à la lecture (`safeRedirect`, règle `sameSitePath`) : une adresse extérieure, piégée
+ * (`/.//evil`) ou vers `/login` y est ignorée. Une seconde copie de la règle ici alourdirait le
+ * JavaScript initial de chaque page (budget `example`).
  */
 export function loginPathWithRedirect(
   returnTo: string | null | undefined,
@@ -111,11 +116,7 @@ export function loginPathWithRedirect(
 ): string {
   const { mode = "investor", reason } = options;
   const query = new URLSearchParams();
-  const isSameSitePath = (path: string) => path.startsWith("/") && !path.startsWith("//");
-  const isLoginPage = (path: string) => path === "/login" || path.startsWith("/login?");
-  if (returnTo && isSameSitePath(returnTo) && !isLoginPage(returnTo)) {
-    query.set("redirect", returnTo);
-  }
+  if (returnTo) query.set("redirect", returnTo);
   if (mode !== "login") query.set("mode", mode);
   if (reason) query.set("reason", reason);
   const serialized = query.toString();
@@ -170,7 +171,13 @@ const PATTERN_RETURN_PATHS: readonly RegExp[] = [
 export function safeSalesReturnTo(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.startsWith("/")) return undefined;
 
-  const url = new URL(value, RETURN_BASE);
+  let url: URL;
+  try {
+    // `//[` et autres adresses illisibles lèvent : refusées, sans faire planter la fiche.
+    url = new URL(value, RETURN_BASE);
+  } catch {
+    return undefined;
+  }
   if (url.origin !== RETURN_BASE || url.hash) return undefined;
   if (url.pathname === "/sales") return `${url.pathname}${url.search}`;
   if (url.search) return undefined;

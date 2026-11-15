@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   launch: { active: false, pending: false },
   checkoutOpen: false as boolean | null,
   replace: vi.fn(),
+  push: vi.fn(),
+  user: null as { id: string; app_metadata: object; user_metadata: object } | null,
   signIn: vi.fn(),
   signUp: vi.fn(),
   resend: vi.fn(),
@@ -20,7 +22,7 @@ vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen,
 }));
 vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: null, profile: null, loading: false }),
+  useAuth: () => ({ user: mocks.user, profile: null, loading: false }),
 }));
 vi.mock("@/integrations/supabase/client", () => ({
   isSupabaseConfigured: true,
@@ -31,7 +33,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/login",
-  useRouter: () => ({ push: vi.fn(), replace: mocks.replace, refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, replace: mocks.replace, refresh: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
@@ -40,7 +42,9 @@ import {
   LAUNCH_OFFER_SIGNUP_LINE,
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import { rememberedSaleForSignup, rememberSaleForSignup } from "@/lib/signup-return-sale";
+import { HOSTILE_LOCAL_LOOKING_PATHS, VALID_LOCAL_PATHS } from "@/test/open-redirect-cases";
 import { LoginPage } from "./login-page";
 
 function fillName(first = "Claire", last = "Martin") {
@@ -52,6 +56,7 @@ beforeEach(() => {
   mocks.search = {};
   mocks.launch = { active: false, pending: false };
   mocks.checkoutOpen = false;
+  mocks.user = null;
   vi.clearAllMocks();
   window.sessionStorage.clear();
 });
@@ -545,6 +550,84 @@ describe("login page", () => {
     render(<LoginPage />);
     fireEvent.click(screen.getAllByRole("button", { name: "Se connecter" })[0]);
     expect(mocks.replace).toHaveBeenLastCalledWith("/login?redirect=%2Fsales");
+  });
+
+  describe("de bout en bout : `loginPathWithRedirect`, puis lecture du `redirect` par /login", () => {
+    const CONNECTED = { id: "user-1", app_metadata: {}, user_metadata: {} };
+    /** Adresses que /login doit ignorer : piégées, extérieures, ou /login elle-même. */
+    const DETOURED = [
+      ...HOSTILE_LOCAL_LOOKING_PATHS,
+      "https://exemple.test/sales",
+      "//exemple.test",
+      "/login?redirect=%2Fsales",
+      "https://exemple.test",
+    ];
+
+    /** La requête de l'adresse de connexion construite, telle que /login la lit. */
+    function searchOf(loginPath: string): typeof mocks.search {
+      const url = new URL(loginPath, "https://immojudis.test");
+      expect(url.pathname).toBe("/login");
+      return Object.fromEntries(url.searchParams) as typeof mocks.search;
+    }
+
+    function expectOnlyCatalogue() {
+      const targets = mocks.push.mock.calls.map(([target]) => String(target));
+      expect(targets.length).toBeGreaterThan(0);
+      for (const target of targets) {
+        expect(target).not.toMatch(/evil|exemple/);
+        expect(target).toBe("/sales");
+      }
+    }
+
+    it.each(DETOURED)(
+      "une personne déjà connectée finit sur le catalogue, pas vers %j",
+      async (address) => {
+        mocks.user = CONNECTED;
+        mocks.search = searchOf(loginPathWithRedirect(address, { mode: "login" }));
+        render(<LoginPage />);
+        await waitFor(() => expect(mocks.push).toHaveBeenCalled());
+        expectOnlyCatalogue();
+      },
+    );
+
+    it("une fiche notée piégée (sessionStorage) mène aussi au catalogue", async () => {
+      rememberSaleForSignup("/.//evil.example");
+      mocks.user = CONNECTED;
+      render(<LoginPage />);
+      await waitFor(() => expect(mocks.push).toHaveBeenCalled());
+      expectOnlyCatalogue();
+    });
+
+    it.each(DETOURED)(
+      "garde le mode et le motif ; le lien de confirmation ne mène pas vers %j",
+      async (address) => {
+        const search = searchOf(loginPathWithRedirect(address, { reason: "export" }));
+        expect(search.mode).toBe("investor");
+        expect(search.reason).toBe("export");
+        mocks.search = search;
+        mocks.signUp.mockResolvedValue({ error: null });
+        render(<LoginPage />);
+        fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+          target: { value: "nouvel.utilisateur@example.test" },
+        });
+        fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+          target: { value: "un-mot-de-passe-solide" },
+        });
+        fillName();
+        fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+        await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
+        const target: string = mocks.signUp.mock.calls[0][0].options.emailRedirectTo;
+        expect(target).toBe(`${window.location.origin}/bienvenue`);
+      },
+    );
+
+    it.each(VALID_LOCAL_PATHS)("garde la page du site %j", async (address) => {
+      mocks.user = CONNECTED;
+      mocks.search = searchOf(loginPathWithRedirect(address, { mode: "login" }));
+      render(<LoginPage />);
+      await waitFor(() => expect(mocks.push).toHaveBeenCalled());
+      expect(mocks.push).toHaveBeenLastCalledWith(address);
+    });
   });
 
   it("ignore une adresse de retour extérieure au site", () => {

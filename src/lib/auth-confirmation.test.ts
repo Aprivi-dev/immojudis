@@ -5,6 +5,7 @@ import {
   postConfirmationPath,
   type AuthLink,
 } from "./auth-confirmation";
+import { HOSTILE_LOCAL_LOOKING_PATHS, VALID_LOCAL_PATHS } from "@/test/open-redirect-cases";
 
 const ORIGIN = "https://immojudis.com";
 const HASH = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
@@ -207,5 +208,16 @@ describe("postConfirmationPath", () => {
     "",
   ])("refuse l'adresse de retour %j (autre origine, boucle ou schéma)", (redirectTo) => {
     expect(postConfirmationPath(link({ redirectTo }), ORIGIN)).toBe("/bienvenue");
+  });
+
+  it.each(HOSTILE_LOCAL_LOOKING_PATHS)("refuse le chemin qui mène ailleurs %j", (path) => {
+    expect(postConfirmationPath(link({ redirectTo: path }), ORIGIN)).toBe("/bienvenue");
+    expect(postConfirmationPath(link({ redirectTo: `${ORIGIN}${path}` }), ORIGIN)).toBe(
+      "/bienvenue",
+    );
+  });
+
+  it.each(VALID_LOCAL_PATHS)("garde la page du site %j", (path) => {
+    expect(postConfirmationPath(link({ redirectTo: path }), ORIGIN)).toBe(path);
   });
 });
