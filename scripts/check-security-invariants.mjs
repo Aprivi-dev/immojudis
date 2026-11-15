@@ -857,6 +857,159 @@ if (
 ) {
   failures.push("v_auction_sales_unlocked is not closed to anon");
 }
+// The address of the original listing (20261123100000): the views of a reader without the Analyse
+// offer (discovery, its search view by inheritance, unlocked) serve sale_procedure (and, for
+// discovery, source_blocks.sale_procedure), source_conflicts and source_presence through their
+// projection functions only; discovery with the strict variant (no url on the case documents), unlocked
+// keeping them. The LAST definition of each view, among all migrations, must be that migration or a
+// later one, call the projections, and serve none of these columns raw (no dynamic rewrite can follow
+// it: since the lot R2b an EXECUTE takes a literal only).
+const listingSourceName = "20261123100000_sale_procedure_without_listing_source.sql";
+const listingSourceSql = (migrationSources.get(listingSourceName) ?? "").replace(
+  /^[ \t]*--[^\n]*$/gm,
+  "",
+);
+const listingSourceFunction = (signature) =>
+  new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+app_private\\.${signature}[\\s\\S]*?\\$\\$;`,
+    "i",
+  ).exec(listingSourceSql)?.[0] ?? "";
+if (!listingSourceSql) {
+  failures.push("The listing source migration (20261123100000) is missing");
+} else {
+  const projection = listingSourceFunction(
+    "sale_procedure_without_listing_source\\(\\s*p_procedure\\s+jsonb\\s*,\\s*p_keep_document_urls\\s+boolean\\s*\\)",
+  );
+  const keyFilter = listingSourceFunction("jsonb_without_source_url_keys\\(p_value\\s+jsonb\\)");
+  const conflicts = listingSourceFunction(
+    "source_conflicts_without_listing_source\\(p_conflicts\\s+jsonb\\)",
+  );
+  const presence = listingSourceFunction(
+    "source_presence_without_listing_source\\(p_presence\\s+jsonb\\)",
+  );
+  const keptKinds = /\bin\s*\(([^)]*)\)/i
+    .exec(projection)?.[1]
+    ?.match(/'(\w+)'/g)
+    ?.join(",");
+  if (
+    !projection ||
+    !keyFilter ||
+    keptKinds !== "'document','official_reference'" ||
+    !/when\s+source\.value\s*->>\s*'kind'\s*=\s*'document'\s+then\s+source\.value\s*-\s*\(\s*case\s+when\s+p_keep_document_urls\s+is\s+true\s+then\s+array\['source_name'\]\s+else\s+array\['source_name',\s*'url'\]\s+end\s*\)/i.test(
+      projection,
+    ) ||
+    !/app_private\.jsonb_without_source_url_keys\(p_procedure\)/i.test(projection) ||
+    !/where\s+entry\.key\s*!~\s*'source_url\$'/i.test(keyFilter)
+  ) {
+    failures.push(
+      "sale_procedure_without_listing_source does not keep only the documents (without source name, without url unless kept) and the official reference, without any *source_url key",
+    );
+  }
+  // source_conflicts: each conflict keeps `field` only; source_presence: re-keyed, availability and
+  // state only. Any other key built or kept fails.
+  if (
+    !conflicts ||
+    (conflicts.match(/jsonb_build_object\(\s*'(\w+)'/gi) ?? []).join(",") !==
+      "jsonb_build_object('field'" ||
+    /->>?\s*'(?!field')\w+'/i.test(conflicts)
+  ) {
+    failures.push(
+      "source_conflicts_without_listing_source keeps more than the field of a conflict",
+    );
+  }
+  if (
+    !presence ||
+    !/where\s+kept\.key\s+in\s*\(\s*'availability'\s*,\s*'state'\s*\)/i.test(presence) ||
+    !/jsonb_object_agg\(\s*'source_'\s*\|\|\s*ranked\.rank\s*,/i.test(presence) ||
+    /jsonb_object_agg\(\s*presence\.key\b/i.test(presence)
+  ) {
+    failures.push(
+      "source_presence_without_listing_source keeps the source names or more than availability and state",
+    );
+  }
+  for (const definition of [projection, keyFilter, conflicts, presence]) {
+    if (
+      definition &&
+      (!/\bimmutable\b/i.test(definition) ||
+        !/security\s+invoker/i.test(definition) ||
+        !/set\s+search_path\s*=\s*''/i.test(definition))
+    ) {
+      failures.push(
+        "The listing source projection functions are not IMMUTABLE SECURITY INVOKER with an empty search_path",
+      );
+    }
+  }
+  for (const fn of [
+    "app_private.sale_procedure_without_listing_source(jsonb, boolean)",
+    "app_private.jsonb_without_source_url_keys(jsonb)",
+    "app_private.source_conflicts_without_listing_source(jsonb)",
+    "app_private.source_presence_without_listing_source(jsonb)",
+  ]) {
+    const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(", ", ",\\s*");
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${escaped}\\s+from\\s+public,\\s*anon`,
+        "i",
+      ).test(listingSourceSql) ||
+      !new RegExp(
+        `grant\\s+execute\\s+on\\s+function\\s+${escaped}\\s+to\\s+authenticated,\\s*service_role\\s*;`,
+        "i",
+      ).test(listingSourceSql) ||
+      new RegExp(
+        `grant\\s+execute\\s+on\\s+function\\s+${escaped}\\s+to\\s+[^;]*\\banon\\b`,
+        "i",
+      ).test(listingSourceSql)
+    ) {
+      failures.push(`${fn} is not closed to anon and open to authenticated and service_role`);
+    }
+  }
+}
+const CONFLICTS_CALL =
+  "app_private.source_conflicts_without_listing_source(s.raw_payload -> 'source_conflicts') as source_conflicts,";
+const PRESENCE_CALL =
+  "app_private.source_presence_without_listing_source(app_private.auction_sale_source_presence_json(s.id))";
+for (const [view, keepDocumentUrls] of [
+  ["v_auction_sales_discovery", "false"],
+  ["v_auction_sales_unlocked", "true"],
+]) {
+  const procedureCall = `app_private.sale_procedure_without_listing_source(s.sale_procedure, ${keepDocumentUrls})`;
+  const definitions = [...migrationSources].flatMap(([name, source]) =>
+    [
+      ...source
+        .replace(/^[ \t]*--[^\n]*$/gm, "")
+        .matchAll(
+          new RegExp(
+            `create\\s+(?:or\\s+replace\\s+)?view\\s+public\\.${view}\\b[\\s\\S]*?;`,
+            "gi",
+          ),
+        ),
+    ].map((match) => ({ name, sql: match[0] })),
+  );
+  const last = definitions.at(-1);
+  const sql = last?.sql ?? "";
+  const body = sql
+    .replaceAll(procedureCall, "")
+    .replaceAll(CONFLICTS_CALL, "")
+    .replaceAll(PRESENCE_CALL, "");
+  if (
+    !last ||
+    last.name < listingSourceName ||
+    !sql.includes(`${procedureCall} as sale_procedure,`) ||
+    (view === "v_auction_sales_discovery" &&
+      !sql.includes(`jsonb_build_object('sale_procedure', ${procedureCall}) as source_blocks,`)) ||
+    !sql.includes(CONFLICTS_CALL) ||
+    !sql.includes(`${PRESENCE_CALL}\n    as source_presence,`) ||
+    /sale_procedure_without_listing_source\(/i.test(body) ||
+    /(?:^|,)\s*(?:\w+\.)?sale_procedure\s*(?:,|\bfrom\b)/i.test(body) ||
+    /jsonb_build_object\(\s*'sale_procedure'\s*,\s*(?:\w+\.)?sale_procedure\s*\)/i.test(body) ||
+    /'source_conflicts'/i.test(body) ||
+    /auction_sale_source_presence_json\(/i.test(body)
+  ) {
+    failures.push(
+      `${view} does not serve sale_procedure, source_conflicts and source_presence through their listing source projections`,
+    );
+  }
+}
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
