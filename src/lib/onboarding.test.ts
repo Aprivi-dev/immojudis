@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { firstSearchToUrl, postAuthDestination, saleDetailReturnPath } from "./onboarding";
 import { validateSalesSearch } from "./search/search-url-state";
+import { HOSTILE_LOCAL_LOOKING_PATHS } from "@/test/open-redirect-cases";
 
 const SALE = "4655881c-249d-4eab-beba-f2624d8a1af0";
 
@@ -45,6 +46,10 @@ describe("inscription depuis une fiche", () => {
     `/sales/${SALE}#ancre`,
   ])("refuse %s", (value) => {
     expect(saleDetailReturnPath(value)).toBeUndefined();
+  });
+  it.each(HOSTILE_LOCAL_LOOKING_PATHS)("refuse le chemin qui mène ailleurs %j", (value) => {
+    expect(saleDetailReturnPath(value)).toBeUndefined();
+    expect(saleDetailReturnPath(`/sales/${SALE}/..${value}`)).toBeUndefined();
   });
   it("ignore une origine non valide sans refuser la fiche", () => {
     expect(saleDetailReturnPath(`/sales/${SALE}?from=https%3A%2F%2Fevil.example`)).toBe(

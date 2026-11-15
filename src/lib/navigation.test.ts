@@ -13,6 +13,7 @@ import {
   searchParamsToRecord,
   SITE_NAV_LINKS,
 } from "./navigation";
+import { HOSTILE_LOCAL_LOOKING_PATHS } from "@/test/open-redirect-cases";
 import { COMPARE_SALE_PARAM } from "./search/sale-comparison";
 import { validateSalesSearch } from "./search/search-url-state";
 
@@ -212,15 +213,25 @@ describe("loginPathWithRedirect", () => {
     );
   });
 
-  it("refuse les adresses extérieures ou déjà sur la connexion, sans perdre le mode", () => {
-    expect(loginPathWithRedirect("https://exemple.test/sales")).toBe("/login?mode=investor");
-    expect(loginPathWithRedirect("//exemple.test")).toBe("/login?mode=investor");
-    expect(loginPathWithRedirect("/login?redirect=%2Fsales")).toBe("/login?mode=investor");
+  // Le refus des adresses extérieures, piégées ou vers `/login` se fait à la lecture, par `/login`
+  // (RÈGLE LIÉE) : il est vérifié de bout en bout dans `src/app/login/login-page.test.tsx`.
+  it("sans adresse de retour, garde le mode et le motif", () => {
     expect(loginPathWithRedirect(null)).toBe("/login?mode=investor");
     expect(loginPathWithRedirect("")).toBe("/login?mode=investor");
-    expect(loginPathWithRedirect("https://exemple.test", { reason: "export" })).toBe(
+    expect(loginPathWithRedirect(undefined, { reason: "export" })).toBe(
       "/login?mode=investor&reason=export",
     );
+  });
+});
+
+describe("safeSalesReturnTo et les chemins qui mènent ailleurs une fois normalisés", () => {
+  it.each(HOSTILE_LOCAL_LOOKING_PATHS)("refuse %j", (path) => {
+    expect(safeSalesReturnTo(path)).toBeUndefined();
+  });
+
+  it("refuse une adresse illisible sans lever (la fiche ne plante pas)", () => {
+    expect(safeSalesReturnTo("//[")).toBeUndefined();
+    expect(safeSalesReturnTo("//%5B")).toBeUndefined();
   });
 });
 
