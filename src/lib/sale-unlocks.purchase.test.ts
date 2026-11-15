@@ -47,7 +47,9 @@ describe("achat d'une vente à l'unité : textes", () => {
         }).subscriptionText;
         const match = /À partir (?:d’une vente|de (\S+) ventes) à l’unité/.exec(sentence);
         expect(match, sentence).not.toBeNull();
-        const count = match![1] == null ? 1 : words.indexOf(match![1]) + 2 || Number(match![1]);
+        const word = match![1];
+        const count =
+          word == null ? 1 : words.includes(word) ? words.indexOf(word) + 2 : Number(word);
         // Le total de `count` ventes dépasse le mois ; celui de `count - 1` ne le dépasse pas.
         expect(count * unitCents, sentence).toBeGreaterThan(subscriptionCents);
         expect((count - 1) * unitCents, sentence).toBeLessThanOrEqual(subscriptionCents);
