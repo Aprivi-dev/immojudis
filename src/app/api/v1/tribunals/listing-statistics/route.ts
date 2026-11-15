@@ -40,8 +40,8 @@ export const GET = apiRoute(
       }
     }
     const query = Object.fromEntries(url.searchParams.entries());
-    // Analyse, or a Découverte account that unlocked the sale given as `saleId` (« 3 déblocages
-    // par mois »): the tribunal of that sale only. A query by `courtCode` stays on Analyse. The
+    // Analyse, or a Découverte account that unlocked the sale given as `saleId` (« déblocage du
+    // compte gratuit »): the tribunal of that sale only. A query by `courtCode` stays on Analyse. The
     // query is validated after the entitlement, as before; the schema then requires exactly one of
     // `courtCode` and `saleId`.
     const { door } = await assertFeatureEntitlementVia(

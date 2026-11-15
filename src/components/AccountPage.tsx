@@ -199,14 +199,14 @@ export function AccountPage() {
           <div className="mt-3 text-sm text-muted-foreground" data-testid="account-unlocks">
             {unlocksQuery.isError ? (
               <p role="alert" className="text-danger">
-                Le suivi de vos déblocages est indisponible pour le moment.
+                Le suivi de votre déblocage est indisponible pour le moment.
               </p>
             ) : unlockStatus ? (
               unlockStatus.analysisAccess ? null : (
                 <p>{unlockUsageLine(unlockStatus)}</p>
               )
             ) : (
-              <p>Chargement de vos déblocages…</p>
+              <p>Chargement de votre déblocage…</p>
             )}
           </div>
         ) : null}

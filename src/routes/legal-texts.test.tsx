@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
-import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { DEFAULT_ANALYSIS_OFFER_LABEL } from "@/lib/analysis-offer";
+import { FREE_UNLOCK_EFFECTIVE_DATE, LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
+import { FREE_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { TermsPage } from "./conditions-generales";
 import { LegalPage } from "./legal";
 import { PrivacyPage } from "./privacy";
@@ -56,10 +57,7 @@ describe("conditions générales", () => {
     );
     expect(text).not.toContain("À l’attention de l’éditeur Immojudis");
     expect(text).toContain(
-      "L’essai gratuit à l’inscription (article 13) est sans paiement : aucun montant n’est dû",
-    );
-    expect(text).toContain(
-      "le délai de 14 jours court à compter de la conclusion de l’abonnement, et le service fourni pendant l’essai gratuit n’est pas pris en compte dans le montant éventuellement dû en cas de rétractation.",
+      "L’offre Découverte est sans paiement : aucun montant n’est dû, et vous pouvez demander la fermeture de votre compte à tout moment, gratuitement, depuis Mes droits. Le droit de rétractation ci-dessous s’applique à l’abonnement Analyse : le délai de 14 jours court à compter de la conclusion de l’abonnement.",
     );
   });
 
@@ -138,14 +136,20 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-11-10.1 (ouverture des paiements), ancrée par l'empreinte de leur source ; la 2026-10-26.1 est archivée", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-10.1");
+  it("portent la version 2026-11-15.1 (un seul déblocage, fin de l'essai), ancrée par l'empreinte de leur source ; les 2026-11-10.1 et 2026-10-26.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-15.1");
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier.map((earlier) => earlier.version)).toEqual([
+      "2026-11-10.1",
       "2026-10-26.1",
     ]);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[0].applicableUntil).toBe(
+      FREE_UNLOCK_EFFECTIVE_DATE,
+    );
   });
 
-  it("respectent le préavis de 30 jours de l'article 14 : comptes existants soumis à la nouvelle version au moins 30 jours après le 1er novembre 2026, dernier jour d'envoi de l'information", () => {
+  // Décision du propriétaire du 15/11/2026 : l'article 2 (offre Découverte) et l'article 13
+  // s'appliquent aux comptes existants dès la mise en ligne, sans ce préavis (legal-documents.ts).
+  it("gardent le préavis de 30 jours de l'article 14 pour les autres stipulations : comptes existants soumis au reste de la version au moins 30 jours après le 1er novembre 2026, dernier jour d'envoi de l'information", () => {
     const mois = [
       "janvier",
       "février",
@@ -170,7 +174,7 @@ describe("conditions générales : classement, référencement et mise en avant"
   it("précisent dans l'en-tête qui est soumis à quelle version, et où obtenir la précédente", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Version 2026-11-10.1, applicable à compter du 1er décembre 2026 aux comptes existants, et dès l’inscription pour les comptes créés à partir de sa mise en ligne. La version précédente (2026-10-25.1) reste applicable aux comptes existants jusqu’au 1er décembre 2026 ; elle est communiquée sur demande à contact@immojudis.example.",
+      `Version 2026-11-15.1, applicable dès l’inscription pour les comptes créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui concerne l’offre Découverte et son déblocage, et l’article 13 s’appliquent à compter du ${FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du 1er décembre 2026. Jusqu’à cette date, la version précédente (2026-10-25.1) reste applicable aux comptes existants pour ces autres stipulations ; elle est communiquée sur demande à contact@immojudis.example.`,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
       LEGAL_DOCUMENTS.terms.effectiveDate,
@@ -207,15 +211,17 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-14.1 (professionnels contactés, photos, profil d'investisseur) ; les 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne prévue.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("16 novembre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.3");
+  it("la politique de confidentialité est en version 2026-11-15.1 (déblocage de vente, fin de l'essai) ; les 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne prévue, la même
+    // que celle des CGU 2026-11-15.1.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-01.3",
       "2026-11-01.2",
       "2026-11-01.1",
       "2026-10-31.1",
@@ -225,62 +231,69 @@ describe("conditions générales : classement, référencement et mise en avant"
   });
 });
 
-describe("conditions générales : essai gratuit à l'inscription (25/10/2026)", () => {
-  it("décrivent l'article 13 : 7 jours après la confirmation, une fois par personne, retour à Découverte", () => {
+describe("conditions générales : fin de l'essai gratuit à l'inscription (15/11/2026)", () => {
+  it("remplacent l'article 13 par la fin de l'essai : retour à Découverte sans frais ni perte de données", () => {
     const text = pageText(<TermsPage />);
-    expect(text).toContain("13. Essai gratuit à l’inscription");
+    expect(text).toContain("13. Fin de l’essai gratuit à l’inscription");
     expect(text).toContain(
-      `pendant ${ANALYSIS_TRIAL_DAYS} jours à compter de la confirmation de son adresse email. L’essai n’est proposé qu’une fois par personne`,
+      `L’essai gratuit de l’offre Analyse à l’inscription n’est plus proposé depuis le ${FREE_UNLOCK_EFFECTIVE_DATE}, date d’entrée en vigueur de cet article. Les comptes qui en bénéficiaient à cette date sont revenus à l’offre Découverte, sans frais, sans paiement automatique et sans suppression des données. Leurs données (favoris, alertes, rapports enregistrés) restent conservées dans les conditions de la politique de confidentialité.`,
     );
-    expect(text).toContain(
-      "n’est pas ouvert aux adresses jetables. Cette vérification est automatique",
-    );
-    expect(text).toContain(
-      "en cas d’abus (notamment la création de plusieurs comptes ou l’usage d’adresses jetables pour obtenir plusieurs essais) ou d’impératif technique ou juridique",
-    );
-    expect(text).toContain(
-      "le compte revient à l’offre Découverte, sans frais, sans paiement automatique et sans suppression des données",
-    );
-    expect(text).toContain("aucun abonnement ne commence sans confirmation dans Stripe.");
-    expect(text).toContain(
-      "restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse",
-    );
-    expect(text).toContain("Cet essai remplace l’offre de lancement à compter du 25 octobre 2026.");
+    expect(text).not.toContain("13. Essai gratuit à l’inscription");
     expect(text).not.toContain("13. Offre de lancement");
-    expect(text).not.toContain("prendront fin au plus tard au lancement officiel du site");
   });
 
-  it("résolvent la contradiction avec le préavis de 30 jours : l'article est spécial à l'essai", () => {
+  it("ne décrivent plus d'essai proposé ni ne renvoient à « l'essai gratuit de l'article 13 »", () => {
     const text = pageText(<TermsPage />);
-    expect(text).toContain(
-      "Cet article est spécial à l’essai : il s’applique à la place du délai de prévenance de 30 jours de l’article 2, qui continue de s’appliquer aux déblocages mensuels de l’offre Découverte.",
+    for (const gone of [
+      "l’essai gratuit de l’article 13",
+      "l’essai gratuit est proposé",
+      "sauf pour l’essai gratuit",
+      "obtenir plusieurs fois l’essai gratuit",
+      "pendant l’essai gratuit",
+      "À la fin de l’abonnement ou de l’essai",
+      "Cet article est spécial à l’essai",
+    ]) {
+      expect(text).not.toContain(gone);
+    }
+    // « essai » ne reste que dans l'article 13 (fin de l'essai), dans « L'abonnement ne comprend pas
+    // de période d'essai » et dans la période d'essai de la mise en avant des avocats (article 10).
+    const article13 = text.slice(
+      text.indexOf("13. Fin de l’essai"),
+      text.indexOf("14. Modification"),
     );
-    expect(text).toContain(
-      "Ce délai ne s’applique pas à l’essai gratuit à l’inscription, régi par l’article 13.",
-    );
+    const rest = text.replace(article13, "");
+    expect(rest.match(/\bessais?\b/gi)).toEqual(["essai", "essai"]);
+    expect(rest).toContain("L’abonnement ne comprend pas de période d’essai.");
+    expect(rest).toContain("bénéficient d’une période d’essai de cette offre de mise en avant");
   });
 
-  it("ajoutent l'article 14 : modification des conditions avec 30 jours de préavis", () => {
+  it("n'affirment pas que les titulaires de compte ont été prévenus 30 jours avant ce changement", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).not.toMatch(/(ont été|avez été) (prévenus?|informés?)/);
+  });
+
+  it("gardent l'article 14 : modification des conditions avec 30 jours de préavis, sans exception pour l'essai", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain("14. Modification des conditions");
     expect(text).toContain(
-      "au moins 30 jours avant l’entrée en vigueur, sauf pour l’essai gratuit (article 13) et sauf obligation légale ou impératif de sécurité. Une modification n’est jamais appliquée à un abonnement en cours sans l’accord du client.",
+      "au moins 30 jours avant l’entrée en vigueur, sauf obligation légale ou impératif de sécurité. Une modification n’est jamais appliquée à un abonnement en cours sans l’accord du client.",
     );
   });
 
-  it("ne mettent plus d'essai avec carte bancaire dans l'abonnement", () => {
+  it("ne mettent pas d'essai dans l'abonnement", () => {
     const text = pageText(<TermsPage />);
-    expect(text).toContain("L’abonnement ne comprend pas de période d’essai");
+    expect(text).toContain(
+      "L’abonnement ne comprend pas de période d’essai. Le tarif applicable est présenté avant la confirmation de la souscription.",
+    );
     expect(text).not.toContain("nécessite l’enregistrement d’une carte bancaire");
     expect(text).not.toContain("la fin de l’essai et la date du premier prélèvement");
     expect(text).not.toContain("Une résiliation pendant l’essai évite le premier prélèvement");
   });
 
-  it("tirent le nombre de favoris et la durée de l'essai du code, pas du texte", () => {
+  it("tirent le nombre de favoris du code, pas du texte", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum`);
     expect(text).not.toContain("trois favoris");
-    expect(text).not.toContain("sept jours");
   });
 
   it("indiquent la franchise de TVA à côté du prix, sans dire que la souscription n'est pas ouverte", () => {
@@ -297,18 +310,19 @@ describe("conditions générales : essai gratuit à l'inscription (25/10/2026)",
   });
 });
 
-describe("conditions générales : 3 déblocages par mois", () => {
-  const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
-
+describe("conditions générales : un déblocage de vente en tout", () => {
   it("définissent le déblocage : une vente, cinq éléments quand elle les comporte, le reste à Analyse", () => {
     const text = pageText(<TermsPage />);
+    expect(FREE_SALE_UNLOCKS).toBe(1);
     expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
-    expect(text).toContain(`chaque mois civil, ${n} déblocages`);
+    expect(text).toContain(
+      `une alerte avec un email hebdomadaire et ${FREE_SALE_UNLOCKS} déblocage de vente en tout, qui ne se renouvelle pas chaque mois.`,
+    );
     expect(text).toContain(
       "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
     );
     expect(text).toContain(
-      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
+      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre. Pour consulter ces éléments sur d’autres ventes, il faut souscrire à l’offre Analyse.",
     );
     // Jamais « réservé » pour un élément que le compte reçoit.
     const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
@@ -324,42 +338,44 @@ describe("conditions générales : 3 déblocages par mois", () => {
     }
   });
 
-  it("disent quand le déblocage est consommé, non restitué, non reporté, et quand le compteur repart", () => {
+  it("disent quand le déblocage est consommé, rendu ou non, et quand un déblocage redevient disponible", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Le déblocage est consommé quand vous le confirmez, après affichage du nombre restant",
+      "Le déblocage est consommé quand vous le confirmez, après affichage du nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée.",
     );
     expect(text).toContain(
-      "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
+      "Il est rendu automatiquement si la vente est retirée avant d’avoir lieu, par la juridiction, le notaire ou la source.",
     );
     expect(text).toContain(
-      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (par exemple une erreur de publication ou la suspension d’une source décidée par Immojudis), le déblocage est restitué sur simple demande adressée à",
-    );
-    expect(text).toMatch(
-      /adressée à .+, qui reçoit une réponse sous un mois\. Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés\./,
+      "Si Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (par exemple une erreur de publication ou la suspension d’une source décidée par Immojudis), le déblocage est rendu sur simple demande adressée à contact@immojudis.example, qui reçoit une réponse sous un mois. Il n’est pas rendu si la vente est reportée ou adjugée.",
     );
     // Le canal est l'adresse de contact : Mes droits n'a pas de demande de restitution.
     expect(text).not.toContain("depuis Mes droits ou à l’adresse de contact");
-    expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
     expect(text).toContain(
-      `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
+      "tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre compte existe. Passé ce délai de 24 mois, le déblocage n’est plus conservé et un déblocage redevient disponible.",
     );
-    expect(text).toContain(
-      "tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre compte existe",
-    );
+    for (const gone of [
+      "déblocages mensuels",
+      "chaque mois civil",
+      "mois du déblocage",
+      "Le compteur est remis",
+      "ne sont pas reportés",
+    ]) {
+      expect(text).not.toContain(gone);
+    }
   });
 
   it("disent le sort des ventes débloquées après un abonnement Analyse", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Pendant un abonnement Analyse ou l’essai gratuit de l’article 13, aucun déblocage n’est consommé. À la fin de l’abonnement ou de l’essai, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement ou l’essai redeviennent soumises aux déblocages.",
+      "Pendant un abonnement Analyse, aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises au déblocage.",
     );
   });
 
-  it("limitent la clause de modification aux déblocages, avec trente jours de préavis", () => {
+  it("limitent la clause de modification au déblocage du compte gratuit, avec trente jours de préavis", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous prévenant au moins 30 jours à l’avance par un message dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez fermer votre compte gratuitement depuis Mes droits.",
+      "Immojudis peut modifier ou supprimer le déblocage du compte gratuit pour l’avenir, en vous prévenant au moins 30 jours à l’avance par un message dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez fermer votre compte gratuitement depuis Mes droits.",
     );
     // Les autres avantages de Découverte (favoris, alerte) ne sont plus modifiables par cette clause.
     expect(text).not.toContain("les avantages de l’offre Découverte");
@@ -371,7 +387,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
       "Les déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent.",
     );
     expect(text).toContain(
-      "le contournement des quotas, notamment la création de plusieurs comptes pour multiplier les déblocages",
+      "le contournement des quotas, notamment la création de plusieurs comptes pour multiplier les déblocages, la redistribution massive des données",
     );
     expect(text).not.toMatch(/analyses? (complètes? )?gratuites?|analyse offerte/i);
   });
@@ -500,16 +516,29 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("journal des emails liés à votre compte");
   });
 
-  it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
+  it("décrit le traitement du déblocage : base contractuelle et conservation de 24 mois au plus, sans compteur mensuel", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");
+    expect(text).toContain("Déblocage de vente (offre Découverte)");
+    expect(text).not.toContain("Déblocages mensuels");
     expect(text).toContain("Identifiant de compte, vente débloquée, date du déblocage");
     expect(text).toContain(
       "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
     );
     expect(text).toContain(
-      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, dans la même limite de 24 mois, pour que le déblocage reste compté.",
     );
+    expect(text).not.toContain("mois civil");
+  });
+
+  it("dit que l'essai gratuit à l'inscription n'est plus proposé", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Essai gratuit de l’offre Analyse à l’inscription, qui n’est plus proposé, et prévention des abus",
+    );
+    expect(text).toContain(
+      "Intérêt légitime : réserver l’essai, tant qu’il était proposé, à une fois par personne et prévenir les comptes multiples.",
+    );
+    expect(text).not.toContain("si l’essai ne vous est pas accordé");
   });
 
   it("dit que le journal d’usage relie un compte à la vente débloquée, pendant 24 mois au plus", () => {

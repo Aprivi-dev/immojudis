@@ -468,8 +468,6 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     limit: 3,
     used: unlocked ? 1 : 0,
     remaining: unlocked ? 2 : 3,
-    periodStart: "2026-09-30T22:00:00.000Z",
-    resetsAt: "2026-10-31T23:00:00.000Z",
   });
   const renderPage = () =>
     render(

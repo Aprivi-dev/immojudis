@@ -56,9 +56,9 @@ export const POST = apiRoute(
     });
     const { saleId, enteredSurface } = requestSchema.parse(await request.json());
     // One read of the plan: the bid-ceiling right opens the reference value (the offer, or a
-    // Découverte account that unlocked this very sale, « 3 déblocages par mois »), reduced to what
-    // the ceiling reads. The detailed estimate (range, quartiles, comparables) stays with the offer
-    // that includes it.
+    // Découverte account that unlocked this very sale, « déblocage du compte gratuit »), reduced to
+    // what the ceiling reads. The detailed estimate (range, quartiles, comparables) stays with the
+    // offer that includes it.
     const { plan, door } = await assertFeatureEntitlementVia(
       auth,
       "property.bidCeiling",

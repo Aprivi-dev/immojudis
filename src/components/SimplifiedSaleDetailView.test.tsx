@@ -435,8 +435,6 @@ describe("repère « Pépite » de la fiche", () => {
               limit: 3,
               used: 0,
               remaining: 3,
-              periodStart: "2026-11-01T00:00:00.000Z",
-              resetsAt: "2026-12-01T00:00:00.000Z",
             } satisfies SaleUnlockStatus
           }
         />
@@ -1447,8 +1445,6 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     limit: 3,
     used: 1,
     remaining: 2,
-    periodStart: "2026-09-30T22:00:00.000Z",
-    resetsAt: "2026-10-31T23:00:00.000Z",
     ...overrides,
   });
 

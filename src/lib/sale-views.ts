@@ -6,8 +6,8 @@ export const DETAIL_VIEW = "v_auction_sales_app";
 /** Redacted catalogue view of a Découverte account (no score, risks or documents). */
 export const DISCOVERY_VIEW = "v_auction_sales_discovery";
 /**
- * The sales the signed-in account unlocked (« 3 déblocages par mois »): the discovery columns plus
- * the listing facts the bid ceiling reads and the official documents. It lists nothing else.
+ * The sales the signed-in account unlocked (« déblocage du compte gratuit »): the discovery columns
+ * plus the listing facts the bid ceiling reads and the official documents. It lists nothing else.
  */
 export const UNLOCKED_VIEW = "v_auction_sales_unlocked";
 

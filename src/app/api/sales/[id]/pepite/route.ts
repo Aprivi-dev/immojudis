@@ -39,8 +39,8 @@ const PUBLIC_HEADERS = { "cache-control": "public, s-maxage=60, stale-while-reva
  *  - `criteria` (défaut, ouvert à tous, visiteurs compris) : le NOM des critères réunis, sans valeur ni montant, et
  *    le contrôle du risque d'inondation (verdict affichable et deux dates : jamais un montant) ;
  *  - `detail` : en plus, la condition, le plafond de référence, le prix probable et sa fourchette. Réservé
- *    aux comptes qui ont le droit au plafond d'enchère (offre Analyse, ou vente débloquée avec « 3 déblocages
- *    par mois », comme `/api/market-estimate`) : 401 sans compte, 403 sans le droit. Jamais un montant en dehors
+ *    aux comptes qui ont le droit au plafond d'enchère (offre Analyse, ou vente débloquée avec le déblocage
+ *    du compte gratuit, comme `/api/market-estimate`) : 401 sans compte, 403 sans le droit. Jamais un montant en dehors
  *    de ce niveau.
  *
  * La vente doit être une pépite publiable À L'INSTANT de l'appel (`get_public_sale_pepite` : mode « on » seulement,

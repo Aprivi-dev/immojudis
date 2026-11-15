@@ -47,7 +47,7 @@ import {
 import { postAuthDestination } from "@/lib/onboarding";
 import { forgetSaleForSignup, rememberedSaleForSignup } from "@/lib/signup-return-sale";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
+import { FREE_UNLOCK_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import {
@@ -160,7 +160,7 @@ function reasonCopy(
       return {
         signup: launchOffer
           ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi votre plafond pour cette vente (enchère ou offre), frais estimés compris, et les analyses de l’offre Analyse (contenu selon la vente).`
-          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec ${MONTHLY_UNLOCKS_TEXT} : un déblocage ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).`,
+          : "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente. Il comprend le déblocage d’une vente : il ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
         login: "Connectez-vous pour consulter cette vente.",
       };
     case "exemple":
@@ -539,7 +539,7 @@ export function LoginPage() {
                   </>
                 ) : (
                   <>
-                    Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
+                    Découverte ouvre gratuitement le catalogue, avec le déblocage d’une vente (
                     {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
                     comparables, les alertes quotidiennes et les exports
                     {checkoutOpen === true
@@ -716,7 +716,7 @@ export function LoginPage() {
                     <p className="font-medium">{LAUNCH_OFFER_SIGNUP_LINE}</p>
                   ) : (
                     <p className="font-medium">
-                      {`Gratuit : ${MONTHLY_UNLOCKS_TEXT} (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                      {`Gratuit : ${FREE_UNLOCK_TEXT} (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
                     </p>
                   )}
                 </div>
@@ -981,7 +981,7 @@ export function LoginPage() {
 /** Ce qui reste du compte à la fin de l'essai : les droits de Découverte, chiffrés d'après les plans. */
 function afterTrialLine(): string {
   const { watchedZones, favoriteSales } = PLAN_LIMITS.decouverte;
-  const kept = [MONTHLY_UNLOCKS_TEXT];
+  const kept = [FREE_UNLOCK_TEXT];
   if (watchedZones != null) kept.push(watchedZones === 1 ? "1 alerte" : `${watchedZones} alertes`);
   if (favoriteSales != null) kept.push(`${favoriteSales} favoris`);
   const list = kept.length > 1 ? `${kept.slice(0, -1).join(", ")} et ${kept.at(-1)}` : kept[0];

@@ -106,9 +106,9 @@ function ceilingOpenFor(sale: AuctionSale, open?: readonly FeeRegimeKey[]): bool
 }
 
 /**
- * Ce que la fiche coûte au visiteur : un compte gratuit, un déblocage mensuel (ventes dont le
+ * Ce que la fiche coûte au visiteur : un compte gratuit, le déblocage d'une vente (ventes dont le
  * plafond est ouvert, le tribunal aujourd'hui) ou rien (« Voir le détail »). Offre de lancement active (`launchOffer`) : la ligne
- * courte de l'offre (`LISTING_LAUNCH_OFFER_LINE`) à la place de « 3 fiches détaillées par mois »,
+ * courte de l'offre (`LISTING_LAUNCH_OFFER_LINE`) à la place de la ligne du compte gratuit,
  * pour toutes les ventes. Tant que l'état de l'offre est inconnu (`launchPending`, rendu serveur
  * compris), la ligne reste neutre : aucune promesse de quota qui serait remplacée à l'hydratation.
  */

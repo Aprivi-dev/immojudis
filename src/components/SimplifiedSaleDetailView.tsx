@@ -163,8 +163,8 @@ const PepiteBlock = dynamic(() =>
 );
 
 /**
- * What the account reads: the free view, a sale unlocked with « 3 déblocages par mois » (the sale
- * rows are open, and the bid ceiling, document reading, sale history, tribunal statistics and
+ * What the account reads: the free view, a sale unlocked with « déblocage du compte gratuit » (the
+ * sale rows are open, and the bid ceiling, document reading, sale history, tribunal statistics and
  * official documents with them), or the full Analyse view.
  */
 type SaleDetailAccess = "discovery" | "unlocked" | "analysis";
@@ -278,7 +278,7 @@ export function FreeSaleDetailView({
   );
 }
 
-/** A Découverte account reading a sale it unlocked (« 3 déblocages par mois »). */
+/** A Découverte account reading a sale it unlocked (« déblocage du compte gratuit »). */
 export function UnlockedSaleDetailView({
   sale,
   returnTo = "/sales",

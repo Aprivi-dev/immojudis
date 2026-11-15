@@ -19,11 +19,9 @@ const status = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => 
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 1,
-  remaining: 2,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
+  limit: 1,
+  used: 0,
+  remaining: 1,
   ...overrides,
 });
 
@@ -48,18 +46,18 @@ function renderPreview(offer: SaleUnlockStatus | null) {
 }
 
 describe("UnlockCallToAction in a paid preview", () => {
-  it("makes « Débloquer cette vente » the main link while unlocks are left, the offer comes second", () => {
+  it("makes « Débloquer cette vente » the main link while the unlock is left, the offer comes second", () => {
     renderPreview(status());
 
     const unlock = screen.getByRole("link", {
-      name: "Débloquer cette vente (il vous reste 2 sur 3)",
+      name: "Débloquer cette vente avec mon compte gratuit",
     });
     expect(unlock.getAttribute("href")).toBe(`#${UNLOCK_PANEL_ID}`);
     expect(
       screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
     ).toBe("/offres");
     const links = screen.getAllByRole("link").map((link) => link.textContent);
-    expect(links.indexOf("Débloquer cette vente (il vous reste 2 sur 3)")).toBeLessThan(
+    expect(links.indexOf("Débloquer cette vente avec mon compte gratuit")).toBeLessThan(
       links.indexOf("Découvrir l’offre Analyse"),
     );
   });
@@ -75,7 +73,7 @@ describe("UnlockCallToAction in a paid preview", () => {
     card.scrollIntoView = scroll;
 
     const click = fireEvent.click(
-      screen.getByRole("link", { name: /Débloquer cette vente \(il vous reste 2 sur 3\)/ }),
+      screen.getByRole("link", { name: "Débloquer cette vente avec mon compte gratuit" }),
     );
 
     // The default (a hash change) is cancelled: the page would fall back to the first tab.
@@ -85,10 +83,11 @@ describe("UnlockCallToAction in a paid preview", () => {
     card.remove();
   });
 
-  it("tells when the unlocks come back once they are spent, then points to the offer", () => {
-    renderPreview(status({ used: 3, remaining: 0 }));
+  it("says the unlock is spent on another sale, without a return date, then points to the offer", () => {
+    renderPreview(status({ used: 1, remaining: 0 }));
 
-    expect(screen.getByText("Vos 3 déblocages d’octobre reviennent le 1er novembre.")).toBeTruthy();
+    expect(screen.getByText("Votre compte gratuit a déjà débloqué une vente.")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/reviennent|1er|ce mois/);
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
     );
@@ -98,7 +97,7 @@ describe("UnlockCallToAction in a paid preview", () => {
 
   it("offers the opening request instead of a dead end when the offer is closed", async () => {
     mocks.checkoutOpen.mockReturnValue(false);
-    renderPreview(status({ used: 3, remaining: 0 }));
+    renderPreview(status({ used: 1, remaining: 0 }));
 
     // The request is loaded on demand.
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
