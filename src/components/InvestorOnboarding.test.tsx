@@ -110,7 +110,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Votre compte gratuit vous permet de débloquer une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Votre compte gratuit vous permet de débloquer une vente (l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
@@ -225,7 +225,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Votre compte gratuit vous permet de débloquer une vente (enchère plafond, lecture des pièces, historique, selon la vente).",
+      "Votre compte gratuit vous permet de débloquer une vente (l’analyse complète de la vente : enchère plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente).",
     );
     expect(text).not.toContain("offre plafond");
   });

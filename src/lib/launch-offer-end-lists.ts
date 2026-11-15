@@ -17,13 +17,15 @@ export const LAUNCH_OFFER_END_STAYS: readonly string[] = [
 ];
 
 /**
- * Le bénéfice d'abord (le plafond de chaque vente, l'alerte chaque jour), le PDF une seule fois. Les
+ * Le bénéfice d'abord (le plafond de chaque vente, l'alerte chaque jour), le PDF une seule fois. Ce
+ * qu'un déblocage ouvre sur sa vente (plafond, estimation, comparables, rapport, pièces) est dit entre
+ * parenthèses : ce n'est réservé à Analyse que sur les autres ventes (décision du 15/11/2026). Les
  * rapports enregistrés sont dits par `LAUNCH_OFFER_DATA_TEXT`, affiché à côté de cette liste.
  */
 export const LAUNCH_OFFER_END_NEEDS_ANALYSIS: readonly string[] = [
   "le plafond chiffré sur toutes les ventes (compte gratuit : une vente débloquée)",
   `jusqu’à ${analysis.watchedZones} alertes, chaque jour (compte gratuit : ${free.watchedZones}, chaque semaine)`,
-  "l’estimation détaillée et les ventes comparables",
-  "le rapport PDF et l’export CSV",
+  "l’estimation détaillée et les ventes comparables sur toutes les ventes (compte gratuit : une vente débloquée)",
+  "le rapport PDF et l’export CSV (compte gratuit : le rapport de la vente débloquée)",
   "les pièces du dossier et leur lecture sur toutes les ventes (compte gratuit : vos ventes débloquées)",
 ];

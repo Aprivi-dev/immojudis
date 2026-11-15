@@ -119,7 +119,7 @@ export function SaleDetailWorksFinancingSection({
             </>
           ) : (
             <PremiumFeaturePreview
-              title="Estimez vos travaux avec l’offre Analyse"
+              title="Estimez vos travaux avec un déblocage ou l’offre Analyse"
               description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
               labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
             />
