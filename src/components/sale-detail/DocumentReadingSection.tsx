@@ -2,10 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchDocumentReading } from "@/lib/client-api";
-import type {
-  DocumentReadingReadResponse,
-  DocumentReadingTeaser,
-} from "@/lib/client-api/sale-analysis";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import {
@@ -14,6 +10,7 @@ import {
   documentPageHref,
   groupReadingPoints,
   readingHighlights,
+  type DocumentReadingResponse,
 } from "@/lib/document-reading";
 import styles from "./DocumentReadingSection.module.css";
 import { UnlockCallToAction } from "./UnlockCallToAction";
@@ -27,7 +24,9 @@ function plural(count: number, word: string): string {
  * de points, jamais lesquels (« 12 points relevés dans les pièces, dont 3 à vérifier et 2 sur
  * l’occupation »). À n'appeler qu'avec au moins un point.
  */
-export function readingTeaserLine(teaser: DocumentReadingTeaser): string {
+export function readingTeaserLine(
+  teaser: Extract<DocumentReadingResponse, { access: "teaser" }>,
+): string {
   const among = [
     teaser.alertCount > 0 ? `${teaser.alertCount} à vérifier` : null,
     teaser.occupationCount > 0 ? `${teaser.occupationCount} sur l’occupation` : null,
@@ -44,7 +43,7 @@ type ReadingQueryArgs = {
 
 /** Une seule lecture par vente et par compte, partagée par l'encart de tête et la section des pièces. */
 function useDocumentReading({ saleId, enabled, access, userKey }: ReadingQueryArgs) {
-  return useQuery<DocumentReadingReadResponse>({
+  return useQuery<DocumentReadingResponse>({
     queryKey: queryKeys.documentReading(saleId, access, userKey),
     queryFn: () => fetchDocumentReading(saleId),
     enabled,
