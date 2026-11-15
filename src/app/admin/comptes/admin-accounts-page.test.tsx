@@ -55,6 +55,8 @@ const ready = (open: boolean): BillingOfferState => ({
   open,
   trialAvailable: false,
   label: null,
+  saleUnlock: null,
+  firstMonthDeductionCents: 0,
 });
 
 beforeEach(() => {

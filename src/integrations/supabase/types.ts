@@ -11128,6 +11128,126 @@ export type Database = {
           },
         ];
       };
+      sale_unlock_purchases: {
+        Row: {
+          amount_cents: number;
+          checkout_session_id: string | null;
+          commercial_acceptance_id: string | null;
+          created_at: string;
+          currency: string;
+          deducted_checkout_session_id: string | null;
+          deduction_reserved_at: string | null;
+          deduction_reserved_token: string | null;
+          id: string;
+          last_event_created: number | null;
+          last_event_id: string | null;
+          outcome: string | null;
+          paid_at: string | null;
+          payment_intent_id: string | null;
+          sale_id: string | null;
+          state: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          amount_cents: number;
+          checkout_session_id?: string | null;
+          commercial_acceptance_id?: string | null;
+          created_at?: string;
+          currency: string;
+          deducted_checkout_session_id?: string | null;
+          deduction_reserved_at?: string | null;
+          deduction_reserved_token?: string | null;
+          id?: string;
+          last_event_created?: number | null;
+          last_event_id?: string | null;
+          outcome?: string | null;
+          paid_at?: string | null;
+          payment_intent_id?: string | null;
+          sale_id?: string | null;
+          state?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          amount_cents?: number;
+          checkout_session_id?: string | null;
+          commercial_acceptance_id?: string | null;
+          created_at?: string;
+          currency?: string;
+          deducted_checkout_session_id?: string | null;
+          deduction_reserved_at?: string | null;
+          deduction_reserved_token?: string | null;
+          id?: string;
+          last_event_created?: number | null;
+          last_event_id?: string | null;
+          outcome?: string | null;
+          paid_at?: string | null;
+          payment_intent_id?: string | null;
+          sale_id?: string | null;
+          state?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_unlock_purchases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       sale_workspace_annotations: {
         Row: {
           author_id: string;
@@ -13269,23 +13389,36 @@ export type Database = {
       user_sale_unlocks: {
         Row: {
           id: string;
+          purchase_id: string | null;
           sale_id: string | null;
+          source: string;
           unlocked_at: string;
           user_id: string;
         };
         Insert: {
           id?: string;
+          purchase_id?: string | null;
           sale_id?: string | null;
+          source?: string;
           unlocked_at?: string;
           user_id: string;
         };
         Update: {
           id?: string;
+          purchase_id?: string | null;
           sale_id?: string | null;
+          source?: string;
           unlocked_at?: string;
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "user_sale_unlocks_purchase_id_fkey";
+            columns: ["purchase_id"];
+            isOneToOne: false;
+            referencedRelation: "sale_unlock_purchases";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "user_sale_unlocks_sale_id_fkey";
             columns: ["sale_id"];
@@ -15563,6 +15696,14 @@ export type Database = {
         };
         Returns: string;
       };
+      attach_sale_unlock_checkout: {
+        Args: {
+          p_checkout_session_id: string;
+          p_commercial_acceptance_id?: string;
+          p_purchase_id: string;
+        };
+        Returns: boolean;
+      };
       attest_information_agent_aipd: {
         Args: { p_reason: string; p_version: string };
         Returns: {
@@ -16139,6 +16280,10 @@ export type Database = {
         Returns: Json;
       };
       evaluate_operational_health: { Args: { p_now?: string }; Returns: Json };
+      expire_sale_unlock_purchase: {
+        Args: { p_checkout_session_id: string };
+        Returns: boolean;
+      };
       extend_trial_with_note: {
         Args: {
           p_ends_at: string;
@@ -16500,6 +16645,23 @@ export type Database = {
         };
         Returns: undefined;
       };
+      grant_purchased_sale_unlock: {
+        Args: {
+          p_amount_cents: number;
+          p_checkout_session_id: string;
+          p_currency: string;
+          p_event_id: string;
+          p_paid_at: string;
+          p_payment_intent_id: string;
+          p_purchase_id: string;
+          p_sale_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          granted: boolean;
+          outcome: string;
+        }[];
+      };
       has_analysis_access: { Args: never; Returns: boolean };
       increment_property_report_share_view: {
         Args: { p_report_id: string };
@@ -16753,6 +16915,15 @@ export type Database = {
         };
         Returns: boolean;
       };
+      record_sale_unlock_payment_state: {
+        Args: {
+          p_event_created: number;
+          p_event_id: string;
+          p_payment_intent_id: string;
+          p_state: string;
+        };
+        Returns: boolean;
+      };
       record_stripe_payment_state: {
         Args: {
           p_entitlement_status: string;
@@ -16779,6 +16950,7 @@ export type Database = {
         };
         Returns: string;
       };
+      redeem_sale_unlock_credit: { Args: { p_sale_id: string }; Returns: Json };
       reject_auction_fact_claim: {
         Args: { p_claim_id: string; p_reason_code: string };
         Returns: Json;
@@ -16794,6 +16966,10 @@ export type Database = {
       release_sale_flood_risk_lease: {
         Args: { p_token: string };
         Returns: boolean;
+      };
+      release_unit_purchase_deduction: {
+        Args: { p_token: string };
+        Returns: number;
       };
       remap_archived_catalogue_courts_by_label_batch: {
         Args: { p_after_id?: string; p_limit?: number };
@@ -16851,6 +17027,17 @@ export type Database = {
             };
             Returns: string;
           };
+      reserve_sale_unlock_purchase: {
+        Args: { p_sale_id: string; p_user_id: string };
+        Returns: {
+          existing_session_id: string;
+          purchase_id: string;
+        }[];
+      };
+      reserve_unit_purchase_deduction: {
+        Args: { p_now: string; p_token: string; p_user_id: string };
+        Returns: number;
+      };
       review_auction_fact_claim: {
         Args: {
           p_claim_id: string;
@@ -17236,6 +17423,10 @@ export type Database = {
       set_launch_offer_end: {
         Args: { p_actor?: string; p_ends_on: string };
         Returns: Json;
+      };
+      settle_unit_purchase_deduction: {
+        Args: { p_checkout_session_id: string; p_token: string };
+        Returns: number;
       };
       st_3dclosestpoint: {
         Args: { geom1: unknown; geom2: unknown };

@@ -357,7 +357,15 @@ describe("BillingActions", () => {
     const reload = vi.fn();
     renderActions({
       offerSource: {
-        offer: { status: "ready", configured: true, open: true, trialAvailable: true, label: null },
+        offer: {
+          status: "ready",
+          configured: true,
+          open: true,
+          trialAvailable: true,
+          label: null,
+          saleUnlock: null,
+          firstMonthDeductionCents: 0,
+        },
         reload,
       },
     });

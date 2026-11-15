@@ -174,6 +174,33 @@ export const FREE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
  */
 export const FULL_SALE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
 
+/**
+ * Achat d'une vente à l'unité (décision du propriétaire du 15/11/2026, lot 3). À FAIRE VALIDER PAR UN
+ * AVOCAT AVANT L'OUVERTURE DE L'ACHAT.
+ *
+ * - CGU 2026-11-15.3 : nouvel article 2 bis « Achat d’une vente à l’unité », placé après l'article 2
+ *   pour ne décaler aucun numéro cité ailleurs : objet (déblocage d'une vente, mêmes éléments qu'un
+ *   déblocage du compte gratuit, tant que la vente est en ligne et 24 mois au plus), prix (19 € TTC,
+ *   TVA non applicable, art. 293 B du CGI ; paiement unique par carte, par Stripe), fourniture
+ *   immédiate d'un contenu numérique à la demande expresse du client, qui reconnaît perdre son droit
+ *   de rétractation une fois l'accès fourni, confirmation par email, crédit sans remboursement pour
+ *   une vente retirée avant d'avoir lieu ou plus disponible au paiement, déduction des achats des 30
+ *   derniers jours sur le premier mois d'abonnement dans la limite de son prix, caractère personnel.
+ *   Mis en cohérence : article 1 (champ d'application), article 2 (renvoi à l'article 2 bis) et
+ *   article 6 (rétractation : renonciation pour l'achat à l'unité ; la perte du droit « en cas
+ *   d'exécution complète » ne vise plus que l'abonnement). La version 2026-11-15.2 est archivée.
+ * - L'article 2 bis ne produit d'effet qu'à l'ouverture de l'achat (`saleUnlock.open` de
+ *   `GET /api/billing/offer`) ; l'en-tête des CGU le dit. Les autres stipulations gardent leur
+ *   calendrier. Aucune justification juridique n'est avancée ici : la qualification en contenu
+ *   numérique et la renonciation, le crédit au lieu du remboursement et sa durée de validité (le
+ *   texte n'en fixe pas), la déduction présentée comme une remise et la facture d'un particulier
+ *   sont à soumettre à l'avocat.
+ *
+ * Date de la mise en ligne prévue ; à décaler à la date réelle si elle diffère (elle n'entre pas
+ * dans l'empreinte du texte).
+ */
+export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -182,8 +209,8 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-11-15.2",
-    sha256: "37905b0d0a391ab052c2d749d91a319dada4b32079357e3a3996bbc58205d2a7",
+    version: "2026-11-15.3",
+    sha256: "caca834bbfc7fb409b5817de73bd703ea61845cc25c14517022ab3244fd49a1e",
     effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },

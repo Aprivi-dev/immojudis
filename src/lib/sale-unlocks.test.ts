@@ -110,7 +110,13 @@ describe("unlock status parsing", () => {
       limit: 1,
       used: 0,
       remaining: 1,
+      credits: 0,
     });
+  });
+
+  it("reads the unlock credits, and counts none when the database does not send them", () => {
+    expect(parseSaleUnlockStatus({ ...rpcStatus, credits: 2 }).credits).toBe(2);
+    expect(parseSaleUnlockStatus(rpcStatus).credits).toBe(0);
   });
 
   it("ignores the monthly period keys a database not yet migrated still sends", () => {

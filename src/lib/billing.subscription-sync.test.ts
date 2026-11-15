@@ -18,6 +18,8 @@ vi.mock("stripe", () => ({
     subscriptions = { retrieve: mocks.subscriptionsRetrieve, update: vi.fn() };
     paymentMethods = { retrieve: mocks.retrievePaymentMethod };
     customers = { retrieve: vi.fn() };
+    // Objet du paiement relu avant de toucher l'abonnement : ces paiements sont des abonnements.
+    paymentIntents = { retrieve: vi.fn(async () => ({ metadata: {} })) };
   },
 }));
 vi.mock("@/lib/commercial-acceptance", () => ({

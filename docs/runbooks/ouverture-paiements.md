@@ -49,14 +49,14 @@ Point de terminaison : `<origine>/api/stripe/webhook`. Événements à cocher (e
 
 | Événement                                                                      | Effet dans le code                                                               |
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `checkout.session.completed`, `checkout.session.async_payment_succeeded`       | Rattache l'abonnement, confirmation de commande                                  |
-| `checkout.session.expired`                                                     | Libère la réservation de checkout                                                |
+| `checkout.session.completed`, `checkout.session.async_payment_succeeded`       | Rattache l'abonnement, confirmation de commande ; achat à l'unité payé (§ 8)     |
+| `checkout.session.expired`                                                     | Libère la réservation de checkout ; achat à l'unité expiré (§ 8)                 |
 | `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed` | Synchronise l'état et l'accès Analyse, confirmation de résiliation               |
 | `customer.subscription.trial_will_end`                                         | Email de fin d'essai Stripe (inutile tant que le checkout est sans essai Stripe) |
 | `invoice.payment_failed`                                                       | Email « Votre paiement n'a pas abouti »                                          |
 | `invoice.payment_action_required`                                              | Email « Confirmez le paiement » (3-D Secure au renouvellement, C10)              |
-| `charge.refunded`                                                              | Retire l'accès après un remboursement total                                      |
-| `charge.dispute.created`, `charge.dispute.closed`                              | Suspend puis rétablit ou non l'accès                                             |
+| `charge.refunded`                                                              | Retire l'accès après un remboursement total (abonnement ou achat, § 8)           |
+| `charge.dispute.created`, `charge.dispute.closed`                              | Suspend puis rétablit ou non l'accès (abonnement ou achat, § 8)                  |
 
 Un événement non listé est journalisé « ignored » : sans danger, mais inutile.
 
@@ -227,3 +227,81 @@ Dans ces cas, la rétractation se traite à la main, par le propriétaire, dans 
 5. **Clore la demande** dans Conformité : statut « Traitée », code de résolution `withdrawal_executed_manually`,
    notes : motif du refus 409, identifiant et montant du remboursement, date de la résiliation. Puis informer la
    personne sur un support durable (`docs/compliance-phase-6.md`, « Procédure opérateur », étapes 6 et 7).
+
+## 8. Achat d'une vente à l'unité (19 € TTC, lot 3)
+
+Un compte gratuit qui a utilisé son déblocage gratuit peut acheter le déblocage d'une autre vente : 19 € TTC,
+paiement unique. Le déblocage n'est accordé **que par le webhook** (`checkout.session.completed`), jamais au retour
+du navigateur. Vente plus débloquable ou déjà débloquée au paiement, ou retirée ensuite : pas de remboursement
+automatique, un **crédit** qui débloque une autre vente (`POST /api/sales/[id]/unlock`). Les achats payés depuis
+moins de 30 jours sont déduits du **premier** mois d'abonnement Analyse (bon Stripe à usage unique, plafonné à
+59 €).
+
+### Ce que le code exige
+
+L'achat ne s'ouvre que si `saleUnlockCheckoutReadiness` (`src/lib/sale-unlock-checkout-readiness.ts`) ne signale
+rien : toute la configuration du § 0 **sauf** `STRIPE_ANALYSIS_SALES_OPEN`, plus `STRIPE_SALE_UNLOCK_PRICE_ID` et
+`STRIPE_SALE_UNLOCK_SALES_OPEN=true`. Fermé par défaut : sans ces deux variables, l'offre répond
+`saleUnlock.open: false` et `POST /api/billing/sale-unlock-checkout` répond 503 sans rien écrire. Le Price est relu
+avant chaque session : **actif, paiement unique (`one_time`), EUR, 1 900 centimes, « inclusive »**
+(`resolveConfiguredSaleUnlockPrice`, `src/lib/billing.ts`).
+
+Remboursement et litige sont aiguillés par la métadonnée `purpose` du PaymentIntent (`sale_unlock`, posée par la
+session) : un remboursement ou un litige d'achat ne touche **jamais** l'abonnement du compte, et inversement.
+
+### Mise en place, dans l'ordre (test d'abord, puis production)
+
+1. **Migration** `20261122100000_sale_unlock_purchases.sql` appliquée (par le propriétaire). Sans elle, l'achat
+   échouerait à la réservation : ne pas ouvrir l'interrupteur avant.
+2. **Stripe** : créer le produit « Immojudis — déblocage d'une vente », puis son Price : 19,00 €, EUR,
+   **paiement unique**, comportement fiscal **« inclusive »**. Relever l'identifiant du Price (`price_…`) et celui du
+   produit Analyse existant (`prod_…`, en test : `prod_Vb9wBbHMcjd77m`).
+3. **Webhook** : rien à ajouter, les événements du § 1 suffisent.
+4. **Vercel** (Preview pour la recette, puis Production) : `STRIPE_SALE_UNLOCK_PRICE_ID`, et
+   `STRIPE_ANALYSIS_PRODUCT_ID` (facultatif, limite le bon de déduction au produit Analyse). Redéployer : l'achat
+   reste fermé.
+5. **Ouvrir** : `STRIPE_SALE_UNLOCK_SALES_OPEN=true`, redéployer. Fermer : retirer la variable (ou toute autre
+   valeur), redéployer. Fermer n'arrête ni le webhook, ni les remboursements, ni l'usage des crédits. Ne pas retirer
+   le Price tant que des achats existent : le rapprochement quotidien ne les contrôle qu'avec lui.
+
+### Scénarios de recette (mode test, compte gratuit dont le déblocage gratuit est utilisé)
+
+| #   | Scénario                     | Attendu                                                                                                                                         |
+| --- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Achat, carte `4242…`         | Retour sur la fiche (`?unlock_checkout=success`), vente débloquée après le webhook, email de confirmation (montant, TVA, renonciation), facture |
+| 2   | Abandon puis nouvel achat    | La session ouverte est reproposée ; expirée, une nouvelle est créée                                                                             |
+| 3   | Vente retirée avant paiement | Paiement accepté, crédit sur le compte, email expliquant le crédit ; le crédit débloque une autre vente sans payer                              |
+| 4   | Remboursement total          | Déblocage retiré ; un abonnement Analyse du même compte n'est pas touché                                                                        |
+| 5   | Litige (carte `…0259`)       | Déblocage suspendu ; abonnement non touché                                                                                                      |
+| 6   | Souscription Analyse ensuite | Le premier mois porte la remise des achats des 30 derniers jours (au plus 59 €), pas les suivants                                               |
+| 7   | Interrupteur retiré          | Bouton d'achat absent, `POST /api/billing/sale-unlock-checkout` en 503                                                                          |
+
+### Avant de rembourser un achat à l'unité
+
+Un achat payé depuis moins de 30 jours a pu être **déduit du premier mois** d'un abonnement Analyse : le
+rembourser donnerait au client la remise et le remboursement. Avant tout remboursement d'un achat (Stripe →
+Paiement → Rembourser), vérifier en lecture seule :
+
+```sql
+select id, state, paid_at, deducted_checkout_session_id
+from public.sale_unlock_purchases
+where payment_intent_id = '<pi_…>';
+```
+
+- `deducted_checkout_session_id` vide : rembourser normalement.
+- `deducted_checkout_session_id` posé : l'achat a déjà servi de remise. Ne pas rembourser l'achat seul ;
+  décider (propriétaire) entre ne rien rembourser, ou rembourser l'achat et récupérer la remise (remboursement
+  partiel de la première facture d'abonnement réduit d'autant, ou facture complémentaire). Noter la décision
+  dans la demande du client.
+
+Un litige ouvert sur un achat déduit est signalé de la même façon par le rapprochement (ci-dessous) : le
+traiter avec la même règle.
+
+### Rapprochement
+
+`/api/cron/billing-reconciliation` signale, quand le Price de l'achat est posé : `sale_unlock_paid_without_purchase`
+(session payée chez Stripe depuis plus de 2 heures, sans achat payé en base : rejouer l'événement depuis Stripe →
+Webhooks) et `sale_unlock_deducted_then_refunded` (achat déduit d'un premier mois puis remboursé, contesté ou
+perdu en litige : décision humaine, voir ci-dessus). Au paiement d'un premier mois, le webhook journalise aussi
+`unit_deduction_settlement_mismatch` (journaux Vercel, préfixe `[billing]`) quand la base a réglé moins d'achats
+que le bon appliqué (achat remboursé ou contesté entre le checkout et le paiement) : même décision humaine.

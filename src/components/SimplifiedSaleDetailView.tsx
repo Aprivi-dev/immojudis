@@ -9,6 +9,7 @@ import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import type { SalePurchaseReturnPhase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { DocumentReadingHighlights } from "@/components/sale-detail/DocumentReadingSection";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import {
@@ -18,7 +19,8 @@ import {
 import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
-import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { type SaleUnlockResult, type SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { UNLOCK_CREDIT_CALL_TO_ACTION_LABEL } from "@/lib/sale-unlock-purchase-texts";
 import { isPersistedSale } from "@/lib/example-sale-identity";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
@@ -205,6 +207,10 @@ type SaleDetailProps = {
   /** The sale was unlocked on this page a moment ago: the result takes the focus. */
   justUnlocked?: boolean;
   onSaleUnlocked?: (result: SaleUnlockResult) => void;
+  /** The account state changed elsewhere (refused purchase): read it again. */
+  onUnlockStatusStale?: () => void;
+  /** Back from the payment of this sale: what the server has confirmed so far. */
+  purchaseReturn?: SalePurchaseReturnPhase;
 };
 
 export function AnalysisSaleDetailView({
@@ -256,6 +262,8 @@ export function FreeSaleDetailView({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  onUnlockStatusStale,
+  purchaseReturn = null,
   pepiteKnown,
 }: SaleDetailProps) {
   return (
@@ -271,6 +279,8 @@ export function FreeSaleDetailView({
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
       onSaleUnlocked={onSaleUnlocked}
+      onUnlockStatusStale={onUnlockStatusStale}
+      purchaseReturn={purchaseReturn}
       pepiteKnown={pepiteKnown}
       access="discovery"
     />
@@ -345,6 +355,8 @@ function SaleDetailWorkspace({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  onUnlockStatusStale,
+  purchaseReturn = null,
   pepiteKnown,
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
@@ -743,7 +755,15 @@ function SaleDetailWorkspace({
           href: `#${UNLOCK_PANEL_ID}`,
           label: `Débloquer ${ceilingTerms?.ceilingTermWithArticle ?? "le plafond"}`,
         }
-      : preparation;
+      : access === "discovery" &&
+          user &&
+          !publicDemo &&
+          unlockStatus?.unlockable &&
+          !unlockStatus.unlocked &&
+          (unlockStatus.credits ?? 0) > 0
+        ? // Déblocage gratuit utilisé, crédit restant (vente achetée qui n'a pas eu lieu).
+          { href: `#${UNLOCK_PANEL_ID}`, label: UNLOCK_CREDIT_CALL_TO_ACTION_LABEL }
+        : preparation;
   const ceilingSummaryLabel =
     ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)";
   // Fourchette de l'estimation détaillée (offre Analyse) : case « Valeur estimée » et réglette.
@@ -1009,6 +1029,8 @@ function SaleDetailWorkspace({
                     ceilingGap: unlockGap,
                   }}
                   announce={justUnlocked}
+                  purchaseReturn={purchaseReturn}
+                  onStatusStale={onUnlockStatusStale}
                   onUnlocked={(result) => {
                     onSaleUnlocked?.(result);
                     // Le plafond est ce que le déblocage ouvre : on y va, la confirmation reste en haut.

@@ -210,15 +210,33 @@ function cell(plan: PlanCode, spec: RowSpec): OfferCell {
 }
 
 /**
+ * La ligne de l'achat d'une vente à l'unité, juste après celle du déblocage. Le prix est celui de
+ * l'offre lue (`saleUnlock.label`), jamais écrit ici.
+ */
+function salePurchaseRow(label: string): OfferRow {
+  return {
+    id: "unit-sale",
+    label: "Vente supplémentaire à l’unité",
+    hint: "Paiement unique, une fois le déblocage du compte gratuit utilisé : l’analyse complète de la vente, tant qu’elle est en ligne (24 mois au plus)",
+    decouverte: { included: false, limited: true, text: label },
+    analyse: { included: true, text: "Inutile : toutes les ventes sont ouvertes" },
+  };
+}
+
+/**
  * `analysisOpen` : l'offre Analyse se souscrit pour de bon (état lu). Tant qu'il ne l'est pas, la
  * mise en relation avec un avocat, que seule Analyse donne, n'est pas promise : le tableau ne la
- * décrit pas comme « Inclus » pour une offre que l'on ne peut pas acheter.
+ * décrit pas comme « Inclus » pour une offre que l'on ne peut pas acheter. `salePurchaseLabel` : le
+ * prix d'une vente à l'unité quand cet achat est ouvert ; absent, le tableau n'en parle pas.
  */
 export function offerComparisonRows(
   open?: readonly FeeRegimeKey[],
-  { analysisOpen = false }: { analysisOpen?: boolean } = {},
+  {
+    analysisOpen = false,
+    salePurchaseLabel = null,
+  }: { analysisOpen?: boolean; salePurchaseLabel?: string | null } = {},
 ): OfferRow[] {
-  return specs(open).map((spec) => {
+  const rows = specs(open).map((spec) => {
     const analyse = cell("analyse", spec);
     return {
       id: spec.id,
@@ -231,6 +249,9 @@ export function offerComparisonRows(
           : analyse,
     };
   });
+  if (!salePurchaseLabel) return rows;
+  const after = rows.findIndex((row) => row.id === "unlocks") + 1;
+  return [...rows.slice(0, after), salePurchaseRow(salePurchaseLabel), ...rows.slice(after)];
 }
 
 /** La ligne est la même dans les deux offres, et incluse : rien ne les y distingue. */

@@ -4,19 +4,29 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   rows: vi.fn(),
   subscriptionsList: vi.fn(),
+  sessionsList: vi.fn(),
+  purchasesBySession: vi.fn(),
+  deductedRefunded: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     rpc: mocks.rpc,
-    from: () => ({
-      select: () => ({ not: async () => mocks.rows() }),
-    }),
+    from: (table: string) =>
+      table === "sale_unlock_purchases"
+        ? {
+            select: () => ({
+              in: async () => mocks.purchasesBySession(),
+              not: () => ({ in: async () => mocks.deductedRefunded() }),
+            }),
+          }
+        : { select: () => ({ not: async () => mocks.rows() }) },
   },
 }));
 vi.mock("stripe", () => ({
   default: class FakeStripe {
     subscriptions = { list: mocks.subscriptionsList };
+    checkout = { sessions: { list: mocks.sessionsList } };
   },
 }));
 
@@ -159,5 +169,76 @@ describe("rapprochement Stripe quotidien", () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "function does not exist" } });
 
     await expect(runBillingReconciliationJob()).rejects.toThrow("function does not exist");
+  });
+
+  describe("achats à l'unité", () => {
+    beforeEach(() => {
+      mocks.subscriptionsList.mockResolvedValue({ data: [], has_more: false });
+      mocks.rows.mockResolvedValue({ data: [], error: null });
+      mocks.sessionsList.mockReset();
+      mocks.purchasesBySession.mockReset();
+      mocks.deductedRefunded.mockReset();
+      mocks.purchasesBySession.mockResolvedValue({ data: [], error: null });
+      mocks.deductedRefunded.mockResolvedValue({ data: [], error: null });
+    });
+
+    it("ne lit ni les sessions ni les achats tant que le Price de l'achat à l'unité n'est pas posé", async () => {
+      await runBillingReconciliationJob();
+
+      expect(mocks.sessionsList).not.toHaveBeenCalled();
+      expect(mocks.purchasesBySession).not.toHaveBeenCalled();
+    });
+
+    it("signale une session payée chez Stripe sans achat payé en base", async () => {
+      vi.stubEnv("STRIPE_SALE_UNLOCK_PRICE_ID", "price_unit");
+      mocks.sessionsList.mockResolvedValue({
+        data: [
+          {
+            id: "cs_paid",
+            payment_status: "paid",
+            metadata: { purpose: "sale_unlock", user_id: "user-1" },
+          },
+          {
+            id: "cs_recorded",
+            payment_status: "paid",
+            metadata: { purpose: "sale_unlock", user_id: "user-2" },
+          },
+          // Abonnement : hors de ce contrôle.
+          { id: "cs_subscription", payment_status: "paid", metadata: { plan_code: "analyse" } },
+        ],
+        has_more: false,
+      });
+      mocks.purchasesBySession.mockResolvedValue({
+        data: [
+          {
+            id: "p2",
+            user_id: "user-2",
+            checkout_session_id: "cs_recorded",
+            state: "paid",
+            deducted_checkout_session_id: null,
+          },
+        ],
+        error: null,
+      });
+
+      const result = await runBillingReconciliationJob();
+
+      expect(result).toMatchObject({
+        alert: "open",
+        kinds: { sale_unlock_paid_without_purchase: 1 },
+      });
+      expect(mocks.sessionsList.mock.calls[0]![0]).toMatchObject({
+        status: "complete",
+        created: { gte: expect.any(Number), lte: expect.any(Number) },
+      });
+      expect(mocks.rpc.mock.calls[0]![1]).toMatchObject({
+        p_details: {
+          sample: [
+            { kind: "sale_unlock_paid_without_purchase", session: "cs_paid", user: "user-1" },
+          ],
+        },
+      });
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    });
   });
 });

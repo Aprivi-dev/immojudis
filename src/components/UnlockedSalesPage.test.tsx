@@ -37,6 +37,44 @@ beforeEach(() => mocks.overview.mockReset());
 afterEach(cleanup);
 
 describe("UnlockedSalesPage", () => {
+  it("names how each sale was unlocked when it is known, and the credits left", async () => {
+    const sale = {
+      title: "Vente",
+      city: null,
+      department: null,
+      propertyType: null,
+      startingPriceEur: null,
+      saleDate: null,
+      status: null,
+    };
+    const data = overview([
+      { ...sale, id: "11111111-1111-4111-8111-111111111111", source: "free" },
+      { ...sale, id: "22222222-2222-4222-8222-222222222222", source: "purchase" },
+      { ...sale, id: "33333333-3333-4333-8333-333333333333", source: "credit" },
+      { ...sale, id: "44444444-4444-4444-8444-444444444444" },
+    ]);
+    mocks.overview.mockResolvedValue({ ...data, status: { ...data.status, credits: 1 } });
+    renderPage();
+
+    const items = (await screen.findByRole("list", { name: "Ventes débloquées" })).querySelectorAll(
+      "li",
+    );
+    expect(items[0].textContent).toContain("Débloquée avec le compte gratuit");
+    expect(items[1].textContent).toContain("Achetée");
+    expect(items[2].textContent).toContain("Débloquée avec un crédit");
+    expect(items[3].textContent).not.toMatch(/Débloquée avec|Achetée/);
+    expect(screen.getByTestId("unlock-credits").textContent).toBe(
+      "1 crédit de déblocage disponible",
+    );
+  });
+
+  it("says nothing about credits when there are none", async () => {
+    mocks.overview.mockResolvedValue(overview([]));
+    renderPage();
+    await screen.findByText("Déblocage du compte gratuit : utilisé");
+    expect(screen.queryByTestId("unlock-credits")).toBeNull();
+  });
+
   it("lists the unlocked sales, each linking to its sheet, with the state of the free unlock", async () => {
     mocks.overview.mockResolvedValue(
       overview([

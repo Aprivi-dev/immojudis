@@ -16,6 +16,7 @@ import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
 import { fetchSaleUnlockStatus } from "@/lib/client-api";
+import { useSalePurchaseReturn } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import { rememberSaleForSignup } from "@/lib/signup-return-sale";
 import type { AuctionSale } from "@/lib/types";
@@ -171,6 +172,29 @@ function SaleDetailContent({
     queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
     void queryClient.invalidateQueries({ queryKey: queryKeys.saleDetailForSale(id) });
   };
+  // Déblocage confirmé par le serveur hors d'un clic de cette page (paiement d'une vente à l'unité,
+  // vente déjà débloquée ailleurs) : même bascule que juste après « Confirmer le déblocage ».
+  const handleUnlockConfirmedByServer = () => {
+    setJustUnlocked(true);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.saleDetailForSale(id) });
+  };
+  // Un refus de l'achat à l'unité (409) : la situation du compte a changé, on la relit, droits compris
+  // (un compte devenu abonné n'a plus rien à acheter).
+  const refreshUnlockStatus = async () => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.featureEntitlementsPlan(session?.user.id ?? "anonymous"),
+    });
+    const { data: next } = await unlockQuery.refetch();
+    if (next?.unlocked) handleUnlockConfirmedByServer();
+  };
+  const purchaseReturn = useSalePurchaseReturn({
+    saleId: id,
+    enabled: unlockEnabled,
+    unlocked,
+    credits: unlockQuery.data?.credits ?? 0,
+    refetch: unlockQuery.refetch,
+    onConfirmed: handleUnlockConfirmedByServer,
+  });
   const signedIn = Boolean(session) && !authLoading;
   useEffect(() => {
     if (!signedIn) return;
@@ -356,6 +380,8 @@ function SaleDetailContent({
           unlockStatus={unlockQuery.data ?? null}
           justUnlocked={justUnlocked}
           onSaleUnlocked={handleSaleUnlocked}
+          onUnlockStatusStale={refreshUnlockStatus}
+          purchaseReturn={purchaseReturn}
         />
       </>
     );
@@ -469,6 +495,8 @@ function SaleDetailContent({
         housingTension={housingTension}
         unlockStatus={unlockQuery.data ?? null}
         onSaleUnlocked={handleSaleUnlocked}
+        onUnlockStatusStale={refreshUnlockStatus}
+        purchaseReturn={purchaseReturn}
         pepiteKnown={serverPreview?.pepite}
       />
     </>
