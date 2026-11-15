@@ -220,7 +220,9 @@ describe("integrated scenario workspace", { timeout: 15_000 }, () => {
     renderDetail("discovery");
     await openTab("Travaux");
     expect(
-      screen.getByRole("heading", { name: "Estimez vos travaux avec un déblocage ou l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Estimez vos travaux avec un déblocage ou l’offre Analyse",
+      }),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Type, poste 1" })).toBeNull();

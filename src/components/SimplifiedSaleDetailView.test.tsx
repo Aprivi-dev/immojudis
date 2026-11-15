@@ -1326,7 +1326,9 @@ describe("integrated listing", () => {
 
     selectTab("Travaux");
     expect(
-      screen.getByRole("heading", { name: "Estimez vos travaux avec un déblocage ou l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Estimez vos travaux avec un déblocage ou l’offre Analyse",
+      }),
     ).toBeTruthy();
     expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
@@ -1704,7 +1706,9 @@ describe("the free unlock on the sale page", () => {
     // Travaux: the works of the listing instead of the preview of the offer.
     selectTab("Travaux");
     expect(
-      screen.queryByRole("heading", { name: "Estimez vos travaux avec un déblocage ou l’offre Analyse" }),
+      screen.queryByRole("heading", {
+        name: "Estimez vos travaux avec un déblocage ou l’offre Analyse",
+      }),
     ).toBeNull();
     // Démarches: the report of this sale; the work file stays with the subscription.
     selectTab("Démarches");
