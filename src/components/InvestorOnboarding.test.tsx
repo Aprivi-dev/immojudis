@@ -104,13 +104,13 @@ describe("investor welcome flow", () => {
     expect(container.innerHTML).not.toMatch(/liquid-|glass-/);
   });
 
-  it("announces the monthly unlocks of the free account instead of a flat « Analyse only »", () => {
+  it("announces the single unlock of the free account instead of a flat « Analyse only »", () => {
     render(<InvestorOnboarding />);
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Votre compte gratuit vous permet de débloquer une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
@@ -133,7 +133,7 @@ describe("investor welcome flow", () => {
     const text = lastStepText();
     expect(text).toContain("Votre essai gratuit de 7 jours court jusqu’au ");
     expect(text).toContain(
-      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
+      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, votre compte gratuit comprendra le déblocage d’une vente.",
     );
   });
 
@@ -181,7 +181,7 @@ describe("investor welcome flow", () => {
       alerts.plan = plan;
       const text = lastStepText();
       expect(text).not.toContain("votre compte ouvre les outils");
-      expect(text).toContain("Avec 3 déblocages par mois, vous ouvrez le détail d’une vente");
+      expect(text).toContain("Votre compte gratuit vous permet de débloquer une vente");
       cleanup();
     }
   });
@@ -203,7 +203,7 @@ describe("investor welcome flow", () => {
     alerts.plan = undefined;
     const text = lastStepText();
     expect(text).not.toContain("votre compte ouvre");
-    expect(text).not.toContain("Avec 3 déblocages par mois");
+    expect(text).not.toContain("Votre compte gratuit vous permet de débloquer");
     expect(text).not.toContain("Votre essai gratuit");
   });
 
@@ -225,7 +225,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond, lecture des pièces, historique, selon la vente).",
+      "Votre compte gratuit vous permet de débloquer une vente (enchère plafond, lecture des pièces, historique, selon la vente).",
     );
     expect(text).not.toContain("offre plafond");
   });
