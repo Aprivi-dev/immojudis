@@ -10,6 +10,8 @@ import { UNLOCKED_SALES_PATH, saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
 import {
   UNLOCK_CALL_TO_ACTION_LABEL,
+  unlockCreditsLine,
+  unlockSourceLabel,
   unlockUsageLine,
   type UnlockedSaleSummary,
 } from "@/lib/sale-unlocks";
@@ -58,6 +60,11 @@ export function UnlockedSalesPage() {
           </p>
           {status && !status.analysisAccess ? (
             <p className="mt-3 text-sm font-medium text-brand-navy">{unlockUsageLine(status)}</p>
+          ) : null}
+          {status && !status.analysisAccess && unlockCreditsLine(status) ? (
+            <p data-testid="unlock-credits" className="mt-1 text-sm font-medium text-brand-navy">
+              {unlockCreditsLine(status)}
+            </p>
           ) : null}
         </>
       }
@@ -108,6 +115,11 @@ export function UnlockedSalesPage() {
                   ? `Mise à prix ${formatStartingPrice(sale.startingPriceEur)}`
                   : "Mise à prix à confirmer"}
               </p>
+              {unlockSourceLabel(sale.source) ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {unlockSourceLabel(sale.source)}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>

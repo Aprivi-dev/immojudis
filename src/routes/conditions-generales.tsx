@@ -53,7 +53,8 @@ export function TermsPage() {
             {LEGAL_DOCUMENTS.terms.effectiveDate}. Jusqu’à cette date, la version précédente (
             {PREVIOUS_LEGAL_DOCUMENTS.terms.version}) reste applicable aux comptes existants pour
             ces autres stipulations ; elle est communiquée sur demande à{" "}
-            {legalValue(publisher.contactEmail)}.
+            {legalValue(publisher.contactEmail)}. L’article 2 bis (achat d’une vente à l’unité) ne
+            produit d’effet qu’à compter de l’ouverture de cet achat sur Immojudis.
           </p>
         </header>
 
@@ -61,9 +62,10 @@ export function TermsPage() {
           <TermsSection title="1. Éditeur et champ d’application">
             <p>
               Les présentes conditions régissent l’accès à Immojudis, édité par{" "}
-              {legalValue(publisher.entityName)}, ainsi que l’achat de l’offre Analyse. Elles sont
-              accessibles avant toute commande et leur version acceptée est conservée avec la preuve
-              de commande. L’utilisation du service suppose également le respect des{" "}
+              {legalValue(publisher.entityName)}, ainsi que l’achat de l’offre Analyse et l’achat
+              d’une vente à l’unité (article 2 bis). Elles sont accessibles avant toute commande et
+              leur version acceptée est conservée avec la preuve de commande. L’utilisation du
+              service suppose également le respect des{" "}
               <Link to="/legal" className="text-gold underline">
                 mentions légales
               </Link>{" "}
@@ -115,6 +117,11 @@ export function TermsPage() {
               au déblocage.
             </p>
             <p className="mt-3">
+              Une fois le déblocage du compte gratuit utilisé, une autre vente s’ouvre avec l’offre
+              Analyse ou, lorsque cet achat est proposé, par l’achat d’une vente à l’unité, dans les
+              conditions de l’article 2 bis.
+            </p>
+            <p className="mt-3">
               Immojudis peut modifier ou supprimer le déblocage du compte gratuit pour l’avenir, en
               vous prévenant au moins {FREE_BENEFIT_NOTICE_DAYS} jours à l’avance par un message
               dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà
@@ -149,6 +156,44 @@ export function TermsPage() {
               . Le montant de l’enchère plafond ou de l’offre plafond estimée, selon la vente, et le
               détail du calcul sont réservés à l’offre Analyse ou à un déblocage, dans les
               conditions du présent article.
+            </p>
+          </TermsSection>
+
+          <TermsSection title="2 bis. Achat d’une vente à l’unité">
+            <p>
+              Lorsque le déblocage compris dans Découverte a été utilisé, le titulaire du compte
+              peut acheter le déblocage d’une autre vente. Cet achat ouvre, pour la vente choisie,
+              les mêmes éléments qu’un déblocage du compte gratuit (article 2), tant que la vente
+              est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que
+              le compte existe. Il n’ouvre aucune autre vente ni les éléments que l’article 2
+              réserve à l’offre Analyse.
+            </p>
+            <p className="mt-3">
+              Prix : 19 € TTC par vente. Ce prix est un prix final : TVA non applicable, art. 293 B
+              du CGI. Le paiement est unique, par carte bancaire, par l’intermédiaire de Stripe ;
+              Immojudis ne reçoit ni ne conserve le numéro complet de la carte. Le montant est
+              affiché avant la confirmation du paiement.
+            </p>
+            <p className="mt-3">
+              L’analyse de la vente est un contenu numérique fourni dès la confirmation du paiement,
+              à la demande expresse du client. Avant le paiement, le client demande cet accès
+              immédiat et reconnaît perdre son droit de rétractation une fois l’accès fourni
+              (article 6). L’achat est confirmé par email.
+            </p>
+            <p className="mt-3">
+              Si la vente est retirée avant d’avoir lieu, ou si elle n’est plus disponible au moment
+              où le paiement aboutit, l’achat n’est pas remboursé : il devient un crédit qui permet
+              de débloquer une autre vente, dans les conditions du présent article. Les crédits
+              disponibles sont indiqués dans Mon compte.
+            </p>
+            <p className="mt-3">
+              Les achats à l’unité payés dans les 30 jours qui précèdent la souscription de l’offre
+              Analyse sont déduits du prix du premier mois d’abonnement, dans la limite de ce prix.
+            </p>
+            <p className="mt-3">
+              L’achat est personnel : la vente débloquée ne se partage ni ne se transmet (article
+              9). Le présent article ne produit d’effet qu’à compter de l’ouverture de l’achat d’une
+              vente à l’unité sur Immojudis.
             </p>
           </TermsSection>
 
@@ -218,14 +263,18 @@ export function TermsPage() {
               L’offre Découverte est sans paiement : aucun montant n’est dû, et vous pouvez demander
               la fermeture de votre compte à tout moment, gratuitement, depuis Mes droits. Le droit
               de rétractation ci-dessous s’applique à l’abonnement Analyse : le délai de 14 jours
-              court à compter de la conclusion de l’abonnement.
+              court à compter de la conclusion de l’abonnement. Pour l’achat d’une vente à l’unité
+              (article 2 bis), l’analyse de la vente est fournie dès la confirmation du paiement, à
+              la demande expresse du client, qui reconnaît avant le paiement perdre son droit de
+              rétractation une fois l’accès fourni.
             </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
               pour se rétracter sans motif. Lorsqu’il demande l’exécution immédiate du service, il
               reconnaît qu’un montant proportionné au service déjà fourni peut rester dû en cas de
-              rétractation. Le droit n’est perdu qu’en cas d’exécution complète dans les conditions
-              prévues par la loi et après accord exprès et reconnaissance correspondante.
+              rétractation. Pour l’abonnement, le droit n’est perdu qu’en cas d’exécution complète
+              dans les conditions prévues par la loi et après accord exprès et reconnaissance
+              correspondante.
             </p>
             <p className="mt-3">
               La demande peut être déposée depuis{" "}

@@ -9,6 +9,7 @@ import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import type { SalePurchaseReturnPhase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { DocumentReadingHighlights } from "@/components/sale-detail/DocumentReadingSection";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import {
@@ -205,6 +206,10 @@ type SaleDetailProps = {
   /** The sale was unlocked on this page a moment ago: the result takes the focus. */
   justUnlocked?: boolean;
   onSaleUnlocked?: (result: SaleUnlockResult) => void;
+  /** The account state changed elsewhere (refused purchase): read it again. */
+  onUnlockStatusStale?: () => void;
+  /** Back from the payment of this sale: what the server has confirmed so far. */
+  purchaseReturn?: SalePurchaseReturnPhase;
 };
 
 export function AnalysisSaleDetailView({
@@ -256,6 +261,8 @@ export function FreeSaleDetailView({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  onUnlockStatusStale,
+  purchaseReturn = null,
   pepiteKnown,
 }: SaleDetailProps) {
   return (
@@ -271,6 +278,8 @@ export function FreeSaleDetailView({
       unlockStatus={unlockStatus}
       justUnlocked={justUnlocked}
       onSaleUnlocked={onSaleUnlocked}
+      onUnlockStatusStale={onUnlockStatusStale}
+      purchaseReturn={purchaseReturn}
       pepiteKnown={pepiteKnown}
       access="discovery"
     />
@@ -345,6 +354,8 @@ function SaleDetailWorkspace({
   unlockStatus = null,
   justUnlocked = false,
   onSaleUnlocked,
+  onUnlockStatusStale,
+  purchaseReturn = null,
   pepiteKnown,
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
@@ -1009,6 +1020,8 @@ function SaleDetailWorkspace({
                     ceilingGap: unlockGap,
                   }}
                   announce={justUnlocked}
+                  purchaseReturn={purchaseReturn}
+                  onStatusStale={onUnlockStatusStale}
                   onUnlocked={(result) => {
                     onSaleUnlocked?.(result);
                     // Le plafond est ce que le déblocage ouvre : on y va, la confirmation reste en haut.

@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_ANALYSIS_OFFER_LABEL } from "@/lib/analysis-offer";
+import { DEFAULT_ANALYSIS_OFFER_LABEL, SALE_UNLOCK_PRICE_LABEL } from "@/lib/analysis-offer";
 import {
   FREE_UNLOCK_EFFECTIVE_DATE,
   FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
+  SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
@@ -140,17 +141,21 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-11-15.2 (le déblocage ouvre toute l'offre Analyse sur la vente), ancrée par l'empreinte de leur source ; les 2026-11-15.1, 2026-11-10.1 et 2026-10-26.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-15.2");
+  it("portent la version 2026-11-15.3 (achat d'une vente à l'unité), ancrée par l'empreinte de leur source ; les 2026-11-15.2, 2026-11-15.1, 2026-11-10.1 et 2026-10-26.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-15.3");
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier.map((earlier) => earlier.version)).toEqual([
+      "2026-11-15.2",
       "2026-11-15.1",
       "2026-11-10.1",
       "2026-10-26.1",
     ]);
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[0].applicableUntil).toBe(
-      FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+      SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[1].applicableUntil).toBe(
+      FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[2].applicableUntil).toBe(
       FREE_UNLOCK_EFFECTIVE_DATE,
     );
   });
@@ -182,7 +187,7 @@ describe("conditions générales : classement, référencement et mise en avant"
   it("précisent dans l'en-tête qui est soumis à quelle version, et où obtenir la précédente", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      `Version 2026-11-15.2, applicable dès l’inscription pour les comptes créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui concerne l’offre Découverte et son déblocage, s’applique à compter du ${FULL_SALE_UNLOCK_EFFECTIVE_DATE}, et l’article 13 à compter du ${FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du 1er décembre 2026. Jusqu’à cette date, la version précédente (2026-10-25.1) reste applicable aux comptes existants pour ces autres stipulations ; elle est communiquée sur demande à contact@immojudis.example.`,
+      `Version 2026-11-15.3, applicable dès l’inscription pour les comptes créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui concerne l’offre Découverte et son déblocage, s’applique à compter du ${FULL_SALE_UNLOCK_EFFECTIVE_DATE}, et l’article 13 à compter du ${FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du 1er décembre 2026. Jusqu’à cette date, la version précédente (2026-10-25.1) reste applicable aux comptes existants pour ces autres stipulations ; elle est communiquée sur demande à contact@immojudis.example. L’article 2 bis (achat d’une vente à l’unité) ne produit d’effet qu’à compter de l’ouverture de cet achat sur Immojudis.`,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
       LEGAL_DOCUMENTS.terms.effectiveDate,
@@ -433,6 +438,79 @@ describe("conditions générales : un déblocage de vente en tout", () => {
       expect(source, file).not.toMatch(/(?<![\w$])(3|trois) (déblocages|ventes par mois)/i);
       expect(source, file).not.toMatch(/analyses? (complètes? )?gratuites?|Analyse offerte/i);
     }
+  });
+});
+
+describe("conditions générales : achat d'une vente à l'unité (article 2 bis)", () => {
+  function article2bis(): string {
+    const { container } = render(<TermsPage />);
+    const section = Array.from(container.querySelectorAll("section")).find((node) =>
+      node.querySelector("h2")?.textContent?.startsWith("2 bis."),
+    );
+    return (section?.textContent ?? "").replace(/\s+/g, " ");
+  }
+
+  it("ajoutent l'article 2 bis sans décaler la numérotation des articles cités ailleurs", () => {
+    const { container } = render(<TermsPage />);
+    const titles = Array.from(container.querySelectorAll("h2"), (node) => node.textContent);
+    expect(titles.slice(0, 4)).toEqual([
+      "1. Éditeur et champ d’application",
+      "2. Description des offres",
+      "2 bis. Achat d’une vente à l’unité",
+      "3. Formation de la commande",
+    ]);
+    expect(titles).toContain("6. Droit de rétractation");
+    expect(titles).toContain("9. Compte et usages autorisés");
+    expect(titles).toContain("14. Modification des conditions");
+  });
+
+  it("décrivent l'objet, le prix, la fourniture immédiate, la confirmation, le crédit, la déduction et le caractère personnel", () => {
+    const text = article2bis();
+    expect(text).toContain(
+      "Cet achat ouvre, pour la vente choisie, les mêmes éléments qu’un déblocage du compte gratuit (article 2), tant que la vente est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage",
+    );
+    expect(text).toContain(
+      "Prix : 19 € TTC par vente. Ce prix est un prix final : TVA non applicable, art. 293 B du CGI. Le paiement est unique, par carte bancaire, par l’intermédiaire de Stripe",
+    );
+    expect(text).toContain(
+      "L’analyse de la vente est un contenu numérique fourni dès la confirmation du paiement, à la demande expresse du client. Avant le paiement, le client demande cet accès immédiat et reconnaît perdre son droit de rétractation une fois l’accès fourni (article 6). L’achat est confirmé par email.",
+    );
+    expect(text).toContain(
+      "Si la vente est retirée avant d’avoir lieu, ou si elle n’est plus disponible au moment où le paiement aboutit, l’achat n’est pas remboursé : il devient un crédit qui permet de débloquer une autre vente",
+    );
+    expect(text).toContain(
+      "Les achats à l’unité payés dans les 30 jours qui précèdent la souscription de l’offre Analyse sont déduits du prix du premier mois d’abonnement, dans la limite de ce prix.",
+    );
+    expect(text).toContain("L’achat est personnel");
+    expect(text).toContain(
+      "Le présent article ne produit d’effet qu’à compter de l’ouverture de l’achat d’une vente à l’unité sur Immojudis.",
+    );
+  });
+
+  it("écrivent le prix approuvé de l'achat à l'unité (`SALE_UNLOCK_PRICE_LABEL`)", () => {
+    expect(article2bis()).toContain(`Prix : ${SALE_UNLOCK_PRICE_LABEL} TTC par vente.`);
+  });
+
+  it("n'affirment jamais qu'un achat à l'unité est remboursé", () => {
+    const text = article2bis();
+    expect(text).toContain("n’est pas remboursé");
+    expect(text.replace(/n’est pas remboursé/g, "")).not.toMatch(/rembours/i);
+  });
+
+  it("mettent le droit de rétractation en cohérence : renonciation pour l'achat à l'unité, exécution complète pour l'abonnement", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Pour l’achat d’une vente à l’unité (article 2 bis), l’analyse de la vente est fournie dès la confirmation du paiement, à la demande expresse du client, qui reconnaît avant le paiement perdre son droit de rétractation une fois l’accès fourni.",
+    );
+    expect(text).toContain(
+      "Pour l’abonnement, le droit n’est perdu qu’en cas d’exécution complète dans les conditions prévues par la loi",
+    );
+    expect(text).toContain(
+      "ainsi que l’achat de l’offre Analyse et l’achat d’une vente à l’unité (article 2 bis)",
+    );
+    expect(text).toContain(
+      "Une fois le déblocage du compte gratuit utilisé, une autre vente s’ouvre avec l’offre Analyse ou, lorsque cet achat est proposé, par l’achat d’une vente à l’unité, dans les conditions de l’article 2 bis.",
+    );
   });
 });
 

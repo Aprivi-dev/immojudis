@@ -9,6 +9,7 @@ import {
   PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
   PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
   PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE,
+  SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 
 // Module à part de `legal-documents.ts` : ces versions n'intéressent que les pages de textes
@@ -29,6 +30,13 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     archive: "docs/legal-archives/conditions-generales-2026-10-25.1.tsx.txt",
     /** Versions plus récentes que la précédente mais déjà remplacées, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-11-15.2",
+        sha256: "37905b0d0a391ab052c2d749d91a319dada4b32079357e3a3996bbc58205d2a7",
+        effectiveDate: FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+        applicableUntil: SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/conditions-generales-2026-11-15.2.tsx.txt",
+      },
       {
         version: "2026-11-15.1",
         sha256: "52e3b866e3de65f04d363e72353491309a65c14c0e2c0b540a73d8f92df6c32b",

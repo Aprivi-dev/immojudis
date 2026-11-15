@@ -17,7 +17,11 @@ import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  analysisOfferLabelAmountsCents,
+  ANALYSIS_TRIAL_DAYS,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 import { analysisSubscriptionTerms } from "@/lib/analysis-subscription-terms";
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
@@ -42,7 +46,12 @@ import {
   ceilingTermWithScopeText,
 } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
-import { FREE_UNLOCK_LABEL, unlockedItemsText } from "@/lib/sale-unlocks";
+import {
+  FREE_UNLOCK_LABEL,
+  salePurchaseOfferLine,
+  salePurchaseOffersNote,
+  unlockedItemsText,
+} from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
@@ -297,6 +306,8 @@ export function OffersPage({
         : `Découverte gratuite · Analyse : ${price}`;
   // L'invitation à l'essai s'adresse au visiteur : un compte voit son offre dans Mon compte.
   const visitorTrial = launchActive && !user;
+  // Achat d'une vente à l'unité : seulement une fois ouvert (offre lue) ; fermé, la page n'en dit rien.
+  const salePurchase = offer.status === "ready" ? offer.saleUnlock : null;
 
   return (
     <main id="contenu" className="min-h-screen bg-white text-brand-navy">
@@ -415,6 +426,11 @@ export function OffersPage({
             description="Pour repérer les ventes et chiffrer celle qui vous intéresse le plus."
             features={discoveryFeatures(openFeeRegimes)}
           >
+            {salePurchase ? (
+              <p data-testid="offers-sale-purchase-line" className="mb-4 text-sm font-medium">
+                {salePurchaseOfferLine(salePurchase.label)}
+              </p>
+            ) : null}
             {launchActive ? (
               <p data-testid="launch-offer-free-note" className="mb-4 text-sm text-ink-soft">
                 {LAUNCH_OFFER_FREE_PLAN_NOTE}
@@ -463,6 +479,17 @@ export function OffersPage({
             )}
           </PlanPanel>
         </div>
+        {salePurchase ? (
+          <p
+            data-testid="offers-sale-purchase-note"
+            className="mt-5 max-w-3xl text-sm text-ink-soft"
+          >
+            {salePurchaseOffersNote({
+              unitCents: salePurchase.amountCents,
+              subscriptionCents: analysisOfferLabelAmountsCents(price)[0] ?? null,
+            })}
+          </p>
+        ) : null}
         <p data-testid="offers-heavy-use-note" className="mt-5 max-w-3xl text-sm text-ink-soft">
           {HEAVY_USE_NOTE}
         </p>
@@ -481,7 +508,11 @@ export function OffersPage({
               {LAUNCH_OFFER_FREE_PLAN_NOTE}
             </p>
           ) : null}
-          <ComparisonTable open={openFeeRegimes} analysisOpen={subscriptionOpen} />
+          <ComparisonTable
+            open={openFeeRegimes}
+            analysisOpen={subscriptionOpen}
+            salePurchaseLabel={salePurchase?.label ?? null}
+          />
           <p className="mt-4 text-sm text-ink-soft">
             Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années
             publiées par Licitor (source tierce, non officielle) et sur les prix DVF ; les
@@ -533,13 +564,15 @@ export function OffersPage({
 function ComparisonTable({
   open,
   analysisOpen,
+  salePurchaseLabel,
 }: {
   open?: readonly FeeRegimeKey[];
   analysisOpen: boolean;
+  salePurchaseLabel: string | null;
 }) {
   // Ce qui distingue les offres d'abord ; ce qu'elles ont en commun, replié, sans rien retirer.
   const { differences, shared } = splitOfferComparisonRows(
-    offerComparisonRows(open, { analysisOpen }),
+    offerComparisonRows(open, { analysisOpen, salePurchaseLabel }),
   );
   return (
     <>
