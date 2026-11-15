@@ -23,6 +23,8 @@ const rpcStatusSchema = z.object({
   limit: z.number().int().nullable(),
   used: z.number().int().nonnegative(),
   remaining: z.number().int().nonnegative().nullable(),
+  // Absent tant que la migration de l'achat à l'unité n'est pas appliquée.
+  credits: z.number().int().nonnegative().optional(),
   // La base a envoyé `period_start` et `period_end` tant que le quota était mensuel : un objet zod
   // non strict ignore ces clés, une base pas encore migrée reste donc lisible.
 });
@@ -41,6 +43,7 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
     limit: row.limit,
     used: row.used,
     remaining: row.remaining,
+    credits: row.credits ?? 0,
   };
 }
 
