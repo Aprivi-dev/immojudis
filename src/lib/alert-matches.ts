@@ -46,6 +46,12 @@ export type AlertMatchSummary = {
   department: string | null;
   startingPriceEur: number | null;
   saleDate: string | null;
+  /**
+   * Surface de la vente et sa nature (`getSaleSurface`), comme dans le résumé enregistré : l'e-mail dit
+   * qu'un rendement est calculé sur une surface présumée (`presumedSurfaceNote`).
+   */
+  surfaceM2: number | null;
+  surfaceKind: string | null;
   reasons: string[];
   marketDiscountPct: number | null;
   matchedAt: string;
@@ -974,11 +980,13 @@ export function buildAlertMatchSummary({
   sale: Pick<
     AuctionSale,
     "id" | "title" | "city" | "department" | "starting_price_eur" | "sale_date"
-  >;
+  > &
+    Parameters<typeof getSaleSurface>[0];
   reasons: string[];
   marketDiscountPct?: number | null;
   matchedAt: string;
 }): AlertMatchSummary {
+  const surface = getSaleSurface(sale);
   return {
     id: null,
     alertId: alert.id,
@@ -989,6 +997,8 @@ export function buildAlertMatchSummary({
     department: sale.department,
     startingPriceEur: sale.starting_price_eur,
     saleDate: sale.sale_date,
+    surfaceM2: surface.value,
+    surfaceKind: surface.kind,
     reasons,
     marketDiscountPct: roundPercent(marketDiscountPct),
     matchedAt,
@@ -1136,6 +1146,8 @@ function alertMatchRowToSummary(row: AlertMatchRow): AlertMatchSummary {
     department: stringValue(sale.department),
     startingPriceEur: numberValue(sale.startingPriceEur),
     saleDate: stringValue(sale.saleDate),
+    surfaceM2: numberValue(sale.surfaceM2),
+    surfaceKind: stringValue(sale.surfaceKind),
     reasons: row.match_reasons,
     marketDiscountPct: numberValue(match.marketDiscountPct),
     matchedAt: row.matched_at,

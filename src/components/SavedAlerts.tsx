@@ -20,6 +20,7 @@ import {
   type AlertFrequency,
 } from "@/lib/alert-criteria-labels";
 import { formatDate } from "@/lib/format";
+import { PRESUMED_SURFACE_CRITERIA_NOTE } from "@/lib/presumed-surface";
 import type { UserAlert, UserWatchedZone } from "@/lib/types";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
@@ -377,6 +378,12 @@ function AlertCard({
         ) : (
           <p className="mt-1 text-sm text-ink-soft">Toutes les nouvelles ventes.</p>
         )}
+        {/* Seuls ces deux critères comptent la surface présumée d'une vente (`alertMatchesSale`). */}
+        {alert.min_surface_m2 != null || alert.min_yield_pct != null ? (
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            {PRESUMED_SURFACE_CRITERIA_NOTE}
+          </p>
+        ) : null}
         {alert.last_evaluated_at ? (
           <p className="mt-3 text-sm text-ink-soft">
             Dernière recherche : {formatDate(alert.last_evaluated_at)} ·{" "}

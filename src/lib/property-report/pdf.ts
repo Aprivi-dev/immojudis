@@ -38,6 +38,7 @@ import {
   normalizeUrbanPlanningItems,
   normalizeValuationCheckpoints,
   opportunityScoreLabel,
+  reportPresumedSurfaceNote,
 } from "./serialization";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { rentabilityLabel } from "@/lib/profitability";
@@ -199,6 +200,7 @@ export function reportToPdfLines(
       : "Postes de charges à 0 €: valeurs saisies explicitement"
     : "Origine des postes à 0 €: non conservée pour ce rapport antérieur";
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
+  const presumedSurfaceNote = reportPresumedSurfaceNote(sale);
   // Une étape sans montant ne s'écrit pas : « - 0 € » se lirait comme un calcul sans effet.
   const calculationSteps = (Array.isArray(ceiling.steps) ? ceiling.steps : []).flatMap((step) => {
     const item = asRecord(step);
@@ -382,6 +384,8 @@ export function reportToPdfLines(
       : []),
     "",
     "Lecture opportunité",
+    // Valeur estimée, écart et rendement calculés sur une surface présumée : dit avant les chiffres.
+    ...(presumedSurfaceNote ? [presumedSurfaceNote] : []),
     `Score du dossier, distinct du scénario personnel: ${opportunityScore != null ? `${opportunityScore}/100 - ${opportunityScoreLabel(opportunityScore)}` : "à compléter"}`,
     // Écart absent : la phrase de la fiche (bien occupé, écart non significatif) plutôt qu'un tiret.
     `Décote apparente: ${

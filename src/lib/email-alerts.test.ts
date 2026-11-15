@@ -224,6 +224,64 @@ describe("email alerts", () => {
     expect(other.html).not.toContain("ANIL");
   });
 
+  it("dit la surface présumée d'un rendement calculé dessus, jamais pour une surface mesurée", () => {
+    const note =
+      "Surface provisoire de 20 m² retenue pour les calculs : l'annonce ne publie pas la surface.";
+    const yieldNotification = (
+      id: string,
+      surface: { surfaceM2: number; surfaceKind: string },
+      reasons = ["rendement"],
+    ) => ({
+      ...notification(id, `sale-${id}`, "Studio"),
+      notification_snapshot: {
+        alert: { id: alertA, name: "Rendement" },
+        sale: { id: `sale-${id}`, title: "Studio", city: "Bordeaux", ...surface },
+        match: { marketDiscountPct: null, reasons },
+      },
+    });
+    const build = (notifications: unknown[]) =>
+      buildAlertDigestMessage({
+        userId,
+        from: "Immojudis <alertes@immojudis.fr>",
+        recipientEmail: "client@example.test",
+        appUrl: "https://immojudis.example",
+        now: new Date("2026-10-09T10:00:00Z"),
+        env,
+        notifications: notifications as Parameters<
+          typeof buildAlertDigestMessage
+        >[0]["notifications"],
+      });
+
+    const presumed = build([
+      yieldNotification("6b6b42a1-b719-48cc-9c9f-f0c9f707e1c1", {
+        surfaceM2: 20,
+        surfaceKind: "estimated",
+      }),
+    ]);
+    expect(presumed.text).toContain(`  Critères détectés : rendement\n  ${note}`);
+    expect(presumed.html).toContain(escapeHtml(note));
+
+    // Surface mesurée, ou surface présumée sans critère de rendement : aucune mention.
+    for (const message of [
+      build([
+        yieldNotification("6b6b42a1-b719-48cc-9c9f-f0c9f707e1c2", {
+          surfaceM2: 20,
+          surfaceKind: "recorded",
+        }),
+      ]),
+      build([
+        yieldNotification(
+          "6b6b42a1-b719-48cc-9c9f-f0c9f707e1c3",
+          { surfaceM2: 20, surfaceKind: "estimated" },
+          ["DPE C"],
+        ),
+      ]),
+    ]) {
+      expect(message.text).not.toContain("Surface provisoire");
+      expect(message.html).not.toContain("Surface provisoire");
+    }
+  });
+
   it("n'ajoute rien pour une vente qui ne vient pas d'une alerte « pépites »", () => {
     const message = buildAlertDigestMessage({
       userId,

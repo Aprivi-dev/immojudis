@@ -11,6 +11,7 @@ import { PepiteIcon } from "@/components/PepiteBadge";
 import { Input } from "@/components/ui/input";
 import { PEPITE_EXPLANATION, PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { DPE_CLASSES, dpeColor, type DpeClass } from "@/lib/dpe";
+import { PRESUMED_SURFACE_CRITERIA_NOTE } from "@/lib/presumed-surface";
 import {
   BELOW_RANGE_FILTER_HINT,
   BELOW_RANGE_FILTER_LABEL,
@@ -325,7 +326,7 @@ export function MobileFilterDrawer({
                 Rendement brut calculé sur la mise à prix, avec un repère de loyer départemental
                 (indicatif). La fiche, les alertes, les exports et les statistiques utilisent la
                 carte des loyers de l’ANIL (par commune, charges comprises) : une même vente peut
-                donc donner deux chiffres différents.
+                donc donner deux chiffres différents. {PRESUMED_SURFACE_CRITERIA_NOTE}
               </p>
 
               <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">

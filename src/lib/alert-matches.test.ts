@@ -181,4 +181,27 @@ describe("alert match snapshots", () => {
       sale: { surfaceM2: 30, surfaceKind: "recorded", pricePerM2: 2_000 },
     });
   });
+
+  it("le résumé porte la surface et sa nature, pour la mention de l'e-mail sur le rendement", () => {
+    const summaryOf = (sale: AuctionSale) =>
+      buildAlertMatchSummary({
+        alert: makeAlert(),
+        sale,
+        reasons: ["rendement"],
+        matchedAt: "2026-11-15T10:00:00.000Z",
+      });
+    const withoutSurface: AuctionSale = {
+      ...EXAMPLE_SALE,
+      app_surface_m2: null,
+      habitable_surface_m2: null,
+      carrez_surface_m2: null,
+    };
+    expect(
+      summaryOf({ ...withoutSurface, property_type: "studio", title: "Studio" }),
+    ).toMatchObject({ surfaceM2: 20, surfaceKind: "estimated" });
+    expect(summaryOf({ ...withoutSurface, app_surface_m2: 30 })).toMatchObject({
+      surfaceM2: 30,
+      surfaceKind: "recorded",
+    });
+  });
 });

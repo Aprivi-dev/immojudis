@@ -40,6 +40,7 @@ import {
 import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
 import { formatDate } from "@/lib/format/dates";
 import { formatPrice } from "@/lib/format/numbers";
+import { presumedSurfaceNote } from "@/lib/presumed-surface";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -182,6 +183,8 @@ type DigestItem = {
   /** La vente correspond à une alerte « Seulement les pépites » : une mention en texte, jamais un montant. */
   pepite: boolean;
   discountLine: string | null;
+  /** Le critère « rendement » est calculé sur une surface présumée : la mention qui le dit. */
+  surfaceNote: string | null;
   /** Hearing date, formatted for the email, when the snapshot carries one. */
   hearingDate: string | null;
   /** Starting price (mise à prix), formatted for the email, when known. */
@@ -484,6 +487,13 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
       .filter((reason) => reason !== PEPITE_REASON)
       .slice(0, 4),
     pepite: arrayOfStrings(match.reasons).includes(PEPITE_REASON),
+    // Le rendement est calculé sur la surface de la vente (`alertMatchesSale`) : présumée, on le dit.
+    surfaceNote: arrayOfStrings(match.reasons).includes(RENT_YIELD_REASON)
+      ? presumedSurfaceNote({
+          kind: stringValue(sale.surfaceKind),
+          value: numberValue(sale.surfaceM2),
+        })
+      : null,
     discountLine:
       marketDiscountPct == null
         ? null
@@ -606,6 +616,7 @@ export function buildAlertDigestMessage({
         );
       }
       if (item.reasons.length) textLines.push(`  Critères détectés : ${item.reasons.join(", ")}`);
+      if (item.surfaceNote) textLines.push(`  ${item.surfaceNote}`);
       textLines.push(`  Consulter l'annonce : ${saleUrl(item)}`);
     }
     if (group.alertId) {
@@ -1201,6 +1212,13 @@ function buildAlertDigestHtml({
               : "",
             reasons
               ? `<ul class="ej-body" style="${noteStyle}margin-bottom:12px;padding-left:18px;">${reasons}</ul>`
+              : "",
+            item.surfaceNote
+              ? emailParagraph(escapeHtml(item.surfaceNote), {
+                  size: "caption",
+                  tone: "muted",
+                  marginBottom: 12,
+                })
               : "",
           ].join("");
           return emailSaleCard({

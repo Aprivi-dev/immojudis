@@ -390,3 +390,43 @@ describe("shared report rent source", () => {
     expect(await rentMarkup(undefined)).not.toContain("ANIL");
   });
 });
+
+describe("shared report built on a presumed surface", () => {
+  async function surfaceMarkup(sale: Record<string, unknown>) {
+    mocks.report.mockResolvedValue({
+      title: "Rapport studio",
+      updatedAt: "2026-11-15",
+      sharedAt: null,
+      sale: { startingPrice: 60000, ...sale },
+      analysis: {
+        opportunity: { estimatedMarketValue: 70000, apparentDiscountPct: 14, grossYieldPct: 6.2 },
+      },
+      sourceTrace: [],
+      limitations: [],
+    });
+    return renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    );
+  }
+
+  it("says the presumed surface and why before the value, the gap and the yield", async () => {
+    const html = await surfaceMarkup({
+      surface: 20,
+      surfaceKind: "estimated",
+      surfaceLabel: "20 m² estimés",
+    });
+    const note =
+      "Surface provisoire de 20 m² retenue pour les calculs : l&#x27;annonce ne publie pas la surface.";
+    expect(html).toContain(note);
+    expect(html.indexOf(note)).toBeLessThan(html.indexOf("Valeur médiane estimée"));
+  });
+
+  it("adds no mention for a measured surface, or for a report saved without the surface nature", async () => {
+    for (const sale of [
+      { surface: 20, surfaceKind: "recorded", surfaceLabel: "20 m²" },
+      { surface: 20, surfaceLabel: "20 m² estimés" },
+    ]) {
+      expect(await surfaceMarkup(sale)).not.toContain("Surface provisoire");
+    }
+  });
+});
