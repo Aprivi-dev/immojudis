@@ -20,7 +20,7 @@ vi.mock("@/lib/account-product-events.server", () => ({
   recordAccountProductEvent: mocks.record,
 }));
 vi.mock("@/lib/sale-unlocks.server", async () => {
-  const SALE_UNLOCK_QUOTA_MESSAGE = "Vous avez utilisé tous vos déblocages de ce mois-ci.";
+  const SALE_UNLOCK_QUOTA_MESSAGE = "Votre compte gratuit a déjà débloqué une vente.";
   class SaleUnlockQuotaError extends Error {
     readonly status: SaleUnlockStatus;
     constructor(status: SaleUnlockStatus) {
@@ -46,11 +46,9 @@ const status: SaleUnlockStatus = {
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 3,
+  limit: 1,
+  used: 1,
   remaining: 0,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
 };
 const context = (id = saleId) => ({ params: Promise.resolve({ id }) });
 const post = (id = saleId) =>
@@ -121,14 +119,14 @@ describe("POST /api/sales/[id]/unlock", () => {
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it("explains an exhausted quota with the counter and the reset date (409)", async () => {
+  it("explains a spent free unlock with the state of the account (409)", async () => {
     mocks.unlock.mockRejectedValue(new SaleUnlockQuotaError(status));
 
     const response = await post();
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
-      error: "Vous avez utilisé tous vos déblocages de ce mois-ci.",
+      error: "Votre compte gratuit a déjà débloqué une vente.",
       code: "unlock_quota_reached",
       status,
     });

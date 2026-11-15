@@ -227,8 +227,9 @@ export function SearchResultsList({
     retry: false,
   });
   const favoriteIds = useMemo(() => new Set(favoriteQuery.data ?? []), [favoriteQuery.data]);
-  // « 3 déblocages par mois » : un compte Découverte voit lesquelles de ces ventes il a débloquées.
-  // Sans réponse (erreur, base sans le déblocage), aucune pastille : la carte reste celle d'avant.
+  // « déblocage du compte gratuit » : un compte Découverte voit lesquelles de ces ventes il a
+  // débloquées. Sans réponse (erreur, base sans le déblocage), aucune pastille : la carte reste
+  // celle d'avant.
   const unlocksQuery = useQuery({
     queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
     queryFn: fetchSaleUnlocksOverview,
@@ -403,7 +404,7 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus?: AiReviewRequestStatus;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
-  /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
+  /** Le compte a débloqué cette vente (déblocage du compte gratuit) : pastille « Débloquée ». */
   unlocked?: boolean;
   /** La vente est une pépite publiable : pastille « Pépite » sur la photo, mot ajouté au nom du lien. */
   pepite?: boolean;

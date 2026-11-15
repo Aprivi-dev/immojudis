@@ -27,8 +27,8 @@ export const GET = apiRoute<{ id: string }>(
       bucketKey: "v1.sale-adjudication-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »):
-    // the statistics of the tribunal of this sale only. The identifier is validated after the
+    // Analyse, or a Découverte account that unlocked this very sale (« déblocage du compte gratuit
+    // »): the statistics of the tribunal of this sale only. The identifier is validated after the
     // entitlement, as before; an invalid one simply cannot match an unlock.
     await assertFeatureEntitlement(
       auth,

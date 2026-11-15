@@ -195,8 +195,6 @@ describe("DiscoveryDecisionPanel", () => {
       limit: 3,
       used: 1,
       remaining: 2,
-      periodStart: "2026-09-30T22:00:00.000Z",
-      resetsAt: "2026-10-31T23:00:00.000Z",
     };
 
     it("links the ceiling row and the preview of a tribunal sale to the unlock card", () => {

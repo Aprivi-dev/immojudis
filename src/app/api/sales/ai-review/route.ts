@@ -86,12 +86,12 @@ export const GET = apiRoute(
       visibleSaleRows.map((sale) => sale.id).filter((id): id is string => typeof id === "string"),
     );
     // A Découverte account does not read the full catalogue view; the sales it unlocked
-    // (« 3 déblocages par mois ») are visible through their own view. The review stays applied to
-    // the figures of the bid ceiling (AI_REVIEW_CEILING_FIELD_KEYS). For the other fields (city,
-    // address, date, parking, energy) the unlocked view exposes the value itself, so the blocking
-    // rows stay: the client must keep masking a value the review blocked. Only the publishable
-    // rows are dropped there. Neither the citation links nor the source names of an unlocked sale
-    // come back.
+    // (« déblocage du compte gratuit ») are visible through their own view. The review stays
+    // applied to the figures of the bid ceiling (AI_REVIEW_CEILING_FIELD_KEYS). For the other
+    // fields (city, address, date, parking, energy) the unlocked view exposes the value itself, so
+    // the blocking rows stay: the client must keep masking a value the review blocked. Only the
+    // publishable rows are dropped there. Neither the citation links nor the source names of an
+    // unlocked sale come back.
     const unlockedSaleIds = new Set<string>();
     const hiddenIds = parsedIds.data.filter((id) => !visibleSaleIds.has(id));
     if (hiddenIds.length > 0) {

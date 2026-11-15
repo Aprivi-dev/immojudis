@@ -15,13 +15,13 @@ import {
   type SaleReminderAccuracy,
 } from "@/lib/admin-pilotage";
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
-import { PLAN_LIMITS } from "@/lib/plans";
 import {
   AdminPilotagePage,
   formatShare,
   MASKED,
   NOT_MEASURED,
   REMINDER_VERDICT_LABELS,
+  UNLOCK_THRESHOLD,
 } from "./admin-pilotage-page";
 
 const mocks = vi.hoisted(() => ({ fetchPilotage: vi.fn(), fetchInterviewees: vi.fn() }));
@@ -721,7 +721,7 @@ describe("page admin Pilotage", () => {
       expect(inside('[data-threshold-month="previous"]', "ont atteint 3 déblocages")).toBe(MASKED);
     });
 
-    it("counts at the database the same threshold as the Discovery quota it names", () => {
+    it("counts at the database the same threshold as the one it names", () => {
       const migration = readFileSync(
         join(process.cwd(), "supabase/migrations/20261110180000_admin_pilotage_activation.sql"),
         "utf8",
@@ -729,7 +729,7 @@ describe("page admin Pilotage", () => {
       const thresholds = [...migration.matchAll(/'reached_three'[\s\S]*?u\.sales >= (\d+)\)/g)];
       expect(thresholds).toHaveLength(2);
       for (const [, threshold] of thresholds) {
-        expect(Number(threshold)).toBe(PLAN_LIMITS.decouverte.monthlyUnlocks);
+        expect(Number(threshold)).toBe(UNLOCK_THRESHOLD);
       }
     });
 

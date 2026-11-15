@@ -62,8 +62,8 @@ export const AI_REVIEW_SURFACE_FIELD_KEYS = [
 ] as const satisfies readonly AiReviewFieldKey[];
 
 /**
- * The reviewed fields the bid ceiling reads, the only ones a sale unlocked with « 3 déblocages par
- * mois » gets back from `/api/sales/ai-review`: the mise à prix, the surfaces and the type of
+ * The reviewed fields the bid ceiling reads, the only ones a sale unlocked with « déblocage du
+ * compte gratuit » gets back from `/api/sales/ai-review`: the mise à prix, the surfaces and the type of
  * property (the critical inputs of the ceiling, see `criticalAnalysisInputsBlocked` in
  * SimplifiedSaleDetailView), the rooms count (same critical inputs) and the occupancy status
  * (`occupationCaseForStatus` in bid-ceiling-defaults). The city, the sale date, the parking count

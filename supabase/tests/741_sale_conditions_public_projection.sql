@@ -299,15 +299,23 @@ select is(
   true,
   'the free account unlocks the interactive sale'
 );
+-- One unlock in all for a free account (20261120100000): the two other sales are given to the account
+-- as rows written directly (as the owner), so the view is checked on three unlocked sales.
+reset role;
+insert into public.user_sale_unlocks (user_id, sale_id)
+values
+  ('c7410000-0000-4000-8000-000000000001', 'c7410000-1000-4000-8000-000000000002'),
+  ('c7410000-0000-4000-8000-000000000001', 'c7410000-1000-4000-8000-000000000004');
+set local role authenticated;
 select is(
   (select (public.unlock_sale('c7410000-1000-4000-8000-000000000002') ->> 'unlocked')::boolean),
   true,
-  'the free account unlocks the candle sale'
+  'the free account has the candle sale unlocked'
 );
 select is(
   (select (public.unlock_sale('c7410000-1000-4000-8000-000000000004') ->> 'unlocked')::boolean),
   true,
-  'the free account unlocks the sale of another source'
+  'the free account has the sale of another source unlocked'
 );
 select is(
   (select sale_conditions from public.v_auction_sales_unlocked

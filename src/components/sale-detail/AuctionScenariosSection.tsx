@@ -82,7 +82,7 @@ export function AuctionScenariosSection({
 }: {
   saleId: string;
   enabled: boolean;
-  /** The view the account reads (Analyse, or a sale unlocked with « 3 déblocages par mois »). */
+  /** The view the account reads (Analyse, or a sale unlocked by the free account). */
   access?: SaleAccessMode;
   /** The signed-in account, so that a cached reading never crosses accounts. */
   userKey?: string | null;

@@ -27,11 +27,9 @@ const status: SaleUnlockStatus = {
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 2,
+  limit: 1,
+  used: 0,
   remaining: 1,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
 };
 const get = () => GET(new Request("https://example.test/api/sale-unlocks"));
 
