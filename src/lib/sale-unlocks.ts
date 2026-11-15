@@ -56,6 +56,11 @@ export type SaleUnlockStatus = {
   limit: number | null;
   used: number;
   remaining: number | null;
+  /**
+   * Crédits de déblocage disponibles : un achat à l'unité payé dont la vente a été retirée, ou
+   * n'était plus débloquable au paiement. Absent d'une base pas encore migrée : zéro.
+   */
+  credits?: number;
 };
 
 export type SaleUnlockResult = SaleUnlockStatus & {
