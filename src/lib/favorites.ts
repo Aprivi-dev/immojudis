@@ -6,6 +6,7 @@ import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } fro
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import { saleRows } from "@/lib/sale-rows";
+import { saleWithoutListingSource } from "@/lib/property-report/entitlements";
 import {
   normalizeFavoriteDossierStatus,
   type FavoriteDossierStatus,
@@ -273,12 +274,15 @@ async function loadSalesByIds(
   const ids = [...new Set(saleIds)].filter(Boolean);
   if (!ids.length) return [];
 
+  const analysis = plan === "analyse";
   const { data, error } = await auth.supabase
-    .from(plan === "analyse" ? DETAIL_VIEW : ("v_auction_sales_discovery" as typeof DETAIL_VIEW))
+    .from(analysis ? DETAIL_VIEW : ("v_auction_sales_discovery" as typeof DETAIL_VIEW))
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (error) throw error;
-  return saleRows(data);
+  // The discovery view already removes the listing source from `sale_procedure` (20261123100000):
+  // removed again here, whatever the state of the database.
+  return analysis ? saleRows(data) : saleRows(data).map(saleWithoutListingSource);
 }
 
 async function insertFavoriteRow(

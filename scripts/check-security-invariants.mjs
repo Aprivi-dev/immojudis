@@ -857,6 +857,112 @@ if (
 ) {
   failures.push("v_auction_sales_unlocked is not closed to anon");
 }
+// The listing source inside sale_procedure (20261123100000): the views of a reader without the
+// Analyse offer (discovery, unlocked) serve sale_procedure, and source_blocks.sale_procedure, through
+// app_private.sale_procedure_without_listing_source only. The LAST definition of each view, among all
+// migrations, must be that migration or a later one, call the projection, and serve no raw
+// sale_procedure (no dynamic rewrite can follow it: since the lot R2b an EXECUTE takes a literal only).
+const listingSourceName = "20261123100000_sale_procedure_without_listing_source.sql";
+const listingSourceSql = (migrationSources.get(listingSourceName) ?? "").replace(
+  /^[ \t]*--[^\n]*$/gm,
+  "",
+);
+const LISTING_SOURCE_CALL = "app_private.sale_procedure_without_listing_source(s.sale_procedure)";
+if (!listingSourceSql) {
+  failures.push("The sale_procedure listing source migration is missing");
+} else {
+  const projection =
+    /create\s+or\s+replace\s+function\s+app_private\.sale_procedure_without_listing_source\(p_procedure\s+jsonb\)[\s\S]*?\$\$;/i.exec(
+      listingSourceSql,
+    )?.[0] ?? "";
+  const keyFilter =
+    /create\s+or\s+replace\s+function\s+app_private\.jsonb_without_source_url_keys\(p_value\s+jsonb\)[\s\S]*?\$\$;/i.exec(
+      listingSourceSql,
+    )?.[0] ?? "";
+  const keptKinds = /\bin\s*\(([^)]*)\)/i
+    .exec(projection)?.[1]
+    ?.match(/'(\w+)'/g)
+    ?.join(",");
+  if (
+    !projection ||
+    !keyFilter ||
+    keptKinds !== "'document','official_reference'" ||
+    !/when\s+source\.value\s*->>\s*'kind'\s*=\s*'document'\s+then\s+source\.value\s*-\s*'source_name'/i.test(
+      projection,
+    ) ||
+    !/app_private\.jsonb_without_source_url_keys\(p_procedure\)/i.test(projection) ||
+    !/where\s+entry\.key\s*!~\s*'source_url\$'/i.test(keyFilter)
+  ) {
+    failures.push(
+      "sale_procedure_without_listing_source does not keep only the documents (without source name) and the official reference, without any *source_url key",
+    );
+  }
+  for (const definition of [projection, keyFilter]) {
+    if (
+      definition &&
+      (!/\bimmutable\b/i.test(definition) ||
+        !/security\s+invoker/i.test(definition) ||
+        !/set\s+search_path\s*=\s*''/i.test(definition))
+    ) {
+      failures.push(
+        "The sale_procedure listing source functions are not IMMUTABLE SECURITY INVOKER with an empty search_path",
+      );
+    }
+  }
+  for (const fn of [
+    "app_private.sale_procedure_without_listing_source(jsonb)",
+    "app_private.jsonb_without_source_url_keys(jsonb)",
+  ]) {
+    const escaped = fn.replace(/[.()]/g, "\\$&");
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${escaped}\\s+from\\s+public,\\s*anon`,
+        "i",
+      ).test(listingSourceSql) ||
+      !new RegExp(
+        `grant\\s+execute\\s+on\\s+function\\s+${escaped}\\s+to\\s+authenticated,\\s*service_role\\s*;`,
+        "i",
+      ).test(listingSourceSql) ||
+      new RegExp(
+        `grant\\s+execute\\s+on\\s+function\\s+${escaped}\\s+to\\s+[^;]*\\banon\\b`,
+        "i",
+      ).test(listingSourceSql)
+    ) {
+      failures.push(`${fn} is not closed to anon and open to authenticated and service_role`);
+    }
+  }
+}
+for (const view of ["v_auction_sales_discovery", "v_auction_sales_unlocked"]) {
+  const definitions = [...migrationSources].flatMap(([name, source]) =>
+    [
+      ...source
+        .replace(/^[ \t]*--[^\n]*$/gm, "")
+        .matchAll(
+          new RegExp(
+            `create\\s+(?:or\\s+replace\\s+)?view\\s+public\\.${view}\\b[\\s\\S]*?;`,
+            "gi",
+          ),
+        ),
+    ].map((match) => ({ name, sql: match[0] })),
+  );
+  const last = definitions.at(-1);
+  const body = last?.sql.replaceAll(LISTING_SOURCE_CALL, "") ?? "";
+  if (
+    !last ||
+    last.name < listingSourceName ||
+    !last.sql.includes(`${LISTING_SOURCE_CALL} as sale_procedure,`) ||
+    (view === "v_auction_sales_discovery" &&
+      !last.sql.includes(
+        `jsonb_build_object('sale_procedure', ${LISTING_SOURCE_CALL}) as source_blocks,`,
+      )) ||
+    /(?:^|,)\s*(?:\w+\.)?sale_procedure\s*(?:,|\bfrom\b)/i.test(body) ||
+    /jsonb_build_object\(\s*'sale_procedure'\s*,\s*(?:\w+\.)?sale_procedure\s*\)/i.test(body)
+  ) {
+    failures.push(
+      `${view} does not pass sale_procedure through sale_procedure_without_listing_source`,
+    );
+  }
+}
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
