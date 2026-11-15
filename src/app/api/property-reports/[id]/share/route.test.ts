@@ -19,14 +19,17 @@ vi.mock("@/lib/property-reports", () => ({
 
 import { POST } from "./route";
 
-const params = { params: Promise.resolve({ id: "report-1" }) };
+const params = { params: Promise.resolve({ id: "51515151-5151-4515-8515-515151515151" }) };
 const post = (body?: string, withToken = true) =>
   POST(
-    new Request("https://immojudis.test/api/property-reports/report-1/share", {
-      method: "POST",
-      headers: withToken ? { authorization: "Bearer token" } : undefined,
-      body,
-    }),
+    new Request(
+      "https://immojudis.test/api/property-reports/51515151-5151-4515-8515-515151515151/share",
+      {
+        method: "POST",
+        headers: withToken ? { authorization: "Bearer token" } : undefined,
+        body,
+      },
+    ),
     params,
   );
 
@@ -59,7 +62,10 @@ describe("POST /api/property-reports/[id]/share", () => {
     }
     expect(mocks.enable).toHaveBeenCalledTimes(4);
     expect(mocks.enable).toHaveBeenLastCalledWith(
-      expect.objectContaining({ reportId: "report-1", expiresAt: null }),
+      expect.objectContaining({
+        reportId: "51515151-5151-4515-8515-515151515151",
+        expiresAt: null,
+      }),
     );
   });
 

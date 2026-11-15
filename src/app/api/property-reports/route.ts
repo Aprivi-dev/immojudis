@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -10,12 +11,15 @@ import {
 } from "@/lib/property-reports";
 import { apiRoute } from "@/lib/api-route";
 
+const saleIdQuerySchema = z.string().guid().nullable();
+
 export const GET = apiRoute(
   { scope: "api.property-reports.list", fallbackMessage: "Rapports indisponibles." },
   async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const saleId = url.searchParams.get("saleId");
+    // Validated before any read: a malformed identifier is the caller's error (400), not a 500.
+    const saleId = saleIdQuerySchema.parse(url.searchParams.get("saleId"));
     return listPropertyReports({ auth, saleId });
   },
 );

@@ -6,6 +6,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { disablePropertyReportShare, enablePropertyReportShare } from "@/lib/property-reports";
 
+const reportIdSchema = z.string().guid();
 const shareBodySchema = z.object({ expiresAt: z.string().nullable().optional() });
 
 export const POST = apiRoute<{ id: string }>(
@@ -19,7 +20,7 @@ export const POST = apiRoute<{ id: string }>(
     const payload = shareBodySchema.parse(rawBody.trim() ? JSON.parse(rawBody) : {});
     return enablePropertyReportShare({
       auth,
-      reportId: params.id,
+      reportId: reportIdSchema.parse(params.id),
       origin: url.origin,
       expiresAt: payload.expiresAt,
     });
@@ -34,6 +35,10 @@ export const DELETE = apiRoute<{ id: string }>(
   async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    return disablePropertyReportShare({ auth, reportId: params.id, origin: url.origin });
+    return disablePropertyReportShare({
+      auth,
+      reportId: reportIdSchema.parse(params.id),
+      origin: url.origin,
+    });
   },
 );

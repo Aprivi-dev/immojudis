@@ -181,6 +181,61 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
     expect(mocks.getUrbanPlanningSignals).toHaveBeenCalledWith(sale.source_url);
   });
 
+  it("ne renvoie, pour la vente débloquée, aucun signal tiré des données brutes ou d’une autre source", async () => {
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
+    mocks.getSale.mockResolvedValue({ sale: { source_url: null }, enrichmentKey: sale.source_url });
+    const fromRawPayload = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw",
+      sourceKind: "source_payload",
+      sourceName: "Données source",
+      excerpt: "EXTRAIT-BRUT-PRIVE",
+    };
+    const fromSourceText = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw-text",
+      sourceKind: "sale_text",
+      sourceName: "Texte source",
+      excerpt: "TEXTE-SOURCE-PRIVE",
+    };
+    const fromDescription = {
+      ...urbanPlanningSignals[0],
+      signalKey: "description",
+      sourceKind: "sale_text",
+      sourceName: "Description annonce",
+      excerpt: "Servitude de passage",
+    };
+    const unknownKind = { ...urbanPlanningSignals[0], signalKey: "x", sourceKind: "inconnu" };
+    mocks.getUrbanPlanningSignals.mockResolvedValue([
+      ...urbanPlanningSignals,
+      fromRawPayload,
+      fromSourceText,
+      fromDescription,
+      unknownKind,
+    ]);
+
+    const body = await (await request()).json();
+
+    expect(body.urbanPlanningSignals.map((item: { signalKey: string }) => item.signalKey)).toEqual([
+      "plu-zonage",
+      "description",
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/EXTRAIT-BRUT-PRIVE|TEXTE-SOURCE-PRIVE/);
+  });
+
+  it("garde tous les signaux pour l’offre Analyse, comme avant", async () => {
+    const fromRawPayload = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw",
+      sourceKind: "source_payload",
+    };
+    mocks.getUrbanPlanningSignals.mockResolvedValue([...urbanPlanningSignals, fromRawPayload]);
+
+    const body = await (await request()).json();
+
+    expect(body.urbanPlanningSignals).toHaveLength(2);
+  });
+
   it("ne lit pas les enrichissements si la vente n’est pas accessible", async () => {
     mocks.getSale.mockRejectedValue(new SalePublicationUnavailableError());
 

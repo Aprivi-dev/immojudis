@@ -37,6 +37,7 @@ import {
   featureOpenFor,
   planForSaleDoor,
   sanitizeReportSnapshotForPlan,
+  urbanPlanningSignalsForDoor,
 } from "./property-report/entitlements";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
 import { reportToPdfLines, REPORT_PDF_HEADINGS } from "./property-report/pdf";
@@ -354,7 +355,9 @@ export async function savePropertyReport({
   const cadastreParcelsPromise = getCadastralParcels(enrichmentKey);
   const dpeDiagnosticsPromise = getDpeDiagnostics(enrichmentKey);
   const urbanPlanningSignalsPromise = open("property.urbanPlanning")
-    ? getUrbanPlanningSignals(enrichmentKey)
+    ? getUrbanPlanningSignals(enrichmentKey).then((signals) =>
+        urbanPlanningSignalsForDoor(signals, door),
+      )
     : Promise.resolve([]);
   const valuationBacktestPromise = open("property.soldComparables")
     ? getValuationBacktestForReport(sale)

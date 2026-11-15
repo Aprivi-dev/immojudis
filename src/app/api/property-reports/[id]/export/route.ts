@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
@@ -6,6 +7,8 @@ import {
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { exportPropertyReportPdf } from "@/lib/property-reports";
+
+const reportIdSchema = z.string().guid();
 
 export const POST = apiRoute<{ id: string }>(
   { scope: "api.property-reports.export", fallbackMessage: "Export impossible" },
@@ -17,7 +20,11 @@ export const POST = apiRoute<{ id: string }>(
       ...RATE_LIMIT_POLICIES.compute,
       context: api,
     });
-    const pdf = await exportPropertyReportPdf({ auth, reportId: params.id, request });
+    const pdf = await exportPropertyReportPdf({
+      auth,
+      reportId: reportIdSchema.parse(params.id),
+      request,
+    });
     const body = pdf.bytes.buffer.slice(
       pdf.bytes.byteOffset,
       pdf.bytes.byteOffset + pdf.bytes.byteLength,

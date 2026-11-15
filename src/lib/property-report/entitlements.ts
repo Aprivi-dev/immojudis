@@ -126,10 +126,13 @@ export function planForSaleDoor(plan: PlanEntitlements, door: SaleFeatureDoor): 
  * What the unlock of a sale never opens, removed from the sale before any response or report: the
  * investment score and its factors, the risks and the pipeline's risk notes, the source names and
  * urls, the raw payload. The columns `v_auction_sales_unlocked` empties, applied again on the server
- * side so that a sale read for an unlock carries none of them whatever its origin.
+ * side so that a sale read for an unlock carries none of them whatever its origin. The source also
+ * travels inside `sale_procedure` (`unlockedSaleProcedure`): it is removed there too.
  */
 export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
   const {
+    sale_procedure: saleProcedure,
+    source_blocks: sourceBlocks,
     raw_payload: _rawPayload,
     premium_readiness_score: _readinessScore,
     premium_readiness_status: _readinessStatus,
@@ -142,6 +145,13 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
   } = sale;
   return {
     ...rest,
+    ...(saleProcedure === undefined
+      ? {}
+      : { sale_procedure: unlockedSaleProcedure(saleProcedure) as AuctionSale["sale_procedure"] }),
+    source_blocks:
+      sourceBlocks && "sale_procedure" in sourceBlocks
+        ? { ...sourceBlocks, sale_procedure: unlockedSaleProcedure(sourceBlocks.sale_procedure) }
+        : sourceBlocks,
     investment_score: null,
     investment_summary: null,
     score_version: null,
@@ -156,6 +166,80 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
     dedupe_confidence: null,
     quality_flags: [],
   };
+}
+
+/**
+ * Kinds of `sale_procedure.verification.case_sources` an unlock may show, as the pipeline writes them
+ * (`_case_sources`, `services/data-pipeline/src/sale_procedure.py`): the case documents and the
+ * official reference of the competent court. The `listing` entry carries the source url and name;
+ * any other or unknown kind is removed too (closed by default).
+ */
+const UNLOCK_CASE_SOURCE_KINDS: ReadonlySet<unknown> = new Set(["document", "official_reference"]);
+
+/**
+ * `sale_procedure` without the listing source: the case sources outside `UNLOCK_CASE_SOURCE_KINDS`,
+ * the listing platform's name on the documents (the pipeline copies `source_name` there), and every
+ * `…source_url` key (schedule, payment deadline, facts: the pipeline fills them with the listing url).
+ */
+function unlockedSaleProcedure(value: unknown): unknown {
+  const procedure = withoutSourceUrlKeys(value);
+  if (!procedure || typeof procedure !== "object" || Array.isArray(procedure)) return procedure;
+  const record = procedure as Record<string, unknown>;
+  const verification = record.verification;
+  if (!verification || typeof verification !== "object" || Array.isArray(verification)) {
+    return record;
+  }
+  const caseSources = (verification as Record<string, unknown>).case_sources;
+  if (!Array.isArray(caseSources)) return record;
+  return {
+    ...record,
+    verification: {
+      ...verification,
+      case_sources: caseSources
+        .filter((source) => UNLOCK_CASE_SOURCE_KINDS.has(asRecord(source).kind))
+        .map((source) => {
+          const entry = asRecord(source);
+          if (entry.kind === "official_reference") return entry;
+          const { source_name: _listingSourceName, ...document } = entry;
+          return document;
+        }),
+    },
+  };
+}
+
+function withoutSourceUrlKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutSourceUrlKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !key.endsWith("source_url"))
+      .map(([key, item]) => [key, withoutSourceUrlKeys(item)]),
+  );
+}
+
+/**
+ * Urban planning signals an unlock may show, by `source_kind` as the pipeline writes them
+ * (`_collect_text_candidates`, `services/data-pipeline/src/urban_planning.py`): the case pieces
+ * (`document`, `pdf`) and the listing's title and description (`sale_text` from « Titre annonce » or
+ * « Description annonce »), all already served with the sale. Removed: `source_payload` (leaves of the
+ * raw payload and other sources' observations), the raw text of the source (`sale_text` « Texte
+ * source »), and any other or unknown kind (closed by default).
+ */
+const UNLOCK_SIGNAL_SOURCE_KINDS: ReadonlySet<unknown> = new Set(["document", "pdf"]);
+const UNLOCK_SALE_TEXT_SOURCES: ReadonlySet<unknown> = new Set([
+  "Titre annonce",
+  "Description annonce",
+]);
+
+export function urbanPlanningSignalsForDoor<
+  Signal extends { sourceKind?: string | null; sourceName?: string | null },
+>(signals: Signal[], door: SaleFeatureDoor): Signal[] {
+  if (door === "plan") return signals;
+  return signals.filter(
+    (signal) =>
+      UNLOCK_SIGNAL_SOURCE_KINDS.has(signal.sourceKind) ||
+      (signal.sourceKind === "sale_text" && UNLOCK_SALE_TEXT_SOURCES.has(signal.sourceName)),
+  );
 }
 
 export function assertEntitlementIncluded(
