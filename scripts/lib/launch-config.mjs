@@ -233,12 +233,36 @@ export function saleRemindersModeAdvisories(env) {
 }
 
 /**
+ * Achat d'une vente à l'unité (lot 3) : `STRIPE_SALE_UNLOCK_PRICE_ID` et
+ * `STRIPE_SALE_UNLOCK_SALES_OPEN` ne sont JAMAIS requises pour le build. Leur absence ferme seulement
+ * l'achat (`saleUnlockCheckoutReadiness`, src/lib/sale-unlock-checkout-readiness.ts). Avertissements
+ * seulement, quand la configuration ne fait pas ce que le propriétaire croit : interrupteur ouvert sans
+ * Price (l'achat reste fermé), ou valeur de l'interrupteur que le site lit comme « fermé ».
+ */
+export function saleUnlockAdvisories(env) {
+  const raw = String(env.STRIPE_SALE_UNLOCK_SALES_OPEN ?? "").trim();
+  const open = raw.toLowerCase() === "true";
+  const advisories = [];
+  if (raw && !open && raw.toLowerCase() !== "false") {
+    advisories.push(
+      `[env] STRIPE_SALE_UNLOCK_SALES_OPEN vaut « ${raw} » : seule la valeur « true » ouvre l'achat d'une vente à l'unité, il reste fermé.`,
+    );
+  }
+  if (open && !/^price_[A-Za-z0-9]+$/.test(String(env.STRIPE_SALE_UNLOCK_PRICE_ID ?? "").trim())) {
+    advisories.push(
+      "[env] STRIPE_SALE_UNLOCK_SALES_OPEN=true sans STRIPE_SALE_UNLOCK_PRICE_ID valide (price_…) : l'achat d'une vente à l'unité reste fermé.",
+    );
+  }
+  return advisories;
+}
+
+/**
  * Applies the guards to a production build. Returns the process exit code and
  * the lines to print, so the caller (and the tests) decide how to emit them.
  */
 export function evaluateProductionLaunchConfig(env) {
   if (!isProductionBuild(env)) return { exitCode: 0, errors: [], warnings: [] };
-  const advisories = saleRemindersModeAdvisories(env);
+  const advisories = [...saleRemindersModeAdvisories(env), ...saleUnlockAdvisories(env)];
   const originProblems = blockingLaunchProblems(env);
   const stripeProblems = stripeKeyModeProblems(env);
   const blocking = [...originProblems, ...stripeProblems];

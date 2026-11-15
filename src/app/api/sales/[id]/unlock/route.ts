@@ -10,7 +10,12 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleUnlockQuotaReachedResponse } from "@/lib/sale-unlocks";
 import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
-import { getSaleUnlockStatus, SaleUnlockQuotaError, unlockSale } from "@/lib/sale-unlocks.server";
+import {
+  getSaleUnlockStatus,
+  redeemSaleUnlockCredit,
+  SaleUnlockQuotaError,
+  unlockSale,
+} from "@/lib/sale-unlocks.server";
 
 const saleIdSchema = z.string().guid();
 
@@ -37,7 +42,9 @@ export const GET = apiRoute<{ id: string }>(
  * Débloque cette vente pour le compte connecté : enchère plafond, lecture des pièces, historique,
  * statistiques du tribunal de la vente et pièces officielles, tant qu'elle est en ligne. Le quota
  * du compte est appliqué par la base, sous verrou par compte. Idempotent : une vente déjà
- * débloquée ne consomme rien. Un compte Analyse n'a rien à débloquer. Aucun appel Stripe.
+ * débloquée ne consomme rien. Un compte Analyse n'a rien à débloquer. Le déblocage gratuit déjà
+ * utilisé, un crédit du compte (achat à l'unité dont la vente n'était plus débloquable) débloque
+ * cette vente. Aucun appel Stripe.
  */
 export const POST = apiRoute<{ id: string }>(
   { scope: "sale-unlock", fallbackMessage: "Déblocage indisponible." },
@@ -51,7 +58,12 @@ export const POST = apiRoute<{ id: string }>(
     });
     let result: Awaited<ReturnType<typeof unlockSale>>;
     try {
-      result = await unlockSale(auth, saleId);
+      result = await unlockSale(auth, saleId).catch((error) => {
+        if (error instanceof SaleUnlockQuotaError && (error.status.credits ?? 0) > 0) {
+          return redeemSaleUnlockCredit(auth, saleId);
+        }
+        throw error;
+      });
     } catch (error) {
       if (!(error instanceof SaleUnlockQuotaError)) throw error;
       await recordAccountProductEvent(auth.userId, { type: "quota_reached", quota: "unlocks" });

@@ -7,9 +7,14 @@ import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import { Button, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
-import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
+import { SaleUnlockPurchaseChoices } from "@/components/sale-detail/SaleUnlockPurchaseChoices";
+import type { SalePurchaseReturnPhase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
+import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
-import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  resolveAnalysisOfferLabel,
+  type SaleUnlockPurchaseRefusalCode,
+} from "@/lib/analysis-offer";
 import { analysisSubscriptionTerms } from "@/lib/analysis-subscription-terms";
 import { UNLOCKED_SALES_PATH } from "@/lib/navigation";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
@@ -18,9 +23,15 @@ import type { UnlockCeilingGap } from "@/lib/bid-ceiling-gaps";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   SALE_NOT_UNLOCKABLE_TEXT,
+  SALE_PURCHASE_DELAYED_TEXT,
+  SALE_PURCHASE_PENDING_TEXT,
   UNLOCK_CALL_TO_ACTION_LABEL,
   UNLOCK_CHOICE_TEXT,
   UNLOCK_CONFIRMATION_TEXT,
+  UNLOCK_CREDIT_CALL_TO_ACTION_LABEL,
+  UNLOCK_CREDIT_CONFIRMATION_TEXT,
+  UNLOCK_CREDIT_TEXT,
+  UNLOCK_CREDIT_TITLE,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
   unlockQuotaReachedText,
@@ -38,6 +49,8 @@ import { userMessage } from "@/lib/user-messages";
  */
 /** Au-dessus du titre de la carte, dans chacun de ses états avant le déblocage. */
 const UNLOCK_EYEBROW = "Déblocage du compte gratuit";
+/** Au-dessus du titre quand il reste un crédit (vente achetée qui n'a pas eu lieu). */
+const CREDIT_EYEBROW = "Crédit de déblocage";
 
 export function SaleUnlockPanel({
   saleId,
@@ -49,6 +62,8 @@ export function SaleUnlockPanel({
     statistics: true,
   },
   announce = false,
+  purchaseReturn = null,
+  onStatusStale,
   onUnlocked,
 }: {
   saleId: string;
@@ -78,6 +93,13 @@ export function SaleUnlockPanel({
   };
   /** The sale was unlocked a moment ago: move the focus to the result so it is announced. */
   announce?: boolean;
+  /**
+   * Back from the payment of this sale (`useSalePurchaseReturn`): `pending` while the server has not
+   * confirmed the unlock, `delayed` once the re-reads are over. Nothing is offered meanwhile.
+   */
+  purchaseReturn?: SalePurchaseReturnPhase;
+  /** A purchase was refused (409): the account state changed elsewhere and is read again. */
+  onStatusStale?: () => void;
   onUnlocked: (result: SaleUnlockResult) => void;
 }) {
   const items = unlockedItemsText(opens);
@@ -96,6 +118,8 @@ export function SaleUnlockPanel({
     status: SaleUnlockStatus;
   } | null>(null);
   const [live, setLive] = useState("");
+  // Why a purchase was refused (409), kept while the card switches to the state read again.
+  const [notice, setNotice] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -106,6 +130,10 @@ export function SaleUnlockPanel({
   useEffect(() => {
     if (announce && unlocked) headingRef.current?.focus();
   }, [announce, unlocked]);
+  useEffect(() => {
+    if (purchaseReturn === "pending") setLive(SALE_PURCHASE_PENDING_TEXT);
+    if (purchaseReturn === "delayed") setLive(SALE_PURCHASE_DELAYED_TEXT);
+  }, [purchaseReturn]);
 
   if (!status || status.analysisAccess) return null;
   const base = status;
@@ -212,28 +240,86 @@ export function SaleUnlockPanel({
     );
   }
 
+  // Back from the payment of this sale: only the server says when it is unlocked, and nothing else
+  // is offered meanwhile (a second purchase of the same sale).
+  if (purchaseReturn) {
+    return (
+      <>
+        {liveRegion}
+        <Card
+          as="section"
+          id={UNLOCK_PANEL_ID}
+          aria-labelledby="sale-unlock-title"
+          className="mt-4 scroll-mt-2"
+        >
+          <Eyebrow className="flex items-center gap-2">
+            <LockKeyhole className="size-4" aria-hidden /> Achat de cette vente
+          </Eyebrow>
+          <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
+            {purchaseReturn === "pending" ? "Ouverture de la vente" : "Ouverture à confirmer"}
+          </h2>
+          <p
+            data-testid="sale-purchase-return"
+            className="mt-2 text-sm font-medium leading-relaxed text-brand-navy"
+          >
+            {purchaseReturn === "pending" ? SALE_PURCHASE_PENDING_TEXT : SALE_PURCHASE_DELAYED_TEXT}
+          </p>
+          {purchaseReturn === "delayed" ? (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button variant="primary" onClick={() => window.location.reload()}>
+                Recharger la page
+              </Button>
+              <Link href="/contact" className={buttonClasses()}>
+                Écrire au support
+              </Link>
+            </div>
+          ) : null}
+        </Card>
+      </>
+    );
+  }
+
+  const noticeBlock = notice ? (
+    <p data-testid="sale-unlock-notice" className="mt-2 text-sm font-medium text-brand-navy">
+      {notice}
+    </p>
+  ) : null;
+
   // The free sheet is online but the database would refuse the unlock (« Vente introuvable »):
   // say so instead of offering a button that ends on an error.
   if (!current.unlockable) {
     return (
-      <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
-        <Eyebrow className="flex items-center gap-2">
-          <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
-        </Eyebrow>
-        <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
-          Débloquer cette vente
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{SALE_NOT_UNLOCKABLE_TEXT}</p>
-      </Card>
+      <>
+        {liveRegion}
+        <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
+          <Eyebrow className="flex items-center gap-2">
+            <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
+          </Eyebrow>
+          <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
+            Débloquer cette vente
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">{SALE_NOT_UNLOCKABLE_TEXT}</p>
+        </Card>
+      </>
     );
   }
 
   const exhausted = (current.remaining ?? 0) <= 0;
+  // The free unlock is spent but a purchased sale did not take place: its credit opens this one,
+  // through the same route and the same two-step confirmation.
+  const withCredit = exhausted && (current.credits ?? 0) > 0;
+
+  function refusePurchase(_code: SaleUnlockPurchaseRefusalCode, text: string) {
+    setNotice(text);
+    setLive(text);
+    onStatusStale?.();
+  }
 
   async function confirmUnlock() {
     trackProductEvent("sale_unlock_confirmed");
     setStep("pending");
     setError(null);
+    setNotice(null);
     setLive("Déblocage en cours…");
     try {
       const result = await unlockSaleRequest(saleId);
@@ -253,7 +339,7 @@ export function SaleUnlockPanel({
     }
   }
 
-  if (exhausted) {
+  if (exhausted && !withCredit) {
     return (
       <>
         {liveRegion}
@@ -269,7 +355,8 @@ export function SaleUnlockPanel({
           <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
             {UNLOCK_QUOTA_REACHED_TITLE}
           </h2>
-          <ExhaustedNotice />
+          {noticeBlock}
+          <ExhaustedNotice saleId={saleId} onConflict={refusePurchase} onAnnounce={setLive} />
         </Card>
       </>
     );
@@ -285,16 +372,31 @@ export function SaleUnlockPanel({
         className="mt-4 scroll-mt-2"
       >
         <Eyebrow className="flex items-center gap-2">
-          <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
+          <LockKeyhole className="size-4" aria-hidden />{" "}
+          {withCredit ? CREDIT_EYEBROW : UNLOCK_EYEBROW}
         </Eyebrow>
         <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
-          Débloquer cette vente
+          {withCredit ? UNLOCK_CREDIT_TITLE : "Débloquer cette vente"}
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-          Ouvre, pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
-          ligne, dans la limite de 24 mois. Compris dans le compte Découverte, sans carte bancaire.
-        </p>
-        <p className="mt-2 text-sm font-medium text-brand-navy">{UNLOCK_CHOICE_TEXT}</p>
+        {noticeBlock}
+        {withCredit ? (
+          <>
+            <p className="mt-2 text-sm font-medium text-brand-navy">{UNLOCK_CREDIT_TEXT}</p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Ouvre, pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
+              ligne, dans la limite de 24 mois.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Ouvre, pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
+              ligne, dans la limite de 24 mois. Compris dans le compte Découverte, sans carte
+              bancaire.
+            </p>
+            <p className="mt-2 text-sm font-medium text-brand-navy">{UNLOCK_CHOICE_TEXT}</p>
+          </>
+        )}
         {step === "idle" ? (
           <Button
             variant="primary"
@@ -304,7 +406,7 @@ export function SaleUnlockPanel({
               setStep("confirm");
             }}
           >
-            {UNLOCK_CALL_TO_ACTION_LABEL}
+            {withCredit ? UNLOCK_CREDIT_CALL_TO_ACTION_LABEL : UNLOCK_CALL_TO_ACTION_LABEL}
           </Button>
         ) : (
           <div
@@ -312,7 +414,9 @@ export function SaleUnlockPanel({
             aria-label="Confirmer le déblocage"
             className="mt-4 rounded-lg border border-gold/40 bg-surface-tint p-4"
           >
-            <p className="text-sm leading-relaxed text-brand-navy">{UNLOCK_CONFIRMATION_TEXT}</p>
+            <p className="text-sm leading-relaxed text-brand-navy">
+              {withCredit ? UNLOCK_CREDIT_CONFIRMATION_TEXT : UNLOCK_CONFIRMATION_TEXT}
+            </p>
             {gap ? (
               <p
                 data-testid="unlock-ceiling-gap"
@@ -369,18 +473,45 @@ export function SaleUnlockPanel({
  * Unlock spent on another sale: the way to that sale, then how to open this one. The subscription
  * is named only when it can really be bought (the legal identity is published and the approved
  * price is configured). While the offer is closed, the primary action is the opening request, never
- * a link to a page that cannot sell it.
+ * a link to a page that cannot sell it. Once the purchase of a single sale is open, the two choices
+ * (subscription, this sale) replace the sentence; until then, nothing mentions it.
  */
-function ExhaustedNotice() {
-  const checkoutOpen = useAnalysisCheckoutOpen();
+function ExhaustedNotice({
+  saleId,
+  onConflict,
+  onAnnounce,
+}: {
+  saleId: string;
+  onConflict: (code: SaleUnlockPurchaseRefusalCode, text: string) => void;
+  onAnnounce: (text: string) => void;
+}) {
+  const offer = useSaleUnlockPurchaseOffer();
+  const checkoutOpen = offer.status === "loading" ? null : offer.analysisOpen;
+  const unlockedSaleLink = (
+    <Link
+      href={UNLOCKED_SALES_PATH}
+      className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
+    >
+      Voir la vente débloquée
+    </Link>
+  );
+  if (offer.status === "ready" && offer.purchase) {
+    return (
+      <>
+        {unlockedSaleLink}
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">Pour ouvrir celle-ci aussi :</p>
+        <SaleUnlockPurchaseChoices
+          saleId={saleId}
+          offer={{ ...offer, purchase: offer.purchase }}
+          onConflict={onConflict}
+          onAnnounce={onAnnounce}
+        />
+      </>
+    );
+  }
   return (
     <>
-      <Link
-        href={UNLOCKED_SALES_PATH}
-        className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
-      >
-        Voir la vente débloquée
-      </Link>
+      {unlockedSaleLink}
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         {unlockQuotaReachedText({ analysisOpen: checkoutOpen === true })}{" "}
         {checkoutOpen === true

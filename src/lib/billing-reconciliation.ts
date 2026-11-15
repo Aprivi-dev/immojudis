@@ -1,6 +1,7 @@
 import "server-only";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import type Stripe from "stripe";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
@@ -8,9 +9,11 @@ import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
   analysisSubscriptionPriceIds,
   getStripe,
+  SALE_UNLOCK_PAYMENT_PURPOSE,
   stripeAccessPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
+import { saleUnlockPriceId } from "@/lib/sale-unlock-checkout-readiness";
 import { serverEnv } from "@/lib/env";
 import { isPlanPeriodActive } from "@/lib/plans";
 
@@ -22,6 +25,10 @@ import { isPlanPeriodActive } from "@/lib/plans";
  * modifiés. La correction reste une décision humaine (portail Stripe, attribution admin).
  *
  * Les droits accordés à la main (ligne sans identifiant d'abonnement Stripe) sont hors périmètre.
+ *
+ * Achats à l'unité (lot 3), quand leur Price est configuré : une session `sale_unlock` payée chez
+ * Stripe sans achat payé en base, et un achat déduit d'un premier mois d'abonnement puis remboursé
+ * (ou litige perdu) : le client aurait la déduction et le remboursement.
  */
 type SubscriptionRow = Pick<
   Database["public"]["Tables"]["user_subscriptions"]["Row"],
@@ -57,13 +64,19 @@ type BillingDiscrepancyKind =
   /** Le Price de l'abonnement n'est dans aucune liste de l'offre Analyse. */
   | "unknown_price"
   /** Le compte indiqué par Stripe n'est pas celui de la ligne en base. */
-  | "user_mismatch";
+  | "user_mismatch"
+  /** Session d'achat à l'unité payée chez Stripe, sans achat payé en base (déblocage non accordé). */
+  | "sale_unlock_paid_without_purchase"
+  /** Achat à l'unité déduit d'un premier mois d'abonnement, puis remboursé ou litige perdu. */
+  | "sale_unlock_deducted_then_refunded";
 
 export type BillingDiscrepancy = {
   kind: BillingDiscrepancyKind;
   stripeSubscriptionId: string | null;
   userId: string | null;
   detail: string;
+  /** Session Checkout en cause (achats à l'unité). */
+  stripeCheckoutSessionId?: string | null;
 };
 
 const ACCESS_STRIPE_STATUSES = new Set(["trialing", "active", "past_due"]);
@@ -192,6 +205,137 @@ export function compareStripeWithDatabase({
   return discrepancies;
 }
 
+/** Session Checkout d'achat à l'unité payée chez Stripe. */
+export type SaleUnlockPaidSession = { id: string; userId: string | null };
+
+/** Ligne de `sale_unlock_purchases` lue par le rapprochement. */
+export type SaleUnlockPurchaseRow = {
+  id: string;
+  user_id: string;
+  checkout_session_id: string | null;
+  state: string;
+  deducted_checkout_session_id: string | null;
+};
+
+/** États d'un achat dont le paiement a été enregistré (payé, puis éventuellement remboursé ou contesté). */
+const RECORDED_PAYMENT_STATES = new Set(["paid", "refunded", "disputed", "dispute_lost"]);
+
+/** Pur : les achats à l'unité, sans accès réseau ni écriture. */
+export function compareSaleUnlockPurchases({
+  paidSessions,
+  purchases,
+}: {
+  paidSessions: SaleUnlockPaidSession[];
+  /** Achats des sessions de `paidSessions`, et achats déduits puis remboursés ou perdus. */
+  purchases: SaleUnlockPurchaseRow[];
+}): BillingDiscrepancy[] {
+  const discrepancies: BillingDiscrepancy[] = [];
+  const recordedSessions = new Set(
+    purchases
+      .filter((purchase) => RECORDED_PAYMENT_STATES.has(purchase.state))
+      .flatMap((purchase) => (purchase.checkout_session_id ? [purchase.checkout_session_id] : [])),
+  );
+  for (const session of paidSessions) {
+    if (recordedSessions.has(session.id)) continue;
+    discrepancies.push({
+      kind: "sale_unlock_paid_without_purchase",
+      stripeSubscriptionId: null,
+      stripeCheckoutSessionId: session.id,
+      userId: session.userId,
+      detail: `Session ${session.id} payée chez Stripe, aucun achat payé en base : le déblocage n'a pas été accordé (rejouer l'événement depuis Stripe).`,
+    });
+  }
+  for (const purchase of purchases) {
+    if (!purchase.deducted_checkout_session_id) continue;
+    if (purchase.state !== "refunded" && purchase.state !== "dispute_lost") continue;
+    discrepancies.push({
+      kind: "sale_unlock_deducted_then_refunded",
+      stripeSubscriptionId: null,
+      stripeCheckoutSessionId: purchase.checkout_session_id,
+      userId: purchase.user_id,
+      detail: `Achat ${purchase.id} déduit du premier mois (session ${purchase.deducted_checkout_session_id}) puis ${purchase.state === "refunded" ? "remboursé" : "perdu en litige"}.`,
+    });
+  }
+  return discrepancies;
+}
+
+/** Sessions d'achat lues : celles des 35 derniers jours (une session expire en 31 minutes). */
+const SALE_UNLOCK_SESSION_WINDOW_SECONDS = 35 * 86_400;
+/**
+ * Une session payée depuis moins de 2 heures peut attendre son webhook : elle n'est pas encore un
+ * écart. Une session vit 31 minutes au plus, son paiement est donc antérieur à sa création + 31 min.
+ */
+const SALE_UNLOCK_WEBHOOK_GRACE_SECONDS = 2 * 3_600;
+
+async function listPaidSaleUnlockSessions(): Promise<{
+  sessions: SaleUnlockPaidSession[];
+  truncated: boolean;
+}> {
+  const stripe = getStripe();
+  const now = Math.floor(Date.now() / 1000);
+  const sessions: SaleUnlockPaidSession[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < MAX_STRIPE_PAGES; page += 1) {
+    const result = await stripe.checkout.sessions.list({
+      status: "complete",
+      created: {
+        gte: now - SALE_UNLOCK_SESSION_WINDOW_SECONDS,
+        lte: now - SALE_UNLOCK_WEBHOOK_GRACE_SECONDS,
+      },
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    for (const session of result.data) {
+      if (session.metadata?.purpose !== SALE_UNLOCK_PAYMENT_PURPOSE) continue;
+      if (session.payment_status !== "paid") continue;
+      sessions.push({ id: session.id, userId: session.metadata?.user_id || null });
+    }
+    startingAfter = result.data.at(-1)?.id;
+    if (!result.has_more || !startingAfter) return { sessions, truncated: false };
+  }
+  return { sessions, truncated: true };
+}
+
+const SALE_UNLOCK_PURCHASE_COLUMNS =
+  "id,user_id,checkout_session_id,state,deducted_checkout_session_id";
+
+/** Achats des sessions payées, et achats déduits puis remboursés ou perdus (client de service). */
+async function readSaleUnlockPurchases(sessionIds: string[]): Promise<SaleUnlockPurchaseRow[]> {
+  // Table de la migration 20261122100000, pas encore dans les types générés.
+  const client = supabaseAdmin as unknown as SupabaseClient;
+  const rows: SaleUnlockPurchaseRow[] = [];
+  for (let index = 0; index < sessionIds.length; index += 100) {
+    const { data, error } = await client
+      .from("sale_unlock_purchases")
+      .select(SALE_UNLOCK_PURCHASE_COLUMNS)
+      .in("checkout_session_id", sessionIds.slice(index, index + 100));
+    if (error) throw error;
+    rows.push(...((data ?? []) as SaleUnlockPurchaseRow[]));
+  }
+  const { data, error } = await client
+    .from("sale_unlock_purchases")
+    .select(SALE_UNLOCK_PURCHASE_COLUMNS)
+    .not("deducted_checkout_session_id", "is", null)
+    .in("state", ["refunded", "dispute_lost"]);
+  if (error) throw error;
+  rows.push(...((data ?? []) as SaleUnlockPurchaseRow[]));
+  return rows;
+}
+
+async function reconcileSaleUnlockPurchases(): Promise<{
+  discrepancies: BillingDiscrepancy[];
+  truncated: boolean;
+}> {
+  // Pas de Price d'achat à l'unité : la vente n'a jamais été ouverte, il n'y a rien à rapprocher.
+  if (!saleUnlockPriceId()) return { discrepancies: [], truncated: false };
+  const { sessions, truncated } = await listPaidSaleUnlockSessions();
+  const purchases = await readSaleUnlockPurchases(sessions.map((session) => session.id));
+  return {
+    discrepancies: compareSaleUnlockPurchases({ paidSessions: sessions, purchases }),
+    truncated,
+  };
+}
+
 /** Pages de 100 abonnements lues au plus : au-delà, le rapport le signale (`truncated`). */
 const MAX_STRIPE_PAGES = 50;
 
@@ -233,7 +377,7 @@ export async function reconcileBillingReadOnly(
 
 /** Le rapprochement sans contrôle d'accès : réservé à la tâche planifiée et à `reconcileBillingReadOnly`. */
 async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
-  const [stripeResult, rowsResult] = await Promise.all([
+  const [stripeResult, rowsResult, saleUnlocks] = await Promise.all([
     listStripeSubscriptions(),
     supabaseAdmin
       .from("user_subscriptions")
@@ -241,6 +385,7 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
         "user_id,plan_code,status,current_period_end,stripe_customer_id,stripe_subscription_id",
       )
       .not("stripe_subscription_id", "is", null),
+    reconcileSaleUnlockPurchases(),
   ]);
   if (rowsResult.error) throw rowsResult.error;
   const rows = (rowsResult.data ?? []) as SubscriptionRow[];
@@ -248,14 +393,17 @@ async function reconcileBillingNow(): Promise<BillingReconciliationReport> {
     checkedAt: new Date().toISOString(),
     stripeSubscriptionCount: stripeResult.subscriptions.length,
     databaseRowCount: rows.length,
-    truncated: stripeResult.truncated,
-    discrepancies: compareStripeWithDatabase({
-      stripeSubscriptions: stripeResult.subscriptions,
-      rows,
-      acceptedPriceIds: analysisSubscriptionPriceIds(),
-      currentPriceId: analysisPriceId() ?? null,
-      listComplete: !stripeResult.truncated,
-    }),
+    truncated: stripeResult.truncated || saleUnlocks.truncated,
+    discrepancies: [
+      ...compareStripeWithDatabase({
+        stripeSubscriptions: stripeResult.subscriptions,
+        rows,
+        acceptedPriceIds: analysisSubscriptionPriceIds(),
+        currentPriceId: analysisPriceId() ?? null,
+        listComplete: !stripeResult.truncated,
+      }),
+      ...saleUnlocks.discrepancies,
+    ],
   };
 }
 
@@ -298,6 +446,9 @@ export async function runBillingReconciliationJob(): Promise<Record<string, unkn
       sample: report.discrepancies.slice(0, ALERT_SAMPLE_SIZE).map((discrepancy) => ({
         kind: discrepancy.kind,
         subscription: discrepancy.stripeSubscriptionId,
+        ...(discrepancy.stripeCheckoutSessionId
+          ? { session: discrepancy.stripeCheckoutSessionId }
+          : {}),
         user: discrepancy.userId,
       })),
     },

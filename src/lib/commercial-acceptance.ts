@@ -19,6 +19,9 @@ import {
   ANALYSIS_TRIAL_DAYS,
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
+  SALE_UNLOCK_CURRENCY,
+  SALE_UNLOCK_OFFER_CODE,
+  VAT_EXEMPTION_INVOICE_MENTION,
 } from "@/lib/analysis-offer";
 import { escapeHtml, numberValue, stringValue } from "@/lib/guards";
 import {
@@ -41,6 +44,23 @@ export const checkoutConsentSchema = z.object({
 });
 
 export type CheckoutConsent = z.infer<typeof checkoutConsentSchema>;
+
+/**
+ * Consentement de l'achat d'une vente à l'unité : celui de l'abonnement, plus la renonciation
+ * expresse au droit de rétractation pour un contenu numérique fourni immédiatement (l'analyse de la
+ * vente s'ouvre dès le paiement). Un consentement sans elle est refusé.
+ */
+export const saleUnlockConsentSchema = checkoutConsentSchema.extend({
+  withdrawalWaiverAcknowledged: z.literal(true),
+});
+
+export type SaleUnlockConsent = z.infer<typeof saleUnlockConsentSchema>;
+
+/** Objet de l'acceptation de l'achat à l'unité (colonne `purpose`). */
+export const SALE_UNLOCK_ACCEPTANCE_PURPOSE = "sale_unlock_purchase";
+
+/** Ce que la confirmation dit de l'achat à l'unité : vente débloquée, ou crédit. */
+export type SaleUnlockConfirmationOutcome = "unlocked" | "credit";
 
 export type CommercialConfirmationRetrySummary = {
   configured: boolean;
@@ -136,16 +156,93 @@ export async function recordCommercialAcceptance({
   if (error) throw error;
 }
 
+/**
+ * Preuve de l'acceptation avant la session d'achat d'une vente à l'unité. Même table que
+ * l'abonnement ; l'objet (`sale_unlock_purchase`), le code d'offre et la renonciation au droit de
+ * rétractation la distinguent. La renonciation est portée par `evidence` tant que la table n'a pas de
+ * colonne dédiée.
+ */
+export async function recordSaleUnlockAcceptance({
+  acceptanceId,
+  auth,
+  consent,
+  checkoutSessionId,
+  checkoutCreatedAt,
+  requestId,
+  userAgent,
+  priceId,
+  amountCents,
+  saleId,
+  purchaseId,
+}: {
+  acceptanceId: string;
+  auth: SupabaseAuthContext;
+  consent: SaleUnlockConsent;
+  checkoutSessionId: string;
+  checkoutCreatedAt: string;
+  requestId: string | null;
+  userAgent: string | null;
+  priceId: string;
+  amountCents: number;
+  saleId: string;
+  purchaseId: string;
+}): Promise<void> {
+  const email =
+    normalizeEmail(typeof auth.claims.email === "string" ? auth.claims.email : null) || null;
+  const { error } = await supabaseAdmin.from("commercial_acceptances").insert({
+    id: acceptanceId,
+    user_id: auth.userId,
+    purpose: SALE_UNLOCK_ACCEPTANCE_PURPOSE,
+    terms_version: consent.termsVersion,
+    terms_sha256: LEGAL_DOCUMENTS.terms.sha256,
+    privacy_version: consent.privacyVersion,
+    privacy_sha256: LEGAL_DOCUMENTS.privacy.sha256,
+    offer_code: SALE_UNLOCK_OFFER_CODE,
+    amount_cents: amountCents,
+    currency: SALE_UNLOCK_CURRENCY,
+    terms_accepted: consent.termsAccepted,
+    payment_obligation_acknowledged: consent.paymentObligationAcknowledged,
+    immediate_performance_requested: consent.immediatePerformanceRequested,
+    withdrawal_information_acknowledged: consent.withdrawalInformationAcknowledged,
+    requester_email_hash: digest(email),
+    request_id: requestId,
+    user_agent_hash: digest(userAgent),
+    checkout_session_id: checkoutSessionId,
+    checkout_created_at: checkoutCreatedAt,
+    evidence: {
+      source: "sale_unlock_checkout_dialog",
+      offer_label: SALE_UNLOCK_OFFER_LABEL,
+      amount_cents: amountCents,
+      currency: SALE_UNLOCK_CURRENCY,
+      price_id: priceId,
+      billing_model: "one_time_payment",
+      sale_id: saleId,
+      purchase_id: purchaseId,
+      payment_method_required: true,
+      withdrawal_waiver_acknowledged: consent.withdrawalWaiverAcknowledged,
+    },
+  });
+  if (error) throw error;
+}
+
+const SALE_UNLOCK_OFFER_LABEL = "Déblocage d’une vente à l’unité";
+
 export async function sendCommercialConfirmation({
   acceptanceId,
   checkoutSessionId,
   userId,
   paidAt,
+  saleUnlockOutcome,
 }: {
   acceptanceId: string;
   checkoutSessionId: string;
   userId: string;
   paidAt: string;
+  /**
+   * Achat à l'unité : ce que le paiement a donné. Absent (relance d'un envoi échoué) : la
+   * confirmation explique les deux issues possibles.
+   */
+  saleUnlockOutcome?: SaleUnlockConfirmationOutcome;
 }): Promise<"sent" | "failed"> {
   const config = resolveTransactionalEmailConfig();
   const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -167,6 +264,33 @@ export async function sendCommercialConfirmation({
     .eq("id", acceptanceId)
     .maybeSingle();
   if (acceptanceError) throw acceptanceError;
+  if (acceptance?.offer_code === SALE_UNLOCK_OFFER_CODE) {
+    const accepted = {
+      termsVersion: acceptance.terms_version,
+      termsSha256: acceptance.terms_sha256,
+      privacyVersion: acceptance.privacy_version,
+    };
+    return deliverConfirmation({
+      config,
+      recipient,
+      acceptanceId,
+      checkoutSessionId,
+      attemptCount,
+      paidAt,
+      userId,
+      build: (appUrl) =>
+        saleUnlockConfirmationContent({
+          appUrl,
+          evidence: jsonRecord(acceptance.evidence),
+          amountCents: acceptance.amount_cents,
+          currency: acceptance.currency,
+          accepted,
+          paidAt,
+          checkoutSessionId,
+          outcome: saleUnlockOutcome,
+        }),
+    });
+  }
   const { data: subscription, error: subscriptionError } = await supabaseAdmin
     .from("user_subscriptions")
     .select("metadata")
@@ -228,6 +352,111 @@ export async function sendCommercialConfirmation({
       ? `${formatMoney(acceptance.amount_cents, acceptance.currency)}, paiement unique sans renouvellement automatique.`
       : "Accès Analyse selon les conditions indiquées au paiement.";
 
+  // Le courriel cite ce que le client a accepté (version et empreinte enregistrées avec
+  // l'acceptation), pas la version en vigueur le jour de l'envoi ou de la relance.
+  const accepted = {
+    termsVersion: acceptance?.terms_version ?? LEGAL_DOCUMENTS.terms.version,
+    termsSha256: acceptance?.terms_sha256 ?? LEGAL_DOCUMENTS.terms.sha256,
+    privacyVersion: acceptance?.privacy_version ?? LEGAL_DOCUMENTS.privacy.version,
+  };
+  return deliverConfirmation({
+    config,
+    recipient,
+    acceptanceId,
+    checkoutSessionId,
+    attemptCount,
+    paidAt,
+    userId,
+    build: (appUrl) => {
+      const termsUrl = `${appUrl}${LEGAL_DOCUMENTS.terms.path}`;
+      const privacyUrl = `${appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
+      const rightsUrl = `${appUrl}/mes-droits`;
+      const withdrawalLines = withdrawalInformationLines({
+        publisher: publicLegalPublisher(),
+        rightsUrl,
+        orderedOn: paidAt,
+      });
+      const subject = isRecurringOffer
+        ? "Confirmation de votre abonnement Immojudis Analyse"
+        : "Confirmation de votre commande Immojudis Analyse";
+      const text = [
+        subject,
+        "",
+        `Offre : ${offerLabel}`,
+        offerDescription,
+        `Commande confirmée le : ${paidAt}`,
+        `Référence : ${checkoutSessionId}`,
+        `Conditions acceptées : version ${accepted.termsVersion}`,
+        `Politique de confidentialité : version ${accepted.privacyVersion}`,
+        "Exécution : accès immédiat demandé avant la fin du délai de rétractation.",
+        "",
+        `Conditions générales : ${termsUrl}`,
+        `Confidentialité : ${privacyUrl}`,
+        `Exercer un droit ou notifier une rétractation : ${rightsUrl}`,
+        "",
+        ...withdrawalLines,
+        "",
+        `Empreinte SHA-256 des conditions acceptées : ${accepted.termsSha256}`,
+      ].join("\n");
+      const html = emailLayout({
+        title: subject,
+        preheader: `Offre : ${offerLabel}`,
+        // Même contenu qu'avant, seulement mis en forme : aucun texte ni aucune date ne change.
+        content: [
+          emailHeading(
+            `${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}`,
+          ),
+          emailParagraph(
+            `<strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription).replace(/\n/g, "<br>")}`,
+          ),
+          emailParagraph(
+            `Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${emailBreakable(checkoutSessionId)}`,
+          ),
+          emailParagraph(
+            `Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}`,
+          ),
+          emailParagraph(
+            `${emailLink(termsUrl, "Conditions générales")} · ${emailLink(privacyUrl, "Confidentialité")} · ${emailLink(rightsUrl, "Mes droits et rétractation")}`,
+          ),
+          emailParagraph(escapeHtml(withdrawalLines.join("\n")).replace(/\n/g, "<br>")),
+          emailParagraph(
+            `Empreinte SHA-256 des conditions acceptées : ${emailBreakable(accepted.termsSha256)}`,
+            { marginBottom: 0 },
+          ),
+        ].join(""),
+        footer: {},
+      });
+      return { subject, text, html };
+    },
+  });
+}
+
+type ConfirmationContent = { subject: string; text: string; html: string };
+
+/**
+ * Envoi suivi d'une confirmation contractuelle et trace de la tentative (relancée par
+ * `retryFailedCommercialConfirmations` en cas d'échec). Sans destinataire ni configuration, la
+ * tentative est enregistrée en échec.
+ */
+async function deliverConfirmation({
+  config,
+  recipient,
+  acceptanceId,
+  checkoutSessionId,
+  attemptCount,
+  paidAt,
+  userId,
+  build,
+}: {
+  config: ReturnType<typeof resolveTransactionalEmailConfig>;
+  recipient: string | null;
+  acceptanceId: string;
+  checkoutSessionId: string;
+  attemptCount: number;
+  paidAt: string;
+  userId: string;
+  build: (appUrl: string) => ConfirmationContent;
+}): Promise<"sent" | "failed"> {
   if (!recipient || !config.configured || !config.apiKey || !config.from || !config.appUrl) {
     await recordConfirmationDelivery({
       acceptanceId,
@@ -242,44 +471,7 @@ export async function sendCommercialConfirmation({
     });
     return "failed";
   }
-
-  // Le courriel cite ce que le client a accepté (version et empreinte enregistrées avec
-  // l'acceptation), pas la version en vigueur le jour de l'envoi ou de la relance.
-  const accepted = {
-    termsVersion: acceptance?.terms_version ?? LEGAL_DOCUMENTS.terms.version,
-    termsSha256: acceptance?.terms_sha256 ?? LEGAL_DOCUMENTS.terms.sha256,
-    privacyVersion: acceptance?.privacy_version ?? LEGAL_DOCUMENTS.privacy.version,
-  };
-  const termsUrl = `${config.appUrl}${LEGAL_DOCUMENTS.terms.path}`;
-  const privacyUrl = `${config.appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
-  const rightsUrl = `${config.appUrl}/mes-droits`;
-  const withdrawalLines = withdrawalInformationLines({
-    publisher: publicLegalPublisher(),
-    rightsUrl,
-    orderedOn: paidAt,
-  });
-  const subject = isRecurringOffer
-    ? "Confirmation de votre abonnement Immojudis Analyse"
-    : "Confirmation de votre commande Immojudis Analyse";
-  const text = [
-    subject,
-    "",
-    `Offre : ${offerLabel}`,
-    offerDescription,
-    `Commande confirmée le : ${paidAt}`,
-    `Référence : ${checkoutSessionId}`,
-    `Conditions acceptées : version ${accepted.termsVersion}`,
-    `Politique de confidentialité : version ${accepted.privacyVersion}`,
-    "Exécution : accès immédiat demandé avant la fin du délai de rétractation.",
-    "",
-    `Conditions générales : ${termsUrl}`,
-    `Confidentialité : ${privacyUrl}`,
-    `Exercer un droit ou notifier une rétractation : ${rightsUrl}`,
-    "",
-    ...withdrawalLines,
-    "",
-    `Empreinte SHA-256 des conditions acceptées : ${accepted.termsSha256}`,
-  ].join("\n");
+  const { subject, text, html } = build(config.appUrl);
 
   try {
     const result = await sendTrackedEmail({
@@ -288,40 +480,7 @@ export async function sendCommercialConfirmation({
       templateKey: "commercial_confirmation",
       userId,
       fetchImpl: fetch,
-      message: {
-        from: config.from,
-        to: recipient,
-        subject,
-        text,
-        html: emailLayout({
-          title: subject,
-          preheader: `Offre : ${offerLabel}`,
-          // Même contenu qu'avant, seulement mis en forme : aucun texte ni aucune date ne change.
-          content: [
-            emailHeading(
-              `${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}`,
-            ),
-            emailParagraph(
-              `<strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription).replace(/\n/g, "<br>")}`,
-            ),
-            emailParagraph(
-              `Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${emailBreakable(checkoutSessionId)}`,
-            ),
-            emailParagraph(
-              `Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}`,
-            ),
-            emailParagraph(
-              `${emailLink(termsUrl, "Conditions générales")} · ${emailLink(privacyUrl, "Confidentialité")} · ${emailLink(rightsUrl, "Mes droits et rétractation")}`,
-            ),
-            emailParagraph(escapeHtml(withdrawalLines.join("\n")).replace(/\n/g, "<br>")),
-            emailParagraph(
-              `Empreinte SHA-256 des conditions acceptées : ${emailBreakable(accepted.termsSha256)}`,
-              { marginBottom: 0 },
-            ),
-          ].join(""),
-          footer: {},
-        }),
-      },
+      message: { from: config.from, to: recipient, subject, text, html },
       category: "acceptance",
     });
     await recordConfirmationDelivery({
@@ -347,6 +506,103 @@ export async function sendCommercialConfirmation({
     });
     return "failed";
   }
+}
+
+/**
+ * Confirmation de l'achat d'une vente à l'unité (support durable) : objet, vente, montant, mention
+ * de TVA, rappel de la renonciation au droit de rétractation et, pour un crédit, son explication.
+ */
+function saleUnlockConfirmationContent({
+  appUrl,
+  evidence,
+  amountCents,
+  currency,
+  accepted,
+  paidAt,
+  checkoutSessionId,
+  outcome,
+}: {
+  appUrl: string;
+  evidence: Record<string, unknown>;
+  amountCents: number | null;
+  currency: string;
+  accepted: { termsVersion: string; termsSha256: string; privacyVersion: string };
+  paidAt: string;
+  checkoutSessionId: string;
+  outcome: SaleUnlockConfirmationOutcome | undefined;
+}): ConfirmationContent {
+  const saleId = stringValue(evidence.sale_id);
+  const saleUrl = saleId ? `${appUrl}/sales/${encodeURIComponent(saleId)}` : null;
+  const termsUrl = `${appUrl}${LEGAL_DOCUMENTS.terms.path}`;
+  const privacyUrl = `${appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
+  const rightsUrl = `${appUrl}/mes-droits`;
+  const subject = "Confirmation de votre achat Immojudis : déblocage d’une vente";
+  const amount =
+    amountCents != null
+      ? `Montant payé : ${formatMoney(amountCents, currency)}, paiement unique sans renouvellement.`
+      : "Montant payé : celui affiché dans Stripe Checkout, paiement unique sans renouvellement.";
+  const waiver =
+    "Exécution immédiate et renonciation : avant le paiement, vous avez demandé l’accès immédiat à l’analyse de la vente et renoncé expressément à votre droit de rétractation, qui ne s’applique plus une fois cet accès fourni (article L. 221-28, 13°, du code de la consommation).";
+  const result =
+    outcome === "unlocked"
+      ? "Résultat : la vente est débloquée sur votre compte."
+      : outcome === "credit"
+        ? "Résultat : cette vente n’était plus débloquable au moment du paiement (retirée de la publication, ou déjà débloquée sur votre compte). Votre paiement n’est pas perdu : un crédit a été ajouté à votre compte. Il permet de débloquer une autre vente de votre choix, depuis sa fiche, sans nouveau paiement."
+        : "Résultat : la vente est débloquée sur votre compte. Si elle n’était plus débloquable au moment du paiement, un crédit a été ajouté à votre compte à la place : il permet de débloquer une autre vente de votre choix, sans nouveau paiement.";
+  const lines = [
+    subject,
+    "",
+    `Offre : ${SALE_UNLOCK_OFFER_LABEL}`,
+    saleUrl ? `Vente : ${saleUrl}` : null,
+    amount,
+    VAT_EXEMPTION_INVOICE_MENTION,
+    result,
+    `Commande confirmée le : ${paidAt}`,
+    `Référence : ${checkoutSessionId}`,
+    `Conditions acceptées : version ${accepted.termsVersion}`,
+    `Politique de confidentialité : version ${accepted.privacyVersion}`,
+    waiver,
+    "",
+    `Conditions générales : ${termsUrl}`,
+    `Confidentialité : ${privacyUrl}`,
+    `Exercer un droit : ${rightsUrl}`,
+    "",
+    `Empreinte SHA-256 des conditions acceptées : ${accepted.termsSha256}`,
+  ].filter((line): line is string => line !== null);
+  const html = emailLayout({
+    title: subject,
+    preheader: `Offre : ${SALE_UNLOCK_OFFER_LABEL}`,
+    content: [
+      emailHeading("Achat Immojudis confirmé"),
+      emailParagraph(
+        [
+          `<strong>${escapeHtml(SALE_UNLOCK_OFFER_LABEL)}</strong>`,
+          saleUrl ? `Vente : ${emailLink(saleUrl, "voir la fiche de la vente")}` : null,
+          escapeHtml(amount),
+          escapeHtml(VAT_EXEMPTION_INVOICE_MENTION),
+        ]
+          .filter(Boolean)
+          .join("<br>"),
+      ),
+      emailParagraph(escapeHtml(result)),
+      emailParagraph(
+        `Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${emailBreakable(checkoutSessionId)}`,
+      ),
+      emailParagraph(
+        `Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}`,
+      ),
+      emailParagraph(escapeHtml(waiver)),
+      emailParagraph(
+        `${emailLink(termsUrl, "Conditions générales")} · ${emailLink(privacyUrl, "Confidentialité")} · ${emailLink(rightsUrl, "Mes droits")}`,
+      ),
+      emailParagraph(
+        `Empreinte SHA-256 des conditions acceptées : ${emailBreakable(accepted.termsSha256)}`,
+        { marginBottom: 0 },
+      ),
+    ].join(""),
+    footer: {},
+  });
+  return { subject, text: lines.join("\n"), html };
 }
 
 export async function retryFailedCommercialConfirmations({

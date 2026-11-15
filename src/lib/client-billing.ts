@@ -1,4 +1,8 @@
 import type { BillingSessionResponse } from "@/lib/billing";
+import {
+  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
+  type SaleUnlockPurchaseRefusalCode,
+} from "@/lib/analysis-offer";
 import { parseLaunchOfferResponse } from "@/lib/launch-offer-response";
 import {
   OFFER_OPENING_CONSENT_VERSION,
@@ -18,6 +22,13 @@ export type BillingOfferResponse = {
   trialDays: 7;
   trialAvailable?: boolean;
   label: string;
+  /** Achat du déblocage d'une vente à l'unité : ouvert ou non, libellé (« 19 € ») et montant. */
+  saleUnlock: { open: boolean; label: string; amountCents: number };
+  /**
+   * Compte connecté : montant des achats à l'unité qui serait déduit du premier mois d'abonnement
+   * Analyse s'il souscrivait maintenant (0 sinon, et toujours 0 pour un visiteur).
+   */
+  firstMonthDeductionCents: number;
 };
 
 export async function fetchBillingOffer(): Promise<BillingOfferResponse> {
@@ -69,6 +80,58 @@ export async function startAnalyseCheckout(args: {
   });
 
   return readJson<BillingSessionResponse>(response);
+}
+
+/**
+ * Consentement de l'achat d'une vente à l'unité : celui de l'abonnement, plus la renonciation
+ * expresse au droit de rétractation (contenu numérique fourni immédiatement).
+ */
+export type SaleUnlockCheckoutConsent = {
+  termsAccepted: true;
+  termsVersion: string;
+  privacyVersion: string;
+  paymentObligationAcknowledged: true;
+  immediatePerformanceRequested: true;
+  withdrawalInformationAcknowledged: true;
+  withdrawalWaiverAcknowledged: true;
+};
+
+/** Corps du 409 de `POST /api/billing/sale-unlock-checkout` : la base refuse l'achat. */
+export type SaleUnlockCheckoutRefusal = { error: string; code: SaleUnlockPurchaseRefusalCode };
+
+export { SALE_UNLOCK_PURCHASE_REFUSAL_CODES, type SaleUnlockPurchaseRefusalCode };
+
+/**
+ * Ouvre la session de paiement du déblocage de la vente ; rend `{ url }` (page Stripe Checkout). En
+ * échec, l'erreur levée porte `status` et `code` : 409 avec un code de
+ * `SALE_UNLOCK_PURCHASE_REFUSAL_CODES` (voir `saleUnlockCheckoutRefusalCode`), 503 quand l'achat
+ * n'est pas ouvert. Au retour, la fiche de la vente porte `?unlock_checkout=success` ou
+ * `=cancelled` et ne fait que relire l'état : le déblocage vient du webhook Stripe.
+ */
+export async function startSaleUnlockCheckout(args: {
+  saleId: string;
+  consent: SaleUnlockCheckoutConsent;
+}): Promise<BillingSessionResponse> {
+  const response = await fetch("/api/billing/sale-unlock-checkout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify({ saleId: args.saleId, consent: args.consent }),
+  });
+
+  return readJson<BillingSessionResponse>(response);
+}
+
+/** Code de refus d'une erreur levée par `startSaleUnlockCheckout`, ou `null`. */
+export function saleUnlockCheckoutRefusalCode(
+  error: unknown,
+): SaleUnlockPurchaseRefusalCode | null {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  return status === 409 && (SALE_UNLOCK_PURCHASE_REFUSAL_CODES as readonly unknown[]).includes(code)
+    ? (code as SaleUnlockPurchaseRefusalCode)
+    : null;
 }
 
 export async function openBillingPortal(): Promise<BillingSessionResponse> {

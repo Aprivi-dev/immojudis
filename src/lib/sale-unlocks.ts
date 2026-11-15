@@ -1,6 +1,10 @@
 import { ceilingTermText, ceilingTermWithScopeText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { launchOfferText } from "@/lib/launch-offer";
+import {
+  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
+  type SaleUnlockPurchaseRefusalCode,
+} from "@/lib/analysis-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 /**
@@ -61,7 +65,12 @@ export type SaleUnlockStatus = {
    * n'était plus débloquable au paiement. Absent d'une base pas encore migrée : zéro.
    */
   credits?: number;
+  /** Comment cette vente a été débloquée ; absent ou `null` : inconnu, ou vente non débloquée. */
+  source?: SaleUnlockSource | null;
 };
+
+/** Ce qui a ouvert une vente : le déblocage du compte gratuit, un achat à l'unité, un crédit. */
+export type SaleUnlockSource = "free" | "purchase" | "credit";
 
 export type SaleUnlockResult = SaleUnlockStatus & {
   /** La vente était déjà débloquée : rien n'a été consommé. */
@@ -80,6 +89,8 @@ export type UnlockedSaleSummary = {
   startingPriceEur: number | null;
   saleDate: string | null;
   status: string | null;
+  /** Comment la vente a été débloquée, quand le serveur le sait. */
+  source?: SaleUnlockSource | null;
 };
 
 /** Réponse de `GET /api/sale-unlocks` : le déblocage du compte et les ventes débloquées en ligne. */
@@ -193,4 +204,196 @@ export function unlockQuotaReachedText({ analysisOpen = false }: { analysisOpen?
 /** « Déblocage du compte gratuit : utilisé » ou « disponible » (Mon compte, ventes débloquées). */
 export function unlockUsageLine(status: Pick<SaleUnlockStatus, "remaining">): string {
   return `Déblocage du compte gratuit : ${(status.remaining ?? 0) > 0 ? "disponible" : "utilisé"}`;
+}
+
+/** « 1 crédit de déblocage disponible », « 2 crédits… » ; `null` sans crédit (Mon compte). */
+export function unlockCreditsLine(status: Pick<SaleUnlockStatus, "credits">): string | null {
+  const credits = status.credits ?? 0;
+  if (credits <= 0) return null;
+  return credits > 1
+    ? `${credits} crédits de déblocage disponibles`
+    : "1 crédit de déblocage disponible";
+}
+
+/** Comment une vente de « Mes ventes débloquées » a été ouverte ; `null` quand ce n'est pas connu. */
+export function unlockSourceLabel(source: SaleUnlockSource | null | undefined): string | null {
+  if (source === "free") return "Débloquée avec le compte gratuit";
+  if (source === "purchase") return "Achetée";
+  if (source === "credit") return "Débloquée avec un crédit";
+  return null;
+}
+
+/*
+ * Achat d'une vente à l'unité (décision du propriétaire du 15/11/2026) : un compte gratuit dont le
+ * déblocage a servi peut acheter le déblocage d'une autre vente. Rien ne le propose tant que l'achat
+ * n'est pas ouvert (`saleUnlock.open` de `GET /api/billing/offer`). Aucun prix n'est écrit ici : les
+ * montants viennent de l'offre lue (`label`, `amountCents`) et du libellé de l'abonnement.
+ */
+
+/** L'achat à l'unité, tel que `GET /api/billing/offer` le décrit. */
+export type SaleUnlockPurchaseOffer = {
+  open: boolean;
+  /** Prix affiché, « 19 € ». */
+  label: string;
+  amountCents: number;
+};
+
+/** Ce que la fiche dit pour chaque refus (409) de `POST /api/billing/sale-unlock-checkout`. */
+export const SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS: Record<SaleUnlockPurchaseRefusalCode, string> = {
+  analysis_access: "Votre compte a déjà accès à toutes les ventes : il n’y a rien à acheter.",
+  free_unlock_available:
+    "Votre compte gratuit peut encore débloquer une vente : utilisez-le pour celle-ci, sans paiement.",
+  credit_available:
+    "Vous avez un crédit de déblocage : utilisez-le pour cette vente, sans paiement.",
+  already_unlocked: "Cette vente est déjà débloquée pour votre compte : la fiche se recharge.",
+  sale_not_unlockable: SALE_NOT_UNLOCKABLE_TEXT,
+};
+
+export function isSaleUnlockPurchaseRefusalCode(
+  value: unknown,
+): value is SaleUnlockPurchaseRefusalCode {
+  return (SALE_UNLOCK_PURCHASE_REFUSAL_CODES as readonly unknown[]).includes(value);
+}
+
+/** Le titre de la carte quand il reste un crédit (vente achetée qui n'a pas eu lieu). */
+export const UNLOCK_CREDIT_TITLE = "Vous avez un crédit de déblocage";
+
+export const UNLOCK_CREDIT_TEXT =
+  "Une vente que vous aviez achetée n’a pas eu lieu ou n’était plus disponible : son déblocage vous est rendu.";
+
+export const UNLOCK_CREDIT_CALL_TO_ACTION_LABEL = "Débloquer cette vente avec mon crédit";
+
+/** Dit avant le clic que le crédit est consommé, et quand il est rendu. */
+export const UNLOCK_CREDIT_CONFIRMATION_TEXT =
+  "Ce déblocage utilise votre crédit : il ne servira plus pour une autre vente. Il vous est rendu de nouveau si cette vente est retirée avant d’avoir lieu.";
+
+export const SALE_PURCHASE_CHOICE_TEXT =
+  "Paiement unique. L’analyse complète de cette vente, tant qu’elle est en ligne (24 mois au plus).";
+
+/** Seconde case du recueil du consentement, avant le paiement d'une vente à l'unité. */
+export const SALE_PURCHASE_IMMEDIATE_ACCESS_TEXT =
+  "Je demande à accéder immédiatement à l’analyse de cette vente et je reconnais perdre mon droit de rétractation une fois l’accès fourni.";
+
+/** Rappel sous les cases : une vente retirée donne un crédit, jamais un remboursement. */
+export const SALE_PURCHASE_CREDIT_REMINDER =
+  "Si la vente est retirée avant d’avoir lieu, votre achat devient un crédit pour débloquer une autre vente. Il n’est pas remboursé.";
+
+/** Pourquoi le bouton de paiement reste désactivé. */
+export const SALE_PURCHASE_CONSENT_MISSING_TEXT = "Cochez les deux cases pour accéder au paiement.";
+
+/** Retour du paiement, tant que le serveur n'a pas confirmé le déblocage. */
+export const SALE_PURCHASE_PENDING_TEXT = "Paiement reçu. L’ouverture de la vente est en cours…";
+
+/** Retour du paiement, déblocage toujours pas confirmé après les relectures. */
+export const SALE_PURCHASE_DELAYED_TEXT =
+  "Paiement reçu, mais l’ouverture de la vente n’est pas encore confirmée. Rechargez la page dans quelques minutes. Si la vente n’est toujours pas ouverte, écrivez-nous depuis la page Contact en indiquant cette vente.";
+
+/** Un montant en centimes, écrit comme un prix : « 19 € », « 40,50 € ». */
+export function formatEuroCents(cents: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+/**
+ * Règle de vérité des phrases qui rapprochent l'abonnement de trois ventes à l'unité : trois achats
+ * coûtent au moins le prix d'un mois d'abonnement, à 5 % près. Fausse dès qu'un montant manque.
+ */
+export function threeSalesMatchSubscription({
+  unitCents,
+  subscriptionCents,
+}: {
+  unitCents: number;
+  subscriptionCents: number | null;
+}): boolean {
+  if (!(unitCents > 0) || subscriptionCents == null || !(subscriptionCents > 0)) return false;
+  return 3 * unitCents >= subscriptionCents * 0.95;
+}
+
+/** Les textes des deux choix de la fiche (abonnement, puis cette vente). */
+export type SaleUnlockPurchaseChoiceTexts = {
+  subscriptionTitle: string;
+  subscriptionText: string;
+  /** Déduction des achats des 30 derniers jours ; `null` sans achat à déduire. */
+  subscriptionDeduction: string | null;
+  saleTitle: string;
+  saleText: string;
+  /** Pour un compte qui n'a rien à déduire : ce que deviendrait cet achat. */
+  saleDeduction: string | null;
+  saleCallToAction: string;
+};
+
+/**
+ * Les deux choix proposés quand le déblocage du compte gratuit a servi et que l'achat est ouvert.
+ * `subscriptionCents` : le prix mensuel lu dans le libellé de l'abonnement (`null` s'il ne s'y lit
+ * pas : le libellé est repris tel quel et rien n'est comparé). `firstMonthDeductionCents` : ce que
+ * le serveur déduirait du premier mois (achats à l'unité des 30 derniers jours).
+ */
+export function saleUnlockPurchaseChoiceTexts({
+  unit,
+  subscriptionLabel,
+  subscriptionCents,
+  firstMonthDeductionCents,
+}: {
+  unit: Pick<SaleUnlockPurchaseOffer, "label" | "amountCents">;
+  subscriptionLabel: string;
+  subscriptionCents: number | null;
+  firstMonthDeductionCents: number;
+}): SaleUnlockPurchaseChoiceTexts {
+  const monthly = subscriptionCents != null ? formatEuroCents(subscriptionCents) : null;
+  const deduction = Math.max(0, firstMonthDeductionCents);
+  return {
+    subscriptionTitle: `Toutes les ventes pendant un mois : ${monthly ?? subscriptionLabel}`,
+    subscriptionText: threeSalesMatchSubscription({
+      unitCents: unit.amountCents,
+      subscriptionCents,
+    })
+      ? "Sans engagement, soit le prix de trois ventes à l’unité."
+      : "Sans engagement.",
+    subscriptionDeduction:
+      deduction > 0 && subscriptionCents != null && monthly
+        ? `Vos achats à l’unité des 30 derniers jours sont déduits : ${formatEuroCents(
+            Math.max(0, subscriptionCents - deduction),
+          )} le premier mois, puis ${monthly} par mois.`
+        : null,
+    saleTitle: `Cette vente : ${unit.label}`,
+    saleText: SALE_PURCHASE_CHOICE_TEXT,
+    saleDeduction:
+      deduction === 0
+        ? `Si vous vous abonnez dans les 30 jours, ces ${unit.label} sont déduits de votre premier mois.`
+        : null,
+    saleCallToAction: salePurchaseCallToActionLabel(unit.label),
+  };
+}
+
+/** Le bouton qui ouvre le recueil du consentement, et le lien des aperçus vers la carte. */
+export function salePurchaseCallToActionLabel(label: string): string {
+  return `Acheter cette vente : ${label}`;
+}
+
+/**
+ * Sous la carte Découverte de /offres et dans le comparatif, seulement quand l'achat est ouvert.
+ */
+export function salePurchaseOfferLine(label: string): string {
+  return `Vente supplémentaire à l’unité : ${label}`;
+}
+
+/**
+ * Sous les cartes de /offres, achat ouvert. La seconde phrase suit la même règle de vérité que la
+ * fiche (`threeSalesMatchSubscription`).
+ */
+export function salePurchaseOffersNote({
+  unitCents,
+  subscriptionCents,
+}: {
+  unitCents: number;
+  subscriptionCents: number | null;
+}): string {
+  const first = "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité.";
+  return threeSalesMatchSubscription({ unitCents, subscriptionCents })
+    ? `${first} À partir de trois ventes, l’abonnement revient moins cher.`
+    : first;
 }
