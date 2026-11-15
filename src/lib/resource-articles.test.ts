@@ -252,9 +252,7 @@ describe("article sur l'enchère plafond", () => {
     expect(article.intro.join(" ")).toContain("on parle d’offre plafond");
     expect(text).toContain("Avec le compte gratuit, vous la débloquez pour une vente ;");
     expect(text).toContain("offre Analyse");
-    expect(text).toContain(
-      "Pendant les 7 jours d’essai gratuit qui suivent la confirmation de l’adresse email",
-    );
+    expect(text).not.toContain("essai gratuit");
     expect(text).not.toMatch(
       /\d{1,2} (janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)/,
     );
