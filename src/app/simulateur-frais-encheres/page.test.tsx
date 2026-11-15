@@ -49,7 +49,9 @@ describe("page /simulateur-frais-encheres", () => {
 
   it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {
     const html = renderToString(<Page />).replaceAll("<!-- -->", "");
-    expect(html).toContain("sur une vente au tribunal, celle que vous débloquez, avec le compte gratuit");
+    expect(html).toContain(
+      "sur une vente au tribunal, celle que vous débloquez, avec le compte gratuit",
+    );
     expect(html).toContain("toutes les ventes au tribunal avec l’offre Analyse");
     expect(html).not.toContain("se fixe avec l’offre Analyse");
   });

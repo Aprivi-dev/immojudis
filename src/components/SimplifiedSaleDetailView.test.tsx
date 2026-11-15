@@ -1496,7 +1496,9 @@ describe("the free unlock on the sale page", () => {
     expect(
       screen.getByText("Votre compte gratuit comprend le déblocage d’une vente : choisissez-la."),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeTruthy();
   });
 
   it("opens the calculation tab once the unlock succeeded, and keeps the confirmation", async () => {
@@ -1506,7 +1508,9 @@ describe("the free unlock on the sale page", () => {
     renderFree(unlockStatus());
     expect(sectionCurrent("Aperçu")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     await waitFor(() => expect(sectionCurrent("Prix et plafond")).toBe("true"));
@@ -1555,7 +1559,9 @@ describe("the free unlock on the sale page", () => {
 
   it("shows nothing about unlocking before the status is known, or to a visitor", () => {
     const pending = renderFree(null);
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     pending.unmount();
 
     mocks.authUser = null;
@@ -1569,13 +1575,17 @@ describe("the free unlock on the sale page", () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
   });
 
   it("does not offer the unlock to an Analyse account", () => {
     mocks.authUser = { id: "analysis-account" };
     renderDetail("analysis", undefined, false);
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     expect(screen.queryByText("Cette vente est débloquée")).toBeNull();
     expect(screen.queryByText("Votre enchère plafond est débloquée")).toBeNull();
   });
@@ -1585,7 +1595,9 @@ describe("the free unlock on the sale page", () => {
 
     // A court sale with an open fee regime: the result first.
     expect(screen.getByText("Votre enchère plafond est débloquée")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     expect(mocks.fetchMarket).toHaveBeenCalledWith({
       saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     });

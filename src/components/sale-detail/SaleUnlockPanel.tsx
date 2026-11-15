@@ -312,9 +312,7 @@ export function SaleUnlockPanel({
             aria-label="Confirmer le déblocage"
             className="mt-4 rounded-lg border border-gold/40 bg-surface-tint p-4"
           >
-            <p className="text-sm leading-relaxed text-brand-navy">
-              {UNLOCK_CONFIRMATION_TEXT}
-            </p>
+            <p className="text-sm leading-relaxed text-brand-navy">{UNLOCK_CONFIRMATION_TEXT}</p>
             {gap ? (
               <p
                 data-testid="unlock-ceiling-gap"
