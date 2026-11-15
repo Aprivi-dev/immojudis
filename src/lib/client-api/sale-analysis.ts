@@ -9,7 +9,8 @@ import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
 import type { AuctionScenariosResponse, CourtAuctionSummary } from "@/lib/auction-scenarios";
-import type { DocumentReadingResponse } from "@/lib/document-reading";
+import type { DocumentReadingResponse, DocumentReadingTheme } from "@/lib/document-reading";
+import type { PublicMarketGapBand } from "@/lib/market-gap-band";
 import type {
   SaleUnlockQuotaReachedResponse,
   SaleUnlockResult,
@@ -55,8 +56,42 @@ export function fetchSaleFactReliabilities(saleId: string): Promise<SaleFactReli
   );
 }
 
-export function fetchValuePreview(saleId: string): Promise<ValuePreview> {
-  return apiRequest<ValuePreview>(`/api/sales/${encodeURIComponent(saleId)}/value-preview`);
+/*
+ * PROVISOIRE (lot 2, zone Z3) : les trois formes ci-dessous recopient les contrats que la zone Z2
+ * livre avec ses routes. `ValuePreviewResponse` sera exportée par `@/lib/value-preview`, les formes
+ * réduites par `@/lib/sale-passages` et `@/lib/document-reading` : à la fusion, ces types locaux
+ * cèdent la place aux leurs.
+ */
+/** `GET /api/sales/[id]/value-preview` : l'aperçu entier (vente ouverte) ou le niveau d'écart seul. */
+export type ValuePreviewResponse =
+  | ({ access: "full" } & ValuePreview)
+  | {
+      access: "teaser";
+      band: PublicMarketGapBand | null;
+      comparables: { count: number; radiusM: number } | null;
+    };
+/** `GET /api/sales/[id]/passages`, compte gratuit sur une vente non débloquée. */
+export type SalePassagesTeaser = {
+  access: "teaser";
+  summary: { previousPassageCount: number; postponementCount: number; priceDropped: boolean };
+};
+export type SalePassagesReadResponse =
+  | Extract<SalePassagesResponse, { access: "full" }>
+  | SalePassagesTeaser;
+/** `GET /api/sales/[id]/document-reading`, compte gratuit sur une vente non débloquée. */
+export type DocumentReadingTeaser = {
+  access: "teaser";
+  pointCount: number;
+  alertCount: number;
+  occupationCount: number;
+  themes: DocumentReadingTheme[];
+};
+export type DocumentReadingReadResponse =
+  | Extract<DocumentReadingResponse, { access: "full" }>
+  | DocumentReadingTeaser;
+
+export function fetchValuePreview(saleId: string): Promise<ValuePreviewResponse> {
+  return apiRequest<ValuePreviewResponse>(`/api/sales/${encodeURIComponent(saleId)}/value-preview`);
 }
 
 /** Where the account stands this month and whether this sale is unlocked. Consumes nothing. */
@@ -102,14 +137,14 @@ export async function unlockSaleRequest(saleId: string): Promise<SaleUnlockResul
   return (await readJson<{ result: SaleUnlockResult }>(response)).result;
 }
 
-export function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
-  return apiRequest<DocumentReadingResponse>(
+export function fetchDocumentReading(saleId: string): Promise<DocumentReadingReadResponse> {
+  return apiRequest<DocumentReadingReadResponse>(
     `/api/sales/${encodeURIComponent(saleId)}/document-reading`,
   );
 }
 
-export function fetchSalePassages(saleId: string): Promise<SalePassagesResponse> {
-  return apiRequest<SalePassagesResponse>(`/api/sales/${encodeURIComponent(saleId)}/passages`);
+export function fetchSalePassages(saleId: string): Promise<SalePassagesReadResponse> {
+  return apiRequest<SalePassagesReadResponse>(`/api/sales/${encodeURIComponent(saleId)}/passages`);
 }
 
 export function fetchAuctionScenarios(saleId: string): Promise<AuctionScenariosResponse> {

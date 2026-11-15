@@ -28,7 +28,7 @@ function renderSection(startingPrice: number | null) {
   const props: ComponentProps<typeof SaleDetailWorksFinancingSection> = {
     saleId: EXAMPLE_SALE.id,
     displaySale: { ...EXAMPLE_SALE, starting_price_eur: startingPrice },
-    access: "analysis",
+    fullData: true,
     force: true,
     inputsToConfirm: false,
     retainedWorks: 10_000,

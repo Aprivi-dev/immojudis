@@ -5,8 +5,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Terme } from "@/components/ceiling/Terme";
 import type { CeilingWording } from "@/components/sale-detail/SaleListing";
-import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
+import { isMarketGapPosition } from "@/components/sale-detail/MarketReference";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,9 +17,9 @@ import {
 } from "@/lib/bid-ceiling-gaps";
 import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { fetchValuePreview } from "@/lib/client-api";
-import { formatPrice, formatStartingPrice } from "@/lib/format";
+import { formatNumber, formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
-import { describeMarketGap } from "@/lib/market-gap";
+import { MARKET_GAP_BAND_LABELS } from "@/lib/market-gap-band";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
@@ -224,18 +224,19 @@ export function DiscoveryDecisionPanel({
     feeRegimeKeysForVenue(getSaleProcedure(sale).venueType, openFeeRegimes),
   );
   const { user, loading: authLoading } = useAuth();
-  // The value route requires an account: a visitor never gets an answer from it.
+  // The value route requires an account: a visitor never gets an answer from it. A sale the free
+  // account has not unlocked gets the level of the gap only, never the range nor a percentage.
   const preview = useQuery({
-    queryKey: queryKeys.valuePreview(sale.id),
+    queryKey: queryKeys.valuePreview(sale.id, "discovery"),
     queryFn: () => fetchValuePreview(sale.id),
     enabled: Boolean(user),
     staleTime: 60 * 60_000,
     retry: false,
   });
-  const value = user && preview.data?.available ? preview.data : null;
+  const teaser = user && preview.data?.access === "teaser" ? preview.data : null;
+  const band = teaser?.band ?? null;
+  const comparables = teaser?.comparables?.count ? teaser.comparables : null;
   const salePath = saleDetailPath(sale.id);
-  // `describeMarketGap` is also the guard: an implausible gap never reaches the page as a %.
-  const gapSentence = value ? describeMarketGap(value) : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
@@ -244,10 +245,10 @@ export function DiscoveryDecisionPanel({
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
-          <dt>Valeur estimée (fourchette indicative)</dt>
-          <dd className={value ? undefined : panelStyles.textValue}>
-            {value ? (
-              `${formatPrice(value.lowEur)} – ${formatPrice(value.highEur)}`
+          <dt>Repère marché</dt>
+          <dd className={panelStyles.textValue}>
+            {band ? (
+              MARKET_GAP_BAND_LABELS[band]
             ) : !user ? (
               authLoading ? (
                 "Calcul…"
@@ -256,7 +257,7 @@ export function DiscoveryDecisionPanel({
                   href={loginPathWithRedirect(salePath, { reason: "fiche" })}
                   className={panelStyles.valueLink}
                 >
-                  Créez un compte gratuit pour voir la fourchette de valeur
+                  Créez un compte gratuit pour voir le repère marché
                 </Link>
               )
             ) : preview.isLoading ? (
@@ -282,35 +283,35 @@ export function DiscoveryDecisionPanel({
           </dd>
         </div>
       </dl>
-      {gapSentence ? (
+      {band && isMarketGapPosition(band) ? (
         <>
           <p className={panelStyles.surfaceCaution} role="status">
-            {gapSentence}
-            {value?.gapWithheld
-              ? null
-              : ` Reste à savoir jusqu’où ${ceilingTerms == null || ceilingTerms.ceilingTerm === "enchère plafond" ? "enchérir" : "aller"} une fois les frais, les travaux et la libération du bien comptés : c’est le calcul de ${ceilingTerms?.ceilingTermWithArticle ?? "l’enchère plafond"}.`}
+            {`Reste à savoir jusqu’où ${ceilingTerms == null || ceilingTerms.ceilingTerm === "enchère plafond" ? "enchérir" : "aller"} une fois les frais, les travaux et la libération du bien comptés : c’est le calcul de ${ceilingTerms?.ceilingTermWithArticle ?? "l’enchère plafond"}.`}
           </p>
-          {value?.gapWithheld ? null : (
-            <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
-          )}
+          <SaleSignalFeedback saleId={sale.id} signal="market_gap_band" />
         </>
       ) : null}
-      <PremiumFeaturePreview
-        title={
-          ceilingTerms
-            ? `Les comparables et les travaux avec l’offre Analyse ; ${ceilingTerms.ceilingTermWithArticle} aussi en débloquant cette vente`
-            : "Les comparables et les travaux avec l’offre Analyse"
-        }
-        description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
-        labels={[
-          ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)",
-          "Ventes comparables",
-          "Travaux et frais",
-        ]}
-        unlockOffer={ceilingTerms != null}
-      />
+      {comparables ? (
+        <div className={panelStyles.estimationFoot} data-testid="comparables-teaser">
+          <p>
+            <strong>{comparablesTeaserLine(comparables)}</strong>
+          </p>
+          <div>
+            <UnlockCallToAction />
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
+}
+
+/**
+ * Ce qu'un compte gratuit lit des ventes comparables d'une vente qu'il n'a pas débloquée : leur nombre
+ * et le rayon de recherche, sans aucune vente ni montant.
+ */
+function comparablesTeaserLine({ count, radiusM }: { count: number; radiusM: number }): string {
+  const s = count > 1 ? "s" : "";
+  return `${formatNumber(count)} vente${s} comparable${s} trouvée${s} dans un rayon de ${formatNumber(radiusM)} m`;
 }
 
 /**

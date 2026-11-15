@@ -179,7 +179,7 @@ describe("POST /api/market-estimate sale readiness", () => {
       });
     });
 
-    it("sends an unlocked sale only what the bid ceiling reads, through the unlocked view", async () => {
+    it("sends an unlocked sale the whole estimate too, read through the unlocked view", async () => {
       const { from } = authWithVisibleSale(true);
       mocks.entitlement.mockResolvedValue(UNLOCK);
 
@@ -189,25 +189,13 @@ describe("POST /api/market-estimate sale readiness", () => {
       expect(response.status).toBe(200);
       expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
       expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
-      // Exact shape (toEqual): the real count of sales, the effective sample size the ceiling
-      // reads for fragility, the engine and the public gate; nothing else of the estimate.
-      expect(body.estimate).toEqual({
-        source: "DVF normalisé",
-        engineKind: "comparable_ensemble",
-        sourceUpdatedAt: "2026-09-01T00:00:00.000Z",
-        subjectSurfaceEstimated: false,
-        estimatedValueEur: 210_000,
-        actionable: true,
-        qualityLabel: "correcte",
-        sampleSize: 14,
-        effectiveSampleSize: 9,
-        medianPricePerM2: 3_500,
-        p75PricePerM2: 3_900,
-        publicGatePassed: false,
-      });
-      expect(body.computedAt).toBe("2026-10-01T00:00:00.000Z");
-      expect(JSON.stringify(body)).not.toMatch(
-        /recentTransactions|addressHistory|p10PricePerM2|p90PricePerM2|HighEur|LowEur|commune/,
+      // The unlock of this sale opens `property.valueEstimate`: range, quartiles and comparables.
+      expect(body.estimate).toEqual(estimate);
+      expect(mocks.entitlement).toHaveBeenCalledWith(
+        expect.anything(),
+        "property.bidCeiling",
+        expect.any(String),
+        { saleId },
       );
     });
 

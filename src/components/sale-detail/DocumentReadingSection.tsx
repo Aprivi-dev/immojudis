@@ -2,6 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchDocumentReading } from "@/lib/client-api";
+import type {
+  DocumentReadingReadResponse,
+  DocumentReadingTeaser,
+} from "@/lib/client-api/sale-analysis";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import {
@@ -10,13 +14,25 @@ import {
   documentPageHref,
   groupReadingPoints,
   readingHighlights,
-  type DocumentReadingResponse,
 } from "@/lib/document-reading";
 import styles from "./DocumentReadingSection.module.css";
 import { UnlockCallToAction } from "./UnlockCallToAction";
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
+}
+
+/**
+ * Ce qu'un compte gratuit lit de la lecture des pièces d'une vente qu'il n'a pas débloquée : combien
+ * de points, jamais lesquels (« 12 points relevés dans les pièces, dont 3 à vérifier et 2 sur
+ * l’occupation »). À n'appeler qu'avec au moins un point.
+ */
+export function readingTeaserLine(teaser: DocumentReadingTeaser): string {
+  const among = [
+    teaser.alertCount > 0 ? `${teaser.alertCount} à vérifier` : null,
+    teaser.occupationCount > 0 ? `${teaser.occupationCount} sur l’occupation` : null,
+  ].filter((part): part is string => part != null);
+  return `${plural(teaser.pointCount, "point")} relevé${teaser.pointCount > 1 ? "s" : ""} dans les pièces${among.length ? `, dont ${among.join(" et ")}` : ""}`;
 }
 
 type ReadingQueryArgs = {
@@ -28,7 +44,7 @@ type ReadingQueryArgs = {
 
 /** Une seule lecture par vente et par compte, partagée par l'encart de tête et la section des pièces. */
 function useDocumentReading({ saleId, enabled, access, userKey }: ReadingQueryArgs) {
-  return useQuery<DocumentReadingResponse>({
+  return useQuery<DocumentReadingReadResponse>({
     queryKey: queryKeys.documentReading(saleId, access, userKey),
     queryFn: () => fetchDocumentReading(saleId),
     enabled,
@@ -61,8 +77,7 @@ export function DocumentReadingHighlights({
       <aside className={styles.highlights} aria-labelledby="reading-highlights-title">
         <h3 id="reading-highlights-title">Ce que disent les pièces</h3>
         <p className={styles.lead}>
-          {plural(data.pointCount, "point")} relevé{data.pointCount > 1 ? "s" : ""} dans les pièces
-          {data.alertCount ? `, dont ${data.alertCount} à vérifier en priorité` : ""}.{" "}
+          {readingTeaserLine(data)}.{" "}
           <a href="#pieces" className={styles.cta}>
             Voir la lecture des pièces
           </a>
@@ -159,8 +174,7 @@ export function DocumentReadingSection({
       <section id="lecture-pieces" className={styles.card} aria-labelledby="document-reading-title">
         <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
         <p className={styles.lead}>
-          {plural(data.pointCount, "point")} relevé{data.pointCount > 1 ? "s" : ""} dans les pièces
-          {data.alertCount ? `, dont ${data.alertCount} à vérifier en priorité` : ""}
+          {readingTeaserLine(data)}
           {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage et la page
           de la pièce, avec l’offre Analyse ou en débloquant cette vente.
         </p>

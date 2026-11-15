@@ -91,11 +91,13 @@ export type SaleUnlockQuotaReachedResponse = {
 };
 
 /**
- * Ce qu'un déblocage ouvre sur cette vente, en une phrase. Le montant plafond n'existe que pour une
- * vente dont un régime de frais est ouvert (`ceiling` : son libellé avec l'article, « l’enchère
- * plafond » ou « l’offre plafond », ou `null` quand la vente n'en a pas) et les statistiques du
- * tribunal tant que leur drapeau est ouvert : on ne promet jamais un élément que la fiche
- * n'affiche pas.
+ * Ce qu'un déblocage ouvre sur cette vente, en une phrase : l'analyse complète de la vente,
+ * c'est-à-dire tout ce que l'offre Analyse donne sur une vente (décision du propriétaire du
+ * 15/11/2026). La liste est entre parenthèses pour se glisser après « Ce déblocage ouvre » comme
+ * après « Pour cette vente seulement : ». Le montant plafond n'existe que pour une vente dont un régime de frais est ouvert
+ * (`ceiling` : son libellé avec l'article, « l’enchère plafond » ou « l’offre plafond », ou `null`
+ * quand la vente n'en a pas) et les statistiques du tribunal tant que leur drapeau est ouvert : on ne
+ * promet jamais un élément que la fiche n'affiche pas.
  */
 export function unlockedItemsText({
   ceiling,
@@ -110,13 +112,21 @@ export function unlockedItemsText({
   const items = [
     ...(ceiling ? [ceiling] : []),
     ...(pepite ? ["le détail de la pépite"] : []),
+    "l’estimation détaillée et les ventes comparables",
     "la lecture des pièces",
     "l’historique de la vente",
     ...(statistics ? ["les statistiques du tribunal"] : []),
+    "l’urbanisme et le cadastre",
     "les pièces du dossier",
+    "le rapport PDF",
   ];
-  return `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}`;
+  return `l’analyse complète de la vente (${items.slice(0, -1).join(", ")} et ${items[items.length - 1]})`;
 }
+
+/** Ce qui entoure le nom du plafond dans les deux textes courts ci-dessous. */
+const UNLOCK_HIGHLIGHTS_PREFIX = "l’analyse complète de la vente : ";
+const UNLOCK_HIGHLIGHTS_REST =
+  ", estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente";
 
 /**
  * Les éléments que l'on cite en un mot pour présenter le compte gratuit (accueil). Une version
@@ -127,7 +137,7 @@ export function unlockedItemsText({
  * (tous ceux qui sont définis par défaut).
  */
 export function unlockHighlightsText(open?: readonly FeeRegimeKey[]): string {
-  return `${ceilingTermWithScopeText(open)}, lecture des pièces, historique, selon la vente`;
+  return `${UNLOCK_HIGHLIGHTS_PREFIX}${ceilingTermWithScopeText(open)}${UNLOCK_HIGHLIGHTS_REST}`;
 }
 
 /**
@@ -135,7 +145,7 @@ export function unlockHighlightsText(open?: readonly FeeRegimeKey[]): string {
  * parenthèses (onboarding).
  */
 export function unlockHighlightsInlineText(open?: readonly FeeRegimeKey[]): string {
-  return `${ceilingTermText(open)}, lecture des pièces, historique, selon la vente`;
+  return `${UNLOCK_HIGHLIGHTS_PREFIX}${ceilingTermText(open)}${UNLOCK_HIGHLIGHTS_REST}`;
 }
 
 // Ces deux textes sont ceux de `unlockHighlightsText()` et `unlockHighlightsInlineText()` pour les
@@ -143,9 +153,9 @@ export function unlockHighlightsInlineText(open?: readonly FeeRegimeKey[]): stri
 // les pages qui les citent (accueil, connexion, accueil du compte, favoris) n'embarquent pas le
 // calcul des termes ; `sale-unlocks.test.ts` vérifie qu'ils restent égaux à ce calcul.
 export const UNLOCK_HIGHLIGHTS_TEXT =
-  "enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente";
+  "l’analyse complète de la vente : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente";
 export const UNLOCK_HIGHLIGHTS_INLINE_TEXT =
-  "enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente";
+  "l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente";
 
 /** « Cette vente ne peut pas être débloquée pour le moment. » */
 export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloquée pour le moment.";

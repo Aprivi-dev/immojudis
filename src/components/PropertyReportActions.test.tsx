@@ -191,3 +191,51 @@ describe("report export from the listing", () => {
     expect(mocks.exportPdf).not.toHaveBeenCalled();
   });
 });
+
+describe("report of a sale unlocked by the free account", () => {
+  const freePlan = {
+    label: "Découverte",
+    limits: { pdfExportsPerMonth: 0, reportEditing: "none" },
+  };
+  const sharedReport = {
+    id: "report-1",
+    title: "Rapport",
+    user_notes: null,
+    updated_at: "2026-11-15T08:00:00Z",
+    share_enabled: true,
+    export_count: 0,
+    last_exported_at: null,
+  };
+
+  it("saves and exports the report, without the monthly quota of the offer nor any sharing", async () => {
+    mocks.fetchReports.mockResolvedValue({ reports: [sharedReport], plan: freePlan });
+    renderActions({ compact: false, unlockedSale: true });
+
+    expect(await screen.findByRole("button", { name: "Export PDF" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Export PDF \(/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Partager|Copier le lien/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Désactiver" })).toBeNull();
+    expect(document.body.textContent).not.toContain("Partage");
+  });
+
+  it("offers no sharing in the compact actions of the sale page either", async () => {
+    mocks.fetchReports.mockResolvedValue({ reports: [sharedReport], plan: freePlan });
+    renderActions({ unlockedSale: true });
+
+    await waitFor(() => expect(mocks.fetchReports).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Export PDF" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Sauvegarder|Rapport sauvegardé/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Partager le rapport|Copier le lien/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Désactiver le lien du rapport" })).toBeNull();
+  });
+
+  it("keeps the quota of the offer on the label for a subscriber", async () => {
+    mocks.fetchReports.mockResolvedValue({
+      reports: [],
+      plan: { label: "Analyse", limits: { pdfExportsPerMonth: 30, reportEditing: "full" } },
+    });
+    renderActions({ compact: false });
+    expect(await screen.findByRole("button", { name: "Export PDF (30/mois)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Partager" })).toBeTruthy();
+  });
+});

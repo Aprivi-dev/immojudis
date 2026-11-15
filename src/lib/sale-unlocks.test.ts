@@ -163,25 +163,35 @@ describe("unlock status parsing", () => {
 describe("texts of the unlock", () => {
   it("lists what an unlock opens, without promising what the page does not show", () => {
     expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: true })).toBe(
-      "l’enchère plafond, la lecture des pièces, l’historique de la vente, les statistiques du tribunal et les pièces du dossier",
+      "l’analyse complète de la vente (l’enchère plafond, l’estimation détaillée et les ventes comparables, la lecture des pièces, l’historique de la vente, les statistiques du tribunal, l’urbanisme et le cadastre, les pièces du dossier et le rapport PDF)",
     );
     expect(unlockedItemsText({ ceiling: null, statistics: false })).toBe(
-      "la lecture des pièces, l’historique de la vente et les pièces du dossier",
+      "l’analyse complète de la vente (l’estimation détaillée et les ventes comparables, la lecture des pièces, l’historique de la vente, l’urbanisme et le cadastre, les pièces du dossier et le rapport PDF)",
     );
     expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).not.toContain(
       "statistiques",
     );
   });
 
+  it("opens the whole Analyse offer on the sale: estimate, comparables, land, PDF report", () => {
+    const text = unlockedItemsText({ ceiling: null, statistics: false });
+    expect(text).toMatch(/^l’analyse complète de la vente \(/);
+    for (const item of [
+      "l’estimation détaillée et les ventes comparables",
+      "l’urbanisme et le cadastre",
+      "le rapport PDF",
+    ]) {
+      expect(text).toContain(item);
+    }
+  });
+
   it("names the ceiling from the label given by the fee regime of the sale", () => {
     expect(unlockedItemsText({ ceiling: "l’offre plafond", statistics: false })).toBe(
-      "l’offre plafond, la lecture des pièces, l’historique de la vente et les pièces du dossier",
+      "l’analyse complète de la vente (l’offre plafond, l’estimation détaillée et les ventes comparables, la lecture des pièces, l’historique de la vente, l’urbanisme et le cadastre, les pièces du dossier et le rapport PDF)",
     );
     expect(
       unlockedItemsText({ ceiling: "l’enchère plafond ou l’offre plafond", statistics: false }),
-    ).toBe(
-      "l’enchère plafond ou l’offre plafond, la lecture des pièces, l’historique de la vente et les pièces du dossier",
-    );
+    ).toContain("(l’enchère plafond ou l’offre plafond, l’estimation détaillée");
     // No regime, no ceiling: nothing is promised.
     expect(unlockedItemsText({ ceiling: null, statistics: false })).not.toContain("plafond");
   });
@@ -191,23 +201,23 @@ describe("texts of the unlock", () => {
     // they must stay equal to the computation for the regimes open by default.
     expect(unlockHighlightsText()).toBe(UNLOCK_HIGHLIGHTS_TEXT);
     expect(unlockHighlightsInlineText()).toBe(UNLOCK_HIGHLIGHTS_INLINE_TEXT);
-    // The tribunal alone: unchanged wording.
+    // The tribunal alone: the ceiling is only an « enchère plafond ».
     expect(unlockHighlightsText(["tribunal"])).toBe(
-      "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
+      "l’analyse complète de la vente : enchère plafond (ventes au tribunal), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     expect(unlockHighlightsInlineText(["tribunal"])).toBe(
-      "enchère plafond, lecture des pièces, historique, selon la vente",
+      "l’analyse complète de la vente : enchère plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     // Both notarial regimes open (default): both terms, each with its sales.
     expect(UNLOCK_HIGHLIGHTS_TEXT).toBe(
-      "enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente",
+      "l’analyse complète de la vente : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toBe(
-      "enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente",
+      "l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     // A notarial regime switched off promises nothing more.
     expect(unlockHighlightsText(["tribunal", "notary_auction"])).toBe(
-      "enchère plafond (ventes au tribunal et ventes notariales à la bougie), lecture des pièces, historique, selon la vente",
+      "l’analyse complète de la vente : enchère plafond (ventes au tribunal et ventes notariales à la bougie), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     // A regime whose rules are not defined opens nothing.
     expect(unlockHighlightsText(["tribunal", "state_auction"])).toBe(
@@ -235,7 +245,16 @@ describe("texts of the unlock", () => {
       statistics: false,
     });
     expect(full).toContain("l’enchère plafond ou l’offre plafond");
-    for (const word of ["plafond", "pièces", "historique"]) {
+    for (const word of [
+      "analyse complète de la vente",
+      "plafond",
+      "estimation détaillée",
+      "ventes comparables",
+      "pièces",
+      "historique",
+      "urbanisme",
+      "rapport PDF",
+    ]) {
       expect(UNLOCK_HIGHLIGHTS_TEXT).toContain(word);
       expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toContain(word);
       expect(full).toContain(word);
@@ -274,8 +293,8 @@ describe("le détail de la pépite parmi ce qu'un déblocage ouvre", () => {
   it("l'ajoute après le plafond, seulement pour une pépite", () => {
     expect(
       unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false, pepite: true }),
-    ).toBe(
-      "l’enchère plafond, le détail de la pépite, la lecture des pièces, l’historique de la vente et les pièces du dossier",
+    ).toContain(
+      "(l’enchère plafond, le détail de la pépite, l’estimation détaillée et les ventes comparables, la lecture des pièces",
     );
     expect(unlockedItemsText({ ceiling: "l’enchère plafond", statistics: false })).not.toContain(
       "pépite",

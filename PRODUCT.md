@@ -56,7 +56,13 @@ C'est la combinaison qui distingue Immojudis, pas une brique isolée :
 
 - **Périmètre** : la France entière (décision du 09/10/2026, `docs/roadmaps/decision-perimetre-2026-10-09.md`).
 - **Offres** : Découverte, gratuite et sans limite de durée, avec une seule vente débloquée en
-  tout (décision du 15/11/2026, au lieu de trois par mois). Analyse, au tarif prévu de 59 € TTC par
+  tout (décision du 15/11/2026, au lieu de trois par mois). Le déblocage ouvre l'analyse complète
+  de cette vente, tout ce qu'Analyse donne sur une vente (plafond, estimation détaillée et ventes
+  comparables, budget travaux, pièces et leur lecture, historique, urbanisme et cadastre, rapport
+  enregistré et PDF). Sans déblocage, le compte gratuit voit la fiche (adresse, photos,
+  description, occupation, visites, contact), un niveau d'écart avec le marché sans chiffre et un
+  aperçu chiffré sans contenu (nombre de comparables, de points relevés dans les pièces, de
+  passages) ; ni la fourchette de valeur ni l'écart chiffré. Analyse, au tarif prévu de 59 € TTC par
   mois, sans engagement : toutes les ventes ouvertes, alertes avancées, export PDF et CSV,
   estimation détaillée, ventes comparables. L'essai Analyse gratuit à l'inscription n'est plus
   proposé. **Au 13/11/2026,

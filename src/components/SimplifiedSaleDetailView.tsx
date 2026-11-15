@@ -32,7 +32,7 @@ import {
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
 import { FavoriteButton } from "@/components/FavoriteButton";
-import { MarketReference } from "@/components/sale-detail/MarketReference";
+import { isMarketGapPosition, MarketReference } from "@/components/sale-detail/MarketReference";
 import {
   FIRST_AUCTION_GUIDE_TITLE_ID,
   FirstAuctionGuide,
@@ -47,7 +47,7 @@ import { MobileActionBar } from "@/components/sale-detail/MobileActionBar";
 import overviewStyles from "@/components/sale-detail/SaleOverview.module.css";
 import { Terme } from "@/components/ceiling/Terme";
 import { buildValuePreview, type ValuePreview } from "@/lib/value-preview";
-import { marketGapWithheldReason } from "@/lib/market-gap-band";
+import { marketGapWithheldReason, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { POINTS_TO_VERIFY_ANCHOR } from "@/lib/search/points-to-verify";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
@@ -122,7 +122,6 @@ import { formatDate, formatSurface } from "@/lib/format";
 import * as queryKeys from "@/lib/query-keys";
 import { PropertyIdentity } from "@/components/sale-detail/SaleDetailPropertyIdentity";
 import {
-  AnalysisDecisionPanel,
   DiscoveryDecisionPanel,
   NonJudicialDecisionPanel,
 } from "@/components/sale-detail/SaleDetailDecisionPanels";
@@ -375,8 +374,11 @@ function SaleDetailWorkspace({
     defaultCeilingChoices,
     profileChoices,
   );
-  // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
-  // only Analyse has stays on `access === "analysis"`.
+  // Everything about THIS sale is open (Analyse, or a sale this free account unlocked): the
+  // estimate and its comparables, the works, urbanism, the land file, the hearing forecast, the
+  // report. What only the subscription opens stays on `access === "analysis"`: the workspace and
+  // the multi-sale file, the reliability of the facts, the tribunal's upcoming listings, sharing a
+  // report by link, forcing a new read of the land file, anything about other sales.
   const fullData = access !== "discovery";
   // Repère « Pépite » : sa présence (liste publique, lue une fois) et ses critères ; le détail avec le montant
   // seulement pour une fiche dont les lignes sont ouvertes (Analyse, vente débloquée), la route vérifie le droit.
@@ -491,11 +493,7 @@ function SaleDetailWorkspace({
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
   const budgetTarget =
-    fullData && ceilingOpen && !valuationConflict
-      ? "calculation"
-      : access === "analysis"
-        ? "budget"
-        : "summary";
+    fullData && ceilingOpen && !valuationConflict ? "calculation" : fullData ? "budget" : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
   // Le dossier de travail (offre Analyse) existe pour les ventes au tribunal, chez le notaire et
@@ -504,13 +502,12 @@ function SaleDetailWorkspace({
     access === "analysis" &&
     !publicDemo &&
     (venueType === "tribunal" || venueType === "notary" || venueType === "state");
-  // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
-  const marketAccess = access === "analysis" || (access === "unlocked" && ceilingOpen);
   const marketQuery = useQuery({
     queryKey: queryKeys.precomputedMarketEstimate(sale.id, user?.id, access),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
+    // The market estimate feeds the bid ceiling (judicial sales) and the market blocks.
     enabled:
-      marketAccess &&
+      fullData &&
       marketEstimateOverride == null &&
       !valuationConflict &&
       !criticalAnalysisInputsBlocked,
@@ -524,7 +521,7 @@ function SaleDetailWorkspace({
     queryKey: queryKeys.enteredSurfaceMarketEstimate(sale.id, user?.id, enteredSurfaceM2 ?? 0),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id, enteredSurface: true }),
     enabled:
-      marketAccess &&
+      fullData &&
       surfaceEnteredByUser &&
       marketEstimateOverride == null &&
       !valuationConflict &&
@@ -534,22 +531,20 @@ function SaleDetailWorkspace({
   });
   const ceilingMarketQuery = surfaceEnteredByUser ? enteredSurfaceMarketQuery : marketQuery;
   const listingMarketEstimate =
-    !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
+    !fullData || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
   // What the ceiling reads: the whole estimate (Analyse) or its ceiling projection (unlock).
   const marketEstimate =
-    !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
+    !fullData || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ??
         (surfaceEnteredByUser
           ? (enteredSurfaceMarketQuery.data?.estimate ?? null)
           : (marketQuery.data?.estimate ?? null)));
-  // The detailed blocks (range, references, comparables) exist for Analyse only.
+  // The detailed blocks (range, references, comparables).
   const detailedMarketEstimate =
-    access === "analysis" && isDetailedMarketEstimate(listingMarketEstimate)
-      ? listingMarketEstimate
-      : null;
+    fullData && isDetailedMarketEstimate(listingMarketEstimate) ? listingMarketEstimate : null;
   // Hypothèses et plan du plafond : la chaîne de `computeSaleCeiling`, la même que celle du rapport.
   const ceiling = useMemo(
     () =>
@@ -655,7 +650,7 @@ function SaleDetailWorkspace({
   // Scenario (or « Aucun travaux ») picked in the Travaux tab. Without a ceiling (non-judicial
   // sale), the amount only feeds the displayed budget.
   const selectWorksBudget = (amount: number) => {
-    if (access !== "analysis" || !Number.isFinite(amount) || amount < 0) return;
+    if (!fullData || !Number.isFinite(amount) || amount < 0) return;
     setPersonalWorksBudget(Math.max(0, amount));
     if (ceilingEnabled) {
       ceilingChoices.update((choices) => ({
@@ -686,10 +681,11 @@ function SaleDetailWorkspace({
     byOffers: feeRegime?.labels.byOffers,
   });
   // Repère marché et carte « Le prix » : la fourchette de valeur du même aperçu que le panneau de
-  // prix (clé de requête partagée). Un visiteur n'y a pas droit ; l'annonce exemple la calcule sur
-  // son estimation fictive. Rien tant que la valeur ou le prix sont en cours de vérification.
+  // prix (clé de requête partagée), ou son seul niveau d'écart pour une vente que le compte gratuit
+  // n'a pas débloquée. Un visiteur n'y a pas droit ; l'annonce exemple la calcule sur son
+  // estimation fictive. Rien tant que la valeur ou le prix sont en cours de vérification.
   const valuePreviewQuery = useQuery({
-    queryKey: queryKeys.valuePreview(sale.id),
+    queryKey: queryKeys.valuePreview(sale.id, access),
     queryFn: () => fetchValuePreview(sale.id),
     enabled: Boolean(user) && !publicDemo,
     staleTime: 60 * 60_000,
@@ -700,18 +696,24 @@ function SaleDetailWorkspace({
     priceBlocked || !((displaySale.starting_price_eur ?? 0) > 0)
       ? null
       : displaySale.starting_price_eur!;
+  const valuePreviewResponse = user && !valueGuarded ? valuePreviewQuery.data : undefined;
   const rawValuePreview = valueGuarded
     ? null
     : publicDemo
       ? marketEstimateOverride
         ? buildValuePreview(marketEstimateOverride, startingPrice, displaySale.occupancy_status)
         : null
-      : user && valuePreviewQuery.data?.available
-        ? valuePreviewQuery.data
+      : valuePreviewResponse?.access === "full" && valuePreviewResponse.available
+        ? valuePreviewResponse
         : null;
   // Le serveur retient l'écart sur l'occupation brute ; la fiche le retient aussi quand l'occupation
   // affichée n'est pas un bien libre connu (relecture IA en cours : `displaySale` la met à `null`).
   const occupancyGapWithheld = marketGapWithheldReason(displaySale.occupancy_status);
+  const teaserBand = valuePreviewResponse?.access === "teaser" ? valuePreviewResponse.band : null;
+  const marketGapBand: PublicMarketGapBand | null =
+    teaserBand && occupancyGapWithheld && isMarketGapPosition(teaserBand)
+      ? occupancyGapWithheld
+      : teaserBand;
   const valuePreview: ValuePreview | null =
     rawValuePreview && occupancyGapWithheld && !rawValuePreview.gapWithheld
       ? {
@@ -765,11 +767,13 @@ function SaleDetailWorkspace({
         }
       : valuePreview?.lowEur != null && valuePreview.highEur != null
         ? { kind: "range", low: valuePreview.lowEur, high: valuePreview.highEur }
-        : signupHref
-          ? { kind: "signup", href: signupHref }
-          : (user && valuePreviewQuery.isLoading) || marketPending
-            ? { kind: "pending" }
-            : null;
+        : marketGapBand
+          ? { kind: "band", band: marketGapBand }
+          : signupHref
+            ? { kind: "signup", href: signupHref }
+            : (user && valuePreviewQuery.isLoading) || marketPending
+              ? { kind: "pending" }
+              : null;
   // Valeur d'un bien libre : jamais placée face à la mise à prix d'un bien occupé ou d'occupation
   // inconnue (réglette, tête « Votre analyse ») ; la case « Le prix » la libelle comme telle.
   const comparedValue =
@@ -922,6 +926,7 @@ function SaleDetailWorkspace({
                       <MarketReference
                         startingPrice={startingPrice}
                         preview={valuePreview}
+                        band={marketGapBand}
                         loading={Boolean(user) && !publicDemo && valuePreviewQuery.isLoading}
                         signupHref={signupHref}
                         startLabel={
@@ -1076,7 +1081,7 @@ function SaleDetailWorkspace({
                 <ListingChecks
                   sale={displaySale}
                   points={pointsToVerify(displaySale, { occupancyVisible: true })}
-                  showRisks={access === "analysis"}
+                  showRisks={fullData}
                   saleId={sale.id}
                   ownerId={user?.id ?? "guest-demo"}
                   preparation={preparation}
@@ -1131,7 +1136,7 @@ function SaleDetailWorkspace({
                 id="prix"
                 title={ceilingOpen ? `Prix et ${feeRegime.labels.ceilingTerm}` : "Prix et marché"}
               >
-                {marketAccess &&
+                {fullData &&
                 marketEstimateOverride == null &&
                 !marketEstimate &&
                 (marketQuery.data?.error || marketQuery.error) ? (
@@ -1193,7 +1198,7 @@ function SaleDetailWorkspace({
                       <div>
                         <h3>Estimation suspendue : données contradictoires</h3>
                         <p>{valuationConflict}</p>
-                        {access === "analysis" ? (
+                        {fullData ? (
                           <p>
                             Les caractéristiques seront vérifiées par Immojudis avant toute mise à
                             jour.
@@ -1203,7 +1208,7 @@ function SaleDetailWorkspace({
                         )}
                       </div>
                     </div>
-                  ) : access === "analysis" && ceilingOpen ? (
+                  ) : fullData && ceilingOpen ? (
                     <>
                       <PriceScale
                         startingPrice={startingPrice}
@@ -1225,22 +1230,7 @@ function SaleDetailWorkspace({
                         </p>
                       ) : null}
                     </>
-                  ) : fullData && ceilingOpen ? (
-                    <AnalysisDecisionPanel
-                      sale={displaySale}
-                      marketEstimate={marketEstimate}
-                      marketLoading={marketPending}
-                      worksBudget={retainedWorks}
-                      recommendedCeiling={ceilingPlan.maxBid}
-                      ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
-                      startingPriceGap={ceilingPlan.startingPriceGap}
-                      ceilingGap={ceilingMissing}
-                      ceilingWording={ceilingWording}
-                      valueReason={valueReason}
-                      onAdjust={() => undefined}
-                      onEditWorks={editWorks}
-                    />
-                  ) : access === "analysis" ? (
+                  ) : fullData ? (
                     <NonJudicialDecisionPanel
                       sale={displaySale}
                       marketEstimate={detailedMarketEstimate}
@@ -1283,7 +1273,7 @@ function SaleDetailWorkspace({
                       />
                     ) : null}
                   </div>
-                ) : access === "analysis" ? (
+                ) : fullData ? (
                   <details
                     className={panelStyles.disclosure}
                     open={Boolean(expandedDetails.budget)}
@@ -1313,7 +1303,7 @@ function SaleDetailWorkspace({
                     />
                   </WhenNear>
                 ) : null}
-                {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
+                {fullData && !publicDemo && hasVerifiedTribunal ? (
                   <TribunalEstimationEvidence
                     sale={displaySale}
                     valuationConflict={Boolean(valuationConflict)}
@@ -1363,7 +1353,7 @@ function SaleDetailWorkspace({
               <SaleDetailWorksFinancingSection
                 saleId={sale.id}
                 displaySale={displaySale}
-                access={access}
+                fullData={fullData}
                 force={forced("travaux-financement")}
                 inputsToConfirm={Boolean(valuationConflict || criticalAnalysisInputsBlocked)}
                 retainedWorks={retainedWorks}
@@ -1417,9 +1407,7 @@ function SaleDetailWorkspace({
                 onParticipationToggle={() =>
                   setDetailOpen("participation", !expandedDetails.participation)
                 }
-                reportAvailable={
-                  access === "analysis" && !publicDemo && ceilingOpen && !valuationConflict
-                }
+                reportAvailable={fullData && !publicDemo && ceilingOpen && !valuationConflict}
                 surfaceEnteredByUser={surfaceEnteredByUser}
                 reportSimulation={reportSimulation}
               />

@@ -39,6 +39,14 @@ function renderWithQuery(ui: React.ReactElement) {
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
+/** What the value route answers a free account on a sale it has not unlocked. */
+function teaser(
+  band: string | null,
+  comparables: { count: number; radiusM: number } | null = null,
+) {
+  return { access: "teaser", band, comparables };
+}
+
 describe("DiscoveryDecisionPanel", () => {
   it("does not call the value route for a visitor and invites them to create a free account", () => {
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
@@ -46,7 +54,7 @@ describe("DiscoveryDecisionPanel", () => {
     expect(mocks.fetchValuePreview).not.toHaveBeenCalled();
     expect(screen.queryByText("Pas encore d’estimation")).toBeNull();
     const link = screen.getByRole("link", {
-      name: "Créez un compte gratuit pour voir la fourchette de valeur",
+      name: "Créez un compte gratuit pour voir le repère marché",
     });
     expect(link.getAttribute("href")).toBe(
       `/login?redirect=${encodeURIComponent(`/sales/${sale.id}`)}&mode=investor&reason=fiche`,
@@ -61,97 +69,40 @@ describe("DiscoveryDecisionPanel", () => {
     expect(mocks.fetchValuePreview).not.toHaveBeenCalled();
   });
 
-  it("shows the value range to a signed-in account", async () => {
+  it("shows a free account the level of the gap only: no range, no amount, no percentage", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 80_000,
-      highEur: 100_000,
-      discountPct: 40,
-    });
-    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
-
-    expect(await screen.findByText(/80\s000\s€\s–\s100\s000\s€/)).toBeTruthy();
-    expect(mocks.fetchValuePreview).toHaveBeenCalledWith(sale.id);
-    expect(screen.queryByRole("link", { name: /Créez un compte gratuit/ })).toBeNull();
-  });
-
-  it("states the gap in % when it is significant", async () => {
-    mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 80_000,
-      highEur: 100_000,
-      discountPct: 40,
-      discountNotSignificant: false,
-      startingPricePerM2: null,
-    });
+    mocks.fetchValuePreview.mockResolvedValue(teaser("under", { count: 14, radiusM: 500 }));
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 
     expect(
-      await screen.findByText(/La mise à prix est environ 40 % sous la valeur estimée du bien\./),
+      await screen.findByText("Mise à prix inférieure à la fourchette des ventes comparables"),
     ).toBeTruthy();
+    expect(mocks.fetchValuePreview).toHaveBeenCalledWith(sale.id);
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/\d+ %/);
+    expect(text).not.toMatch(/€\s*–/);
+    expect(text).not.toContain("Valeur estimée");
+    expect(screen.queryByRole("link", { name: /Créez un compte gratuit/ })).toBeNull();
   });
 
-  it("never shows a percentage for an implausible gap of 85 %, only the price per m²", async () => {
+  it("offers the one-click feedback on a real level of gap, with the ceiling still to compute", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 270_000,
-      highEur: 330_000,
-      // The API sends no percentage for an implausible gap (see `buildValuePreview`).
-      discountPct: null,
-      discountNotSignificant: true,
-      startingPricePerM2: 750,
-    });
+    mocks.fetchValuePreview.mockResolvedValue(teaser("near"));
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 
     const status = await screen.findByRole("status");
-    const text = (status.textContent ?? "").replace(/\s/g, " ");
-    expect(text).toContain("Écart non significatif : mise à prix de");
-    expect(text).toContain("750");
-    expect(text).toContain("m²");
-    expect(text).not.toMatch(/\d+ %/);
-    expect(text).not.toContain("sous la valeur estimée");
-    expect(text).toContain("c’est le calcul de l’enchère plafond");
-  });
-
-  it("offers the one-click feedback on the gap to a signed-in account, and only with a gap", async () => {
-    mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 80_000,
-      highEur: 100_000,
-      discountPct: 40,
-      discountNotSignificant: false,
-      startingPricePerM2: null,
-    });
-    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
-
-    await screen.findByText(/La mise à prix est environ 40 % sous la valeur estimée du bien\./);
+    expect(status.textContent).toContain("c’est le calcul de l’enchère plafond");
     const feedback = screen.getByTestId("sale-signal-feedback");
     expect(feedback.getAttribute("data-signal")).toBe("market_gap_band");
-    expect(screen.getByRole("button", { name: "Utile" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Pas pertinent" })).toBeTruthy();
   });
 
-  it("keeps the range but says the gap is withheld for an occupied property or an unknown occupation", async () => {
+  it("says why the gap is not situated for an occupied property, without feedback", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 80_000,
-      highEur: 100_000,
-      discountPct: null,
-      discountNotSignificant: false,
-      startingPricePerM2: null,
-      gapWithheld: "occupancy_unknown",
-    });
+    mocks.fetchValuePreview.mockResolvedValue(teaser("occupied"));
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 
-    const status = await screen.findByRole("status");
-    expect(status.textContent).toContain("Occupation du bien non précisée");
-    expect(status.textContent).not.toMatch(/\d+ %|sous la valeur estimée/);
-    expect(screen.getByText(/80\s000\s€\s–\s100\s000\s€/)).toBeTruthy();
+    expect(await screen.findByText(/^Bien occupé : la comparaison/)).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
   });
 
@@ -161,28 +112,50 @@ describe("DiscoveryDecisionPanel", () => {
     expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
   });
 
-  it("shows no sentence when the preview carries no gap at all", async () => {
-    mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({
-      available: true,
-      lowEur: 80_000,
-      highEur: 100_000,
-      discountPct: null,
-      discountNotSignificant: false,
-      startingPricePerM2: null,
-    });
-    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
-
-    await screen.findByText(/80\s000\s€\s–\s100\s000\s€/);
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
   it("keeps « Pas encore d’estimation » for an account without estimate", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
-    mocks.fetchValuePreview.mockResolvedValue({ available: false });
+    mocks.fetchValuePreview.mockResolvedValue(teaser(null));
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 
     expect(await screen.findByText("Pas encore d’estimation")).toBeTruthy();
+  });
+
+  describe("comparables found", () => {
+    it("counts them in the plural, with the search radius", async () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue(teaser("under", { count: 14, radiusM: 1_500 }));
+      renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+      const line = await screen.findByTestId("comparables-teaser");
+      expect(line.textContent?.replace(/\s/g, " ")).toContain(
+        "14 ventes comparables trouvées dans un rayon de 1 500 m",
+      );
+    });
+
+    it("says it in the singular for one sale", async () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue(teaser("near", { count: 1, radiusM: 300 }));
+      renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+      expect((await screen.findByTestId("comparables-teaser")).textContent).toContain(
+        "1 vente comparable trouvée dans un rayon de 300 m",
+      );
+    });
+
+    it("shows no line when the count is unknown or zero", async () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue(teaser("near", null));
+      const { unmount } = renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+      await screen.findByText("Mise à prix dans la fourchette des ventes comparables");
+      expect(screen.queryByTestId("comparables-teaser")).toBeNull();
+      unmount();
+
+      mocks.fetchValuePreview.mockResolvedValue(teaser("near", { count: 0, radiusM: 500 }));
+      renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+      await screen.findByText("Mise à prix dans la fourchette des ventes comparables");
+      expect(screen.queryByTestId("comparables-teaser")).toBeNull();
+      expect(document.body.textContent).not.toContain("0 vente");
+    });
   });
 
   describe("unlock link", () => {
@@ -197,26 +170,27 @@ describe("DiscoveryDecisionPanel", () => {
       remaining: 1,
     };
 
-    it("links the ceiling row and the preview of a tribunal sale to the unlock card", () => {
+    it("links the ceiling row and the comparables found on a tribunal sale to the unlock card", async () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
-      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      mocks.fetchValuePreview.mockResolvedValue(teaser("under", { count: 8, radiusM: 500 }));
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
           <DiscoveryDecisionPanel sale={tribunalSale} />
         </SaleUnlockOfferProvider>,
       );
 
+      await screen.findByTestId("comparables-teaser");
       const links = screen.getAllByRole("link", {
         name: "Débloquer cette vente avec mon compte gratuit",
       });
-      // The row of the ceiling, and the main link of the paid preview.
+      // The row of the ceiling, and the line of the comparables found.
       expect(links).toHaveLength(2);
       for (const link of links) expect(link.getAttribute("href")).toBe("#debloquer");
     });
 
-    it("links the ceiling row and the preview of a notarial sale to the unlock card, with both terms", () => {
+    it("names both terms of the ceiling of a notarial sale", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
-      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      mocks.fetchValuePreview.mockResolvedValue(teaser(null));
       const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
@@ -224,14 +198,14 @@ describe("DiscoveryDecisionPanel", () => {
         </SaleUnlockOfferProvider>,
       );
 
-      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(2);
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
       // The mode of the sale (candle or interactive) is not readable before the unlock.
       expect(document.body.textContent).toContain("Enchère plafond ou offre plafond (simulation)");
     });
 
     it("offers no unlock for a notarial sale when the server lists the tribunal only", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
-      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      mocks.fetchValuePreview.mockResolvedValue(teaser(null));
       const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
@@ -242,16 +216,9 @@ describe("DiscoveryDecisionPanel", () => {
       expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
     });
 
-    it("keeps only the offer when the page has no unlock card", () => {
-      renderWithQuery(<DiscoveryDecisionPanel sale={tribunalSale} />);
-
-      expect(screen.queryByRole("link", { name: /Débloquer cette vente/ })).toBeNull();
-      expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
-    });
-
-    it("does not offer the unlock for the preview of a sale without ceiling (domanial)", () => {
+    it("keeps the single hint of the ceiling row on a sale without ceiling (domanial)", () => {
       mocks.auth = { user: { id: "user-1" }, loading: false };
-      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      mocks.fetchValuePreview.mockResolvedValue(teaser(null));
       const state = { ...sale, sale_venue_type: "state" } as unknown as AuctionSale;
       renderWithQuery(
         <SaleUnlockOfferProvider status={offer}>
@@ -262,8 +229,17 @@ describe("DiscoveryDecisionPanel", () => {
         </SaleUnlockOfferProvider>,
       );
 
-      // Only the hint of the ceiling row remains: the preview talks about comparables and works.
       expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
+    });
+
+    it("keeps only the offer next to the comparables when the page has no unlock card", async () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue(teaser("under", { count: 8, radiusM: 500 }));
+      renderWithQuery(<DiscoveryDecisionPanel sale={tribunalSale} />);
+
+      await screen.findByTestId("comparables-teaser");
+      expect(screen.queryByRole("link", { name: /Débloquer cette vente/ })).toBeNull();
+      expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
     });
   });
 

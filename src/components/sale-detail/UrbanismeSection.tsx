@@ -14,10 +14,13 @@ export function UrbanismeSection({
   sale,
   mapLocation,
   loadStructuredUrbanism = false,
+  officialLandRefresh = false,
 }: {
   sale: AuctionSale;
   mapLocation: Pick<AuctionSale, "address" | "postal_code" | "city" | "latitude" | "longitude">;
   loadStructuredUrbanism?: boolean;
+  /** « Actualiser les sources » du dossier PLU et risques (offre Analyse). */
+  officialLandRefresh?: boolean;
 }) {
   const urbanismQuery = useQuery({
     queryKey: queryKeys.saleUrbanismeCadastre(sale.id, sale.source_url),
@@ -58,6 +61,7 @@ export function UrbanismeSection({
           cadastralParcels={urbanismQuery.data?.cadastralParcels}
           urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
           officialLandEnabled={loadStructuredUrbanism}
+          officialLandRefresh={officialLandRefresh}
         />
       </div>
     </div>

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import {
   FREE_UNLOCK_EFFECTIVE_DATE,
+  FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
   legalValue,
   publicLegalPublisher,
@@ -46,7 +47,8 @@ export function TermsPage() {
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
             Version {LEGAL_DOCUMENTS.terms.version}, applicable dès l’inscription pour les comptes
             créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui
-            concerne l’offre Découverte et son déblocage, et l’article 13 s’appliquent à compter du{" "}
+            concerne l’offre Découverte et son déblocage, s’applique à compter du{" "}
+            {FULL_SALE_UNLOCK_EFFECTIVE_DATE}, et l’article 13 à compter du{" "}
             {FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du{" "}
             {LEGAL_DOCUMENTS.terms.effectiveDate}. Jusqu’à cette date, la version précédente (
             {PREVIOUS_LEGAL_DOCUMENTS.terms.version}) reste applicable aux comptes existants pour
@@ -75,34 +77,42 @@ export function TermsPage() {
 
           <TermsSection title="2. Description des offres">
             <p>
-              Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit les
-              informations essentielles accessibles après création d’un compte : l’accès aux fiches
-              des ventes, {PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum, une alerte avec
-              un email hebdomadaire et {FREE_SALE_UNLOCKS} déblocage de vente en tout, qui ne se
-              renouvelle pas chaque mois. Un déblocage ouvre, pour une vente de votre choix, les
-              éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère
-              plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces,
-              l’historique de la vente, les statistiques du tribunal compétent pour cette vente et
-              les pièces du dossier. Les autres fonctions de l’offre Analyse, notamment l’export PDF
-              ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les
-              ventes comparables, les alertes avancées et la mise en relation avec un avocat
-              référencé, restent réservées à cette offre. Pour consulter ces éléments sur d’autres
-              ventes, il faut souscrire à l’offre Analyse. Le déblocage est consommé quand vous le
-              confirmez, après affichage du nombre restant ; il n’est pas consommé en cas d’erreur
-              technique, ni si la vente est déjà débloquée. Il est rendu automatiquement si la vente
-              est retirée avant d’avoir lieu, par la juridiction, le notaire ou la source. Si
-              Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui
-              lui est imputable (par exemple une erreur de publication ou la suspension d’une source
-              décidée par Immojudis), le déblocage est rendu sur simple demande adressée à{" "}
-              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Il n’est
-              pas rendu si la vente est reportée ou adjugée. Une vente débloquée reste consultable
-              avec ces éléments tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois
-              après le déblocage, et tant que votre compte existe. Passé ce délai de 24 mois, le
-              déblocage n’est plus conservé et un déblocage redevient disponible. Le déblocage est
-              personnel (article 9). Pendant un abonnement Analyse, aucun déblocage n’est consommé.
-              À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez
-              déjà débloquées restent accessibles ; les autres ventes consultées pendant
-              l’abonnement redeviennent soumises au déblocage.
+              Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit,
+              après création d’un compte, l’accès aux fiches des ventes (adresse, photos,
+              description, occupation, dates de visite et contact), un niveau d’écart entre la mise
+              à prix et le marché, sans chiffre, et un aperçu chiffré de l’analyse (nombre de ventes
+              comparables, de points relevés dans les pièces, de passages), lorsqu’ils sont
+              disponibles, {PLAN_LIMITS.decouverte.favoriteSales} favoris au maximum, une alerte
+              avec un email hebdomadaire et {FREE_SALE_UNLOCKS} déblocage de vente en tout, qui ne
+              se renouvelle pas chaque mois. La valeur estimée, sa fourchette et l’écart chiffré
+              avec la mise à prix ne sont pas compris dans Découverte : ils sont ouverts par un
+              déblocage ou par l’offre Analyse. Un déblocage ouvre, pour une vente de votre choix,
+              l’ensemble des éléments de l’offre Analyse propres à cette vente, lorsqu’elle les
+              comporte : l’enchère plafond ou l’offre plafond chiffrée, selon la vente, l’estimation
+              détaillée (valeur estimée et fourchette) et les ventes comparables, le budget travaux
+              détaillé, les pièces du dossier et leur lecture, l’historique de la vente, les
+              statistiques du tribunal compétent pour cette vente, l’urbanisme et le cadastre, le
+              dossier du terrain, l’analyse du quartier, la prévision d’audience, le rapport
+              enregistré et le rapport PDF de cette vente. Restent réservés à l’offre Analyse : ces
+              éléments sur les autres ventes, l’export CSV, les alertes avancées et quotidiennes,
+              les favoris au-delà de {PLAN_LIMITS.decouverte.favoriteSales}, les statistiques des
+              autres tribunaux, le partage d’un rapport par lien et la mise en relation avec un
+              avocat référencé. Le déblocage est consommé quand vous le confirmez, après affichage
+              du nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente
+              est déjà débloquée. Il est rendu automatiquement si la vente est retirée avant d’avoir
+              lieu, par la juridiction, le notaire ou la source. Si Immojudis retire elle-même la
+              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
+              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
+              déblocage est rendu sur simple demande adressée à {legalValue(publisher.contactEmail)}
+              , qui reçoit une réponse sous un mois. Il n’est pas rendu si la vente est reportée ou
+              adjugée. Une vente débloquée reste consultable avec ces éléments tant qu’elle est en
+              ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre
+              compte existe. Passé ce délai de 24 mois, le déblocage n’est plus conservé et un
+              déblocage redevient disponible. Le déblocage est personnel (article 9). Pendant un
+              abonnement Analyse, aucun déblocage n’est consommé. À la fin de l’abonnement, le
+              compte revient à Découverte : les ventes que vous aviez déjà débloquées restent
+              accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises
+              au déblocage.
             </p>
             <p className="mt-3">
               Immojudis peut modifier ou supprimer le déblocage du compte gratuit pour l’avenir, en

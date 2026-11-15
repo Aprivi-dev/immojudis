@@ -1,10 +1,13 @@
 import { pricePerM2 } from "@/lib/geo";
 import type { MarketEstimate } from "@/lib/market.server";
 import { resolveMarketGap } from "@/lib/market-gap";
-import { marketGapWithheldReason } from "@/lib/market-gap-band";
+import { marketGapWithheldReason, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import type { SaleSurface } from "@/lib/surface";
 
-/** What a free account sees of the valuation: a range and the gap with the starting price. */
+/**
+ * What an account with the detailed estimate for this sale sees of the valuation (the offer, or the
+ * unlock of this sale): a range and the gap with the starting price.
+ */
 export type ValuePreview = {
   available: boolean;
   lowEur: number | null;
@@ -83,4 +86,29 @@ export function buildValuePreview(
     reliability: estimate?.qualityLabel ?? null,
     gapWithheld,
   };
+}
+
+/**
+ * Answer of `/api/sales/[id]/value-preview`. `full`: the door opens `property.valueEstimate` for this
+ * sale. `teaser`: any other signed-in account, without any value or gap figure: the qualitative band
+ * of the public page (`get_public_sale_market_gap_band`, `MARKET_GAP_BAND_LABELS`) and how many
+ * comparable sales the stored estimate rests on, within which radius.
+ */
+export type ValuePreviewResponse =
+  | ({ access: "full" } & ValuePreview)
+  | {
+      access: "teaser";
+      band: PublicMarketGapBand | null;
+      comparables: { count: number; radiusM: number } | null;
+    };
+
+/** Size and radius of the stored estimate's sample, `null` when either is missing. */
+export function valuePreviewComparables(
+  estimate: Pick<MarketEstimate, "sampleSize" | "radiusM"> | null,
+): { count: number; radiusM: number } | null {
+  const count = estimate?.sampleSize;
+  const radiusM = estimate?.radiusM;
+  if (typeof count !== "number" || !Number.isFinite(count)) return null;
+  if (typeof radiusM !== "number" || !Number.isFinite(radiusM)) return null;
+  return { count, radiusM };
 }

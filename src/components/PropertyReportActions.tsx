@@ -41,11 +41,17 @@ export function PropertyReportActions({
   compact = false,
   simulation,
   requireSimulation = false,
+  unlockedSale = false,
 }: {
   saleId: string;
   compact?: boolean;
   simulation?: ReportSimulation;
   requireSimulation?: boolean;
+  /**
+   * Rapport d'une vente débloquée par le compte gratuit : le rapport de cette vente, sans le quota
+   * mensuel d'exports de l'offre ni le partage par lien, qui restent à l'abonnement.
+   */
+  unlockedSale?: boolean;
 }) {
   const { user, loading } = useAuth();
   return (
@@ -57,6 +63,7 @@ export function PropertyReportActions({
       loading={loading}
       simulation={simulation}
       requireSimulation={requireSimulation}
+      unlockedSale={unlockedSale}
     />
   );
 }
@@ -68,6 +75,7 @@ function PropertyReportWorkspace({
   loading,
   simulation,
   requireSimulation,
+  unlockedSale,
 }: {
   saleId: string;
   compact: boolean;
@@ -75,6 +83,7 @@ function PropertyReportWorkspace({
   loading: boolean;
   simulation?: ReportSimulation;
   requireSimulation: boolean;
+  unlockedSale: boolean;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -217,7 +226,7 @@ function PropertyReportWorkspace({
     loading || awaitingSimulation || shareMutation.isPending || saveMutation.isPending;
   const unsharing = loading || unshareMutation.isPending;
   const pdfLabel =
-    plan?.limits.pdfExportsPerMonth == null
+    unlockedSale || plan?.limits.pdfExportsPerMonth == null
       ? "Export PDF"
       : `Export PDF (${plan.limits.pdfExportsPerMonth}/mois)`;
 
@@ -251,22 +260,24 @@ function PropertyReportWorkspace({
           <Download className="h-3.5 w-3.5" />
           {exportMutation.isPending ? "Export..." : "Export PDF"}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (requireUser()) shareMutation.mutate();
-          }}
-          disabled={sharing}
-          className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground disabled:opacity-50"
-        >
-          <Share2 className="h-3.5 w-3.5" aria-hidden />
-          {sharing
-            ? "Création du lien…"
-            : report?.share_enabled
-              ? "Copier le lien du rapport"
-              : "Partager le rapport"}
-        </button>
-        {report?.share_enabled ? (
+        {unlockedSale ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              if (requireUser()) shareMutation.mutate();
+            }}
+            disabled={sharing}
+            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground disabled:opacity-50"
+          >
+            <Share2 className="h-3.5 w-3.5" aria-hidden />
+            {sharing
+              ? "Création du lien…"
+              : report?.share_enabled
+                ? "Copier le lien du rapport"
+                : "Partager le rapport"}
+          </button>
+        )}
+        {!unlockedSale && report?.share_enabled ? (
           <button
             type="button"
             onClick={() => unshareMutation.mutate(report)}
@@ -371,17 +382,19 @@ function PropertyReportWorkspace({
           <Download className="h-4 w-4" />
           {exporting ? "Export..." : pdfLabel}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (requireUser()) shareMutation.mutate();
-          }}
-          disabled={sharing}
-          className={actionClassName("secondary")}
-        >
-          <Share2 className="h-4 w-4" />
-          {sharing ? "Lien..." : report?.share_enabled ? "Copier le lien" : "Partager"}
-        </button>
+        {unlockedSale ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              if (requireUser()) shareMutation.mutate();
+            }}
+            disabled={sharing}
+            className={actionClassName("secondary")}
+          >
+            <Share2 className="h-4 w-4" />
+            {sharing ? "Lien..." : report?.share_enabled ? "Copier le lien" : "Partager"}
+          </button>
+        )}
       </div>
 
       {report && (
@@ -392,25 +405,27 @@ function PropertyReportWorkspace({
             value={report.last_exported_at ? formatNumericDate(report.last_exported_at) : "Jamais"}
           />
           <ReportMeta label="Édition" value={plan?.limits.reportEditing ?? "limited"} />
-          <div>
-            <dt className="font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              Partage
-            </dt>
-            <dd className="mt-1 flex flex-wrap items-center gap-2 font-medium text-foreground">
-              {report.share_enabled ? "Actif" : "Inactif"}
-              {report.share_enabled ? (
-                <button
-                  type="button"
-                  onClick={() => unshareMutation.mutate(report)}
-                  disabled={unsharing}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-muted-foreground transition hover:border-red-200 hover:text-red-700 disabled:opacity-50"
-                >
-                  <Link2Off className="h-3 w-3" />
-                  Désactiver
-                </button>
-              ) : null}
-            </dd>
-          </div>
+          {unlockedSale ? null : (
+            <div>
+              <dt className="font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Partage
+              </dt>
+              <dd className="mt-1 flex flex-wrap items-center gap-2 font-medium text-foreground">
+                {report.share_enabled ? "Actif" : "Inactif"}
+                {report.share_enabled ? (
+                  <button
+                    type="button"
+                    onClick={() => unshareMutation.mutate(report)}
+                    disabled={unsharing}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-muted-foreground transition hover:border-red-200 hover:text-red-700 disabled:opacity-50"
+                  >
+                    <Link2Off className="h-3 w-3" />
+                    Désactiver
+                  </button>
+                ) : null}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
     </div>

@@ -80,6 +80,7 @@ describe("document reading", () => {
       access: "teaser",
       pointCount: 3,
       alertCount: 1,
+      occupationCount: 2,
       themes: ["occupation", "conditions_vente"],
     });
     expect(JSON.stringify(teaser)).not.toMatch(/Monsieur|mise à prix|pv\.pdf/);
