@@ -158,11 +158,11 @@ async function seedFixtures() {
         )
     `;
     await sql`
-      insert into public.user_subscriptions (user_id, plan_code, status)
+      insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
       values
-        (${refreshUserId}, 'analyse', 'active'),
-        (${paymentUserId}, 'decouverte', 'active'),
-        (${ownerUserId}, 'analyse', 'active')
+        (${refreshUserId}, 'analyse', 'active', now() + interval '30 days'),
+        (${paymentUserId}, 'decouverte', 'active', null),
+        (${ownerUserId}, 'analyse', 'active', now() + interval '30 days')
     `;
     await sql`
       insert into public.auction_sales (id, source_name, source_url, title)
