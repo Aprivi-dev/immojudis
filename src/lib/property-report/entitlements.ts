@@ -127,7 +127,9 @@ export function planForSaleDoor(plan: PlanEntitlements, door: SaleFeatureDoor): 
  * investment score and its factors, the risks and the pipeline's risk notes, the source names and
  * urls, the raw payload. The columns `v_auction_sales_unlocked` empties, applied again on the server
  * side so that a sale read for an unlock carries none of them whatever its origin. The source also
- * travels inside `sale_procedure` (`saleWithoutListingSource`): it is removed there too.
+ * travels inside `sale_procedure`, `source_conflicts` and `source_presence`
+ * (`saleWithoutListingSource`): it is removed there too; the case documents of the unlocked sale keep
+ * their url.
  */
 export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
   const {
@@ -140,7 +142,7 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
     premium_readiness_missing_fields: _readinessMissing,
     premium_readiness_evaluated_at: _readinessEvaluatedAt,
     ...rest
-  } = saleWithoutListingSource(sale);
+  } = saleWithoutListingSource(sale, { documentUrls: true });
   return {
     ...rest,
     investment_score: null,
@@ -160,11 +162,28 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
 }
 
 /**
- * The sale with `sale_procedure` and `source_blocks.sale_procedure` passed through
- * `saleProcedureWithoutListingSource`, nothing else changed: for any reader without the Analyse offer.
+ * Whether the reader may follow the url of the case documents: `true` for a sale the account unlocked
+ * (`v_auction_sales_unlocked`), `false` for a sale it did not (`v_auction_sales_discovery`, which also
+ * empties `documents` and `documents_rich`).
  */
-export function saleWithoutListingSource(sale: AuctionSale): AuctionSale {
-  const { sale_procedure: saleProcedure, source_blocks: sourceBlocks } = sale;
+export type ListingSourceProjection = { documentUrls: boolean };
+
+/**
+ * The sale as the views of a reader without the Analyse offer serve it (migration 20261123100000):
+ * `sale_procedure` and `source_blocks.sale_procedure` through `saleProcedureWithoutListingSource`,
+ * `source_conflicts` through `sourceConflictsWithoutListingSource`, `source_presence` through
+ * `sourcePresenceWithoutListingSource`. Nothing else changes; an absent column stays absent.
+ */
+export function saleWithoutListingSource(
+  sale: AuctionSale,
+  projection: ListingSourceProjection,
+): AuctionSale {
+  const {
+    sale_procedure: saleProcedure,
+    source_blocks: sourceBlocks,
+    source_conflicts: sourceConflicts,
+    source_presence: sourcePresence,
+  } = sale;
   return {
     ...sale,
     ...(saleProcedure === undefined
@@ -172,16 +191,26 @@ export function saleWithoutListingSource(sale: AuctionSale): AuctionSale {
       : {
           sale_procedure: saleProcedureWithoutListingSource(
             saleProcedure,
+            projection,
           ) as AuctionSale["sale_procedure"],
         }),
     ...(sourceBlocks && "sale_procedure" in sourceBlocks
       ? {
           source_blocks: {
             ...sourceBlocks,
-            sale_procedure: saleProcedureWithoutListingSource(sourceBlocks.sale_procedure),
+            sale_procedure: saleProcedureWithoutListingSource(
+              sourceBlocks.sale_procedure,
+              projection,
+            ),
           },
         }
       : {}),
+    ...(sourceConflicts === undefined
+      ? {}
+      : { source_conflicts: sourceConflictsWithoutListingSource(sourceConflicts) }),
+    ...(sourcePresence === undefined
+      ? {}
+      : { source_presence: sourcePresenceWithoutListingSource(sourcePresence) }),
   };
 }
 
@@ -195,14 +224,18 @@ const UNLOCK_CASE_SOURCE_KINDS: ReadonlySet<unknown> = new Set(["document", "off
 
 /**
  * `sale_procedure` without the listing source: the case sources outside `UNLOCK_CASE_SOURCE_KINDS`,
- * the listing platform's name on the documents (the pipeline copies `source_name` there), and every
- * `…source_url` key (schedule, payment deadline, facts: the pipeline fills them with the listing url).
- * `case_sources` that is not an array holds no entry of an allowed kind: it becomes empty.
+ * the listing platform's name on the documents (the pipeline copies `source_name` there), their url
+ * unless `documentUrls`, and every `…source_url` key (schedule, payment deadline, facts: the pipeline
+ * fills them with the listing url). `case_sources` that is not an array holds no entry of an allowed
+ * kind: it becomes empty. The official reference keeps its url.
  * The database applies the same rule to the views of a reader without the Analyse offer
  * (`app_private.sale_procedure_without_listing_source`, migration 20261123100000): the parity test
  * `sale-procedure-without-listing-source.test.ts` passes the same cases to both.
  */
-export function saleProcedureWithoutListingSource(value: unknown): unknown {
+export function saleProcedureWithoutListingSource(
+  value: unknown,
+  { documentUrls }: ListingSourceProjection,
+): unknown {
   const procedure = withoutSourceUrlKeys(value);
   if (!procedure || typeof procedure !== "object" || Array.isArray(procedure)) return procedure;
   const record = procedure as Record<string, unknown>;
@@ -221,11 +254,56 @@ export function saleProcedureWithoutListingSource(value: unknown): unknown {
         .map((source) => {
           const entry = asRecord(source);
           if (entry.kind === "official_reference") return entry;
-          const { source_name: _listingSourceName, ...document } = entry;
-          return document;
+          const { source_name: _listingSourceName, url, ...document } = entry;
+          return documentUrls && "url" in entry ? { ...document, url } : document;
         }),
     },
   };
+}
+
+/**
+ * `source_conflicts` (`services/data-pipeline/src/dedupe.py`) carries the listing urls
+ * (`selected_source`, `alternative_source`, `observed_primary_source`). Without the Analyse offer the
+ * application reads a conflict's `field` only (`fact-reliability.ts`, `sale-procedure.ts`,
+ * `ai-review-display.ts`) and whether there is a conflict (`listing-completeness.ts`): each conflict keeps
+ * `field` (a string), nothing else. Same rule as `app_private.source_conflicts_without_listing_source`.
+ */
+export function sourceConflictsWithoutListingSource(
+  value: unknown,
+): NonNullable<AuctionSale["source_conflicts"]> {
+  if (!Array.isArray(value)) return [];
+  return value.map((conflict) => {
+    const field = asRecord(conflict).field;
+    return typeof field === "string" ? { field } : {};
+  });
+}
+
+/** The keys of a `source_presence` entry the application reads (`listing-completeness.ts`). */
+const SOURCE_PRESENCE_KEYS = ["availability", "state"] as const;
+
+/**
+ * `source_presence` is keyed by the names of the source platforms, and its entries copy unfiltered the
+ * keys inherited from `raw_payload.source_presence` (`extras`). Without the Analyse offer: entries
+ * re-keyed `source_1`, `source_2`... in the order of the names (code points, as the C collation of
+ * `app_private.source_presence_without_listing_source`), with `availability` and `state` only.
+ */
+export function sourcePresenceWithoutListingSource(
+  value: unknown,
+): NonNullable<AuctionSale["source_presence"]> {
+  const presence = asRecord(value);
+  return Object.fromEntries(
+    Object.keys(presence)
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .map((name, index) => {
+        const entry = asRecord(presence[name]);
+        return [
+          `source_${index + 1}`,
+          Object.fromEntries(
+            SOURCE_PRESENCE_KEYS.filter((key) => key in entry).map((key) => [key, entry[key]]),
+          ),
+        ];
+      }),
+  );
 }
 
 function withoutSourceUrlKeys(value: unknown): unknown {

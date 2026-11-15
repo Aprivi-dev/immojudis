@@ -1,16 +1,18 @@
 -- L'adresse de l'annonce d'origine n'est plus servie aux comptes sans l'offre Analyse
 -- (20261123100000) : v_auction_sales_discovery, v_auction_sales_discovery_search et
--- v_auction_sales_unlocked passent sale_procedure (et source_blocks.sale_procedure) par
--- app_private.sale_procedure_without_listing_source ; v_auction_sales_app (offre Analyse) le sert complet.
+-- v_auction_sales_unlocked passent sale_procedure (et source_blocks.sale_procedure), source_conflicts et
+-- source_presence par leurs fonctions de projection ; la vue découverte retire aussi l'adresse des pièces.
+-- v_auction_sales_app (offre Analyse) sert les trois champs complets.
 -- La procédure de la vente est celle qu'écrit le pipeline (_case_sources, _verification_facts, horaire,
 -- délai de paiement), avec le premier cas du test de parité Vitest
--- (src/lib/property-report/sale-procedure-without-listing-source.test.ts).
+-- (src/lib/property-report/sale-procedure-without-listing-source.test.ts) ; le conflit est celui qu'écrit
+-- dedupe.py ; la présence porte des extras hérités (une adresse d'annonce).
 begin;
 -- L'interrupteur de l'essai est coupé depuis 20261120100000 ; coupé ici aussi (annulé par le rollback) :
 -- le test vérifie ce que lit un compte gratuit.
 update app_private.launch_offer set active = false where singleton;
 
-select plan(24);
+select plan(31);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -30,7 +32,7 @@ values
   ('c9020000-0000-4000-8000-000000000002', 'analyse', 'active', now() + interval '30 days');
 
 insert into public.auction_sales (
-  id, source_name, source_url, title, status, sale_date, latitude, longitude, sale_procedure
+  id, source_name, source_url, title, status, sale_date, latitude, longitude, raw_payload, sale_procedure
 ) values (
   'c9020000-1000-4000-8000-000000000001',
   'plateforme-privee-902',
@@ -40,6 +42,12 @@ insert into public.auction_sales (
   '2099-01-01 12:00:00Z',
   48.85,
   2.35,
+  $json${"source_conflicts": [
+    {"field": "sale_date", "selected": "2099-01-01", "observed_primary": "2099-01-02", "alternative": "2099-01-02",
+     "selected_source": "https://annonce-privee.example/vente/902",
+     "alternative_source": "https://annonce-privee.example/vente/902-bis",
+     "observed_primary_source": "https://annonce-privee.example/vente/902"}
+  ]}$json$::jsonb,
   $json${
     "schema_version": "sale_procedure_v1",
     "venue_type": "tribunal",
@@ -83,43 +91,73 @@ insert into public.auction_sales (
   }$json$::jsonb
 );
 
+-- La présence de la vente chez sa source, avec un extra hérité qui porte l'adresse de l'annonce.
+insert into app_private.auction_sale_source_presence (
+  sale_id, source_name, availability, state, attempted_at, checked_at, run_id, extras
+) values (
+  'c9020000-1000-4000-8000-000000000001', 'plateforme-privee-902', 'available', 'present', now(), now(),
+  'run-902', '{"url": "https://annonce-privee.example/vente/902"}'::jsonb
+)
+on conflict (sale_id, source_name) do update
+  set availability = excluded.availability, state = excluded.state, extras = excluded.extras;
+
 -- Structure ------------------------------------------------------------------------------------
-select has_function(
-  'app_private', 'sale_procedure_without_listing_source', array['jsonb'],
-  'the projection function exists'
+select ok(
+  to_regprocedure('app_private.sale_procedure_without_listing_source(jsonb, boolean)') is not null
+  and to_regprocedure('app_private.source_conflicts_without_listing_source(jsonb)') is not null
+  and to_regprocedure('app_private.source_presence_without_listing_source(jsonb)') is not null,
+  'the projection functions exist'
 );
 select ok(
   (select bool_and(p.provolatile = 'i' and not p.prosecdef and p.proconfig = array['search_path=""'])
      from pg_catalog.pg_proc p
     where p.oid in (
-      'app_private.sale_procedure_without_listing_source(jsonb)'::regprocedure,
-      'app_private.jsonb_without_source_url_keys(jsonb)'::regprocedure
+      'app_private.sale_procedure_without_listing_source(jsonb, boolean)'::regprocedure,
+      'app_private.jsonb_without_source_url_keys(jsonb)'::regprocedure,
+      'app_private.source_conflicts_without_listing_source(jsonb)'::regprocedure,
+      'app_private.source_presence_without_listing_source(jsonb)'::regprocedure
     )),
-  'both functions are immutable, security invoker, with an empty search_path'
+  'the four functions are immutable, security invoker, with an empty search_path'
 );
 select ok(
-  has_function_privilege('authenticated', 'app_private.sale_procedure_without_listing_source(jsonb)', 'EXECUTE')
-  and has_function_privilege('service_role', 'app_private.sale_procedure_without_listing_source(jsonb)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'app_private.jsonb_without_source_url_keys(jsonb)', 'EXECUTE')
-  and has_function_privilege('service_role', 'app_private.jsonb_without_source_url_keys(jsonb)', 'EXECUTE')
-  and not has_function_privilege('anon', 'app_private.sale_procedure_without_listing_source(jsonb)', 'EXECUTE')
-  and not has_function_privilege('anon', 'app_private.jsonb_without_source_url_keys(jsonb)', 'EXECUTE'),
+  (select bool_and(
+       has_function_privilege('authenticated', f, 'EXECUTE')
+       and has_function_privilege('service_role', f, 'EXECUTE')
+       and not has_function_privilege('anon', f, 'EXECUTE'))
+     from unnest(array[
+       'app_private.sale_procedure_without_listing_source(jsonb, boolean)',
+       'app_private.jsonb_without_source_url_keys(jsonb)',
+       'app_private.source_conflicts_without_listing_source(jsonb)',
+       'app_private.source_presence_without_listing_source(jsonb)'
+     ]::regprocedure[]) as f),
   'the definer views run them as an account or the server; anon cannot'
 );
 select ok(
   strpos(pg_get_viewdef('public.v_auction_sales_discovery'::regclass, true),
-    'app_private.sale_procedure_without_listing_source(s.sale_procedure) AS sale_procedure,') > 0
+    'app_private.sale_procedure_without_listing_source(s.sale_procedure, false) AS sale_procedure,') > 0
   and strpos(pg_get_viewdef('public.v_auction_sales_discovery'::regclass, true),
-    'jsonb_build_object(''sale_procedure'', app_private.sale_procedure_without_listing_source(s.sale_procedure)) AS source_blocks') > 0
+    'jsonb_build_object(''sale_procedure'', app_private.sale_procedure_without_listing_source(s.sale_procedure, false)) AS source_blocks') > 0
   and strpos(pg_get_viewdef('public.v_auction_sales_unlocked'::regclass, true),
-    'app_private.sale_procedure_without_listing_source(s.sale_procedure) AS sale_procedure,') > 0,
-  'the discovery and unlocked views pass sale_procedure through the projection'
+    'app_private.sale_procedure_without_listing_source(s.sale_procedure, true) AS sale_procedure,') > 0,
+  'discovery passes sale_procedure through the strict projection, unlocked through the one keeping the documents'
 );
 select ok(
-  pg_get_viewdef('public.v_auction_sales_discovery'::regclass, true) !~ E'\\n    s\\.sale_procedure,'
-  and pg_get_viewdef('public.v_auction_sales_unlocked'::regclass, true) !~ E'\\n    s\\.sale_procedure,'
-  and pg_get_viewdef('public.v_auction_sales_discovery'::regclass, true) !~ 'jsonb_build_object\(''sale_procedure'', s\.sale_procedure\)',
-  'neither view serves the raw column any more'
+  (select bool_and(
+       strpos(pg_get_viewdef(v, true),
+         'app_private.source_conflicts_without_listing_source(s.raw_payload -> ''source_conflicts''::text) AS source_conflicts') > 0
+       and strpos(pg_get_viewdef(v, true),
+         'app_private.source_presence_without_listing_source(app_private.auction_sale_source_presence_json(s.id)) AS source_presence') > 0)
+     from unnest(array['public.v_auction_sales_discovery', 'public.v_auction_sales_unlocked']::regclass[]) as v),
+  'both views pass source_conflicts and source_presence through their projections'
+);
+select ok(
+  (select bool_and(
+       pg_get_viewdef(v, true) !~ E'\\n    s\\.sale_procedure,'
+       and pg_get_viewdef(v, true) !~ 'jsonb_build_object\(''sale_procedure'', s\.sale_procedure\)'
+       and pg_get_viewdef(v, true) !~ 'COALESCE\(s\.raw_payload -> ''source_conflicts'''
+       and pg_get_viewdef(v, true) !~ E'\\n    app_private\\.auction_sale_source_presence_json')
+     from unnest(array['public.v_auction_sales_discovery', 'public.v_auction_sales_unlocked']::regclass[]) as v),
+  'neither view serves the raw columns any more'
 );
 select ok(
   (select bool_and(c.reloptions @> array['security_invoker=false', 'security_barrier=true'])
@@ -133,9 +171,9 @@ select ok(
   'the views keep their options, their grants and their comment'
 );
 select is(
-  pg_get_viewdef('public.v_auction_sales_app'::regclass, true) ~ 'sale_procedure_without_listing_source',
+  pg_get_viewdef('public.v_auction_sales_app'::regclass, true) ~ 'without_listing_source',
   false,
-  'the Analyse view is unchanged: it serves the full procedure'
+  'the Analyse view is unchanged: it serves the full fields'
 );
 
 -- Parity cases (Vitest: the same inputs give the same outputs in TypeScript) -------------------
@@ -146,21 +184,47 @@ select is(
     {"kind": ["document"], "url": "https://tableau.example"},
     {"kind": "DOCUMENT", "url": "https://majuscules.example"},
     "document", null,
-    {"kind": "document", "label": "Pièce", "url": "https://pieces.example/pv.pdf"}]}}$json$::jsonb),
+    {"kind": "document", "label": "Pièce", "url": "https://pieces.example/pv.pdf"}]}}$json$::jsonb, true),
   $json${"verification": {"case_sources": [
     {"url": "https://pieces.example/pv.pdf", "kind": "document", "label": "Pièce"}]}}$json$::jsonb,
   'an unknown or malformed case source is removed (closed by default)'
 );
 select is(
   app_private.sale_procedure_without_listing_source(
-    '{"verification": {"case_sources": {"kind": "listing", "url": "https://annonce.example/3"}}}'::jsonb),
+    '{"verification": {"case_sources": [{"kind": "document", "label": "Pièce", "url": "https://pieces.example/pv.pdf"}]}}'::jsonb,
+    false),
+  '{"verification": {"case_sources": [{"kind": "document", "label": "Pièce"}]}}'::jsonb,
+  'the strict variant keeps the label and the nature of a case document, not its url'
+);
+select is(
+  app_private.sale_procedure_without_listing_source(
+    '{"verification": {"case_sources": {"kind": "listing", "url": "https://annonce.example/3"}}}'::jsonb, true),
   '{"verification": {"case_sources": []}}'::jsonb,
   'case_sources that is not an array keeps nothing'
 );
+select is(
+  app_private.source_conflicts_without_listing_source($json$[
+    {"selected_source": "https://annonce-privee.example/a"}, "texte", null, [1], {"field": 12},
+    {"field": "tribunal"}]$json$::jsonb),
+  '[{}, {}, {}, {}, {}, {"field": "tribunal"}]'::jsonb,
+  'a conflict keeps its field only; a malformed one stays an empty object'
+);
+select is(
+  app_private.source_presence_without_listing_source($json${
+    "vench": {"availability": "available", "state": "present", "checked_at": "2026-11-01T10:00:00Z",
+              "attempted_at": "2026-11-01T10:00:00Z", "run_id": "run-1", "url": "https://annonce-privee.example/a",
+              "_raw_entry": "https://annonce-privee.example/a"},
+    "licitor": {"availability": "unavailable", "state": null, "source_name": "licitor"},
+    "Avoventes": {"_raw_entry": "x"}}$json$::jsonb),
+  '{"source_1": {}, "source_2": {"state": null, "availability": "unavailable"}, "source_3": {"state": "present", "availability": "available"}}'::jsonb,
+  'the presence is re-keyed in the order of the names, with availability and state only'
+);
 select ok(
-  app_private.sale_procedure_without_listing_source(null) is null
-  and app_private.sale_procedure_without_listing_source('{}'::jsonb) = '{}'::jsonb,
-  'an empty or missing procedure stays as it is'
+  app_private.sale_procedure_without_listing_source(null, false) is null
+  and app_private.sale_procedure_without_listing_source('{}'::jsonb, false) = '{}'::jsonb
+  and app_private.source_conflicts_without_listing_source(null) = '[]'::jsonb
+  and app_private.source_presence_without_listing_source(null) = '{}'::jsonb,
+  'an empty or missing value stays empty'
 );
 
 -- A free account, no unlock: the discovery view ------------------------------------------------
@@ -173,9 +237,14 @@ select ok(
   'the free account has no Analyse access'
 );
 select ok(
-  (select sale_procedure::text !~ 'annonce-privee\.example|plateforme-privee-902|autre\.example'
-     from public.v_auction_sales_discovery where id = 'c9020000-1000-4000-8000-000000000001'),
-  'discovery: neither the listing url nor the source name appears anywhere in sale_procedure'
+  (select to_jsonb(v)::text !~ 'annonce-privee\.example|plateforme-privee-902|autre\.example|pieces\.example'
+     from public.v_auction_sales_discovery v where v.id = 'c9020000-1000-4000-8000-000000000001'),
+  'discovery: the whole row carries neither the listing url, nor the source name, nor a case document url'
+);
+select ok(
+  (select to_jsonb(v)::text !~ 'annonce-privee\.example|plateforme-privee-902|autre\.example|pieces\.example'
+     from public.v_auction_sales_discovery_search v where v.id = 'c9020000-1000-4000-8000-000000000001'),
+  'discovery search: the whole row carries neither the listing url, nor the source name, nor a case document url'
 );
 select ok(
   (select sale_procedure::text !~ 'source_url"'
@@ -195,8 +264,7 @@ select is(
       "verified_at": "2026-11-01T10:00:00+01:00",
       "case_source_count": 4,
       "case_sources": [
-        {"kind": "document", "label": "Cahier des conditions de vente",
-         "url": "https://pieces.example/902/ccv.pdf", "document_type": "ccv"},
+        {"kind": "document", "label": "Cahier des conditions de vente", "document_type": "ccv"},
         {"kind": "official_reference", "label": "Référentiel officiel de compétence territoriale",
          "source_name": "Ministère de la Justice", "url": "https://www.data.gouv.fr/fr/datasets/competences",
          "reference_sha256": "abc"}
@@ -212,7 +280,7 @@ select is(
       "issues": []
     }
   }$json$::jsonb,
-  'discovery: the case document (without source name), the official reference, the legal basis, the rules and the dates stay'
+  'discovery: the case document keeps its label and nature; the official reference, the legal basis, the rules and the dates stay'
 );
 select is(
   (select source_blocks -> 'sale_procedure'
@@ -222,10 +290,10 @@ select is(
   'discovery: source_blocks.sale_procedure is the same projection'
 );
 select ok(
-  (select sale_procedure::text !~ 'annonce-privee\.example|plateforme-privee-902|source_url"'
-      and (source_blocks -> 'sale_procedure')::text !~ 'annonce-privee\.example|plateforme-privee-902|source_url"'
-     from public.v_auction_sales_discovery_search where id = 'c9020000-1000-4000-8000-000000000001'),
-  'the discovery search view, read from the discovery view, serves the projection too'
+  (select source_conflicts = '[{"field": "sale_date"}]'::jsonb
+      and source_presence = '{"source_1": {"availability": "available", "state": "present"}}'::jsonb
+     from public.v_auction_sales_discovery where id = 'c9020000-1000-4000-8000-000000000001'),
+  'discovery: the conflict keeps its field, the presence its availability and state under source_1'
 );
 select is(
   (select count(*) from public.v_auction_sales_unlocked where id = 'c9020000-1000-4000-8000-000000000001'),
@@ -240,9 +308,9 @@ select is(
   'the free account unlocks the sale'
 );
 select ok(
-  (select sale_procedure::text !~ 'annonce-privee\.example|plateforme-privee-902|autre\.example'
-     from public.v_auction_sales_unlocked where id = 'c9020000-1000-4000-8000-000000000001'),
-  'unlocked: neither the listing url nor the source name appears anywhere in sale_procedure'
+  (select to_jsonb(v)::text !~ 'annonce-privee\.example|plateforme-privee-902|autre\.example'
+     from public.v_auction_sales_unlocked v where v.id = 'c9020000-1000-4000-8000-000000000001'),
+  'unlocked: the whole row carries neither the listing url nor the source name'
 );
 select ok(
   (select sale_procedure::text !~ 'source_url"'
@@ -250,15 +318,32 @@ select ok(
   'unlocked: no *source_url key is left at any depth'
 );
 select is(
-  (select sale_procedure
+  (select sale_procedure -> 'verification' -> 'case_sources'
      from public.v_auction_sales_unlocked where id = 'c9020000-1000-4000-8000-000000000001'),
-  (select sale_procedure
-     from public.v_auction_sales_discovery where id = 'c9020000-1000-4000-8000-000000000001'),
-  'unlocked: the same projection as discovery (documents, official reference, legal basis, rules, dates)'
+  $json$[
+    {"kind": "document", "label": "Cahier des conditions de vente", "url": "https://pieces.example/902/ccv.pdf",
+     "document_type": "ccv"},
+    {"kind": "official_reference", "label": "Référentiel officiel de compétence territoriale",
+     "source_name": "Ministère de la Justice", "url": "https://www.data.gouv.fr/fr/datasets/competences",
+     "reference_sha256": "abc"}
+  ]$json$::jsonb,
+  'unlocked: the case document keeps its url (without the source name), the official reference stays'
+);
+select ok(
+  (select u.sale_procedure - 'verification' = d.sale_procedure - 'verification'
+      and u.sale_procedure -> 'verification' -> 'regulatory_sources'
+        = d.sale_procedure -> 'verification' -> 'regulatory_sources'
+      and u.sale_procedure -> 'verification' -> 'facts' = d.sale_procedure -> 'verification' -> 'facts'
+      and u.source_conflicts = d.source_conflicts
+      and u.source_presence = d.source_presence
+     from public.v_auction_sales_unlocked u
+     join public.v_auction_sales_discovery d on d.id = u.id
+    where u.id = 'c9020000-1000-4000-8000-000000000001'),
+  'unlocked: rules, dates, legal basis, facts, conflicts and presence as in discovery'
 );
 reset role;
 
--- An Analyse account: the full procedure --------------------------------------------------------
+-- An Analyse account: the full fields ----------------------------------------------------------
 set local role authenticated;
 set local "request.jwt.claim.role" = 'authenticated';
 set local "request.jwt.claim.sub" = 'c9020000-0000-4000-8000-000000000002';
@@ -278,6 +363,12 @@ select ok(
       and sale_procedure -> 'rules' ->> 'payment_deadline_source_url' = 'https://annonce-privee.example/vente/902'
      from public.v_auction_sales_app where id = 'c9020000-1000-4000-8000-000000000001'),
   'Analyse: the listing source and its url are there'
+);
+select ok(
+  (select source_conflicts -> 0 ->> 'selected_source' = 'https://annonce-privee.example/vente/902'
+      and source_presence ? 'plateforme-privee-902'
+     from public.v_auction_sales_app where id = 'c9020000-1000-4000-8000-000000000001'),
+  'Analyse: the conflicts and the presence are served whole'
 );
 reset role;
 

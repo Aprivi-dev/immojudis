@@ -114,9 +114,30 @@ describe("sale procedure sources without the listing source", () => {
     expect(screen.getAllByText("plateforme-privee").length).toBeGreaterThan(0);
   });
 
-  it("keeps the document without the listing nor the source name once projected", () => {
+  it("lists the document of a sale that was not unlocked by its label, without a link", () => {
     const { container } = render(
-      <SaleProcedurePanel sale={saleWithoutListingSource(sale(procedure([listing, document])))} />,
+      <SaleProcedurePanel
+        sale={saleWithoutListingSource(sale(procedure([listing, document])), {
+          documentUrls: false,
+        })}
+      />,
+    );
+    expect(screen.getByText(/Vérification Immojudis · 1 source$/)).toBeTruthy();
+    expect(screen.getByText("Cahier des conditions de vente")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Cahier des conditions de vente/ })).toBeNull();
+    expect(container.innerHTML).not.toContain("https://pieces.example/ccv.pdf");
+    expect(container.innerHTML).not.toContain(LISTING_URL);
+    expect(container.innerHTML).not.toContain("plateforme-privee");
+    expect(container.querySelector('a[href=""]')).toBeNull();
+  });
+
+  it("keeps the document link of an unlocked sale, without the listing nor the source name", () => {
+    const { container } = render(
+      <SaleProcedurePanel
+        sale={saleWithoutListingSource(sale(procedure([listing, document])), {
+          documentUrls: true,
+        })}
+      />,
     );
     expect(screen.getByText(/Vérification Immojudis · 1 source$/)).toBeTruthy();
     expect(screen.getByRole("link", { name: /Cahier des conditions de vente/ })).toBeTruthy();
@@ -125,7 +146,11 @@ describe("sale procedure sources without the listing source", () => {
   });
 
   it("shows no empty « Sources » block and no count when no source with a link is left", () => {
-    render(<SaleProcedurePanel sale={saleWithoutListingSource(sale(procedure([listing])))} />);
+    render(
+      <SaleProcedurePanel
+        sale={saleWithoutListingSource(sale(procedure([listing])), { documentUrls: false })}
+      />,
+    );
     expect(screen.getByText("Vérification Immojudis")).toBeTruthy();
     expect(screen.queryByText(/0 source/)).toBeNull();
     expect(screen.queryByText("Sources contrôlées")).toBeNull();
