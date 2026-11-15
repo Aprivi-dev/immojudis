@@ -79,7 +79,6 @@ async function publicMarketGapBand(
         event: "market_gap_band_failed",
         saleId,
         code: error.code ?? null,
-        message: String(error.message ?? "").slice(0, 200),
       }),
     );
     return null;

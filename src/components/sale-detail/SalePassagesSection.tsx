@@ -2,14 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchSalePassages } from "@/lib/client-api";
-import type { SalePassagesReadResponse, SalePassagesTeaser } from "@/lib/client-api/sale-analysis";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import {
   describePreviousPassage,
   describeTimelineEvent,
   formatPassageDate,
+  type SalePassagesResponse,
   type SalePassagesSummary,
+  type SalePassagesTeaserSummary,
 } from "@/lib/sale-passages";
 import styles from "./SalePassagesSection.module.css";
 import { UnlockCallToAction } from "./UnlockCallToAction";
@@ -39,7 +40,7 @@ function summaryLine(summary: SalePassagesSummary): string | null {
  * Ce qu'un compte gratuit lit de l'historique d'une vente qu'il n'a pas débloquée : des faits, sans
  * date ni montant (« 2ᵉ passage en vente · 1 report · mise à prix déjà baissée »). `null` sans fait.
  */
-export function passagesTeaserLine(summary: SalePassagesTeaser["summary"]): string | null {
+export function passagesTeaserLine(summary: SalePassagesTeaserSummary): string | null {
   const facts = [
     summary.previousPassageCount > 0
       ? `${summary.previousPassageCount + 1}ᵉ passage en vente`
@@ -74,7 +75,7 @@ export function SalePassagesSection({
   /** The signed-in account, so that a cached reading never crosses accounts. */
   userKey?: string | null;
 }) {
-  const query = useQuery<SalePassagesReadResponse>({
+  const query = useQuery<SalePassagesResponse>({
     queryKey: queryKeys.salePassages(saleId, access, userKey),
     queryFn: () => fetchSalePassages(saleId),
     enabled,
