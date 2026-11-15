@@ -401,6 +401,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
 
 describe("déduction des achats à l'unité sur le premier mois d'abonnement", () => {
   let deductionCents = 0;
+  let settledCents = 0;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -410,6 +411,7 @@ describe("déduction des achats à l'unité sur le premier mois d'abonnement", (
     vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_analysis");
     vi.stubEnv("STRIPE_ANALYSIS_PRODUCT_ID", "");
     deductionCents = 1_900;
+    settledCents = 1_900;
     mocks.pricesRetrieve.mockResolvedValue({
       active: true,
       type: "recurring",
@@ -441,6 +443,7 @@ describe("déduction des achats à l'unité sur le premier mois d'abonnement", (
       if (name === "attach_analyse_checkout_customer") return { data: CUSTOMER_ID, error: null };
       if (name === "reserve_unit_purchase_deduction") return { data: deductionCents, error: null };
       if (name === "begin_stripe_webhook_event") return { data: true, error: null };
+      if (name === "settle_unit_purchase_deduction") return { data: settledCents, error: null };
       return { data: null, error: null };
     });
   });
@@ -577,6 +580,33 @@ describe("déduction des achats à l'unité sur le premier mois d'abonnement", (
     });
     expect(rpcCalls("release_unit_purchase_deduction")).toHaveLength(0);
     expect(mocks.couponsDel).not.toHaveBeenCalled();
+  });
+
+  it("réglée sans écart : aucune alerte", async () => {
+    const alert = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await deliver("checkout.session.completed", deductionSession);
+
+    expect(alert).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it("journalise au format du rapprochement un règlement inférieur au bon (achat remboursé entre-temps)", async () => {
+    settledCents = 0;
+    const alert = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await deliver("checkout.session.completed", deductionSession);
+
+    expect(alert).toHaveBeenCalledWith(expect.stringContaining("deduction settlement mismatch"), {
+      kind: "unit_deduction_settlement_mismatch",
+      stripeSubscriptionId: null,
+      stripeCheckoutSessionId: "cs_analysis",
+      userId: USER_ID,
+      detail: expect.stringMatching(/1900 centimes.*0 centimes/),
+    });
+    // L'écart n'empêche pas le traitement de l'abonnement ni ne fait rejouer l'événement.
+    expect(result.eventId).toBe("evt_checkout.session.completed");
+    alert.mockRestore();
   });
 
   it("libérée au checkout.session.expired, et le bon supprimé", async () => {

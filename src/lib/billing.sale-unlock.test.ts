@@ -75,7 +75,8 @@ import {
   SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
   VAT_EXEMPTION_INVOICE_MENTION,
 } from "@/lib/analysis-offer";
-import { createSaleUnlockCheckoutSession, handleStripeWebhook } from "@/lib/billing";
+import { handleStripeWebhook } from "@/lib/billing";
+import { createSaleUnlockCheckoutSession } from "@/lib/billing-sale-unlock";
 import type { SaleUnlockConsent } from "@/lib/commercial-acceptance";
 import { POST } from "@/app/api/billing/sale-unlock-checkout/route";
 
@@ -377,6 +378,45 @@ describe("création de la session d'achat", () => {
     expect(mocks.recordSaleUnlockAcceptance).not.toHaveBeenCalled();
   });
 
+  it("(j) traite une session en attente inconnue de Stripe (resource_missing) comme expirée", async () => {
+    let reservations = 0;
+    stubDatabase({
+      reserve_sale_unlock_purchase: () => {
+        reservations += 1;
+        return reservations === 1
+          ? { data: [{ purchase_id: PURCHASE_ID, existing_session_id: "cs_gone" }], error: null }
+          : { data: [{ purchase_id: NEW_PURCHASE_ID, existing_session_id: null }], error: null };
+      },
+    });
+    mocks.sessionsRetrieve.mockRejectedValue(
+      Object.assign(new Error("No such checkout.session: cs_gone"), { code: "resource_missing" }),
+    );
+
+    await expect(
+      createSaleUnlockCheckoutSession({ auth: authContext(), saleId: SALE_ID, consent }),
+    ).resolves.toEqual({ url: "https://checkout.stripe.test/cs_new" });
+    expect(rpcCalls("expire_sale_unlock_purchase")[0]![1]).toEqual({
+      p_checkout_session_id: "cs_gone",
+    });
+    expect(mocks.sessionsCreate.mock.calls[0]![0].metadata.purchase_id).toBe(NEW_PURCHASE_ID);
+  });
+
+  it("une autre erreur de Stripe à la relecture de la session en attente n'expire rien", async () => {
+    stubDatabase({
+      reserve_sale_unlock_purchase: {
+        data: [{ purchase_id: PURCHASE_ID, existing_session_id: "cs_pending" }],
+        error: null,
+      },
+    });
+    mocks.sessionsRetrieve.mockRejectedValue(new Error("stripe down"));
+
+    await expect(
+      createSaleUnlockCheckoutSession({ auth: authContext(), saleId: SALE_ID, consent }),
+    ).rejects.toThrow("stripe down");
+    expect(rpcCalls("expire_sale_unlock_purchase")).toHaveLength(0);
+    expect(mocks.sessionsCreate).not.toHaveBeenCalled();
+  });
+
   it("(j) remplace la session expirée : l'ancien achat passe à expired, un nouvel achat est réservé", async () => {
     let reservations = 0;
     stubDatabase({
@@ -566,39 +606,42 @@ describe("webhook : achat payé", () => {
     expect(rpcCalls("grant_purchased_sale_unlock")).toHaveLength(1);
   });
 
-  it("(b) deux événements distincts pour la même session ne débloquent la vente qu'une fois", async () => {
-    // Base simulée : la première fois l'achat est payé et la vente débloquée ; ensuite la même
-    // session rend la même réponse sans rien écrire (idempotence par session et PaymentIntent).
-    const unlocks: string[] = [];
-    const paidSessions = new Set<string>();
+  it("(b) deux événements pour la même session portent la même clé d'achat à la base, sans second envoi ni erreur", async () => {
+    // Ce test ne prouve que la part du TypeScript : les deux événements appellent la base avec le même
+    // achat, la même session et le même PaymentIntent, et la réponse « déjà accordé » d'un rejeu
+    // n'entraîne ni erreur ni confirmation pour une autre acceptation. Qu'il n'y ait qu'UN déblocage est
+    // garanti par `grant_purchased_sale_unlock` : assertions pgTAP « the same session replayed gives the
+    // same answer » et « replays left one paid purchase and one bought unlock » de
+    // supabase/tests/852_sale_unlock_purchases.sql. Le second envoi est écarté par la confirmation
+    // elle-même (une acceptation déjà « sent » n'est pas renvoyée : commercial-acceptance.test.ts).
     stubDatabase({
-      grant_purchased_sale_unlock: (args: { p_checkout_session_id: string }) => {
-        if (!paidSessions.has(args.p_checkout_session_id)) {
-          paidSessions.add(args.p_checkout_session_id);
-          unlocks.push(SALE_ID);
-        }
-        return { data: [{ granted: true, outcome: "unlocked" }], error: null };
-      },
+      grant_purchased_sale_unlock: { data: [{ granted: true, outcome: "unlocked" }], error: null },
     });
 
-    await deliver("checkout.session.completed", paidSession(), { id: "evt_completed" });
-    await deliver("checkout.session.async_payment_succeeded", paidSession(), {
+    const first = await deliver("checkout.session.completed", paidSession(), {
+      id: "evt_completed",
+    });
+    const second = await deliver("checkout.session.async_payment_succeeded", paidSession(), {
       id: "evt_async",
     });
 
+    expect(first.handled).toBe(true);
+    expect(second.handled).toBe(true);
     const calls = rpcCalls("grant_purchased_sale_unlock").map(([, args]) => args);
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({
+    const key = {
       p_purchase_id: PURCHASE_ID,
       p_checkout_session_id: "cs_unit",
       p_payment_intent_id: "pi_unit",
-    });
-    expect(calls[1]).toMatchObject({
-      p_purchase_id: PURCHASE_ID,
-      p_checkout_session_id: "cs_unit",
-      p_payment_intent_id: "pi_unit",
-    });
-    expect(unlocks).toEqual([SALE_ID]);
+    };
+    expect(calls[0]).toMatchObject(key);
+    expect(calls[1]).toMatchObject(key);
+    const confirmations = mocks.sendCommercialConfirmation.mock.calls.map(([args]) => args);
+    expect(new Set(confirmations.map((args) => args.acceptanceId)).size).toBe(1);
+    expect(new Set(confirmations.map((args) => args.checkoutSessionId))).toEqual(
+      new Set(["cs_unit"]),
+    );
+    expect(completionStatus()).toMatchObject({ p_processing_status: "processed" });
   });
 
   it.each([

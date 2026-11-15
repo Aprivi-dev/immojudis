@@ -23,8 +23,9 @@ change rien.
 
 - Vente achetée puis passée au statut `withdrawn` : l'achat redevient automatiquement un **crédit**
   (`app_private.sale_unlock_credit_purchases`), que le compte utilise pour débloquer une autre vente. Rien à
-  faire, pas de remboursement.
-- Vente plus débloquable ou déjà débloquée au moment du paiement : le paiement laisse un crédit, de même.
+  faire, pas de remboursement. Le crédit survit à la suppression de la vente retirée (voir ci-dessous).
+- Vente plus débloquable ou déjà débloquée au moment du paiement, ou compte devenu abonné Analyse entre-temps :
+  le paiement laisse un crédit, de même.
 - Remboursement total ou litige perdu : se fait dans Stripe ; le webhook appelle
   `public.record_sale_unlock_payment_state`, qui supprime le déblocage de l'achat ou éteint son crédit.
   Un litige ouvert ferme la vente jusqu'à sa clôture ; un litige gagné la rouvre.
@@ -35,8 +36,12 @@ change rien.
 
 Une ligne de `public.user_sale_unlocks` dont la vente a `auction_sales.status = 'withdrawn'` ne compte plus
 dans les déblocages utilisés (`app_private.sale_unlocks_used`, qui lit `app_private.sale_is_withdrawn`). Le
-compte peut donc débloquer une autre vente sans rien demander. La ligne n'est pas supprimée : elle reste
-jusqu'à la purge des 24 mois.
+compte peut donc débloquer une autre vente sans rien demander. La ligne n'est pas supprimée tant que la
+vente existe. Quand la vente retirée est supprimée (purge de rétention `purge_expired_auction_sales`,
+nettoyage des annonces vides), le déclencheur `auction_sales_release_withdrawn_unlocks`
+(`20261122100000`) supprime d'abord ses lignes de déblocage, de toute source : le déblocage gratuit reste
+rendu et un achat reste un crédit. Une vente supprimée sans être `withdrawn` ne rend rien : sa ligne est
+détachée (`sale_id` vide) et compte jusqu'à ses 24 mois.
 
 Aucune intervention n'est nécessaire dans ce cas. Si un compte écrit pour une vente retirée, vérifier le
 statut de la vente (étape 1 ci-dessous) et lui répondre que le déblocage lui a déjà été rendu.

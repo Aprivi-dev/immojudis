@@ -14,10 +14,8 @@ import {
 import { apiRoute } from "@/lib/api-route";
 import { AuthRequiredError } from "@/lib/api-errors";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
-import {
-  previewFirstMonthDeductionCents,
-  resolveAnalysisCheckoutAvailability,
-} from "@/lib/billing";
+import { resolveAnalysisCheckoutAvailability } from "@/lib/billing";
+import { previewFirstMonthDeductionCents } from "@/lib/billing-unit-deduction";
 import { saleUnlockCheckoutReadiness } from "@/lib/sale-unlock-checkout-readiness";
 import type { BillingOfferResponse } from "@/lib/client-billing";
 import { enforceIpRateLimit } from "@/lib/rate-limit";

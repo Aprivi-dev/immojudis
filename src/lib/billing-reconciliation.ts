@@ -8,10 +8,11 @@ import { analysisPriceId } from "@/lib/analysis-checkout-readiness";
 import {
   analysisSubscriptionPriceIds,
   getStripe,
-  SALE_UNLOCK_PAYMENT_PURPOSE,
   stripeAccessPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
+import type { BillingDiscrepancy } from "@/lib/billing-discrepancy";
+import { SALE_UNLOCK_PAYMENT_PURPOSE } from "@/lib/billing-sale-unlock";
 import { saleUnlockPriceId } from "@/lib/sale-unlock-checkout-readiness";
 import { serverEnv } from "@/lib/env";
 import { isPlanPeriodActive } from "@/lib/plans";
@@ -26,8 +27,8 @@ import { isPlanPeriodActive } from "@/lib/plans";
  * Les droits accordés à la main (ligne sans identifiant d'abonnement Stripe) sont hors périmètre.
  *
  * Achats à l'unité (lot 3), quand leur Price est configuré : une session `sale_unlock` payée chez
- * Stripe sans achat payé en base, et un achat déduit d'un premier mois d'abonnement puis remboursé
- * (ou litige perdu) : le client aurait la déduction et le remboursement.
+ * Stripe sans achat payé en base, et un achat déduit d'un premier mois d'abonnement puis remboursé,
+ * contesté ou perdu en litige : le client aurait la déduction et le remboursement.
  */
 type SubscriptionRow = Pick<
   Database["public"]["Tables"]["user_subscriptions"]["Row"],
@@ -52,31 +53,7 @@ export type StripeSubscriptionView = {
   priceAmountCents?: number | null;
 };
 
-type BillingDiscrepancyKind =
-  /** Stripe facture un abonnement qui ouvre l'accès, aucune ligne ne le porte en base. */
-  | "stripe_access_without_row"
-  /** Stripe facture un abonnement qui ouvre l'accès, la base n'ouvre pas l'accès. */
-  | "stripe_access_database_closed"
-  /** La base ouvre l'accès, l'abonnement Stripe n'en ouvre plus ou n'existe plus. */
-  | "database_access_stripe_closed"
-  | "database_access_stripe_missing"
-  /** Le Price de l'abonnement n'est dans aucune liste de l'offre Analyse. */
-  | "unknown_price"
-  /** Le compte indiqué par Stripe n'est pas celui de la ligne en base. */
-  | "user_mismatch"
-  /** Session d'achat à l'unité payée chez Stripe, sans achat payé en base (déblocage non accordé). */
-  | "sale_unlock_paid_without_purchase"
-  /** Achat à l'unité déduit d'un premier mois d'abonnement, puis remboursé ou litige perdu. */
-  | "sale_unlock_deducted_then_refunded";
-
-export type BillingDiscrepancy = {
-  kind: BillingDiscrepancyKind;
-  stripeSubscriptionId: string | null;
-  userId: string | null;
-  detail: string;
-  /** Session Checkout en cause (achats à l'unité). */
-  stripeCheckoutSessionId?: string | null;
-};
+export type { BillingDiscrepancy, BillingDiscrepancyKind } from "@/lib/billing-discrepancy";
 
 const ACCESS_STRIPE_STATUSES = new Set(["trialing", "active", "past_due"]);
 
@@ -219,6 +196,16 @@ export type SaleUnlockPurchaseRow = {
 /** États d'un achat dont le paiement a été enregistré (payé, puis éventuellement remboursé ou contesté). */
 const RECORDED_PAYMENT_STATES = new Set(["paid", "refunded", "disputed", "dispute_lost"]);
 
+/**
+ * États d'un achat déduit d'un premier mois qui ne justifient plus la déduction : le client garderait
+ * la remise et le remboursement (ou le montant contesté).
+ */
+const DEDUCTION_REVERSAL_STATES = new Map([
+  ["refunded", "remboursé"],
+  ["disputed", "contesté (litige ouvert)"],
+  ["dispute_lost", "perdu en litige"],
+]);
+
 /** Pur : les achats à l'unité, sans accès réseau ni écriture. */
 export function compareSaleUnlockPurchases({
   paidSessions,
@@ -246,13 +233,13 @@ export function compareSaleUnlockPurchases({
   }
   for (const purchase of purchases) {
     if (!purchase.deducted_checkout_session_id) continue;
-    if (purchase.state !== "refunded" && purchase.state !== "dispute_lost") continue;
+    if (!DEDUCTION_REVERSAL_STATES.has(purchase.state)) continue;
     discrepancies.push({
       kind: "sale_unlock_deducted_then_refunded",
       stripeSubscriptionId: null,
       stripeCheckoutSessionId: purchase.checkout_session_id,
       userId: purchase.user_id,
-      detail: `Achat ${purchase.id} déduit du premier mois (session ${purchase.deducted_checkout_session_id}) puis ${purchase.state === "refunded" ? "remboursé" : "perdu en litige"}.`,
+      detail: `Achat ${purchase.id} déduit du premier mois (session ${purchase.deducted_checkout_session_id}) puis ${DEDUCTION_REVERSAL_STATES.get(purchase.state)}.`,
     });
   }
   return discrepancies;
@@ -313,7 +300,7 @@ async function readSaleUnlockPurchases(sessionIds: string[]): Promise<SaleUnlock
     .from("sale_unlock_purchases")
     .select(SALE_UNLOCK_PURCHASE_COLUMNS)
     .not("deducted_checkout_session_id", "is", null)
-    .in("state", ["refunded", "dispute_lost"]);
+    .in("state", [...DEDUCTION_REVERSAL_STATES.keys()]);
   if (error) throw error;
   rows.push(...((data ?? []) as SaleUnlockPurchaseRow[]));
   return rows;
