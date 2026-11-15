@@ -17,9 +17,9 @@ function saleLine(sale: UnlockedSaleSummary): string {
 }
 
 /**
- * « Mes ventes débloquées » : les ventes que ce compte a débloquées (« 3 déblocages par mois ») et
- * qui sont toujours en ligne, avec le compteur du mois. Un déblocage reste valable tant que la vente
- * est en ligne, dans la limite de 24 mois.
+ * « Mes ventes débloquées » : les ventes que ce compte a débloquées et qui sont toujours en ligne,
+ * avec l'état du déblocage du compte gratuit. Un déblocage reste valable tant que la vente est en
+ * ligne, dans la limite de 24 mois.
  */
 export function UnlockedSalesPage() {
   const { user } = useAuth();
@@ -49,8 +49,8 @@ export function UnlockedSalesPage() {
       description={
         <>
           <p>
-            Les ventes dont vous avez ouvert le détail avec vos déblocages par mois. Elles restent
-            accessibles tant qu’elles sont en ligne sur Immojudis, dans la limite de 24 mois.
+            Les ventes dont vous avez ouvert le détail en les débloquant. Elles restent accessibles
+            tant qu’elles sont en ligne sur Immojudis, dans la limite de 24 mois.
           </p>
           {status && !status.analysisAccess ? (
             <p className="mt-3 text-sm font-medium text-brand-navy">{unlockUsageLine(status)}</p>
