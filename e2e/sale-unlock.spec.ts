@@ -544,6 +544,13 @@ test("achat à l'unité ouvert : les deux choix, le consentement, puis le paieme
   await expect(choices.nth(0)).toHaveText(/^Toutes les ventes pendant un mois : 59\s€$/);
   await expect(choices.nth(1)).toHaveText("Cette vente : 19 €");
   await expect(card.getByText("Recommandée")).toBeVisible();
+  // 3 × 19 € = 57 € ne dépasse pas 59 € ; 4 × 19 € = 76 € le dépasse.
+  await expect(
+    card.getByText(
+      "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
+    ),
+  ).toBeVisible();
+  await expect(card.getByText(/trois ventes/)).toHaveCount(0);
   await expect(card.getByRole("link", { name: "Choisir l’abonnement Analyse" })).toHaveAttribute(
     "href",
     "/offres#tarifs",

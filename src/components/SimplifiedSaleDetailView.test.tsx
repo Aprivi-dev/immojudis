@@ -1549,6 +1549,17 @@ describe("the free unlock on the sale page", () => {
     ).toBeTruthy();
   });
 
+  it("puts « Débloquer cette vente avec mon crédit » in the hero when a credit is left", () => {
+    renderFree(unlockStatus({ used: 1, remaining: 0, credits: 1 }));
+    const links = screen.getAllByRole("link", { name: "Débloquer cette vente avec mon crédit" });
+    const hero = links.find((link) => link.className.includes("primaryAction"));
+    expect(hero?.getAttribute("href")).toBe("#debloquer");
+    cleanup();
+
+    renderFree(unlockStatus({ used: 1, remaining: 0 }));
+    expect(screen.queryByRole("link", { name: "Débloquer cette vente avec mon crédit" })).toBeNull();
+  });
+
   it("opens the calculation tab once the unlock succeeded, and keeps the confirmation", async () => {
     const saleId = EXAMPLE_SALE_RECORDS.bordeaux.sale.id;
     mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 1, remaining: 0 }));

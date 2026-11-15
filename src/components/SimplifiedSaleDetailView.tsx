@@ -19,7 +19,11 @@ import {
 import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
-import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import {
+  UNLOCK_CREDIT_CALL_TO_ACTION_LABEL,
+  type SaleUnlockResult,
+  type SaleUnlockStatus,
+} from "@/lib/sale-unlocks";
 import { isPersistedSale } from "@/lib/example-sale-identity";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
@@ -754,7 +758,15 @@ function SaleDetailWorkspace({
           href: `#${UNLOCK_PANEL_ID}`,
           label: `Débloquer ${ceilingTerms?.ceilingTermWithArticle ?? "le plafond"}`,
         }
-      : preparation;
+      : access === "discovery" &&
+          user &&
+          !publicDemo &&
+          unlockStatus?.unlockable &&
+          !unlockStatus.unlocked &&
+          (unlockStatus.credits ?? 0) > 0
+        ? // Déblocage gratuit utilisé, crédit restant (vente achetée qui n'a pas eu lieu).
+          { href: `#${UNLOCK_PANEL_ID}`, label: UNLOCK_CREDIT_CALL_TO_ACTION_LABEL }
+        : preparation;
   const ceilingSummaryLabel =
     ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)";
   // Fourchette de l'estimation détaillée (offre Analyse) : case « Valeur estimée » et réglette.
