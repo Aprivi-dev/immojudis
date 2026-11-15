@@ -54,7 +54,7 @@ function renderBlock(overrides: Partial<Parameters<typeof RentalMarketBlock>[0]>
     <RentalMarketBlock
       sale={SALE}
       startingPriceEur={100_000}
-      surfaceM2={50}
+      surface={{ value: 50, kind: "recorded" }}
       reference={RELIABLE}
       tension={TENSION}
       {...overrides}
@@ -159,13 +159,29 @@ describe("bloc « Marché locatif (estimation) »", () => {
     expect(screen.getByTestId("rental-market-block").textContent).not.toContain(PUBLIC_YIELD_LABEL);
   });
 
+  it("rendement sur une surface présumée : il dit la surface provisoire et pourquoi", () => {
+    renderBlock({ surface: { value: 20, kind: "estimated" } });
+    const block = screen.getByTestId("rental-market-block");
+    expect(block.textContent).toContain(`${PUBLIC_YIELD_LABEL} :`);
+    expect(block.textContent).toContain(
+      "Surface provisoire de 20 m² retenue pour les calculs : l'annonce ne publie pas la surface.",
+    );
+  });
+
+  it("surface mesurée : aucune mention de surface présumée", () => {
+    renderBlock();
+    const block = screen.getByTestId("rental-market-block");
+    expect(block.textContent).toContain(`${PUBLIC_YIELD_LABEL} :`);
+    expect(block.textContent).not.toContain("Surface provisoire");
+  });
+
   it("n'a pas de défaut d'accessibilité", async () => {
     const { container } = render(
       <main>
         <RentalMarketBlock
           sale={SALE}
           startingPriceEur={100_000}
-          surfaceM2={50}
+          surface={{ value: 50, kind: "recorded" }}
           reference={RELIABLE}
           tension={TENSION}
         />

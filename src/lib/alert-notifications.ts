@@ -35,6 +35,9 @@ export type AlertNotificationMatchInput = {
   department: string | null;
   startingPriceEur: number | null;
   saleDate: string | null;
+  /** Surface de la vente et sa nature (`getSaleSurface`) : présumée, l'e-mail le dit à côté du rendement. */
+  surfaceM2: number | null;
+  surfaceKind: string | null;
   reasons: string[];
   marketDiscountPct: number | null;
   matchedAt: string;
@@ -746,6 +749,8 @@ function buildNotificationSnapshot({
       department: match.department,
       startingPriceEur: match.startingPriceEur,
       saleDate: match.saleDate,
+      surfaceM2: match.surfaceM2,
+      surfaceKind: match.surfaceKind,
     },
     match: {
       id: match.id,
