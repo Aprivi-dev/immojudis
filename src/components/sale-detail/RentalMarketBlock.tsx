@@ -15,6 +15,8 @@ import type { RentReference, RentSegment } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
 import { rentNature } from "@/lib/rent-nature";
 import { PUBLIC_YIELD_LABEL, publicYieldText } from "@/lib/public-rental-yield";
+import { presumedSurfaceNote } from "@/lib/presumed-surface";
+import type { SaleSurface } from "@/lib/surface";
 
 /** Titre du bloc (n° 44). */
 export const RENTAL_MARKET_TITLE = "Marché locatif (estimation)";
@@ -33,7 +35,8 @@ type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
 /**
  * Bloc « Marché locatif (estimation) » de la fiche : loyer d’annonce de la carte de l’ANIL (charges comprises) avec
  * sa fourchette et le nombre d’annonces, « loyer de maille » quand la source l’est, rendement brut à la mise à prix en
- * fourchette quand la référence est indicative, zonage tendu (TLV) en ligne neutre, et les mentions de source
+ * fourchette quand la référence est indicative (calculé sur une surface présumée, il le dit : `presumedSurfaceNote`),
+ * zonage tendu (TLV) en ligne neutre, et les mentions de source
  * obligatoires. Rien d’autre : aucun conseil, aucune promesse de gain. Chargé à la demande
  * (`RentalMarketBlockLazy`).
  *
@@ -43,7 +46,7 @@ type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
 export function RentalMarketBlock({
   sale,
   startingPriceEur,
-  surfaceM2,
+  surface,
   reference,
   tension,
   className = "mx-auto w-full max-w-[1380px] px-4 sm:px-6 lg:px-8",
@@ -52,7 +55,8 @@ export function RentalMarketBlock({
   sale: MarketSale;
   /** Mise à prix lisible par ce compte ; `null` : non lisible, aucun rendement. */
   startingPriceEur: number | null;
-  surfaceM2: number | null;
+  /** Surface de la vente (`getSaleSurface`) : présumée, le rendement le dit. */
+  surface: Pick<SaleSurface, "value" | "kind">;
   reference: RentReference | null;
   tension: HousingTension | null;
   className?: string;
@@ -67,11 +71,12 @@ export function RentalMarketBlock({
     anil && regimeKnown && startingPriceEur != null && startingPriceEur > 0
       ? estimateSaleGrossYieldRange(
           { ...sale, starting_price_eur: startingPriceEur },
-          surfaceM2,
+          surface.value,
           anil,
         )
       : null;
   const yieldValue = range && anil ? publicYieldText(range, anil.reliability) : null;
+  const surfaceNote = presumedSurfaceNote(surface);
   const low = anil?.lowPerM2;
   const high = anil?.highPerM2;
   const observations = anil?.observations;
@@ -106,6 +111,9 @@ export function RentalMarketBlock({
             {yieldValue ? (
               <p>
                 {PUBLIC_YIELD_LABEL} : <strong>{yieldValue}</strong>
+                {surfaceNote ? (
+                  <span className="mt-1 block text-xs text-ink-soft">{surfaceNote}</span>
+                ) : null}
                 <span className="mt-1 block text-xs text-ink-soft">
                   Calculé sur la mise à prix, avec les frais d’acquisition estimés du type de vente.
                   Si la vente se conclut au-dessus de la mise à prix, le rendement est plus faible.

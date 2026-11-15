@@ -348,6 +348,9 @@ export function buildReportSnapshot({
       legalFramework: getSaleProcedure(sale).legalFramework,
       surface: surface.value,
       surfaceLabel: surface.label,
+      // Nature de la surface : présumée, le PDF et la page partagée le disent à côté des chiffres
+      // calculés dessus (`presumedSurfaceNote`).
+      surfaceKind: surface.kind,
       occupancy: occupancyAnalysis.label,
     },
     analysis: {

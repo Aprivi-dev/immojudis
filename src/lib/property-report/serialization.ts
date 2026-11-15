@@ -17,9 +17,10 @@ import type {
 import type { buildCeilingSnapshot } from "./ceiling-snapshot";
 import { AppSaleRow, SavedPropertyReport, SavedReportRow } from "../property-reports";
 import type { PlanEntitlements } from "@/lib/plans";
-import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
 import { redactPersonalText, redactSaleTexts } from "@/lib/personal-data-filter";
 import { rentabilityLabel } from "@/lib/profitability";
+import { presumedSurfaceNote } from "@/lib/presumed-surface";
 export function pdfWatermarkForPlan(plan: PlanEntitlements): string | null {
   return plan.features.pdfExport === "limited" ? "VERSION DECOUVERTE - EXTRAIT LIMITE" : null;
 }
@@ -449,6 +450,19 @@ export function roundPercent(value: unknown): number | null {
 
 export function clampScore(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+/**
+ * Mention de la surface présumée d'un rapport (PDF et lien partagé), lue dans `sale.surface` et
+ * `sale.surfaceKind` de l'instantané (`./analysis.ts`) : la valeur estimée, l'écart et le rendement
+ * sont calculés sur cette surface. `null` pour une surface mesurée, et pour un rapport enregistré
+ * sans la nature de sa surface (avant le 15/11/2026).
+ */
+export function reportPresumedSurfaceNote(sale: Record<string, unknown>): string | null {
+  return presumedSurfaceNote({
+    kind: stringValue(sale.surfaceKind),
+    value: numberValue(sale.surface),
+  });
 }
 
 /** Pourcentage d'un rapport (PDF et lien partagé), de 0 à 100, une décimale au plus ; « — » s'il manque. */

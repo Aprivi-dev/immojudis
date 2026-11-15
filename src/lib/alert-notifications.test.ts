@@ -27,6 +27,8 @@ function makeMatch(
     department: "33",
     startingPriceEur: 100_000,
     saleDate: "2026-08-01T09:00:00.000Z",
+    surfaceM2: 85,
+    surfaceKind: "recorded",
     reasons: ["décote", "DPE C"],
     marketDiscountPct: 32,
     matchedAt: "2026-07-06T10:00:00.000Z",
@@ -116,6 +118,22 @@ describe("alert notifications", () => {
       sent_at: null,
       scheduled_for: "2026-07-07T07:00:00.000Z",
     });
+  });
+
+  it("garde dans le résumé la surface de la vente et sa nature, que l'e-mail relit pour le rendement", () => {
+    const rows = buildAlertNotificationRows({
+      userId: "user-1",
+      matches: [makeMatch({ surfaceM2: 20, surfaceKind: "estimated", reasons: ["rendement"] })],
+      alerts: [{ id: "alert-1", alert_frequency: "daily" }],
+      now: new Date("2026-07-06T10:15:00.000Z"),
+      includeEmail: true,
+    });
+    for (const row of rows) {
+      expect(row.notification_snapshot).toMatchObject({
+        sale: { surfaceM2: 20, surfaceKind: "estimated" },
+        match: { reasons: ["rendement"] },
+      });
+    }
   });
 
   it("selects only due in-app queued notifications in scheduled order", () => {
