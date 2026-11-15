@@ -164,7 +164,7 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
     question: "Y a-t-il un essai gratuit ?",
     answer: ({ launchActive, launchPending, subscriptionOpen }) =>
       launchPending ? (
-        // État non lu (lecture en erreur côté serveur) : jamais « Pas pour le moment » à tort.
+        // État non lu (lecture en erreur côté serveur) : jamais « Non » à tort.
         <>
           Un essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire, est proposé à
           l’inscription tant que l’essai est ouvert ; l’état en cours s’affiche une fois la page
@@ -180,7 +180,10 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
             : `Pour garder l’offre Analyse après l’essai, il faudra y souscrire ; l’abonnement n’est pas encore ouvert (tarif prévu : ${resolveAnalysisOfferLabel()}). Vous pouvez demander à être prévenu de son ouverture.`}
         </>
       ) : (
-        <>Pas pour le moment. Le catalogue reste accessible gratuitement avec l’offre Découverte.</>
+        <>
+          Non. Le catalogue reste accessible gratuitement avec l’offre Découverte, qui comprend le
+          déblocage d’une vente.
+        </>
       ),
   },
   {
