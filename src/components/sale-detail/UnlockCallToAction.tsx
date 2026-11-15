@@ -5,12 +5,14 @@ import Link from "next/link";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
 import {
-  salePurchaseCallToActionLabel,
   type SaleUnlockStatus,
   UNLOCK_CALL_TO_ACTION_LABEL,
-  UNLOCK_CREDIT_CALL_TO_ACTION_LABEL,
   UNLOCK_QUOTA_REACHED_TITLE,
 } from "@/lib/sale-unlocks";
+import {
+  salePurchaseCallToActionLabel,
+  UNLOCK_CREDIT_CALL_TO_ACTION_LABEL,
+} from "@/lib/sale-unlock-purchase-texts";
 
 /** `id` of the unlock card (SaleUnlockPanel): the target of « Débloquer cette vente ». */
 export const UNLOCK_PANEL_ID = "debloquer";

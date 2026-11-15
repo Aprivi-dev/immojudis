@@ -19,11 +19,8 @@ import {
 import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
-import {
-  UNLOCK_CREDIT_CALL_TO_ACTION_LABEL,
-  type SaleUnlockResult,
-  type SaleUnlockStatus,
-} from "@/lib/sale-unlocks";
+import { type SaleUnlockResult, type SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { UNLOCK_CREDIT_CALL_TO_ACTION_LABEL } from "@/lib/sale-unlock-purchase-texts";
 import { isPersistedSale } from "@/lib/example-sale-identity";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";

@@ -55,27 +55,6 @@ export const SALE_UNLOCK_OFFER_CODE = "sale_unlock_unit" as const;
 export const UNIT_PURCHASE_DEDUCTION_WINDOW_DAYS = 30 as const;
 
 /**
- * Refus de la réservation d'un achat à l'unité (`reserve_sale_unlock_purchase`), rendus tels quels
- * par `POST /api/billing/sale-unlock-checkout` (409 `{ error, code }`) : le compte a Analyse, a encore
- * son déblocage gratuit ou un crédit, la vente est déjà débloquée ou n'est plus débloquable.
- */
-export const SALE_UNLOCK_PURCHASE_REFUSAL_CODES = [
-  "analysis_access",
-  "free_unlock_available",
-  "credit_available",
-  "already_unlocked",
-  "sale_not_unlockable",
-] as const;
-
-export type SaleUnlockPurchaseRefusalCode = (typeof SALE_UNLOCK_PURCHASE_REFUSAL_CODES)[number];
-
-/**
- * Paramètre de la fiche de la vente au retour de Stripe Checkout : `success` ou `cancelled`. La
- * fiche ne fait que relire l'état du déblocage : seul le webhook l'accorde.
- */
-export const SALE_UNLOCK_CHECKOUT_RETURN_PARAM = "unlock_checkout";
-
-/**
  * Régime de TVA retenu le 09/11/2026 : franchise en base (art. 293 B du CGI). Mention imprimée en pied
  * de chaque facture Stripe (abonnement et achat à l'unité) et rappelée dans la confirmation de l'achat
  * à l'unité ; à doubler dans le tableau de bord Stripe (pied de facture par défaut) pour les clients

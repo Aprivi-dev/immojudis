@@ -6,7 +6,8 @@ import { Badge, Button, buttonClasses } from "@/components/ui/primitives";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import type { SaleUnlockPurchaseOfferState } from "@/hooks/use-sale-unlock-purchase-offer";
 import { rememberCreditsBeforePurchase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
-import { saleUnlockCheckoutRefusalCode, startSaleUnlockCheckout } from "@/lib/client-billing";
+import { startSaleUnlockCheckout } from "@/lib/client-sale-unlock-checkout";
+import { saleUnlockCheckoutRefusalCode } from "@/lib/sale-unlock-checkout-contract";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
   SALE_PURCHASE_CONSENT_MISSING_TEXT,
@@ -14,7 +15,7 @@ import {
   SALE_PURCHASE_IMMEDIATE_ACCESS_TEXT,
   SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
   saleUnlockPurchaseChoiceTexts,
-} from "@/lib/sale-unlocks";
+} from "@/lib/sale-unlock-purchase-texts";
 import { userMessage } from "@/lib/user-messages";
 
 type ReadyOffer = Extract<SaleUnlockPurchaseOfferState, { status: "ready" }> & {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SALE_UNLOCK_CHECKOUT_RETURN_PARAM } from "@/lib/analysis-offer";
+import { SALE_UNLOCK_CHECKOUT_RETURN_PARAM } from "@/lib/sale-unlock-checkout-contract";
 
 /*
  * Retour du paiement Stripe d'une vente à l'unité : `?unlock_checkout=success` (paiement abouti) ou
