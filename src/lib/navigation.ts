@@ -100,6 +100,40 @@ export function loginReason(value: unknown): LoginReason | undefined {
   return LOGIN_REASONS.find((reason) => reason === value);
 }
 
+const PERCENT_ESCAPE = /%([0-9A-Fa-f]{2})/g;
+
+/**
+ * Règle commune des adresses de retour (`redirect` de `/login`, `redirect_to` des emails
+ * d'authentification) : le chemin (`pathname + search + hash`) d'une adresse de `origin` (sans `/`
+ * final), reconstruit par `URL`, ou `null`. `candidate` peut être un chemin ou une adresse absolue.
+ *
+ * Les contrôles portent sur l'adresse NORMALISÉE par `URL`, jamais sur la chaîne brute : `/.//evil`,
+ * `/a/..//evil`, `/%2e%2e//evil`, `/./\evil` ou `/<tab>/evil` y deviennent `//evil` (`URL` lit `\`
+ * comme `/` et retire tabulations et retours à la ligne), qu'un navigateur et `router.push` suivent
+ * vers un autre site. Ils portent aussi sur chacune de ses formes décodées (`/%2F%2Fevil`,
+ * `/%5Cevil`, `/%09/evil`, `%25` en cascade), pour qu'un décodage plus loin (lien d'email relu,
+ * paramètre recopié) ne fasse pas sortir du site. Ce fichier est dans le JavaScript initial de
+ * chaque page : la règle y reste, courte, plutôt que dans un module à part (budget `example`).
+ */
+export function sameSitePath(candidate: string, origin: string): string | null {
+  try {
+    const { pathname, search, hash } = new URL(candidate, origin);
+    // Chaque décodage (`%XX` en son octet, sans lever sur un `%` mal formé) qui change la chaîne la
+    // raccourcit : la boucle s'arrête.
+    for (let form = candidate, previous = ""; form !== previous; ) {
+      const url = new URL(form, origin);
+      if (url.origin !== origin || url.pathname.startsWith("//")) return null;
+      previous = form;
+      form = form.replace(PERCENT_ESCAPE, (_, hex: string) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      );
+    }
+    return `${pathname}${search}${hash}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Adresse de connexion qui ramène la personne sur la page d'où elle vient. Elle ouvre par défaut
  * « Créer un compte » (`mode=investor`) : un visiteur qui touche un cœur ou une cloche n'a pas
@@ -111,7 +145,8 @@ export function loginPathWithRedirect(
 ): string {
   const { mode = "investor", reason } = options;
   const query = new URLSearchParams();
-  const isSameSitePath = (path: string) => path.startsWith("/") && !path.startsWith("//");
+  const isSameSitePath = (path: string) =>
+    path.startsWith("/") && sameSitePath(path, RETURN_BASE) !== null;
   const isLoginPage = (path: string) => path === "/login" || path.startsWith("/login?");
   if (returnTo && isSameSitePath(returnTo) && !isLoginPage(returnTo)) {
     query.set("redirect", returnTo);

@@ -44,7 +44,14 @@ beforeEach(() => {
   mocks.save.mockResolvedValue({ report: { id: "report-new" }, plan: null });
   mocks.exportPdf.mockResolvedValue({ blob: new Blob(["%PDF-1.4"]), filename: "analyse.pdf" });
   mocks.createUrl.mockReturnValue("blob:test-report");
-  vi.stubGlobal("URL", { createObjectURL: mocks.createUrl, revokeObjectURL: mocks.revokeUrl });
+  // Seuls les liens `blob:` sont simulés : `new URL` reste celui du navigateur (adresse de retour).
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: mocks.createUrl,
+      revokeObjectURL: mocks.revokeUrl,
+    }),
+  );
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 });
 afterEach(() => {
