@@ -188,8 +188,10 @@ function SaleDetailContent({
     if (next?.unlocked) handleUnlockConfirmedByServer();
   };
   const purchaseReturn = useSalePurchaseReturn({
+    saleId: id,
     enabled: unlockEnabled,
     unlocked,
+    credits: unlockQuery.data?.credits ?? 0,
     refetch: unlockQuery.refetch,
     onConfirmed: handleUnlockConfirmedByServer,
   });

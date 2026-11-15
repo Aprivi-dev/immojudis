@@ -20,6 +20,7 @@ import type { UnlockCeilingGap } from "@/lib/bid-ceiling-gaps";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   SALE_NOT_UNLOCKABLE_TEXT,
+  SALE_PURCHASE_CREDITED_TEXT,
   SALE_PURCHASE_DELAYED_TEXT,
   SALE_PURCHASE_PENDING_TEXT,
   UNLOCK_CALL_TO_ACTION_LABEL,
@@ -46,6 +47,12 @@ import { userMessage } from "@/lib/user-messages";
  */
 /** Au-dessus du titre de la carte, dans chacun de ses états avant le déblocage. */
 const UNLOCK_EYEBROW = "Déblocage du compte gratuit";
+/** Retour du paiement de cette vente : titre et texte de la carte, selon ce que le serveur dit. */
+const PURCHASE_RETURN = {
+  pending: { title: "Ouverture de la vente", text: SALE_PURCHASE_PENDING_TEXT },
+  delayed: { title: "Ouverture à confirmer", text: SALE_PURCHASE_DELAYED_TEXT },
+  credited: { title: "Achat devenu un crédit", text: SALE_PURCHASE_CREDITED_TEXT },
+} as const;
 /** Au-dessus du titre quand il reste un crédit (vente achetée qui n'a pas eu lieu). */
 const CREDIT_EYEBROW = "Crédit de déblocage";
 
@@ -128,8 +135,7 @@ export function SaleUnlockPanel({
     if (announce && unlocked) headingRef.current?.focus();
   }, [announce, unlocked]);
   useEffect(() => {
-    if (purchaseReturn === "pending") setLive(SALE_PURCHASE_PENDING_TEXT);
-    if (purchaseReturn === "delayed") setLive(SALE_PURCHASE_DELAYED_TEXT);
+    if (purchaseReturn) setLive(PURCHASE_RETURN[purchaseReturn].text);
   }, [purchaseReturn]);
 
   if (!status || status.analysisAccess) return null;
@@ -253,13 +259,13 @@ export function SaleUnlockPanel({
             <LockKeyhole className="size-4" aria-hidden /> Achat de cette vente
           </Eyebrow>
           <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
-            {purchaseReturn === "pending" ? "Ouverture de la vente" : "Ouverture à confirmer"}
+            {PURCHASE_RETURN[purchaseReturn].title}
           </h2>
           <p
             data-testid="sale-purchase-return"
             className="mt-2 text-sm font-medium leading-relaxed text-brand-navy"
           >
-            {purchaseReturn === "pending" ? SALE_PURCHASE_PENDING_TEXT : SALE_PURCHASE_DELAYED_TEXT}
+            {PURCHASE_RETURN[purchaseReturn].text}
           </p>
           {purchaseReturn === "delayed" ? (
             <div className="mt-4 flex flex-wrap gap-3">
@@ -270,6 +276,13 @@ export function SaleUnlockPanel({
                 Écrire au support
               </Link>
             </div>
+          ) : purchaseReturn === "credited" ? (
+            <Link
+              href="/sales"
+              className={buttonClasses({ variant: "primary", className: "mt-4" })}
+            >
+              Choisir une autre vente
+            </Link>
           ) : null}
         </Card>
       </>
@@ -353,7 +366,12 @@ export function SaleUnlockPanel({
             {UNLOCK_QUOTA_REACHED_TITLE}
           </h2>
           {noticeBlock}
-          <ExhaustedNotice saleId={saleId} onConflict={refusePurchase} onAnnounce={setLive} />
+          <ExhaustedNotice
+            saleId={saleId}
+            credits={current.credits ?? 0}
+            onConflict={refusePurchase}
+            onAnnounce={setLive}
+          />
         </Card>
       </>
     );
@@ -475,10 +493,12 @@ export function SaleUnlockPanel({
  */
 function ExhaustedNotice({
   saleId,
+  credits,
   onConflict,
   onAnnounce,
 }: {
   saleId: string;
+  credits: number;
   onConflict: (text: string) => void;
   onAnnounce: (text: string) => void;
 }) {
@@ -499,6 +519,7 @@ function ExhaustedNotice({
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">Pour ouvrir celle-ci aussi :</p>
         <SaleUnlockPurchaseChoices
           saleId={saleId}
+          credits={credits}
           offer={{ ...offer, purchase: offer.purchase }}
           onConflict={onConflict}
           onAnnounce={onAnnounce}
