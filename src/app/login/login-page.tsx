@@ -32,7 +32,6 @@ import {
 import {
   loginPageMode,
   loginReason,
-  sameSitePath,
   searchParamsToRecord,
   type LoginPageMode,
   type LoginReason,
@@ -46,6 +45,7 @@ import {
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
+import { sameSitePath } from "@/lib/same-site-path";
 import { forgetSaleForSignup, rememberedSaleForSignup } from "@/lib/signup-return-sale";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";

@@ -1,5 +1,5 @@
 import { decodeURIComponentSafe as decodeOnce } from "@/lib/safe-decode-uri";
-import { sameSitePath } from "@/lib/navigation";
+import { sameSitePath } from "@/lib/same-site-path";
 /**
  * Lien des emails d'authentification (`/auth/confirmer`), lu côté navigateur.
  *
