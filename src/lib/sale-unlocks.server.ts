@@ -43,6 +43,7 @@ const rpcResultSchema = rpcStatusSchema.extend({
 });
 
 function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
+  const source = saleUnlockSource(row.source);
   return {
     saleId: row.sale_id ?? null,
     unlocked: row.unlocked,
@@ -52,7 +53,8 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
     used: row.used,
     remaining: row.remaining,
     credits: row.credits ?? 0,
-    source: saleUnlockSource(row.source),
+    // Présente seulement quand la base la donne (vente débloquée, base migrée).
+    ...(source ? { source } : {}),
   };
 }
 

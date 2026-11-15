@@ -43,6 +43,7 @@ select is(
     'clear_auction_sale_readiness_override(uuid)',
     'decide_outcome_claim_eligibility(uuid,text,text,uuid[],text,uuid)',
     'oppose_auction_fact_claim(uuid,text)',
+    'redeem_sale_unlock_credit(uuid)',
     'reject_auction_fact_claim(uuid,text)',
     'review_judilibre_match_candidate(uuid,text,text)',
     'review_outcome_evidence(uuid,text,text,jsonb,text)',

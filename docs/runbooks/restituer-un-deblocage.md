@@ -12,6 +12,25 @@ publication, suspension d'une source décidée par Immojudis). Une demande est a
 publié (voir `legalValue(publisher.contactEmail)` dans
 `src/routes/conditions-generales.tsx`) ; la réponse est due **sous un mois**.
 
+## Déblocage acheté ou ouvert par un crédit
+
+Depuis la migration `20261122100000_sale_unlock_purchases.sql` (lot 3), un compte gratuit qui a utilisé son
+déblocage gratuit peut acheter le déblocage d'une autre vente (19 € TTC). La colonne
+`user_sale_unlocks.source` distingue `free` (le déblocage gratuit), `purchase` (vente achetée) et `credit`
+(vente ouverte par un crédit) ; `purchase_id` renvoie à `public.sale_unlock_purchases`. **Cette procédure ne
+s'applique qu'aux lignes `free`** : `release_sale_unlock` refuse les autres (`outcome: not_free`) et ne
+change rien.
+
+- Vente achetée puis passée au statut `withdrawn` : l'achat redevient automatiquement un **crédit**
+  (`app_private.sale_unlock_credit_purchases`), que le compte utilise pour débloquer une autre vente. Rien à
+  faire, pas de remboursement.
+- Vente plus débloquable ou déjà débloquée au moment du paiement : le paiement laisse un crédit, de même.
+- Remboursement total ou litige perdu : se fait dans Stripe ; le webhook appelle
+  `public.record_sale_unlock_payment_state`, qui supprime le déblocage de l'achat ou éteint son crédit.
+  Un litige ouvert ferme la vente jusqu'à sa clôture ; un litige gagné la rouvre.
+- Ne jamais supprimer à la main une ligne `purchase` ou `credit`, ni modifier `sale_unlock_purchases` :
+  l'état de l'achat suit Stripe.
+
 ## Restitution automatique : la vente est retirée
 
 Une ligne de `public.user_sale_unlocks` dont la vente a `auction_sales.status = 'withdrawn'` ne compte plus
@@ -51,7 +70,8 @@ se referme pour ce compte. Le compte peut débloquer une autre vente (ou la mêm
    étape) :
 
    ```sql
-   select unlock_row.id, unlock_row.unlocked_at, unlock_row.sale_id, sale.title, sale.status
+   select unlock_row.id, unlock_row.source, unlock_row.unlocked_at, unlock_row.sale_id, sale.title,
+     sale.status
    from public.user_sale_unlocks unlock_row
    join auth.users account on account.id = unlock_row.user_id
    left join public.auction_sales sale on sale.id = unlock_row.sale_id
@@ -60,7 +80,8 @@ se referme pour ce compte. Le compte peut débloquer une autre vente (ou la mêm
    ```
 
    Une ligne dont `sale_id` est vide correspond à une vente purgée : elle compte encore jusqu'à ses
-   24 mois. Noter l'`id` de la ligne à restituer.
+   24 mois. Seule une ligne `source = 'free'` se restitue (voir « Déblocage acheté ou ouvert par un
+   crédit »). Noter l'`id` de la ligne à restituer.
 
 3. **Restituer** :
 
@@ -75,6 +96,7 @@ se referme pour ce compte. Le compte peut débloquer une autre vente (ou la mêm
    | ----------- | ------------------------------------------------------------------------- |
    | `released`  | La ligne est supprimée : le déblocage est de nouveau disponible.          |
    | `not_found` | Aucune ligne avec cet identifiant (déjà restitué, ou identifiant erroné). |
+   | `not_free`  | Déblocage acheté ou par crédit : rien n'est changé (voir plus haut).      |
 
    L'appel est idempotent : le répéter ne restitue pas deux fois.
 

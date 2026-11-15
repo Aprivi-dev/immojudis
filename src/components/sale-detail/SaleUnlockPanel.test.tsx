@@ -11,7 +11,17 @@ const mocks = vi.hoisted(() => {
       this.status = status;
     }
   }
-  return { unlock: vi.fn(), checkoutOpen: vi.fn(), track: vi.fn(), SaleUnlockQuotaReachedError };
+  return {
+    unlock: vi.fn(),
+    checkoutOpen: vi.fn(),
+    // Offre d'achat à l'unité lue (`null` : achat fermé, l'écran d'avant le lot 3).
+    purchase: null as { label: string; amountCents: number } | null,
+    analysisLabel: "59 € TTC / mois",
+    firstMonthDeductionCents: 0,
+    startCheckout: vi.fn(),
+    track: vi.fn(),
+    SaleUnlockQuotaReachedError,
+  };
 });
 vi.mock("@/lib/client-api", () => ({
   unlockSaleRequest: mocks.unlock,
@@ -20,8 +30,25 @@ vi.mock("@/lib/client-api", () => ({
 
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
-vi.mock("@/hooks/use-analysis-checkout-open", () => ({
-  useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
+// One read of the offer for both the subscription and the purchase of a single sale.
+vi.mock("@/hooks/use-sale-unlock-purchase-offer", () => ({
+  useSaleUnlockPurchaseOffer: () => {
+    const open = mocks.checkoutOpen();
+    if (open === null) return { status: "loading" };
+    const cents = Number.parseInt(mocks.analysisLabel, 10) * 100;
+    return {
+      status: "ready",
+      analysisOpen: open,
+      analysisLabel: mocks.analysisLabel,
+      analysisCents: Number.isFinite(cents) ? cents : null,
+      purchase: mocks.purchase,
+      firstMonthDeductionCents: mocks.firstMonthDeductionCents,
+    };
+  },
+}));
+
+vi.mock("@/components/sale-detail/sale-unlock-checkout-request", () => ({
+  startSaleUnlockCheckout: mocks.startCheckout,
 }));
 
 // The opening request has its own tests (BillingActions): here only its presence matters.
@@ -49,6 +76,10 @@ const result: SaleUnlockResult = {
 };
 
 beforeEach(() => {
+  mocks.purchase = null;
+  mocks.analysisLabel = "59 € TTC / mois";
+  mocks.firstMonthDeductionCents = 0;
+  mocks.startCheckout.mockReset();
   mocks.unlock.mockReset();
   mocks.track.mockReset();
   mocks.checkoutOpen.mockReset();
@@ -795,5 +826,328 @@ describe("SaleUnlockPanel", () => {
       expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
       expect(screen.queryByRole("link", { name: /Voir mon|Saisir la surface/ })).toBeNull();
     });
+  });
+});
+
+describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
+  const spent = (overrides: Partial<SaleUnlockStatus> = {}) =>
+    status({ used: 1, remaining: 0, ...overrides });
+  const nbsp = (text: string) => text.replace(/[\u00a0\u202f]/g, " ");
+  const bodyText = () => nbsp(document.body.textContent ?? "");
+  const openPurchase = (label = "19 €", amountCents = 1900) => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    mocks.purchase = { label, amountCents };
+  };
+
+  it("with a credit left: its own title and button, the same two-step confirmation, no purchase", async () => {
+    openPurchase();
+    mocks.unlock.mockResolvedValue(result);
+    const onUnlocked = vi.fn();
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent({ credits: 1 })}
+        unlocked={false}
+        onUnlocked={onUnlocked}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Vous avez un crédit de déblocage" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Une vente que vous aviez achetée n’a pas eu lieu ou n’était plus disponible : son déblocage vous est rendu.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Acheter cette vente/)).toBeNull();
+    // The credit is used without reading the offer.
+    expect(mocks.checkoutOpen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente avec mon crédit" }));
+    expect(
+      screen.getByText(
+        "Ce déblocage utilise votre crédit : il ne servira plus pour une autre vente. Il vous est rendu de nouveau si cette vente est retirée avant d’avoir lieu.",
+      ),
+    ).toBeTruthy();
+    expect(mocks.unlock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
+    await waitFor(() => expect(onUnlocked).toHaveBeenCalledWith(result));
+    expect(mocks.unlock).toHaveBeenCalledWith(saleId);
+  });
+
+  it("purchase closed: exactly the current screen, nothing mentions a purchase", () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    expect(
+      screen.getByText(
+        /Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes\./,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
+    expect(bodyText()).not.toMatch(/Acheter|à l’unité|19 €|Cette vente :/);
+  });
+
+  it("purchase open, nothing to deduct: the subscription first and recommended, then this sale", () => {
+    openPurchase();
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => nbsp(h.textContent ?? ""));
+    expect(headings).toEqual(["Toutes les ventes pendant un mois : 59 €", "Cette vente : 19 €"]);
+    const text = bodyText();
+    expect(text).toContain("Recommandée");
+    expect(text).toContain("Sans engagement, soit le prix de trois ventes à l’unité.");
+    expect(text).toContain(
+      "Paiement unique. L’analyse complète de cette vente, tant qu’elle est en ligne (24 mois au plus).",
+    );
+    expect(text).toContain(
+      "Si vous vous abonnez dans les 30 jours, ces 19 € sont déduits de votre premier mois.",
+    );
+    expect(text).not.toContain("sont déduits : ");
+    expect(
+      screen.getByRole("link", { name: "Choisir l’abonnement Analyse" }).getAttribute("href"),
+    ).toBe("/offres#tarifs");
+    expect(screen.getByRole("button", { name: /Acheter cette vente : 19.€/ })).toBeTruthy();
+    // No countdown, no scarcity, no pressure to bid.
+    expect(text).not.toMatch(/dernière chance|plus que|vite|expire|enchérissez/i);
+  });
+
+  it("purchase open with purchases to deduct: the first month says what is deducted", () => {
+    openPurchase();
+    mocks.firstMonthDeductionCents = 1900;
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    const text = bodyText();
+    expect(text).toContain(
+      "Vos achats à l’unité des 30 derniers jours sont déduits : 40 € le premier mois, puis 59 € par mois.",
+    );
+    expect(text).not.toContain("Si vous vous abonnez dans les 30 jours");
+  });
+
+  it("writes no amount by hand: another price changes every text, and the comparison only if true", () => {
+    openPurchase("25 €", 2500);
+    mocks.analysisLabel = "99 € TTC / mois";
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => nbsp(h.textContent ?? ""));
+    expect(headings).toEqual(["Toutes les ventes pendant un mois : 99 €", "Cette vente : 25 €"]);
+    const text = bodyText();
+    expect(text).toContain("Acheter cette vente : 25 €");
+    expect(text).toContain("ces 25 € sont déduits");
+    // 3 × 25 € = 75 € : far from 99 €, the sentence is not shown.
+    expect(text).not.toContain("trois ventes");
+    expect(text).toContain("Sans engagement.");
+    expect(text).not.toMatch(/19 €|59 €/);
+  });
+
+  it("collects the consent before the payment: two unchecked boxes, the button disabled until both", async () => {
+    openPurchase();
+    mocks.startCheckout.mockResolvedValue({ url: "https://checkout.stripe.test/s" });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    try {
+      render(
+        <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Acheter cette vente/ }));
+
+      const group = screen.getByRole("group", { name: "Avant le paiement" });
+      const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+      expect(boxes).toHaveLength(2);
+      expect(boxes.every((box) => !box.checked)).toBe(true);
+      expect(document.activeElement).toBe(boxes[0]);
+      expect(group.textContent).toContain(
+        "Je demande à accéder immédiatement à l’analyse de cette vente et je reconnais perdre mon droit de rétractation une fois l’accès fourni.",
+      );
+      expect(group.textContent).toContain(
+        "Si la vente est retirée avant d’avoir lieu, votre achat devient un crédit pour débloquer une autre vente. Il n’est pas remboursé.",
+      );
+      expect(screen.getByRole("link", { name: "conditions générales" }).getAttribute("href")).toBe(
+        "/conditions-generales",
+      );
+
+      const pay = screen.getByRole("button", { name: "Commander avec obligation de paiement" });
+      expect((pay as HTMLButtonElement).disabled).toBe(true);
+      const why = document.getElementById(pay.getAttribute("aria-describedby") ?? "");
+      expect(why?.textContent).toBe("Cochez les deux cases pour accéder au paiement.");
+
+      fireEvent.click(boxes[0]);
+      expect((pay as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(pay);
+      expect(mocks.startCheckout).not.toHaveBeenCalled();
+
+      fireEvent.click(boxes[1]);
+      expect((pay as HTMLButtonElement).disabled).toBe(false);
+      expect(pay.getAttribute("aria-describedby")).toBeNull();
+      fireEvent.click(pay);
+
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.test/s"));
+      expect(mocks.startCheckout).toHaveBeenCalledWith({
+        saleId,
+        consent: expect.objectContaining({
+          termsAccepted: true,
+          paymentObligationAcknowledged: true,
+          immediatePerformanceRequested: true,
+          withdrawalInformationAcknowledged: true,
+          withdrawalWaiverAcknowledged: true,
+        }),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("cancelling the consent goes back to the two choices, without paying", () => {
+    openPurchase();
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Acheter cette vente/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
+    expect(screen.queryByRole("group", { name: "Avant le paiement" })).toBeNull();
+    expect(document.activeElement?.textContent).toMatch(/Acheter cette vente/);
+    expect(mocks.startCheckout).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["analysis_access", "Votre compte a déjà accès à toutes les ventes : il n’y a rien à acheter."],
+    [
+      "free_unlock_available",
+      "Votre compte gratuit peut encore débloquer une vente : utilisez-le pour celle-ci, sans paiement.",
+    ],
+    [
+      "credit_available",
+      "Vous avez un crédit de déblocage : utilisez-le pour cette vente, sans paiement.",
+    ],
+    [
+      "already_unlocked",
+      "Cette vente est déjà débloquée pour votre compte : la fiche se recharge.",
+    ],
+    ["sale_not_unlockable", "Cette vente ne peut pas être débloquée pour le moment."],
+  ])("explains the refusal %s and reads the account state again", async (code, message) => {
+    openPurchase();
+    mocks.startCheckout.mockRejectedValue(
+      Object.assign(new Error("Refusé."), { status: 409, code }),
+    );
+    const onStatusStale = vi.fn();
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent()}
+        unlocked={false}
+        onStatusStale={onStatusStale}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Acheter cette vente/ }));
+    for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Commander avec obligation de paiement" }));
+
+    await waitFor(() => expect(onStatusStale).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("sale-unlock-notice").textContent).toBe(message);
+    expect(screen.getByRole("status").textContent).toBe(message);
+  });
+
+  it("keeps the refusal on screen once the state read again offers the free unlock", async () => {
+    openPurchase();
+    mocks.startCheckout.mockRejectedValue(
+      Object.assign(new Error("Refusé."), { status: 409, code: "free_unlock_available" }),
+    );
+    const view = render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Acheter cette vente/ }));
+    for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Commander avec obligation de paiement" }));
+    await screen.findByTestId("sale-unlock-notice");
+
+    view.rerender(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("sale-unlock-notice").textContent).toContain(
+      "Votre compte gratuit peut encore débloquer une vente",
+    );
+  });
+
+  it("shows another failure as an error, and the consent stays to retry", async () => {
+    openPurchase();
+    mocks.startCheckout.mockRejectedValue(
+      Object.assign(new Error("Achat indisponible."), { status: 503 }),
+    );
+    render(
+      <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Acheter cette vente/ }));
+    for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Commander avec obligation de paiement" }));
+    expect((await screen.findByRole("alert")).textContent).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Avant le paiement" })).toBeTruthy();
+  });
+
+  it("back from the payment, not confirmed yet: says it is in progress, offers nothing else", () => {
+    openPurchase();
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent()}
+        unlocked={false}
+        purchaseReturn="pending"
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("sale-purchase-return").textContent).toBe(
+      "Paiement reçu. L’ouverture de la vente est en cours…",
+    );
+    expect(screen.getByRole("status").textContent).toBe(
+      "Paiement reçu. L’ouverture de la vente est en cours…",
+    );
+    expect(screen.queryByRole("button", { name: /Acheter/ })).toBeNull();
+    expect(bodyText()).not.toMatch(/débloquée/);
+  });
+
+  it("back from the payment, never confirmed: says what to do, never « débloquée »", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent()}
+        unlocked={false}
+        purchaseReturn="delayed"
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("sale-purchase-return").textContent).toBe(
+      "Paiement reçu, mais l’ouverture de la vente n’est pas encore confirmée. Rechargez la page dans quelques minutes. Si la vente n’est toujours pas ouverte, écrivez-nous depuis la page Contact en indiquant cette vente.",
+    );
+    expect(screen.getByRole("button", { name: "Recharger la page" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Écrire au support" }).getAttribute("href")).toBe(
+      "/contact",
+    );
+    expect(bodyText()).not.toMatch(/débloquée/);
+  });
+
+  it("back from the payment, confirmed: the unlocked card takes the focus", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={spent({ unlocked: true })}
+        unlocked
+        announce
+        onUnlocked={vi.fn()}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2 });
+    expect(heading.textContent).toMatch(/débloquée/);
+    expect(document.activeElement).toBe(heading);
   });
 });
