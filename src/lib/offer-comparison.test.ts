@@ -61,19 +61,19 @@ describe("offerComparisonRows", () => {
   });
 
   it("n'écrit « Non inclus » pour aucune ligne qu'un déblocage ouvre", () => {
-    const opened = rows.filter((candidate) =>
-      ["documents", "document-reading", "passages", "ceiling", "scenarios", "statistics"].includes(
-        candidate.id,
-      ),
-    );
-    expect(opened.map((candidate) => candidate.id)).toEqual([
+    const openedIds = [
       "ceiling",
       "scenarios",
       "documents",
       "document-reading",
       "passages",
+      "estimate",
       "statistics",
-    ]);
+      "pdf",
+      "land",
+    ];
+    const opened = rows.filter((candidate) => openedIds.includes(candidate.id));
+    expect(opened.map((candidate) => candidate.id)).toEqual(openedIds);
     for (const candidate of opened) {
       expect(candidate.decouverte.text, candidate.id).not.toBe("Non inclus");
       expect(candidate.decouverte.text, candidate.id).toMatch(/^1 vente débloquée/);
@@ -83,23 +83,50 @@ describe("offerComparisonRows", () => {
       expect(candidate.analyse.included, candidate.id).toBe(true);
     }
     expect(row("statistics").decouverte.text).toBe("1 vente débloquée (tribunal de la vente)");
-    // L'onglet Travaux reste fermé sur une vente débloquée : le budget travaux n'est pas promis.
-    expect(row("scenarios").decouverte.text).toBe(
-      "1 vente débloquée (hors budget travaux détaillé)",
+    // Le déblocage ouvre toute l'offre Analyse sur la vente, budget travaux compris.
+    expect(row("scenarios").decouverte.text).toBe("1 vente débloquée");
+    expect(JSON.stringify(rows)).not.toContain("hors budget travaux");
+  });
+
+  it("calcule « 1 vente débloquée » à partir des droits ouverts par un déblocage", () => {
+    // Pas de texte en dur : ces lignes suivent SALE_UNLOCK_FEATURES (plans.ts).
+    for (const id of ["estimate", "pdf", "land"]) {
+      expect(row(id).decouverte, id).toEqual({
+        included: false,
+        limited: true,
+        text: "1 vente débloquée",
+      });
+    }
+    expect(row("estimate").hint).toBe(
+      "Fourchette de valeur, écart chiffré avec la mise à prix et ventes comparables : pour toutes les ventes avec Analyse, pour la vente choisie avec un déblocage",
     );
   });
 
   it("garde « Non inclus » pour ce qu'un déblocage n'ouvre jamais", () => {
-    for (const id of ["pdf", "csv", "referrals", "estimate", "land"]) {
+    for (const id of ["csv", "referrals"]) {
       expect(row(id).decouverte, id).toEqual({ included: false, text: "Non inclus" });
     }
   });
 
-  it("dit pourquoi l'estimation détaillée n'est pas incluse alors que le plafond la lit", () => {
-    // « Non inclus » est exact : un déblocage ne renvoie que la valeur de référence du plafond.
-    expect(row("estimate").decouverte).toEqual({ included: false, text: "Non inclus" });
-    expect(row("estimate").hint).toMatch(/valeur de référence entre dans le calcul du plafond/);
-    // Les pièces officielles restent annoncées comme ouvertes, sans dépendre du droit d'estimation.
+  it("annonce l'analyse complète de la vente dans la ligne du déblocage", () => {
+    expect(row("unlocks").label).toBe(
+      "Déblocage d’une vente : l’analyse complète de la vente (enchère plafond ou offre plafond, estimation détaillée et ventes comparables, pièces, historique, urbanisme, rapport PDF)",
+    );
+    expect(row("unlocks").hint).toBe(
+      "Ouvre tout ce que l’offre Analyse donne sur la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; les autres ventes, l’export CSV, les alertes avancées et le partage d’un rapport restent avec Analyse",
+    );
+  });
+
+  it("ne présente plus la fourchette de valeur comme gratuite", () => {
+    expect(row("value-range").label).toBe(
+      "Niveau d’écart avec le marché et aperçu chiffré de l’analyse",
+    );
+    expect(row("value-range").decouverte).toEqual({ included: true, text: "Inclus" });
+    const shared = splitOfferComparisonRows(rows).shared;
+    expect(JSON.stringify(shared)).not.toMatch(/Fourchette|fourchette/);
+  });
+
+  it("annonce les pièces officielles comme ouvertes par un déblocage", () => {
     expect(row("documents").decouverte).toEqual({
       included: false,
       limited: true,

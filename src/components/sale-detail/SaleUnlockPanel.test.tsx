@@ -72,7 +72,9 @@ describe("SaleUnlockPanel", () => {
     ).toBeTruthy();
     // Without a regime of its own (default), both terms of the open regimes are named.
     expect(
-      screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
+      screen.getByText(
+        /l’enchère plafond ou l’offre plafond, l’estimation détaillée et les ventes comparables, la lecture des pièces/,
+      ),
     ).toBeTruthy();
     // No countdown, no scarcity, no month: the free account comprises one unlock, and says so.
     expect(document.body.textContent).not.toMatch(
@@ -93,7 +95,7 @@ describe("SaleUnlockPanel", () => {
     );
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "la lecture des pièces, l’historique de la vente et les pièces du dossier",
+      "l’estimation détaillée et les ventes comparables, la lecture des pièces, l’historique de la vente, l’urbanisme et le cadastre, les pièces du dossier et le rapport PDF",
     );
     expect(text).not.toContain("enchère plafond");
     expect(text).not.toContain("statistiques du tribunal");
@@ -109,7 +111,7 @@ describe("SaleUnlockPanel", () => {
         onUnlocked={vi.fn()}
       />,
     );
-    expect(document.body.textContent).toContain("l’offre plafond, la lecture des pièces");
+    expect(document.body.textContent).toContain("l’offre plafond, l’estimation détaillée");
     expect(document.body.textContent).not.toContain("enchère plafond");
   });
 
@@ -513,7 +515,7 @@ describe("SaleUnlockPanel", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        /exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés/,
+        /Le partage d’un rapport par lien, l’export CSV et l’espace de travail restent réservés/,
       ),
     ).toBeTruthy();
     expect(
@@ -543,7 +545,7 @@ describe("SaleUnlockPanel", () => {
       "Ouvert pour cette vente, tant qu’elle est en ligne (24 mois au plus).",
     );
     const reserved = screen.getByText(
-      /Les exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre Analyse\./,
+      /Le partage d’un rapport par lien, l’export CSV et l’espace de travail restent réservés à l’offre Analyse\./,
     );
     const reserve = screen.getByText(
       "Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un conseil financier, et l’enchère plafond est une simulation fondée sur des hypothèses modifiables.",
@@ -556,7 +558,7 @@ describe("SaleUnlockPanel", () => {
       ).toBeTruthy();
     }
     expect(reserved.textContent).toContain(
-      "Ce déblocage ouvre l’enchère plafond, la lecture des pièces",
+      "Ce déblocage ouvre l’analyse complète de la vente (l’enchère plafond, l’estimation détaillée",
     );
     expect(container.textContent).not.toMatch(/Il vous reste|ce mois-ci/);
     expect(container.textContent).not.toContain("Cette vente est débloquée");

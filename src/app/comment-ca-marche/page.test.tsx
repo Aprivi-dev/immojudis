@@ -23,6 +23,19 @@ describe("page Comment ça marche", () => {
     );
   });
 
+  it("décrit la fiche gratuite sans la fourchette de valeur, et l'analyse complète d'une vente débloquée", () => {
+    render(<Page />);
+    const step = within(screen.getByRole("list", { name: "Les trois étapes" })).getAllByRole(
+      "listitem",
+    )[0]!;
+    const text = step.textContent ?? "";
+    expect(text).not.toContain("fourchette de valeur");
+    expect(text).toContain("niveau d’écart avec le marché");
+    expect(text).toContain(
+      "L’analyse complète d’une vente (pièces du dossier, estimation détaillée et ventes comparables, historique, urbanisme, rapport PDF) s’ouvre pour une vente, celle que vous débloquez avec le compte gratuit",
+    );
+  });
+
   it("renvoie l'étape du plafond vers le simulateur de frais", () => {
     render(<Page />);
     const step = within(screen.getByRole("list", { name: "Les trois étapes" })).getAllByRole(

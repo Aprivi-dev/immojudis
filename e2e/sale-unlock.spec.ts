@@ -243,7 +243,7 @@ test("visiteur : la fiche publique propose de créer un compte, avec le motif de
 
   await create.click();
   await expect(page.getByTestId("login-reason")).toContainText(
-    "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur",
+    "Créez votre compte gratuit pour voir l'adresse et les photos de cette vente. Il comprend le déblocage d’une vente, qui ouvre son analyse complète",
   );
 });
 

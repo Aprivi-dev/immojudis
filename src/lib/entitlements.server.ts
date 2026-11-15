@@ -14,11 +14,16 @@ import {
   type PlanEntitlements,
   type PlanStatus,
 } from "@/lib/plans";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { readSignupTrial } from "@/lib/launch-offer.server";
-import { buildPlanEntitlements } from "@/lib/property-report/entitlements";
+import type { AppSaleRow } from "@/lib/property-reports";
+import { buildPlanEntitlements, unlockedSaleProjection } from "@/lib/property-report/entitlements";
+import { getSale } from "@/lib/property-report/repository";
+import { appSaleRowToAuctionSale } from "@/lib/property-report/serialization";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { DETAIL_VIEW, DISCOVERY_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
+import type { AuctionSale } from "@/lib/types";
 
 /**
  * Résolution serveur des droits d'un compte (plan, essai, offre de lancement, administrateur), et
@@ -139,6 +144,12 @@ function latestIso(...values: Array<string | null | undefined>): string | null {
 export type SaleFeatureDoor = "plan" | "unlock";
 
 /**
+ * The sale a right is asked for: its identifier, or how to find it (the sale of a saved report),
+ * read only when the offer does not open the right by itself.
+ */
+type SaleOfRequest = string | (() => Promise<string>) | undefined;
+
+/**
  * The one rule: the offer opens `feature` for every sale; otherwise an unlock opens the rights of
  * `SALE_UNLOCK_FEATURES`, for the sale the database confirms (unlocked and still online) only.
  */
@@ -146,13 +157,12 @@ async function doorFor(
   auth: SupabaseAuthContext,
   plan: PlanEntitlements,
   feature: FeatureKey,
-  saleId: string | undefined,
+  saleOf: SaleOfRequest,
 ): Promise<SaleFeatureDoor | null> {
   if (featureIncluded(plan.plan, feature)) return "plan";
-  if (saleId && isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId))) {
-    return "unlock";
-  }
-  return null;
+  if (!saleOf || !isSaleUnlockFeature(feature)) return null;
+  const saleId = typeof saleOf === "function" ? await saleOf() : saleOf;
+  return (await hasUnlockedSale(auth, saleId)) ? "unlock" : null;
 }
 
 /**
@@ -170,12 +180,14 @@ export async function saleFeatureDoor(
 /**
  * Refuse a right the caller's offer does not include, and say which door opened it. With
  * `saleId`, an unlock of that sale opens the rights of `SALE_UNLOCK_FEATURES`, for that sale only.
+ * `saleId` may be a function that finds the sale: it is called only when the offer does not open
+ * the right, so an Analyse account never pays for that read.
  */
 export async function assertFeatureEntitlementVia(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
   message = "Fonctionnalité réservée à l’offre Analyse.",
-  options: { saleId?: string } = {},
+  options: { saleId?: SaleOfRequest } = {},
 ): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
   const plan = await resolvePlanEntitlements(auth);
   const door = await doorFor(auth, plan, feature, options.saleId);
@@ -223,4 +235,38 @@ export async function readSaleThroughDoor<Row = Record<string, unknown>>(
   if (!data) throw new NotFoundError("Vente introuvable.");
   await assertSalePublicationVisible(saleId);
   return data as Row;
+}
+
+/**
+ * The sale an Analyse route works on, read for `door`, and the key of its enrichment tables
+ * (cadastre, urban planning, DPE: `source_url`), for the server only: never put in a response.
+ *
+ * - `"plan"`: the full sale page view, read with the caller's session (row-level security applies).
+ * - `"unlock"`: the database has confirmed the unlock of this sale (`doorFor`). The sale is read
+ *   through `v_auction_sales_unlocked` with the caller's session (it lists the account's unlocked
+ *   sales only, and its projection of the source blocks), publication checked, then stripped again of
+ *   what an unlock never opens (`unlockedSaleProjection`). The enrichment key is read with the
+ *   service client, column alone: the unlocked view empties it on purpose, and no row-level policy of
+ *   an enrichment table is opened to an unlock.
+ */
+export async function getSaleForDoor(
+  auth: SupabaseAuthContext,
+  saleId: string,
+  door: SaleFeatureDoor,
+): Promise<{ sale: AuctionSale; enrichmentKey: string | null }> {
+  if (door === "plan") {
+    const sale = await getSale(auth.supabase, saleId);
+    return { sale, enrichmentKey: sale.source_url };
+  }
+  const row = await readSaleThroughDoor<AppSaleRow>(auth, saleId, "unlock", "*");
+  const { data, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select("source_url")
+    .eq("id", saleId)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    sale: unlockedSaleProjection(appSaleRowToAuctionSale(row)),
+    enrichmentKey: data?.source_url ?? null,
+  };
 }

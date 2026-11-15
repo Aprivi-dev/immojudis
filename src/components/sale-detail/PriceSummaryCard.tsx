@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
+import { MARKET_GAP_BAND_LABELS, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import styles from "./PriceTrio.module.css";
 
 export type PriceSummaryValue =
@@ -14,6 +15,8 @@ export type PriceSummaryValue =
       range?: { low: number; high: number } | null;
     }
   | { kind: "range"; low: number; high: number }
+  /** Compte gratuit, vente non débloquée : le niveau d'écart seul, sans montant. */
+  | { kind: "band"; band: PublicMarketGapBand }
   | { kind: "signup"; href: string }
   | { kind: "pending" };
 
@@ -126,7 +129,13 @@ export function PriceSummaryCard({
         ) : null}
         {value ? (
           <div className={styles.tile}>
-            <dt>{valueWithheld ? FREE_VALUE_LABEL : "Valeur estimée"}</dt>
+            <dt>
+              {value.kind === "band"
+                ? "Repère marché"
+                : valueWithheld
+                  ? FREE_VALUE_LABEL
+                  : "Valeur estimée"}
+            </dt>
             <dd>
               {value.kind === "amount" ? (
                 <>
@@ -145,14 +154,16 @@ export function PriceSummaryCard({
                   </span>
                   <span className={styles.note}>fourchette indicative, ventes comparables</span>
                 </>
+              ) : value.kind === "band" ? (
+                <span className={styles.note}>{MARKET_GAP_BAND_LABELS[value.band]}</span>
               ) : value.kind === "signup" ? (
                 <span className={styles.note}>
-                  <Link href={value.href}>Créez un compte gratuit</Link> pour la voir
+                  <Link href={value.href}>Créez un compte gratuit</Link>, puis débloquez la vente
                 </span>
               ) : (
                 <span className={styles.note}>Calcul…</span>
               )}
-              {valueWithheld ? (
+              {valueWithheld && value.kind !== "band" ? (
                 <span className={styles.note}>{FREE_VALUE_REASON[valueWithheld]}</span>
               ) : null}
             </dd>

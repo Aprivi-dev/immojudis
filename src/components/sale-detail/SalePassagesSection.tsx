@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { fetchSalePassages } from "@/lib/client-api";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
@@ -11,8 +10,10 @@ import {
   formatPassageDate,
   type SalePassagesResponse,
   type SalePassagesSummary,
+  type SalePassagesTeaserSummary,
 } from "@/lib/sale-passages";
 import styles from "./SalePassagesSection.module.css";
+import { UnlockCallToAction } from "./UnlockCallToAction";
 
 function summaryLine(summary: SalePassagesSummary): string | null {
   const parts = [
@@ -33,6 +34,25 @@ function summaryLine(summary: SalePassagesSummary): string | null {
       : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" ") : null;
+}
+
+/**
+ * Ce qu'un compte gratuit lit de l'historique d'une vente qu'il n'a pas débloquée : des faits, sans
+ * date ni montant (« 2ᵉ passage en vente · 1 report · mise à prix déjà baissée »). `null` sans fait.
+ */
+export function passagesTeaserLine(summary: SalePassagesTeaserSummary): string | null {
+  const facts = [
+    summary.previousPassageCount > 0
+      ? `${summary.previousPassageCount + 1}ᵉ passage en vente`
+      : null,
+    summary.postponementCount > 0
+      ? `${summary.postponementCount} report${summary.postponementCount > 1 ? "s" : ""}`
+      : null,
+    summary.priceDropped ? "mise à prix déjà baissée" : null,
+  ].filter((fact): fact is string => fact != null);
+  if (!facts.length) return null;
+  const line = facts.join(" · ");
+  return `${line.charAt(0).toUpperCase()}${line.slice(1)}`;
 }
 
 /**
@@ -97,24 +117,28 @@ export function SalePassagesSection({
     );
   }
   const data = query.data;
-  const highlight = summaryLine(data.summary);
 
   if (data.access === "teaser") {
-    if (!highlight) return null;
+    const facts = passagesTeaserLine(data.summary);
+    if (!facts) return null;
     return (
       <section id="historique" className={styles.card} aria-labelledby="sale-passages-title">
         <h2 id="sale-passages-title">Historique de la vente</h2>
-        <p className={styles.highlight}>{highlight}</p>
+        <p className={styles.highlight}>{facts}</p>
         <p className={styles.lead}>
           Dates des audiences précédentes, mises à prix successives et reports : le détail est
           inclus dans l’offre Analyse ou en débloquant cette vente.
         </p>
-        <Link href="/offres" className={styles.cta}>
-          Découvrir l’offre Analyse
-        </Link>
+        <UnlockCallToAction
+          primaryClassName={styles.cta}
+          secondaryClassName={`${styles.cta} ${styles.ctaSecondary}`}
+          messageClassName={styles.lead}
+        />
       </section>
     );
   }
+
+  const highlight = summaryLine(data.summary);
 
   const events = data.timeline.filter((event) => event.kind !== "first_seen");
   const firstSeen = data.timeline.find((event) => event.kind === "first_seen");

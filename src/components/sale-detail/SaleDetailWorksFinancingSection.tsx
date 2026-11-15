@@ -9,7 +9,6 @@ import layoutStyles from "@/components/sale-detail/SaleDetailLayout.module.css";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import { maxWorksAtBid, type CeilingHypotheses } from "@/lib/bid-ceiling-engine";
-import type { SaleAccessMode } from "@/lib/query-keys";
 import type { AuctionSale } from "@/lib/types";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 
@@ -36,7 +35,7 @@ const ListingRental = dynamic(() =>
 export function SaleDetailWorksFinancingSection({
   saleId,
   displaySale,
-  access,
+  fullData,
   force,
   inputsToConfirm,
   retainedWorks,
@@ -60,7 +59,8 @@ export function SaleDetailWorksFinancingSection({
 }: {
   saleId: string;
   displaySale: AuctionSale;
-  access: SaleAccessMode;
+  /** Les données de la vente sont ouvertes (offre Analyse, ou vente débloquée par le compte gratuit). */
+  fullData: boolean;
   /** Une ancre a demandé la section : ses blocs lourds montent sans attendre le défilement. */
   force: boolean;
   /** Conflit de valorisation ou caractéristiques du calcul bloquées par la relecture IA. */
@@ -91,7 +91,7 @@ export function SaleDetailWorksFinancingSection({
     <DetailSection id="travaux-financement">
       <div className={layoutStyles.stack}>
         <div className="grid min-w-0 gap-4">
-          {access === "analysis" ? (
+          {fullData ? (
             <>
               {inputsToConfirm ? (
                 <div className={panelStyles.warning} role="status">
@@ -119,7 +119,7 @@ export function SaleDetailWorksFinancingSection({
             </>
           ) : (
             <PremiumFeaturePreview
-              title="Estimez vos travaux avec l’offre Analyse"
+              title="Estimez vos travaux avec un déblocage ou l’offre Analyse"
               description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
               labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
             />

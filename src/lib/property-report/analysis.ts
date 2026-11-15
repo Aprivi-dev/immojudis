@@ -37,14 +37,18 @@ import { buildValuationAudit } from "@/lib/valuation-audit";
 import { type ValuationBacktestResult } from "@/lib/valuation-backtest";
 import type { AuctionSale } from "@/lib/types";
 import {
+  featureOpenFor,
   gateMarketComparablesAnalysis,
   lockedActiveComparablesAnalysis,
   lockedNeighborhoodAnalysis,
   lockedStreetFacadeAnalysis,
   lockedUrbanPlanningAnalysis,
+  planForSaleDoor,
+  unlockedSaleProjection,
 } from "./entitlements";
 import type { ActiveComparableSales } from "../property-reports";
-import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
+import type { SaleFeatureDoor } from "@/lib/entitlements.server";
+import type { FeatureKey, PlanEntitlements } from "@/lib/plans";
 import { listingAddress } from "../sale-listing";
 import {
   dpeFromSourceBlocks,
@@ -216,6 +220,7 @@ export function buildReportSnapshot({
   valuationBacktest,
   ceilingSnapshot,
   plan,
+  door = "plan",
   rentReference = null,
 }: {
   rentReference?: RentReference | null;
@@ -229,7 +234,15 @@ export function buildReportSnapshot({
   valuationBacktest: ValuationBacktestResult | null;
   ceilingSnapshot: ReturnType<typeof buildCeilingSnapshot>;
   plan: PlanEntitlements;
+  /**
+   * How the sale was reached: the offer, or the unlock of this sale. Through an unlock, every section
+   * of the report is open, and the sale is read without what an unlock never opens (score and its
+   * factors, risks, sources: `unlockedSaleProjection`), whatever the caller passed.
+   */
+  door?: SaleFeatureDoor;
 }) {
+  if (door === "unlock") sale = unlockedSaleProjection(sale);
+  const open = (feature: FeatureKey) => featureOpenFor(plan, door, feature);
   const generatedAt = new Date().toISOString();
   const surface = getSaleSurface(sale);
   const risks = normalizeRisks(sale.risks).slice(0, 8);
@@ -238,6 +251,7 @@ export function buildReportSnapshot({
   const marketComparablesAnalysis = gateMarketComparablesAnalysis(
     buildMarketComparablesAnalysis(marketEstimate),
     plan,
+    door,
   );
   const valuationAudit = buildValuationAudit({
     sale,
@@ -264,10 +278,10 @@ export function buildReportSnapshot({
   });
   const occupancyAnalysis = buildOccupancyAnalysis(sale);
   const renovationAnalysis = buildRenovationAnalysis({ sale, surfaceM2: surface.value });
-  const streetFacadeAnalysis = featureIncluded(plan.plan, "property.streetFacade")
+  const streetFacadeAnalysis = open("property.streetFacade")
     ? buildStreetFacadeAnalysis(sale)
     : lockedStreetFacadeAnalysis();
-  const neighborhoodAnalysis = featureIncluded(plan.plan, "property.neighborhoodAnalysis")
+  const neighborhoodAnalysis = open("property.neighborhoodAnalysis")
     ? buildNeighborhoodAnalysis({
         sale,
         marketEstimate,
@@ -276,7 +290,7 @@ export function buildReportSnapshot({
         environmentalContext,
       })
     : lockedNeighborhoodAnalysis();
-  const activeComparablesAnalysis = featureIncluded(plan.plan, "property.activeComparables")
+  const activeComparablesAnalysis = open("property.activeComparables")
     ? buildActiveComparablesAnalysis({
         sale,
         candidates: activeComparables.sales,
@@ -287,7 +301,7 @@ export function buildReportSnapshot({
     sale,
     acquisition: ceilingSnapshot.acquisition,
   });
-  const urbanPlanningAnalysis = featureIncluded(plan.plan, "property.urbanPlanning")
+  const urbanPlanningAnalysis = open("property.urbanPlanning")
     ? buildUrbanPlanningAnalysis({
         sale,
         documents,
@@ -323,6 +337,8 @@ export function buildReportSnapshot({
   return {
     generatedAt,
     plan: plan.plan,
+    // Read back by `reportOpenThrough`: through an unlock, only a report built through it is served.
+    door,
     sourceTraceability,
     sale: {
       id: sale.id,
@@ -366,9 +382,7 @@ export function buildReportSnapshot({
         : null,
       marketComparablesAnalysis,
       valuationAudit,
-      valuationBacktest: featureIncluded(plan.plan, "property.soldComparables")
-        ? valuationBacktest
-        : null,
+      valuationBacktest: open("property.soldComparables") ? valuationBacktest : null,
       cadastralAnalysis,
       dpe: {
         ...dpeAnalysis,
@@ -401,6 +415,6 @@ export function buildReportSnapshot({
       documentsCount: documents.length,
       sourceName: sale.source_name,
     },
-    gatedFeatures: plan.features,
+    gatedFeatures: planForSaleDoor(plan, door).features,
   };
 }

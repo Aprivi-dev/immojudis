@@ -659,7 +659,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente. Il comprend le déblocage d’une vente : il ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
+      "Créez votre compte gratuit pour voir l'adresse et les photos de cette vente. Il comprend le déblocage d’une vente, qui ouvre son analyse complète : votre plafond pour cette vente (enchère ou offre), frais estimés compris, l’estimation détaillée et les ventes comparables (contenu selon la vente).",
     );
     // Formule sobre du plafond, en attendant l'arbitrage sur « l'enchère à ne pas dépasser ».
     expect(screen.getByTestId("login-reason").textContent).not.toContain("ne pas dépasser");
@@ -677,7 +677,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : une vente à débloquer (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
+      "Gratuit : une vente à débloquer (l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");

@@ -19,11 +19,11 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
 }));
 
 vi.mock("@/lib/entitlements.server", () => ({
-  assertFeatureEntitlement: mocks.assertEntitlement,
+  assertFeatureEntitlementVia: mocks.assertEntitlement,
+  getSaleForDoor: mocks.getSale,
 }));
 
 vi.mock("@/lib/property-report/repository", () => ({
-  getSale: mocks.getSale,
   getCadastralParcels: mocks.getCadastralParcels,
   getUrbanPlanningSignals: mocks.getUrbanPlanningSignals,
 }));
@@ -83,8 +83,8 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.requireAuth.mockResolvedValue(auth);
-    mocks.assertEntitlement.mockResolvedValue(undefined);
-    mocks.getSale.mockResolvedValue(sale);
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "analyse" }, door: "plan" });
+    mocks.getSale.mockResolvedValue({ sale, enrichmentKey: sale.source_url });
     mocks.getCadastralParcels.mockResolvedValue(cadastralParcels);
     mocks.getUrbanPlanningSignals.mockResolvedValue(urbanPlanningSignals);
   });
@@ -116,6 +116,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
       auth,
       "property.cadastralAnalysis",
       expect.stringContaining("Analyse"),
+      { saleId },
     );
     expect(mocks.getSale).not.toHaveBeenCalled();
   });
@@ -125,6 +126,13 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.assertEntitlement).toHaveBeenCalledTimes(2);
+    // An invalid identifier cannot match an unlock: the rights are checked on the offer alone.
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      auth,
+      "property.cadastralAnalysis",
+      expect.any(String),
+      { saleId: undefined },
+    );
     expect(mocks.getSale).not.toHaveBeenCalled();
   });
 
@@ -135,7 +143,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("vary")).toBe("authorization");
     await expect(response.json()).resolves.toEqual({ cadastralParcels, urbanPlanningSignals });
-    expect(mocks.getSale).toHaveBeenCalledWith(auth.supabase, saleId);
+    expect(mocks.getSale).toHaveBeenCalledWith(auth, saleId, "plan");
     expect(mocks.getCadastralParcels).toHaveBeenCalledWith(sale.source_url);
     expect(mocks.getUrbanPlanningSignals).toHaveBeenCalledWith(sale.source_url);
     expect(mocks.assertEntitlement).toHaveBeenNthCalledWith(
@@ -143,13 +151,89 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
       auth,
       "property.cadastralAnalysis",
       expect.stringContaining("Analyse"),
+      { saleId },
     );
     expect(mocks.assertEntitlement).toHaveBeenNthCalledWith(
       2,
       auth,
       "property.urbanPlanning",
       expect.stringContaining("Analyse"),
+      { saleId },
     );
+  });
+
+  it("ouvre la vente débloquée par un compte Découverte, sans renvoyer sa source", async () => {
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
+    // Through the unlock door, the sale comes without its source; the key stays on the server.
+    mocks.getSale.mockResolvedValue({
+      sale: { ...sale, source_url: null },
+      enrichmentKey: sale.source_url,
+    });
+
+    const response = await request();
+
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain("example.test/vente");
+    expect(JSON.parse(text)).toEqual({ cadastralParcels, urbanPlanningSignals });
+    expect(mocks.getSale).toHaveBeenCalledWith(auth, saleId, "unlock");
+    expect(mocks.getCadastralParcels).toHaveBeenCalledWith(sale.source_url);
+    expect(mocks.getUrbanPlanningSignals).toHaveBeenCalledWith(sale.source_url);
+  });
+
+  it("ne renvoie, pour la vente débloquée, aucun signal tiré des données brutes ou d’une autre source", async () => {
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
+    mocks.getSale.mockResolvedValue({ sale: { source_url: null }, enrichmentKey: sale.source_url });
+    const fromRawPayload = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw",
+      sourceKind: "source_payload",
+      sourceName: "Données source",
+      excerpt: "EXTRAIT-BRUT-PRIVE",
+    };
+    const fromSourceText = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw-text",
+      sourceKind: "sale_text",
+      sourceName: "Texte source",
+      excerpt: "TEXTE-SOURCE-PRIVE",
+    };
+    const fromDescription = {
+      ...urbanPlanningSignals[0],
+      signalKey: "description",
+      sourceKind: "sale_text",
+      sourceName: "Description annonce",
+      excerpt: "Servitude de passage",
+    };
+    const unknownKind = { ...urbanPlanningSignals[0], signalKey: "x", sourceKind: "inconnu" };
+    mocks.getUrbanPlanningSignals.mockResolvedValue([
+      ...urbanPlanningSignals,
+      fromRawPayload,
+      fromSourceText,
+      fromDescription,
+      unknownKind,
+    ]);
+
+    const body = await (await request()).json();
+
+    expect(body.urbanPlanningSignals.map((item: { signalKey: string }) => item.signalKey)).toEqual([
+      "plu-zonage",
+      "description",
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/EXTRAIT-BRUT-PRIVE|TEXTE-SOURCE-PRIVE/);
+  });
+
+  it("garde tous les signaux pour l’offre Analyse, comme avant", async () => {
+    const fromRawPayload = {
+      ...urbanPlanningSignals[0],
+      signalKey: "raw",
+      sourceKind: "source_payload",
+    };
+    mocks.getUrbanPlanningSignals.mockResolvedValue([...urbanPlanningSignals, fromRawPayload]);
+
+    const body = await (await request()).json();
+
+    expect(body.urbanPlanningSignals).toHaveLength(2);
   });
 
   it("ne lit pas les enrichissements si la vente n’est pas accessible", async () => {

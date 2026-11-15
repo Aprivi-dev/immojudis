@@ -186,16 +186,19 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
 };
 
 /**
- * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement, et
- * rien d'autre : enchère plafond, historique de la vente, lecture des pièces, statistiques du
- * tribunal de la vente (prix d'adjudication et scénarios d'enchères). Les pièces officielles du
- * dossier sont ouvertes par la base (vue `v_auction_sales_unlocked`, aucune table d'enfants n'est ouverte).
+ * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement :
+ * toute l'offre Analyse de la fiche. Enchère plafond, historique de la vente, lecture des pièces,
+ * statistiques du tribunal de la vente, estimation détaillée, comparables vendus et en vente,
+ * urbanisme et cadastre (avec le dossier du terrain), services à proximité, quartier et façade,
+ * prévision d'audience, rapport enregistré de cette vente, son édition et son export PDF. Les pièces
+ * officielles sont ouvertes par la base (vue `v_auction_sales_unlocked`) ; le reste passe par le
+ * serveur (`getSaleForDoor`), aucune table d'enfants n'est ouverte au compte.
  *
- * Ne figurent pas ici : l'estimation détaillée (`property.valueEstimate`), la prévision d'audience
- * (`property.outcomeGraph`), les comparables, l'urbanisme, les exports PDF/CSV, les rapports
- * enregistrés, les alertes, les espaces de travail. Le calcul de l'enchère plafond a besoin d'une
- * valeur de référence : `/api/market-estimate` la sert sous le droit `property.bidCeiling`, réduite
- * aux seuls champs que le plafond lit (voir `ceilingMarketContext`).
+ * Ne figurent pas ici, ils restent à l'abonnement : les autres ventes, l'explorateur DPE
+ * (`dpe.latest`), les alertes avancées, l'export CSV, les favoris illimités, les statistiques des
+ * autres tribunaux, la mise en relation avec un avocat. Le partage d'un rapport par lien reste aussi à
+ * l'abonnement : il est contrôlé sur l'offre seule (`shareOwnerKeepsSavedReports`), jamais sur un
+ * déblocage.
  */
 export const SALE_UNLOCK_FEATURES = [
   "property.bidCeiling",
@@ -203,6 +206,18 @@ export const SALE_UNLOCK_FEATURES = [
   "property.documentReading",
   "property.advancedBidScenarios",
   "sales.statistics",
+  "property.valueEstimate",
+  "property.soldComparables",
+  "property.activeComparables",
+  "property.urbanPlanning",
+  "property.cadastralAnalysis",
+  "property.nearbyServices",
+  "property.neighborhoodAnalysis",
+  "property.streetFacade",
+  "property.outcomeGraph",
+  "property.savedReports",
+  "property.pdfExport",
+  "property.reportEditing",
 ] as const satisfies readonly FeatureKey[];
 
 export type SaleUnlockFeature = (typeof SALE_UNLOCK_FEATURES)[number];

@@ -72,6 +72,7 @@ export function SaleDetailMarketSection({
   sale: AuctionSale;
   displaySale: AuctionSale;
   access: SaleAccessMode;
+  /** Les données de la vente sont ouvertes (offre Analyse, ou vente débloquée par le compte gratuit). */
   fullData: boolean;
   publicDemo: boolean;
   signedIn: boolean;
@@ -93,7 +94,7 @@ export function SaleDetailMarketSection({
 }) {
   return (
     <DetailSection id="marche">
-      {access === "analysis" ? (
+      {fullData ? (
         <>
           <MarketSnapshot
             estimate={detailedMarketEstimate}
@@ -159,9 +160,9 @@ export function SaleDetailMarketSection({
           <UrbanismeSection
             sale={displaySale}
             mapLocation={sale}
-            loadStructuredUrbanism={
-              access === "analysis" && !publicDemo && !authLoading && signedIn
-            }
+            loadStructuredUrbanism={fullData && !publicDemo && !authLoading && signedIn}
+            // Interroger de nouveau les sources officielles reste à l'abonnement.
+            officialLandRefresh={access === "analysis"}
           />
         </WhenNear>
       </div>

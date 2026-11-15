@@ -120,7 +120,7 @@ export function SaleUnlockPanel({
   if (unlocked) {
     // What stays on Analyse, and the decision-aid reserve: always shown, under the result.
     const reserved =
-      "Les exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre Analyse.";
+      "Le partage d’un rapport par lien, l’export CSV et l’espace de travail restent réservés à l’offre Analyse.";
     const reserve = (
       <p className="mt-2 text-xs leading-relaxed text-ink-soft">
         Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un

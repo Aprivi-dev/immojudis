@@ -10,8 +10,8 @@ describe("ce qui demandera l’offre Analyse à la fin de l’essai", () => {
     expect(LAUNCH_OFFER_END_NEEDS_ANALYSIS).toEqual([
       "le plafond chiffré sur toutes les ventes (compte gratuit : une vente débloquée)",
       `jusqu’à ${analysis.watchedZones} alertes, chaque jour (compte gratuit : ${free.watchedZones}, chaque semaine)`,
-      "l’estimation détaillée et les ventes comparables",
-      "le rapport PDF et l’export CSV",
+      "l’estimation détaillée et les ventes comparables sur toutes les ventes (compte gratuit : une vente débloquée)",
+      "le rapport PDF et l’export CSV (compte gratuit : le rapport de la vente débloquée)",
       "les pièces du dossier et leur lecture sur toutes les ventes (compte gratuit : vos ventes débloquées)",
     ]);
     expect(free.saleUnlocks).toBe(1);

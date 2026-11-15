@@ -166,7 +166,9 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   // Les régimes de frais sont tous ouverts par défaut : le déblocage ouvre « l’enchère plafond ou
   // l’offre plafond » (ventes notariales interactives).
   await expect(
-    page.getByText(/^Une vente à débloquer : l[’']enchère plafond ou l[’']offre plafond/),
+    page.getByText(
+      /^Une vente à débloquer : l[’']analyse complète de la vente \(l[’']enchère plafond ou l[’']offre plafond/,
+    ),
   ).toBeVisible();
   // Tableau au-delà de 640 px, liste en dessous : seule la forme visible est trouvée.
   await expect(

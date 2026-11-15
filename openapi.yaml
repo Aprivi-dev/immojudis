@@ -100,8 +100,8 @@ paths:
       operationId: getSaleOutcomeGraph
       summary: Lire la dernière prévision Outcome Graph admissible
       description: >-
-        Réservé au plan Analyse. Un déblocage de vente (« 3 déblocages par mois ») n'ouvre pas la
-        prévision d'audience. Le serveur refuse les prédictions sans snapshot
+        Réservé au plan Analyse, ou à un compte Découverte pour la vente qu'il a débloquée
+        (déblocage du compte gratuit). Le serveur refuse les prédictions sans snapshot
         pré-audience validé, cohorte éligible ou provenance complète. Le plafond
         personnel n'est pas envoyé à cette route et se calcule dans le navigateur.
       security:
@@ -1099,7 +1099,7 @@ paths:
       operationId: getSaleAdjudicationStatistics
       summary: Lire les statistiques de prix d'adjudication d'une vente
       description: >-
-        Réservé au plan Analyse, ou à un compte Découverte pour une vente qu'il a débloquée (« 3 déblocages par mois »). Référence nationale et tribunal compétent pour la vente, expérimentales et descriptives. Indisponible tant que le drapeau serveur `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
+        Réservé au plan Analyse, ou à un compte Découverte pour la vente qu'il a débloquée (déblocage du compte gratuit). Référence nationale et tribunal compétent pour la vente, expérimentales et descriptives. Indisponible tant que le drapeau serveur `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
       security:
         - bearerAuth: []
       parameters:
@@ -1283,7 +1283,7 @@ paths:
       operationId: getSaleLandReport
       summary: Lire l'analyse du terrain d'une vente (PLU, risques, cadastre)
       description: >-
-        Réservé au plan Analyse. `format=pdf` renvoie le rapport en PDF et exige en plus le droit d'export PDF ; `refresh=1` recalcule au lieu d'utiliser le cache (12 appels par minute et par utilisateur).
+        Réservé au plan Analyse, ou à un compte Découverte pour la vente qu'il a débloquée (déblocage du compte gratuit). `format=pdf` renvoie le rapport en PDF et exige en plus le droit d'export PDF (ouvert aussi par le déblocage de la vente) ; `refresh=1` recalcule au lieu d'utiliser le cache (12 appels par minute et par utilisateur) et reste réservé au plan Analyse : par le déblocage, il est refusé (403).
 
 
         Version du rapport : `land-report-v1.1` (avant : `land-report-v1`). Changement de sens de la couche des risques d'inondation (TRI) : elle signale désormais l'appartenance du point à la zone d'un scénario de la cartographie des territoires à risque important d'inondation, et non plus la présence d'un TRI dans un rayon de 1 000 m ; quand la position n'est qu'un centre de commune, elle ne renvoie que la commune (`scope: "commune"`). La structure de la réponse ne change pas.
@@ -1461,7 +1461,7 @@ paths:
       operationId: getSaleUrbanismeCadastre
       summary: Lire les parcelles cadastrales et les signaux d'urbanisme d'une vente
       description: >-
-        Réservé au plan Analyse. Renvoie `cadastralParcels` et `urbanPlanningSignals` tels que rattachés à la vente.
+        Réservé au plan Analyse, ou à un compte Découverte pour la vente qu'il a débloquée (déblocage du compte gratuit). Renvoie `cadastralParcels` et `urbanPlanningSignals` tels que rattachés à la vente.
       security:
         - bearerAuth: []
       parameters:
@@ -1541,7 +1541,7 @@ paths:
       operationId: getTribunalListingStatistics
       summary: Lire les statistiques des annonces d'un tribunal
       description: >-
-        Réservé au plan Analyse. Un compte Découverte y accède seulement avec `saleId`, pour une vente qu'il a débloquée (« 3 déblocages par mois »), et obtient alors les statistiques du tribunal de cette vente, sans la liste de ses autres ventes à venir : `activity.upcomingListings` est alors toujours vide (`activity.upcomingSales` reste renseigné). Une requête avec `courtCode` reste réservée à Analyse. Un paramètre répété est refusé (400). Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
+        Réservé au plan Analyse. Un compte Découverte y accède seulement avec `saleId`, pour la vente qu'il a débloquée (déblocage du compte gratuit), et obtient alors les statistiques du tribunal de cette vente, sans la liste de ses autres ventes à venir : `activity.upcomingListings` est alors toujours vide (`activity.upcomingSales` reste renseigné). Une requête avec `courtCode` reste réservée à Analyse. Un paramètre répété est refusé (400). Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
       security:
         - bearerAuth: []
       parameters:

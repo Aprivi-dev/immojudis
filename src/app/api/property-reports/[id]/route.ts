@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
@@ -10,11 +11,13 @@ import {
   updatePropertyReport,
 } from "@/lib/property-reports";
 
+const reportIdSchema = z.string().guid();
+
 export const GET = apiRoute<{ id: string }>(
   { scope: "api.property-reports.read", fallbackMessage: "Rapport indisponible" },
   async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    return getPropertyReport({ auth, reportId: params.id });
+    return getPropertyReport({ auth, reportId: reportIdSchema.parse(params.id) });
   },
 );
 
@@ -23,7 +26,7 @@ export const PATCH = apiRoute<{ id: string }>(
   async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = propertyReportUpdateSchema.parse(await request.json());
-    return updatePropertyReport({ auth, reportId: params.id, input });
+    return updatePropertyReport({ auth, reportId: reportIdSchema.parse(params.id), input });
   },
 );
 
@@ -31,6 +34,6 @@ export const DELETE = apiRoute<{ id: string }>(
   { scope: "api.property-reports.delete", fallbackMessage: "Rapport impossible à supprimer" },
   async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    return deletePropertyReport({ auth, reportId: params.id });
+    return deletePropertyReport({ auth, reportId: reportIdSchema.parse(params.id) });
   },
 );

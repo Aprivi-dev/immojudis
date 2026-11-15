@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL } from "@/lib/analysis-offer";
-import { FREE_UNLOCK_EFFECTIVE_DATE, LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import {
+  FREE_UNLOCK_EFFECTIVE_DATE,
+  FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+  LEGAL_DOCUMENTS,
+} from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
 import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { FREE_SALE_UNLOCKS } from "@/lib/sale-unlocks";
@@ -136,13 +140,17 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-11-15.1 (un seul déblocage, fin de l'essai), ancrée par l'empreinte de leur source ; les 2026-11-10.1 et 2026-10-26.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-15.1");
+  it("portent la version 2026-11-15.2 (le déblocage ouvre toute l'offre Analyse sur la vente), ancrée par l'empreinte de leur source ; les 2026-11-15.1, 2026-11-10.1 et 2026-10-26.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-15.2");
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier.map((earlier) => earlier.version)).toEqual([
+      "2026-11-15.1",
       "2026-11-10.1",
       "2026-10-26.1",
     ]);
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[0].applicableUntil).toBe(
+      FULL_SALE_UNLOCK_EFFECTIVE_DATE,
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier[1].applicableUntil).toBe(
       FREE_UNLOCK_EFFECTIVE_DATE,
     );
   });
@@ -174,7 +182,7 @@ describe("conditions générales : classement, référencement et mise en avant"
   it("précisent dans l'en-tête qui est soumis à quelle version, et où obtenir la précédente", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      `Version 2026-11-15.1, applicable dès l’inscription pour les comptes créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui concerne l’offre Découverte et son déblocage, et l’article 13 s’appliquent à compter du ${FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du 1er décembre 2026. Jusqu’à cette date, la version précédente (2026-10-25.1) reste applicable aux comptes existants pour ces autres stipulations ; elle est communiquée sur demande à contact@immojudis.example.`,
+      `Version 2026-11-15.2, applicable dès l’inscription pour les comptes créés à partir de sa mise en ligne. Pour les comptes existants, l’article 2, pour ce qui concerne l’offre Découverte et son déblocage, s’applique à compter du ${FULL_SALE_UNLOCK_EFFECTIVE_DATE}, et l’article 13 à compter du ${FREE_UNLOCK_EFFECTIVE_DATE} ; les autres stipulations s’appliquent à compter du 1er décembre 2026. Jusqu’à cette date, la version précédente (2026-10-25.1) reste applicable aux comptes existants pour ces autres stipulations ; elle est communiquée sur demande à contact@immojudis.example.`,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
       LEGAL_DOCUMENTS.terms.effectiveDate,
@@ -188,7 +196,7 @@ describe("conditions générales : classement, référencement et mise en avant"
     );
     expect(text).toContain("enchère plafond ou offre plafond selon la vente");
     expect(text).toContain(
-      "l’enchère plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces",
+      "l’enchère plafond ou l’offre plafond chiffrée, selon la vente, l’estimation détaillée",
     );
   });
 
@@ -311,7 +319,7 @@ describe("conditions générales : fin de l'essai gratuit à l'inscription (15/1
 });
 
 describe("conditions générales : un déblocage de vente en tout", () => {
-  it("définissent le déblocage : une vente, cinq éléments quand elle les comporte, le reste à Analyse", () => {
+  it("définissent le déblocage : une vente, toute l'offre Analyse propre à cette vente, le reste à Analyse", () => {
     const text = pageText(<TermsPage />);
     expect(FREE_SALE_UNLOCKS).toBe(1);
     expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
@@ -319,23 +327,39 @@ describe("conditions générales : un déblocage de vente en tout", () => {
       `une alerte avec un email hebdomadaire et ${FREE_SALE_UNLOCKS} déblocage de vente en tout, qui ne se renouvelle pas chaque mois.`,
     );
     expect(text).toContain(
-      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond ou l’offre plafond chiffrée, selon la vente, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
+      "Un déblocage ouvre, pour une vente de votre choix, l’ensemble des éléments de l’offre Analyse propres à cette vente, lorsqu’elle les comporte : l’enchère plafond ou l’offre plafond chiffrée, selon la vente, l’estimation détaillée (valeur estimée et fourchette) et les ventes comparables, le budget travaux détaillé, les pièces du dossier et leur lecture, l’historique de la vente, les statistiques du tribunal compétent pour cette vente, l’urbanisme et le cadastre, le dossier du terrain, l’analyse du quartier, la prévision d’audience, le rapport enregistré et le rapport PDF de cette vente.",
     );
     expect(text).toContain(
-      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre. Pour consulter ces éléments sur d’autres ventes, il faut souscrire à l’offre Analyse.",
+      `Restent réservés à l’offre Analyse : ces éléments sur les autres ventes, l’export CSV, les alertes avancées et quotidiennes, les favoris au-delà de ${PLAN_LIMITS.decouverte.favoriteSales}, les statistiques des autres tribunaux, le partage d’un rapport par lien et la mise en relation avec un avocat référencé.`,
     );
-    // Jamais « réservé » pour un élément que le compte reçoit.
-    const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
-    const reservedSentence = reserved.slice(0, reserved.indexOf("restent réservées"));
+    // Jamais « réservé » pour un élément que le déblocage ouvre.
+    const reserved = text.slice(text.indexOf("Restent réservés à l’offre Analyse :"));
+    const reservedSentence = reserved.slice(0, reserved.indexOf("Le déblocage est consommé"));
     for (const received of [
       "enchère plafond",
-      "lecture des pièces",
+      "estimation détaillée",
+      "ventes comparables",
+      "budget travaux",
+      "lecture",
       "historique",
-      "statistiques",
-      "pièces du dossier",
+      "urbanisme",
+      "rapport enregistré",
+      "rapport PDF",
+      "export PDF",
     ]) {
       expect(reservedSentence).not.toContain(received);
     }
+  });
+
+  it("ne comptent plus la fourchette de valeur ni l'écart chiffré dans Découverte", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).not.toContain("informations essentielles");
+    expect(text).toContain(
+      "un niveau d’écart entre la mise à prix et le marché, sans chiffre, et un aperçu chiffré de l’analyse (nombre de ventes comparables, de points relevés dans les pièces, de passages), lorsqu’ils sont disponibles",
+    );
+    expect(text).toContain(
+      "La valeur estimée, sa fourchette et l’écart chiffré avec la mise à prix ne sont pas compris dans Découverte : ils sont ouverts par un déblocage ou par l’offre Analyse.",
+    );
   });
 
   it("disent quand le déblocage est consommé, rendu ou non, et quand un déblocage redevient disponible", () => {

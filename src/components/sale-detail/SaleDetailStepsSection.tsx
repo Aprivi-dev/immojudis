@@ -68,7 +68,10 @@ export function SaleDetailStepsSection({
   fileCard: ReactNode;
   participationOpen: boolean;
   onParticipationToggle: () => void;
-  /** « Conserver votre analyse » : offre Analyse, plafond ouvert et sans conflit de valorisation. */
+  /**
+   * « Conserver votre analyse » : offre Analyse ou vente débloquée, plafond ouvert et sans conflit de
+   * valorisation.
+   */
   reportAvailable: boolean;
   surfaceEnteredByUser: boolean;
   reportSimulation: ReportSimulation | undefined;
@@ -130,6 +133,7 @@ export function SaleDetailStepsSection({
             compact
             simulation={reportSimulation}
             requireSimulation
+            unlockedSale={access !== "analysis"}
           />
         </section>
       ) : null}

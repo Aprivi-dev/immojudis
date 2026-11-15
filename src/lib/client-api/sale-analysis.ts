@@ -4,7 +4,7 @@ import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { SaleMarketContext } from "@/lib/market-estimate-ceiling";
-import type { ValuePreview } from "@/lib/value-preview";
+import type { ValuePreviewResponse } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
@@ -55,8 +55,8 @@ export function fetchSaleFactReliabilities(saleId: string): Promise<SaleFactReli
   );
 }
 
-export function fetchValuePreview(saleId: string): Promise<ValuePreview> {
-  return apiRequest<ValuePreview>(`/api/sales/${encodeURIComponent(saleId)}/value-preview`);
+export function fetchValuePreview(saleId: string): Promise<ValuePreviewResponse> {
+  return apiRequest<ValuePreviewResponse>(`/api/sales/${encodeURIComponent(saleId)}/value-preview`);
 }
 
 /** Where the account stands this month and whether this sale is unlocked. Consumes nothing. */

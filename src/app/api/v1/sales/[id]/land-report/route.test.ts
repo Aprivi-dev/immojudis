@@ -16,11 +16,11 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "bearer",
   requireSupabaseAuthContext: mocks.auth,
 }));
-vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
-vi.mock("@/lib/property-report/repository", () => ({
-  getSale: mocks.sale,
-  getCadastralParcels: mocks.parcels,
+vi.mock("@/lib/entitlements.server", () => ({
+  assertFeatureEntitlementVia: mocks.entitlement,
+  getSaleForDoor: mocks.sale,
 }));
+vi.mock("@/lib/property-report/repository", () => ({ getCadastralParcels: mocks.parcels }));
 vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.rate,
   enforceDailyOperationLimits: mocks.daily,
@@ -54,6 +54,8 @@ const report = {
   rules: { rules: [], checks: [], warnings: [], completeCoverage: false },
   projects: [],
 };
+const ANALYSIS = { plan: { plan: "analyse" }, door: "plan" };
+const UNLOCK = { plan: { plan: "decouverte" }, door: "unlock" };
 function request(query = "", saleId = id) {
   return GET(new Request(`https://immojudis.com/api/v1/sales/${saleId}/land-report${query}`), {
     params: Promise.resolve({ id: saleId }),
@@ -67,8 +69,8 @@ describe("dossier PLU et risques premium", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.auth.mockResolvedValue(context);
-    mocks.entitlement.mockResolvedValue({ plan: "analyse" });
-    mocks.sale.mockResolvedValue(sale);
+    mocks.entitlement.mockResolvedValue(ANALYSIS);
+    mocks.sale.mockResolvedValue({ sale, enrichmentKey: sale.source_url });
     mocks.parcels.mockResolvedValue([]);
     mocks.rate.mockResolvedValue(undefined);
     mocks.daily.mockResolvedValue(undefined);
@@ -129,7 +131,8 @@ describe("dossier PLU et risques premium", () => {
     expect(response.headers.get("vary")).toBe("authorization");
     expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(await response.json()).toEqual({ report });
-    expect(mocks.sale).toHaveBeenCalledWith(context.supabase, id);
+    expect(mocks.sale).toHaveBeenCalledWith(context, id, "plan");
+    expect(mocks.parcels).toHaveBeenCalledWith(sale.source_url);
     expect(mocks.report).toHaveBeenCalledWith({ address: sale.address }, { refresh: true });
   });
   it("contrôle les droits en parallèle, avant toute lecture de la vente", async () => {
@@ -138,7 +141,7 @@ describe("dossier PLU et risques premium", () => {
     const pending = request("?format=pdf");
     await vi.waitFor(() => expect(mocks.entitlement).toHaveBeenCalledTimes(3));
     expect(mocks.sale).not.toHaveBeenCalled();
-    for (const release of releases) release({ plan: "analyse" });
+    for (const release of releases) release(ANALYSIS);
     expect((await pending).status).toBe(200);
   });
   it("exporte un vrai PDF après vérification du droit d'export", async () => {
@@ -151,6 +154,62 @@ describe("dossier PLU et risques premium", () => {
       context,
       "property.pdfExport",
       expect.any(String),
+      { saleId: id },
     );
+  });
+
+  describe("vente débloquée par un compte Découverte", () => {
+    // Ce que `getSaleForDoor` rend pour la porte du déblocage : la vente sans ses sources.
+    const unlockedSale = { ...sale, source_url: null };
+
+    beforeEach(() => {
+      mocks.entitlement.mockResolvedValue(UNLOCK);
+      mocks.sale.mockResolvedValue({ sale: unlockedSale, enrichmentKey: sale.source_url });
+    });
+
+    it("passe la vente à chaque droit, pour que son déblocage les ouvre", async () => {
+      expect((await request("?format=pdf")).status).toBe(200);
+      for (const feature of [
+        "property.urbanPlanning",
+        "property.cadastralAnalysis",
+        "property.pdfExport",
+      ]) {
+        expect(mocks.entitlement).toHaveBeenCalledWith(context, feature, expect.any(String), {
+          saleId: id,
+        });
+      }
+    });
+
+    it("sert le dossier en cache, lu par la porte du déblocage, sans renvoyer la source", async () => {
+      const response = await request();
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).not.toContain("licitor");
+      expect(mocks.sale).toHaveBeenCalledWith(context, id, "unlock");
+      // Le cadastre est retrouvé par la clé lue côté serveur.
+      expect(mocks.parcels).toHaveBeenCalledWith(sale.source_url);
+      expect(mocks.report).toHaveBeenCalledWith({ address: sale.address }, { refresh: false });
+    });
+
+    it("refuse l'actualisation (refresh=1) avant toute lecture et tout appel aux sources", async () => {
+      const response = await request("?refresh=1");
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        code: "FORBIDDEN",
+        error: expect.stringContaining("actualisation"),
+      });
+      expect(mocks.sale).not.toHaveBeenCalled();
+      expect(mocks.daily).not.toHaveBeenCalled();
+      expect(mocks.report).not.toHaveBeenCalled();
+    });
+
+    it("refuse une autre vente que la vente débloquée", async () => {
+      mocks.entitlement.mockRejectedValue(
+        new ForbiddenError("L’analyse du PLU et des risques est réservée à l’offre Analyse."),
+      );
+      expect((await request()).status).toBe(403);
+      expect(mocks.sale).not.toHaveBeenCalled();
+      expect(mocks.report).not.toHaveBeenCalled();
+    });
   });
 });

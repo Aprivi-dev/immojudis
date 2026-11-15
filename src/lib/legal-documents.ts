@@ -147,6 +147,33 @@ export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "15 novembre 2026";
 // Mise en ligne réelle : le 15/11/2026.
 export const FREE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
 
+/**
+ * Le déblocage d'une vente ouvre toute l'offre Analyse sur cette vente ; nouvelle vue du compte
+ * gratuit (décision du propriétaire du 15/11/2026, lot 2).
+ *
+ * - CGU 2026-11-15.2 (BROUILLON, à faire valider par un avocat avant la mise en ligne) : l'article 2
+ *   dit qu'un déblocage ouvre l'ensemble des éléments de l'offre Analyse propres à la vente
+ *   débloquée, lorsqu'elle les comporte (estimation détaillée, ventes comparables, budget travaux,
+ *   urbanisme et cadastre, rapport enregistré et rapport PDF compris), et ce qui reste réservé à
+ *   l'offre Analyse (autres ventes, export CSV, alertes avancées et quotidiennes, favoris au-delà de
+ *   la limite, statistiques des autres tribunaux, partage d'un rapport par lien, mise en relation
+ *   avec un avocat référencé). La description de Découverte ne comprend plus la fourchette de valeur
+ *   ni l'écart chiffré avec la mise à prix : seulement un niveau d'écart, sans chiffre, et un aperçu
+ *   chiffré de l'analyse (nombres de ventes comparables, de points relevés dans les pièces, de
+ *   passages). La version 2026-11-15.1 est archivée.
+ * - Calendrier, décision du propriétaire du 15/11/2026 : la nouvelle rédaction de l'article 2 pour
+ *   l'offre Découverte et son déblocage s'applique à tous les comptes, nouveaux et existants, dès la
+ *   mise en ligne, sans le préavis de 30 jours des articles 2 et 14, comme pour la version
+ *   2026-11-15.1. Ce changement retire au compte gratuit la fourchette de valeur et l'écart chiffré,
+ *   jusque-là visibles sans déblocage. Aucune information préalable de 30 jours n'a été envoyée : le
+ *   texte publié ne le dit pas. Les autres stipulations gardent leur calendrier. À faire valider par
+ *   un avocat.
+ *
+ * Date de la mise en ligne prévue ; à décaler à la date réelle si elle diffère (elle n'entre pas
+ * dans l'empreinte du texte).
+ */
+export const FULL_SALE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -155,8 +182,8 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-11-15.1",
-    sha256: "52e3b866e3de65f04d363e72353491309a65c14c0e2c0b540a73d8f92df6c32b",
+    version: "2026-11-15.2",
+    sha256: "37905b0d0a391ab052c2d749d91a319dada4b32079357e3a3996bbc58205d2a7",
     effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },

@@ -776,10 +776,43 @@ for (const table of [
     failures.push(`The sale unlock migration opens ${table} to an unlock`);
   }
 }
+// The view is checked in its LAST textual definition among all migrations, not only in the migration
+// that created it: a later migration that rewrites it must keep the same redactions. Whole-line
+// comments are dropped (a comment may quote the statement); the view body itself has none that ends a
+// statement. The dynamic rewrite of 20261103110000 (sale_conditions appended) is checked further
+// down with the sale conditions.
+const unlockedViewDefinitions = [...migrationSources].flatMap(([name, source]) =>
+  [
+    ...source
+      .replace(/^[ \t]*--[^\n]*$/gm, "")
+      .matchAll(
+        /create\s+(?:or\s+replace\s+)?view\s+public\.v_auction_sales_unlocked\b[\s\S]*?;/gi,
+      ),
+  ].map((match) => ({ name, sql: match[0] })),
+);
+const lastUnlockedViewDefinition = unlockedViewDefinitions.at(-1);
 const unlockedView =
-  /create\s+or\s+replace\s+view\s+public\.v_auction_sales_unlocked\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)[\s\S]*?;/i.exec(
-    saleUnlockMigration,
-  )?.[0];
+  lastUnlockedViewDefinition &&
+  /^create\s+or\s+replace\s+view\s+public\.v_auction_sales_unlocked\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)/i.test(
+    lastUnlockedViewDefinition.sql,
+  )
+    ? lastUnlockedViewDefinition.sql
+    : undefined;
+for (const [name, source] of migrationSources) {
+  const sql = source.replace(/^[ \t]*--[^\n]*$/gm, "");
+  if (
+    /alter\s+view\s+(?:if\s+exists\s+)?public\.v_auction_sales_unlocked\s+(?:re)?set\b/i.test(sql)
+  ) {
+    failures.push(`${name} changes the options of v_auction_sales_unlocked outside its definition`);
+  }
+  if (
+    /grant\s+[^;]*\bon\s+(?:table\s+)?public\.v_auction_sales_unlocked\s+to\s+[^;]*\b(?:anon|public)\b/i.test(
+      sql,
+    )
+  ) {
+    failures.push(`${name} opens v_auction_sales_unlocked to anon`);
+  }
+}
 if (
   !unlockedView ||
   !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.current_user_unlocked_sale\(s\.id\)/i.test(
@@ -819,13 +852,62 @@ if (unlockedView && /sale_is_unlockable\(/i.test(unlockedView)) {
 }
 if (
   !/revoke\s+all\s+on\s+table\s+public\.v_auction_sales_unlocked\s+from\s+public,\s*anon/i.test(
-    saleUnlockMigration,
+    migrationSources.get(lastUnlockedViewDefinition?.name ?? "") ?? "",
   )
 ) {
   failures.push("v_auction_sales_unlocked is not closed to anon");
 }
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
+}
+// Saved reports (20261121100000): an unlock opens the account's own saved report of the unlocked
+// sale, built through the unlock door, nothing wider. The last definition of the restrictive policy must be exactly « Analyse access
+// or unlocked sale », never dropped afterwards, and every other policy of the table must stay limited
+// to the owner (the restrictive policy is ANDed with them). The first definition (20260710083858) is
+// dynamic SQL, out of reach of this scan: it is replaced by the static one.
+const normalizePolicy = (sql) =>
+  sql.replace(/\s+/g, " ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim().toLowerCase();
+// The unlock branch also requires a snapshot built through the unlock door: an older row of the same
+// sale (saved during a trial, with the Analyse access) carries the investment score and the sources.
+const savedReportsUnlockCondition =
+  "((select public.has_analysis_access()) or (app_private.current_user_unlocked_sale(sale_id) and (report_snapshot ->> 'door') = 'unlock'))";
+const expectedSavedReportsPolicy = normalizePolicy(
+  `create policy analysis_access_required on public.saved_property_reports as restrictive for all to authenticated using ${savedReportsUnlockCondition} with check ${savedReportsUnlockCondition};`,
+);
+const savedReportsPolicyStatements = [...migrationSources].flatMap(([name, source]) =>
+  [
+    ...source
+      .replace(/--[^\n]*/g, "")
+      .matchAll(
+        /(create|alter|drop)\s+policy\s+(?:if\s+exists\s+)?(\w+)\s+on\s+(?:table\s+)?public\.saved_property_reports\b[\s\S]*?;/gi,
+      ),
+  ].map((match) => ({
+    name,
+    verb: (match[1] ?? "").toLowerCase(),
+    policy: (match[2] ?? "").toLowerCase(),
+    sql: normalizePolicy(match[0]),
+  })),
+);
+const lastSavedReportsPolicy = new Map();
+for (const statement of savedReportsPolicyStatements) {
+  lastSavedReportsPolicy.set(statement.policy, statement);
+}
+const savedReportsRestriction = lastSavedReportsPolicy.get("analysis_access_required");
+if (!savedReportsRestriction || savedReportsRestriction.sql !== expectedSavedReportsPolicy) {
+  failures.push(
+    "saved_property_reports: the last analysis_access_required is not « Analyse access, or unlocked sale with an unlock-door snapshot », restrictive, for authenticated",
+  );
+}
+for (const [policy, statement] of lastSavedReportsPolicy) {
+  if (policy === "analysis_access_required" || statement.verb === "drop") continue;
+  if (
+    !statement.sql.includes("user_id = (select auth.uid())") ||
+    /current_user_unlocked_sale|using \(true\)/.test(statement.sql)
+  ) {
+    failures.push(
+      `${statement.name}: saved_property_reports policy ${policy} is not limited to the owner`,
+    );
+  }
 }
 // Plafond des ventes notariales: the conditions of a notarial sale reach the browser of an Analyse
 // account (v_auction_sales_app) and of an account that unlocked the sale (v_auction_sales_unlocked)
