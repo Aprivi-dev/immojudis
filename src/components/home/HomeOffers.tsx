@@ -9,7 +9,7 @@ import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
+import { FREE_UNLOCK_LABEL, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
 import { ArrowRight, Check } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
@@ -17,7 +17,7 @@ const discoveryFeatures = (unlockHighlights: string) =>
   [
     "Accès aux annonces, sur la carte et en liste",
     "Informations essentielles de chaque vente",
-    `${MONTHLY_UNLOCKS_TEXT} : ${unlockHighlights}`,
+    `${FREE_UNLOCK_LABEL} : ${unlockHighlights}`,
     `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   ] as const;
 

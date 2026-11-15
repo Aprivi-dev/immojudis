@@ -10,7 +10,6 @@ import { LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { pageMetadata } from "@/lib/page-metadata";
 import { EMOLUMENT_SCALE_DATE, EMOLUMENT_SCALE_REFERENCE } from "@/lib/profitability";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { getSurenchereReminder } from "@/lib/surenchere-reminder";
 
 export const metadata: Metadata = pageMetadata({
@@ -75,8 +74,8 @@ function PageContent() {
         <p className="mt-2 max-w-2xl text-ink-soft">
           Vous connaissez maintenant les frais. Le plafond fait le chemin inverse sur une vraie
           vente : il part de la valeur estimée du bien et calcule, selon vos hypothèses, l’enchère à
-          ne pas dépasser. L’enchère plafond s’ouvre sur {MONTHLY_SALE_UNLOCKS} ventes au tribunal
-          par mois avec le compte gratuit, et sur toutes les ventes au tribunal avec l’offre
+          ne pas dépasser. L’enchère plafond s’ouvre sur une vente au tribunal, celle que vous
+          débloquez, avec le compte gratuit, et sur toutes les ventes au tribunal avec l’offre
           Analyse.
         </p>
         <LaunchOfferNote className="mt-3 max-w-2xl" />

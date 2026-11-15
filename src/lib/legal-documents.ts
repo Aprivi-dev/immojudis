@@ -117,6 +117,34 @@ export const PRIVACY_EMAIL_LOG_EFFECTIVE_DATE = "1er novembre 2026";
  */
 export const PRIVACY_PROFESSIONALS_EFFECTIVE_DATE = "16 novembre 2026";
 
+/**
+ * Offre gratuite : un seul déblocage de vente, plus d'essai (décision du propriétaire du 15/11/2026).
+ *
+ * - CGU 2026-11-15.1 (BROUILLON, à faire valider par un avocat avant la mise en ligne) : l'article 2
+ *   décrit le compte Découverte avec un déblocage de vente en tout (`FREE_SALE_UNLOCKS`) au lieu de
+ *   trois par mois civil ; le déblocage est rendu automatiquement si la vente est retirée avant
+ *   d'avoir lieu, sur demande si Immojudis retire elle-même la fiche, et redevient disponible
+ *   24 mois après le déblocage. L'article 13 ne décrit plus un essai proposé : il constate la fin
+ *   de l'essai gratuit à l'inscription et le retour des comptes concernés à Découverte. Les renvois
+ *   à l'essai (articles 2, 6, 9 et 14) sont retirés. La version 2026-11-10.1 est archivée.
+ * - Calendrier, décision du propriétaire prise le 15/11/2026 en connaissance des articles 2 et 14
+ *   (préavis de 30 jours) et de l'article 13 (essais en cours) de la version en vigueur, contre la
+ *   recommandation qui lui a été faite : la nouvelle règle (article 2 pour l'offre Découverte et
+ *   article 13) s'applique à tous les comptes, nouveaux et existants, dès la mise en ligne, sans
+ *   ce préavis, et les essais en cours prennent fin à la mise en ligne. Aucune information
+ *   préalable de 30 jours n'a été envoyée : le texte publié ne le dit pas. Les autres stipulations
+ *   gardent leur calendrier (1er décembre 2026 pour les comptes existants,
+ *   `PEPITE_TERMS_EFFECTIVE_DATE`). À faire valider par un avocat avant la mise en ligne.
+ * - Politique de confidentialité 2026-11-15.1 : lignes « Essai gratuit » (plus proposé) et
+ *   « Déblocage de vente » (plus de compteur mensuel ; une vente supprimée du site garde le
+ *   déblocage compté dans la limite de 24 mois). La version 2026-11-14.1 est archivée. En vigueur à
+ *   la mise en ligne, sans préavis, comme les versions précédentes.
+ *
+ * Date de la mise en ligne prévue ; à décaler à la date réelle si elle diffère (elle n'entre pas
+ * dans l'empreinte du texte).
+ */
+export const FREE_UNLOCK_EFFECTIVE_DATE = "16 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -125,15 +153,15 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-11-10.1",
-    sha256: "6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc",
+    version: "2026-11-15.1",
+    sha256: "52e3b866e3de65f04d363e72353491309a65c14c0e2c0b540a73d8f92df6c32b",
     effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-14.1",
-    sha256: "19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25",
-    effectiveDate: PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
+    version: "2026-11-15.1",
+    sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
+    effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

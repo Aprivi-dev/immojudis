@@ -6,7 +6,7 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import { Terme } from "@/components/ceiling/Terme";
 import type { ceilingTermsFor } from "@/lib/fee-regime-labels";
-import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { unlockedItemsText } from "@/lib/sale-unlocks";
 import type { SaleProcedurePresentation } from "@/lib/sale-procedure";
 import styles from "./SalePublicPreview.module.css";
 
@@ -146,8 +146,8 @@ export function SalePublicSaleSteps({
               </h3>
               <p>
                 Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune. Et{" "}
-                {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour une vente :{" "}
+                fourchette de valeur estimée, Street View, météo et risques de la commune. Et le
+                déblocage d’une vente, qui ouvre pour cette vente :{" "}
                 {unlockedItemsText({
                   ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                   statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
