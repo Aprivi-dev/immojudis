@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * « 3 déblocages par mois » sur la fiche d'une vente, du point de vue d'un compte Découverte
- * connecté. Le serveur Next répond aux appels Supabase côté serveur grâce au préchargement
+ * Le déblocage du compte gratuit (une vente en tout, sans remise à zéro) sur la fiche d'une vente,
+ * du point de vue d'un compte Découverte connecté. Le serveur Next répond aux appels Supabase côté serveur grâce au préchargement
  * `e2e/support/server-fetch-mock.cjs` (voir `scripts/start-e2e-server.mjs`) ; le navigateur est
  * intercepté ici par `page.route`.
  */
@@ -62,8 +62,6 @@ const sale = {
   updated_at: new Date().toISOString(),
 };
 
-// Le mois d'octobre 2026 : le compteur est remis à zéro le 1er novembre.
-const period = { periodStart: "2026-09-30T22:00:00.000Z", resetsAt: "2026-10-31T23:00:00.000Z" };
 type Status = {
   saleId: string;
   unlocked: boolean;
@@ -72,18 +70,16 @@ type Status = {
   limit: number | null;
   used: number;
   remaining: number | null;
-  periodStart: string;
-  resetsAt: string;
 };
+/** Le compte gratuit comprend un déblocage : `status(0)` disponible, `status(1)` déjà utilisé. */
 const status = (used: number, overrides: Partial<Status> = {}): Status => ({
   saleId: SALE_ID,
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
+  limit: 1,
   used,
-  remaining: Math.max(0, 3 - used),
-  ...period,
+  remaining: Math.max(0, 1 - used),
   ...overrides,
 });
 
@@ -218,7 +214,13 @@ async function setup(
   return counters;
 }
 
-const unlockButton = (page: Page) => page.getByRole("button", { name: "Débloquer cette vente" });
+// Textes de `src/lib/sale-unlocks.ts` (UNLOCK_CALL_TO_ACTION_LABEL, UNLOCK_CHOICE_TEXT,
+// UNLOCK_QUOTA_REACHED_TITLE, unlockQuotaReachedText).
+const UNLOCK_LABEL = "Débloquer cette vente avec mon compte gratuit";
+const CHOICE_TEXT = "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.";
+const QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
+
+const unlockButton = (page: Page) => page.getByRole("button", { name: UNLOCK_LABEL, exact: true });
 const confirmButton = (page: Page) => page.getByRole("button", { name: "Confirmer le déblocage" });
 
 async function requestUnlock(page: Page) {
@@ -245,7 +247,7 @@ test("visiteur : la fiche publique propose de créer un compte, avec le motif de
   );
 });
 
-test("compte Découverte : « Débloquer cette vente » d'un aperçu mène à la carte de déblocage", async ({
+test("compte Découverte : « Débloquer cette vente avec mon compte gratuit » d'un aperçu mène à la carte de déblocage", async ({
   page,
 }) => {
   await setup(page, { initial: status(0) });
@@ -255,9 +257,7 @@ test("compte Découverte : « Débloquer cette vente » d'un aperçu mène à la
     timeout: 15_000,
   });
 
-  const link = page
-    .getByRole("link", { name: "Débloquer cette vente (il vous reste 3 sur 3)" })
-    .first();
+  const link = page.getByRole("link", { name: UNLOCK_LABEL, exact: true }).first();
   await expect(link).toHaveAttribute("href", "#debloquer");
   await expect(
     page.getByRole("link", { name: /Découvrir l.(offre Analyse|analyse)/ }).first(),
@@ -278,14 +278,15 @@ test("un double clic sur « Confirmer le déblocage » ne consomme qu'un débloc
 }) => {
   const counters = await setup(page, { initial: status(0) });
   await page.goto(`/sales/${SALE_ID}`);
-  await expect(page.getByText("Il vous reste 3 déblocages sur 3 ce mois-ci.")).toBeVisible();
+  await expect(page.getByText(CHOICE_TEXT)).toBeVisible();
 
   await unlockButton(page).click();
   await expect(confirmButton(page)).toBeFocused();
   await confirmButton(page).dblclick();
 
   await expect(unlockedHeading(page)).toBeVisible();
-  await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
+  // Le seul déblocage du compte a servi : plus de phrase qui invite à choisir une vente.
+  await expect(page.getByText(CHOICE_TEXT)).toHaveCount(0);
   expect(counters.post).toBe(1);
 });
 
@@ -307,7 +308,7 @@ test("après le déblocage, la fiche reste affichée avec un bandeau pendant la 
   await expect(page.getByRole("status", { name: "Chargement de la fiche" })).toHaveCount(0);
   await expect(unlockedHeading(page)).toBeVisible();
   await expect(banner).toBeHidden();
-  await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
+  await expect(page.getByText(CHOICE_TEXT)).toHaveCount(0);
 });
 
 test("si la relecture échoue après le déblocage : bandeau « conservé », « Réessayer », pas de page d'erreur", async ({
@@ -334,25 +335,24 @@ test("si la relecture échoue après le déblocage : bandeau « conservé », «
   expect(counters.post).toBe(1);
 });
 
-test("quota épuisé au chargement : date de retour, offre ouverte, aucun bouton de déblocage", async ({
+test("déblocage déjà utilisé au chargement : lien vers la vente débloquée, offre ouverte, aucun bouton de déblocage", async ({
   page,
 }) => {
-  await setup(page, { initial: status(3) });
+  await setup(page, { initial: status(1) });
   await page.goto(`/sales/${SALE_ID}`);
 
-  await expect(
-    page.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Vous pourrez la débloquer le 1er novembre avec le compte gratuit/),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Voir mes ventes débloquées" })).toHaveAttribute(
+  await expect(page.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Voir la vente débloquée" })).toHaveAttribute(
     "href",
     "/compte/ventes-debloquees",
   );
   await expect(
-    page.getByText("Vos 3 déblocages d’octobre reviennent le 1er novembre.").first(),
+    page.getByText(
+      "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes.",
+    ),
   ).toBeVisible();
+  // Les aperçus payants le disent aussi, à la place du lien de déblocage.
+  await expect(page.getByText(`${QUOTA_REACHED_TITLE}.`).first()).toBeVisible();
   await expect(unlockButton(page)).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Voir l’offre Analyse" }).first()).toHaveAttribute(
     "href",
@@ -361,48 +361,47 @@ test("quota épuisé au chargement : date de retour, offre ouverte, aucun bouton
   await expect(page.getByRole("link", { name: /Débloquer cette vente/ })).toHaveCount(0);
 });
 
-test("quota épuisé et offre fermée : « Me prévenir de l'ouverture » plutôt qu'un lien vers l'offre", async ({
+test("déblocage déjà utilisé et offre fermée : « Me prévenir de l'ouverture » plutôt qu'un lien vers l'offre", async ({
   page,
 }) => {
-  await setup(page, { initial: status(3), offerConfigured: false });
+  await setup(page, { initial: status(1), offerConfigured: false });
   await page.goto(`/sales/${SALE_ID}`);
 
   const card = page.locator("#debloquer");
-  await expect(
-    card.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
-  ).toBeVisible();
+  await expect(card.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible();
   await expect(card.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeVisible();
   await expect(card.getByRole("link", { name: /offre Analyse/ })).toHaveCount(0);
+  await expect(card.getByRole("link", { name: "Voir la vente débloquée" })).toBeVisible();
   await expect(card).toContainText(
-    "Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
+    "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.",
   );
   await expect(card).toContainText("L’offre Analyse n’est pas encore ouverte à la souscription.");
 });
 
-test("quota dépensé ailleurs : le 409 bascule sur l'écran épuisé", async ({ page }) => {
+test("déblocage utilisé ailleurs entre-temps : le 409 bascule sur l'écran « déjà débloqué »", async ({
+  page,
+}) => {
   await setup(page, {
-    initial: status(2),
+    initial: status(0),
     post: () => ({
       status: 409,
-      json: { error: "x", code: "unlock_quota_reached", status: status(3) },
+      json: { error: "x", code: "unlock_quota_reached", status: status(1) },
     }),
   });
   await page.goto(`/sales/${SALE_ID}`);
   await requestUnlock(page);
 
-  await expect(
-    page.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible();
   await expect(unlockButton(page)).toHaveCount(0);
 });
 
-test("état des déblocages indisponible : bandeau et fiche gratuite, sans bouton", async ({
+test("état du déblocage indisponible : bandeau et fiche gratuite, sans bouton", async ({
   page,
 }) => {
   await setup(page, { initial: "error" });
   await page.goto(`/sales/${SALE_ID}`);
 
-  await expect(page.getByText("État de vos déblocages indisponible")).toBeVisible({
+  await expect(page.getByText("État de votre déblocage indisponible")).toBeVisible({
     timeout: 15_000,
   });
   await expect(unlockButton(page)).toHaveCount(0);
@@ -469,13 +468,13 @@ test("compte Analyse : aucun panneau ni lien de déblocage", async ({ page }) =>
   await page.goto(`/sales/${SALE_ID}`);
 
   // La fiche s'affiche une fois les droits lus : c'est à ce moment qu'un compte Découverte
-  // demanderait l'état de ses déblocages.
+  // demanderait l'état de son déblocage.
   // Titre court de la fiche (type, surface, ville), le même que sur la fiche publique.
   await expect(
     page.getByRole("heading", { level: 1, name: "Appartement de 60 m² à Lyon" }),
   ).toBeVisible();
   await page.waitForTimeout(500);
-  // L'état des déblocages n'est même pas demandé à un compte qui a déjà toutes les ventes.
+  // L'état du déblocage n'est même pas demandé à un compte qui a déjà toutes les ventes.
   expect(counters.get).toBe(0);
   await expect(page.getByRole("heading", { name: "Débloquer cette vente" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Débloquer cette vente/ })).toHaveCount(0);
