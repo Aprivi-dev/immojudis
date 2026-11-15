@@ -67,13 +67,19 @@ import { EMAIL_TEMPLATES } from "./registry";
  * « 3 déblocages par mois », et « le plafond chiffré sur toutes les ventes (compte gratuit : une
  * vente débloquée) » au lieu de « … sans limite mensuelle (compte gratuit : 3 ventes par mois) ».
  * Gabarit dormant tant que l'essai est fermé.
+ *
+ * Mise à jour explicite du 15/11/2026 (le déblocage ouvre toute l'analyse de la vente, validé par
+ * le propriétaire) : l'empreinte de trial_end a changé, et SEULEMENT celle-là. Seules deux lignes
+ * de `LAUNCH_OFFER_END_NEEDS_ANALYSIS` diffèrent : l'estimation détaillée et les ventes comparables
+ * reçoivent « sur toutes les ventes (compte gratuit : une vente débloquée) », et le rapport PDF
+ * « (compte gratuit : le rapport de la vente débloquée) ». Gabarit toujours dormant.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
   sale_reminder: "89b4e771c33a8e3ba65dd0013af35fd14e355bcf0626bbd58ad5b14cf867a4ce",
   weekly_digest: "da2f3c451922e5683f5c531a57099c45b57c16becd516aa0b6defd7d3961e19e",
   sale_result: "7c64c7e5a5b08e1b888fefc460c6759d69c12c695d60bfba30f5d585e1d96d3f",
-  trial_end: "ab3df42fa21d84be2be141c88648ebf752c87660f12285d79a6cb8ddb4b46067",
+  trial_end: "c81b13a29d9e2e2a65502b3c3ea4f92ebfd867b774b65936bb1d7092847e0ad9",
   offer_opening: "33f6b0d764b9bb7b9e611de5250b6ac1cff11fd47139ace9da41154322d17f47",
   payment_failed: "a7cf5adb71220d3a7e3125032c3f5b22a82cbb7d713b29bb11b52c13352c4a40",
   trial_ending: "40d19feefa61fd75b6075103ed2ff7229ddf5a73988c9f8495ad619ff3fc9f13",
