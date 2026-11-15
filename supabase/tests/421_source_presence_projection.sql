@@ -462,14 +462,14 @@ select is(
 
 select is(
   (
-    select source_presence->context.source_name->>'state'
+    select source_presence->'source_1'->>'state'
       from public.v_auction_sales_discovery view_row
       join pgtap_source_presence_421_context context
         on context.sale_id = view_row.id
      where context.case_name = 'current'
   ),
   'present',
-  'the discovery view exposes the compact current state'
+  'the discovery view exposes the compact current state (re-keyed source_1 since 20261123100000: the keys named the source)'
 );
 
 select is(
@@ -486,14 +486,14 @@ select is(
 
 select is(
   (
-    select source_presence->context.source_name->>'availability'
+    select source_presence->'source_1'->>'availability'
       from public.v_auction_sales_discovery_search view_row
       join pgtap_source_presence_421_context context
         on context.sale_id = view_row.id
      where context.case_name = 'outage'
   ),
   'unavailable',
-  'the discovery search projection inherits the compact outage state'
+  'the discovery search projection inherits the compact outage state (re-keyed source_1 since 20261123100000)'
 );
 
 select * from finish();

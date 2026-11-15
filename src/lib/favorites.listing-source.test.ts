@@ -64,6 +64,20 @@ function authReturning(views: string[]) {
                   id: saleId,
                   sale_procedure: rawProcedure,
                   source_blocks: { sale_procedure: rawProcedure },
+                  source_conflicts: [
+                    {
+                      field: "sale_date",
+                      selected_source: LISTING_URL,
+                      alternative_source: LISTING_URL,
+                    },
+                  ],
+                  source_presence: {
+                    "plateforme-privee": {
+                      availability: "available",
+                      state: "present",
+                      url: LISTING_URL,
+                    },
+                  },
                 },
               ],
               error: null,
@@ -80,7 +94,7 @@ describe("favorites: the listing source inside sale_procedure", () => {
     vi.resetAllMocks();
   });
 
-  it("is removed again for an account without the Analyse offer, whatever the database serves", async () => {
+  it("is removed again for an account without the Analyse offer, whatever the database serves (strict: the rows come from the discovery view, even for a sale the account unlocked)", async () => {
     mocks.plan.mockResolvedValue({
       plan: "decouverte",
       label: "Découverte",
@@ -93,8 +107,13 @@ describe("favorites: the listing source inside sale_procedure", () => {
     const text = JSON.stringify(favorites);
     expect(text).not.toContain(LISTING_URL);
     expect(text).not.toContain("plateforme-privee");
-    expect(text).toContain("https://pieces.example/ccv.pdf");
+    expect(text).not.toContain("https://pieces.example/ccv.pdf");
+    expect(text).toContain("Cahier des conditions de vente");
     expect(text).toContain("2026-12-01T10:00:00+01:00");
+    expect(favorites[0]!.sale.source_conflicts).toEqual([{ field: "sale_date" }]);
+    expect(favorites[0]!.sale.source_presence).toEqual({
+      source_1: { availability: "available", state: "present" },
+    });
   });
 
   it("is kept for the offer", async () => {

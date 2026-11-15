@@ -280,9 +280,12 @@ async function loadSalesByIds(
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (error) throw error;
-  // The discovery view already removes the listing source from `sale_procedure` (20261123100000):
-  // removed again here, whatever the state of the database.
-  return analysis ? saleRows(data) : saleRows(data).map(saleWithoutListingSource);
+  // The discovery view already removes the listing source (20261123100000): removed again here,
+  // whatever the state of the database. The rows come from the discovery view even for a sale the
+  // account unlocked: the strict projection (no document url), never more than that view.
+  return analysis
+    ? saleRows(data)
+    : saleRows(data).map((sale) => saleWithoutListingSource(sale, { documentUrls: false }));
 }
 
 async function insertFavoriteRow(
