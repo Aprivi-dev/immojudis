@@ -277,6 +277,22 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     );
   });
 
+  it("dit ce qu'un compte gratuit voit : le niveau, pas la fourchette ni l'écart chiffré", () => {
+    render(<Page />);
+    const bands = (
+      section("Le repère en trois bandes de la fiche publique").textContent ?? ""
+    ).replace(/\s/g, " ");
+    expect(bands).toContain(
+      "Avec un compte gratuit, la fiche donne aussi un niveau d’écart, sans chiffre.",
+    );
+    expect(bands).toContain(
+      "Le pourcentage, la valeur estimée et la fourchette s’affichent pour la vente débloquée avec le compte gratuit (une vente en tout) et pour toutes les ventes avec l’offre Analyse.",
+    );
+    expect(bands).not.toContain("restent réservés aux comptes");
+    const fallback = section("Quand il y a trop peu de ventes").textContent ?? "";
+    expect(fallback).not.toContain("aperçu d’un compte gratuit");
+  });
+
   it("énonce les limites sans promettre de conseil", () => {
     render(<Page />);
     const text = section("Les limites à garder en tête").textContent ?? "";

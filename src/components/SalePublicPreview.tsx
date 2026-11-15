@@ -174,8 +174,9 @@ const BAND_POSITION: Partial<Record<PublicMarketGapBand, string>> = {
 
 /**
  * Écart de la mise à prix au marché local, en trois bandes et sans chiffre (le pourcentage et la
- * fourchette restent au compte). Affichée seulement quand la base a jugé l'estimation fiable (ou
- * dit qu'elle ne l'est pas) ; neutre, indicative, jamais une recommandation.
+ * fourchette restent à l'offre Analyse et à la vente débloquée). Affichée seulement quand la base
+ * a jugé l'estimation fiable (ou dit qu'elle ne l'est pas) ; neutre, indicative, jamais une
+ * recommandation.
  */
 function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId: string }) {
   // Une vraie bande (sous, dans, au-dessus) porte la phrase sur la mise à prix basse et la mise en
@@ -543,18 +544,22 @@ export function SalePublicPreview({
   // either (« 000 000 € » was read as a value by crawlers and assistants). `width` sizes the bar.
   // `offerAware` : l'étiquette change pendant l'offre de lancement (voir `TeaserTier`).
   const analysisTeaserRows: Array<TeaserItem | null> = [
+    // La valeur estimée et l'écart chiffré ne sont plus visibles avec le seul compte gratuit
+    // (décision du 15/11/2026) : l'offre Analyse ou le déblocage de la vente les ouvre.
     {
       label: "Valeur estimée",
       width: "wide",
-      tier: "Compte gratuit",
-      visibleWith: "un compte gratuit",
+      tier: "Offre Analyse, ou une vente débloquée",
+      visibleWith: "l’offre Analyse, ou avec un déblocage",
+      offerAware: true,
     },
     price
       ? {
           label: "Écart chiffré avec la mise à prix",
           width: "short",
-          tier: "Compte gratuit",
-          visibleWith: "un compte gratuit",
+          tier: "Offre Analyse, ou une vente débloquée",
+          visibleWith: "l’offre Analyse, ou avec un déblocage",
+          offerAware: true,
         }
       : null,
     ceilingTerms
@@ -569,8 +574,8 @@ export function SalePublicPreview({
     {
       label: "Ventes comparables du secteur",
       width: "medium",
-      tier: "Offre Analyse",
-      visibleWith: "l’offre Analyse",
+      tier: "Offre Analyse, ou une vente débloquée",
+      visibleWith: "l’offre Analyse, ou avec un déblocage",
       offerAware: true,
     },
   ];
@@ -646,8 +651,8 @@ export function SalePublicPreview({
           <p className={styles.signupText}>
             {/* Une photo est déjà visible : le compte ouvre « les autres », pas « les photos ». */}
             Créez votre compte gratuit pour voir l’adresse, l’occupation,{" "}
-            {photo?.url ? "les autres photos" : "les photos"} et la fourchette de valeur de cette
-            vente.
+            {photo?.url ? "les autres photos" : "les photos"} et le niveau d’écart avec le marché de
+            cette vente.
           </p>
           <SignupAccessLine />
         </>

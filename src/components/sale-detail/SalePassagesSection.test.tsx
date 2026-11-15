@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalePassagesSection } from "./SalePassagesSection";
+import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
 
 const mocks = vi.hoisted(() => ({ fetchSalePassages: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({ fetchSalePassages: mocks.fetchSalePassages }));
@@ -61,22 +62,75 @@ describe("SalePassagesSection", () => {
     expect(section.textContent).toContain("Mise à prix baissée");
   });
 
-  it("only tells a free account that a history exists", async () => {
+  it("only tells a free account the facts of the history, without dates, amounts or percentage", async () => {
     mocks.fetchSalePassages.mockResolvedValue({
       access: "teaser",
-      summary: { previousPassageCount: 2, priceChangePct: -20, postponementCount: 0 },
+      summary: { previousPassageCount: 2, postponementCount: 3, priceDropped: true },
     });
     renderSection();
     const section = await loadedSection();
-    expect(section.textContent).toContain("déjà passé 2 fois aux enchères");
-    expect(section.textContent).not.toMatch(/septembre|€/);
+    expect(section.textContent).toContain(
+      "3ᵉ passage en vente · 3 reports · mise à prix déjà baissée",
+    );
+    expect(section.textContent).not.toMatch(/septembre|€|%/);
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("says one postponement in the singular and leaves out the facts that are zero", async () => {
+    mocks.fetchSalePassages.mockResolvedValue({
+      access: "teaser",
+      summary: { previousPassageCount: 0, postponementCount: 1, priceDropped: false },
+    });
+    renderSection();
+    await loadedSection();
+    // The facts line, above the sentence on what the detail holds.
+    expect(screen.getByText("1 report")).toBeTruthy();
+  });
+
+  it("starts the line with a capital when the price drop is the only fact", async () => {
+    mocks.fetchSalePassages.mockResolvedValue({
+      access: "teaser",
+      summary: { previousPassageCount: 0, postponementCount: 0, priceDropped: true },
+    });
+    renderSection();
+    expect((await loadedSection()).textContent).toContain("Mise à prix déjà baissée");
+  });
+
+  it("makes « Débloquer cette vente » the main link of the teaser when the page has the unlock card", async () => {
+    mocks.fetchSalePassages.mockResolvedValue({
+      access: "teaser",
+      summary: { previousPassageCount: 1, postponementCount: 0, priceDropped: false },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleUnlockOfferProvider
+          status={{
+            saleId: "sale-1",
+            unlocked: false,
+            unlockable: true,
+            analysisAccess: false,
+            limit: 1,
+            used: 0,
+            remaining: 1,
+          }}
+        >
+          <SalePassagesSection saleId="sale-1" startingPrice={null} enabled />
+        </SaleUnlockOfferProvider>
+      </QueryClientProvider>,
+    );
+    expect((await loadedSection()).textContent).toContain("2ᵉ passage en vente");
+    expect(
+      screen
+        .getByRole("link", { name: "Débloquer cette vente avec mon compte gratuit" })
+        .getAttribute("href"),
+    ).toBe("#debloquer");
   });
 
   it("stays hidden for a free account when there is nothing to tell, and without a session", async () => {
     mocks.fetchSalePassages.mockResolvedValue({
       access: "teaser",
-      summary: { previousPassageCount: 0, priceChangePct: null, postponementCount: 0 },
+      summary: { previousPassageCount: 0, postponementCount: 0, priceDropped: false },
     });
     const { container } = renderSection();
     await vi.waitFor(() => expect(mocks.fetchSalePassages).toHaveBeenCalled());
@@ -107,7 +161,7 @@ describe("SalePassagesSection", () => {
       access: "full",
       timeline: [],
       previousPassages: [],
-      summary: { previousPassageCount: 0, priceChangePct: null, postponementCount: 0 },
+      summary: { previousPassageCount: 0, postponementCount: 0, priceDropped: false },
     });
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     await waitFor(() =>

@@ -45,8 +45,17 @@ export type SalePassagesResponse =
       previousPassages: SalePreviousPassage[];
       summary: SalePassagesSummary;
     }
-  /** Free accounts: the counts only, the details stay with the Analyse offer. */
-  | { access: "teaser"; summary: SalePassagesSummary };
+  /**
+   * Free accounts: the counts, and whether the starting price went down, never by how much. The
+   * details stay with the Analyse offer and the unlock of the sale.
+   */
+  | { access: "teaser"; summary: SalePassagesTeaserSummary };
+
+export type SalePassagesTeaserSummary = {
+  previousPassageCount: number;
+  postponementCount: number;
+  priceDropped: boolean;
+};
 
 type RawPassages = {
   timeline?: Array<{
@@ -122,6 +131,21 @@ function summarizeSalePassages(
     previousPassageCount: previousPassages.length,
     priceChangePct,
     postponementCount: timeline.filter((event) => event.kind === "postponed").length,
+  };
+}
+
+/** The teaser of the full history: the counts, and a price drop as a yes or no. */
+export function salePassagesTeaser(
+  passages: Extract<SalePassagesResponse, { access: "full" }>,
+): Extract<SalePassagesResponse, { access: "teaser" }> {
+  const { previousPassageCount, postponementCount, priceChangePct } = passages.summary;
+  return {
+    access: "teaser",
+    summary: {
+      previousPassageCount,
+      postponementCount,
+      priceDropped: priceChangePct != null && priceChangePct < 0,
+    },
   };
 }
 

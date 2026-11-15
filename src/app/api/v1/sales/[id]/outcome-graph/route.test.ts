@@ -113,8 +113,23 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
       auth,
       "property.outcomeGraph",
       expect.stringContaining("Analyse"),
+      { saleId },
     );
     expect(mocks.getForecast).not.toHaveBeenCalled();
+  });
+
+  it("passe la vente au droit, pour que son déblocage par un compte Découverte l'ouvre", async () => {
+    // The entitlement resolves: the unlock of this very sale opened `property.outcomeGraph`.
+    const response = await request();
+
+    expect(response.status).toBe(200);
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      auth,
+      "property.outcomeGraph",
+      expect.any(String),
+      { saleId },
+    );
+    expect(mocks.getForecast).toHaveBeenCalledWith(saleId);
   });
 
   it("répond 404 pour une vente inconnue ou retirée de la publication", async () => {
@@ -132,6 +147,12 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.assertEntitlement).toHaveBeenCalledOnce();
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      auth,
+      "property.outcomeGraph",
+      expect.any(String),
+      { saleId: undefined },
+    );
     expect(mocks.getForecast).not.toHaveBeenCalled();
   });
 

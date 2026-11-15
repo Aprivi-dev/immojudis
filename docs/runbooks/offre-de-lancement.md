@@ -129,7 +129,9 @@ juridique.
 ## Ce que voient les comptes quand l'essai se termine (ou est coupé)
 
 - Le compte **redevient Découverte** : 10 favoris, 1 alerte avec email hebdomadaire, 1 déblocage de vente en
-  tout (depuis `20261120100000`), pas d'export, de rapport PDF, d'estimation détaillée ni de comparables.
+  tout (depuis `20261120100000`). Sur la vente débloquée, tout ce que l'offre Analyse donne sur une vente
+  (estimation détaillée, comparables, rapport enregistré et PDF compris) ; ailleurs, pas d'export, de rapport
+  PDF, d'estimation détaillée ni de comparables.
 - **Aucune notification** n'est envoyée par la fin d'un essai ni par la coupure.
 - `/offres` et l'accueil présentent l'offre payante fermée tant que le paiement n'est pas ouvert : bouton
   « Me prévenir de l'ouverture » (avec les trois questions facultatives de la liste d'attente) et le tarif
@@ -141,7 +143,8 @@ juridique.
     la création de nouvelles zones ou alertes retombe sur le quota gratuit ;
   - les rapports enregistrés, leurs exports, les espaces de travail et les clés d'API se ferment (politiques RLS
     restrictives et droits de l'API réservés à Analyse) ; les données restent en base et se rouvrent si le compte
-    s'abonne ;
+    s'abonne. Exception : le rapport enregistré de la vente que le compte a débloquée reste lisible tant que le
+    déblocage compte (`20261121100000`) ;
   - les liens de partage de rapports d'un compte gratuit cessent de répondre (`shareOwnerKeepsSavedReports`).
 - Les déblocages de ventes pris pendant l'essai ne comptent pas : un compte Analyse n'en consomme pas. Après
   l'essai, le compte a son déblocage unique.

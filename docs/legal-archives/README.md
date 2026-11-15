@@ -6,6 +6,7 @@ Copie exacte du code source des versions précédentes des pages juridiques, ext
 | --- | --- | --- | --- |
 | Conditions générales | `2026-10-25.1` | `45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c` | du 25 octobre 2026 au 1er décembre 2026 pour les comptes existants |
 | Conditions générales | `2026-11-10.1` | `6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc` | pour les comptes créés à partir de sa mise en ligne (10 novembre 2026), jusqu'à la version `2026-11-15.1` (un seul déblocage pour le compte gratuit, fin de l'essai gratuit) |
+| Conditions générales | `2026-11-15.1` | `52e3b866e3de65f04d363e72353491309a65c14c0e2c0b540a73d8f92df6c32b` | pour tous les comptes à partir de sa mise en ligne (15 novembre 2026) pour l'article 2 (offre Découverte et son déblocage) et l'article 13, jusqu'à la version `2026-11-15.2` (le déblocage ouvre toute l'offre Analyse sur la vente ; fourchette de valeur et écart chiffré retirés de Découverte) |
 | Mentions légales | `2026-07-29.1` | `c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9` | du 29 juillet au 26 octobre 2026 |
 | Mentions légales | `2026-10-26.1` | `d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46` | le 26 octobre 2026, jusqu'à la version `2026-10-26.2` (paragraphe « Données publiques réutilisées ») |
 | Politique de confidentialité | `2026-11-14.1` | `19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25` | du 15 novembre 2026 jusqu'à la version `2026-11-15.1` (déblocage de vente sans compteur mensuel, essai gratuit plus proposé) |

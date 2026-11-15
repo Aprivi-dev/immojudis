@@ -72,8 +72,8 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
   return [
     {
       id: "unlocks",
-      label: `Déblocage d’une vente : ${CEILING_TERM}, pièces, historique, statistiques du tribunal`,
-      hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",
+      label: `Déblocage d’une vente : l’analyse complète de la vente (${CEILING_TERM}, estimation détaillée et ventes comparables, pièces, historique, urbanisme, rapport PDF)`,
+      hint: "Ouvre tout ce que l’offre Analyse donne sur la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; les autres ventes, l’export CSV, les alertes avancées et le partage d’un rapport restent avec Analyse",
       features: ["sales.filters"],
       custom: {
         decouverte: UNLOCK_CELL_TEXT,
@@ -95,8 +95,6 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       id: "scenarios",
       label: "Scénarios de frais, de travaux et de marge de sécurité",
       features: ["property.advancedBidScenarios"],
-      // L'onglet Travaux reste fermé sur une vente débloquée.
-      lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (hors budget travaux détaillé)` },
     },
     {
       // The free catalogue view publishes only the number of documents; the
@@ -132,9 +130,7 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
     {
       id: "estimate",
       label: "Estimation détaillée et ventes comparables",
-      hint: `La valeur de référence entre dans le calcul du plafond d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse`,
-      // Un déblocage ne renvoie ni la fourchette, ni les quartiles, ni les ventes comparables : « Non
-      // inclus » est exact (voir ceilingMarketContext).
+      hint: "Fourchette de valeur, écart chiffré avec la mise à prix et ventes comparables : pour toutes les ventes avec Analyse, pour la vente choisie avec un déblocage",
       features: ["property.valueEstimate", "property.soldComparables"],
     },
     {
@@ -186,8 +182,11 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       features: ["sales.filters"],
     },
     {
+      // La fourchette et l'écart chiffré ne sont plus gratuits (ligne « estimate ») : le compte
+      // gratuit voit le niveau d'écart et des aperçus chiffrés sans contenu (`buildValuePreview`).
       id: "value-range",
-      label: "Fourchette de valeur et écart avec la mise à prix",
+      label: "Niveau d’écart avec le marché et aperçu chiffré de l’analyse",
+      hint: "Nombre de ventes comparables, de points relevés dans les pièces, de passages",
       features: ["sales.filters"],
     },
   ];

@@ -161,7 +161,7 @@ function reasonCopy(
       return {
         signup: launchOffer
           ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi votre plafond pour cette vente (enchère ou offre), frais estimés compris, et les analyses de l’offre Analyse (contenu selon la vente).`
-          : "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente. Il comprend le déblocage d’une vente : il ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
+          : "Créez votre compte gratuit pour voir l'adresse et les photos de cette vente. Il comprend le déblocage d’une vente, qui ouvre son analyse complète : votre plafond pour cette vente (enchère ou offre), frais estimés compris, l’estimation détaillée et les ventes comparables (contenu selon la vente).",
         login: "Connectez-vous pour consulter cette vente.",
       };
     case "exemple":

@@ -86,6 +86,10 @@
   text-underline-offset: 4px;
 }
 
+.ctaSecondary {
+  margin-left: 16px;
+}
+
 /* Chargement et erreur : la hauteur est réservée, la page ne saute pas. */
 .placeholder {
   min-height: 132px;

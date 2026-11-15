@@ -71,15 +71,44 @@ describe("DocumentReadingSection", () => {
       access: "teaser",
       pointCount: 5,
       alertCount: 2,
+      occupationCount: 1,
       themes: ["occupation", "diagnostics"],
     });
     renderSection();
     const section = await loadedSection();
     expect(section.textContent).toContain(
-      "5 points relevés dans les pièces, dont 2 à vérifier en priorité : occupation, diagnostics.",
+      "5 points relevés dans les pièces, dont 2 à vérifier et 1 sur l’occupation : occupation, diagnostics.",
     );
     expect(section.textContent).toContain("avec l’offre Analyse ou en débloquant cette vente");
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("counts the points in the singular and leaves out the parts that are zero", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "teaser",
+      pointCount: 1,
+      alertCount: 0,
+      occupationCount: 0,
+      themes: [],
+    });
+    renderSection();
+    const section = await loadedSection();
+    expect(section.textContent).toContain("1 point relevé dans les pièces. Chaque point");
+    expect(section.textContent).not.toMatch(/dont|0 à vérifier|sur l’occupation/);
+  });
+
+  it("names the points on the occupation without points to check", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "teaser",
+      pointCount: 3,
+      alertCount: 0,
+      occupationCount: 2,
+      themes: [],
+    });
+    renderSection();
+    expect((await loadedSection()).textContent).toContain(
+      "3 points relevés dans les pièces, dont 2 sur l’occupation.",
+    );
   });
 
   it("makes « Débloquer cette vente » the main link of the teaser when the page has the unlock card", async () => {
@@ -87,6 +116,7 @@ describe("DocumentReadingSection", () => {
       access: "teaser",
       pointCount: 2,
       alertCount: 0,
+      occupationCount: 2,
       themes: ["occupation"],
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -120,6 +150,7 @@ describe("DocumentReadingSection", () => {
       access: "teaser",
       pointCount: 1,
       alertCount: 0,
+      occupationCount: 0,
       themes: ["occupation"],
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -221,6 +252,7 @@ describe("DocumentReadingSection", () => {
       access: "teaser",
       pointCount: 0,
       alertCount: 0,
+      occupationCount: 0,
       themes: [],
     });
     const { container } = renderSection();

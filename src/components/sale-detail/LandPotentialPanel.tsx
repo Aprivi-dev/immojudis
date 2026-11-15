@@ -34,6 +34,11 @@ import { userMessage } from "@/lib/user-messages";
 type Props = {
   saleId: string;
   enabled: boolean;
+  /**
+   * « Actualiser les sources » : interroge de nouveau les sources officielles (offre Analyse). Une
+   * vente débloquée par le compte gratuit lit le dossier sans le relancer.
+   */
+  refreshEnabled?: boolean;
   initialReport?: LandReport;
   /** PLU zone quoted in the listing (« UP1*1L40 »), compared with the official zone. */
   listingZone?: string | null;
@@ -58,6 +63,7 @@ const PROJECT_HINTS: Partial<Record<LandProjectKind, string>> = {
 export function LandPotentialPanel({
   saleId,
   enabled,
+  refreshEnabled = true,
   initialReport,
   listingZone = null,
   landSurfaceM2 = null,
@@ -566,15 +572,17 @@ export function LandPotentialPanel({
                   <Download size={16} aria-hidden="true" />{" "}
                   {exporting ? "Préparation du PDF…" : "Exporter le dossier PDF"}
                 </button>
-                <button
-                  className={styles.secondaryButton}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => void load(true)}
-                >
-                  <RefreshCw size={16} aria-hidden="true" />
-                  {loading ? "Consultation des sources…" : "Actualiser les sources"}
-                </button>
+                {refreshEnabled ? (
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void load(true)}
+                  >
+                    <RefreshCw size={16} aria-hidden="true" />
+                    {loading ? "Consultation des sources…" : "Actualiser les sources"}
+                  </button>
+                ) : null}
               </div>
 
               <p className={styles.disclaimer}>

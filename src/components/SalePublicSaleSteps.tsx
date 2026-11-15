@@ -146,8 +146,8 @@ export function SalePublicSaleSteps({
               </h3>
               <p>
                 Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune. Et le
-                déblocage d’une vente, qui ouvre pour cette vente :{" "}
+                niveau d’écart avec le marché, Street View, météo et risques de la commune. Et le
+                déblocage d’une vente, qui ouvre pour cette vente{" "}
                 {unlockedItemsText({
                   ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
                   statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,

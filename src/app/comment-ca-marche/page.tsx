@@ -21,7 +21,7 @@ const STEPS = [
   {
     icon: UserPlus,
     title: "Créez votre compte gratuit",
-    text: `Le compte Découverte est gratuit et ne demande pas de carte bancaire. Il ouvre la fiche de chaque vente (adresse, photos, description, occupation, visites, risques de la commune et fourchette de valeur) et les alertes par email : un récapitulatif hebdomadaire avec le compte gratuit, quotidien avec l’offre Analyse. Les pièces du dossier s’ouvrent pour une vente, celle que vous débloquez avec le compte gratuit, et pour toutes les ventes avec l’offre Analyse, qui ajoute aussi les ventes comparables.`,
+    text: `Le compte Découverte est gratuit et ne demande pas de carte bancaire. Il ouvre la fiche de chaque vente (adresse, photos, description, occupation, visites, risques de la commune et niveau d’écart avec le marché) et les alertes par email : un récapitulatif hebdomadaire avec le compte gratuit, quotidien avec l’offre Analyse. L’analyse complète d’une vente (pièces du dossier, estimation détaillée et ventes comparables, historique, urbanisme, rapport PDF) s’ouvre pour une vente, celle que vous débloquez avec le compte gratuit, et pour toutes les ventes avec l’offre Analyse.`,
     links: [
       { href: loginPathWithRedirect(undefined), label: "Créer mon compte gratuit" },
       { href: "/offres", label: "Voir les offres" },

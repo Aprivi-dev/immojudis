@@ -17,7 +17,7 @@ describe("HomeOffers free offer card", () => {
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(
       within(card).getByText(
-        "Une vente à débloquer : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), lecture des pièces, historique, selon la vente",
+        "Une vente à débloquer, qui ouvre l’analyse complète de la vente : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
       ),
     ).toBeTruthy();
     const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
@@ -33,7 +33,7 @@ describe("HomeOffers free offer card", () => {
       />,
     );
     expect(document.body.textContent).toContain(
-      "Une vente à débloquer : enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
+      "Une vente à débloquer, qui ouvre l’analyse complète de la vente : enchère plafond (ventes au tribunal), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente",
     );
     expect(document.body.textContent).toContain(
       "Le plafond des ventes au tribunal, avant de choisir celles qui méritent une visite.",

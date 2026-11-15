@@ -89,8 +89,13 @@ export const saleDetail = (saleId: string, sessionKey: Id, mode: SaleAccessMode)
   ["sale-detail", saleId, sessionKey, mode] as const;
 /** Prefix of {@link saleDetail} for every account and view of a sale. */
 export const saleDetailForSale = (saleId: string) => ["sale-detail", saleId] as const;
-/** Aperçu de la valeur d'une vente : partagé par le panneau de prix et le repère marché de la fiche. */
-export const valuePreview = (saleId: string) => ["value-preview", saleId] as const;
+/**
+ * Aperçu de la valeur d'une vente : partagé par le panneau de prix et le repère marché de la fiche.
+ * Le compte gratuit n'en lit que le niveau d'écart ; débloquer la vente ouvre la fourchette, d'où la
+ * vue dans la clé.
+ */
+export const valuePreview = (saleId: string, access: SaleAccessMode) =>
+  ["value-preview", saleId, access] as const;
 export const lawyerQuestions = (saleId: string, access: SaleAccessMode, userKey: string) =>
   ["lawyer-questions", saleId, access, userKey] as const;
 /** Liste publique des identifiants des pépites (une lecture par page de résultats ou par fiche). */

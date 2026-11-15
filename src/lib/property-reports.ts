@@ -11,15 +11,22 @@ import {
   featureIncluded,
   isPlanPeriodActive,
   normalizePlanCode,
+  type FeatureKey,
   type PlanEntitlements,
 } from "@/lib/plans";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
 import { hasActiveSignupTrial } from "@/lib/launch-offer.server";
-import { resolvePlanEntitlements } from "@/lib/entitlements.server";
+import {
+  assertFeatureEntitlementVia,
+  getSaleForDoor,
+  resolvePlanEntitlements,
+  type SaleFeatureDoor,
+} from "@/lib/entitlements.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
+import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import type { AuctionSale } from "@/lib/types";
 import { buildMarketSnapshot, buildReportSnapshot } from "./property-report/analysis";
 import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
@@ -27,6 +34,8 @@ import {
   assertEntitlementIncluded,
   buildPlanEntitlements,
   emptyActiveComparableSales,
+  featureOpenFor,
+  planForSaleDoor,
   sanitizeReportSnapshotForPlan,
 } from "./property-report/entitlements";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./property-report/ceiling-switch";
@@ -43,6 +52,7 @@ import {
   getDpeDiagnostics,
   getExistingReportId,
   getReport,
+  getReportSaleId,
   getSale,
   getUrbanPlanningSignals,
   getValuationBacktestForReport,
@@ -62,7 +72,7 @@ import {
 } from "./property-report/serialization";
 import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/share-token";
 import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
-import { NotFoundError } from "@/lib/api-errors";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 import { asJson } from "@/lib/supabase-json";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
@@ -188,8 +198,14 @@ export async function listPropertyReports({
   auth: SupabaseAuthContext;
   saleId?: string | null;
 }): Promise<PropertyReportListResponse> {
-  const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
+  // With a sale, its unlock opens its reports; without, only the offer lists every report.
+  const { plan, door } = await assertFeatureEntitlementVia(
+    auth,
+    "property.savedReports",
+    REPORTS_RESERVED_MESSAGE,
+    { saleId: saleId ?? undefined },
+  );
+  const salePlan = planForSaleDoor(plan, door);
   let query = auth.supabase
     .from("saved_property_reports")
     .select("*")
@@ -211,10 +227,54 @@ export async function listPropertyReports({
     // sale facts after the source is quarantined, even if the report belongs
     // to the requesting user and RLS still allows the report row.
     reports: reports
-      .filter((report) => visibleSaleIds.has(report.sale_id))
-      .map((report) => attachPlan(report, plan)),
-    plan,
+      .filter((report) => visibleSaleIds.has(report.sale_id) && reportOpenThrough(report, door))
+      .map((report) => attachPlan(report, salePlan)),
+    plan: salePlan,
   };
+}
+
+const REPORTS_RESERVED_MESSAGE = "Rapports réservés à l’offre Analyse.";
+
+/**
+ * Through the unlock of its sale, a report is served only when it was built through that unlock
+ * (`door: "unlock"` in its snapshot: no score, no risk, no source). One built with the offer (during a
+ * trial, for instance) carries what the unlock does not open: it has to be saved again.
+ */
+function reportOpenThrough(report: Pick<SavedReportRow, "report_snapshot">, door: SaleFeatureDoor) {
+  return door === "plan" || asRecord(report.report_snapshot).door === "unlock";
+}
+
+/**
+ * The right `feature` on an owned report. Without the offer, the report's sale is read before the
+ * right is decided, so that the unlock of that sale opens it. A report the session cannot read
+ * (another account's, or a Découverte account's before the policy of `saved_property_reports` follows
+ * the unlock) is « introuvable ».
+ */
+async function reportAccess(
+  auth: SupabaseAuthContext,
+  reportId: string,
+  feature: "property.savedReports" | "property.reportEditing" | "property.pdfExport",
+  message: string,
+): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
+  return assertFeatureEntitlementVia(auth, feature, message, {
+    saleId: () => getReportSaleId(auth.supabase, auth.userId, reportId),
+  });
+}
+
+/** The owned report, publication-checked, refused through an unlock when not built through it. */
+async function getReportThrough(
+  auth: SupabaseAuthContext,
+  reportId: string,
+  door: SaleFeatureDoor,
+): Promise<SavedReportRow> {
+  const report = await getReport(auth.supabase, auth.userId, reportId);
+  if (!reportOpenThrough(report, door)) {
+    throw new PublicApiError(
+      "Ce rapport a été établi avec l’offre Analyse : enregistrez à nouveau votre analyse depuis la fiche de la vente pour l’ouvrir avec ce déblocage.",
+      409,
+    );
+  }
+  return report;
 }
 
 export async function getPropertyReport({
@@ -224,13 +284,18 @@ export async function getPropertyReport({
   auth: SupabaseAuthContext;
   reportId: string;
 }): Promise<PropertyReportDetailResponse> {
-  const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
-  const report = await getReport(auth.supabase, auth.userId, reportId);
+  const { plan, door } = await reportAccess(
+    auth,
+    reportId,
+    "property.savedReports",
+    REPORTS_RESERVED_MESSAGE,
+  );
+  const report = await getReportThrough(auth, reportId, door);
+  const salePlan = planForSaleDoor(plan, door);
 
   return {
-    report: attachPlan(report, plan),
-    plan,
+    report: attachPlan(report, salePlan),
+    plan: salePlan,
   };
 }
 
@@ -244,8 +309,14 @@ export async function savePropertyReport({
   /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
   request: Request;
 }): Promise<PropertyReportSaveResponse> {
-  const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés à l’offre Analyse.");
+  // The offer, or the unlock of this sale (« déblocage du compte gratuit »).
+  const { plan, door } = await assertFeatureEntitlementVia(
+    auth,
+    "property.savedReports",
+    REPORTS_RESERVED_MESSAGE,
+    { saleId: input.saleId },
+  );
+  const open = (feature: FeatureKey) => featureOpenFor(plan, door, feature);
   // Après le droit d'accès : un compte sans droit ne doit pas user les compteurs de son adresse ni
   // le disjoncteur global. Le quota mensuel de l'offre Analyse est illimité, ce plafond est le seul.
   await enforceDailyOperationLimits({
@@ -261,27 +332,31 @@ export async function savePropertyReport({
     input.reportKind,
   );
 
-  const sale = await getSale(auth.supabase, input.saleId);
+  // Through an unlock, the sale comes without what the unlock does not open (score, risks, sources);
+  // the enrichment key stays on the server.
+  const { sale, enrichmentKey } = await getSaleForDoor(auth, input.saleId, door);
   const valuationConflict = listingValuationConflict(sale);
   if (valuationConflict) throw new Error(valuationConflict);
   const marketEstimatePromise = buildMarketSnapshot(sale);
   const environmentalContextPromise =
-    input.includeEnvironment && featureIncluded(plan.plan, "property.neighborhoodAnalysis")
+    input.includeEnvironment && open("property.neighborhoodAnalysis")
       ? getEnvironmentalContext({
           address: saleLocation(sale),
           lat: sale.latitude,
           lng: sale.longitude,
         })
       : Promise.resolve(null);
-  const activeComparablesPromise = featureIncluded(plan.plan, "property.activeComparables")
-    ? getActiveComparableSales(auth.supabase, sale)
+  // The other sales are read as the account sees them: in full with the offer, in the redacted
+  // catalogue view through an unlock (never the full rows of other sales).
+  const activeComparablesPromise = open("property.activeComparables")
+    ? getActiveComparableSales(auth.supabase, sale, door === "plan" ? DETAIL_VIEW : DISCOVERY_VIEW)
     : Promise.resolve(emptyActiveComparableSales());
-  const cadastreParcelsPromise = getCadastralParcels(sale.source_url);
-  const dpeDiagnosticsPromise = getDpeDiagnostics(sale.source_url);
-  const urbanPlanningSignalsPromise = featureIncluded(plan.plan, "property.urbanPlanning")
-    ? getUrbanPlanningSignals(sale.source_url)
+  const cadastreParcelsPromise = getCadastralParcels(enrichmentKey);
+  const dpeDiagnosticsPromise = getDpeDiagnostics(enrichmentKey);
+  const urbanPlanningSignalsPromise = open("property.urbanPlanning")
+    ? getUrbanPlanningSignals(enrichmentKey)
     : Promise.resolve([]);
-  const valuationBacktestPromise = featureIncluded(plan.plan, "property.soldComparables")
+  const valuationBacktestPromise = open("property.soldComparables")
     ? getValuationBacktestForReport(sale)
     : Promise.resolve(null);
   const [
@@ -329,6 +404,7 @@ export async function savePropertyReport({
       valuationBacktest,
       ceilingSnapshot,
       plan,
+      door,
       rentReference,
     }),
     sourceFingerprint: reportSourceFingerprint(sale),
@@ -370,9 +446,10 @@ export async function savePropertyReport({
     });
   }
 
+  const salePlan = planForSaleDoor(plan, door);
   return {
-    report: attachPlan(data, plan),
-    plan,
+    report: attachPlan(data, salePlan),
+    plan: salePlan,
   };
 }
 
@@ -385,15 +462,15 @@ export async function updatePropertyReport({
   reportId: string;
   input: PropertyReportUpdatePayload;
 }): Promise<PropertyReportSaveResponse> {
-  const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(
-    plan,
+  // Resolve and publication-check the owned report before returning its
+  // snapshot through the privileged update client.
+  const { plan, door } = await reportAccess(
+    auth,
+    reportId,
     "property.reportEditing",
     "Édition des rapports réservée à l’offre Analyse.",
   );
-  // Resolve and publication-check the owned report before returning its
-  // snapshot through the privileged update client.
-  await getReport(auth.supabase, auth.userId, reportId);
+  await getReportThrough(auth, reportId, door);
   const patch: Database["public"]["Tables"]["saved_property_reports"]["Update"] = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.userNotes !== undefined) patch.user_notes = emptyToNull(input.userNotes ?? undefined);
@@ -408,9 +485,10 @@ export async function updatePropertyReport({
 
   if (error) throw error;
 
+  const salePlan = planForSaleDoor(plan, door);
   return {
-    report: attachPlan(data, plan),
-    plan,
+    report: attachPlan(data, salePlan),
+    plan: salePlan,
   };
 }
 
@@ -440,17 +518,23 @@ export async function exportPropertyReportPdf({
   /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
   request: Request;
 }): Promise<PropertyReportExport> {
-  const plan = await resolvePlanEntitlements(auth);
-  assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé à l’offre Analyse.");
+  const { plan, door } = await reportAccess(
+    auth,
+    reportId,
+    "property.pdfExport",
+    "Export PDF réservé à l’offre Analyse.",
+  );
   await enforceDailyOperationLimits({
     request,
     userId: auth.userId,
     operation: "propertyReportPdf",
     launchOffer: plan.launchOffer === true,
   });
-  const report = await getReport(auth.supabase, auth.userId, reportId);
-  assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
-  const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv());
+  const report = await getReportThrough(auth, reportId, door);
+  // Compared with the sale as this door reads it: the one the report was built from.
+  const { sale } = await getSaleForDoor(auth, report.sale_id, door);
+  assertReportSourceCurrent(report.report_snapshot, sale);
+  const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv(), door);
   const { title, filename } = reportPdfIdentity(report);
   const bytes = createTextPdf({
     title,
@@ -711,9 +795,11 @@ export function buildPublicSharedPropertyReport(
   regimes: readonly FeeRegimeKey[] = DEFAULT_OPEN_FEE_REGIMES,
 ): PublicSharedPropertyReport {
   const rawSnapshot = asRecord(report.report_snapshot);
+  // A shared link is the offer's alone (`shareOwnerKeepsSavedReports`): never read through an unlock.
   const snapshot = sanitizeReportSnapshotForPlan(
     rawSnapshot,
     buildPlanEntitlements(normalizePlanCode(rawSnapshot.plan)),
+    "plan",
   );
   const traceability = asRecord(snapshot.sourceTraceability);
   const savedCeiling = asRecord(report.ceiling_snapshot);

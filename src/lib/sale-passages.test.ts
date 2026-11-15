@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { describePreviousPassage, describeTimelineEvent, mapSalePassages } from "./sale-passages";
+import {
+  describePreviousPassage,
+  describeTimelineEvent,
+  mapSalePassages,
+  salePassagesTeaser,
+} from "./sale-passages";
 
 describe("sale passages", () => {
   const raw = {
@@ -53,6 +58,24 @@ describe("sale passages", () => {
       priceChangePct: null,
       postponementCount: 0,
     });
+  });
+
+  it("tells a free account that the price went down, never by how much", () => {
+    const dropped = mapSalePassages(
+      { previous_passages: [{ sale_date: "2026-01-10", starting_price_eur: 100000 }] },
+      80000,
+    );
+    expect(salePassagesTeaser(dropped)).toEqual({
+      access: "teaser",
+      summary: { previousPassageCount: 1, postponementCount: 0, priceDropped: true },
+    });
+    expect(JSON.stringify(salePassagesTeaser(dropped))).not.toMatch(/priceChangePct|-20|2026/);
+    const raised = mapSalePassages(
+      { previous_passages: [{ sale_date: "2026-01-10", starting_price_eur: 100000 }] },
+      120000,
+    );
+    expect(salePassagesTeaser(raised).summary.priceDropped).toBe(false);
+    expect(salePassagesTeaser(mapSalePassages(null, 100000)).summary.priceDropped).toBe(false);
   });
 
   it("describes each event in plain French", () => {

@@ -63,13 +63,12 @@ describe("DocumentReadingHighlights", () => {
       access: "teaser",
       pointCount: 5,
       alertCount: 2,
+      occupationCount: 0,
       themes: ["occupation"],
     });
     renderHighlights();
     const aside = await screen.findByRole("complementary", { name: "Ce que disent les pièces" });
-    expect(aside.textContent).toContain(
-      "5 points relevés dans les pièces, dont 2 à vérifier en priorité.",
-    );
+    expect(aside.textContent).toContain("5 points relevés dans les pièces, dont 2 à vérifier.");
     expect(aside.querySelectorAll("li")).toHaveLength(0);
   });
 

@@ -97,8 +97,13 @@ describe("GET /api/sales/[id]/passages", () => {
 
     const body = await (await call()).json();
 
-    expect(body).toEqual({ access: "teaser", summary: passages.summary });
+    // The counts and a price drop as a yes or no: never by how much.
+    expect(body).toEqual({
+      access: "teaser",
+      summary: { previousPassageCount: 1, postponementCount: 0, priceDropped: true },
+    });
     expect(JSON.stringify(body)).not.toContain("2026-03-01");
+    expect(JSON.stringify(body)).not.toMatch(/priceChangePct|-20/);
     expect(mocks.recordUsage).not.toHaveBeenCalled();
   });
 

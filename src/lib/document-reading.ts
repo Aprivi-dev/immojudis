@@ -36,7 +36,14 @@ export type DocumentReadingResponse =
       partial: boolean;
     }
   /** Free accounts: how much was found, never what. */
-  | { access: "teaser"; pointCount: number; alertCount: number; themes: DocumentReadingTheme[] };
+  | {
+      access: "teaser";
+      pointCount: number;
+      alertCount: number;
+      /** Points of the « occupation » theme. */
+      occupationCount: number;
+      themes: DocumentReadingTheme[];
+    };
 
 export const DOCUMENT_READING_THEMES: Record<DocumentReadingTheme, string> = {
   occupation: "Occupation",
@@ -139,6 +146,7 @@ export function documentReadingTeaser(
     access: "teaser",
     pointCount: reading.points.length,
     alertCount: reading.points.filter((point) => point.importance === "alerte").length,
+    occupationCount: reading.points.filter((point) => point.theme === "occupation").length,
     themes: [...new Set(reading.points.map((point) => point.theme))],
   };
 }

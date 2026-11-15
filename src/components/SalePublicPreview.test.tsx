@@ -80,7 +80,11 @@ describe("SalePublicPreview", () => {
       view.container.querySelector("[class*=tierFree]")?.textContent ?? "";
     expect(intro(closed)).toContain("le déblocage d’une vente, qui ouvre pour cette vente");
     expect(intro(closed)).not.toContain("déblocages de ventes");
-    expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
+    expect(intro(closed)).toContain(
+      "qui ouvre pour cette vente l’analyse complète de la vente (l’enchère plafond, l’estimation détaillée",
+    );
+    expect(intro(closed)).toContain("niveau d’écart avec le marché");
+    expect(intro(closed)).not.toContain("fourchette de valeur");
     expect(intro(closed)).not.toContain("statistiques du tribunal");
     closed.unmount();
 
@@ -365,7 +369,9 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByText("Avec le compte gratuit, vous voyez aussi")).toBeNull();
     expect(container.textContent).not.toContain("Le compte Découverte est gratuit");
     expect(
-      container.textContent?.match(/voir l’adresse, l’occupation, les photos et la fourchette/g),
+      container.textContent?.match(
+        /voir l’adresse, l’occupation, les photos et le niveau d’écart/g,
+      ),
     ).toHaveLength(1);
     expect(container.textContent?.match(/Découverte · gratuit/g)).toHaveLength(1);
     // Le nombre de photos de l'annonce n'est dit qu'une fois, dans la galerie (maquette du
@@ -388,7 +394,7 @@ describe("SalePublicPreview", () => {
       renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
       const block = screen.getByTestId("public-signup");
       expect(block.textContent).toContain(
-        "Créez votre compte gratuit pour voir l’adresse, l’occupation, les photos et la fourchette de valeur de cette vente.",
+        "Créez votre compte gratuit pour voir l’adresse, l’occupation, les photos et le niveau d’écart avec le marché de cette vente.",
       );
       expect(block.textContent).toContain(FREE_ACCESS_LINE);
       expect(within(block).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
@@ -472,12 +478,15 @@ describe("SalePublicPreview", () => {
         media: [{ type: "image", url: "https://www.licitor.com/photo.jpg" }],
       } as Partial<AuctionSale>);
       const text = screen.getByTestId("public-signup").textContent ?? "";
-      expect(text).toContain("voir l’adresse, l’occupation, les autres photos et la fourchette");
-      expect(text).not.toContain("les photos et la fourchette");
+      expect(text).toContain(
+        "voir l’adresse, l’occupation, les autres photos et le niveau d’écart avec le marché",
+      );
+      expect(text).not.toContain("les photos et le niveau");
+      expect(text).not.toContain("fourchette");
       withPhoto.unmount();
       renderPreview({ sale_venue_type: "tribunal" });
       expect(screen.getByTestId("public-signup").textContent).toContain(
-        "voir l’adresse, l’occupation, les photos et la fourchette",
+        "voir l’adresse, l’occupation, les photos et le niveau d’écart avec le marché",
       );
     });
 
@@ -751,10 +760,10 @@ describe("SalePublicPreview", () => {
     const rows = Array.from(teaser.querySelectorAll("dd"));
     expect(rows).toHaveLength(4);
     const spoken = rows.map((row) => row.querySelector(".sr-only")?.textContent);
-    expect(spoken[0]).toBe("Valeur masquée, visible avec un compte gratuit");
-    expect(spoken[1]).toBe("Valeur masquée, visible avec un compte gratuit");
-    expect(spoken[2]).toBe("Valeur masquée, visible avec l’offre Analyse, ou avec un déblocage");
-    expect(spoken[3]).toBe("Valeur masquée, visible avec l’offre Analyse");
+    // Valeur estimée, écart chiffré, plafond, comparables : jamais avec le seul compte gratuit.
+    for (const text of spoken) {
+      expect(text).toBe("Valeur masquée, visible avec l’offre Analyse, ou avec un déblocage");
+    }
     // La barre de remplacement reste un décor : jamais lue, et sans aucun chiffre.
     for (const row of rows) {
       const bar = row.querySelector("[aria-hidden='true'][data-nosnippet]");
@@ -1043,7 +1052,9 @@ describe("plafond annoncé selon le régime de frais de la vente", () => {
     expect(text).toContain(
       "Compte gratuit : notez votre statut et votre enchère plafond ou offre plafond sur chaque vente suivie.",
     );
-    expect(text).toContain("l’enchère plafond ou l’offre plafond, la lecture des pièces");
+    expect(text).toContain(
+      "l’enchère plafond ou l’offre plafond, l’estimation détaillée et les ventes comparables",
+    );
     expect(text).toContain("calcul de votre enchère plafond ou offre plafond");
   });
 
@@ -1058,7 +1069,7 @@ describe("plafond annoncé selon le régime de frais de la vente", () => {
     const { container } = renderNotarial(["tribunal", "notary_online"]);
     const text = container.textContent ?? "";
     expect(text).toContain("votre offre plafond sur chaque vente suivie.");
-    expect(text).toContain("l’offre plafond, la lecture des pièces");
+    expect(text).toContain("(l’offre plafond, l’estimation détaillée et les ventes comparables");
     expect(text).not.toContain("enchère plafond");
   });
 

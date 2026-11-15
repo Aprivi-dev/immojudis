@@ -43,6 +43,8 @@ export type UrbanismeCadastrePanelProps = {
   /** Optional structured PLU / permit / servitude signals supplied by the report loader. */
   urbanPlanningSignals?: StructuredUrbanPlanningSignal[];
   officialLandEnabled?: boolean;
+  /** « Actualiser les sources » du dossier PLU et risques : nouvelle consultation forcée. */
+  officialLandRefresh?: boolean;
   className?: string;
   heading?: string;
 };
@@ -76,6 +78,7 @@ export function UrbanismeCadastrePanel({
   cadastralParcels = [],
   urbanPlanningSignals = [],
   officialLandEnabled = false,
+  officialLandRefresh = true,
   className,
   heading = "Urbanisme & cadastre",
 }: UrbanismeCadastrePanelProps) {
@@ -150,6 +153,7 @@ export function UrbanismeCadastrePanel({
         key={sale.id}
         saleId={sale.id}
         enabled={officialLandEnabled}
+        refreshEnabled={officialLandRefresh}
         listingZone={listingPluZone(sale.source_description, sale.description)}
         landSurfaceM2={sale.land_surface_m2}
         onReport={setLandReport}

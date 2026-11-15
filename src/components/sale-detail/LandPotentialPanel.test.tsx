@@ -220,6 +220,16 @@ describe("LandPotentialPanel", () => {
     expect(screen.getByText(/ne vaut ni droit disponible ni autorisation/)).toBeTruthy();
   });
 
+  it("ne relance les sources officielles que pour l'offre Analyse, la vente débloquée lit le dossier", () => {
+    const subscriber = renderPanel();
+    expect(screen.getByRole("button", { name: "Actualiser les sources" })).toBeTruthy();
+    subscriber.unmount();
+
+    renderPanel({ refreshEnabled: false });
+    expect(screen.getByRole("button", { name: "Exporter le dossier PDF" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Actualiser les sources" })).toBeNull();
+  });
+
   it("confronte la zone citée et la surface annoncée au rapport officiel", () => {
     renderPanel({ listingZone: "UCa2*L12", landSurfaceM2: 4_000 });
     expect(

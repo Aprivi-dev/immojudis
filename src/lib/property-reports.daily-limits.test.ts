@@ -64,8 +64,10 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
     await expect(savePropertyReport({ auth, input, request })).rejects.toThrow(
       "Rapports réservés à l’offre Analyse.",
     );
+    // Sans l'offre, le rapport est d'abord retrouvé pour savoir si sa vente est débloquée : un
+    // rapport que la session ne lit pas est introuvable.
     await expect(exportPropertyReportPdf({ auth, reportId: "r", request })).rejects.toThrow(
-      "Export PDF réservé à l’offre Analyse.",
+      "Rapport introuvable.",
     );
     expect(mocks.daily).not.toHaveBeenCalled();
   });
