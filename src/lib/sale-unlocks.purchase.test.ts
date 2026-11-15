@@ -14,7 +14,7 @@ import {
   unlockSourceLabel,
 } from "@/lib/sale-unlocks";
 
-const plain = (text: string | null) => text?.replace(/[  ]/g, " ") ?? null;
+const plain = (text: string | null) => text?.replace(/[\u00a0\u202f]/g, " ") ?? null;
 
 describe("achat d'une vente à l'unité : textes", () => {
   it("écrit les montants en euros, sans centimes quand il n'y en a pas", () => {
@@ -118,6 +118,6 @@ describe("achat d'une vente à l'unité : textes", () => {
     const source = readFileSync(resolve("src/lib/sale-unlocks.ts"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
-    expect(source).not.toMatch(/\d+[  ]?€/);
+    expect(source).not.toMatch(/\d+[ \u00a0]?€/);
   });
 });

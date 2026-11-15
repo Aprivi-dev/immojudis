@@ -65,7 +65,12 @@ C'est la combinaison qui distingue Immojudis, pas une brique isolée :
   passages) ; ni la fourchette de valeur ni l'écart chiffré. Analyse, au tarif prévu de 59 € TTC par
   mois, sans engagement : toutes les ventes ouvertes, alertes avancées, export PDF et CSV,
   estimation détaillée, ventes comparables. L'essai Analyse gratuit à l'inscription n'est plus
-  proposé. **Au 13/11/2026,
+  proposé. Achat d'une vente à l'unité (décision du 15/11/2026) : une fois le déblocage gratuit
+  utilisé, une autre vente s'achète 19 € TTC, paiement unique ; les achats des 30 derniers jours sont
+  déduits du premier mois d'abonnement ; une vente achetée puis retirée avant d'avoir lieu donne un
+  crédit pour une autre vente, pas un remboursement. La fiche met l'abonnement en avant sans forcer
+  (ni compte à rebours ni fausse rareté), et rien ne propose l'achat tant qu'il n'est pas ouvert
+  (CGU, article 2 bis, à faire valider par un avocat avant l'ouverture). **Au 13/11/2026,
   le paiement n'est pas encore ouvert** : tant que les conditions de lancement ne sont pas réunies
   (`docs/roadmaps/conditions-de-lancement-2026-10-10.md`), rien ne doit laisser croire qu'un
   abonnement se souscrit déjà.

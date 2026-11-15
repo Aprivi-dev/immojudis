@@ -149,7 +149,13 @@ function deliver(
   object: unknown,
   { id = `evt_${type}`, livemode = false }: { id?: string; livemode?: boolean } = {},
 ) {
-  mocks.constructEvent.mockReturnValue({ id, type, created: 1_800_000_500, livemode, data: { object } });
+  mocks.constructEvent.mockReturnValue({
+    id,
+    type,
+    created: 1_800_000_500,
+    livemode,
+    data: { object },
+  });
   return handleStripeWebhook({ payload: "{}", signature: "sig" });
 }
 
@@ -708,7 +714,10 @@ describe("(e) remboursements et litiges : achat à l'unité et abonnement ne se 
   });
 
   it("lit l'objet du paiement sur le PaymentIntent déjà développé, sans relecture", async () => {
-    await deliver("charge.refunded", charge({ payment_intent: { id: "pi_1", ...unitPaymentIntent } }));
+    await deliver(
+      "charge.refunded",
+      charge({ payment_intent: { id: "pi_1", ...unitPaymentIntent } }),
+    );
 
     expect(mocks.paymentIntentsRetrieve).not.toHaveBeenCalled();
     expect(rpcCalls("record_sale_unlock_payment_state")).toHaveLength(1);

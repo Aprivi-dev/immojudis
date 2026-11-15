@@ -701,3 +701,71 @@ describe("page Offres", () => {
     expect(analysis.textContent).toContain("Statistiques des tribunaux : prix d’adjudication");
   });
 });
+
+describe("page Offres : achat d'une vente à l'unité", () => {
+  const plain = (text: string | null | undefined) => (text ?? "").replace(/[\u00a0\u202f]/g, " ");
+
+  it("achat fermé : la page actuelle, sans ligne ni phrase ni ligne du comparatif", async () => {
+    mocks.offer.mockResolvedValue({
+      configured: true,
+      trialAvailable: true,
+      label: "59 € TTC / mois",
+      saleUnlock: { open: false, label: "19 €", amountCents: 1900 },
+    });
+    const { container } = render(<OffersPage />);
+    await screen.findByText("Recommandée");
+    expect(screen.queryByTestId("offers-sale-purchase-line")).toBeNull();
+    expect(screen.queryByTestId("offers-sale-purchase-note")).toBeNull();
+    expect(container.textContent).not.toMatch(/à l’unité|19 €/);
+  });
+
+  it("achat ouvert : la ligne sous Découverte, la phrase sous les cartes et la ligne du comparatif", async () => {
+    mocks.offer.mockResolvedValue({
+      configured: true,
+      trialAvailable: true,
+      label: "59 € TTC / mois",
+      saleUnlock: { open: true, label: "19 €", amountCents: 1900 },
+    });
+    render(<OffersPage />);
+    const line = await screen.findByTestId("offers-sale-purchase-line");
+    expect(line.textContent).toBe("Vente supplémentaire à l’unité : 19 €");
+    expect(line.closest("article")?.getAttribute("aria-labelledby")).toBe("offre-Découverte");
+    expect(screen.getByTestId("offers-sale-purchase-note").textContent).toBe(
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité. À partir de trois ventes, l’abonnement revient moins cher.",
+    );
+    const table = screen.getByRole("table", {
+      name: "Comparaison des offres Découverte et Analyse",
+    });
+    const row = within(table).getByRole("rowheader", { name: /Vente supplémentaire à l’unité/ });
+    expect(plain(row.closest("tr")?.textContent)).toContain("19 €");
+  });
+
+  it("le prix suit l'offre lue, et la comparaison avec trois ventes n'est dite que si elle est vraie", async () => {
+    mocks.offer.mockResolvedValue({
+      configured: true,
+      trialAvailable: true,
+      label: "59 € TTC / mois",
+      saleUnlock: { open: true, label: "12 €", amountCents: 1200 },
+    });
+    render(<OffersPage />);
+    expect((await screen.findByTestId("offers-sale-purchase-line")).textContent).toBe(
+      "Vente supplémentaire à l’unité : 12 €",
+    );
+    expect(screen.getByTestId("offers-sale-purchase-note").textContent).toBe(
+      "Vous n’avez besoin que d’une vente de plus ? Elle s’achète à l’unité.",
+    );
+  });
+
+  it("achat ouvert mais éditeur non identifié : rien n'est proposé", async () => {
+    mocks.legalReady.mockReturnValue({ ready: false, missing: ["NEXT_PUBLIC_LEGAL_ENTITY_NAME"] });
+    mocks.offer.mockResolvedValue({
+      configured: true,
+      trialAvailable: true,
+      label: "59 € TTC / mois",
+      saleUnlock: { open: true, label: "19 €", amountCents: 1900 },
+    });
+    render(<OffersPage />);
+    await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./);
+    expect(screen.queryByTestId("offers-sale-purchase-line")).toBeNull();
+  });
+});
