@@ -17,25 +17,28 @@ import { trackProductEvent } from "@/lib/product-events";
 import type { UnlockCeilingGap } from "@/lib/bid-ceiling-gaps";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
-  MONTHLY_SALE_UNLOCKS,
-  remainingUnlocksLine,
   SALE_NOT_UNLOCKABLE_TEXT,
-  unlockConfirmationText,
+  UNLOCK_CALL_TO_ACTION_LABEL,
+  UNLOCK_CHOICE_TEXT,
+  UNLOCK_CONFIRMATION_TEXT,
+  UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
   unlockQuotaReachedText,
-  unlockQuotaReachedTitle,
   type SaleUnlockResult,
   type SaleUnlockStatus,
 } from "@/lib/sale-unlocks";
 import { userMessage } from "@/lib/user-messages";
 
 /**
- * « Débloquer cette vente » : « 3 déblocages par mois » du compte Découverte.
+ * « Débloquer cette vente » : le déblocage d'une vente compris dans le compte Découverte.
  *
  * Un déblocage ouvre, pour cette vente seulement, de quoi préparer l'enchère. Il est consommé après
- * confirmation, une seule fois par vente, et ne s'affiche jamais à un abonné Analyse. Pas de
- * compte à rebours ni de rareté artificielle : le nombre restant et la date de remise à zéro.
+ * confirmation, une seule fois, et ne s'affiche jamais à un abonné Analyse. Pas de compte à rebours
+ * ni de rareté artificielle : le compte gratuit en comprend un, et on le dit.
  */
+/** Au-dessus du titre de la carte, dans chacun de ses états avant le déblocage. */
+const UNLOCK_EYEBROW = "Déblocage du compte gratuit";
+
 export function SaleUnlockPanel({
   saleId,
   status,
@@ -49,7 +52,7 @@ export function SaleUnlockPanel({
   onUnlocked,
 }: {
   saleId: string;
-  /** Situation du compte ce mois-ci ; absente tant qu'elle n'est pas connue (rien n'est affiché). */
+  /** Situation du déblocage du compte ; absente tant qu'elle n'est pas connue (rien n'est affiché). */
   status: SaleUnlockStatus | null | undefined;
   /** La vente est déjà débloquée : le panneau rappelle ce qui est ouvert. */
   unlocked: boolean;
@@ -137,9 +140,6 @@ export function SaleUnlockPanel({
         : opens.ceilingTerm
           ? `Votre ${opens.ceilingTerm} est débloquée`
           : "Votre plafond est débloqué";
-    const remaining = remainingUnlocksLine(current) ? (
-      <p className="mt-2 text-sm font-medium text-brand-navy">{remainingUnlocksLine(current)}</p>
-    ) : null;
     return (
       <>
         {liveRegion}
@@ -197,7 +197,6 @@ export function SaleUnlockPanel({
                 Ce déblocage ouvre {items}. {reserved}
               </p>
               {reserve}
-              {remaining}
             </>
           ) : (
             <>
@@ -206,7 +205,6 @@ export function SaleUnlockPanel({
                 ligne sur Immojudis, dans la limite de 24 mois. {reserved}
               </p>
               {reserve}
-              {remaining}
             </>
           )}
         </Card>
@@ -220,7 +218,7 @@ export function SaleUnlockPanel({
     return (
       <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
         <Eyebrow className="flex items-center gap-2">
-          <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par mois
+          <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
         </Eyebrow>
         <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
           Débloquer cette vente
@@ -246,10 +244,8 @@ export function SaleUnlockPanel({
       setStep("idle");
       if (failure instanceof SaleUnlockQuotaReachedError) {
         setRefused({ base, status: failure.status });
-        // The subscription is not read here: the free-account way is true in every case.
-        setLive(
-          `${unlockQuotaReachedTitle(failure.status)}. ${unlockQuotaReachedText(failure.status)}`,
-        );
+        // The subscription is not read here: the sentence without it is true in every case.
+        setLive(`${UNLOCK_QUOTA_REACHED_TITLE}. ${unlockQuotaReachedText()}`);
         return;
       }
       setLive("");
@@ -268,13 +264,12 @@ export function SaleUnlockPanel({
           className="mt-4 scroll-mt-2"
         >
           <Eyebrow className="flex items-center gap-2">
-            <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par
-            mois
+            <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
           </Eyebrow>
           <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
-            {unlockQuotaReachedTitle(current)}
+            {UNLOCK_QUOTA_REACHED_TITLE}
           </h2>
-          <ExhaustedNotice status={current} />
+          <ExhaustedNotice />
         </Card>
       </>
     );
@@ -290,7 +285,7 @@ export function SaleUnlockPanel({
         className="mt-4 scroll-mt-2"
       >
         <Eyebrow className="flex items-center gap-2">
-          <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par mois
+          <LockKeyhole className="size-4" aria-hidden /> {UNLOCK_EYEBROW}
         </Eyebrow>
         <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
           Débloquer cette vente
@@ -299,7 +294,7 @@ export function SaleUnlockPanel({
           Ouvre, pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
           ligne, dans la limite de 24 mois. Compris dans le compte Découverte, sans carte bancaire.
         </p>
-        <p className="mt-2 text-sm font-medium text-brand-navy">{remainingUnlocksLine(current)}</p>
+        <p className="mt-2 text-sm font-medium text-brand-navy">{UNLOCK_CHOICE_TEXT}</p>
         {step === "idle" ? (
           <Button
             variant="primary"
@@ -309,7 +304,7 @@ export function SaleUnlockPanel({
               setStep("confirm");
             }}
           >
-            Débloquer cette vente
+            {UNLOCK_CALL_TO_ACTION_LABEL}
           </Button>
         ) : (
           <div
@@ -318,7 +313,7 @@ export function SaleUnlockPanel({
             className="mt-4 rounded-lg border border-gold/40 bg-surface-tint p-4"
           >
             <p className="text-sm leading-relaxed text-brand-navy">
-              {unlockConfirmationText(current)}
+              {UNLOCK_CONFIRMATION_TEXT}
             </p>
             {gap ? (
               <p
@@ -373,12 +368,12 @@ export function SaleUnlockPanel({
 }
 
 /**
- * Spent quota: the sales already opened this month, then how to open this one. The subscription is
- * named only when it can really be bought (the legal identity is published and the approved price
- * is configured). While the offer is closed, the primary action is the opening request, never a
- * link to a page that cannot sell it.
+ * Unlock spent on another sale: the way to that sale, then how to open this one. The subscription
+ * is named only when it can really be bought (the legal identity is published and the approved
+ * price is configured). While the offer is closed, the primary action is the opening request, never
+ * a link to a page that cannot sell it.
  */
-function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
+function ExhaustedNotice() {
   const checkoutOpen = useAnalysisCheckoutOpen();
   return (
     <>
@@ -386,10 +381,10 @@ function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
         href={UNLOCKED_SALES_PATH}
         className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
       >
-        Voir mes ventes débloquées
+        Voir la vente débloquée
       </Link>
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-        {unlockQuotaReachedText(status, { analysisOpen: checkoutOpen === true })}{" "}
+        {unlockQuotaReachedText({ analysisOpen: checkoutOpen === true })}{" "}
         {checkoutOpen === true
           ? `L’offre Analyse est un ${nonBreakingUnits(analysisSubscriptionTerms(resolveAnalysisOfferLabel()))}.`
           : checkoutOpen === false

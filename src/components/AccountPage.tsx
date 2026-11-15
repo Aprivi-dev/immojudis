@@ -35,7 +35,7 @@ export function AccountPage() {
   const { user } = useAuth();
   const planQuery = useAccessPlanQuery(user?.id);
   const plan = planQuery.data?.plan;
-  // « 3 déblocages par mois » : seul un compte qui n'a pas déjà toutes les ventes les consomme.
+  // Le déblocage du compte gratuit : seul un compte qui n'a pas déjà toutes les ventes le consomme.
   const unlocksQuery = useQuery({
     queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
     queryFn: fetchSaleUnlocksOverview,
