@@ -14,7 +14,7 @@ import { ceilingVenueScopeText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
-import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
@@ -70,12 +70,13 @@ function ExampleFictionNotice() {
 /**
  * Fin de l'exemple, pour un visiteur : le même calcul sur les ventes réelles. Avec l'essai, sur toutes
  * les ventes qui ont un plafond (`open` : les régimes de frais ouverts ; jamais les ventes domaniales)
- * pendant l'essai, puis sur les déblocages du mois ; sans l'essai (ou état non lu), les déblocages seuls.
+ * pendant l'essai, puis sur la vente débloquée ; sans l'essai (ou état non lu), la vente débloquée
+ * seule.
  */
 function exampleNextStepsText(trialOpen: boolean, open?: readonly FeeRegimeKey[]): string {
   return trialOpen
-    ? `Avec un compte gratuit, ce calcul sur les ventes réelles (${ceilingVenueScopeText(open)}) : sur toutes pendant ${ANALYSIS_TRIAL_DAYS} jours, puis sur ${MONTHLY_SALE_UNLOCKS} par mois. Sans carte bancaire.`
-    : `Avec un compte gratuit, ce calcul sur ${MONTHLY_SALE_UNLOCKS} ventes réelles par mois. Sans carte bancaire.`;
+    ? `Avec un compte gratuit, ce calcul sur les ventes réelles (${ceilingVenueScopeText(open)}) : sur toutes pendant ${ANALYSIS_TRIAL_DAYS} jours, puis sur la vente que vous débloquez. Sans carte bancaire.`
+    : "Avec un compte gratuit, ce calcul sur une vente réelle, celle que vous débloquez. Sans carte bancaire.";
 }
 
 /**

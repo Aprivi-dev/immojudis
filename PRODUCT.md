@@ -55,10 +55,11 @@ C'est la combinaison qui distingue Immojudis, pas une brique isolée :
 ## Capabilities and Constraints
 
 - **Périmètre** : la France entière (décision du 09/10/2026, `docs/roadmaps/decision-perimetre-2026-10-09.md`).
-- **Offres** : Découverte, gratuite et sans limite de durée, avec un quota mensuel de ventes
-  débloquées. Analyse, au tarif prévu de 59 € TTC par mois, sans engagement : toutes les ventes
-  ouvertes, alertes avancées, export PDF et CSV, estimation détaillée, ventes comparables. Un essai
-  Analyse de 7 jours, sans carte bancaire, suit la confirmation de l'adresse email. **Au 13/11/2026,
+- **Offres** : Découverte, gratuite et sans limite de durée, avec une seule vente débloquée en
+  tout (décision du 15/11/2026, au lieu de trois par mois). Analyse, au tarif prévu de 59 € TTC par
+  mois, sans engagement : toutes les ventes ouvertes, alertes avancées, export PDF et CSV,
+  estimation détaillée, ventes comparables. L'essai Analyse gratuit à l'inscription n'est plus
+  proposé. **Au 13/11/2026,
   le paiement n'est pas encore ouvert** : tant que les conditions de lancement ne sont pas réunies
   (`docs/roadmaps/conditions-de-lancement-2026-10-10.md`), rien ne doit laisser croire qu'un
   abonnement se souscrit déjà.

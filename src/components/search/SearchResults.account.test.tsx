@@ -33,7 +33,7 @@ afterEach(() => {
   testState.user = null;
 });
 
-const FREE_LINE = "Gratuit, sans carte bancaire · 3 déblocages par mois";
+const FREE_LINE = "Gratuit, sans carte bancaire · une vente à débloquer";
 
 function sale(id: string, extra: Record<string, unknown> = {}): AuctionSale {
   return {

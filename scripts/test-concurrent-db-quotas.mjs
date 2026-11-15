@@ -13,7 +13,7 @@ const unlockSaleIds = Array.from(
 const admin = postgres(databaseUrl, { max: 1 });
 const first = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
 const second = postgres(authenticatorDatabaseUrl.toString(), { max: 1 });
-// État de l'offre de lancement avant la vérification des déblocages, pour le rétablir ensuite.
+// État de l'interrupteur de l'essai avant la vérification des déblocages, pour le rétablir ensuite.
 let launchOfferWasActive = null;
 
 try {
@@ -30,8 +30,8 @@ try {
       )
     `;
     await sql`
-      insert into public.user_subscriptions (user_id, plan_code, status)
-      values (${userId}, 'analyse', 'active')
+      insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
+      values (${userId}, 'analyse', 'active', now() + interval '30 days')
     `;
     await sql`
       insert into public.user_alerts (user_id, name, is_active)
@@ -86,17 +86,17 @@ try {
 }
 
 /**
- * "3 déblocages par mois": six simultaneous unlocks of six different sales by one Découverte
- * account must leave exactly three rows (the account is serialized by an advisory lock), and a
+ * Free account, one unlock in all: six simultaneous unlocks of six different sales by one Découverte
+ * account must leave exactly one row (the account is serialized by an advisory lock), and a
  * simultaneous repeat of one already unlocked sale must consume nothing. Each refusal must carry
  * the detail `sale_unlock_quota_reached` (T27, 14/11): it is what `unlockSale`
  * (src/lib/sale-unlocks.server.ts) turns into the 409 of `/api/sales/[id]/unlock`; any other
  * refusal under concurrency would reach the account as a 500.
  */
 async function verifyConcurrentSaleUnlocks() {
-  // L'offre de lancement (active par défaut) donne l'accès Analyse à tout compte qui a un profil :
-  // cette vérification porte sur le quota d'un compte Découverte, la base locale la coupe pour sa
-  // durée (rétablie dans le `finally` principal).
+  // L'essai à l'inscription, s'il est ouvert, donne l'accès Analyse à un compte tout juste confirmé :
+  // cette vérification porte sur le quota d'un compte Découverte, la base locale coupe l'interrupteur
+  // pour sa durée (rétabli dans le `finally` principal). Il est déjà coupé depuis 20261120100000.
   [{ active: launchOfferWasActive }] =
     await admin`select active from app_private.launch_offer where singleton`;
   await admin`update app_private.launch_offer set active = false where singleton`;
@@ -149,7 +149,7 @@ async function verifyConcurrentSaleUnlocks() {
     const [{ count }] = await admin`
       select count(*)::integer as count from public.user_sale_unlocks where user_id = ${unlockUserId}
     `;
-    if (fulfilled !== 3 || quotaRefusals !== 3 || count !== 3) {
+    if (fulfilled !== 1 || quotaRefusals !== 5 || count !== 1) {
       throw new Error(
         `Concurrent unlock invariant failed: fulfilled=${fulfilled}, refused=${quotaRefusals}, rows=${count}`,
       );
@@ -165,7 +165,7 @@ async function verifyConcurrentSaleUnlocks() {
     const [{ count: afterRepeat }] = await admin`
       select count(*)::integer as count from public.user_sale_unlocks where user_id = ${unlockUserId}
     `;
-    if (repeats.some((outcome) => outcome.status !== "fulfilled") || afterRepeat !== 3) {
+    if (repeats.some((outcome) => outcome.status !== "fulfilled") || afterRepeat !== 1) {
       throw new Error("Repeating an unlocked sale must consume nothing and never be refused.");
     }
     return { fulfilled, quotaRefusals, rows: count };

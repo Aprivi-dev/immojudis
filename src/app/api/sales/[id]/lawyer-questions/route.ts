@@ -22,8 +22,8 @@ const saleIdSchema = z.string().guid();
  * l'inventaire de la fiche reste côté serveur.
  *
  * Mêmes droits que la lecture des pièces : l'offre Analyse, ou une vente que le compte a débloquée
- * (« 3 déblocages par mois »), pour cette vente seulement. Les autres comptes reçoivent un refus. La vente
- * doit être visible de l'appelant (sa session, pas le rôle de service) et publiée.
+ * (« déblocage du compte gratuit »), pour cette vente seulement. Les autres comptes reçoivent un
+ * refus. La vente doit être visible de l'appelant (sa session, pas le rôle de service) et publiée.
  */
 export const GET = apiRoute<{ id: string }>(
   {

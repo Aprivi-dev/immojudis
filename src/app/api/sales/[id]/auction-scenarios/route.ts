@@ -17,7 +17,7 @@ const saleIdSchema = z.string().guid();
  * fourchette de prix d'adjudication, d'après les trois dernières années d'adjudications
  * du tribunal. The sale must be visible to the caller first; the figures themselves are cached
  * per (court, starting-price band, property group), after that check. A Découverte account that unlocked
- * this sale (« 3 déblocages par mois ») reads it too, for this sale only.
+ * this sale (« déblocage du compte gratuit ») reads it too, for this sale only.
  */
 export const GET = apiRoute<{ id: string }>(
   { scope: "auction-scenarios", fallbackMessage: "Scénarios d’enchères indisponibles." },

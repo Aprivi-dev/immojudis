@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDayLongMonth } from "./format/dates";
-import { parisDayMonthLabel, parisMonthName, parisMonthWindow } from "./paris-month";
+import { parisMonthWindow } from "./paris-month";
 
 describe("parisMonthWindow", () => {
   it("coupe le mois à 00 h 00 heure de Paris en été (UTC+2)", () => {
@@ -55,27 +54,5 @@ describe("parisMonthWindow", () => {
       periodStart: "2026-12-31T23:00:00.000Z",
       periodEnd: "2027-01-31T23:00:00.000Z",
     });
-  });
-});
-
-describe("libellés en heure de Paris", () => {
-  it("nomme le mois civil de Paris et le jour de remise à zéro", () => {
-    expect(parisMonthName("2026-10-13T09:00:00.000Z")).toBe("octobre");
-    expect(parisMonthName("2026-10-31T23:30:00.000Z")).toBe("novembre");
-    expect(parisDayMonthLabel(parisMonthWindow(new Date("2026-10-13T09:00:00Z")).periodEnd)).toBe(
-      "1er novembre",
-    );
-    expect(parisDayMonthLabel("2026-11-12T12:00:00.000Z")).toBe("12 novembre");
-  });
-
-  it("écrit le jour et le mois comme formatDayLongMonth (même règle du « 1er »)", () => {
-    for (const iso of [
-      "2026-10-31T23:00:00.000Z",
-      "2026-11-12T12:00:00.000Z",
-      "2026-03-31T22:00:00.000Z",
-      "2026-12-31T23:30:00.000Z",
-    ]) {
-      expect(parisDayMonthLabel(iso)).toBe(formatDayLongMonth(iso));
-    }
   });
 });

@@ -192,11 +192,9 @@ describe("DiscoveryDecisionPanel", () => {
       unlocked: false,
       unlockable: true,
       analysisAccess: false,
-      limit: 3,
-      used: 1,
-      remaining: 2,
-      periodStart: "2026-09-30T22:00:00.000Z",
-      resetsAt: "2026-10-31T23:00:00.000Z",
+      limit: 1,
+      used: 0,
+      remaining: 1,
     };
 
     it("links the ceiling row and the preview of a tribunal sale to the unlock card", () => {
@@ -209,7 +207,7 @@ describe("DiscoveryDecisionPanel", () => {
       );
 
       const links = screen.getAllByRole("link", {
-        name: "Débloquer cette vente (il vous reste 2 sur 3)",
+        name: "Débloquer cette vente avec mon compte gratuit",
       });
       // The row of the ceiling, and the main link of the paid preview.
       expect(links).toHaveLength(2);

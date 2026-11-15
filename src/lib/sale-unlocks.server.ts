@@ -7,16 +7,11 @@ import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/
 import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 
 /**
- * « 3 déblocages par mois » côté serveur. Tout passe par les RPC `unlock_sale` et
+ * Le déblocage du compte gratuit côté serveur. Tout passe par les RPC `unlock_sale` et
  * `get_sale_unlock_status` avec le client de l'utilisateur : la base identifie le compte par
- * `auth.uid()`, applique le quota du mois de Paris sous verrou et ne lit que ses propres lignes.
- * Aucun appel Stripe sur ce chemin.
+ * `auth.uid()`, applique le quota du compte (`app_private.free_sale_unlock_limit()`) sous verrou et
+ * ne lit que ses propres lignes. Aucun appel Stripe sur ce chemin.
  */
-
-const instantSchema = z
-  .string()
-  .refine((value) => Number.isFinite(new Date(value).getTime()), "Date invalide.")
-  .transform((value) => new Date(value).toISOString());
 
 const rpcStatusSchema = z.object({
   sale_id: z.string().nullable().optional(),
@@ -28,8 +23,8 @@ const rpcStatusSchema = z.object({
   limit: z.number().int().nullable(),
   used: z.number().int().nonnegative(),
   remaining: z.number().int().nonnegative().nullable(),
-  period_start: instantSchema,
-  period_end: instantSchema,
+  // La base a envoyé `period_start` et `period_end` tant que le quota était mensuel : un objet zod
+  // non strict ignore ces clés, une base pas encore migrée reste donc lisible.
 });
 
 const rpcResultSchema = rpcStatusSchema.extend({
@@ -46,8 +41,6 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
     limit: row.limit,
     used: row.used,
     remaining: row.remaining,
-    periodStart: row.period_start,
-    resetsAt: row.period_end,
   };
 }
 
@@ -62,7 +55,7 @@ export function parseSaleUnlockResult(raw: unknown): SaleUnlockResult {
   return { ...toStatus(row), alreadyUnlocked: row.already_unlocked, consumed: row.consumed };
 }
 
-/** Quota du mois atteint : porte l'état du compteur pour que la fiche l'explique. */
+/** Déblocage du compte déjà utilisé : porte l'état du compte pour que la fiche l'explique. */
 export class SaleUnlockQuotaError extends Error {
   readonly status: SaleUnlockStatus;
 
@@ -73,7 +66,7 @@ export class SaleUnlockQuotaError extends Error {
   }
 }
 
-/** Situation du compte pour ce mois et, avec `saleId`, état de déblocage de cette vente. */
+/** Situation du déblocage du compte et, avec `saleId`, état de déblocage de cette vente. */
 export async function getSaleUnlockStatus(
   auth: SupabaseAuthContext,
   saleId: string | null = null,
@@ -99,7 +92,10 @@ const unlockedSaleRowSchema = z.object({
 
 const UNLOCKED_SALE_COLUMNS =
   "id,title,city,department,property_type,starting_price_eur,sale_date,status";
-/** Au plus 3 par mois et 24 mois de validité : 72 au maximum, la marge couvre un compte Analyse passé. */
+/**
+ * Une vente pour le compte gratuit ; la marge couvre les ventes débloquées quand le quota était
+ * mensuel (3 par mois, 24 mois de validité : 72 au plus) et un compte Analyse passé.
+ */
 const UNLOCKED_SALES_LIST_LIMIT = 100;
 
 /**

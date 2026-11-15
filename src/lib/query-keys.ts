@@ -16,8 +16,8 @@
 type Id = string | null | undefined;
 
 /**
- * What the account reads on a sale page: the free view, a sale unlocked with « 3 déblocages par
- * mois », or the full Analyse view. Keys of the data that differs between these views carry it, so
+ * What the account reads on a sale page: the free view, a sale unlocked by the free account, or
+ * the full Analyse view. Keys of the data that differs between these views carry it, so
  * unlocking a sale never leaves the free teaser in the cache.
  */
 export type SaleAccessMode = "discovery" | "unlocked" | "analysis";

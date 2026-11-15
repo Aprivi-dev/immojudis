@@ -1,5 +1,5 @@
 import { PLAN_LIMITS } from "@/lib/plans";
-import { MONTHLY_UNLOCKS_TEXT } from "@/lib/sale-unlocks";
+import { FREE_UNLOCK_TEXT } from "@/lib/sale-unlocks";
 
 /**
  * Ce que devient un compte gratuit quand l'essai gratuit se termine : une seule liste, lue par
@@ -12,7 +12,7 @@ const analysis = PLAN_LIMITS.analyse;
 export const LAUNCH_OFFER_END_STAYS: readonly string[] = [
   `${free.favoriteSales} favoris`,
   `${free.watchedZones} alerte avec un email récapitulatif par semaine`,
-  MONTHLY_UNLOCKS_TEXT,
+  FREE_UNLOCK_TEXT,
   "« Mon dossier » : le statut et l’enchère plafond enregistrés sur vos favoris",
 ];
 
@@ -21,7 +21,7 @@ export const LAUNCH_OFFER_END_STAYS: readonly string[] = [
  * rapports enregistrés sont dits par `LAUNCH_OFFER_DATA_TEXT`, affiché à côté de cette liste.
  */
 export const LAUNCH_OFFER_END_NEEDS_ANALYSIS: readonly string[] = [
-  `le plafond chiffré sans limite mensuelle (compte gratuit : ${free.monthlyUnlocks} ventes par mois)`,
+  "le plafond chiffré sur toutes les ventes (compte gratuit : une vente débloquée)",
   `jusqu’à ${analysis.watchedZones} alertes, chaque jour (compte gratuit : ${free.watchedZones}, chaque semaine)`,
   "l’estimation détaillée et les ventes comparables",
   "le rapport PDF et l’export CSV",

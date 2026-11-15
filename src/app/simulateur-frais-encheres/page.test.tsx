@@ -49,7 +49,9 @@ describe("page /simulateur-frais-encheres", () => {
 
   it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {
     const html = renderToString(<Page />).replaceAll("<!-- -->", "");
-    expect(html).toContain("sur 3 ventes au tribunal par mois avec le compte gratuit");
+    expect(html).toContain(
+      "sur une vente au tribunal, celle que vous débloquez, avec le compte gratuit",
+    );
     expect(html).toContain("toutes les ventes au tribunal avec l’offre Analyse");
     expect(html).not.toContain("se fixe avec l’offre Analyse");
   });
@@ -59,7 +61,7 @@ describe("page /simulateur-frais-encheres", () => {
       .replaceAll("<!-- -->", "")
       .replace(/\s+/g, " ");
     expect(html).toContain(
-      "Vous connaissez maintenant les frais. Le plafond fait le chemin inverse sur une vraie vente : il part de la valeur estimée du bien et calcule, selon vos hypothèses, l’enchère à ne pas dépasser. L’enchère plafond s’ouvre sur 3 ventes au tribunal par mois",
+      "Vous connaissez maintenant les frais. Le plafond fait le chemin inverse sur une vraie vente : il part de la valeur estimée du bien et calcule, selon vos hypothèses, l’enchère à ne pas dépasser. L’enchère plafond s’ouvre sur une vente au tribunal, celle que vous débloquez",
     );
     expect(html).not.toContain("Ce simulateur chiffre les frais, pas votre limite d’enchère.");
   });

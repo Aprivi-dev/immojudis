@@ -8,7 +8,11 @@ import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { UNLOCKED_SALES_PATH, saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
-import { unlockUsageLine, type UnlockedSaleSummary } from "@/lib/sale-unlocks";
+import {
+  UNLOCK_CALL_TO_ACTION_LABEL,
+  unlockUsageLine,
+  type UnlockedSaleSummary,
+} from "@/lib/sale-unlocks";
 
 function saleLine(sale: UnlockedSaleSummary): string {
   const place = [sale.city, sale.department].filter(Boolean).join(" · ");
@@ -17,9 +21,9 @@ function saleLine(sale: UnlockedSaleSummary): string {
 }
 
 /**
- * « Mes ventes débloquées » : les ventes que ce compte a débloquées (« 3 déblocages par mois ») et
- * qui sont toujours en ligne, avec le compteur du mois. Un déblocage reste valable tant que la vente
- * est en ligne, dans la limite de 24 mois.
+ * « Mes ventes débloquées » : les ventes que ce compte a débloquées et qui sont toujours en ligne,
+ * avec l'état du déblocage du compte gratuit. Un déblocage reste valable tant que la vente est en
+ * ligne, dans la limite de 24 mois.
  */
 export function UnlockedSalesPage() {
   const { user } = useAuth();
@@ -49,8 +53,8 @@ export function UnlockedSalesPage() {
       description={
         <>
           <p>
-            Les ventes dont vous avez ouvert le détail avec vos déblocages par mois. Elles restent
-            accessibles tant qu’elles sont en ligne sur Immojudis, dans la limite de 24 mois.
+            Les ventes dont vous avez ouvert le détail en les débloquant. Elles restent accessibles
+            tant qu’elles sont en ligne sur Immojudis, dans la limite de 24 mois.
           </p>
           {status && !status.analysisAccess ? (
             <p className="mt-3 text-sm font-medium text-brand-navy">{unlockUsageLine(status)}</p>
@@ -77,8 +81,8 @@ export function UnlockedSalesPage() {
       ) : sales.length === 0 ? (
         <Card className="text-sm">
           <p className="text-muted-foreground">
-            Vous n’avez encore débloqué aucune vente en ligne. Ouvrez une fiche, puis choisissez «
-            Débloquer cette vente ».
+            Vous n’avez encore débloqué aucune vente en ligne. Ouvrez une fiche, puis choisissez «{" "}
+            {UNLOCK_CALL_TO_ACTION_LABEL} ».
           </p>
           <Link
             href="/sales"

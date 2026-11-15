@@ -9,6 +9,10 @@ begin;
 
 select plan(29);
 
+-- L'interrupteur est coupé depuis 20261120100000 : ce test porte sur l'offre active, il la rallume
+-- pour sa durée (annulé avec le reste en fin de test).
+update app_private.launch_offer set active = true where singleton;
+
 -- Fixtures -------------------------------------------------------------------------------------
 -- 01, 02 : comptes gratuits confirmés (destinataires) ; 03 : premium ; 04 : administrateur ;
 -- 05 : abonné Analyse ; 06 : email non confirmé ; 07 : désinscrit ; 08 : déjà prévenu ;

@@ -42,7 +42,7 @@ import {
   ceilingTermWithScopeText,
 } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
-import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { FREE_UNLOCK_LABEL, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
@@ -95,15 +95,15 @@ const OFFER_SIGNUP_PATH = pathWithSearch("/login", {
 
 /**
  * Sous les deux cartes, pour qui étudie beaucoup de ventes (marchands de biens). « Toutes les ventes
- * ouvertes » : Analyse n'a pas de quota de déblocages (`PLAN_LIMITS.analyse.monthlyUnlocks`).
+ * ouvertes » : Analyse n'a pas de quota de déblocages (`PLAN_LIMITS.analyse.saleUnlocks`).
  */
-const HEAVY_USE_NOTE = `Vous étudiez plus de ${MONTHLY_SALE_UNLOCKS} ventes par mois, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à ${PLAN_LIMITS.analyse.watchedZones} alertes, export CSV.`;
+const HEAVY_USE_NOTE = `Vous étudiez plusieurs ventes, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à ${PLAN_LIMITS.analyse.watchedZones} alertes, export CSV.`;
 
 const unlockedItems = (open?: readonly FeeRegimeKey[]) =>
   unlockedItemsText({ ceiling: ceilingTermWithArticleText(open), statistics: true });
 
 const discoveryFeatures = (open?: readonly FeeRegimeKey[]) => [
-  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${unlockedItems(open)}, pour la vente choisie`,
+  `${FREE_UNLOCK_LABEL} : ${unlockedItems(open)}, pour la vente choisie`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
   "Fourchette de valeur estimée et écart avec la mise à prix",
   `Une alerte avec un email récapitulatif par semaine, ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
@@ -164,7 +164,7 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
     question: "Y a-t-il un essai gratuit ?",
     answer: ({ launchActive, launchPending, subscriptionOpen }) =>
       launchPending ? (
-        // État non lu (lecture en erreur côté serveur) : jamais « Pas pour le moment » à tort.
+        // État non lu (lecture en erreur côté serveur) : jamais « Non » à tort.
         <>
           Un essai gratuit de {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire, est proposé à
           l’inscription tant que l’essai est ouvert ; l’état en cours s’affiche une fois la page
@@ -180,20 +180,24 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
             : `Pour garder l’offre Analyse après l’essai, il faudra y souscrire ; l’abonnement n’est pas encore ouvert (tarif prévu : ${resolveAnalysisOfferLabel()}). Vous pouvez demander à être prévenu de son ouverture.`}
         </>
       ) : (
-        <>Pas pour le moment. Le catalogue reste accessible gratuitement avec l’offre Découverte.</>
+        <>
+          Non. Le catalogue reste accessible gratuitement avec l’offre Découverte, qui comprend le
+          déblocage d’une vente.
+        </>
       ),
   },
   {
-    question: `Comment fonctionnent les ${MONTHLY_SALE_UNLOCKS} déblocages par mois ?`,
+    question: "Comment fonctionne le déblocage du compte gratuit ?",
     answer: ({ launchActive, ceilingWithArticle }) => (
       <>
-        Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
-        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, {ceilingWithArticle},
-        la lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente
-        et les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h
-        00, heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée
-        reste accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
-        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.{" "}
+        Votre compte Découverte comprend le déblocage d’une vente : choisissez celle qui vous
+        intéresse le plus. Pour cette vente, vous voyez, lorsqu’elle les comporte,{" "}
+        {ceilingWithArticle}, la lecture des pièces, l’historique de la vente, les statistiques du
+        tribunal de cette vente et les pièces du dossier. Le déblocage est définitif ; il vous est
+        rendu si la vente est retirée avant d’avoir lieu. Une vente débloquée reste accessible tant
+        qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage. Pour
+        ouvrir d’autres ventes, il faut l’offre Analyse. Aucune carte bancaire n’est demandée et
+        rien ne devient payant automatiquement.{" "}
         {launchActive
           ? `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de l’adresse email, l’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables sont aussi ouverts au compte gratuit ; ils redeviennent réservés à Analyse ensuite.`
           : "L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée et les ventes comparables restent réservés à Analyse."}
@@ -387,11 +391,11 @@ export function OffersPage({
         className="mx-auto max-w-[1220px] px-4 py-12 sm:px-6 lg:px-8"
       >
         <h2 id="tarifs" className="font-display text-3xl font-medium sm:text-4xl">
-          {MONTHLY_SALE_UNLOCKS} ventes chiffrées par mois, ou sans limite.
+          Une vente chiffrée avec le compte gratuit, toutes avec Analyse.
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
-          Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
-          déblocages par mois, chacun ouvrant, pour une vente, {unlockedItems(openFeeRegimes)}.{" "}
+          Découverte est gratuite, sans limite de durée ; elle comprend le déblocage d’une vente,
+          qui ouvre pour cette vente {unlockedItems(openFeeRegimes)}.{" "}
           {subscriptionKnownOpen === false
             ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
             : offerKnown
@@ -405,7 +409,7 @@ export function OffersPage({
           <PlanPanel
             name="Découverte"
             price="0 €"
-            description={`Pour repérer les ventes et chiffrer, chaque mois, les ${MONTHLY_SALE_UNLOCKS} qui vous intéressent le plus.`}
+            description="Pour repérer les ventes et chiffrer celle qui vous intéresse le plus."
             features={discoveryFeatures(openFeeRegimes)}
           >
             {launchActive ? (

@@ -6,8 +6,8 @@ import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import {
   type SaleUnlockStatus,
-  unlockCallToActionLabel,
-  unlockQuotaResetLine,
+  UNLOCK_CALL_TO_ACTION_LABEL,
+  UNLOCK_QUOTA_REACHED_TITLE,
 } from "@/lib/sale-unlocks";
 
 /** `id` of the unlock card (SaleUnlockPanel): the target of « Débloquer cette vente ». */
@@ -56,14 +56,14 @@ type Classes = {
   primaryClassName?: string;
   /** The secondary link to the offer, next to the unlock link. */
   secondaryClassName?: string;
-  /** The sentence « Vos 3 déblocages … reviennent le … ». */
+  /** The sentence « Votre compte gratuit a déjà débloqué une vente. » */
   messageClassName?: string;
 };
 
 /**
  * What a paid preview offers next to its message:
- *  - unlocks left: « Débloquer cette vente (il vous reste N sur 3) » first, then the offer;
- *  - quota spent: when the unlocks come back, then the offer (or « Me prévenir de l'ouverture »
+ *  - unlock left: « Débloquer cette vente avec mon compte gratuit » first, then the offer;
+ *  - unlock spent on another sale: says so, then the offer (or « Me prévenir de l'ouverture »
  *    when it is not open for subscription and `withOpeningRequest` is set);
  *  - no unlock card on the page: the offer alone, as before.
  * Renders a fragment: place it in the preview's own row of links.
@@ -96,7 +96,7 @@ export function UnlockCallToAction({
     return (
       <>
         <a href={`#${UNLOCK_PANEL_ID}`} onClick={goToUnlockPanel} className={primaryClassName}>
-          {unlockCallToActionLabel(status)}
+          {UNLOCK_CALL_TO_ACTION_LABEL}
         </a>{" "}
         <Link href="/offres" className={secondaryClassName ?? primaryClassName}>
           {offerLabel}
@@ -106,7 +106,6 @@ export function UnlockCallToAction({
   }
   return (
     <SpentUnlocks
-      status={status}
       withOpeningRequest={withOpeningRequest}
       primaryClassName={primaryClassName}
       messageClassName={messageClassName}
@@ -114,20 +113,21 @@ export function UnlockCallToAction({
   );
 }
 
-/** Quota spent: the return date, then the way to the offer. Only here is the offer state read. */
+/**
+ * Unlock spent on another sale: says so, then the way to the offer. Only here is the offer state
+ * read.
+ */
 function SpentUnlocks({
-  status,
   withOpeningRequest,
   primaryClassName,
   messageClassName,
 }: Pick<Classes, "primaryClassName" | "messageClassName"> & {
-  status: SaleUnlockStatus;
   withOpeningRequest: boolean;
 }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
   return (
     <>
-      <p className={messageClassName}>{unlockQuotaResetLine(status)}</p>
+      <p className={messageClassName}>{UNLOCK_QUOTA_REACHED_TITLE}.</p>
       {checkoutOpen === false && withOpeningRequest ? (
         <div className="w-full max-w-sm">
           <OfferOpeningRequest className="mt-0" />

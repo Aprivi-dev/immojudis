@@ -37,15 +37,13 @@ const status = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => 
   unlocked: false,
   unlockable: true,
   analysisAccess: false,
-  limit: 3,
-  used: 1,
-  remaining: 2,
-  periodStart: "2026-09-30T22:00:00.000Z",
-  resetsAt: "2026-10-31T23:00:00.000Z",
+  limit: 1,
+  used: 0,
+  remaining: 1,
   ...overrides,
 });
 const result: SaleUnlockResult = {
-  ...status({ unlocked: true, used: 2, remaining: 1 }),
+  ...status({ unlocked: true, used: 1, remaining: 0 }),
   alreadyUnlocked: false,
   consumed: true,
 };
@@ -59,19 +57,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SaleUnlockPanel", () => {
-  it("offers the unlock with the number left and the items it opens, nothing else", () => {
+  it("offers the single unlock of the free account and the items it opens, nothing else", () => {
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
 
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
-    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
+    expect(
+      screen.getByText("Votre compte gratuit comprend le déblocage d’une vente : choisissez-la."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Déblocage du compte gratuit/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeTruthy();
     // Without a regime of its own (default), both terms of the open regimes are named.
     expect(
       screen.getByText(/l’enchère plafond ou l’offre plafond, la lecture des pièces/),
     ).toBeTruthy();
-    // No countdown, no scarcity: only the figure and the reset date (given at confirmation).
-    expect(document.body.textContent).not.toMatch(/dernière chance|plus que|vite|expire/i);
+    // No countdown, no scarcity, no month: the free account comprises one unlock, and says so.
+    expect(document.body.textContent).not.toMatch(
+      /dernière chance|plus que|vite|expire|ce mois|par mois|chaque mois/i,
+    );
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
@@ -115,7 +121,9 @@ describe("SaleUnlockPanel", () => {
     );
     // Only at the confirmation step, not before.
     expect(screen.queryByText(estimated)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     expect(screen.getByText(estimated)).toBeTruthy();
     unmount();
 
@@ -128,7 +136,9 @@ describe("SaleUnlockPanel", () => {
         onUnlocked={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     expect(screen.getByRole("group", { name: "Confirmer le déblocage" })).toBeTruthy();
     expect(screen.queryByText(estimated)).toBeNull();
   });
@@ -138,11 +148,13 @@ describe("SaleUnlockPanel", () => {
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
 
     expect(
       screen.getByText(
-        "Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre.",
+        "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
       ),
     ).toBeTruthy();
     expect(mocks.unlock).not.toHaveBeenCalled();
@@ -165,7 +177,9 @@ describe("SaleUnlockPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     await waitFor(() => expect(onUnlocked).toHaveBeenCalledWith(result));
@@ -184,7 +198,9 @@ describe("SaleUnlockPanel", () => {
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
     const pending = screen.getByRole("button", { name: "Déblocage en cours…" });
     expect((pending as HTMLButtonElement).disabled).toBe(true);
@@ -201,48 +217,60 @@ describe("SaleUnlockPanel", () => {
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     expect((await screen.findByRole("alert")).textContent).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeTruthy();
   });
 
   it("switches to the exhausted message when the quota was spent elsewhere in the meantime", async () => {
     mocks.unlock.mockRejectedValue(
-      new mocks.SaleUnlockQuotaReachedError(status({ used: 3, remaining: 0 })),
+      new mocks.SaleUnlockQuotaReachedError(status({ used: 1, remaining: 0 })),
     );
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
+      await screen.findByRole("heading", {
+        name: "Votre compte gratuit a déjà débloqué une vente",
+      }),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     // Announced by the live region that stays mounted across the states, without naming the
     // subscription (its availability is not read there).
     expect(screen.getByRole("status").textContent).toBe(
-      "Vos 3 ventes d’octobre sont débloquées. Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
+      "Votre compte gratuit a déjà débloqué une vente. Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.",
     );
   });
 
   it("forgets a refusal when the account status is read again", async () => {
     mocks.unlock.mockRejectedValue(
-      new mocks.SaleUnlockQuotaReachedError(status({ used: 3, remaining: 0 })),
+      new mocks.SaleUnlockQuotaReachedError(status({ used: 1, remaining: 0 })),
     );
     const first = status();
     const { rerender } = render(
       <SaleUnlockPanel saleId={saleId} status={first} unlocked={false} onUnlocked={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
-    await screen.findByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" });
+    await screen.findByRole("heading", { name: "Votre compte gratuit a déjà débloqué une vente" });
 
-    // The status is read again (a new month, a refund): the panel follows it.
+    // The status is read again (the unlock was given back): the panel follows it.
     rerender(
       <SaleUnlockPanel
         saleId={saleId}
@@ -259,18 +287,18 @@ describe("SaleUnlockPanel", () => {
     const { container } = render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ used: 3, remaining: 0 })}
+        status={status({ used: 1, remaining: 0 })}
         unlocked={false}
         onUnlocked={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
+      screen.getByRole("heading", { name: "Votre compte gratuit a déjà débloqué une vente" }),
     ).toBeTruthy();
     const text = container.textContent ?? "";
     expect(text).toContain(
-      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
+      "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes.",
     );
     expect(text).toContain(
       "L’offre Analyse est un abonnement à 59\u00a0€\u00a0TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment.",
@@ -279,7 +307,9 @@ describe("SaleUnlockPanel", () => {
       "/offres",
     );
     expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
   });
 
   it("never suggests subscribing while the subscription is closed", async () => {
@@ -287,15 +317,17 @@ describe("SaleUnlockPanel", () => {
     const { container } = render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ used: 3, remaining: 0 })}
+        status={status({ used: 1, remaining: 0 })}
         unlocked={false}
         onUnlocked={vi.fn()}
       />,
     );
     const text = container.textContent ?? "";
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
-    expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable|dès maintenant/);
-    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
+    expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable|passez/);
+    expect(text).toContain(
+      "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.",
+    );
     // The primary action is the opening request (loaded on demand), not a link to a page that
     // cannot sell it yet.
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
@@ -307,53 +339,48 @@ describe("SaleUnlockPanel", () => {
     const { container } = render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ used: 3, remaining: 0 })}
+        status={status({ used: 1, remaining: 0 })}
         unlocked={false}
         onUnlocked={vi.fn()}
       />,
     );
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte|dès maintenant/);
-    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
+    expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte|passez/);
+    expect(text).toContain(
+      "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.",
+    );
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
   });
 
-  it("links an account without unlock left to the sales it already opened", () => {
+  it("links an account without unlock left to the sale it already opened", () => {
     for (const open of [true, false, null]) {
       mocks.checkoutOpen.mockReturnValue(open);
       const view = render(
         <SaleUnlockPanel
           saleId={saleId}
-          status={status({ used: 3, remaining: 0 })}
+          status={status({ used: 1, remaining: 0 })}
           unlocked={false}
           onUnlocked={vi.fn()}
         />,
       );
       expect(
-        screen.getByRole("link", { name: "Voir mes ventes débloquées" }).getAttribute("href"),
+        screen.getByRole("link", { name: "Voir la vente débloquée" }).getAttribute("href"),
       ).toBe("/compte/ventes-debloquees");
       view.unmount();
     }
   });
 
-  it("names the month with its elision and follows the limit of the account", () => {
+  it("names no month and no reset date once the unlock is spent", () => {
+    mocks.checkoutOpen.mockReturnValue(false);
     render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({
-          used: 3,
-          remaining: 0,
-          periodStart: "2026-10-31T23:00:00.000Z",
-          resetsAt: "2026-11-30T23:00:00.000Z",
-        })}
+        status={status({ used: 1, remaining: 0 })}
         unlocked={false}
         onUnlocked={vi.fn()}
       />,
     );
-    expect(
-      screen.getByRole("heading", { name: "Vos 3 ventes de novembre sont débloquées" }),
-    ).toBeTruthy();
-    expect(document.body.textContent).toContain("le 1er décembre avec le compte gratuit");
+    expect(document.body.textContent).not.toMatch(/mois|1er|remis|reviennent|pourrez la débloquer/);
   });
 
   it("gives each of its three cards the « debloquer » anchor the previews link to", () => {
@@ -365,7 +392,7 @@ describe("SaleUnlockPanel", () => {
     rerender(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ used: 3, remaining: 0 })}
+        status={status({ used: 1, remaining: 0 })}
         unlocked={false}
         onUnlocked={vi.fn()}
       />,
@@ -375,7 +402,7 @@ describe("SaleUnlockPanel", () => {
     rerender(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        status={status({ unlocked: true, used: 1, remaining: 0 })}
         unlocked
         onUnlocked={vi.fn()}
       />,
@@ -404,7 +431,7 @@ describe("SaleUnlockPanel", () => {
     render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ unlocked: true, unlockable: true, used: 2, remaining: 1 })}
+        status={status({ unlocked: true, unlockable: true, used: 1, remaining: 0 })}
         unlocked
         opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
@@ -425,7 +452,9 @@ describe("SaleUnlockPanel", () => {
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
 
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Confirmer le déblocage" }),
@@ -444,7 +473,9 @@ describe("SaleUnlockPanel", () => {
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Déblocage en cours…"));
   });
@@ -453,7 +484,7 @@ describe("SaleUnlockPanel", () => {
     render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        status={status({ unlocked: true, used: 1, remaining: 0 })}
         unlocked
         announce
         opens={{ ceiling: "l’enchère plafond", ceilingTerm: "enchère plafond", statistics: false }}
@@ -469,7 +500,7 @@ describe("SaleUnlockPanel", () => {
     render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        status={status({ unlocked: true, used: 1, remaining: 0 })}
         unlocked
         opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
@@ -490,7 +521,8 @@ describe("SaleUnlockPanel", () => {
         "Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un conseil financier.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
+    // No count left once the sale is unlocked: the free account comprises this one.
+    expect(document.body.textContent).not.toMatch(/Il vous reste|ce mois-ci/);
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -498,7 +530,7 @@ describe("SaleUnlockPanel", () => {
     const { container } = render(
       <SaleUnlockPanel
         saleId={saleId}
-        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        status={status({ unlocked: true, used: 1, remaining: 0 })}
         unlocked
         opens={{ ceiling: "l’enchère plafond", ceilingTerm: "enchère plafond", statistics: false }}
         onUnlocked={vi.fn()}
@@ -526,12 +558,12 @@ describe("SaleUnlockPanel", () => {
     expect(reserved.textContent).toContain(
       "Ce déblocage ouvre l’enchère plafond, la lecture des pièces",
     );
-    expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Il vous reste|ce mois-ci/);
     expect(container.textContent).not.toContain("Cette vente est débloquée");
   });
 
   it("names the ready ceiling with the term of the regime, or « plafond » when both apply", () => {
-    const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const unlockedStatus = status({ unlocked: true, used: 1, remaining: 0 });
     const online = render(
       <SaleUnlockPanel
         saleId={saleId}
@@ -561,7 +593,7 @@ describe("SaleUnlockPanel", () => {
   });
 
   it("links an unlocked sale to its bid ceiling with the term of its regime, and never promises one elsewhere", () => {
-    const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const unlockedStatus = status({ unlocked: true, used: 1, remaining: 0 });
     const tribunal = {
       ceiling: "l’enchère plafond",
       ceilingTerm: "enchère plafond",
@@ -664,7 +696,9 @@ describe("SaleUnlockPanel", () => {
         />,
       );
       expect(screen.queryByTestId("unlock-ceiling-gap")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+      );
       const group = screen.getByRole("group", { name: "Confirmer le déblocage" });
       const warning = screen.getByTestId("unlock-ceiling-gap");
       expect(group.contains(warning)).toBe(true);
@@ -697,7 +731,9 @@ describe("SaleUnlockPanel", () => {
           onUnlocked={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+      );
       expect(screen.getByTestId("unlock-ceiling-gap").textContent).toBe(
         "Le plafond restera à compléter : données de l’annonce contradictoires.",
       );
@@ -712,7 +748,9 @@ describe("SaleUnlockPanel", () => {
           onUnlocked={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+      );
       expect(screen.queryByTestId("unlock-ceiling-gap")).toBeNull();
     });
 
@@ -720,7 +758,7 @@ describe("SaleUnlockPanel", () => {
       render(
         <SaleUnlockPanel
           saleId={saleId}
-          status={status({ unlocked: true, used: 2, remaining: 1 })}
+          status={status({ unlocked: true, used: 1, remaining: 0 })}
           unlocked
           opens={opens}
           onUnlocked={vi.fn()}
@@ -743,7 +781,7 @@ describe("SaleUnlockPanel", () => {
       render(
         <SaleUnlockPanel
           saleId={saleId}
-          status={status({ unlocked: true, used: 2, remaining: 1 })}
+          status={status({ unlocked: true, used: 1, remaining: 0 })}
           unlocked
           opens={{
             ...opens,

@@ -432,11 +432,9 @@ describe("repère « Pépite » de la fiche", () => {
               unlocked: false,
               unlockable: true,
               analysisAccess: false,
-              limit: 3,
+              limit: 1,
               used: 0,
-              remaining: 3,
-              periodStart: "2026-11-01T00:00:00.000Z",
-              resetsAt: "2026-12-01T00:00:00.000Z",
+              remaining: 1,
             } satisfies SaleUnlockStatus
           }
         />
@@ -1438,17 +1436,15 @@ describe("integrated listing", () => {
   });
 });
 
-describe("« 3 déblocages par mois » on the sale page", () => {
+describe("the free unlock on the sale page", () => {
   const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
     saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     unlocked: false,
     unlockable: true,
     analysisAccess: false,
-    limit: 3,
-    used: 1,
-    remaining: 2,
-    periodStart: "2026-09-30T22:00:00.000Z",
-    resetsAt: "2026-10-31T23:00:00.000Z",
+    limit: 1,
+    used: 0,
+    remaining: 1,
     ...overrides,
   });
 
@@ -1493,22 +1489,28 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     );
   }
 
-  it("offers the unlock, with the number left, on a locked sale of a Découverte account", () => {
+  it("offers the single unlock of the free account on a locked sale of a Découverte account", () => {
     renderFree(unlockStatus());
 
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
-    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+    expect(
+      screen.getByText("Votre compte gratuit comprend le déblocage d’une vente : choisissez-la."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeTruthy();
   });
 
   it("opens the calculation tab once the unlock succeeded, and keeps the confirmation", async () => {
     const saleId = EXAMPLE_SALE_RECORDS.bordeaux.sale.id;
-    mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 2, remaining: 1 }));
+    mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 1, remaining: 0 }));
     window.history.replaceState(null, "", "/");
     renderFree(unlockStatus());
     expect(sectionCurrent("Aperçu")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     await waitFor(() => expect(sectionCurrent("Prix et plafond")).toBe("true"));
@@ -1557,7 +1559,9 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
   it("shows nothing about unlocking before the status is known, or to a visitor", () => {
     const pending = renderFree(null);
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     pending.unmount();
 
     mocks.authUser = null;
@@ -1571,13 +1575,17 @@ describe("« 3 déblocages par mois » on the sale page", () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
   });
 
   it("does not offer the unlock to an Analyse account", () => {
     mocks.authUser = { id: "analysis-account" };
     renderDetail("analysis", undefined, false);
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     expect(screen.queryByText("Cette vente est débloquée")).toBeNull();
     expect(screen.queryByText("Votre enchère plafond est débloquée")).toBeNull();
   });
@@ -1587,8 +1595,9 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     // A court sale with an open fee regime: the result first.
     expect(screen.getByText("Votre enchère plafond est débloquée")).toBeTruthy();
-    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),
+    ).toBeNull();
     expect(mocks.fetchMarket).toHaveBeenCalledWith({
       saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     });

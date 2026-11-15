@@ -98,11 +98,9 @@ describe("DocumentReadingSection", () => {
             unlocked: false,
             unlockable: true,
             analysisAccess: false,
-            limit: 3,
-            used: 3,
+            limit: 1,
+            used: 1,
             remaining: 0,
-            periodStart: "2026-09-30T22:00:00.000Z",
-            resetsAt: "2026-10-31T23:00:00.000Z",
           }}
         >
           <DocumentReadingSection saleId="sale-1" enabled />
@@ -110,7 +108,7 @@ describe("DocumentReadingSection", () => {
       </QueryClientProvider>,
     );
     const section = await loadedSection();
-    expect(section.textContent).toContain("Vos 3 déblocages d’octobre reviennent le 1er novembre.");
+    expect(section.textContent).toContain("Votre compte gratuit a déjà débloqué une vente.");
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
     );

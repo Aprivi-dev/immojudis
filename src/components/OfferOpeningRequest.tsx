@@ -33,7 +33,7 @@ const ANONYMOUS_HELP = `${OFFER_OPENING_CONSENT_TEXT} Un compte gratuit est néc
 /**
  * « Me prévenir de l'ouverture » : la demande explicite d'un email le jour où l'abonnement Analyse
  * ouvre. À monter seulement quand l'offre est fermée. Partagé par la page Offres (BillingActions)
- * et par les aperçus payants d'une vente quand les déblocages du mois sont épuisés.
+ * et par les aperçus payants d'une vente quand le déblocage du compte gratuit est utilisé.
  *
  * Une fois la demande enregistrée, trois questions facultatives et une case « entretien d'environ
  * 45 minutes » (non cochée, proposée seulement si l'identité de l'éditeur est renseignée) sont

@@ -51,7 +51,7 @@ describe("textes de l'essai gratuit à l'inscription", () => {
       "7 jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.",
     );
     // « Toutes les ventes ouvertes » n'est vrai que si l'offre Analyse n'a pas de quota de déblocages.
-    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
+    expect(PLAN_LIMITS.analyse.saleUnlocks).toBeNull();
   });
 
   it("ne promettent ni retrait « à tout moment » sans condition, ni prix sans le dire payant", () => {
@@ -107,7 +107,7 @@ describe("ligne d'accès commune (FREE_ACCESS_LINE)", () => {
   it("bascule sur les textes de l'offre quand elle est active", () => {
     expect(freeAccessLine({ launchOffer: true })).toBe(LAUNCH_OFFER_VISITOR_TEXT);
     expect(freeAccessLine({ launchOffer: true, signedIn: true })).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
-    expect(freeAccessLine({ launchOffer: true })).not.toContain("déblocages par mois");
+    expect(freeAccessLine({ launchOffer: true })).not.toContain("une vente à débloquer");
   });
 });
 

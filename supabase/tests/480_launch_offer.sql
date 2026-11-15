@@ -50,8 +50,8 @@ select has_table('app_private', 'launch_offer', 'the launch offer has its own ta
 select is((select count(*) from app_private.launch_offer), 1::bigint, 'the table holds a single row');
 select is(
   (select active from app_private.launch_offer where singleton),
-  true,
-  'the offer is active once the migration is applied'
+  false,
+  'the offer is cut once 20261120100000 is applied (the trial was stopped for everyone)'
 );
 select throws_ok(
   $$insert into app_private.launch_offer (singleton, active) values (false, true)$$,
@@ -107,6 +107,8 @@ select is(
 );
 
 -- Offer active: the database answers for the account -------------------------------------------
+-- Cut since 20261120100000: the test switches it on to check the mechanism (undone by the rollback).
+update app_private.launch_offer set active = true where singleton;
 select is(app_private.launch_offer_active(), true, 'the offer reads as active');
 select is(
   app_private.has_active_analysis_access('c4800000-0000-4000-8000-000000000001'),

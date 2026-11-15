@@ -142,7 +142,7 @@ describe("PepiteBlock", () => {
         <PepiteBlock
           payload={locked}
           saleId={saleId}
-          lockedAction={<a href="#debloquer">Débloquer cette vente (il vous reste 3 sur 3)</a>}
+          lockedAction={<a href="#debloquer">Débloquer cette vente avec mon compte gratuit</a>}
         />,
       );
       expect(screen.getByText("Montant et détail : débloquez cette vente")).toBeTruthy();

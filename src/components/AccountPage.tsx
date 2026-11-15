@@ -35,7 +35,7 @@ export function AccountPage() {
   const { user } = useAuth();
   const planQuery = useAccessPlanQuery(user?.id);
   const plan = planQuery.data?.plan;
-  // « 3 déblocages par mois » : seul un compte qui n'a pas déjà toutes les ventes les consomme.
+  // Le déblocage du compte gratuit : seul un compte qui n'a pas déjà toutes les ventes le consomme.
   const unlocksQuery = useQuery({
     queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
     queryFn: fetchSaleUnlocksOverview,
@@ -199,14 +199,14 @@ export function AccountPage() {
           <div className="mt-3 text-sm text-muted-foreground" data-testid="account-unlocks">
             {unlocksQuery.isError ? (
               <p role="alert" className="text-danger">
-                Le suivi de vos déblocages est indisponible pour le moment.
+                Le suivi de votre déblocage est indisponible pour le moment.
               </p>
             ) : unlockStatus ? (
               unlockStatus.analysisAccess ? null : (
                 <p>{unlockUsageLine(unlockStatus)}</p>
               )
             ) : (
-              <p>Chargement de vos déblocages…</p>
+              <p>Chargement de votre déblocage…</p>
             )}
           </div>
         ) : null}

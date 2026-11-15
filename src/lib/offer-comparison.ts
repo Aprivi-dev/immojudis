@@ -21,8 +21,8 @@ export type OfferCell = {
   included: boolean;
   text: string;
   /**
-   * Droit fermé dans l'offre mais ouvert vente par vente par les déblocages mensuels : jamais
-   * présenté comme « Non inclus ».
+   * Droit fermé dans l'offre mais ouvert pour la vente choisie par le déblocage du compte gratuit :
+   * jamais présenté comme « Non inclus ».
    */
   limited?: boolean;
 };
@@ -44,16 +44,18 @@ type RowSpec = {
   custom?: Partial<Record<PlanCode, string>>;
   /**
    * Texte propre à un plan dont les droits sont fermés. Par défaut, une ligne dont tous les droits
-   * sont ouverts par un déblocage affiche « Pour N ventes par mois » au lieu de « Non inclus ».
+   * sont ouverts par un déblocage affiche « 1 vente débloquée » au lieu de « Non inclus ».
    */
   lockedCustom?: Partial<Record<PlanCode, string>>;
   includedText?: string;
   limitedText?: string;
 };
 
-const UNLOCKS_PER_MONTH = PLAN_LIMITS.decouverte.monthlyUnlocks;
+const FREE_UNLOCKS = PLAN_LIMITS.decouverte.saleUnlocks ?? 0;
 const REFERRAL_NOT_OPEN_TEXT = "Pas encore disponible";
-const UNLOCK_CELL_TEXT = `${UNLOCKS_PER_MONTH} déblocages par mois`;
+/** « 1 vente débloquée » : le nombre vient de `PLAN_LIMITS`, l'accord le suit. */
+const UNLOCK_CELL_TEXT =
+  FREE_UNLOCKS > 1 ? `${FREE_UNLOCKS} ventes débloquées` : `${FREE_UNLOCKS} vente débloquée`;
 /**
  * Les lignes du comparatif. Le montant plafond, son nom (« enchère plafond », « offre plafond ») et
  * les ventes qui en ont un dépendent des régimes de frais ouverts (`open`, lus côté serveur dans
@@ -74,9 +76,9 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",
       features: ["sales.filters"],
       custom: {
-        decouverte: `${UNLOCKS_PER_MONTH} déblocages par mois`,
+        decouverte: UNLOCK_CELL_TEXT,
         analyse:
-          PLAN_LIMITS.analyse.monthlyUnlocks == null
+          PLAN_LIMITS.analyse.saleUnlocks == null
             ? "Illimités : toutes les ventes sont ouvertes"
             : undefined,
       },

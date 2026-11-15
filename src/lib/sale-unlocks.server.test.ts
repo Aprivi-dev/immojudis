@@ -14,11 +14,9 @@ const rpcStatus = {
   sale_id: saleId,
   unlocked: true,
   analysis_access: false,
-  limit: 3,
-  used: 3,
+  limit: 1,
+  used: 1,
   remaining: 0,
-  period_start: "2026-09-30T22:00:00+00:00",
-  period_end: "2026-10-31T23:00:00+00:00",
 };
 
 function authWith(rpc: ReturnType<typeof vi.fn>) {
@@ -30,7 +28,7 @@ describe("sale unlock server helpers", () => {
     const rpc = vi.fn().mockResolvedValue({ data: rpcStatus, error: null });
     const status = await getSaleUnlockStatus(authWith(rpc), saleId);
     expect(rpc).toHaveBeenCalledWith("get_sale_unlock_status", { p_sale_id: saleId });
-    expect(status).toMatchObject({ unlocked: true, remaining: 0, limit: 3 });
+    expect(status).toMatchObject({ unlocked: true, remaining: 0, limit: 1 });
   });
 
   it.each(["PGRST202", "42883"])(
@@ -88,7 +86,7 @@ describe("sale unlock server helpers", () => {
     );
     const failure = await unlockSale(authWith(rpc), saleId).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(SaleUnlockQuotaError);
-    expect((failure as SaleUnlockQuotaError).status).toMatchObject({ remaining: 0, limit: 3 });
+    expect((failure as SaleUnlockQuotaError).status).toMatchObject({ remaining: 0, limit: 1 });
   });
 
   it("answers 404 for a sale that is missing or no longer online", async () => {

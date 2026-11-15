@@ -51,20 +51,20 @@ describe("/offres : rendu serveur", () => {
   it("essai ouvert : la FAQ répond oui et le bandeau de l'essai est dans le HTML", () => {
     const { markup, text } = render({ trialOpen: true, subscriptionOpen: false });
     expect(text).toContain("Oui. Une fois votre adresse email confirmée");
-    expect(text).not.toContain("Pas pour le moment");
+    expect(text).not.toContain("Non. Le catalogue reste accessible");
     expect(markup).toContain('data-testid="launch-offer-banner"');
     expect(markup).not.toContain("launch-offer-banner-placeholder");
   });
 
-  it("essai fermé, lu : la FAQ dit qu'il n'y en a pas pour le moment, sans bandeau", () => {
+  it("essai fermé, lu : la FAQ dit qu'il n'y en a pas, sans bandeau", () => {
     const { markup, text } = render({ trialOpen: false, subscriptionOpen: false });
-    expect(text).toContain("Pas pour le moment");
+    expect(text).toContain("Non. Le catalogue reste accessible gratuitement");
     expect(markup).not.toContain("launch-offer-banner");
   });
 
-  it("état de l'essai non lu : jamais « Pas pour le moment », une réponse vraie dans les deux états", () => {
+  it("état de l'essai non lu : jamais « Non », une réponse vraie dans les deux états", () => {
     const { markup, text } = render({ trialOpen: undefined, subscriptionOpen: false });
-    expect(text).not.toContain("Pas pour le moment");
+    expect(text).not.toContain("Non. Le catalogue reste accessible");
     expect(text).toContain(
       "Un essai gratuit de 7 jours, sans carte bancaire, est proposé à l’inscription tant que l’essai est ouvert",
     );

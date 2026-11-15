@@ -1,38 +1,36 @@
 import { ceilingTermText, ceilingTermWithScopeText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { launchOfferText } from "@/lib/launch-offer";
-import { parisDayMonthLabel, parisMonthName } from "@/lib/paris-month";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 /**
- * « 3 déblocages par mois » (offre Découverte). Types et textes partagés par la route API, la base
- * de données (RPC `unlock_sale` / `get_sale_unlock_status`) et la fiche d'une vente. Module pur,
- * sans import serveur. Le nombre de déblocages vient de `PLAN_LIMITS.decouverte.monthlyUnlocks`.
+ * Le déblocage du compte gratuit (offre Découverte) : une vente en tout, sans remise à zéro. Types
+ * et textes partagés par la route API, la base de données (RPC `unlock_sale` /
+ * `get_sale_unlock_status`) et la fiche d'une vente. Module pur, sans import serveur. Le nombre de
+ * déblocages vient de `PLAN_LIMITS.decouverte.saleUnlocks`.
+ *
+ * Les textes visibles écrivent « une vente » en toutes lettres : `sale-unlocks.test.ts` vérifie que
+ * `FREE_SALE_UNLOCKS` vaut 1. Changer ce nombre impose de réécrire ces textes.
  */
 
-export const MONTHLY_SALE_UNLOCKS = PLAN_LIMITS.decouverte.monthlyUnlocks;
+export const FREE_SALE_UNLOCKS = PLAN_LIMITS.decouverte.saleUnlocks;
+
+/** Ce que le compte gratuit permet de débloquer, en quelques mots. */
+export const FREE_UNLOCK_TEXT = "une vente à débloquer";
+
+/** La même chose en tête d'une liste (« Une vente à débloquer : … »). */
+export const FREE_UNLOCK_LABEL = `${FREE_UNLOCK_TEXT.charAt(0).toUpperCase()}${FREE_UNLOCK_TEXT.slice(1)}`;
 
 /**
- * La formule unique des textes visibles : « 3 déblocages par mois » (jamais « fiches détaillées »,
- * « ventes en détail » ni « ventes débloquées par mois »). Les conditions générales et la politique de
- * confidentialité, dont le texte est ancré par empreinte, gardent « déblocages mensuels ».
+ * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Les offres
+ * expliquent ce que le déblocage ouvre.
  */
-/** Le libellé seul, pour un chiffre affiché à part (« 3 » puis « déblocages par mois »). */
-const MONTHLY_UNLOCKS_LABEL = "déblocages par mois";
-
-export const MONTHLY_UNLOCKS_TEXT = `${MONTHLY_SALE_UNLOCKS} ${MONTHLY_UNLOCKS_LABEL}`;
-
-/**
- * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Un
- * déblocage ouvre le détail d'une vente : le nombre vient de `MONTHLY_SALE_UNLOCKS`, jamais
- * écrit en dur. Les offres expliquent ce que chaque déblocage ouvre.
- */
-export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${MONTHLY_UNLOCKS_TEXT}`;
+export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${FREE_UNLOCK_TEXT}`;
 
 /**
  * `FREE_ACCESS_LINE`, ou la mention de l'offre de lancement quand elle est active : un compte
  * gratuit a alors les avantages de l'offre Analyse, et la ligne qui présente le compte gratuit ne
- * promet plus « 3 déblocages par mois ». Texte pour un compte connecté ou pour un visiteur
+ * promet plus le seul déblocage d'une vente. Texte pour un compte connecté ou pour un visiteur
  * (`src/lib/launch-offer.ts`). Les appels à l'inscription et l'accueil passent par ici.
  */
 export function freeAccessLine({
@@ -54,14 +52,10 @@ export type SaleUnlockStatus = {
   unlockable: boolean;
   /** Le compte a déjà accès à toutes les ventes (Analyse, administrateur) : rien à débloquer. */
   analysisAccess: boolean;
-  /** Déblocages par mois ; `null` quand le compte n'a pas à débloquer. */
+  /** Déblocages compris dans le compte ; `null` quand le compte n'a pas à débloquer. */
   limit: number | null;
   used: number;
   remaining: number | null;
-  /** Début du mois civil (heure de Paris), en ISO UTC. */
-  periodStart: string;
-  /** Remise à zéro du compteur : le 1er du mois suivant à 00 h 00, heure de Paris (ISO UTC). */
-  resetsAt: string;
 };
 
 export type SaleUnlockResult = SaleUnlockStatus & {
@@ -83,13 +77,13 @@ export type UnlockedSaleSummary = {
   status: string | null;
 };
 
-/** Réponse de `GET /api/sale-unlocks` : le compteur du mois et les ventes débloquées en ligne. */
+/** Réponse de `GET /api/sale-unlocks` : le déblocage du compte et les ventes débloquées en ligne. */
 export type SaleUnlocksOverview = {
   status: SaleUnlockStatus;
   sales: UnlockedSaleSummary[];
 };
 
-/** Réponse de `POST /api/sales/[id]/unlock` quand le quota du mois est atteint. */
+/** Réponse de `POST /api/sales/[id]/unlock` quand le déblocage du compte est déjà utilisé. */
 export type SaleUnlockQuotaReachedResponse = {
   error: string;
   code: "unlock_quota_reached";
@@ -153,78 +147,35 @@ export const UNLOCK_HIGHLIGHTS_TEXT =
 export const UNLOCK_HIGHLIGHTS_INLINE_TEXT =
   "enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente";
 
-function unlockCountLabel(count: number): string {
-  return `${count} déblocage${count > 1 ? "s" : ""}`;
-}
-
-/** « Il vous reste 2 déblocages sur 3 ce mois-ci. » */
-export function remainingUnlocksLine(status: Pick<SaleUnlockStatus, "remaining" | "limit">) {
-  if (status.remaining == null || status.limit == null) return null;
-  return `Il vous reste ${unlockCountLabel(status.remaining)} sur ${status.limit} ce mois-ci.`;
-}
-
 /** « Cette vente ne peut pas être débloquée pour le moment. » */
 export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloquée pour le moment.";
 
-/** « Débloquer cette vente (il vous reste 2 sur 3) » : le lien principal des aperçus payants. */
-export function unlockCallToActionLabel(status: Pick<SaleUnlockStatus, "remaining" | "limit">) {
-  const limit = status.limit ?? MONTHLY_SALE_UNLOCKS;
-  return `Débloquer cette vente (il vous reste ${status.remaining ?? 0} sur ${limit})`;
-}
+/** Le bouton de la fiche et le lien principal des aperçus payants. */
+export const UNLOCK_CALL_TO_ACTION_LABEL = "Débloquer cette vente avec mon compte gratuit";
 
-/** « Vos 3 déblocages d’octobre reviennent le 1er novembre. » */
-export function unlockQuotaResetLine(
-  status: Pick<SaleUnlockStatus, "limit" | "periodStart" | "resetsAt">,
-) {
-  const month = parisMonthName(status.periodStart);
-  const ofMonth = /^[aeiouyàâéèêîôû]/i.test(month) ? `d’${month}` : `de ${month}`;
-  return `Vos ${status.limit ?? MONTHLY_SALE_UNLOCKS} déblocages ${ofMonth} reviennent le ${parisDayMonthLabel(status.resetsAt)}.`;
-}
+/** Sous le bouton, avant la confirmation. */
+export const UNLOCK_CHOICE_TEXT =
+  "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.";
 
-/** « Déblocages ce mois-ci : 2 sur 3 utilisés. Remis à 3 le 1er novembre. » (page Mon compte) */
-export function unlockUsageLine(
-  status: Pick<SaleUnlockStatus, "limit" | "used" | "resetsAt">,
-): string {
-  const limit = status.limit ?? MONTHLY_SALE_UNLOCKS;
-  const used = limit == null ? status.used : Math.min(status.used, limit);
-  return `Déblocages ce mois-ci : ${used} sur ${limit} utilisés. Remis à ${limit} le ${parisDayMonthLabel(status.resetsAt)}.`;
-}
+/** Dit avant le clic que le déblocage est définitif, et quand il est rendu. */
+export const UNLOCK_CONFIRMATION_TEXT =
+  "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
 
-/** « Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre. » */
-export function unlockConfirmationText(status: Pick<SaleUnlockStatus, "limit" | "resetsAt">) {
-  return `Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à ${status.limit ?? MONTHLY_SALE_UNLOCKS} le ${parisDayMonthLabel(status.resetsAt)}.`;
-}
-
-/** « Vos 3 ventes d’octobre sont débloquées » : le titre de la fiche quand le mois est épuisé. */
-export function unlockQuotaReachedTitle(
-  status: Pick<SaleUnlockStatus, "limit" | "periodStart"> & { used?: number },
-) {
-  const month = parisMonthName(status.periodStart);
-  const ofMonth = /^[aeiouyàâéèêîôû]/i.test(month) ? `d’${month}` : `de ${month}`;
-  // Le nombre réellement débloqué ; la limite seulement s'il n'est pas connu (limite changée en cours
-  // de mois : le titre ne doit pas affirmer plus de ventes qu'il n'y en a eu).
-  const limit =
-    status.used && status.used > 0 ? status.used : (status.limit ?? MONTHLY_SALE_UNLOCKS);
-  return limit === 1
-    ? `Votre vente ${ofMonth} est débloquée`
-    : `Vos ${limit} ventes ${ofMonth} sont débloquées`;
-}
+/** Le titre de la fiche quand le déblocage du compte a servi pour une autre vente. */
+export const UNLOCK_QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
 
 /**
- * Comment ouvrir la vente affichée quand le mois est épuisé. `analysisOpen` : la souscription à
- * l'offre Analyse est réellement ouverte (`useAnalysisCheckoutOpen() === true`) ; sinon seul le
- * compte gratuit est cité.
- * - « Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec
- *   l’offre Analyse, qui ouvre toutes les ventes. »
- * - « Vous pourrez la débloquer le 1er novembre avec le compte gratuit. »
- * Rien ne s'ouvre seul : la vente se débloque de nouveau, à la main, quand le compteur est remis.
+ * Comment ouvrir la vente affichée quand le déblocage a servi ailleurs. `analysisOpen` : la
+ * souscription à l'offre Analyse est réellement ouverte (`useAnalysisCheckoutOpen() === true`) ;
+ * sinon la phrase constate sans promettre une souscription fermée.
  */
-export function unlockQuotaReachedText(
-  status: Pick<SaleUnlockStatus, "resetsAt">,
-  { analysisOpen = false }: { analysisOpen?: boolean } = {},
-) {
-  const reset = parisDayMonthLabel(status.resetsAt);
+export function unlockQuotaReachedText({ analysisOpen = false }: { analysisOpen?: boolean } = {}) {
   return analysisOpen
-    ? `Vous pourrez la débloquer le ${reset} avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.`
-    : `Vous pourrez la débloquer le ${reset} avec le compte gratuit.`;
+    ? "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes."
+    : "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.";
+}
+
+/** « Déblocage du compte gratuit : utilisé » ou « disponible » (Mon compte, ventes débloquées). */
+export function unlockUsageLine(status: Pick<SaleUnlockStatus, "remaining">): string {
+  return `Déblocage du compte gratuit : ${(status.remaining ?? 0) > 0 ? "disponible" : "utilisé"}`;
 }
