@@ -305,11 +305,14 @@ function CompactFact({ label, value }: { label: string; value: string }) {
 }
 
 function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentation }) {
-  const sourceLinks = procedure.sources.flatMap((source, index) => {
+  // A case document of a sale that was not unlocked comes without its url (the documents are opened by
+  // an unlock or the Analyse offer): it is listed by its label, without a link.
+  const listedSources = procedure.sources.flatMap((source, index) => {
     const href = safeExternalHttpUrl(source.url);
-    return href
+    return href || source.kind === "document"
       ? [
           {
+            key: href ?? `document-${index}`,
             href,
             label: source.label ?? source.source_name ?? `Source ${index + 1}`,
             sourceName: source.source_name ?? null,
@@ -323,7 +326,10 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-brand-navy">
         <span className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-gold-text" aria-hidden />
-          Vérification Immojudis · {sourceLinks.length} source{sourceLinks.length > 1 ? "s" : ""}
+          Vérification Immojudis
+          {listedSources.length
+            ? ` · ${listedSources.length} source${listedSources.length > 1 ? "s" : ""}`
+            : null}
         </span>
         <span className="text-xs font-normal text-brand-navy/75">
           {procedure.verifiedAt
@@ -332,35 +338,37 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
         </span>
       </summary>
       <div className="mt-4 grid gap-5 border-t border-brand-navy/10 pt-4 @2xl:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-            Sources contrôlées
-          </p>
-          {sourceLinks.length ? (
+        {/* Without the Analyse offer the listing source is not served: without any other source,
+            the column is left out rather than shown empty. */}
+        {listedSources.length ? (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
+              Sources contrôlées
+            </p>
             <ul className="mt-3 space-y-2">
-              {sourceLinks.map((source) => (
-                <li key={source.href}>
-                  <a
-                    href={source.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-start gap-2 text-sm font-semibold text-brand-navy underline decoration-gold/45 underline-offset-4 hover:text-gold-text"
-                  >
-                    <span>{source.label}</span>
-                    <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                  </a>
+              {listedSources.map((source) => (
+                <li key={source.key}>
+                  {source.href ? (
+                    <a
+                      href={source.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-2 text-sm font-semibold text-brand-navy underline decoration-gold/45 underline-offset-4 hover:text-gold-text"
+                    >
+                      <span>{source.label}</span>
+                      <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    </a>
+                  ) : (
+                    <span className="text-sm font-semibold text-brand-navy">{source.label}</span>
+                  )}
                   {source.sourceName && source.sourceName !== source.label ? (
                     <p className="mt-0.5 text-xs text-brand-navy/75">{source.sourceName}</p>
                   ) : null}
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="mt-2 text-sm text-brand-navy/75">
-              Les justificatifs de cette qualification sont en cours de rattachement.
-            </p>
-          )}
-        </div>
+          </div>
+        ) : null}
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
             Points encore ouverts
