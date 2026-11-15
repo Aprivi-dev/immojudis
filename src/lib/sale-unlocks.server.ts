@@ -1,5 +1,4 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
@@ -175,9 +174,9 @@ export async function redeemSaleUnlockCredit(
   auth: SupabaseAuthContext,
   saleId: string,
 ): Promise<SaleUnlockResult> {
-  // Fonction de la migration 20261122100000, pas encore dans les types générés.
-  const client = auth.supabase as unknown as SupabaseClient;
-  const { data, error } = await client.rpc("redeem_sale_unlock_credit", { p_sale_id: saleId });
+  const { data, error } = await auth.supabase.rpc("redeem_sale_unlock_credit", {
+    p_sale_id: saleId,
+  });
   if (error) throw await unlockFailure(auth, saleId, error, "sale_unlock_no_credit");
   return parseSaleUnlockResult(data);
 }

@@ -1,10 +1,7 @@
 import { ceilingTermText, ceilingTermWithScopeText } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { launchOfferText } from "@/lib/launch-offer";
-import {
-  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
-  type SaleUnlockPurchaseRefusalCode,
-} from "@/lib/analysis-offer";
+import type { SaleUnlockPurchaseRefusalCode } from "@/lib/analysis-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 /**
@@ -230,14 +227,6 @@ export function unlockSourceLabel(source: SaleUnlockSource | null | undefined): 
  * montants viennent de l'offre lue (`label`, `amountCents`) et du libellé de l'abonnement.
  */
 
-/** L'achat à l'unité, tel que `GET /api/billing/offer` le décrit. */
-export type SaleUnlockPurchaseOffer = {
-  open: boolean;
-  /** Prix affiché, « 19 € ». */
-  label: string;
-  amountCents: number;
-};
-
 /** Ce que la fiche dit pour chaque refus (409) de `POST /api/billing/sale-unlock-checkout`. */
 export const SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS: Record<SaleUnlockPurchaseRefusalCode, string> = {
   analysis_access: "Votre compte a déjà accès à toutes les ventes : il n’y a rien à acheter.",
@@ -248,12 +237,6 @@ export const SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS: Record<SaleUnlockPurchaseRefus
   already_unlocked: "Cette vente est déjà débloquée pour votre compte : la fiche se recharge.",
   sale_not_unlockable: SALE_NOT_UNLOCKABLE_TEXT,
 };
-
-export function isSaleUnlockPurchaseRefusalCode(
-  value: unknown,
-): value is SaleUnlockPurchaseRefusalCode {
-  return (SALE_UNLOCK_PURCHASE_REFUSAL_CODES as readonly unknown[]).includes(value);
-}
 
 /** Le titre de la carte quand il reste un crédit (vente achetée qui n'a pas eu lieu). */
 export const UNLOCK_CREDIT_TITLE = "Vous avez un crédit de déblocage";
@@ -338,7 +321,8 @@ export function saleUnlockPurchaseChoiceTexts({
   subscriptionCents,
   firstMonthDeductionCents,
 }: {
-  unit: Pick<SaleUnlockPurchaseOffer, "label" | "amountCents">;
+  /** L'achat à l'unité lu dans l'offre : prix affiché (« 19 € ») et montant. */
+  unit: { label: string; amountCents: number };
   subscriptionLabel: string;
   subscriptionCents: number | null;
   firstMonthDeductionCents: number;

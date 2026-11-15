@@ -1,7 +1,6 @@
 import "server-only";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import type Stripe from "stripe";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
@@ -301,18 +300,16 @@ const SALE_UNLOCK_PURCHASE_COLUMNS =
 
 /** Achats des sessions payées, et achats déduits puis remboursés ou perdus (client de service). */
 async function readSaleUnlockPurchases(sessionIds: string[]): Promise<SaleUnlockPurchaseRow[]> {
-  // Table de la migration 20261122100000, pas encore dans les types générés.
-  const client = supabaseAdmin as unknown as SupabaseClient;
   const rows: SaleUnlockPurchaseRow[] = [];
   for (let index = 0; index < sessionIds.length; index += 100) {
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from("sale_unlock_purchases")
       .select(SALE_UNLOCK_PURCHASE_COLUMNS)
       .in("checkout_session_id", sessionIds.slice(index, index + 100));
     if (error) throw error;
     rows.push(...((data ?? []) as SaleUnlockPurchaseRow[]));
   }
-  const { data, error } = await client
+  const { data, error } = await supabaseAdmin
     .from("sale_unlock_purchases")
     .select(SALE_UNLOCK_PURCHASE_COLUMNS)
     .not("deducted_checkout_session_id", "is", null)

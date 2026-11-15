@@ -10,7 +10,6 @@ import { saleUnlockConsentSchema } from "@/lib/commercial-acceptance";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { SaleUnlockPurchaseRefusedError } from "@/lib/sale-unlock-purchase";
-import type { SaleUnlockCheckoutRefusal } from "@/lib/client-billing";
 
 const bodySchema = z.object({
   saleId: z.string().guid(),
@@ -47,8 +46,7 @@ export const POST = apiRoute(
     } catch (error) {
       if (!(error instanceof SaleUnlockPurchaseRefusedError)) throw error;
       // Le client lit `code` pour expliquer le refus : corps propre à ce 409.
-      const refusal: SaleUnlockCheckoutRefusal = { error: error.message, code: error.code };
-      return NextResponse.json(refusal, { status: 409 });
+      return NextResponse.json(error.refusal, { status: 409 });
     }
   },
 );

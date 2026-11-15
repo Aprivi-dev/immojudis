@@ -47,7 +47,8 @@ vi.mock("@/hooks/use-sale-unlock-purchase-offer", () => ({
   },
 }));
 
-vi.mock("@/components/sale-detail/sale-unlock-checkout-request", () => ({
+vi.mock("@/lib/client-billing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/client-billing")>()),
   startSaleUnlockCheckout: mocks.startCheckout,
 }));
 

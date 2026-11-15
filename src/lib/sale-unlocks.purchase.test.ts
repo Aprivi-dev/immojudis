@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { SALE_UNLOCK_PURCHASE_REFUSAL_CODES } from "@/lib/analysis-offer";
 import {
   formatEuroCents,
-  isSaleUnlockPurchaseRefusalCode,
   SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
   salePurchaseOfferLine,
   salePurchaseOffersNote,
@@ -98,8 +97,6 @@ describe("achat d'une vente à l'unité : textes", () => {
     expect(Object.keys(SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS).sort()).toEqual(
       [...SALE_UNLOCK_PURCHASE_REFUSAL_CODES].sort(),
     );
-    expect(isSaleUnlockPurchaseRefusalCode("credit_available")).toBe(true);
-    expect(isSaleUnlockPurchaseRefusalCode("unlock_quota_reached")).toBe(false);
   });
 
   it("dit les crédits disponibles et la source d'un déblocage quand elle est connue", () => {
