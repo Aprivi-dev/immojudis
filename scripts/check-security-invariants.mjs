@@ -945,7 +945,7 @@ if (!listingSourceSql) {
     "app_private.source_conflicts_without_listing_source(jsonb)",
     "app_private.source_presence_without_listing_source(jsonb)",
   ]) {
-    const escaped = fn.replace(/[.()]/g, "\\$&").replace(", ", ",\\s*");
+    const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(", ", ",\\s*");
     if (
       !new RegExp(
         `revoke\\s+all\\s+on\\s+function\\s+${escaped}\\s+from\\s+public,\\s*anon`,
