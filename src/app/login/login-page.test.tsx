@@ -42,6 +42,7 @@ import {
   LAUNCH_OFFER_SIGNUP_LINE,
   LAUNCH_OFFER_VISITOR_TEXT,
 } from "@/lib/launch-offer";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import { rememberedSaleForSignup, rememberSaleForSignup } from "@/lib/signup-return-sale";
 import { HOSTILE_LOCAL_LOOKING_PATHS, VALID_LOCAL_PATHS } from "@/test/open-redirect-cases";
 import { LoginPage } from "./login-page";
@@ -551,24 +552,59 @@ describe("login page", () => {
     expect(mocks.replace).toHaveBeenLastCalledWith("/login?redirect=%2Fsales");
   });
 
-  describe("`redirect` qui ressemble à un chemin du site mais mène ailleurs une fois normalisé", () => {
+  describe("de bout en bout : `loginPathWithRedirect`, puis lecture du `redirect` par /login", () => {
     const CONNECTED = { id: "user-1", app_metadata: {}, user_metadata: {} };
+    /** Adresses que /login doit ignorer : piégées, extérieures, ou /login elle-même. */
+    const DETOURED = [
+      ...HOSTILE_LOCAL_LOOKING_PATHS,
+      "https://exemple.test/sales",
+      "//exemple.test",
+      "/login?redirect=%2Fsales",
+      "https://exemple.test",
+    ];
 
-    it.each(HOSTILE_LOCAL_LOOKING_PATHS)(
-      "une personne déjà connectée va au catalogue, pas vers %j",
-      async (redirect) => {
+    /** La requête de l'adresse de connexion construite, telle que /login la lit. */
+    function searchOf(loginPath: string): typeof mocks.search {
+      const url = new URL(loginPath, "https://immojudis.test");
+      expect(url.pathname).toBe("/login");
+      return Object.fromEntries(url.searchParams) as typeof mocks.search;
+    }
+
+    function expectOnlyCatalogue() {
+      const targets = mocks.push.mock.calls.map(([target]) => String(target));
+      expect(targets.length).toBeGreaterThan(0);
+      for (const target of targets) {
+        expect(target).not.toMatch(/evil|exemple/);
+        expect(target).toBe("/sales");
+      }
+    }
+
+    it.each(DETOURED)(
+      "une personne déjà connectée finit sur le catalogue, pas vers %j",
+      async (address) => {
         mocks.user = CONNECTED;
-        mocks.search = { redirect };
+        mocks.search = searchOf(loginPathWithRedirect(address, { mode: "login" }));
         render(<LoginPage />);
         await waitFor(() => expect(mocks.push).toHaveBeenCalled());
-        expect(mocks.push).toHaveBeenLastCalledWith("/sales");
+        expectOnlyCatalogue();
       },
     );
 
-    it.each(HOSTILE_LOCAL_LOOKING_PATHS)(
-      "le lien de confirmation de l'inscription ne mène pas vers %j",
-      async (redirect) => {
-        mocks.search = { mode: "investor", redirect };
+    it("une fiche notée piégée (sessionStorage) mène aussi au catalogue", async () => {
+      rememberSaleForSignup("/.//evil.example");
+      mocks.user = CONNECTED;
+      render(<LoginPage />);
+      await waitFor(() => expect(mocks.push).toHaveBeenCalled());
+      expectOnlyCatalogue();
+    });
+
+    it.each(DETOURED)(
+      "garde le mode et le motif ; le lien de confirmation ne mène pas vers %j",
+      async (address) => {
+        const search = searchOf(loginPathWithRedirect(address, { reason: "export" }));
+        expect(search.mode).toBe("investor");
+        expect(search.reason).toBe("export");
+        mocks.search = search;
         mocks.signUp.mockResolvedValue({ error: null });
         render(<LoginPage />);
         fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
@@ -585,12 +621,12 @@ describe("login page", () => {
       },
     );
 
-    it.each(VALID_LOCAL_PATHS)("garde la page du site %j", async (redirect) => {
+    it.each(VALID_LOCAL_PATHS)("garde la page du site %j", async (address) => {
       mocks.user = CONNECTED;
-      mocks.search = { redirect };
+      mocks.search = searchOf(loginPathWithRedirect(address, { mode: "login" }));
       render(<LoginPage />);
       await waitFor(() => expect(mocks.push).toHaveBeenCalled());
-      expect(mocks.push).toHaveBeenLastCalledWith(redirect);
+      expect(mocks.push).toHaveBeenLastCalledWith(address);
     });
   });
 
