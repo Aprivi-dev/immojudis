@@ -72,9 +72,9 @@ import {
   ANALYSIS_RECURRING_PRICE_CENTS,
   SALE_UNLOCK_OFFER_CODE,
   SALE_UNLOCK_PRICE_CENTS,
-  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
   VAT_EXEMPTION_INVOICE_MENTION,
 } from "@/lib/analysis-offer";
+import { SALE_UNLOCK_PURCHASE_REFUSAL_CODES } from "@/lib/sale-unlock-checkout-contract";
 import { handleStripeWebhook } from "@/lib/billing";
 import { createSaleUnlockCheckoutSession } from "@/lib/billing-sale-unlock";
 import type { SaleUnlockConsent } from "@/lib/commercial-acceptance";

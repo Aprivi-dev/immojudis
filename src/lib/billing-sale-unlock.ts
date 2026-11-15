@@ -4,7 +4,6 @@ import type Stripe from "stripe";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
-  SALE_UNLOCK_CHECKOUT_RETURN_PARAM,
   SALE_UNLOCK_CURRENCY,
   SALE_UNLOCK_PRICE_CENTS,
   VAT_EXEMPTION_INVOICE_MENTION,
@@ -24,6 +23,7 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { saleDetailPath } from "@/lib/navigation";
+import { SALE_UNLOCK_CHECKOUT_RETURN_PARAM } from "@/lib/sale-unlock-checkout-contract";
 import {
   assertSaleUnlockCheckoutOpen,
   saleUnlockPriceId,

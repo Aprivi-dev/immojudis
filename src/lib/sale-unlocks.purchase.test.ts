@@ -1,17 +1,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SALE_UNLOCK_PURCHASE_REFUSAL_CODES } from "@/lib/analysis-offer";
+import { SALE_UNLOCK_PURCHASE_REFUSAL_CODES } from "@/lib/sale-unlock-checkout-contract";
+import { unlockCreditsLine, unlockSourceLabel } from "@/lib/sale-unlocks";
+import {
+  SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
+  saleUnlockPurchaseChoiceTexts,
+} from "@/lib/sale-unlock-purchase-texts";
 import {
   formatEuroCents,
-  SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
   salePurchaseOfferLine,
   salePurchaseOffersNote,
-  saleUnlockPurchaseChoiceTexts,
   subscriptionCheaperFrom,
-  unlockCreditsLine,
-  unlockSourceLabel,
-} from "@/lib/sale-unlocks";
+} from "@/lib/sale-unlock-offer-texts";
 
 const plain = (text: string | null) => text?.replace(/[\u00a0\u202f]/g, " ") ?? null;
 

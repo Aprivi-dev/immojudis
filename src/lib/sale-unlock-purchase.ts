@@ -3,11 +3,13 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   ANALYSIS_RECURRING_PRICE_CENTS,
-  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
-  type SaleUnlockPurchaseRefusalCode,
   UNIT_PURCHASE_DEDUCTION_WINDOW_DAYS,
 } from "@/lib/analysis-offer";
-import type { SaleUnlockCheckoutRefusal } from "@/lib/client-billing";
+import {
+  SALE_UNLOCK_PURCHASE_REFUSAL_CODES,
+  type SaleUnlockCheckoutRefusal,
+  type SaleUnlockPurchaseRefusalCode,
+} from "@/lib/sale-unlock-checkout-contract";
 
 /**
  * Achat du déblocage d'une vente à l'unité : les appels à la base (lot 3, 15/11/2026). La base

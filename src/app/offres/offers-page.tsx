@@ -46,12 +46,8 @@ import {
   ceilingTermWithScopeText,
 } from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
-import {
-  FREE_UNLOCK_LABEL,
-  salePurchaseOfferLine,
-  salePurchaseOffersNote,
-  unlockedItemsText,
-} from "@/lib/sale-unlocks";
+import { FREE_UNLOCK_LABEL, unlockedItemsText } from "@/lib/sale-unlocks";
+import { salePurchaseOfferLine, salePurchaseOffersNote } from "@/lib/sale-unlock-offer-texts";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
