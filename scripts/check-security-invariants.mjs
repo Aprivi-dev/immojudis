@@ -2677,6 +2677,96 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Achat d'une vente à l'unité (lot 3, 20261122100000) : public.sale_unlock_purchases a la RLS activée et ne
+// reçoit aucun droit pour public, anon ni authenticated (dans aucune migration) ; le déblocage acheté n'est
+// accordé que par le rôle de service (grant_purchased_sale_unlock), comme la réservation, les états de
+// paiement et la déduction : chacune, dans sa dernière définition, est SECURITY DEFINER à search_path vide,
+// retirée à public, anon et authenticated, jamais accordée à un rôle du navigateur. Seul
+// redeem_sale_unlock_credit (le compte utilise son crédit, identifié par auth.uid()) s'ouvre à authenticated,
+// jamais à anon.
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const migrations = [...migrationSources].map(([name, source]) => [name, stripSql(source)]);
+  const allSql = migrations.map(([, sql]) => sql).join("\n");
+  if (
+    !/alter\s+table\s+(?:only\s+)?public\.sale_unlock_purchases\s+enable\s+row\s+level\s+security/i.test(
+      allSql,
+    )
+  ) {
+    failures.push("public.sale_unlock_purchases does not enable row level security");
+  }
+  if (
+    !/revoke\s+all\s+on\s+table\s+public\.sale_unlock_purchases\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      allSql,
+    )
+  ) {
+    failures.push("public.sale_unlock_purchases is not closed to public, anon and authenticated");
+  }
+  for (const [name, sql] of migrations) {
+    for (const statement of sql.split(";")) {
+      if (!/^\s*grant\s/i.test(statement)) continue;
+      if (!/\bpublic\.sale_unlock_purchases\b/i.test(statement)) continue;
+      const roles = statement.replace(/^[\s\S]*?\bto\b/i, "").replace(/\bpublic\.[a-z0-9_]+/gi, "");
+      if (/\b(?:anon|authenticated|public)\b/i.test(roles)) {
+        failures.push(`${name} grants a right on public.sale_unlock_purchases to a browser role`);
+      }
+    }
+  }
+  const lastDefinition = (fn) =>
+    migrations
+      .flatMap(([, sql]) => [
+        ...sql.matchAll(
+          new RegExp(
+            `create\\s+or\\s+replace\\s+function\\s+${fn.replace(".", "\\.")}\\([\\s\\S]*?\\$\\$;`,
+            "gi",
+          ),
+        ),
+      ])
+      .at(-1)?.[0];
+  const definerWithEmptyPath = (definition) =>
+    Boolean(definition) &&
+    /security\s+definer/i.test(definition) &&
+    /set\s+search_path\s*=\s*''/i.test(definition);
+  const grantsTo = (fn, roles) =>
+    new RegExp(
+      `grant\\s+(?:execute|all)[^;]*\\bon\\s+function\\s+${fn.replace(".", "\\.")}\\s*\\([^)]*\\)\\s+to\\s+[^;]*\\b(?:${roles})\\b`,
+      "i",
+    ).test(allSql);
+  for (const fn of [
+    "public.grant_purchased_sale_unlock",
+    "public.reserve_sale_unlock_purchase",
+    "public.attach_sale_unlock_checkout",
+    "public.expire_sale_unlock_purchase",
+    "public.record_sale_unlock_payment_state",
+    "public.reserve_unit_purchase_deduction",
+    "public.settle_unit_purchase_deduction",
+    "public.release_unit_purchase_deduction",
+  ]) {
+    if (!definerWithEmptyPath(lastDefinition(fn))) {
+      failures.push(`${fn} is not a SECURITY DEFINER function with an empty search_path`);
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${fn.replace(".", "\\.")}\\s*\\([^)]*\\)\\s+from\\s+public,\\s*anon,\\s*authenticated`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(`${fn} is not revoked from public, anon and authenticated`);
+    }
+    if (grantsTo(fn, "public|anon|authenticated")) {
+      failures.push(`${fn} is granted to a browser role (service_role only)`);
+    }
+  }
+  if (!definerWithEmptyPath(lastDefinition("public.redeem_sale_unlock_credit"))) {
+    failures.push(
+      "public.redeem_sale_unlock_credit is not a SECURITY DEFINER function with an empty search_path",
+    );
+  }
+  if (grantsTo("public.redeem_sale_unlock_credit", "public|anon")) {
+    failures.push("public.redeem_sale_unlock_credit is granted to public or anon");
+  }
+}
+
 // Registre des pièces (lot R1, 20261116100000 à 20261116100500) : tables fermées, journaux en ajout seul,
 // held_fields écrite par la seule projection, déclencheur de retenue en tête, projection hors de portée de
 // l'API, observations jamais rattachées à une autre vente, aucune clé étrangère vers auction_sales. Les
@@ -2725,6 +2815,7 @@ console.log(
       "raw-columns-not-revoked-without-definer-view",
       "personal-data-filter-write-boundary",
       "sale-unlock-rls-and-definer-boundary",
+      "sale-unlock-purchases-service-role-only",
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
       "pepite-rule-independent-of-lawyers-sponsoring-and-score",

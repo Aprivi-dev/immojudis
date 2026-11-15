@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   sessionsExpire: vi.fn(),
   assertOpen: vi.fn(),
   launchState: vi.fn(),
+  couponsCreate: vi.fn(),
+  couponsDel: vi.fn(),
+  constructEvent: vi.fn(),
+  from: vi.fn(),
   events: [] as string[],
 }));
 
@@ -22,6 +26,8 @@ vi.mock("stripe", () => ({
     customers = { create: mocks.customersCreate };
     prices = { retrieve: mocks.pricesRetrieve };
     subscriptions = { list: mocks.subscriptionsList };
+    coupons = { create: mocks.couponsCreate, del: mocks.couponsDel };
+    webhooks = { constructEvent: mocks.constructEvent };
     checkout = {
       sessions: {
         create: mocks.checkoutCreate,
@@ -33,7 +39,7 @@ vi.mock("stripe", () => ({
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.adminRpc },
+  supabaseAdmin: { rpc: mocks.adminRpc, from: mocks.from },
 }));
 vi.mock("@/lib/analysis-checkout-readiness", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/analysis-checkout-readiness")>()),
@@ -47,6 +53,7 @@ vi.mock("@/lib/commercial-acceptance", () => ({
 
 import {
   createPlanCheckoutSession,
+  handleStripeWebhook,
   stripeCustomerIdempotencyKey,
   VAT_EXEMPTION_INVOICE_MENTION,
 } from "@/lib/billing";
@@ -104,6 +111,8 @@ describe("createPlanCheckoutSession customer reservation", () => {
         return { data: CUSTOMER_ID, error: null };
       }
       if (name === "release_analyse_checkout") return { data: true, error: null };
+      // Aucun achat à l'unité à déduire du premier mois.
+      if (name === "reserve_unit_purchase_deduction") return { data: 0, error: null };
       throw new Error(`Unexpected RPC ${name}`);
     });
   });
@@ -247,6 +256,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
         }
         if (name === "attach_analyse_checkout_customer") return { data: CUSTOMER_ID, error: null };
         if (name === "release_analyse_checkout") return { data: true, error: null };
+        if (name === "reserve_unit_purchase_deduction") return { data: 0, error: null };
         throw new Error(`Unexpected RPC ${name}`);
       });
     });
@@ -387,6 +397,208 @@ describe("createPlanCheckoutSession customer reservation", () => {
       expect(mocks.checkoutCreate).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("déduction des achats à l'unité sur le premier mois d'abonnement", () => {
+  let deductionCents = 0;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.assertOpen.mockReset();
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_billing");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_billing");
+    vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_analysis");
+    vi.stubEnv("STRIPE_ANALYSIS_PRODUCT_ID", "");
+    deductionCents = 1_900;
+    mocks.pricesRetrieve.mockResolvedValue({
+      active: true,
+      type: "recurring",
+      currency: "eur",
+      unit_amount: 5_900,
+      tax_behavior: "inclusive",
+      recurring: { interval: "month", interval_count: 1 },
+    });
+    mocks.subscriptionsList.mockResolvedValue({ data: [], has_more: false });
+    mocks.sessionsList.mockResolvedValue({ data: [] });
+    mocks.sessionsExpire.mockResolvedValue({});
+    mocks.customersCreate.mockResolvedValue({ id: CUSTOMER_ID });
+    mocks.couponsCreate.mockResolvedValue({ id: "coupon_unit" });
+    mocks.couponsDel.mockResolvedValue({ deleted: true });
+    mocks.checkoutCreate.mockResolvedValue({
+      id: "cs_analysis",
+      url: "https://checkout.stripe.test/cs_analysis",
+      created: 1_800_000_000,
+      status: "open",
+    });
+    mocks.from.mockImplementation(() => {
+      const query: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "limit"]) query[method] = () => query;
+      query.maybeSingle = async () => ({ data: { processing_status: "processed" }, error: null });
+      return query;
+    });
+    mocks.adminRpc.mockImplementation(async (name: string) => {
+      if (name === "reserve_analyse_checkout") return { data: true, error: null };
+      if (name === "attach_analyse_checkout_customer") return { data: CUSTOMER_ID, error: null };
+      if (name === "reserve_unit_purchase_deduction") return { data: deductionCents, error: null };
+      if (name === "begin_stripe_webhook_event") return { data: true, error: null };
+      return { data: null, error: null };
+    });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  const rpcCalls = (name: string) =>
+    mocks.adminRpc.mock.calls.filter(([called]) => called === name);
+  const checkout = () =>
+    createPlanCheckoutSession({
+      auth: buildAuthContext(),
+      origin: "https://immojudis.test",
+      plan: "analyse",
+      consent,
+    });
+  const sessionParams = () =>
+    mocks.checkoutCreate.mock.calls[0]?.[0] as {
+      discounts?: Array<{ coupon: string }>;
+      allow_promotion_codes?: boolean;
+      metadata: Record<string, string>;
+    };
+
+  it("premier abonnement : un bon unique du montant réservé, seule remise de la session", async () => {
+    await checkout();
+
+    const [, reserveArgs] = rpcCalls("reserve_unit_purchase_deduction")[0]!;
+    const token = (reserveArgs as { p_token: string }).p_token;
+    expect(reserveArgs).toMatchObject({ p_user_id: USER_ID, p_now: expect.any(String) });
+    // Même jeton que la réservation du checkout : règlement et libération le retrouvent.
+    expect(rpcCalls("reserve_analyse_checkout")[0]![1]).toMatchObject({ p_checkout_token: token });
+    const [couponParams, couponOptions] = mocks.couponsCreate.mock.calls[0]!;
+    expect(couponParams).toEqual({
+      amount_off: 1_900,
+      currency: "eur",
+      duration: "once",
+      max_redemptions: 1,
+      name: expect.any(String),
+      metadata: {
+        user_id: USER_ID,
+        checkout_reservation_token: token,
+        purpose: "unit_purchase_deduction",
+      },
+    });
+    expect(couponOptions).toEqual({ idempotencyKey: `immojudis-unit-deduction-${token}` });
+    expect(sessionParams().discounts).toEqual([{ coupon: "coupon_unit" }]);
+    expect(sessionParams().allow_promotion_codes).toBeUndefined();
+    expect(sessionParams().metadata).toMatchObject({
+      unit_purchase_deduction_coupon: "coupon_unit",
+      unit_purchase_deduction_cents: "1900",
+    });
+  });
+
+  it("plafonne la déduction au prix du premier mois (5 900 centimes)", async () => {
+    deductionCents = 7_600;
+
+    await checkout();
+
+    expect(mocks.couponsCreate.mock.calls[0]![0]).toMatchObject({ amount_off: 5_900 });
+    expect(sessionParams().metadata.unit_purchase_deduction_cents).toBe("5900");
+  });
+
+  it("limite le bon au produit Analyse quand STRIPE_ANALYSIS_PRODUCT_ID est posé", async () => {
+    vi.stubEnv("STRIPE_ANALYSIS_PRODUCT_ID", "prod_analysis");
+
+    await checkout();
+
+    expect(mocks.couponsCreate.mock.calls[0]![0]).toMatchObject({
+      applies_to: { products: ["prod_analysis"] },
+    });
+  });
+
+  it("rien à déduire : ni bon ni remise", async () => {
+    deductionCents = 0;
+
+    await checkout();
+
+    expect(mocks.couponsCreate).not.toHaveBeenCalled();
+    expect(sessionParams()).not.toHaveProperty("discounts");
+  });
+
+  it("compte déjà abonné par le passé : aucune déduction réservée", async () => {
+    mocks.subscriptionsList.mockResolvedValue({
+      data: [{ id: "sub_old", status: "canceled", trial_start: null, trial_end: null }],
+      has_more: false,
+    });
+
+    await checkout();
+
+    expect(rpcCalls("reserve_unit_purchase_deduction")).toHaveLength(0);
+    expect(mocks.couponsCreate).not.toHaveBeenCalled();
+    expect(sessionParams()).not.toHaveProperty("discounts");
+  });
+
+  it("checkout en échec : la déduction est rendue et le bon supprimé", async () => {
+    mocks.checkoutCreate.mockRejectedValue(new Error("stripe down"));
+
+    await expect(checkout()).rejects.toThrow("stripe down");
+
+    const token = (rpcCalls("reserve_unit_purchase_deduction")[0]![1] as { p_token: string })
+      .p_token;
+    expect(rpcCalls("release_unit_purchase_deduction")[0]![1]).toEqual({ p_token: token });
+    expect(mocks.couponsDel).toHaveBeenCalledWith("coupon_unit");
+  });
+
+  function deliver(type: string, object: unknown) {
+    mocks.constructEvent.mockReturnValue({
+      id: `evt_${type}`,
+      type,
+      created: 1_800_000_500,
+      livemode: false,
+      data: { object },
+    });
+    return handleStripeWebhook({ payload: "{}", signature: "sig" });
+  }
+
+  const deductionSession = {
+    id: "cs_analysis",
+    mode: "subscription",
+    subscription: null,
+    metadata: {
+      user_id: USER_ID,
+      checkout_reservation_token: "token-of-the-checkout-0001",
+      unit_purchase_deduction_coupon: "coupon_unit",
+      unit_purchase_deduction_cents: "1900",
+    },
+  };
+
+  it("réglée au checkout.session.completed de l'abonnement", async () => {
+    await deliver("checkout.session.completed", deductionSession);
+
+    expect(rpcCalls("settle_unit_purchase_deduction")[0]![1]).toEqual({
+      p_token: "token-of-the-checkout-0001",
+      p_checkout_session_id: "cs_analysis",
+    });
+    expect(rpcCalls("release_unit_purchase_deduction")).toHaveLength(0);
+    expect(mocks.couponsDel).not.toHaveBeenCalled();
+  });
+
+  it("libérée au checkout.session.expired, et le bon supprimé", async () => {
+    await deliver("checkout.session.expired", deductionSession);
+
+    expect(rpcCalls("release_analyse_checkout")).toHaveLength(1);
+    expect(rpcCalls("release_unit_purchase_deduction")[0]![1]).toEqual({
+      p_token: "token-of-the-checkout-0001",
+    });
+    expect(mocks.couponsDel).toHaveBeenCalledWith("coupon_unit");
+    expect(rpcCalls("settle_unit_purchase_deduction")).toHaveLength(0);
+  });
+
+  it("un checkout expiré sans déduction ne touche à aucun achat", async () => {
+    await deliver("checkout.session.expired", {
+      ...deductionSession,
+      metadata: { user_id: USER_ID, checkout_reservation_token: "token-of-the-checkout-0001" },
+    });
+
+    expect(rpcCalls("release_unit_purchase_deduction")).toHaveLength(0);
+    expect(mocks.couponsDel).not.toHaveBeenCalled();
+  });
 });
 
 function buildAuthContext(customerId: string | null = null): SupabaseAuthContext {

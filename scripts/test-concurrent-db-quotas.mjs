@@ -71,8 +71,11 @@ try {
   }
 
   const unlocks = await verifyConcurrentSaleUnlocks();
+  const credits = await verifyConcurrentCreditRedeems();
 
-  console.log(JSON.stringify({ ok: true, fulfilled, rejected, activeAlerts: count, unlocks }));
+  console.log(
+    JSON.stringify({ ok: true, fulfilled, rejected, activeAlerts: count, unlocks, credits }),
+  );
 } finally {
   if (launchOfferWasActive !== null) {
     await admin`update app_private.launch_offer set active = ${launchOfferWasActive} where singleton`.catch(
@@ -169,6 +172,64 @@ async function verifyConcurrentSaleUnlocks() {
       throw new Error("Repeating an unlocked sale must consume nothing and never be refused.");
     }
     return { fulfilled, quotaRefusals, rows: count };
+  } finally {
+    await Promise.all(clients.map((client) => client.end()));
+  }
+}
+
+/**
+ * Credit of a unit purchase (20261122100000): after verifyConcurrentSaleUnlocks the account has used
+ * its free unlock. One paid purchase that no unlock uses is one credit; five simultaneous
+ * `redeem_sale_unlock_credit` calls on the five sales still locked must open exactly one of them (same
+ * advisory lock as unlock_sale), every other call refused with the detail `sale_unlock_no_credit`.
+ */
+async function verifyConcurrentCreditRedeems() {
+  await admin`
+    insert into public.sale_unlock_purchases (
+      user_id, payment_intent_id, amount_cents, currency, state, outcome, paid_at
+    ) values (
+      ${unlockUserId}, 'pi_concurrent_credit', 1900, 'eur', 'paid', 'credit', now()
+    )
+  `;
+  const lockedSaleIds = (
+    await admin`
+      select id from public.auction_sales
+      where id = any(${unlockSaleIds})
+        and id not in (select sale_id from public.user_sale_unlocks where user_id = ${unlockUserId})
+    `
+  ).map((row) => row.id);
+  const clients = lockedSaleIds.map(() =>
+    postgres(authenticatorDatabaseUrl.toString(), { max: 1 }),
+  );
+  try {
+    const outcomes = await Promise.allSettled(
+      clients.map((client, index) =>
+        client.begin(async (sql) => {
+          await sql.unsafe("set local role authenticated");
+          await sql`select set_config('request.jwt.claim.sub', ${unlockUserId}, true)`;
+          const [row] =
+            await sql`select public.redeem_sale_unlock_credit(${lockedSaleIds[index]}::uuid) as result`;
+          return row.result;
+        }),
+      ),
+    );
+    const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
+    const noCredit = outcomes.filter(
+      (outcome) =>
+        outcome.status === "rejected" &&
+        outcome.reason?.code === "P0001" &&
+        outcome.reason?.detail === "sale_unlock_no_credit",
+    ).length;
+    const [{ count }] = await admin`
+      select count(*)::integer as count from public.user_sale_unlocks
+      where user_id = ${unlockUserId} and source = 'credit'
+    `;
+    if (fulfilled !== 1 || noCredit !== lockedSaleIds.length - 1 || count !== 1) {
+      throw new Error(
+        `Concurrent credit invariant failed: fulfilled=${fulfilled}, refused=${noCredit}, rows=${count}`,
+      );
+    }
+    return { fulfilled, noCredit, rows: count };
   } finally {
     await Promise.all(clients.map((client) => client.end()));
   }
