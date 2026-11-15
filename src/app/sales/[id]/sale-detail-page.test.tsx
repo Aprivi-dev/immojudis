@@ -48,13 +48,21 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   FreeSaleDetailView: ({
     unlockStatus,
     onSaleUnlocked,
+    onUnlockStatusStale,
+    purchaseReturn,
   }: {
     unlockStatus?: { remaining: number | null } | null;
     onSaleUnlocked?: (result: unknown) => void;
+    onUnlockStatusStale?: () => void;
+    purchaseReturn?: string | null;
   }) => (
     <div>
       Offre Découverte
       <span data-testid="remaining">{String(unlockStatus?.remaining ?? "inconnu")}</span>
+      <span data-testid="purchase-return">{purchaseReturn ?? "aucun"}</span>
+      <button type="button" onClick={() => onUnlockStatusStale?.()}>
+        Relire l’état
+      </button>
       <button
         type="button"
         onClick={() =>
@@ -641,6 +649,55 @@ describe("the free unlock on the sale page", () => {
 
     await screen.findByText("Vente débloquée");
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+  });
+
+  describe("retour du paiement d'une vente à l'unité", () => {
+    it("paiement abouti : la fiche attend la confirmation du serveur, puis ouvre la vente", async () => {
+      window.history.replaceState(null, "", "/sales/sale?unlock_checkout=success&session_id=cs_1");
+      mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+      mocks.unlockStatus.mockResolvedValueOnce(status(false));
+      mocks.unlockStatus.mockResolvedValue(status(true));
+      mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      expect(screen.getByTestId("purchase-return").textContent).toBe("pending");
+      expect(window.location.search).toBe("");
+
+      // First re-read after 2 s: the server now says the sale is unlocked.
+      await screen.findByText("Vente débloquée", {}, { timeout: 4000 });
+      expect(mocks.unlockStatus).toHaveBeenCalledTimes(2);
+      expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+    });
+
+    it("annulation : l'état d'achat, sans message ni relecture", async () => {
+      window.history.replaceState(null, "", "/sales/sale?unlock_checkout=cancelled");
+      mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+      mocks.unlockStatus.mockResolvedValue(status(false));
+      mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      expect(screen.getByTestId("purchase-return").textContent).toBe("aucun");
+      expect(window.location.search).toBe("");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mocks.unlockStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it("un achat refusé relit l'état du compte ; une vente déjà débloquée s'ouvre", async () => {
+      mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+      mocks.unlockStatus.mockResolvedValueOnce(status(false));
+      mocks.unlockStatus.mockResolvedValue(status(true));
+      mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      fireEvent.click(screen.getByRole("button", { name: "Relire l’état" }));
+
+      await screen.findByText("Vente débloquée");
+      expect(mocks.unlockStatus).toHaveBeenCalledTimes(2);
+      expect(mocks.entitlements.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
   });
 
   describe("right after « Confirmer le déblocage »", () => {

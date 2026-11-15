@@ -66,6 +66,23 @@ describe("AccountPage unlocks", () => {
     );
   });
 
+  it("gives the number of unlock credits when there are some, and nothing otherwise", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue({ status: { ...status(), credits: 2 }, sales: [] });
+    renderPage();
+    expect((await screen.findByTestId("account-unlock-credits")).textContent).toBe(
+      "2 crédits de déblocage disponibles",
+    );
+    cleanup();
+
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    renderPage();
+    await screen.findByText("Déblocage du compte gratuit : utilisé");
+    expect(screen.queryByTestId("account-unlock-credits")).toBeNull();
+  });
+
   it("says so, with the link, when the counter cannot be read", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },

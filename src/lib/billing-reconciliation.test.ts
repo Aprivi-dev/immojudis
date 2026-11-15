@@ -4,6 +4,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 vi.mock("stripe", () => ({ default: class FakeStripe {} }));
 
 import {
+  compareSaleUnlockPurchases,
   compareStripeWithDatabase,
   stripeSubscriptionView,
   type StripeSubscriptionView,
@@ -204,5 +205,66 @@ describe("stripeSubscriptionView", () => {
       planStatus: "paused",
       priceId: "price_z",
     });
+  });
+});
+
+describe("rapprochement des achats à l'unité", () => {
+  const purchase = (overrides: Record<string, unknown> = {}) => ({
+    id: "purchase-1",
+    user_id: "user-1",
+    checkout_session_id: "cs_1",
+    state: "paid",
+    deducted_checkout_session_id: null,
+    ...overrides,
+  });
+
+  it("ne signale rien quand chaque session payée a son achat payé (ou remboursé ensuite)", () => {
+    expect(
+      compareSaleUnlockPurchases({
+        paidSessions: [
+          { id: "cs_1", userId: "user-1" },
+          { id: "cs_2", userId: "user-1" },
+        ],
+        purchases: [purchase(), purchase({ checkout_session_id: "cs_2", state: "refunded" })],
+      }),
+    ).toEqual([]);
+  });
+
+  it("signale une session payée dont l'achat est absent, en attente ou expiré", () => {
+    const discrepancies = compareSaleUnlockPurchases({
+      paidSessions: [
+        { id: "cs_missing", userId: "user-1" },
+        { id: "cs_pending", userId: "user-2" },
+        { id: "cs_expired", userId: "user-3" },
+      ],
+      purchases: [
+        purchase({ checkout_session_id: "cs_pending", state: "pending" }),
+        purchase({ checkout_session_id: "cs_expired", state: "expired" }),
+      ],
+    });
+
+    expect(discrepancies.map((item) => [item.kind, item.stripeCheckoutSessionId])).toEqual([
+      ["sale_unlock_paid_without_purchase", "cs_missing"],
+      ["sale_unlock_paid_without_purchase", "cs_pending"],
+      ["sale_unlock_paid_without_purchase", "cs_expired"],
+    ]);
+  });
+
+  it("signale un achat déduit du premier mois puis remboursé ou perdu en litige", () => {
+    const discrepancies = compareSaleUnlockPurchases({
+      paidSessions: [],
+      purchases: [
+        purchase({ id: "refunded", state: "refunded", deducted_checkout_session_id: "cs_sub" }),
+        purchase({ id: "lost", state: "dispute_lost", deducted_checkout_session_id: "cs_sub" }),
+        purchase({ id: "kept", state: "paid", deducted_checkout_session_id: "cs_sub" }),
+        purchase({ id: "plain", state: "refunded" }),
+      ],
+    });
+
+    expect(discrepancies.map((item) => item.kind)).toEqual([
+      "sale_unlock_deducted_then_refunded",
+      "sale_unlock_deducted_then_refunded",
+    ]);
+    expect(discrepancies[0]).toMatchObject({ userId: "user-1", stripeSubscriptionId: null });
   });
 });

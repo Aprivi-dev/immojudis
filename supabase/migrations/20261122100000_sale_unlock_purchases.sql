@@ -55,6 +55,9 @@
 -- vérification « déjà débloquée » porte sur les lignes de toute source) ; purge_sale_unlocks n'est pas
 -- redéfinie (elle ne supprime que des lignes de user_sale_unlocks, jamais un achat).
 --
+-- Aucune écriture de données existantes : les lignes de user_sale_unlocks prennent source = 'free' par la
+-- valeur par défaut de la colonne, sans update.
+--
 -- Verrous : création d'une table ; ajout de deux colonnes à user_sale_unlocks et remplacement de deux
 -- contraintes de commercial_acceptances (verrous brefs, tables petites) ; redéfinition de fonctions.
 begin;

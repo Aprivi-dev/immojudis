@@ -6,6 +6,36 @@ import {
 } from "./offer-comparison";
 import { PLAN_FEATURES, PLAN_LIMITS } from "./plans";
 
+describe("offerComparisonRows : achat d'une vente à l'unité", () => {
+  it("n'en parle pas tant que l'achat n'est pas ouvert", () => {
+    expect(offerComparisonRows().some((row) => row.id === "unit-sale")).toBe(false);
+    expect(
+      offerComparisonRows(undefined, { salePurchaseLabel: null }).some(
+        (row) => row.id === "unit-sale",
+      ),
+    ).toBe(false);
+  });
+
+  it("ajoute la ligne après celle du déblocage, au prix reçu, parmi les différences", () => {
+    const rows = offerComparisonRows(undefined, { salePurchaseLabel: "19 €" });
+    const index = rows.findIndex((row) => row.id === "unit-sale");
+    expect(rows[index - 1].id).toBe("unlocks");
+    expect(rows[index]).toMatchObject({
+      label: "Vente supplémentaire à l’unité",
+      decouverte: { included: false, limited: true, text: "19 €" },
+      analyse: { included: true },
+    });
+    expect(splitOfferComparisonRows(rows).differences.some((row) => row.id === "unit-sale")).toBe(
+      true,
+    );
+    expect(
+      offerComparisonRows(undefined, { salePurchaseLabel: "25 €" }).find(
+        (row) => row.id === "unit-sale",
+      )?.decouverte.text,
+    ).toBe("25 €");
+  });
+});
+
 describe("offerComparisonRows", () => {
   const rows = offerComparisonRows();
   const row = (id: string) => rows.find((candidate) => candidate.id === id)!;

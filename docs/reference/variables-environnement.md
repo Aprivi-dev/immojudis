@@ -20,7 +20,7 @@ Une variable Vercel ne s'applique qu'à un **nouveau déploiement** (redéploiem
 
 | Variable                           | Lue dans                                                             | Valeur et effet                                                                                                                                                                                                                                                                                                               |
 | ---------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PEPITE_RULE_V2_ENABLED`           | `serverEnv` (`pepite-rule-switch.server.ts`)                         | `true` ou `1` : règle `pepite-v2.1` appliquée. Absente ou autre valeur : `pepite-v1.2` (défaut). Redéploiement nécessaire. Procédure : `docs/runbooks/pepite-v2-ouverture.md`.                                                                                                                                                    |
+| `PEPITE_RULE_V2_ENABLED`           | `serverEnv` (`pepite-rule-switch.server.ts`)                         | `true` ou `1` : règle `pepite-v2.1` appliquée. Absente ou autre valeur : `pepite-v1.2` (défaut). Redéploiement nécessaire. Procédure : `docs/runbooks/pepite-v2-ouverture.md`.                                                                                                                                                |
 | `SALE_FLOOD_RISK_BATCH_LIMIT`      | `serverEnv` (route) ; `process.env` (runner GitHub)                  | Ventes observées par passage du traitement d'inondation. Défaut 150, borné à 1000. Depuis le 27/10/2026, le runner GitHub Actions lit la **variable de dépôt GitHub** du même nom (`vars.SALE_FLOOD_RISK_BATCH_LIMIT`) ; la variable Vercel ne compte qu'en retour arrière (`SALE_FLOOD_RISK_RUNNER=vercel`).                 |
 | `SALE_FLOOD_RISK_RUNNER`           | `serverEnv` (`sale-flood-risk-dispatch.server.ts`)                   | `vercel` : la route `/api/cron/sale-flood-risk` fait elle-même les appels à Géorisques (retour arrière). Absente ou autre valeur (défaut) : la route déclenche le workflow GitHub `sale-flood-risk.yml`. Voir `docs/runbooks/georisques-pannes-inondation.md`.                                                                |
 | `SALE_PEPITES_BATCH_LIMIT`         | `process.env` (`api/cron/sale-pepites/route.ts`)                     | Ventes (ré)évaluées par passage du calcul des pépites. Défaut 300, borné à 2000.                                                                                                                                                                                                                                              |
@@ -34,6 +34,23 @@ Une variable Vercel ne s'applique qu'à un **nouveau déploiement** (redéploiem
 | `NEXT_PUBLIC_MAPBOX_STYLE_ID`      | `process.env` (`mapbox.ts`, `getMapboxStylePath`)                    | Facultatif. Repli de `NEXT_PUBLIC_MAPBOX_STYLE`, lu seulement si ce dernier est absent. Défaut `mapbox/streets-v12`. Inliné au build.                                                                                                                                                                                         |
 
 Les mêmes réglages, avec leurs commentaires, sont dans `.env.example`.
+
+## Achat d'une vente à l'unité (lot 3, 15/11/2026)
+
+Aucune n'est requise pour le build (`scripts/lib/launch-config.mjs` n'émet que des avertissements) : sans elles,
+l'achat reste fermé et `GET /api/billing/offer` répond `saleUnlock.open: false`. Elles ne figurent pas encore dans
+`.env.example` (hors du périmètre du lot). Procédure : `docs/runbooks/ouverture-paiements.md`, § 8.
+
+| Variable                        | Lue dans                                                   | Valeur et effet                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRIPE_SALE_UNLOCK_PRICE_ID`   | `serverEnv` (`sale-unlock-checkout-readiness.ts`)          | Price Stripe de l'achat (`price_…`) : paiement unique, 19 € (1 900 centimes), EUR, actif, « inclusive ». Relu chez Stripe avant chaque session ; un Price différent refuse la session. Absent ou mal formé : achat fermé, et le rapprochement quotidien ne contrôle pas les achats. |
+| `STRIPE_SALE_UNLOCK_SALES_OPEN` | `serverEnv` (`sale-unlock-checkout-readiness.ts`)          | Interrupteur, **fermé par défaut** (l'inverse de `STRIPE_ANALYSIS_SALES_OPEN`) : seule la valeur `true` (casse et espaces indifférents) ouvre l'achat, si le reste des paiements est configuré. Le fermer n'empêche ni le webhook, ni les remboursements, ni l'usage des crédits.   |
+| `STRIPE_ANALYSIS_PRODUCT_ID`    | `serverEnv` (`billing.ts`, `prepareUnitPurchaseDeduction`) | Facultatif. Produit Stripe de l'offre Analyse (`prod_…`) : le bon de réduction des achats à l'unité déduits du premier mois ne vaut que pour ce produit. Absent : le bon vaut pour la session d'abonnement (qui ne contient que ce produit).                                        |
+
+L'achat reprend aussi toute la configuration des paiements Analyse (`analysisCheckoutReadiness` : clé, mode de la
+clé, webhook, identité légale, emails), sauf `STRIPE_ANALYSIS_SALES_OPEN` : fermer la souscription Analyse ne ferme
+pas l'achat à l'unité. Le prix est une constante du code, `SALE_UNLOCK_PRICE_CENTS` (`src/lib/analysis-offer.ts`),
+égale à `app_private.sale_unlock_purchase_amount_cents()` en base (vérifié par `billing.sale-unlock.test.ts`).
 
 ## Ce qui ressemble à une variable mais n'en est pas
 

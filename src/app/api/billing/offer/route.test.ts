@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   enforceIp: vi.fn(),
   readiness: vi.fn(),
   availability: vi.fn(),
+  deduction: vi.fn(),
+  saleUnlockReadiness: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -16,7 +18,13 @@ vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.enforceIp }));
 vi.mock("@/lib/analysis-checkout-readiness", () => ({
   analysisCheckoutReadiness: mocks.readiness,
 }));
-vi.mock("@/lib/billing", () => ({ resolveAnalysisCheckoutAvailability: mocks.availability }));
+vi.mock("@/lib/billing", () => ({
+  resolveAnalysisCheckoutAvailability: mocks.availability,
+  previewFirstMonthDeductionCents: mocks.deduction,
+}));
+vi.mock("@/lib/sale-unlock-checkout-readiness", () => ({
+  saleUnlockCheckoutReadiness: mocks.saleUnlockReadiness,
+}));
 
 import { GET } from "./route";
 
@@ -31,6 +39,7 @@ describe("GET /api/billing/offer", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.enforceIp.mockResolvedValue(1);
     mocks.readiness.mockReturnValue({ open: false, missing: ["STRIPE_SECRET_KEY"] });
+    mocks.saleUnlockReadiness.mockReturnValue({ open: false });
   });
 
   it("répond à un visiteur : offre non ouverte, 7 jours d'essai non proposés par la carte, cache partagé de 5 minutes", async () => {
@@ -74,5 +83,60 @@ describe("GET /api/billing/offer", () => {
     expect(mocks.enforceIp).toHaveBeenCalledWith(
       expect.objectContaining({ bucketKey: "billing.offer", limit: 60 }),
     );
+  });
+
+  it("annonce l'achat à l'unité (fermé par défaut, 19 €) et aucune déduction à un visiteur", async () => {
+    const response = await request();
+
+    expect(await response.json()).toMatchObject({
+      saleUnlock: { open: false, label: "19 €", amountCents: 1_900 },
+      firstMonthDeductionCents: 0,
+    });
+    expect(mocks.deduction).not.toHaveBeenCalled();
+  });
+
+  it("dit l'achat à l'unité ouvert selon sa propre garde, même souscription Analyse fermée", async () => {
+    mocks.saleUnlockReadiness.mockReturnValue({ open: true });
+
+    const body = await (await request()).json();
+
+    expect(body.configured).toBe(false);
+    expect(body.saleUnlock.open).toBe(true);
+  });
+
+  it("donne au compte connecté la déduction de son premier mois, en réponse privée", async () => {
+    mocks.readiness.mockReturnValue({ open: true, missing: [] });
+    mocks.requireAuth.mockResolvedValue({ userId: "user-1" });
+    mocks.deduction.mockResolvedValue(3_800);
+
+    const response = await request({ authorization: "Bearer jeton" });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).firstMonthDeductionCents).toBe(3_800);
+    expect(mocks.deduction).toHaveBeenCalledWith({ userId: "user-1" });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("répond l'offre anonyme, en cache partagé, à un jeton qui n'authentifie pas", async () => {
+    mocks.readiness.mockReturnValue({ open: true, missing: [] });
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: invalid token"));
+
+    const response = await request({ authorization: "Bearer jeton-invalide" });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).firstMonthDeductionCents).toBe(0);
+    expect(mocks.deduction).not.toHaveBeenCalled();
+    expect(response.headers.get("cache-control")).toContain("s-maxage=300");
+  });
+
+  it("affiche 0 plutôt que de rendre l'offre indisponible quand l'aperçu échoue", async () => {
+    mocks.readiness.mockReturnValue({ open: true, missing: [] });
+    mocks.requireAuth.mockResolvedValue({ userId: "user-1" });
+    mocks.deduction.mockRejectedValue(new Error("relation does not exist"));
+
+    const response = await request({ authorization: "Bearer jeton" });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).firstMonthDeductionCents).toBe(0);
   });
 });

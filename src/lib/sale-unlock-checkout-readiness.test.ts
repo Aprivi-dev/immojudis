@@ -83,9 +83,10 @@ describe("saleUnlockCheckoutReadiness", () => {
       open: false,
       missing: ["STRIPE_WEBHOOK_SECRET"],
     });
-    expect(
-      saleUnlockCheckoutReadiness({ ...OPEN_ENV, VERCEL_ENV: "production" }),
-    ).toMatchObject({ open: false, keyModeMismatch: true });
+    expect(saleUnlockCheckoutReadiness({ ...OPEN_ENV, VERCEL_ENV: "production" })).toMatchObject({
+      open: false,
+      keyModeMismatch: true,
+    });
   });
 
   it("ne dépend pas de l'interrupteur de vente d'Analyse", () => {

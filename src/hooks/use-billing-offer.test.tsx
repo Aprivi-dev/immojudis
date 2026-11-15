@@ -82,3 +82,55 @@ describe("offre Analyse", () => {
     await expect(isAnalysisOfferOpen()).resolves.toBe(true);
   });
 });
+
+describe("offre Analyse : achat d'une vente à l'unité", () => {
+  it("ne propose l'achat que s'il est ouvert, l'éditeur identifié et le montant lisible", async () => {
+    const cases: [unknown, boolean][] = [
+      [undefined, false],
+      [{ open: false, label: "19 €", amountCents: 1900 }, false],
+      [{ open: true, label: "19 €", amountCents: 0 }, false],
+      [{ open: true, label: " ", amountCents: 1900 }, false],
+      [{ open: true, label: "19 €", amountCents: 1900 }, true],
+    ];
+    for (const [saleUnlock, expected] of cases) {
+      mocks.fetchBillingOffer.mockResolvedValue({ ...offer(true), saleUnlock });
+      const { result, unmount } = renderHook(() => useBillingOffer());
+      await waitFor(() => expect(result.current.offer.status).toBe("ready"));
+      const state = result.current.offer as Extract<
+        typeof result.current.offer,
+        { status: "ready" }
+      >;
+      expect(state.saleUnlock, JSON.stringify(saleUnlock)).toEqual(
+        expected ? { label: "19 €", amountCents: 1900 } : null,
+      );
+      unmount();
+    }
+
+    mocks.legalReady = false;
+    mocks.fetchBillingOffer.mockResolvedValue({
+      ...offer(true),
+      saleUnlock: { open: true, label: "19 €", amountCents: 1900 },
+    });
+    const { result } = renderHook(() => useBillingOffer());
+    await waitFor(() => expect(result.current.offer.status).toBe("ready"));
+    expect(result.current.offer).toMatchObject({ saleUnlock: null });
+  });
+
+  it("lit la déduction du premier mois, zéro quand elle manque ou n'est pas un montant", async () => {
+    for (const [value, expected] of [
+      [1900, 1900],
+      [undefined, 0],
+      [-5, 0],
+      [12.5, 0],
+    ] as const) {
+      mocks.fetchBillingOffer.mockResolvedValue({
+        ...offer(true),
+        firstMonthDeductionCents: value,
+      });
+      const { result, unmount } = renderHook(() => useBillingOffer());
+      await waitFor(() => expect(result.current.offer.status).toBe("ready"));
+      expect(result.current.offer).toMatchObject({ firstMonthDeductionCents: expected });
+      unmount();
+    }
+  });
+});

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   enforce: vi.fn(),
   getStatus: vi.fn(),
   unlock: vi.fn(),
+  redeem: vi.fn(),
   record: vi.fn(),
 }));
 
@@ -32,6 +33,7 @@ vi.mock("@/lib/sale-unlocks.server", async () => {
     SaleUnlockQuotaError,
     getSaleUnlockStatus: mocks.getStatus,
     unlockSale: mocks.unlock,
+    redeemSaleUnlockCredit: mocks.redeem,
   };
 });
 
@@ -134,6 +136,48 @@ describe("POST /api/sales/[id]/unlock", () => {
       type: "quota_reached",
       quota: "unlocks",
     });
+  });
+
+  it("uses a credit of the account once the free unlock is spent", async () => {
+    mocks.unlock.mockRejectedValue(new SaleUnlockQuotaError({ ...status, credits: 1 }));
+    const result: SaleUnlockResult = {
+      ...status,
+      unlocked: true,
+      credits: 0,
+      alreadyUnlocked: false,
+      consumed: true,
+    };
+    mocks.redeem.mockResolvedValue(result);
+
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ result });
+    expect(mocks.redeem).toHaveBeenCalledWith(auth, saleId);
+    expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "sale_unlocked", saleId });
+    expect(mocks.record).not.toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ type: "quota_reached" }),
+    );
+  });
+
+  it("keeps the 409 when the account has no credit, without trying to redeem one", async () => {
+    mocks.unlock.mockRejectedValue(new SaleUnlockQuotaError({ ...status, credits: 0 }));
+
+    const response = await post();
+
+    expect(response.status).toBe(409);
+    expect(mocks.redeem).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 when the credit was used meanwhile", async () => {
+    mocks.unlock.mockRejectedValue(new SaleUnlockQuotaError({ ...status, credits: 1 }));
+    mocks.redeem.mockRejectedValue(new SaleUnlockQuotaError({ ...status, credits: 0 }));
+
+    const response = await post();
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("unlock_quota_reached");
   });
 
   it("answers 404 for a sale that is missing or no longer online", async () => {

@@ -107,6 +107,8 @@ async function setup(
     unlockedRead?: (call: number) => { delayMs?: number; fail?: boolean };
     plan?: "decouverte" | "analyse";
     offerConfigured?: boolean;
+    /** Achat d'une vente à l'unité tel que l'offre le décrit (absent : la réponse d'avant le lot 3). */
+    saleUnlock?: { open: boolean; label: string; amountCents: number };
   },
 ) {
   const counters = { post: 0, get: 0, unlockedView: 0 };
@@ -171,6 +173,9 @@ async function setup(
         trialDays: 7,
         trialAvailable: true,
         label: "59 € / mois",
+        ...(options.saleUnlock
+          ? { saleUnlock: options.saleUnlock, firstMonthDeductionCents: 0 }
+          : {}),
       },
     }),
   );
@@ -489,3 +494,87 @@ function fakeJwt(payload: Record<string, unknown>) {
     exp: Math.floor(Date.now() / 1000) + 3600,
   })}.signature`;
 }
+
+test("achat à l'unité fermé : déblocage utilisé, aucun bouton ni lien d'achat", async ({
+  page,
+}) => {
+  await setup(page, {
+    initial: status(1),
+    saleUnlock: { open: false, label: "19 €", amountCents: 1900 },
+  });
+  await page.goto(`/sales/${SALE_ID}`);
+
+  await expect(page.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.getByText(
+      "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Acheter cette vente/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Acheter cette vente/ })).toHaveCount(0);
+  await expect(page.getByText(/à l’unité/)).toHaveCount(0);
+});
+
+test("achat à l'unité ouvert : les deux choix, le consentement, puis le paiement simulé", async ({
+  page,
+}) => {
+  await setup(page, {
+    initial: status(1),
+    saleUnlock: { open: true, label: "19 €", amountCents: 1900 },
+  });
+  const bodies: unknown[] = [];
+  await page.route("**/api/billing/sale-unlock-checkout", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: { url: "/paiement-simule" } });
+  });
+  await page.route("**/paiement-simule", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Paiement simulé</h1>" }),
+  );
+  await page.goto(`/sales/${SALE_ID}`);
+
+  const card = page.locator("#debloquer");
+  await expect(card.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible({
+    timeout: 15_000,
+  });
+  // L'abonnement d'abord, mis en avant ; puis cette vente.
+  const choices = card.getByRole("heading", { level: 3 });
+  await expect(choices).toHaveCount(2);
+  await expect(choices.nth(0)).toHaveText(/^Toutes les ventes pendant un mois : 59\s€$/);
+  await expect(choices.nth(1)).toHaveText("Cette vente : 19 €");
+  await expect(card.getByText("Recommandée")).toBeVisible();
+  await expect(card.getByRole("link", { name: "Choisir l’abonnement Analyse" })).toHaveAttribute(
+    "href",
+    "/offres#tarifs",
+  );
+
+  await card.getByRole("button", { name: "Acheter cette vente : 19 €" }).click();
+  const consent = card.getByRole("group", { name: "Avant le paiement" });
+  const boxes = consent.getByRole("checkbox");
+  await expect(boxes).toHaveCount(2);
+  await expect(boxes.nth(0)).not.toBeChecked();
+  await expect(boxes.nth(1)).not.toBeChecked();
+  await expect(boxes.nth(0)).toBeFocused();
+  const pay = consent.getByRole("button", { name: "Commander avec obligation de paiement" });
+  await expect(pay).toBeDisabled();
+  await expect(consent.getByText("Cochez les deux cases pour accéder au paiement.")).toBeVisible();
+
+  await boxes.nth(0).check();
+  await expect(pay).toBeDisabled();
+  await boxes.nth(1).check();
+  await expect(pay).toBeEnabled();
+  expect(bodies).toHaveLength(0);
+
+  await pay.click();
+  await page.waitForURL("**/paiement-simule");
+  expect(bodies).toHaveLength(1);
+  expect(bodies[0]).toMatchObject({
+    saleId: SALE_ID,
+    consent: {
+      termsAccepted: true,
+      immediatePerformanceRequested: true,
+      withdrawalWaiverAcknowledged: true,
+    },
+  });
+});
