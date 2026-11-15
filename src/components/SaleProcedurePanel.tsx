@@ -323,7 +323,10 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-brand-navy">
         <span className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-gold-text" aria-hidden />
-          Vérification Immojudis · {sourceLinks.length} source{sourceLinks.length > 1 ? "s" : ""}
+          Vérification Immojudis
+          {sourceLinks.length
+            ? ` · ${sourceLinks.length} source${sourceLinks.length > 1 ? "s" : ""}`
+            : null}
         </span>
         <span className="text-xs font-normal text-brand-navy/75">
           {procedure.verifiedAt
@@ -332,11 +335,13 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
         </span>
       </summary>
       <div className="mt-4 grid gap-5 border-t border-brand-navy/10 pt-4 @2xl:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-            Sources contrôlées
-          </p>
-          {sourceLinks.length ? (
+        {/* Without the Analyse offer the listing source is not served: without any other source
+            with a link, the column is left out rather than shown empty. */}
+        {sourceLinks.length ? (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
+              Sources contrôlées
+            </p>
             <ul className="mt-3 space-y-2">
               {sourceLinks.map((source) => (
                 <li key={source.href}>
@@ -355,12 +360,8 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="mt-2 text-sm text-brand-navy/75">
-              Les justificatifs de cette qualification sont en cours de rattachement.
-            </p>
-          )}
-        </div>
+          </div>
+        ) : null}
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
             Points encore ouverts

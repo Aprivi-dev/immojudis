@@ -127,12 +127,10 @@ export function planForSaleDoor(plan: PlanEntitlements, door: SaleFeatureDoor): 
  * investment score and its factors, the risks and the pipeline's risk notes, the source names and
  * urls, the raw payload. The columns `v_auction_sales_unlocked` empties, applied again on the server
  * side so that a sale read for an unlock carries none of them whatever its origin. The source also
- * travels inside `sale_procedure` (`unlockedSaleProcedure`): it is removed there too.
+ * travels inside `sale_procedure` (`saleWithoutListingSource`): it is removed there too.
  */
 export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
   const {
-    sale_procedure: saleProcedure,
-    source_blocks: sourceBlocks,
     raw_payload: _rawPayload,
     premium_readiness_score: _readinessScore,
     premium_readiness_status: _readinessStatus,
@@ -142,16 +140,9 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
     premium_readiness_missing_fields: _readinessMissing,
     premium_readiness_evaluated_at: _readinessEvaluatedAt,
     ...rest
-  } = sale;
+  } = saleWithoutListingSource(sale);
   return {
     ...rest,
-    ...(saleProcedure === undefined
-      ? {}
-      : { sale_procedure: unlockedSaleProcedure(saleProcedure) as AuctionSale["sale_procedure"] }),
-    source_blocks:
-      sourceBlocks && "sale_procedure" in sourceBlocks
-        ? { ...sourceBlocks, sale_procedure: unlockedSaleProcedure(sourceBlocks.sale_procedure) }
-        : sourceBlocks,
     investment_score: null,
     investment_summary: null,
     score_version: null,
@@ -169,10 +160,36 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
 }
 
 /**
- * Kinds of `sale_procedure.verification.case_sources` an unlock may show, as the pipeline writes them
- * (`_case_sources`, `services/data-pipeline/src/sale_procedure.py`): the case documents and the
- * official reference of the competent court. The `listing` entry carries the source url and name;
- * any other or unknown kind is removed too (closed by default).
+ * The sale with `sale_procedure` and `source_blocks.sale_procedure` passed through
+ * `saleProcedureWithoutListingSource`, nothing else changed: for any reader without the Analyse offer.
+ */
+export function saleWithoutListingSource(sale: AuctionSale): AuctionSale {
+  const { sale_procedure: saleProcedure, source_blocks: sourceBlocks } = sale;
+  return {
+    ...sale,
+    ...(saleProcedure === undefined
+      ? {}
+      : {
+          sale_procedure: saleProcedureWithoutListingSource(
+            saleProcedure,
+          ) as AuctionSale["sale_procedure"],
+        }),
+    ...(sourceBlocks && "sale_procedure" in sourceBlocks
+      ? {
+          source_blocks: {
+            ...sourceBlocks,
+            sale_procedure: saleProcedureWithoutListingSource(sourceBlocks.sale_procedure),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Kinds of `sale_procedure.verification.case_sources` a reader without the Analyse offer may see, as
+ * the pipeline writes them (`_case_sources`, `services/data-pipeline/src/sale_procedure.py`): the case
+ * documents and the official reference of the competent court. The `listing` entry carries the source
+ * url and name; any other or unknown kind is removed too (closed by default).
  */
 const UNLOCK_CASE_SOURCE_KINDS: ReadonlySet<unknown> = new Set(["document", "official_reference"]);
 
@@ -180,8 +197,12 @@ const UNLOCK_CASE_SOURCE_KINDS: ReadonlySet<unknown> = new Set(["document", "off
  * `sale_procedure` without the listing source: the case sources outside `UNLOCK_CASE_SOURCE_KINDS`,
  * the listing platform's name on the documents (the pipeline copies `source_name` there), and every
  * `…source_url` key (schedule, payment deadline, facts: the pipeline fills them with the listing url).
+ * `case_sources` that is not an array holds no entry of an allowed kind: it becomes empty.
+ * The database applies the same rule to the views of a reader without the Analyse offer
+ * (`app_private.sale_procedure_without_listing_source`, migration 20261123100000): the parity test
+ * `sale-procedure-without-listing-source.test.ts` passes the same cases to both.
  */
-function unlockedSaleProcedure(value: unknown): unknown {
+export function saleProcedureWithoutListingSource(value: unknown): unknown {
   const procedure = withoutSourceUrlKeys(value);
   if (!procedure || typeof procedure !== "object" || Array.isArray(procedure)) return procedure;
   const record = procedure as Record<string, unknown>;
@@ -189,13 +210,13 @@ function unlockedSaleProcedure(value: unknown): unknown {
   if (!verification || typeof verification !== "object" || Array.isArray(verification)) {
     return record;
   }
+  if (!("case_sources" in verification)) return record;
   const caseSources = (verification as Record<string, unknown>).case_sources;
-  if (!Array.isArray(caseSources)) return record;
   return {
     ...record,
     verification: {
       ...verification,
-      case_sources: caseSources
+      case_sources: (Array.isArray(caseSources) ? caseSources : [])
         .filter((source) => UNLOCK_CASE_SOURCE_KINDS.has(asRecord(source).kind))
         .map((source) => {
           const entry = asRecord(source);
