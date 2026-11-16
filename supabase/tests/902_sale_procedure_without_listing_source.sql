@@ -2,6 +2,7 @@
 -- (20261123100000) : v_auction_sales_discovery, v_auction_sales_discovery_search et
 -- v_auction_sales_unlocked passent sale_procedure (et source_blocks.sale_procedure), source_conflicts et
 -- source_presence par leurs fonctions de projection ; la vue découverte retire aussi l'adresse des pièces.
+-- source_checks suit la même règle depuis 20261124100000 (ses valeurs portaient le nom de la plateforme).
 -- v_auction_sales_app (offre Analyse) sert les trois champs complets.
 -- La procédure de la vente est celle qu'écrit le pipeline (_case_sources, _verification_facts, horaire,
 -- délai de paiement), avec le premier cas du test de parité Vitest
@@ -12,7 +13,7 @@ begin;
 -- le test vérifie ce que lit un compte gratuit.
 update app_private.launch_offer set active = false where singleton;
 
-select plan(31);
+select plan(34);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -47,7 +48,14 @@ insert into public.auction_sales (
      "selected_source": "https://annonce-privee.example/vente/902",
      "alternative_source": "https://annonce-privee.example/vente/902-bis",
      "observed_primary_source": "https://annonce-privee.example/vente/902"}
-  ]}$json$::jsonb,
+  ],
+  "source_checks": {
+    "https://annonce-privee.example/vente/902": {
+      "checked_at": "2026-11-01T08:00:00+00:00", "source_name": "plateforme-privee-902",
+      "fingerprint": "empreinte-902", "evidence_fingerprint": "preuve-902",
+      "extractor_version": "source_extraction_20260913_v3", "capture_kind": "detail",
+      "capture_fingerprints": {"detail": {"facts": "empreinte-902"}}, "detail_status": "complete"}
+  }}$json$::jsonb,
   $json${
     "schema_version": "sale_procedure_v1",
     "venue_type": "tribunal",
@@ -227,6 +235,36 @@ select ok(
   'an empty or missing value stays empty'
 );
 
+-- source_checks (20261124100000) ---------------------------------------------------------------
+select ok(
+  (select p.provolatile = 'i' and not p.prosecdef and p.proconfig = array['search_path=""']
+      and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      and has_function_privilege('service_role', p.oid, 'EXECUTE')
+      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+     from pg_catalog.pg_proc p
+    where p.oid = 'app_private.source_checks_without_listing_source(jsonb)'::regprocedure),
+  'the source_checks projection is immutable, security invoker, with an empty search_path, closed to anon'
+);
+select is(
+  app_private.source_checks_without_listing_source($json${
+    "https://annonce-privee.example/vente/b": {
+      "checked_at": "2026-11-02T08:00:00+00:00", "source_name": "plateforme-privee", "fingerprint": "f2",
+      "evidence_fingerprint": "e2", "extractor_version": "source_extraction_20260913_v3",
+      "capture_kind": "detail", "capture_fingerprints": {"detail": {"facts": "x"}}, "detail_status": "complete",
+      "display_invalidations": ["https://annonce-privee.example/vente/b"]},
+    "https://annonce.example/vente/a": {
+      "checked_at": "2026-11-01T08:00:00+00:00", "source_name": "vench", "fingerprint": "f1",
+      "field": "surface", "fields": ["surface", "starting_price"]},
+    "Z-en-capitale": {"source_name": "licitor"},
+    "texte": "https://annonce-privee.example/a"}$json$::jsonb),
+  $json${
+    "source_1": {},
+    "source_2": {"checked_at": "2026-11-02T08:00:00+00:00", "extractor_version": "source_extraction_20260913_v3"},
+    "source_3": {"checked_at": "2026-11-01T08:00:00+00:00", "field": "surface", "fields": ["surface", "starting_price"]},
+    "source_4": {}}$json$::jsonb,
+  'a check is re-keyed in the order of the keys and keeps checked_at, extractor_version, field and fields only'
+);
+
 -- A free account, no unlock: the discovery view ------------------------------------------------
 set local role authenticated;
 set local "request.jwt.claim.role" = 'authenticated';
@@ -296,6 +334,13 @@ select ok(
   'discovery: the conflict keeps its field, the presence its availability and state under source_1'
 );
 select is(
+  (select source_checks
+     from public.v_auction_sales_discovery where id = 'c9020000-1000-4000-8000-000000000001'),
+  $json${"source_1": {"checked_at": "2026-11-01T08:00:00+00:00",
+                      "extractor_version": "source_extraction_20260913_v3"}}$json$::jsonb,
+  'discovery: the source check keeps its date and extractor version under source_1, without the source name'
+);
+select is(
   (select count(*) from public.v_auction_sales_unlocked where id = 'c9020000-1000-4000-8000-000000000001'),
   0::bigint,
   'the sale is not unlocked yet'
@@ -336,10 +381,11 @@ select ok(
       and u.sale_procedure -> 'verification' -> 'facts' = d.sale_procedure -> 'verification' -> 'facts'
       and u.source_conflicts = d.source_conflicts
       and u.source_presence = d.source_presence
+      and u.source_checks = d.source_checks
      from public.v_auction_sales_unlocked u
      join public.v_auction_sales_discovery d on d.id = u.id
     where u.id = 'c9020000-1000-4000-8000-000000000001'),
-  'unlocked: rules, dates, legal basis, facts, conflicts and presence as in discovery'
+  'unlocked: rules, dates, legal basis, facts, conflicts, presence and source checks as in discovery'
 );
 reset role;
 
