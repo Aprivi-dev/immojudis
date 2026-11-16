@@ -16,6 +16,9 @@ vi.mock("@/lib/client-api", () => ({
   executeAdminContractWithdrawal: vi.fn(),
   executeAdminPrivacyErasure: vi.fn(),
   fetchAdminProfessionalPrivacyExport: vi.fn(),
+  fetchAdminAccountPrivacyExport: vi.fn(),
+  fetchAdminContractWithdrawalContext: vi.fn(),
+  fetchAdminErasureGuard: vi.fn(),
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 

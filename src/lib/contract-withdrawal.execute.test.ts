@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
   subscriptionsCancel: vi.fn(),
   chargesList: vi.fn(),
   refundsCreate: vi.fn(),
+  refundsList: vi.fn(),
   updatePrivacyRequest: vi.fn(),
+  updates: [] as Array<{ table: string; value: unknown }>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -16,10 +18,11 @@ vi.mock("@/lib/billing", () => ({
   getStripe: () => ({
     subscriptions: { retrieve: mocks.subscriptionsRetrieve, cancel: mocks.subscriptionsCancel },
     charges: { list: mocks.chargesList },
-    refunds: { create: mocks.refundsCreate },
+    refunds: { create: mocks.refundsCreate, list: mocks.refundsList },
   }),
 }));
-vi.mock("@/lib/privacy-requests", () => ({
+vi.mock("@/lib/privacy-requests", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/privacy-requests")>()),
   updatePrivacyRequestForAdmin: mocks.updatePrivacyRequest,
 }));
 
@@ -32,9 +35,13 @@ const auth = { isAdmin: true, userId: "admin" } as unknown as SupabaseAuthContex
 const periodStart = Date.UTC(2026, 9, 1) / 1000;
 const periodEnd = Date.UTC(2026, 9, 31) / 1000;
 
-function chain(result: { data: unknown; error: unknown }) {
+function chain(result: { data: unknown; error: unknown }, table = "") {
   const query: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "update"]) query[method] = () => query;
+  for (const method of ["select", "eq"]) query[method] = () => query;
+  query.update = (value: unknown) => {
+    mocks.updates.push({ table, value });
+    return query;
+  };
   query.single = () => Promise.resolve(result);
   query.maybeSingle = () => Promise.resolve(result);
   query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
@@ -95,6 +102,7 @@ function run(refundMode: "prorata" | "full", now: string) {
 describe("executeContractWithdrawal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.updates = [];
     mocks.from.mockImplementation((table: string) =>
       table === "data_subject_requests"
         ? chain({
@@ -103,13 +111,19 @@ describe("executeContractWithdrawal", () => {
               request_type: "contract_withdrawal",
               status: "in_progress",
               user_id: USER_ID,
+              identity_status: "verified",
+              operator_notes: "Pièce reçue le 03/10.",
+              metadata: { source: "authenticated_rights_portal" },
             },
             error: null,
           })
-        : chain({
-            data: { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" },
-            error: null,
-          }),
+        : chain(
+            {
+              data: { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" },
+              error: null,
+            },
+            table,
+          ),
     );
     mocks.subscriptionsRetrieve.mockResolvedValue(subscription("pi_latest"));
     mocks.updatePrivacyRequest.mockImplementation(async ({ input }) => input);
@@ -307,5 +321,139 @@ describe("executeContractWithdrawal", () => {
     ).rejects.toMatchObject({ status: 409, message: expect.stringContaining(message) });
     expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
     expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("executeContractWithdrawal : M4 et F3", () => {
+  const PURCHASE_ID = "44444444-4444-4444-8444-444444444444";
+
+  function requestRow(
+    metadata: Record<string, unknown> = { source: "authenticated_rights_portal" },
+  ) {
+    return {
+      id: REQUEST_ID,
+      request_type: "contract_withdrawal",
+      status: "received",
+      user_id: USER_ID,
+      identity_status: "verified",
+      operator_notes: "Pièce reçue le 03/10.",
+      metadata,
+    };
+  }
+
+  function tables(rows: Record<string, unknown>) {
+    mocks.from.mockImplementation((table: string) =>
+      chain({ data: rows[table] ?? null, error: null }, table),
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updates = [];
+    mocks.updatePrivacyRequest.mockImplementation(async ({ input }) => input);
+    mocks.refundsList.mockResolvedValue({ data: [] });
+    mocks.refundsCreate.mockResolvedValue({ id: "re_unit", amount: 1_900 });
+  });
+
+  it("M4 (b) : sans abonnement Stripe ni achat, 409 ; la demande reste ouverte et l'accès n'est pas touché", async () => {
+    tables({ data_subject_requests: requestRow(), user_subscriptions: null });
+    await expect(run("full", "2026-10-04T00:00:00.000Z")).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("Aucun abonnement Stripe ni achat"),
+    });
+    expect(mocks.updates.filter((entry) => entry.table === "user_subscriptions")).toEqual([]);
+    expect(mocks.updatePrivacyRequest).not.toHaveBeenCalled();
+  });
+
+  it("F3 : ajoute la note au journal opérateur et ne rétrograde pas l'identité vérifiée", async () => {
+    tables({
+      data_subject_requests: requestRow(),
+      user_subscriptions: { stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1" },
+    });
+    mocks.subscriptionsRetrieve.mockResolvedValue(subscription(null));
+    mocks.chargesList.mockResolvedValue({ data: [], has_more: false });
+
+    await run("full", "2026-10-04T00:00:00.000Z");
+    const update = mocks.updatePrivacyRequest.mock.calls[0][0].input;
+    expect(update.operatorNotes).toMatch(/^Pièce reçue le 03\/10\.\nRétractation exécutée/);
+    expect(update.identityStatus).toBeUndefined();
+  });
+
+  it("M4 (c) : rembourse l'achat à l'unité par son paiement, clé stable, sans toucher l'abonnement", async () => {
+    tables({
+      data_subject_requests: requestRow({
+        source: "authenticated_rights_portal",
+        withdrawal_target: { kind: "sale_unlock_purchase", purchase_id: PURCHASE_ID },
+      }),
+      sale_unlock_purchases: {
+        id: PURCHASE_ID,
+        user_id: USER_ID,
+        state: "paid",
+        payment_intent_id: "pi_unit",
+        amount_cents: 1_900,
+      },
+    });
+
+    const result = await run("prorata", "2026-11-16T00:00:00.000Z");
+
+    expect(result).toMatchObject({ refundedCents: 1_900, subscriptionCancelled: false });
+    expect(mocks.refundsCreate).toHaveBeenCalledWith(
+      {
+        payment_intent: "pi_unit",
+        metadata: {
+          reason: "contract_withdrawal",
+          withdrawal_request_id: REQUEST_ID,
+          purchase_id: PURCHASE_ID,
+        },
+      },
+      { idempotencyKey: `immojudis-sale-unlock-withdrawal-${PURCHASE_ID}` },
+    );
+    expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
+    expect(mocks.subscriptionsCancel).not.toHaveBeenCalled();
+    expect(mocks.updates.filter((entry) => entry.table === "user_subscriptions")).toEqual([]);
+    expect(mocks.updatePrivacyRequest.mock.calls[0][0].input).toMatchObject({
+      status: "completed",
+      resolutionCode: "withdrawal_executed",
+      response: expect.stringContaining("19,00"),
+    });
+  });
+
+  it("M4 (c) : un remboursement déjà émis sur ce paiement n'est pas refait", async () => {
+    tables({
+      data_subject_requests: requestRow({
+        withdrawal_target: { kind: "sale_unlock_purchase", purchase_id: PURCHASE_ID },
+      }),
+      sale_unlock_purchases: {
+        id: PURCHASE_ID,
+        user_id: USER_ID,
+        state: "paid",
+        payment_intent_id: "pi_unit",
+        amount_cents: 1_900,
+      },
+    });
+    mocks.refundsList.mockResolvedValue({
+      data: [{ id: "re_prev", amount: 1_900, status: "succeeded" }],
+    });
+    const result = await run("full", "2026-11-16T00:00:00.000Z");
+    expect(result.refundedCents).toBe(0);
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
+
+  it("M4 (c) : refuse un achat d'un autre compte, sans rien rembourser ni clore", async () => {
+    tables({
+      data_subject_requests: requestRow({
+        withdrawal_target: { kind: "sale_unlock_purchase", purchase_id: PURCHASE_ID },
+      }),
+      sale_unlock_purchases: {
+        id: PURCHASE_ID,
+        user_id: "55555555-5555-4555-8555-555555555555",
+        state: "paid",
+        payment_intent_id: "pi_unit",
+        amount_cents: 1_900,
+      },
+    });
+    await expect(run("full", "2026-11-16T00:00:00.000Z")).rejects.toMatchObject({ status: 409 });
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+    expect(mocks.updatePrivacyRequest).not.toHaveBeenCalled();
   });
 });

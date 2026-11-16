@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { evaluateAutopilotSilence } from "@/lib/information-agent/autopilot-settings";
 import { operationalErrorMessage } from "@/lib/monitored-job.server";
 import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
+import { followUpPrivacyRequests } from "@/lib/privacy-request-notifications";
 
 /** Tâche planifiée `operational-health` : évaluations de santé en base, puis remise des alertes. */
 export async function evaluateOperationalHealth(
@@ -19,6 +20,9 @@ export async function evaluateOperationalHealth(
     // Pilote de l'agent muet : la règle est en TypeScript (plage d'envoi à l'heure de Paris, passages
     // planifiés seulement), seule l'alerte est écrite en base.
     evaluateAutopilotSilence(now).then((data) => ({ data, error: null })),
+    // Demandes de droits : alertes d'échéance (`compliance.privacy_requests.*`) et reprise des emails de
+    // suivi en attente. Avant la migration 20261202100000, l'évaluation est sautée sans erreur.
+    followUpPrivacyRequests(now).then((data) => ({ data, error: null })),
   ]);
   // Deliver incidents even when an independent evaluator fails.
   const delivery = await deliverOperationalAlertNotifications();
@@ -45,6 +49,7 @@ export async function evaluateOperationalHealth(
     pipeline: data[2],
     informationAgent: data[3],
     informationAgentAutopilot: data[4],
+    privacyRequests: data[5],
     externalAlerts: delivery,
   };
 }

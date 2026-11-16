@@ -1,6 +1,9 @@
 import { apiRequest } from "@/lib/client-api-core";
+import type { ContractWithdrawalContext } from "@/lib/contract-withdrawal";
 import type { ProfessionalDataExport } from "@/lib/information-agent-professional-rights";
+import type { AccountDataExport } from "@/lib/privacy-account-export";
 import type {
+  ErasureGuard,
   PrivacyRequestAdminListResponse,
   PrivacyRequestAdminSummary,
   PrivacyErasureExecuteInput,
@@ -52,6 +55,28 @@ export function executeAdminContractWithdrawal(data: {
     "/api/admin/privacy-requests/withdrawal",
     { method: "POST", body: data },
   );
+}
+
+/** Objet d'une rétractation et faits utiles à la décision (achat à l'unité). */
+export function fetchAdminContractWithdrawalContext(
+  requestId: string,
+): Promise<ContractWithdrawalContext> {
+  const search = new URLSearchParams({ requestId });
+  return apiRequest<ContractWithdrawalContext>(
+    "/api/admin/privacy-requests/withdrawal?" + search,
+  );
+}
+
+/** Garde avant effacement : ce qui serait perdu avec le compte (administrateur). */
+export function fetchAdminErasureGuard(requestId: string): Promise<ErasureGuard> {
+  const search = new URLSearchParams({ requestId });
+  return apiRequest<ErasureGuard>("/api/admin/privacy-requests/erasure-guard?" + search);
+}
+
+/** Copie des données d'un titulaire de compte (demande d'accès ou de portabilité). */
+export function fetchAdminAccountPrivacyExport(requestId: string): Promise<AccountDataExport> {
+  const search = new URLSearchParams({ requestId });
+  return apiRequest<AccountDataExport>("/api/admin/privacy-requests/account-export?" + search);
 }
 
 /** Copie des données d'un professionnel sans compte qui a demandé l'accès (administrateur). */
