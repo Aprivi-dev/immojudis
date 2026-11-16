@@ -32,6 +32,7 @@ import { PublicApiError } from "@/lib/api-errors";
 import { normalizeEmail } from "@/lib/account";
 import { formatDate } from "@/lib/format/dates";
 import { isPlanPeriodActive } from "@/lib/plans";
+import { ANALYSIS_CHECKOUT_EXPIRY_MINUTES } from "@/lib/analysis-offer";
 
 const privacyRequestTypeSchema = z.enum(PRIVACY_REQUEST_TYPES);
 
@@ -195,17 +196,41 @@ export function withdrawalPurchaseIdOf(metadata: Json | null | undefined): strin
 }
 
 /**
- * Achats à l'unité du compte payés depuis moins de `WITHDRAWAL_PERIOD_DAYS` jours et pas encore
- * remboursés : ceux dont la rétractation peut être demandée.
+ * Achat à l'unité déduit du premier mois d'un abonnement (`settle_unit_purchase_deduction`, migration
+ * 20261122100000) : il reste `paid`, mais son prix a déjà été rendu par la remise. Il n'est plus un
+ * crédit (même condition que `app_private.sale_unlock_credit_purchases`) ni remboursable seul.
  */
-async function listWithdrawablePurchases(
+export function isDeductedPurchase(purchase: {
+  deducted_checkout_session_id?: string | null;
+}): boolean {
+  return Boolean(purchase.deducted_checkout_session_id);
+}
+
+/**
+ * Achat réservé par un checkout d'abonnement encore ouvert (`reserve_unit_purchase_deduction` : une
+ * réservation vit `ANALYSIS_CHECKOUT_EXPIRY_MINUTES` minutes). Le rembourser maintenant laisserait la
+ * déduction se régler sur un achat remboursé.
+ */
+export function hasLiveDeductionReservation(
+  purchase: { deduction_reserved_token?: string | null; deduction_reserved_at?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (!purchase.deduction_reserved_token || !purchase.deduction_reserved_at) return false;
+  const reservedAt = new Date(purchase.deduction_reserved_at).getTime();
+  return reservedAt > now.getTime() - ANALYSIS_CHECKOUT_EXPIRY_MINUTES * 60_000;
+}
+
+type RecentPaidPurchase = WithdrawablePurchase & { deducted: boolean };
+
+/** Achats à l'unité `paid` du compte payés depuis moins de `WITHDRAWAL_PERIOD_DAYS` jours. */
+async function listRecentPaidPurchases(
   userId: string,
   now: Date = new Date(),
-): Promise<WithdrawablePurchase[]> {
+): Promise<RecentPaidPurchase[]> {
   const since = new Date(now.getTime() - WITHDRAWAL_PERIOD_DAYS * DAY_MS).toISOString();
   const { data, error } = await supabaseAdmin
     .from("sale_unlock_purchases")
-    .select("id,paid_at,amount_cents,currency")
+    .select("id,paid_at,amount_cents,currency,deducted_checkout_session_id")
     .eq("user_id", userId)
     .eq("state", "paid")
     .gt("paid_at", since)
@@ -214,8 +239,29 @@ async function listWithdrawablePurchases(
   if (error) throw error;
   return (data ?? []).flatMap((row) =>
     row.paid_at
-      ? [{ id: row.id, paidAt: row.paid_at, amountCents: row.amount_cents, currency: row.currency }]
+      ? [
+          {
+            id: row.id,
+            paidAt: row.paid_at,
+            amountCents: row.amount_cents,
+            currency: row.currency,
+            deducted: isDeductedPurchase(row),
+          },
+        ]
       : [],
+  );
+}
+
+/**
+ * Achats à l'unité du compte payés depuis moins de `WITHDRAWAL_PERIOD_DAYS` jours, pas encore
+ * remboursés ni déduits d'un abonnement : ceux dont la rétractation peut être demandée.
+ */
+async function listWithdrawablePurchases(
+  userId: string,
+  now: Date = new Date(),
+): Promise<WithdrawablePurchase[]> {
+  return (await listRecentPaidPurchases(userId, now)).flatMap(({ deducted, ...purchase }) =>
+    deducted ? [] : [purchase],
   );
 }
 
@@ -246,7 +292,7 @@ export async function createPrivacyRequest({
     const purchases = await listWithdrawablePurchases(auth.userId);
     if (!purchases.some((purchase) => purchase.id === input.purchaseId)) {
       throw new PublicApiError(
-        `Cet achat n’est pas rétractable depuis cet espace : il doit avoir été payé il y a moins de ${WITHDRAWAL_PERIOD_DAYS} jours.`,
+        `Cet achat n’est pas rétractable depuis cet espace : il doit avoir été payé il y a moins de ${WITHDRAWAL_PERIOD_DAYS} jours et ne pas avoir été déduit d’un abonnement.`,
         400,
       );
     }
@@ -515,7 +561,6 @@ type DeleteBuilder = {
   from(name: string): {
     delete(options: { count: "exact" }): {
       eq(column: string, value: string): DeleteResult;
-      ilike(column: string, pattern: string): DeleteResult;
     };
   };
 };
@@ -540,7 +585,9 @@ export type ErasureGuard = {
 /**
  * Garde avant effacement (M2) : abonnement Analyse actif, achat à l'unité encore rétractable, crédit
  * non utilisé. Le crédit se lit par la base (`account_sale_unlock_credits`, migration 20261202100000) ;
- * sans elle, il est « non vérifiable » et la confirmation est exigée quand même.
+ * sans elle, il est « non vérifiable » et la confirmation est exigée quand même. Un achat récent déduit
+ * d'un abonnement n'est pas un achat remboursable, mais il signale un abonnement conclu depuis peu, dont
+ * la rétractation serait perdue : il exige aussi la confirmation, avec son propre motif.
  */
 async function computeErasureGuard(userId: string, now: Date = new Date()): Promise<ErasureGuard> {
   const [subscription, purchases, credits] = await Promise.all([
@@ -549,9 +596,11 @@ async function computeErasureGuard(userId: string, now: Date = new Date()): Prom
       .select("status,current_period_end")
       .eq("user_id", userId)
       .maybeSingle(),
-    listWithdrawablePurchases(userId, now),
+    listRecentPaidPurchases(userId, now),
     supabaseAdmin.rpc("account_sale_unlock_credits", { p_user_id: userId }),
   ]);
+  const withdrawable = purchases.filter((purchase) => !purchase.deducted).length;
+  const deducted = purchases.length - withdrawable;
   if (subscription.error) throw subscription.error;
   const reasons: string[] = [];
   const period = subscription.data;
@@ -560,9 +609,14 @@ async function computeErasureGuard(userId: string, now: Date = new Date()): Prom
       `Abonnement Analyse actif (période payée jusqu'au ${formatDate(period.current_period_end)}) : il sera résilié sans remboursement.`,
     );
   }
-  if (purchases.length) {
+  if (withdrawable) {
     reasons.push(
-      `${purchases.length} achat(s) à l'unité payé(s) depuis moins de ${WITHDRAWAL_PERIOD_DAYS} jours : une rétractation reste possible et sera perdue.`,
+      `${withdrawable} achat(s) à l'unité payé(s) depuis moins de ${WITHDRAWAL_PERIOD_DAYS} jours : une rétractation reste possible et sera perdue.`,
+    );
+  }
+  if (deducted) {
+    reasons.push(
+      `${deducted} achat(s) à l'unité récent(s) déduit(s) du premier mois d'un abonnement : non remboursable(s) seul(s), mais la rétractation de cet abonnement reste possible et sera perdue.`,
     );
   }
   if (credits.error) {
@@ -710,23 +764,16 @@ export async function executePrivacyErasure({
   // (envoi avant la création du compte, lien perdu) et les invitations à un espace de travail reçues à
   // cette adresse sans compte. Avant la suppression Auth : l'adresse y est encore.
   const address = normalizeEmail(request.requester_email);
-  const deleteFrom = (table: string) =>
-    (supabaseAdmin as unknown as DeleteBuilder).from(table).delete({ count: "exact" });
-  for (const [key, removal] of [
-    ["email_send_log.to_address", deleteFrom("email_send_log").eq("to_address", address)],
-    [
-      "sale_workspace_collaborators.invited_email",
-      deleteFrom("sale_workspace_collaborators").ilike("invited_email", escapeLikePattern(address)),
-    ],
-  ] as const) {
-    const { count, error } = await removal;
-    if (error) {
-      throw new Error(
-        `Erasure failed in ${key.split(".")[0]}: ${error.message ?? "unknown error"}`,
-      );
-    }
-    deletedRows[key] = count ?? 0;
+  const { count: logCount, error: logError } = await (supabaseAdmin as unknown as DeleteBuilder)
+    .from("email_send_log")
+    .delete({ count: "exact" })
+    .eq("to_address", address);
+  if (logError) {
+    throw new Error(`Erasure failed in email_send_log: ${logError.message ?? "unknown error"}`);
   }
+  deletedRows["email_send_log.to_address"] = logCount ?? 0;
+  deletedRows["sale_workspace_collaborators.invited_email"] =
+    await deleteInvitationsToAddress(address);
 
   let storageObjectsRemoved = 0;
   if (accountId) {
@@ -760,6 +807,49 @@ export async function executePrivacyErasure({
     storageObjectsRemoved,
     authUserDeleted: true,
   };
+}
+
+const INVITATION_PAGE_SIZE = 1000;
+const INVITATION_DELETE_CHUNK = 100;
+
+/**
+ * Invitations à un espace de travail envoyées à `address` (déjà normalisée). `ilike` ne fait que réduire
+ * la lecture (PostgREST lit `*` comme `%`) : seule l'égalité exacte de l'adresse normalisée retient une
+ * ligne, puis la suppression vise ces identifiants. Rend le nombre de lignes supprimées.
+ */
+async function deleteInvitationsToAddress(address: string): Promise<number> {
+  const ids: string[] = [];
+  for (let from = 0; ; from += INVITATION_PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("sale_workspace_collaborators")
+      .select("id,invited_email")
+      .ilike("invited_email", escapeLikePattern(address))
+      .order("id")
+      .range(from, from + INVITATION_PAGE_SIZE - 1);
+    if (error) {
+      throw new Error(
+        `Erasure failed in sale_workspace_collaborators: ${error.message ?? "unknown error"}`,
+      );
+    }
+    for (const row of data ?? []) {
+      if (normalizeEmail(row.invited_email) === address) ids.push(row.id);
+    }
+    if ((data?.length ?? 0) < INVITATION_PAGE_SIZE) break;
+  }
+  let deleted = 0;
+  for (let index = 0; index < ids.length; index += INVITATION_DELETE_CHUNK) {
+    const { count, error } = await supabaseAdmin
+      .from("sale_workspace_collaborators")
+      .delete({ count: "exact" })
+      .in("id", ids.slice(index, index + INVITATION_DELETE_CHUNK));
+    if (error) {
+      throw new Error(
+        `Erasure failed in sale_workspace_collaborators: ${error.message ?? "unknown error"}`,
+      );
+    }
+    deleted += count ?? 0;
+  }
+  return deleted;
 }
 
 /** Garde le compte visé dans la demande, avant toute suppression (reprise F1). */

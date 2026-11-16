@@ -260,6 +260,29 @@ describe("/api/privacy/requests", () => {
     });
   });
 
+  it("un achat déduit du premier mois d'un abonnement n'est ni listé ni rétractable (400)", async () => {
+    const deducted = "66666666-6666-4666-8666-666666666666";
+    mocks.db = createFakeSupabase(
+      {
+        data_subject_requests: [],
+        sale_unlock_purchases: [
+          purchase("p-recent", "user-1", 2),
+          { ...purchase(deducted, "user-1", 2), deducted_checkout_session_id: "cs_analyse" },
+        ],
+      },
+      { defaults: DEFAULTS },
+    );
+
+    const body = await (await GET(request("GET"))).json();
+    expect(body.withdrawablePurchases.map((item: { id: string }) => item.id)).toEqual(["p-recent"]);
+
+    const refused = await POST(
+      request("POST", { requestType: "contract_withdrawal", purchaseId: deducted }),
+    );
+    expect(refused.status).toBe(400);
+    expect(mocks.db.rows("data_subject_requests")).toHaveLength(0);
+  });
+
   it("E1 : un échec d'envoi des emails ne fait pas échouer le dépôt", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     vi.stubEnv("ALERT_EMAIL_FROM", "Immojudis <alertes@immojudis.test>");

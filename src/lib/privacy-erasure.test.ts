@@ -16,6 +16,8 @@ const state = vi.hoisted(() => ({
   credits: { data: 0, error: null } as { data: number | null; error: { code?: string } | null },
   blockingCounts: {} as Record<string, number>,
   recentPurchases: [] as Array<Record<string, unknown>>,
+  invitations: [] as Array<{ id: string; invited_email: string }>,
+  invitationPatterns: [] as string[],
   deletes: [] as Array<{ table: string; column: string; value: string }>,
   deleteErrors: {} as Record<string, { code?: string; message?: string }>,
   updates: [] as Array<Record<string, unknown>>,
@@ -79,7 +81,16 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           }
           return builder;
         },
-        ilike: (column: string, value: string) => recordDelete(column, value),
+        ilike: (_column: string, pattern: string) => {
+          state.invitationPatterns.push(pattern);
+          return builder;
+        },
+        range: () =>
+          Promise.resolve({
+            data: table === "sale_workspace_collaborators" ? state.invitations : [],
+            error: null,
+          }),
+        in: (column: string, values: string[]) => recordDelete(column, values.join(",")),
         gt: () => builder,
         order: () => builder,
         limit: () => Promise.resolve({ data: state.recentPurchases, error: null }),
@@ -145,6 +156,8 @@ describe("erasure execution (P4-10)", () => {
     state.credits = { data: 0, error: null };
     state.blockingCounts = {};
     state.recentPurchases = [];
+    state.invitations = [{ id: "inv-1", invited_email: "Client@Example.test" }];
+    state.invitationPatterns = [];
     state.deletes = [];
     state.deleteErrors = {};
     state.updates = [];
@@ -195,20 +208,18 @@ describe("erasure execution (P4-10)", () => {
     }
     // Chaque suppression vise le compte, sauf celles par adresse (minuscules) : journal des emails et
     // invitations reçues sans compte (M5).
+    // Les invitations à l'adresse sont lues, puis supprimées par identifiant.
     const byAddress = state.deletes.filter(
-      (entry) => entry.column === "to_address" || entry.column === "invited_email",
+      (entry) => entry.column === "to_address" || entry.column === "id",
     );
     expect(byAddress).toEqual([
       { table: "email_send_log", column: "to_address", value: "client@example.test" },
-      {
-        table: "sale_workspace_collaborators",
-        column: "invited_email",
-        value: "client@example.test",
-      },
+      { table: "sale_workspace_collaborators", column: "id", value: "inv-1" },
     ]);
+    expect(state.invitationPatterns).toEqual(["client@example.test"]);
     expect(
       state.deletes
-        .filter((entry) => entry.column !== "to_address" && entry.column !== "invited_email")
+        .filter((entry) => entry.column !== "to_address" && entry.column !== "id")
         .every((entry) => entry.value === USER_ID),
     ).toBe(true);
     expect(state.deletes.filter((entry) => entry.table === "email_send_log")).toContainEqual({
@@ -360,6 +371,8 @@ describe("erasure: Stripe customers, guard, blocking references, retry and closu
     state.credits = { data: 0, error: null };
     state.blockingCounts = {};
     state.recentPurchases = [];
+    state.invitations = [{ id: "inv-1", invited_email: "Client@Example.test" }];
+    state.invitationPatterns = [];
     state.deletes = [];
     state.deleteErrors = {};
     state.updates = [];
@@ -413,6 +426,20 @@ describe("erasure: Stripe customers, guard, blocking references, retry and closu
     await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
       "achat(s) à l'unité",
     );
+    // Achat déduit du premier mois d'un abonnement : pas remboursable seul, mais la confirmation
+    // reste exigée (rétractation de l'abonnement perdue), avec son propre motif.
+    state.recentPurchases = [
+      {
+        id: "p2",
+        paid_at: "2026-11-15T10:00:00.000Z",
+        amount_cents: 1900,
+        currency: "eur",
+        deducted_checkout_session_id: "cs_analyse",
+      },
+    ];
+    const deducted = executePrivacyErasure({ auth: admin, input });
+    await expect(deducted).rejects.toThrow("déduit(s) du premier mois d'un abonnement");
+    await expect(deducted).rejects.not.toThrow("une rétractation reste possible");
     state.recentPurchases = [];
     state.credits = { data: 2, error: null };
     await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
@@ -449,9 +476,35 @@ describe("erasure: Stripe customers, guard, blocking references, retry and closu
     });
     expect(state.deletes).toContainEqual({
       table: "sale_workspace_collaborators",
-      column: "invited_email",
-      value: "client@example.test",
+      column: "id",
+      value: "inv-1",
     });
+  });
+
+  it("une adresse « *@x.fr » n'efface que ses propres invitations, pas celles d'une autre adresse", async () => {
+    state.requestRow = request({ requester_email: "*@x.fr" });
+    // `*` vaut `%` pour PostgREST : la lecture large peut rendre l'invitation d'une autre adresse.
+    state.invitations = [
+      { id: "inv-other", invited_email: "autre@x.fr" },
+      { id: "inv-own", invited_email: "*@X.fr" },
+    ];
+    const report = await executePrivacyErasure({
+      auth: admin,
+      input: { requestId: REQUEST_ID, confirmEmail: "*@x.fr" },
+    });
+    expect(state.invitationPatterns).toEqual(["_@x.fr"]);
+    const invitationDeletes = state.deletes.filter((entry) => entry.column === "id");
+    expect(invitationDeletes).toEqual([
+      { table: "sale_workspace_collaborators", column: "id", value: "inv-own" },
+    ]);
+    expect(report.deletedRows["sale_workspace_collaborators.invited_email"]).toBe(1);
+  });
+
+  it("sans invitation à l'adresse, aucune suppression par identifiant", async () => {
+    state.invitations = [{ id: "inv-other", invited_email: "autre@example.test" }];
+    const report = await executePrivacyErasure({ auth: admin, input });
+    expect(state.deletes.filter((entry) => entry.column === "id")).toEqual([]);
+    expect(report.deletedRows["sale_workspace_collaborators.invited_email"]).toBe(0);
   });
 
   it("F1 : compte déjà supprimé (relance), la demande est close au lieu d'échouer", async () => {
@@ -467,10 +520,7 @@ describe("erasure: Stripe customers, guard, blocking references, retry and closu
     expect(state.stripeSearch).toHaveBeenCalledWith(expect.anything(), ACCOUNT);
     expect(state.stripeDel).toHaveBeenCalledWith("cus_left");
     // Les tables liées au compte sont parties en cascade : seules les suppressions par adresse restent.
-    expect(state.deletes.map((entry) => entry.column).sort()).toEqual([
-      "invited_email",
-      "to_address",
-    ]);
+    expect(state.deletes.map((entry) => entry.column).sort()).toEqual(["id", "to_address"]);
     expect(state.updates.at(-1)).toMatchObject({
       status: "completed",
       resolution_code: "erasure_executed",

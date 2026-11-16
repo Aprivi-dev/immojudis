@@ -45,12 +45,19 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             state.deletes.push(column);
             return { count: 0, error: null };
           },
-          ilike: async (column: string) => {
+          in: async (column: string) => {
             state.deletes.push(column);
-            return { count: 0, error: null };
+            return { count: 1, error: null };
           },
         }),
         eq: () => builder,
+        // Invitations à l'adresse : lues, puis supprimées par identifiant.
+        ilike: () => builder,
+        order: () => builder,
+        range: async () => ({
+          data: [{ id: "inv-1", invited_email: "maitre@cabinet.example" }],
+          error: null,
+        }),
         single: async () => {
           if (payload) {
             state.updates.push(payload);
@@ -149,7 +156,7 @@ describe("effacement d'un professionnel sans compte", () => {
     const report = await executePrivacyErasure({ auth: admin, input });
     expect(state.erase).not.toHaveBeenCalled();
     expect(state.deleteUser).not.toHaveBeenCalled();
-    expect(state.deletes.sort()).toEqual(["invited_email", "to_address"]);
+    expect(state.deletes.sort()).toEqual(["id", "to_address"]);
     expect(state.updates.at(-1)).toMatchObject({ resolution_code: "erasure_executed" });
     expect(report.request.subjectKind).toBe("account");
   });

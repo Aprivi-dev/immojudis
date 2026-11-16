@@ -27,7 +27,7 @@ vi.mock("@/lib/privacy-requests", async (importOriginal) => ({
 }));
 
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { executeContractWithdrawal } from "./contract-withdrawal";
+import { executeContractWithdrawal, getContractWithdrawalContext } from "./contract-withdrawal";
 
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -437,6 +437,81 @@ describe("executeContractWithdrawal : M4 et F3", () => {
     const result = await run("full", "2026-11-16T00:00:00.000Z");
     expect(result.refundedCents).toBe(0);
     expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
+
+  describe("achat déduit du premier mois d'un abonnement", () => {
+    function purchaseTables(purchase: Record<string, unknown>) {
+      tables({
+        data_subject_requests: requestRow({
+          withdrawal_target: { kind: "sale_unlock_purchase", purchase_id: PURCHASE_ID },
+        }),
+        sale_unlock_purchases: {
+          id: PURCHASE_ID,
+          user_id: USER_ID,
+          state: "paid",
+          payment_intent_id: "pi_unit",
+          amount_cents: 1_900,
+          deducted_checkout_session_id: null,
+          deduction_reserved_token: null,
+          deduction_reserved_at: null,
+          ...purchase,
+        },
+      });
+    }
+
+    it("refuse (409) un achat déduit : rien n'est remboursé ni clos", async () => {
+      purchaseTables({
+        deducted_checkout_session_id: "cs_analyse",
+        deduction_reserved_token: "token-1",
+        deduction_reserved_at: "2026-11-10T00:00:00.000Z",
+      });
+      await expect(run("full", "2026-11-16T00:00:00.000Z")).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("déduit du premier mois"),
+      });
+      expect(mocks.refundsList).not.toHaveBeenCalled();
+      expect(mocks.refundsCreate).not.toHaveBeenCalled();
+      expect(mocks.updatePrivacyRequest).not.toHaveBeenCalled();
+    });
+
+    it("refuse (409) un achat réservé par un checkout encore ouvert", async () => {
+      purchaseTables({
+        deduction_reserved_token: "token-1",
+        deduction_reserved_at: "2026-11-15T23:50:00.000Z",
+      });
+      await expect(run("full", "2026-11-16T00:00:00.000Z")).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("réservé pour la remise"),
+      });
+      expect(mocks.refundsCreate).not.toHaveBeenCalled();
+      expect(mocks.updatePrivacyRequest).not.toHaveBeenCalled();
+    });
+
+    it("le contexte de rétractation montre l'achat déduit à l'opérateur", async () => {
+      purchaseTables({
+        deducted_checkout_session_id: "cs_analyse",
+        commercial_acceptance_id: null,
+      });
+      const context = await getContractWithdrawalContext({ auth, requestId: REQUEST_ID });
+      expect(context).toMatchObject({
+        target: "sale_unlock_purchase",
+        purchase: { id: PURCHASE_ID, deducted: true },
+      });
+      purchaseTables({ commercial_acceptance_id: null });
+      expect(await getContractWithdrawalContext({ auth, requestId: REQUEST_ID })).toMatchObject({
+        purchase: { deducted: false },
+      });
+    });
+
+    it("rembourse un achat dont la réservation a expiré (31 minutes)", async () => {
+      purchaseTables({
+        deduction_reserved_token: "token-1",
+        deduction_reserved_at: "2026-11-15T23:29:00.000Z",
+      });
+      const result = await run("full", "2026-11-16T00:00:00.000Z");
+      expect(result.refundedCents).toBe(1_900);
+      expect(mocks.refundsCreate).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("M4 (c) : refuse un achat d'un autre compte, sans rien rembourser ni clore", async () => {

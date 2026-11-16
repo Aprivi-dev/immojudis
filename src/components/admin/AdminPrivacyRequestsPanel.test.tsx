@@ -170,6 +170,7 @@ describe("AdminPrivacyRequestsPanel : rétractation d'un achat à l'unité (M4)"
         currency: "eur",
         withinWithdrawalPeriod: true,
         accessProvided: true,
+        deducted: false,
         waiverAcknowledged: true,
         confirmationSent: true,
       },
@@ -188,6 +189,33 @@ describe("AdminPrivacyRequestsPanel : rétractation d'un achat à l'unité (M4)"
       refundMode: "full",
       confirm: true,
     });
+  });
+  it("signale un achat déduit du premier mois d'un abonnement", async () => {
+    mocks.fetchRequests.mockResolvedValue(
+      list([{ ...WITHDRAWAL, withdrawalPurchaseId: "76000000-0000-4000-8000-000000000201" }]),
+    );
+    mocks.withdrawalContext.mockResolvedValue({
+      target: "sale_unlock_purchase",
+      purchase: {
+        id: "76000000-0000-4000-8000-000000000201",
+        state: "paid",
+        paidAt: "2026-11-12T08:00:00.000Z",
+        amountCents: 1900,
+        currency: "eur",
+        withinWithdrawalPeriod: true,
+        accessProvided: false,
+        deducted: true,
+        waiverAcknowledged: true,
+        confirmationSent: true,
+      },
+    });
+    renderPanel();
+
+    expect(
+      await screen.findByText(
+        /Déduit du premier mois d’un abonnement : oui\. Plus remboursable seul/,
+      ),
+    ).toBeTruthy();
   });
 });
 
