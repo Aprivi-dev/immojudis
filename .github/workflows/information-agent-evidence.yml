@@ -21,6 +21,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     name: Analyze private information-agent attachments
     runs-on: ubuntu-24.04
+    # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
+    environment: Production
     timeout-minutes: 25
     env:
       # Secrets are given only to the steps that call Supabase or Replicate,
