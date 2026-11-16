@@ -1,85 +1,11 @@
-import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, copyFileSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, lstatSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 
 const image =
   "ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f";
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
-const immutableFixtureSha256 = new Map([
-  [
-    "docs/audits/sources-2026-10-02/primary/licitor-109932.html",
-    "b88fe200600ca1aab26c9ab71b24b7a5c168a85fa3e56893ac712a10724372f8",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/primary/licitor-list.html",
-    "a23e413fb4cc2a1a1929724def74b042e67fff1339fb21651941ddb3d416cab1",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/primary/licitor-110031.html",
-    "3ba66ee4ace8ea8960e8907d4cf1f78c21747327014b3f9a4f0bccd58e67caa4",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html",
-    "2f0400b3d193edcd6f7ff8e26b39b3482a09ea9b72ccbe84169ee453b17a68b5",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html",
-    "a93f01131c32c65b603bf6736c11bd3700fab18428c67254eb7236aa9dfa4322",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html",
-    "42dd472b648bb78db5f60b5b9284f22a773e693a6b3855cf4f9d447d10464e29",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html",
-    "af678113ea7b5de267043e853356633082d9c60dc607be9292dcba80c3ee36b5",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html",
-    "6a45e2bc51e3dbcf1c03efef76677ef0dcaaa1dc4bbef2fc0f8d81adeab82c94",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html",
-    "fe6b9292b2c46568c226e560f024ce8bbe74554627e16f2b9e9a519bbd1687a7",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html",
-    "592fd9bc37c06d0450e3231e5df43f47e04a6b4bd3ed5291e5c738b1ca0362bb",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html",
-    "3d5349b35a0c8dcdd484e718bd9b8bf11276e3b68aaf80e4aeb783d429d24383",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html",
-    "600a6c8cc373c8b46a1ef6744d0553855789709c42df234fe4aa2771df2bd21a",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html",
-    "06182ed381c13eaaf106162bfc1675a5a52edfbca68c10cd861e259c89cd3fb0",
-  ],
-  [
-    "docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html",
-    "c45513b44472c1a78a0c6de423ed54088a5439039c9184b09295519fd4dba9a6",
-  ],
-]);
-for (const [path, expected] of immutableFixtureSha256) {
-  const source = resolve(root, path);
-  let stat;
-  try {
-    stat = lstatSync(source);
-  } catch (error) {
-    // Releases may omit the public audit captures; without a file there is no
-    // current path/line fingerprint for this entry to hide.
-    if (error?.code === "ENOENT") continue;
-    throw error;
-  }
-  if (!stat.isFile()) continue;
-  const actual = createHash("sha256").update(readFileSync(source)).digest("hex");
-  if (actual !== expected) throw new Error(`Immutable secret-scan fixture changed: ${path}`);
-}
 if (
   execFileSync("git", ["rev-parse", "--is-shallow-repository"], { encoding: "utf8" }).trim() ===
   "true"

@@ -13,6 +13,7 @@ from src.sources.licitor_history import (
     parse_licitor_history_list_html,
     scrape_licitor_historical_result,
 )
+from tests.source_captures import require_source_captures
 
 LIST_HTML = """
 <article id="zone-list" class="Results Archives">
@@ -235,11 +236,7 @@ def test_live_crawl_requires_the_independent_environment_gate(monkeypatch: pytes
 def test_history_rows_never_carry_the_decoded_lawyer_email() -> None:
     # Fiche réelle 110031 : l'adresse Cloudflare de l'avocat est décodée par le parseur des annonces, mais
     # l'historique (droits de réutilisation commerciale en attente) ne la reprend pas.
-    from pathlib import Path
-
-    html = (
-        Path(__file__).resolve().parents[3] / "docs/audits/sources-2026-10-02/primary/licitor-110031.html"
-    ).read_text(encoding="utf-8")
+    html = (require_source_captures() / "primary/licitor-110031.html").read_text(encoding="utf-8")
     url = "https://www.licitor.com/annonce/11/00/31/vente-aux-encheres/trois-lots-de-copropriete/poitiers/86/110031.html"
 
     rows = parse_licitor_historical_detail_html(html, url)
