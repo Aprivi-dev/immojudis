@@ -9,8 +9,8 @@ import { serverEnv } from "@/lib/env";
  * mode du déploiement, secret de webhook, identité légale, canal de confirmation) sans son
  * interrupteur de vente : fermer la souscription Analyse ne ferme pas l'achat à l'unité. Il exige en
  * plus son propre Price (`STRIPE_SALE_UNLOCK_PRICE_ID`) et son interrupteur
- * `STRIPE_SALE_UNLOCK_SALES_OPEN`, FERMÉ par défaut : l'inverse de `STRIPE_ANALYSIS_SALES_OPEN`, qui
- * protège une vente déjà en ligne. Même format de valeur : seule `true` (casse indifférente) ouvre.
+ * `STRIPE_SALE_UNLOCK_SALES_OPEN`, FERMÉ par défaut, comme `STRIPE_ANALYSIS_SALES_OPEN` depuis le
+ * 16/11/2026. Même format de valeur : seule `true` (casse indifférente) ouvre.
  * Module sans accès à la base ni à Stripe.
  */
 export type SaleUnlockCheckoutReadiness = {
