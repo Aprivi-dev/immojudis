@@ -31,7 +31,8 @@ personnelles (noms, emails, pages sources capturées), ou de la stratégie (prix
 - Dans ce mode, seuls `developpeur` (code) et `redacteur-contenu` (contenus) modifient des
   fichiers, uniquement sur les points validés par l'utilisateur. Aucun agent n'écrit dans
   la base de production.
-- Les comptes-rendus vont dans `docs/equipe/` (voir son `README.md`).
+- Les comptes-rendus vont dans `docs/equipe/` du dépôt privé `Aprivi-dev/immojudis-interne`, jamais ici
+  (mode d'emploi : `docs/equipe/README.md`).
 
 ## Rangement du code
 

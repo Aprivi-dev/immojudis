@@ -151,8 +151,11 @@ Avant tout compte-rendu, contrôle chaque proposition :
 
 ## Phase 3 : compte-rendu
 
-1. Écris le rapport complet dans `docs/equipe/AAAA-MM-JJ-<sujet>.md` (date du jour). C'est
-   le seul fichier que tu écris avant validation.
+1. Écris le rapport complet dans `docs/equipe/AAAA-MM-JJ-<sujet>.md` (date du jour) **du dépôt
+   privé `Aprivi-dev/immojudis-interne`**, jamais dans ce dépôt, qui est public. Si le dépôt privé
+   n'est pas attaché à la session, attache-le ; si c'est impossible, écris le rapport dans le
+   scratchpad de la session et dis-le au propriétaire. C'est le seul fichier que tu écris avant
+   validation.
 2. Affiche à l'utilisateur :
    - une phrase de synthèse ;
    - un tableau numéroté : N° · Agent · Proposition · Priorité · Effort · Avis du chef
@@ -170,7 +173,7 @@ Avant tout compte-rendu, contrôle chaque proposition :
    qui contient des informations juridiques). S'il trouve un point Critique, renvoie-le à
    son auteur une fois, puis signale ce qui reste. Toute relecture de code applique aussi le
    critère « rangement du code » (`docs/architecture/rangement-du-code.md`).
-3. Complète le rapport de `docs/equipe/` avec ce qui a été fait.
+3. Complète le rapport (dépôt privé, `docs/equipe/`) avec ce qui a été fait.
 4. Rends un bilan : ce qui a été fait, fichiers modifiés, résultat des vérifications,
    points d'attention. Rappelle que les changements sont sur la branche de la session
    et qu'il peut les relire dans le diff avant de créer la pull request.
