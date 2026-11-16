@@ -150,7 +150,7 @@ export function Terme({
       <button
         ref={trigger}
         type="button"
-        aria-expanded={open}
+        aria-expanded={open && Boolean(entry)}
         aria-controls={id}
         aria-label={`Définition : ${label}`}
         onPointerEnter={() => loadEntry()}
