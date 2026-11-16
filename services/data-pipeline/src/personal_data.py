@@ -9,27 +9,40 @@ Les règles sont décrites par les cas de `tests/fixtures/personal_data_filter_c
 avec le miroir TypeScript `src/lib/personal-data-filter.ts`. Toute évolution se fait des deux côtés,
 avec les mêmes cas.
 
-- Le filtre ne se déclenche qu'après une formule : « occupé(e)(s) par », « locataire », « bail
-  consenti à », « loué à », « à la requête de », « appartenant à », « propriété de », « né(e) le … »,
-  « demeurant / domicilié / résidant », « époux / épouse », « divorcé(e) », « veuf / veuve »,
-  « née », « consorts », « héritiers de », « succession de ».
+- Un nom sans civilité n'est retiré qu'après une formule : « occupé(e)(s) par », « habité(e)(s)
+  par », « locataire », « bail consenti à », « loué à », « à la requête de », « appartenant à »,
+  « propriété de », « né(e) le … », « demeurant / domicilié / résidant », « époux / épouse »,
+  « divorcé(e) », « veuf / veuve », « née », « consorts », « héritiers de », « succession de »,
+  « contre », « à l'encontre de », « en présence de », « représenté(e)(s) par ».
+- Une civilité de particulier suivie d'un nom est retirée partout, même sans formule (« Lors de la
+  visite, Mme Martin nous a indiqué… » devient « Lors de la visite, un particulier nous a indiqué… » ;
+  « Un particulier » en début de phrase). Civilités : Monsieur, Madame, Mademoiselle, Messieurs,
+  Mesdames, M., MM., Mme(s), Mlle, Melle, Mr, avec ou sans point, et « M. et Mme ». Sont épargnés :
+  « Me », « Maître », « Maitre » (avocats, notaires, commissaires de justice), un titre (« M. le
+  Maire », « Madame la Présidente », « Monsieur le juge de l'exécution »), une voie ou un bâtiment
+  (« rue Madame », « bâtiment M. Escalier B »), un « M » sans point (« lot M ») et un « M. » qui suit un
+  prénom de la liste (initiale : « Maître Jean M. DUPONT »).
 - Il ne retire jamais une commune, une rue, un tribunal, une étude notariale ni une société (SCI,
   SARL…) : un nom n'est reconnu qu'après une civilité (Monsieur, Mme, M.…) ou sous la forme
-  « Prénom NOM » ou « NOM Prénom » (« DUPONT Pierre » : le prénom doit figurer dans la liste
-  `_FIRST_NAMES`, sans quoi « EDF Collectivités » ou « BNP Paribas » seraient pris pour des noms).
+  « Prénom NOM », « J.-P. NOM » ou « NOM Prénom » (« DUPONT Pierre » : le prénom doit figurer dans la
+  liste `_FIRST_NAMES`, sans quoi « EDF Collectivités » ou « BNP Paribas » seraient pris pour des
+  noms). Un sigle à points (« S.A.R.L. LES ORMEAUX ») est une société, pas des initiales.
 - Après un rôle (« le débiteur », « propriétaire », « vendeur »… suivi de `:`, d'une virgule ou
   d'un espace), le nom est retiré avec ou sans civilité (« Le saisi, Paul ROY, occupe… »), sauf si
   le mot qui suit est « Me », « Maître » ou un nom de bien (« propriétaire Local COMMERCIAL »).
 - « À la requête de : Madame X » (deux-points) et « À la requête de la Mme X » sont reconnus.
-- Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
-  locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à <nom> »,
-  « locataire <nom> » : on remplace le nom, pas le rôle).
+- Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » et « habité(e)(s) par <nom> » deviennent
+  toujours « un occupant ». « Un locataire » n'apparaît que si la formule source le dit (« loué à <nom> »,
+  « bail consenti à <nom> », « locataire <nom> » : on remplace le nom, pas le rôle). « contre <nom> » et
+  « représentée par <nom> » deviennent « … un particulier » ; « à l'encontre de <nom> » et « en présence
+  de <nom> », « … d'un particulier ».
 - Après « loué à » et « bail consenti à », un « Prénom Nom » en casse mixte (deux ou trois mots) est reconnu ;
-  après « occupé par », « héritiers de », « propriété de », « appartenant à » et « associé de », il l'est aussi,
-  mais seulement s'il contient un prénom de la liste (« Pierre Martin » ; pas « Orange Business »).
+  après « occupé par », « habité par », « héritiers de », « propriété de », « appartenant à », « associé de »,
+  « contre », « à l'encontre de », « en présence de » et « représenté par », il l'est aussi, mais seulement
+  s'il contient un prénom de la liste (« Pierre Martin » ; pas « Orange Business »).
 - « la famille Martin » et « l'indivision DUPONT » perdent leur nom, le mot reste.
-- Après ces formules, « Civilité NOM Prénom » (« Monsieur DUPONT Jean-Claude ») et « M. et Mme NOM » sont
-  reconnus. Une civilité sans formule n'est pas touchée (« Madame Rose GAUTIER a été assignée »).
+- « Civilité NOM Prénom » (« Monsieur DUPONT Jean-Claude »), « M. et Mme NOM », « M. J.-P. NOM » et un prénom
+  absent de la liste après une civilité (« Mr. Kylian N'DIAYE ») sont reconnus.
 """
 
 from __future__ import annotations
@@ -44,8 +57,9 @@ from src.text_folding import strip_accents
 
 # --- Briques de motifs (identiques dans le miroir TypeScript) -------------------------------------
 _UP = "A-ZÀ-ÖØ-ÞŒ"
-_LOW = "a-zß-öø-ÿœ"
-_L = "A-Za-zÀ-ÖØ-öø-ÿŒœ"
+# Latin étendu A (U+0100–U+017F : « Yılmaz », « Nowakówski ») : lettres d'un nom après sa majuscule.
+_LOW = "a-zß-öø-ÿœĀ-ſ"
+_L = "A-Za-zÀ-ÖØ-öø-ÿŒœĀ-ſ"
 _SP = r"[^\S\r\n]"  # espace sans retour à la ligne
 _APOS = "['’]"
 # Mots en capitales qui terminent un nom écrit tout en capitales (« DUPONT PIERRE SUIVANT BAIL »).
@@ -55,14 +69,17 @@ _STOP_UP = (
     "|EPOUX|ÉPOUX|VEUF|VEUVE|OCCUPE|OCCUPÉ|OCCUPES|OCCUPÉS|DEPUIS|ACTUELLEMENT|DOMICILIE|DOMICILIÉ"
 )
 _NOT_STOP = rf"(?!(?:{_STOP_UP})(?![{_L}]))"
-_CAPW = rf"(?:[dDlLO]{_APOS})?[{_UP}][{_LOW}]+(?:[-'’][{_UP}]?[{_LOW}]+)*(?![{_L}])"
-_UPW = rf"(?:[dDlLO]{_APOS})?[{_UP}]{{2,}}(?:[-'’][{_UP}]{{2,}})*(?![{_L}])"
+# Élision devant un nom : « d'Angelo », « L'AIGLE », « N'DIAYE », « M'BAPPÉ ».
+_ELISION = rf"(?:[dl{_UP}]{_APOS})?"
+_CAPW = rf"{_ELISION}[{_UP}][{_LOW}]+(?:[-'’][{_UP}]?[{_LOW}]+)*(?![{_L}])"
+_UPW = rf"{_ELISION}[{_UP}]{{2,}}(?:[-'’][{_UP}]{{2,}})*(?![{_L}])"
 _TOKEN = rf"(?:{_UPW}|{_CAPW})"
 _NOT_SENTENCE_START = rf"(?!(?:Le|La|Les|Un|Une|Il|Elle|Dans|Pour|Sur|Et|Ce|Cette)(?![{_L}]))"
 # Mot suivant d'un nom : « Le Gall » est un nom, « Le bien est » commence une phrase.
 _NEXT = rf"(?:(?:Le|La|Les){_SP}+{_NOT_STOP}{_TOKEN}|{_NOT_SENTENCE_START}{_NOT_STOP}{_TOKEN})"
 _PARTICLE = rf"(?:de{_SP}+la|de|du|des|d{_APOS}|van|von|der|den|ben|el|al|di|da|dos|del|della)"
-_INITIAL = rf"[{_UP}]\.{_SP}*"
+# Initiale de prénom : « J. », « J.-P. ».
+_INITIAL = rf"[{_UP}]\.(?:-[{_UP}]\.)?{_SP}*"
 # Prénoms usuels (liste partagée mot pour mot avec `FIRST_NAMES` du miroir TypeScript ; un test compare
 # les deux). Sert uniquement à reconnaître « NOM Prénom » (« DUPONT Pierre ») sans civilité : sans
 # liste, tout « SIGLE Mot » (« EDF Collectivités », « BNP Paribas ») serait pris pour une personne.
@@ -127,7 +144,9 @@ _BARE_SURNAME_FIRST = (
     rf"{_NOT_STOP}{_UPW}(?:{_SP}+(?:{_PARTICLE}{_SP}*)?{_NOT_STOP}{_UPW}){{0,2}}"
     rf"{_SP}+{_FIRST_NAME}(?:{_SP}+{_FIRST_NAME}){{0,2}}"
 )
-_BARE = rf"(?:{_BARE_FORENAME_FIRST}|{_BARE_SURNAME_FIRST})"
+# Initiale(s) puis NOM(S) en capitales : « J.-P. DUPONT », « J. DUPONT ».
+_BARE_INITIALS = rf"(?:{_INITIAL})+{_NOT_STOP}{_UPW}(?:{_SP}+(?:{_PARTICLE}{_SP}*)?{_NOT_STOP}{_UPW}){{0,2}}"
+_BARE = rf"(?:{_BARE_FORENAME_FIRST}|{_BARE_SURNAME_FIRST}|{_BARE_INITIALS})"
 _NAMESEQ = rf"(?:{_INITIAL})*{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,4}}"
 _NAME_SINGLE = rf"{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,2}}"
 # « Pierre Martin » en casse mixte, sans civilité : deux à trois mots, jamais un début de phrase.
@@ -136,7 +155,7 @@ _NAME_MIXED = rf"{_NOT_SENTENCE_START}{_NOT_STOP}{_TOKEN}(?:{_SP}+(?:{_PARTICLE}
 _CIV = (
     r"(?:(?:Monsieur|Madame|MONSIEUR|MADAME|M\.|Mme)" + _SP + r"+(?:et|ou|ET|OU)" + _SP + r"+)?"
     r"(?:(?:Monsieur|Madame|Mademoiselle|Messieurs|Mesdames|MONSIEUR|MADAME|MADEMOISELLE|MESSIEURS|MESDAMES"
-    rf"|Mmes|Mme|MME|Mlle|MLLE|Melle|Mr|MM?){_SP}+|MM?\.{_SP}*)"
+    rf"|Mmes|Mme|MME|Mlle|MLLE|Melle|Mr|MR|MM?){_SP}+|(?:Mmes|Mme|MME|Mlle|MLLE|Melle|Mr|MR|MM?)\.{_SP}*)"
 )
 _PERSON_CIV = re.compile(rf"{_CIV}{_NAMESEQ}")
 _PERSON_BARE = re.compile(_BARE)
@@ -157,7 +176,8 @@ _LIST_SEPARATOR = re.compile(rf"(?:{_SP}*,{_SP}*|{_SP}+et{_SP}+)")
 _STOP_FIRST = frozenset(
     "Un Une Ce Cette Ces Dans Pour Sur Et Il Elle Son Sa Ses Aux Au Du De Des Les Rue Avenue Boulevard Place "
     "Impasse Chemin Route Allée Quai Cours Square Passage Saint Sainte Mont Port Grand Grande Val Ville Parc "
-    "Résidence Lotissement Bâtiment Hameau Immeuble Copropriété Cabinet Étude Maître Tribunal".split()
+    "Résidence Lotissement Bâtiment Hameau Immeuble Copropriété Cabinet Étude Maître Tribunal "
+    "Me ME Maitre MAITRE MAÎTRE Mtre".split()
 )
 _STOP_FIRST_SINGLE = _STOP_FIRST - {"Du", "De", "Des"}
 _ORG_RE = re.compile(
@@ -185,7 +205,8 @@ _QUICK = re.compile(
     r"occup|locataire|bail|requête|requete|appartenant|appartien|propriété|propriete|\bné|demeur|domicili"
     r"|résida|residan|époux|épouse|epou|divorc|veuf|veuve|\bnée|consort|héritier|heritier|succession|loué|loue"
     r"|d[ée]biteur|saisi|propri[ée]taire|vendeur|bailleur|cr[ée]ancier|poursuivant|d[ée]fendeur|demandeur"
-    r"|requ[ée]rant|int[ée]ress|indivis|associ[ée]|famille",
+    r"|requ[ée]rant|int[ée]ress|indivis|associ[ée]|famille|habit|contre|pr[ée]sence|repr[ée]sent"
+    r"|monsieur|madame|mademoiselle|messieurs|mesdames|mme|mlle|melle|mr|m\.",
     re.IGNORECASE,
 )
 
@@ -224,7 +245,28 @@ _REQUETE = re.compile(
     rf"(?:(?:la|le){_SP}+(?={_CIV}))?",
     re.IGNORECASE,
 )
-_OCCUPIED = re.compile(rf"{_NO_BEFORE}occup[ée](?:e|s|es)?{_SP}+par{_SP}+", re.IGNORECASE)
+_OCCUPIED = re.compile(rf"{_NO_BEFORE}(?:occup|habit)[ée](?:e|s|es)?{_SP}+par{_SP}+", re.IGNORECASE)
+# Poursuites et procès-verbal : « contre <nom> », « représentée par <nom> » ; « à l'encontre de <nom> »,
+# « en présence de <nom> » (« de » devient « d'un particulier »).
+_AGAINST = re.compile(rf"{_NO_BEFORE}(?:contre|repr[ée]sent[ée](?:e|s|es)?{_SP}+par){_SP}+", re.IGNORECASE)
+_PRESENCE = re.compile(
+    rf"{_NO_BEFORE}([àa]{_SP}+l{_APOS}encontre|en{_SP}+pr[ée]sence)({_SP}+(?:des|de|du)|{_SP}+d{_APOS}){_SP}*",
+    re.IGNORECASE,
+)
+# Toute civilité, même sans formule : le nom qui la suit est vérifié par `_civility`.
+_CIVILITY = re.compile(rf"{_NO_BEFORE}{_CIV}")
+# « M DUPONT » sans point : trop ambigu sans formule (« lot M », « type M Duplex »).
+_BARE_M = re.compile(rf"MM?{_SP}")
+_DOTTED_M = re.compile(r"MM?\.")
+# Voies et bâtiments dont le nom commence par une civilité : « rue Madame », « bâtiment M. Escalier B ».
+_PLACE_WORDS = frozenset(
+    (
+        "rue avenue av boulevard bd chemin impasse route allée allee place quai cours passage square "
+        "résidence residence lotissement hameau bâtiment batiment bât bat villa cité cite faubourg "
+        "esplanade promenade parc escalier école ecole collège college lycée lycee"
+    ).split()
+)
+_LETTER = re.compile(rf"[{_L}]")
 # « le locataire en place, Madame X » : le qualificatif reste, le nom part.
 _ROLE_QUALIFIER = rf"(?:{_SP}+(?:en{_SP}+place|en{_SP}+titre|actuel(?:le)?s?|principa(?:l|le|ux|les)))?"
 _TENANT = re.compile(
@@ -313,7 +355,8 @@ def _with_leading_separator(text: str, index: int) -> int:
 # --- Reconnaissance d'une personne --------------------------------------------------------------
 def _acceptable(span: str, kind: str) -> bool:
     """`kind` : « civ » (après une civilité), « bare » (Prénom NOM) ou « single » (un nom isolé)."""
-    if _ORG_RE.search(span):
+    # « S.A.R.L. LES ORMEAUX » : sans ses points, le sigle est celui d'une société.
+    if _ORG_RE.search(span) or _ORG_RE.search(span.replace(".", "")):
         return False
     if kind == "civ":
         return not _TITLE_RE.match(_CIV_PREFIX.sub("", span, count=1))
@@ -387,6 +430,51 @@ def _occupied(text: str, match: re.Match[str]) -> _Edit | None:
         return None
     # Le statut (locataire, occupant sans titre, ancien locataire…) n'est jamais déduit du voisinage.
     return match.end(), end, "un occupant"
+
+
+def _against(text: str, match: re.Match[str]) -> _Edit | None:
+    end = _person_end(text, match.end(), mixed=True, forename=True)
+    if end is None:
+        return None
+    return match.end(), end, "un particulier"
+
+
+def _presence(text: str, match: re.Match[str]) -> _Edit | None:
+    end = _person_end(text, match.end(), mixed=True, forename=True)
+    if end is None:
+        return None
+    return match.start() + len(match.group(1)), end, " d'un particulier"
+
+
+def _word_before(text: str, end: int) -> str:
+    """Mot qui finit en `end` (lettres seules)."""
+    start = end
+    while start > 0 and _LETTER.match(text, start - 1):
+        start -= 1
+    return text[start:end]
+
+
+def _starts_sentence(text: str, index: int) -> bool:
+    """Début de texte, de ligne ou de phrase : le libellé prend une majuscule."""
+    before = _skip_spaces_back(text, index)
+    return before == 0 or text[before - 1] in ".!?\n\r"
+
+
+def _civility(text: str, match: re.Match[str]) -> _Edit | None:
+    if _BARE_M.match(match.group(0)):
+        return None
+    before = _skip_spaces_back(text, match.start())
+    dotted = before > 0 and text[before - 1] == "."  # « bd. Madame … »
+    word = _word_before(text, before - 1 if dotted else before)
+    if word.lower() in _PLACE_WORDS:
+        return None
+    # « Maître Jean M. DUPONT » : après un prénom, « M. » est l'initiale d'un second prénom.
+    if not dotted and _DOTTED_M.match(match.group(0)) and word in _FIRST_NAME_SET:
+        return None
+    end = _person_end(text, match.start())
+    if end is None:
+        return None
+    return match.start(), end, "Un particulier" if _starts_sentence(text, match.start()) else "un particulier"
 
 
 # Après un rôle sans civilité, ces mots ne commencent pas un nom (avocat, bien décrit en capitales).
@@ -568,8 +656,12 @@ _RULES: tuple[tuple[re.Pattern[str], Callable[[str, re.Match[str]], _Edit | None
     (_ASSOCIATE, _associate),
     (_FAMILY, _family),
     (_MARITAL, _marital),
+    (_AGAINST, _against),
+    (_PRESENCE, _presence),
     (_BIRTH, _birth),
     (_RESIDENCE, _residence),
+    # En dernier : les formules ci-dessus donnent un rôle plus précis que « un particulier ».
+    (_CIVILITY, _civility),
 )
 
 
@@ -611,7 +703,7 @@ def redact_personal_data(value: Any, *, _depth: int = 0) -> Any:
 
 
 # Colonnes texte d'une ligne `auction_sales` lisibles par un compte connecté.
-SALE_TEXT_COLUMNS = ("description", "risk_notes", "investment_summary", "surface_evidence")
+SALE_TEXT_COLUMNS = ("title", "description", "risk_notes", "investment_summary", "surface_evidence")
 # Clés de `raw_payload` qui portent du texte affiché ou produit par l'IA. Les preuves (empreintes,
 # citations de surface, analyses de pièces) ne sont pas touchées : leur vérification exige le texte exact.
 PAYLOAD_TEXT_KEYS = (
