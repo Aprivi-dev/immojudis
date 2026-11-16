@@ -731,7 +731,7 @@ const SALE_JSON_FIELDS = [
 
 /**
  * Filtre les textes libres d'une fiche avant qu'elle ne quitte le serveur (rapports partagés,
- * exports). La lecture directe du catalogue par le navigateur n'y passe pas : elle est protégée
+ * exports), libellés des pièces compris : un nom de fichier devient « Pièce jointe ». La lecture directe du catalogue par le navigateur n'y passe pas : elle est protégée
  * par les données stockées, filtrées à la collecte.
  */
 export function redactSaleTexts<T extends object>(sale: T): T {
@@ -744,5 +744,46 @@ export function redactSaleTexts<T extends object>(sale: T): T {
     const value = record[field];
     if (value && typeof value === "object") record[field] = redactPersonalData(value);
   }
+  for (const field of SALE_DOCUMENT_FIELDS) {
+    const value = record[field];
+    if (Array.isArray(value)) record[field] = value.map(redactDocumentLabels);
+  }
   return record as T;
+}
+
+// Listes de pièces : `documents` (libellé dans `label` ou `name`) et `documents_rich`.
+const SALE_DOCUMENT_FIELDS = ["documents", "documents_rich"] as const;
+const DOCUMENT_LABEL_KEYS = ["label", "name"] as const;
+// Un libellé repris du nom de fichier (« PV_NOM_Prenom.pdf ») nomme souvent le saisi, sans formule.
+const FILE_NAME_LABEL = /\.(?:pdf|docx?|odt|jpe?g|png|tiff?)$/i;
+const GENERIC_DOCUMENT_LABEL = "Pièce jointe";
+
+/** Dernier segment du chemin d'une adresse, décodé (« PV_NOM.pdf » dans « …/pieces/PV_NOM.pdf?v=2 »). */
+function lastUrlSegment(url: unknown): string {
+  if (typeof url !== "string") return "";
+  const path = url.split(/[?#]/, 1)[0];
+  const segment = path.slice(path.lastIndexOf("/") + 1);
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment; // encodage invalide : le segment brut sert de comparaison
+  }
+}
+
+function redactDocumentLabel(label: string, url: unknown): string {
+  const text = label.trim();
+  const segment = lastUrlSegment(url);
+  const isFileName =
+    FILE_NAME_LABEL.test(text) || (text !== "" && text.toLowerCase() === segment.toLowerCase());
+  return isFileName ? GENERIC_DOCUMENT_LABEL : redactPersonalText(label);
+}
+
+function redactDocumentLabels(document: unknown): unknown {
+  if (!document || typeof document !== "object" || Array.isArray(document)) return document;
+  const record: Record<string, unknown> = { ...(document as Record<string, unknown>) };
+  for (const key of DOCUMENT_LABEL_KEYS) {
+    const value = record[key];
+    if (typeof value === "string") record[key] = redactDocumentLabel(value, record.url);
+  }
+  return record;
 }
