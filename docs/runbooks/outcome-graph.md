@@ -272,4 +272,4 @@ Une restauration doit être répétée d’abord hors production. RTO, RPO et re
 - métriques et taux de refus revenus à un niveau expliqué;
 - cause et action corrective ajoutées au journal d’incident.
 
-Voir [`docs/security/outcome-graph.md`](../security/outcome-graph.md) et [`docs/model-card-outcome-graph.md`](../model-card-outcome-graph.md) pour les contrôles et limites qui justifient ces procédures.
+Voir `docs/security/outcome-graph.md` (dépôt interne, `docs/security/outcome-graph.md`) et [`docs/model-card-outcome-graph.md`](../model-card-outcome-graph.md) pour les contrôles et limites qui justifient ces procédures.

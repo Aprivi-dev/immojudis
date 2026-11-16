@@ -1,6 +1,6 @@
 # Outcome Graph — architecture cible
 
-> **Document cible, pas l’état d’aujourd’hui.** Il décrit la destination d’Outcome Graph (rédigé en juillet 2026, d’après une spécification qui n’est plus dans le dépôt) et ne certifie pas que chaque composant est déjà livré. Dernière relecture : 31/10/2026 (en-tête seulement). L’écart réel avec la cible est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) (archive du 17/08/2026) ; l’état actuel, dans [`current-state.md`](current-state.md) (instantané du 30/07/2026) et [`supabase/migrations/`](../../supabase/migrations/).
+> **Document cible, pas l’état d’aujourd’hui.** Il décrit la destination d’Outcome Graph (rédigé en juillet 2026, d’après une spécification qui n’est plus dans le dépôt) et ne certifie pas que chaque composant est déjà livré. Dernière relecture : 31/10/2026 (en-tête seulement). L’écart réel avec la cible est suivi dans `IMPLEMENTATION_STATUS.md` (dépôt interne, `docs/archive/IMPLEMENTATION_STATUS.md`) (archive du 17/08/2026) ; l’état actuel, dans [`current-state.md`](current-state.md) (instantané du 30/07/2026) et [`supabase/migrations/`](../../supabase/migrations/).
 
 ## Objectif d’architecture
 
@@ -135,15 +135,15 @@ Une correction ne modifie pas l’événement fautif. Elle ajoute un événement
 
 ### Rôles métier
 
-| Rôle | Portée cible |
-|---|---|
-| Administrateur plateforme | Sources, organisations, audits et approbation de modèles |
-| Opérateur de données | Dossiers, lots, rounds, rapprochement et soumission de résultats |
-| Reviewer | Preuves, décision champ par champ et grades A/B/C |
-| Cabinet partenaire | Uniquement les dossiers rattachés à son organisation |
-| Contributeur | Soumission de preuve classée C par défaut |
-| Analyste | Données pseudonymisées et exports autorisés |
-| Client ImmoJudis | Projection de prédiction et scénario de plafond personnel |
+| Rôle                      | Portée cible                                                     |
+| ------------------------- | ---------------------------------------------------------------- |
+| Administrateur plateforme | Sources, organisations, audits et approbation de modèles         |
+| Opérateur de données      | Dossiers, lots, rounds, rapprochement et soumission de résultats |
+| Reviewer                  | Preuves, décision champ par champ et grades A/B/C                |
+| Cabinet partenaire        | Uniquement les dossiers rattachés à son organisation             |
+| Contributeur              | Soumission de preuve classée C par défaut                        |
+| Analyste                  | Données pseudonymisées et exports autorisés                      |
+| Client ImmoJudis          | Projection de prédiction et scénario de plafond personnel        |
 
 Les rôles sont portés par les memberships, pas par des chaînes envoyées par le client. Un reviewer ne peut pas produire deux revues indépendantes de la même preuve.
 
@@ -184,16 +184,16 @@ Les endpoints opérateur, reviewer, cabinet et analyste reposent sur leurs propr
 
 ### Surfaces principales
 
-| Domaine | Endpoints cibles |
-|---|---|
-| Dossiers | `GET/POST /cases`, `GET/PATCH /cases/{id}` |
-| Lots | `POST /cases/{id}/lots`, `GET/PATCH /lots/{id}`, `GET /lots/{id}/timeline` |
-| Audiences | `POST /lots/{id}/rounds`, `GET /rounds/{id}`, `POST /rounds/{id}/transition`, `GET /rounds/{id}/events` |
-| Résultats et preuves | `POST /rounds/{id}/outcomes`, `POST /outcomes/{id}/evidence`, `POST /evidence/{id}/reviews` |
-| Snapshots | `POST/GET /rounds/{id}/snapshots`, `GET /snapshots/{id}` |
-| Analytics | `GET /analytics/courts/{id}`, `/lots/{id}/comparables`, `/coverage` |
-| Prédictions | `POST /rounds/{id}/predictions`, `GET /rounds/{id}/predictions/latest`, `GET /predictions/{id}` |
-| Cabinet | `GET /partner/rounds/upcoming`, `POST /partner/rounds/{id}/submit-result` |
+| Domaine              | Endpoints cibles                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| Dossiers             | `GET/POST /cases`, `GET/PATCH /cases/{id}`                                                              |
+| Lots                 | `POST /cases/{id}/lots`, `GET/PATCH /lots/{id}`, `GET /lots/{id}/timeline`                              |
+| Audiences            | `POST /lots/{id}/rounds`, `GET /rounds/{id}`, `POST /rounds/{id}/transition`, `GET /rounds/{id}/events` |
+| Résultats et preuves | `POST /rounds/{id}/outcomes`, `POST /outcomes/{id}/evidence`, `POST /evidence/{id}/reviews`             |
+| Snapshots            | `POST/GET /rounds/{id}/snapshots`, `GET /snapshots/{id}`                                                |
+| Analytics            | `GET /analytics/courts/{id}`, `/lots/{id}/comparables`, `/coverage`                                     |
+| Prédictions          | `POST /rounds/{id}/predictions`, `GET /rounds/{id}/predictions/latest`, `GET /predictions/{id}`         |
+| Cabinet              | `GET /partner/rounds/upcoming`, `POST /partner/rounds/{id}/submit-result`                               |
 
 Le plafond personnel est un paramètre privé. Le service peut calculer `P(prix_final ≤ plafond | adjudication)` et `P(adjudication ET prix_final ≤ plafond)`, mais ne doit ni republier le plafond ni l’injecter dans les features partagées.
 

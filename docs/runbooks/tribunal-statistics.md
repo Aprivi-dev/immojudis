@@ -68,7 +68,7 @@ partagé de cinq minutes. Une lecture échouée produit une indisponibilité ; e
 en zéro activité.
 
 La priorisation des sources ouvertes et les tranches d’enrichissement sont suivies dans
-[`docs/statistics-data-enrichment-roadmap.md`](../statistics-data-enrichment-roadmap.md).
+`docs/statistics-data-enrichment-roadmap.md` (dépôt interne, `docs/statistics-data-enrichment-roadmap.md`).
 
 ### Repère Premium des prix publiés par Licitor
 
