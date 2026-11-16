@@ -4,7 +4,7 @@ _Version initiale du contrat au 30 juillet 2026._
 
 ## Portée et lecture
 
-Ce dictionnaire couvre uniquement les tables, vocabulaires et contrats d’Outcome Graph. Il décrit la cible fonctionnelle; la migration SQL versionnée reste la source de vérité pour les objets effectivement présents. L’avancement physique est indiqué dans [`IMPLEMENTATION_STATUS.md`](archive/IMPLEMENTATION_STATUS.md).
+Ce dictionnaire couvre uniquement les tables, vocabulaires et contrats d’Outcome Graph. Il décrit la cible fonctionnelle; la migration SQL versionnée reste la source de vérité pour les objets effectivement présents. L’avancement physique est indiqué dans `IMPLEMENTATION_STATUS.md` (dépôt interne, `docs/archive/IMPLEMENTATION_STATUS.md`).
 
 Les tables historiques `auction_sales`, `properties` et `judicial_sales` restent des modèles de catalogue et de lecture pendant la migration. Elles ne remplacent aucune entité du registre. `user_profiles`, `user_subscriptions` et `public.has_analysis_access()` sont réutilisés comme intégration d’identité et d’entitlement, mais ne font pas partie du registre judiciaire lui-même.
 
@@ -18,32 +18,32 @@ Tables du compte, hors registre : `user_sale_unlocks` liste les ventes débloqu�
 
 Ajout du 28/10/2026 (versions de la règle des pépites relues le 31/10/2026 ; référentiel des tribunaux ajouté le 01/11/2026). Ces six tables ne font pas partie d’Outcome Graph : elles servent le catalogue (repère « Pépite », rendement). Toutes sont **privées** : RLS active, aucun droit pour `anon` ni `authenticated`, lecture et écriture par le serveur (`service_role`). Le public ne lit que des fonctions qui rendent un booléen ou des identifiants, jamais ces tables. La migration SQL reste la source de vérité.
 
-| Table | Clé | Contenu | Alimentée par | Migration |
-|---|---|---|---|---|
-| `public.auction_sale_pepites` | `sale_id` (→ `auction_sales`, supprimée avec la vente) | Résultat de la règle pépite pour une vente en ligne : `rule_version` (`pepite-v1`, `pepite-v1.1`, `pepite-v2`, `pepite-v1.2` ou `pepite-v2.1`, la version courante ; la liste et ce que chacune ajoute sont dans `src/lib/pepite-policy.ts`), `engine_version`, `regime_version`, `status` (`pepite`, `not_pepite`, `not_applicable`, `insufficient`), `is_pepite` (résultat publiable, après stabilité), `favorable_streak`, `frozen_at`, `last_favorable_at`, `data_missing_since`, `reason_codes`, `details` (JSON privé : plafond, prix probable, fourchette, jamais publié), `input_starting_price_eur`, `input_estimate_computed_at`, `evaluated_at`, `first_pepite_at`. Le mode (`off`, `shadow`, `on`) est dans `app_private.sale_pepite_settings` (une ligne) | `/api/cron/sale-pepites` (toutes les heures) | `20261104100000`, `20261104100100`, `20261105100000` |
-| `public.auction_sale_flood_risk` | `sale_id` | Verdict d’inondation d’une vente : `verdict` (`high`, `exposed`, `none_found`, `no_signal`, `unknown`), `derive_version`, `position_key` (empreinte tronquée de la position, jamais la coordonnée) et `position_kind` (`point`, `street`, `approximate`), `commune_insee`, `commune_has_tri`, `tri_scenarios`, `ppri_perimeter`, `ppri_checked`, `map_date`, `observed_at`, `attempted_at`, `failure_count`, `last_failure` (code, voir `docs/runbooks/georisques-pannes-inondation.md`), `verdict_changed_at`. Un verdict connu n’est jamais écrasé par « inconnu » après une panne | `/api/cron/sale-flood-risk` (toutes les heures ; appels depuis GitHub Actions depuis le 27/10/2026) | `20261106100200`, `20261106100300`, `20261106100400`, `20261106100500` (bail `sale_flood_risk_lease`) |
-| `public.auction_sale_communes` | `sale_id` | Code INSEE de la commune de chaque vente (`commune_insee`, au sens de GASPAR : Paris, Lyon et Marseille ramenées à 75056, 69123, 13055), `arrondissement_insee` (751xx, 132xx, 6938x) gardé à part, `source` (`geocode` ou `reference_communes`), `resolved_at` | Pipeline (`raw_payload.commune`), puis recopie par le traitement d’inondation | `20261106100000`, `20261106100100` (remplissage initial) |
-| `public.anil_rents` | (`commune_code`, `segment`) | Carte des loyers de l’ANIL : loyer d’annonce en €/m² par mois, **charges comprises**, non meublé ; `segment` (`apt_all`, `apt_1_2`, `apt_3p`, `house`), bornes de l’intervalle à 95 %, `prediction_type` (`commune`, `maille`, `epci`), observations, `r2_adj`, `vintage`, `source_updated_on`, `source_url`, `imported_at`. Un seul millésime à la fois. Licence Ouverte 2.0 | Workflow « Reference data import », `dataset = rents` (chaque décembre) | `20261107100000` |
-| `public.commune_housing_tension` | `commune_code` | Zonage tendu (TLV) par commune : `zoning_2013`, `zoning_2023`, `zoning_post_decree` (`tendue`, `touristique_tendue`, `non_tendue`), `decree_reference`, `decree_date`, `source_updated_on`, `source_url`. Aucun écran ne l’affiche encore | Workflow « Reference data import », `dataset = tension` (après un décret) | `20261107100100` |
-| `public.court_registry_contacts` | `court_code` | Référentiel des 168 tribunaux judiciaires et de leurs adresses email (greffe ou accueil) : `court_code` (le code de `auction_sales.tribunal_code`), `name`, `city`, `emails` (`text[]`, vide si aucune adresse connue : 6 tribunaux), `address`, `source`, `imported_at`. Contact de **secours** d’une vente au tribunal sans email d’avocat : preuve `court_email` du minimum d’une annonce et destinataire de l’agent d’information, dans ce seul cas. Aucune clé étrangère vers `tribunals` | Fichier du propriétaire du 01/11/2026 (`docs/reference/tribunaux-judiciaires-emails-2026-11-01.csv`), chargé par la migration | `20261110190000` |
+| Table                            | Clé                                                    | Contenu                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Alimentée par                                                                                                                 | Migration                                                                                             |
+| -------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `public.auction_sale_pepites`    | `sale_id` (→ `auction_sales`, supprimée avec la vente) | Résultat de la règle pépite pour une vente en ligne : `rule_version` (`pepite-v1`, `pepite-v1.1`, `pepite-v2`, `pepite-v1.2` ou `pepite-v2.1`, la version courante ; la liste et ce que chacune ajoute sont dans `src/lib/pepite-policy.ts`), `engine_version`, `regime_version`, `status` (`pepite`, `not_pepite`, `not_applicable`, `insufficient`), `is_pepite` (résultat publiable, après stabilité), `favorable_streak`, `frozen_at`, `last_favorable_at`, `data_missing_since`, `reason_codes`, `details` (JSON privé : plafond, prix probable, fourchette, jamais publié), `input_starting_price_eur`, `input_estimate_computed_at`, `evaluated_at`, `first_pepite_at`. Le mode (`off`, `shadow`, `on`) est dans `app_private.sale_pepite_settings` (une ligne) | `/api/cron/sale-pepites` (toutes les heures)                                                                                  | `20261104100000`, `20261104100100`, `20261105100000`                                                  |
+| `public.auction_sale_flood_risk` | `sale_id`                                              | Verdict d’inondation d’une vente : `verdict` (`high`, `exposed`, `none_found`, `no_signal`, `unknown`), `derive_version`, `position_key` (empreinte tronquée de la position, jamais la coordonnée) et `position_kind` (`point`, `street`, `approximate`), `commune_insee`, `commune_has_tri`, `tri_scenarios`, `ppri_perimeter`, `ppri_checked`, `map_date`, `observed_at`, `attempted_at`, `failure_count`, `last_failure` (code, voir `docs/runbooks/georisques-pannes-inondation.md`), `verdict_changed_at`. Un verdict connu n’est jamais écrasé par « inconnu » après une panne                                                                                                                                                                                   | `/api/cron/sale-flood-risk` (toutes les heures ; appels depuis GitHub Actions depuis le 27/10/2026)                           | `20261106100200`, `20261106100300`, `20261106100400`, `20261106100500` (bail `sale_flood_risk_lease`) |
+| `public.auction_sale_communes`   | `sale_id`                                              | Code INSEE de la commune de chaque vente (`commune_insee`, au sens de GASPAR : Paris, Lyon et Marseille ramenées à 75056, 69123, 13055), `arrondissement_insee` (751xx, 132xx, 6938x) gardé à part, `source` (`geocode` ou `reference_communes`), `resolved_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Pipeline (`raw_payload.commune`), puis recopie par le traitement d’inondation                                                 | `20261106100000`, `20261106100100` (remplissage initial)                                              |
+| `public.anil_rents`              | (`commune_code`, `segment`)                            | Carte des loyers de l’ANIL : loyer d’annonce en €/m² par mois, **charges comprises**, non meublé ; `segment` (`apt_all`, `apt_1_2`, `apt_3p`, `house`), bornes de l’intervalle à 95 %, `prediction_type` (`commune`, `maille`, `epci`), observations, `r2_adj`, `vintage`, `source_updated_on`, `source_url`, `imported_at`. Un seul millésime à la fois. Licence Ouverte 2.0                                                                                                                                                                                                                                                                                                                                                                                          | Workflow « Reference data import », `dataset = rents` (chaque décembre)                                                       | `20261107100000`                                                                                      |
+| `public.commune_housing_tension` | `commune_code`                                         | Zonage tendu (TLV) par commune : `zoning_2013`, `zoning_2023`, `zoning_post_decree` (`tendue`, `touristique_tendue`, `non_tendue`), `decree_reference`, `decree_date`, `source_updated_on`, `source_url`. Aucun écran ne l’affiche encore                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Workflow « Reference data import », `dataset = tension` (après un décret)                                                     | `20261107100100`                                                                                      |
+| `public.court_registry_contacts` | `court_code`                                           | Référentiel des 168 tribunaux judiciaires et de leurs adresses email (greffe ou accueil) : `court_code` (le code de `auction_sales.tribunal_code`), `name`, `city`, `emails` (`text[]`, vide si aucune adresse connue : 6 tribunaux), `address`, `source`, `imported_at`. Contact de **secours** d’une vente au tribunal sans email d’avocat : preuve `court_email` du minimum d’une annonce et destinataire de l’agent d’information, dans ce seul cas. Aucune clé étrangère vers `tribunals`                                                                                                                                                                                                                                                                         | Fichier du propriétaire du 01/11/2026 (`docs/reference/tribunaux-judiciaires-emails-2026-11-01.csv`), chargé par la migration | `20261110190000`                                                                                      |
 
 Les deux sources de référence sont déclarées dans `data_sources` (`anil_rent_map`, `tlv_zoning`) par `20261107100200`. Détails des imports, des gardes et de la lecture par l’application : `docs/operations/donnees-de-reference-loyers-et-zonage.md`.
 
 ## Conventions globales
 
-| Sujet | Contrat |
-|---|---|
-| Identifiants | UUID générés par PostgreSQL, jamais choisis par le client |
-| Dates métier | `timestamptz` en UTC; `local_timezone` conserve le fuseau de l’audience |
-| Montants SQL | `numeric(14,2)`, positifs ou nuls selon le champ |
-| Montants API | centimes entiers sûrs, suffixe `Cents`, jamais nombre JSON flottant représentant des euros |
-| Scores | `numeric(5,4)` pour `[0,1]`; `numeric(5,2)` pour `[0,100]` |
-| JSON | structure versionnée et validée à l’écriture; pas de fourre-tout non documenté |
-| Texte inconnu | valeur canonique `unknown` quand l’état doit être explicite; `NULL` lorsque l’attribut n’a pas été observé |
-| Immutabilité | événements, preuves, revues, snapshots, prédictions, audits et contenu des versions de résultat ne sont ni modifiés ni supprimés |
-| Corrections | nouvelle version ou événement compensatoire avec lien `supersedes_*` et motif |
-| Provenance | chaque claim publié reste relié à une source, un artefact et des horodatages |
-| Données personnelles | exclues de l’analytique sauf nécessité documentée et accès restreint |
+| Sujet                | Contrat                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Identifiants         | UUID générés par PostgreSQL, jamais choisis par le client                                                                        |
+| Dates métier         | `timestamptz` en UTC; `local_timezone` conserve le fuseau de l’audience                                                          |
+| Montants SQL         | `numeric(14,2)`, positifs ou nuls selon le champ                                                                                 |
+| Montants API         | centimes entiers sûrs, suffixe `Cents`, jamais nombre JSON flottant représentant des euros                                       |
+| Scores               | `numeric(5,4)` pour `[0,1]`; `numeric(5,2)` pour `[0,100]`                                                                       |
+| JSON                 | structure versionnée et validée à l’écriture; pas de fourre-tout non documenté                                                   |
+| Texte inconnu        | valeur canonique `unknown` quand l’état doit être explicite; `NULL` lorsque l’attribut n’a pas été observé                       |
+| Immutabilité         | événements, preuves, revues, snapshots, prédictions, audits et contenu des versions de résultat ne sont ni modifiés ni supprimés |
+| Corrections          | nouvelle version ou événement compensatoire avec lien `supersedes_*` et motif                                                    |
+| Provenance           | chaque claim publié reste relié à une source, un artefact et des horodatages                                                     |
+| Données personnelles | exclues de l’analytique sauf nécessité documentée et accès restreint                                                             |
 
 Une contrainte de confiance ou de probabilité accepte `0` et `1`. Une valeur absente ne reçoit pas automatiquement `0`.
 
@@ -51,23 +51,23 @@ Une contrainte de confiance ou de probabilité accepte `0` et `1`. Une valeur ab
 
 ### Politique d’ingestion
 
-| Valeur | Sens | Collecte automatique |
-|---|---|---|
+| Valeur              | Sens                                         | Collecte automatique               |
+| ------------------- | -------------------------------------------- | ---------------------------------- |
 | `allowed_automated` | Revue juridique favorable à l’automatisation | Oui, dans les limites enregistrées |
-| `allowed_manual` | Consultation ou dépôt manuel seulement | Non |
-| `partner_only` | Flux contractuel ou portail partenaire | Uniquement via le canal partenaire |
-| `disabled` | Connecteur arrêté opérationnellement | Non |
-| `prohibited` | Collecte interdite | Non |
+| `allowed_manual`    | Consultation ou dépôt manuel seulement       | Non                                |
+| `partner_only`      | Flux contractuel ou portail partenaire       | Uniquement via le canal partenaire |
+| `disabled`          | Connecteur arrêté opérationnellement         | Non                                |
+| `prohibited`        | Collecte interdite                           | Non                                |
 
 Toute valeur absente ou inconnue vaut refus.
 
 ### Type d’audience (`round_kind`)
 
-| Valeur | Sens |
-|---|---|
-| `initial` | Première tentative de vente du lot |
-| `postponed` | Nouvelle audience créée à la suite d’un report |
-| `surenchere` | Audience ouverte après dépôt d’une surenchère |
+| Valeur        | Sens                                               |
+| ------------- | -------------------------------------------------- |
+| `initial`     | Première tentative de vente du lot                 |
+| `postponed`   | Nouvelle audience créée à la suite d’un report     |
+| `surenchere`  | Audience ouverte après dépôt d’une surenchère      |
 | `reiteration` | Audience après défaillance de paiement/réitération |
 
 ### État courant d’audience
@@ -101,24 +101,24 @@ closed
 
 ### Résultat (`outcome_status`)
 
-| Valeur | Sens |
-|---|---|
-| `unknown` | Résultat non établi |
-| `cancelled` | Annulation explicitement prouvée |
-| `not_requested` | Vente explicitement non requise |
-| `postponed` | Audience reportée; un nouveau round doit être créé |
-| `held_no_bid` | Audience tenue et enchères désertes prouvées |
-| `held_adjudicated` | Adjudication avec prix compatible et preuve |
+| Valeur             | Sens                                               |
+| ------------------ | -------------------------------------------------- |
+| `unknown`          | Résultat non établi                                |
+| `cancelled`        | Annulation explicitement prouvée                   |
+| `not_requested`    | Vente explicitement non requise                    |
+| `postponed`        | Audience reportée; un nouveau round doit être créé |
+| `held_no_bid`      | Audience tenue et enchères désertes prouvées       |
+| `held_adjudicated` | Adjudication avec prix compatible et preuve        |
 
 Ces valeurs sont mutuellement distinctes. `unknown` n’est jamais transformé par défaut en l’une des cinq autres.
 
 ### Surenchère, finalité et paiement
 
-| Champ | Valeurs initiales |
-|---|---|
-| `surenchere_status` | `unknown`, `window_open`, `filed`, `not_filed`, `deadline_expired` |
-| `finality_status` | `unknown`, `provisional`, `procedurally_definitive` |
-| `payment_status` | `unknown`, `pending`, `confirmed`, `default_detected` |
+| Champ                                     | Valeurs initiales                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `surenchere_status`                       | `unknown`, `window_open`, `filed`, `not_filed`, `deadline_expired`  |
+| `finality_status`                         | `unknown`, `provisional`, `procedurally_definitive`                 |
+| `payment_status`                          | `unknown`, `pending`, `confirmed`, `default_detected`               |
 | `reiteration_status` (projection dérivée) | `unknown`, `not_applicable`, `requested`, `scheduled`, `reiterated` |
 
 `not_filed` ne peut être affirmé qu’après contrôle de l’échéance; l’absence de signal avant l’échéance reste `unknown` ou `window_open`.
@@ -127,11 +127,11 @@ La réitération est dérivée de la chaîne de rounds et de `auction_events`; l
 
 ### Preuve et revue
 
-| Champ | Valeurs |
-|---|---|
-| `evidence_grade` | `A`, `B`, `C`, `rejected` |
-| `review_status` | `pending`, `in_review`, `approved`, `rejected`, `conflicted` |
-| `decision` | `approved`, `rejected`, `needs_correction`, `needs_second_review` |
+| Champ            | Valeurs                                                           |
+| ---------------- | ----------------------------------------------------------------- |
+| `evidence_grade` | `A`, `B`, `C`, `rejected`                                         |
+| `review_status`  | `pending`, `in_review`, `approved`, `rejected`, `conflicted`      |
+| `decision`       | `approved`, `rejected`, `needs_correction`, `needs_second_review` |
 
 Un signalement contributeur commence au grade C. Une ligne d’entraînement exige une preuve A ou B, un lot et une audience confirmés, un snapshot valide, aucun problème bloquant et toutes les revues requises.
 
@@ -180,13 +180,13 @@ personal_data_issue
 
 Représente une organisation habilitée : plateforme, cabinet, partenaire ou équipe d’analyse.
 
-| Champ clé | Type | Contrat |
-|---|---|---|
-| `id` | uuid | Clé primaire |
-| `name` | text | Nom d’affichage |
-| `organization_type` | text | `platform`, `law_firm`, `partner`, `analytics` |
-| `status` | text | `active`, `suspended`, `closed` |
-| `created_at` | timestamptz | Date de création |
+| Champ clé           | Type        | Contrat                                        |
+| ------------------- | ----------- | ---------------------------------------------- |
+| `id`                | uuid        | Clé primaire                                   |
+| `name`              | text        | Nom d’affichage                                |
+| `organization_type` | text        | `platform`, `law_firm`, `partner`, `analytics` |
+| `status`            | text        | `active`, `suspended`, `closed`                |
+| `created_at`        | timestamptz | Date de création                               |
 
 Mutabilité : métadonnées courantes modifiables; actions sensibles dans `audit_log`.
 
@@ -194,14 +194,14 @@ Mutabilité : métadonnées courantes modifiables; actions sensibles dans `audit
 
 Associe un utilisateur à une organisation et définit son rôle dans cette portée.
 
-| Champ clé | Type | Contrat |
-|---|---|---|
-| `id` | uuid | Clé primaire |
-| `organization_id` | uuid | FK `organizations` |
-| `user_id` | uuid | FK `auth.users` |
-| `role` | text | `admin`, `operator`, `reviewer`, `partner`, `contributor`, `analyst` |
-| `status` | text | `invited`, `active`, `revoked` |
-| `created_at`, `revoked_at` | timestamptz | Cycle de vie de l’appartenance |
+| Champ clé                  | Type        | Contrat                                                              |
+| -------------------------- | ----------- | -------------------------------------------------------------------- |
+| `id`                       | uuid        | Clé primaire                                                         |
+| `organization_id`          | uuid        | FK `organizations`                                                   |
+| `user_id`                  | uuid        | FK `auth.users`                                                      |
+| `role`                     | text        | `admin`, `operator`, `reviewer`, `partner`, `contributor`, `analyst` |
+| `status`                   | text        | `invited`, `active`, `revoked`                                       |
+| `created_at`, `revoked_at` | timestamptz | Cycle de vie de l’appartenance                                       |
 
 Contrainte : une appartenance révoquée n’est pas réactivée; une nouvelle invitation crée une nouvelle ligne.
 
@@ -249,19 +249,19 @@ Bâtiment RNB/BDNB : `id`, identifiant externe, `address_id`, usage, période, g
 
 Registre obligatoire avant toute collecte.
 
-| Champ | Type | Contrat |
-|---|---|---|
-| `id` | uuid | Clé primaire |
-| `name`, `publisher` | text | Identité de la source |
-| `official` | boolean | Source officielle ou non |
-| `base_url` | text | Origine canonique |
-| `license` | text | Licence connue |
-| `terms_url`, `terms_version` | text | Conditions revues |
-| `legal_review_status` | text | État de la revue juridique |
-| `ingestion_policy` | text | Vocabulaire de politique contrôlé |
-| `rate_limit` | jsonb | Quota et fenêtre documentés |
-| `personal_data_possible` | boolean | Déclenche les contrôles de minimisation |
-| `active` | boolean | Interrupteur opérationnel, jamais substitut de politique |
+| Champ                        | Type    | Contrat                                                  |
+| ---------------------------- | ------- | -------------------------------------------------------- |
+| `id`                         | uuid    | Clé primaire                                             |
+| `name`, `publisher`          | text    | Identité de la source                                    |
+| `official`                   | boolean | Source officielle ou non                                 |
+| `base_url`                   | text    | Origine canonique                                        |
+| `license`                    | text    | Licence connue                                           |
+| `terms_url`, `terms_version` | text    | Conditions revues                                        |
+| `legal_review_status`        | text    | État de la revue juridique                               |
+| `ingestion_policy`           | text    | Vocabulaire de politique contrôlé                        |
+| `rate_limit`                 | jsonb   | Quota et fenêtre documentés                              |
+| `personal_data_possible`     | boolean | Déclenche les contrôles de minimisation                  |
+| `active`                     | boolean | Interrupteur opérationnel, jamais substitut de politique |
 
 Mutabilité : configuration courante modifiable et auditée. Une collecte web automatisée n’est possible que si `active = true` et `ingestion_policy = allowed_automated`; une ingestion `partner_only` emprunte exclusivement le canal partenaire authentifié et prévu par le contrat.
 
@@ -277,15 +277,15 @@ Mutabilité : état technique jusqu’à terminaison, puis conservation historiq
 
 Contenu brut capturé.
 
-| Champ clé | Contrat |
-|---|---|
-| `source_id`, `source_fetch_id` | Provenance |
-| `external_record_id` | Identité source si disponible |
-| `published_at`, `captured_at` | Temps de publication et de disponibilité ImmoJudis |
-| `mime_type`, `content_length` | Métadonnées vérifiées |
-| `content_hash` | SHA-256 du contenu |
-| `storage_bucket`, `storage_path` | Objet privé |
-| `parser_status` | `pending`, `parsed`, `failed`, `dead_letter` |
+| Champ clé                        | Contrat                                            |
+| -------------------------------- | -------------------------------------------------- |
+| `source_id`, `source_fetch_id`   | Provenance                                         |
+| `external_record_id`             | Identité source si disponible                      |
+| `published_at`, `captured_at`    | Temps de publication et de disponibilité ImmoJudis |
+| `mime_type`, `content_length`    | Métadonnées vérifiées                              |
+| `content_hash`                   | SHA-256 du contenu                                 |
+| `storage_bucket`, `storage_path` | Objet privé                                        |
+| `parser_status`                  | `pending`, `parsed`, `failed`, `dead_letter`       |
 
 Immutabilité : le contenu et son hash ne changent pas. Un contenu distinct produit une nouvelle ligne. Une recapture strictement identique peut réutiliser l’artefact adressé par hash seulement si une nouvelle ligne `source_fetches` conserve la tentative et ses horodatages; aucune observation de collecte ne disparaît.
 
@@ -301,16 +301,16 @@ Un rerun avec une autre version crée une nouvelle extraction. Le JSON résultat
 
 File durable du worker.
 
-| Champ | Contrat |
-|---|---|
-| `job_type` | Étape ou commande |
-| `payload` | Entrée versionnée et bornée |
-| `status` | `queued`, `running`, `retry`, `completed`, `dead_letter`, `cancelled` |
-| `priority`, `run_after` | Ordonnancement |
-| `attempt_count`, `max_attempts` | Budget de retry |
-| `locked_at`, `locked_by`, `heartbeat_at` | Lease du worker |
-| `idempotency_key` | Clé unique |
-| `last_error` | Code/message expurgé |
+| Champ                                    | Contrat                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `job_type`                               | Étape ou commande                                                     |
+| `payload`                                | Entrée versionnée et bornée                                           |
+| `status`                                 | `queued`, `running`, `retry`, `completed`, `dead_letter`, `cancelled` |
+| `priority`, `run_after`                  | Ordonnancement                                                        |
+| `attempt_count`, `max_attempts`          | Budget de retry                                                       |
+| `locked_at`, `locked_by`, `heartbeat_at` | Lease du worker                                                       |
+| `idempotency_key`                        | Clé unique                                                            |
+| `last_error`                             | Code/message expurgé                                                  |
 
 Consommation : transaction `FOR UPDATE SKIP LOCKED`. Un 429 respecte `Retry-After`; 5xx utilise un backoff exponentiel; erreur de licence désactive le connecteur.
 
@@ -320,17 +320,17 @@ Consommation : transaction `FOR UPDATE SKIP LOCKED`. Un 429 respecte `Retry-Afte
 
 Une procédure judiciaire identifiable, pouvant contenir plusieurs lots.
 
-| Champ | Type | Contrat |
-|---|---|---|
-| `id` | uuid | Clé primaire |
-| `court_id` | uuid | FK `courts`, obligatoire |
-| `procedure_type` | text | Type de procédure, obligatoire |
-| `court_case_number` | text | Référence locale si connue |
-| `portalis_number` | text | Référence Portalis si connue |
-| `pursuing_firm_id` | uuid | FK `law_firms` |
-| `current_status` | text | Projection de cycle de vie du dossier |
-| `first_observed_at`, `last_observed_at` | timestamptz | Fenêtre d’observation |
-| `created_by`, `created_at`, `updated_at` | uuid/timestamptz | Audit courant |
+| Champ                                    | Type             | Contrat                               |
+| ---------------------------------------- | ---------------- | ------------------------------------- |
+| `id`                                     | uuid             | Clé primaire                          |
+| `court_id`                               | uuid             | FK `courts`, obligatoire              |
+| `procedure_type`                         | text             | Type de procédure, obligatoire        |
+| `court_case_number`                      | text             | Référence locale si connue            |
+| `portalis_number`                        | text             | Référence Portalis si connue          |
+| `pursuing_firm_id`                       | uuid             | FK `law_firms`                        |
+| `current_status`                         | text             | Projection de cycle de vie du dossier |
+| `first_observed_at`, `last_observed_at`  | timestamptz      | Fenêtre d’observation                 |
+| `created_by`, `created_at`, `updated_at` | uuid/timestamptz | Audit courant                         |
 
 Index : tribunal, `(court_id, court_case_number)` et Portalis partiel. Une collision de référence crée une tâche de rapprochement, pas une fusion silencieuse.
 
@@ -338,19 +338,19 @@ Index : tribunal, `(court_id, court_case_number)` et Portalis partiel. Une colli
 
 Bien ou ensemble de biens réellement offert à la vente.
 
-| Champ | Type | Contrat |
-|---|---|---|
-| `id`, `auction_case_id` | uuid | PK et FK dossier |
-| `lot_number`, `lot_label` | text | Identité dans le dossier |
-| `property_type`, `address_id` | text/uuid | Description normalisée |
-| `occupation_status` | text | `unknown` par défaut |
-| `occupation_confidence` | numeric(5,4) | `[0,1]` |
-| `living_area_m2`, `carrez_area_m2`, `land_area_m2` | numeric | Positif ou nul |
-| `room_count`, `bedroom_count`, `parking_count` | integer | Positif ou nul |
-| `initial_starting_price_eur` | numeric(14,2) | Positif ou nul |
-| `price_reduction_rules` | jsonb | Règles structurées/versionnées |
-| `document_completeness_score` | numeric(5,2) | `[0,100]` |
-| `active`, `created_at`, `updated_at` | boolean/timestamptz | Projection courante; un lot inactif ne peut porter une prédiction `ready` |
+| Champ                                              | Type                | Contrat                                                                   |
+| -------------------------------------------------- | ------------------- | ------------------------------------------------------------------------- |
+| `id`, `auction_case_id`                            | uuid                | PK et FK dossier                                                          |
+| `lot_number`, `lot_label`                          | text                | Identité dans le dossier                                                  |
+| `property_type`, `address_id`                      | text/uuid           | Description normalisée                                                    |
+| `occupation_status`                                | text                | `unknown` par défaut                                                      |
+| `occupation_confidence`                            | numeric(5,4)        | `[0,1]`                                                                   |
+| `living_area_m2`, `carrez_area_m2`, `land_area_m2` | numeric             | Positif ou nul                                                            |
+| `room_count`, `bedroom_count`, `parking_count`     | integer             | Positif ou nul                                                            |
+| `initial_starting_price_eur`                       | numeric(14,2)       | Positif ou nul                                                            |
+| `price_reduction_rules`                            | jsonb               | Règles structurées/versionnées                                            |
+| `document_completeness_score`                      | numeric(5,2)        | `[0,100]`                                                                 |
+| `active`, `created_at`, `updated_at`               | boolean/timestamptz | Projection courante; un lot inactif ne peut porter une prédiction `ready` |
 
 Intégration transitoire : un pont nullable et non destructif relie le lot à `auction_sales.id`. La suppression d’une annonce ne supprime jamais le lot.
 
@@ -366,23 +366,23 @@ Association plusieurs-à-plusieurs `lot_id`, `building_id`, avec rôle et confia
 
 Une tentative de vente à une date donnée.
 
-| Champ | Type | Contrat |
-|---|---|---|
-| `id`, `lot_id` | uuid | PK et FK lot |
-| `round_kind` | text | Vocabulaire contrôlé |
-| `sequence_number` | integer | `>= 1`, unique par lot |
-| `scheduled_at` | timestamptz | Peut être inconnu au brouillon |
-| `local_timezone` | text | `Europe/Paris` par défaut |
-| `actual_started_at`, `actual_ended_at` | timestamptz | Observations factuelles |
-| `court_id` | uuid | FK tribunal, obligatoire |
-| `hearing_room` | text | Sans identité personnelle |
-| `initial_starting_price_eur`, `effective_starting_price_eur` | numeric(14,2) | Positif ou nul |
-| `price_steps_eur` | numeric(14,2)[] | Paliers ordonnés |
-| `first_bid_level_eur` | numeric(14,2) | Premier niveau constaté |
-| `current_status` | text | Projection de la machine d’état |
-| `previous_round_id` | uuid | Round précédent du même lot |
-| `publication_first_seen_at`, `result_first_seen_at` | timestamptz | Délais séparés |
-| `status_confidence` | numeric(5,4) | `[0,1]` |
+| Champ                                                        | Type            | Contrat                         |
+| ------------------------------------------------------------ | --------------- | ------------------------------- |
+| `id`, `lot_id`                                               | uuid            | PK et FK lot                    |
+| `round_kind`                                                 | text            | Vocabulaire contrôlé            |
+| `sequence_number`                                            | integer         | `>= 1`, unique par lot          |
+| `scheduled_at`                                               | timestamptz     | Peut être inconnu au brouillon  |
+| `local_timezone`                                             | text            | `Europe/Paris` par défaut       |
+| `actual_started_at`, `actual_ended_at`                       | timestamptz     | Observations factuelles         |
+| `court_id`                                                   | uuid            | FK tribunal, obligatoire        |
+| `hearing_room`                                               | text            | Sans identité personnelle       |
+| `initial_starting_price_eur`, `effective_starting_price_eur` | numeric(14,2)   | Positif ou nul                  |
+| `price_steps_eur`                                            | numeric(14,2)[] | Paliers ordonnés                |
+| `first_bid_level_eur`                                        | numeric(14,2)   | Premier niveau constaté         |
+| `current_status`                                             | text            | Projection de la machine d’état |
+| `previous_round_id`                                          | uuid            | Round précédent du même lot     |
+| `publication_first_seen_at`, `result_first_seen_at`          | timestamptz     | Délais séparés                  |
+| `status_confidence`                                          | numeric(5,4)    | `[0,1]`                         |
 
 Contrainte : un report conserve le round original et crée une nouvelle ligne liée.
 
@@ -392,18 +392,18 @@ Une prédiction `ready` n’est admise que pour les états prévisionnels `sched
 
 Journal append-only de toute transition, correction ou observation métier.
 
-| Champ | Contrat |
-|---|---|
-| `case_id`, `lot_id`, `round_id` | Au moins l’entité pertinente; cohérence vérifiée |
-| `event_type` | Transition ou événement contrôlé |
-| `event_at` | Moment métier, nullable s’il est inconnu |
-| `observed_at` | Moment de connaissance, obligatoire |
-| `source_id`, `raw_artifact_id` | Provenance |
-| `actor_user_id`, `actor_organization_id` | Auteur humain/organisation |
-| `payload` | Détails versionnés, sans modifier les colonnes communes |
-| `confidence_score` | `[0,1]` |
-| `supersedes_event_id`, `correction_reason` | Correction explicite |
-| `created_at` | Insertion |
+| Champ                                      | Contrat                                                 |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `case_id`, `lot_id`, `round_id`            | Au moins l’entité pertinente; cohérence vérifiée        |
+| `event_type`                               | Transition ou événement contrôlé                        |
+| `event_at`                                 | Moment métier, nullable s’il est inconnu                |
+| `observed_at`                              | Moment de connaissance, obligatoire                     |
+| `source_id`, `raw_artifact_id`             | Provenance                                              |
+| `actor_user_id`, `actor_organization_id`   | Auteur humain/organisation                              |
+| `payload`                                  | Détails versionnés, sans modifier les colonnes communes |
+| `confidence_score`                         | `[0,1]`                                                 |
+| `supersedes_event_id`, `correction_reason` | Correction explicite                                    |
+| `created_at`                               | Insertion                                               |
 
 Accès : insert via commandes autorisées; aucun update/delete applicatif.
 
@@ -411,22 +411,22 @@ Accès : insert via commandes autorisées; aucun update/delete applicatif.
 
 Versions canoniques du résultat d’un round.
 
-| Champ | Type | Contrat |
-|---|---|---|
-| `id`, `round_id` | uuid | PK et FK round |
-| `version` | integer | Commence à 1; unique par round |
-| `outcome_status` | text | Vocabulaire contrôlé |
-| `initial_hammer_price_eur`, `final_hammer_price_eur` | numeric(14,2) | Positif ou nul |
-| `taxed_costs_eur` | numeric(14,2) | Positif ou nul |
-| `bidder_count_bucket` | text | Bucket contrôlé |
-| `surenchere_status`, `surenchere_filed_at`, `surenchere_amount_eur` | mixte | État, date et montant distincts |
-| `finality_status`, `payment_status` | text | Vocabulaires contrôlés |
-| `result_observed_at` | timestamptz | Date de connaissance du résultat |
-| `canonical_confidence` | numeric(5,4) | `[0,1]` |
-| `training_eligible` | boolean | Fait d’éligibilité au moment de cette version, faux par défaut |
-| `valid_from`, `valid_to` | timestamptz | Fenêtre logique; la fin est dérivée sans mutation de l’ancienne version |
-| `supersedes_outcome_id` | uuid | Version précédente du même round |
-| `created_by`, `created_at` | uuid/timestamptz | Auteur et insertion |
+| Champ                                                               | Type             | Contrat                                                                 |
+| ------------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------- |
+| `id`, `round_id`                                                    | uuid             | PK et FK round                                                          |
+| `version`                                                           | integer          | Commence à 1; unique par round                                          |
+| `outcome_status`                                                    | text             | Vocabulaire contrôlé                                                    |
+| `initial_hammer_price_eur`, `final_hammer_price_eur`                | numeric(14,2)    | Positif ou nul                                                          |
+| `taxed_costs_eur`                                                   | numeric(14,2)    | Positif ou nul                                                          |
+| `bidder_count_bucket`                                               | text             | Bucket contrôlé                                                         |
+| `surenchere_status`, `surenchere_filed_at`, `surenchere_amount_eur` | mixte            | État, date et montant distincts                                         |
+| `finality_status`, `payment_status`                                 | text             | Vocabulaires contrôlés                                                  |
+| `result_observed_at`                                                | timestamptz      | Date de connaissance du résultat                                        |
+| `canonical_confidence`                                              | numeric(5,4)     | `[0,1]`                                                                 |
+| `training_eligible`                                                 | boolean          | Fait d’éligibilité au moment de cette version, faux par défaut          |
+| `valid_from`, `valid_to`                                            | timestamptz      | Fenêtre logique; la fin est dérivée sans mutation de l’ancienne version |
+| `supersedes_outcome_id`                                             | uuid             | Version précédente du même round                                        |
+| `created_by`, `created_at`                                          | uuid/timestamptz | Auteur et insertion                                                     |
 
 Une correction crée une nouvelle version. Les valeurs métier d’une version existante ne changent pas; la version courante est celle qui n’est pas supersédée ou qui possède le numéro maximal valide. Dans le chemin append-only, `valid_to` de l’ancienne ligne n’est pas renseigné par update : la fin de validité est calculée à partir de la version suivante ou d’une projection de lecture.
 
@@ -440,16 +440,16 @@ promotion qu'avec le workflow preuve A/B, match confirmé, revue et tests associ
 
 Preuve append-only soutenant une version de résultat.
 
-| Champ | Contrat |
-|---|---|
-| `outcome_id` | FK résultat |
-| `raw_artifact_id`, `source_id` | Document et source |
-| `evidence_type`, `evidence_grade` | Nature et grade A/B/C/rejected |
-| `claim_types` | Claims soutenus : date, statut, prix, finalité, surenchère, participation… |
-| `lot_matching_confidence`, `round_matching_confidence` | `[0,1]` |
-| `price_extraction_confidence`, `finality_confidence` | `[0,1]` |
-| `review_status` | État connu à l’insertion de la preuve, pas un workflow mutable |
-| `created_at` | Insertion |
+| Champ                                                  | Contrat                                                                    |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `outcome_id`                                           | FK résultat                                                                |
+| `raw_artifact_id`, `source_id`                         | Document et source                                                         |
+| `evidence_type`, `evidence_grade`                      | Nature et grade A/B/C/rejected                                             |
+| `claim_types`                                          | Claims soutenus : date, statut, prix, finalité, surenchère, participation… |
+| `lot_matching_confidence`, `round_matching_confidence` | `[0,1]`                                                                    |
+| `price_extraction_confidence`, `finality_confidence`   | `[0,1]`                                                                    |
+| `review_status`                                        | État connu à l’insertion de la preuve, pas un workflow mutable             |
+| `created_at`                                           | Insertion                                                                  |
 
 Le grade n’efface pas les confiances par champ. Une preuve rejetée est conservée.
 
@@ -485,21 +485,21 @@ Contrainte : aucun champ de magistrat, greffe, plafond individuel ou résultat p
 
 Copie immuable des données disponibles à un cutoff.
 
-| Champ | Contrat |
-|---|---|
-| `lot_id`, `round_id` | Entités scorées |
-| `prediction_horizon`, `feature_cutoff_at` | Horizon et cutoff |
-| `built_at` | Date de construction |
-| `feature_schema_version`, `feature_builder_version` | Reproductibilité |
-| `features` | Valeurs validées |
-| `source_manifest`, `source_manifest_hash` | Sources, dates et versions |
-| `snapshot_hash` | Hash canonique du snapshot |
-| `market_estimate_version` | Version de valorisation |
-| `dvf_release`, `bdnb_release`, `rnic_release`, `dpe_release` | Releases ouvertes |
-| `data_completeness_score`, `data_freshness_score` | `[0,100]` |
-| `leakage_check_status` | Résultat au moment de l’insertion : `pending`, `passed`, `failed` |
-| `retrospective`, `training_eligible` | Faits figés de cette construction; faux par défaut pour l’éligibilité |
-| `created_at` | Insertion |
+| Champ                                                        | Contrat                                                               |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `lot_id`, `round_id`                                         | Entités scorées                                                       |
+| `prediction_horizon`, `feature_cutoff_at`                    | Horizon et cutoff                                                     |
+| `built_at`                                                   | Date de construction                                                  |
+| `feature_schema_version`, `feature_builder_version`          | Reproductibilité                                                      |
+| `features`                                                   | Valeurs validées                                                      |
+| `source_manifest`, `source_manifest_hash`                    | Sources, dates et versions                                            |
+| `snapshot_hash`                                              | Hash canonique du snapshot                                            |
+| `market_estimate_version`                                    | Version de valorisation                                               |
+| `dvf_release`, `bdnb_release`, `rnic_release`, `dpe_release` | Releases ouvertes                                                     |
+| `data_completeness_score`, `data_freshness_score`            | `[0,100]`                                                             |
+| `leakage_check_status`                                       | Résultat au moment de l’insertion : `pending`, `passed`, `failed`     |
+| `retrospective`, `training_eligible`                         | Faits figés de cette construction; faux par défaut pour l’éligibilité |
+| `created_at`                                                 | Insertion                                                             |
 
 Un snapshot reconstruit après audience est `retrospective = true` et non éligible tant que l’existence antérieure de chaque donnée n’est pas prouvée.
 
@@ -533,22 +533,22 @@ Statuts initiaux : `draft`, `validated`, `shadow`, `active`, `retired`, `rejecte
 
 Sortie immuable d’un modèle ou d’une baseline pour un snapshot.
 
-| Champ | Contrat |
-|---|---|
-| `round_id`, `snapshot_id`, `model_version_id`, `cohort_statistics_id` | Traçabilité obligatoire pour une sortie `ready` |
-| `prediction_kind` | `outcome_graph` pour la restitution publiée, `shadow` pour l’évaluation silencieuse |
-| `prediction_status` | `ready` ou `insufficient_data`; ce dernier exige un motif |
-| `generated_at`, `created_at`, `horizon` | Temps de calcul, insertion et portée; `created_at >= generated_at` |
-| `conditional_on` | Conditions visibles, par exemple audience tenue |
-| `probabilities` | Valeurs `[0,1]` et somme cohérente quand catégories exclusives |
-| `quantiles` | `P05…P95`, montants en centimes entiers et ordre monotone |
-| `expected_value_eur` | `numeric(14,2)` si pertinent |
-| `confidence_level`, `confidence_label` | Score et libellé explicites |
-| `sample_size` | Échantillon éligible réellement utilisé |
-| `explanation_factors` | Facteurs agrégés, sans donnée personnelle |
-| `prediction_hash` | Hash du contrat canonique |
-| `supersedes_prediction_id` | Lien append-only vers la prédiction précédente du même round, type et horizon |
-| `superseded_by` | Pointeur avant réservé à la compatibilité; toujours `NULL` dans le chemin strict |
+| Champ                                                                 | Contrat                                                                             |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `round_id`, `snapshot_id`, `model_version_id`, `cohort_statistics_id` | Traçabilité obligatoire pour une sortie `ready`                                     |
+| `prediction_kind`                                                     | `outcome_graph` pour la restitution publiée, `shadow` pour l’évaluation silencieuse |
+| `prediction_status`                                                   | `ready` ou `insufficient_data`; ce dernier exige un motif                           |
+| `generated_at`, `created_at`, `horizon`                               | Temps de calcul, insertion et portée; `created_at >= generated_at`                  |
+| `conditional_on`                                                      | Conditions visibles, par exemple audience tenue                                     |
+| `probabilities`                                                       | Valeurs `[0,1]` et somme cohérente quand catégories exclusives                      |
+| `quantiles`                                                           | `P05…P95`, montants en centimes entiers et ordre monotone                           |
+| `expected_value_eur`                                                  | `numeric(14,2)` si pertinent                                                        |
+| `confidence_level`, `confidence_label`                                | Score et libellé explicites                                                         |
+| `sample_size`                                                         | Échantillon éligible réellement utilisé                                             |
+| `explanation_factors`                                                 | Facteurs agrégés, sans donnée personnelle                                           |
+| `prediction_hash`                                                     | Hash du contrat canonique                                                           |
+| `supersedes_prediction_id`                                            | Lien append-only vers la prédiction précédente du même round, type et horizon       |
+| `superseded_by`                                                       | Pointeur avant réservé à la compatibilité; toujours `NULL` dans le chemin strict    |
 
 La chaîne `supersedes_prediction_id` progresse strictement en `generated_at`. Un index unique interdit plusieurs successeurs de la même prédiction et le validateur rejette les branches ou les liens incohérents. `superseded_by` n’autorise aucune mutation de l’ancienne sortie et reste nul. Le repository ne le filtre pas : il lit la prédiction `outcome_graph` la plus récente par `generated_at`, puis `created_at`, décroissants.
 
@@ -614,7 +614,7 @@ La réponse de lecture d’une audience expose logiquement :
     "p90Cents": 17900000,
     "p95Cents": 19000000
   },
-  "surenchere": { "filedGivenInitialAdjudication": 0.10 },
+  "surenchere": { "filedGivenInitialAdjudication": 0.1 },
   "finalPrice": {
     "p05Cents": 11800000,
     "p10Cents": 12600000,
@@ -634,9 +634,9 @@ La réponse de lecture d’une audience expose logiquement :
     "label": "élevée",
     "version": "pressure-v1",
     "components": [
-      { "key": "discount", "score": 88, "weight": 0.30 },
-      { "key": "adjudication", "score": 91, "weight": 0.20 },
-      { "key": "qualified_demand", "score": 72, "weight": 0.20 },
+      { "key": "discount", "score": 88, "weight": 0.3 },
+      { "key": "adjudication", "score": 91, "weight": 0.2 },
+      { "key": "qualified_demand", "score": 72, "weight": 0.2 },
       { "key": "history", "score": 64, "weight": 0.15 },
       { "key": "liquidity", "score": 75, "weight": 0.15 }
     ]
@@ -648,7 +648,7 @@ La réponse de lecture d’une audience expose logiquement :
   },
   "delays": {
     "heldWithin30DaysProbability": 0.71,
-    "heldWithin60DaysProbability": 0.90,
+    "heldWithin60DaysProbability": 0.9,
     "resultKnownWithin48HoursProbability": 0.78,
     "finalityKnownWithin15DaysProbability": 0.83,
     "newRoundWithin4MonthsAfterSurenchereProbability": 0.66
@@ -657,9 +657,7 @@ La réponse de lecture d’une audience expose logiquement :
     { "label": "Cohorte de référence", "direction": "neutral" },
     { "label": "Décote de départ", "direction": "up" }
   ],
-  "limitations": [
-    "Prévision statistique, pas une garantie de déroulement ni de prix."
-  ],
+  "limitations": ["Prévision statistique, pas une garantie de déroulement ni de prix."],
   "refusalReason": null
 }
 ```
@@ -681,15 +679,15 @@ Le plafond n’est écrit ni dans `auction_feature_snapshots`, ni dans `cohort_s
 
 Codes initiaux :
 
-| Code | Cas |
-|---|---|
-| `OUTCOME_GRAPH_NOT_ENTITLED` | Ni administrateur, ni premium manuel, ni abonnement Analyse actif/non expiré |
-| `OUTCOME_GRAPH_NOT_LINKED` | Annonce non reliée à un lot/round |
-| `OUTCOME_GRAPH_NO_SNAPSHOT` | Aucun snapshot admissible |
-| `OUTCOME_GRAPH_LOW_SAMPLE` | Échantillon autonome inférieur à 10 |
-| `OUTCOME_GRAPH_LOW_QUALITY` | Preuve, complétude ou fraîcheur insuffisante |
-| `OUTCOME_GRAPH_CONFLICT` | Conflit bloquant non résolu |
-| `OUTCOME_GRAPH_NO_ACTIVE_MODEL` | Aucune baseline/version approuvée disponible |
+| Code                            | Cas                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `OUTCOME_GRAPH_NOT_ENTITLED`    | Ni administrateur, ni premium manuel, ni abonnement Analyse actif/non expiré |
+| `OUTCOME_GRAPH_NOT_LINKED`      | Annonce non reliée à un lot/round                                            |
+| `OUTCOME_GRAPH_NO_SNAPSHOT`     | Aucun snapshot admissible                                                    |
+| `OUTCOME_GRAPH_LOW_SAMPLE`      | Échantillon autonome inférieur à 10                                          |
+| `OUTCOME_GRAPH_LOW_QUALITY`     | Preuve, complétude ou fraîcheur insuffisante                                 |
+| `OUTCOME_GRAPH_CONFLICT`        | Conflit bloquant non résolu                                                  |
+| `OUTCOME_GRAPH_NO_ACTIVE_MODEL` | Aucune baseline/version approuvée disponible                                 |
 
 Un refus est une sortie normale et observable; il ne doit pas être remplacé par une probabilité par défaut. Un snapshot rejeté ne fournit pas de valeur de marché, et une provenance absente reste représentée par des champs nuls.
 

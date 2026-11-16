@@ -74,5 +74,5 @@ partent sans écrire, et le compte administrateur (exclu des agrégats).
 ## Pour aller plus loin
 
 - Règle de décision chiffrée de l'essai et de la pépite :
-  [mesure-essai-et-pepite](../operations/mesure-essai-et-pepite.md).
-- Séances avec des utilisateurs : [etude-utilisateurs](../operations/etude-utilisateurs.md).
+  mesure-essai-et-pepite (dépôt interne, `docs/operations/mesure-essai-et-pepite.md`).
+- Séances avec des utilisateurs : etude-utilisateurs (dépôt interne, `docs/operations/etude-utilisateurs.md`).

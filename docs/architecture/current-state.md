@@ -1,6 +1,6 @@
 # Outcome Graph — état actuel
 
-> **Instantané daté du 30 juillet 2026, pas l’état d’aujourd’hui (31/10/2026).** Il décrit le socle d’avant la généralisation d’Outcome Graph et n’a pas été réécrit depuis, hormis quelques mises à jour ponctuelles signalées dans le texte (par exemple l’essai, le 28/10/2026). Pour l’état réel, voir le [README](../../README.md), [`supabase/migrations/`](../../supabase/migrations/) (la source de vérité du schéma) et [`docs/README.md`](../README.md). Le statut de la tranche verticale d’Outcome Graph est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) (archive du 17/08/2026).
+> **Instantané daté du 30 juillet 2026, pas l’état d’aujourd’hui (31/10/2026).** Il décrit le socle d’avant la généralisation d’Outcome Graph et n’a pas été réécrit depuis, hormis quelques mises à jour ponctuelles signalées dans le texte (par exemple l’essai, le 28/10/2026). Pour l’état réel, voir le [README](../../README.md), [`supabase/migrations/`](../../supabase/migrations/) (la source de vérité du schéma) et [`docs/README.md`](../README.md). Le statut de la tranche verticale d’Outcome Graph est suivi dans `IMPLEMENTATION_STATUS.md` (dépôt interne, `docs/archive/IMPLEMENTATION_STATUS.md`) (archive du 17/08/2026).
 
 ## Synthèse
 
@@ -31,16 +31,16 @@ Cette architecture npm/pip est opérationnelle. La recommandation `pnpm`/`uv` du
 
 ## Composants en place
 
-| Composant | État actuel | Point d’intégration Outcome Graph |
-|---|---|---|
-| Authentification | Supabase Auth, jeton Bearer côté API | Réutiliser `requireSupabaseAuthContext` sur chaque route protégée |
-| Abonnements | Stripe Checkout/Portal/Webhook et `user_subscriptions` | Réutiliser le résolveur d’accès Analyse, sans nouveau système de paiement |
-| Base | PostgreSQL Supabase, PostGIS, migrations versionnées et RLS | Ajouter le registre de façon additive dans la même source de vérité |
-| Stockage | Bucket privé `listing-request-documents` pour les dépôts professionnels | Créer un bucket privé séparé pour les preuves Outcome Graph |
-| Lecture produit | Vues Supabase et API Next sur `auction_sales` | Conserver un pont explicite de l’annonce existante vers lot/audience |
-| Collecte | Pipeline Python multi-source, normalisation, déduplication, PDF/LLM | Produire des artefacts et événements versionnés au lieu d’écraser l’historique |
-| Marché | DVF, cadastre, DPE, valorisation et modèles versionnés | Réutiliser les sorties datées dans les snapshots, sans les confondre avec une preuve de résultat |
-| Exploitation | GitHub Actions, tables de runs/alertes, Vercel Analytics | Ajouter métriques de couverture, revue, snapshots et scoring |
+| Composant        | État actuel                                                             | Point d’intégration Outcome Graph                                                                |
+| ---------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Authentification | Supabase Auth, jeton Bearer côté API                                    | Réutiliser `requireSupabaseAuthContext` sur chaque route protégée                                |
+| Abonnements      | Stripe Checkout/Portal/Webhook et `user_subscriptions`                  | Réutiliser le résolveur d’accès Analyse, sans nouveau système de paiement                        |
+| Base             | PostgreSQL Supabase, PostGIS, migrations versionnées et RLS             | Ajouter le registre de façon additive dans la même source de vérité                              |
+| Stockage         | Bucket privé `listing-request-documents` pour les dépôts professionnels | Créer un bucket privé séparé pour les preuves Outcome Graph                                      |
+| Lecture produit  | Vues Supabase et API Next sur `auction_sales`                           | Conserver un pont explicite de l’annonce existante vers lot/audience                             |
+| Collecte         | Pipeline Python multi-source, normalisation, déduplication, PDF/LLM     | Produire des artefacts et événements versionnés au lieu d’écraser l’historique                   |
+| Marché           | DVF, cadastre, DPE, valorisation et modèles versionnés                  | Réutiliser les sorties datées dans les snapshots, sans les confondre avec une preuve de résultat |
+| Exploitation     | GitHub Actions, tables de runs/alertes, Vercel Analytics                | Ajouter métriques de couverture, revue, snapshots et scoring                                     |
 
 ## Schéma actuel pertinent
 
@@ -48,17 +48,17 @@ Le schéma complet est construit par les migrations `supabase/migrations`. Les g
 
 ### Annonces et actifs
 
-| Table ou vue | Rôle actuel | Limite pour Outcome Graph |
-|---|---|---|
-| `tribunals` | Référentiel de tribunaux par code texte | La cible demande un référentiel `courts` UUID plus riche et agrégé |
-| `auction_sales` | Ligne canonique mutable par `source_url`; bien, audience et résultat aplatis; statut limité à `upcoming`, `past`, `adjudicated`, `unknown` | Une seule trajectoire; pas de dossier/lot/round; état `unknown` trop large |
-| `properties` | Projection normalisée du bien, reliée un-à-un par `source_url` | Cascade depuis `auction_sales`; pas un lot judiciaire multi-biens indépendant |
-| `judicial_sales` | Projection normalisée de la vente judiciaire | Cascade depuis `auction_sales`; une date, un statut et un prix; pas d’historique de rounds |
-| `auction_observations` | Dernière observation brute par `source_url` | Upsert mutable et réécriture de `observed_at`, pas un journal append-only |
-| `auction_documents` | Métadonnées et extraction des documents d’annonce | Ligne mutable; fichiers gardés dans le cache/disque du worker, pas dans un coffre de preuves objet durable |
-| `auction_extractions` | Résultat d’extraction versionné par provider/hash | N’exprime pas le rapprochement dossier/lot/audience ni une revue indépendante |
-| `auction_sale_history` | Ancienne et nouvelle ligne JSON lors d’un changement | Journalise les updates significatifs, pas les inserts/deletes; sans FK et sans immutabilité stricte |
-| `v_auction_sales_app`, `v_auction_sales_discovery`, `v_auction_sales_unlocked` | Modèles de lecture complet, découverte et ventes débloquées (« 3 déblocages par mois ») | Les contrats de lecture restent centrés sur `auction_sales.id` |
+| Table ou vue                                                                   | Rôle actuel                                                                                                                                | Limite pour Outcome Graph                                                                                  |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `tribunals`                                                                    | Référentiel de tribunaux par code texte                                                                                                    | La cible demande un référentiel `courts` UUID plus riche et agrégé                                         |
+| `auction_sales`                                                                | Ligne canonique mutable par `source_url`; bien, audience et résultat aplatis; statut limité à `upcoming`, `past`, `adjudicated`, `unknown` | Une seule trajectoire; pas de dossier/lot/round; état `unknown` trop large                                 |
+| `properties`                                                                   | Projection normalisée du bien, reliée un-à-un par `source_url`                                                                             | Cascade depuis `auction_sales`; pas un lot judiciaire multi-biens indépendant                              |
+| `judicial_sales`                                                               | Projection normalisée de la vente judiciaire                                                                                               | Cascade depuis `auction_sales`; une date, un statut et un prix; pas d’historique de rounds                 |
+| `auction_observations`                                                         | Dernière observation brute par `source_url`                                                                                                | Upsert mutable et réécriture de `observed_at`, pas un journal append-only                                  |
+| `auction_documents`                                                            | Métadonnées et extraction des documents d’annonce                                                                                          | Ligne mutable; fichiers gardés dans le cache/disque du worker, pas dans un coffre de preuves objet durable |
+| `auction_extractions`                                                          | Résultat d’extraction versionné par provider/hash                                                                                          | N’exprime pas le rapprochement dossier/lot/audience ni une revue indépendante                              |
+| `auction_sale_history`                                                         | Ancienne et nouvelle ligne JSON lors d’un changement                                                                                       | Journalise les updates significatifs, pas les inserts/deletes; sans FK et sans immutabilité stricte        |
+| `v_auction_sales_app`, `v_auction_sales_discovery`, `v_auction_sales_unlocked` | Modèles de lecture complet, découverte et ventes débloquées (« 3 déblocages par mois »)                                                    | Les contrats de lecture restent centrés sur `auction_sales.id`                                             |
 
 ### Enrichissement et valorisation
 
@@ -134,20 +134,20 @@ Une vérification directe de `account_tier` serait incorrecte : elle refuserait 
 
 ## Écarts et risques
 
-| Priorité | Écart | Conséquence | Mesure attendue |
-|---|---|---|---|
-| Bloquant | Pas de dossier → lot → audience | Reports, surenchères et multi-lots ambigus | Introduire des entités UUID et un pont depuis `auction_sales` |
-| Bloquant | Écritures et nettoyages mutables | Perte de l’historique et fuite temporelle possible | Isoler un registre append-only avec versions et événements compensatoires |
-| Bloquant | Absence et résultat négatif aplatis | `unknown` peut être interprété à tort | Enums et contraintes distincts; aucun défaut implicite négatif |
-| Bloquant | Pas de snapshots pré-audience | Impossible d’auditer une prédiction sans fuite | Manifestes, cutoff, versions et tests anti-fuite |
-| Élevé | Pas de registre de politiques source | Un connecteur existant n’est pas une autorisation juridique | `data_sources.ingestion_policy`; refus par défaut |
-| Élevé | Rôles limités à `user/admin` | Pas d’isolation cabinet/reviewer/analyste | Organisations, memberships et RLS dédiées |
-| Élevé | Documents sans chaîne de claims/revues | Prix ou finalité insuffisamment justifiables | Preuves A/B/C, revues append-only et conflits bloquants |
-| Élevé | `Decimal` du pipeline historique sérialisé en `float` | Risque d’arrondi pour les montants legacy | Conserver les contrats Outcome Graph en centimes entiers sûrs |
-| Élevé | Types Supabase générés en décalage possible | Contournements par casts et erreurs de contrat | Régénérer après chaque migration Outcome Graph |
-| Moyen | Worker GitHub Actions non long-running | Latence, reprises et verrous limités | Introduire progressivement `ingestion_jobs` et un worker durable |
-| Moyen | npm/pip diffèrent de pnpm/uv cible | Commandes du cahier des charges non disponibles | Migration d’outillage dédiée, avec lockfiles et CI verte |
-| Moyen | Bucket de preuve dédié absent | Accès documentaire trop large ou mal attribué | Bucket privé, chemins UUID et URL signées courtes |
+| Priorité | Écart                                                 | Conséquence                                                 | Mesure attendue                                                           |
+| -------- | ----------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Bloquant | Pas de dossier → lot → audience                       | Reports, surenchères et multi-lots ambigus                  | Introduire des entités UUID et un pont depuis `auction_sales`             |
+| Bloquant | Écritures et nettoyages mutables                      | Perte de l’historique et fuite temporelle possible          | Isoler un registre append-only avec versions et événements compensatoires |
+| Bloquant | Absence et résultat négatif aplatis                   | `unknown` peut être interprété à tort                       | Enums et contraintes distincts; aucun défaut implicite négatif            |
+| Bloquant | Pas de snapshots pré-audience                         | Impossible d’auditer une prédiction sans fuite              | Manifestes, cutoff, versions et tests anti-fuite                          |
+| Élevé    | Pas de registre de politiques source                  | Un connecteur existant n’est pas une autorisation juridique | `data_sources.ingestion_policy`; refus par défaut                         |
+| Élevé    | Rôles limités à `user/admin`                          | Pas d’isolation cabinet/reviewer/analyste                   | Organisations, memberships et RLS dédiées                                 |
+| Élevé    | Documents sans chaîne de claims/revues                | Prix ou finalité insuffisamment justifiables                | Preuves A/B/C, revues append-only et conflits bloquants                   |
+| Élevé    | `Decimal` du pipeline historique sérialisé en `float` | Risque d’arrondi pour les montants legacy                   | Conserver les contrats Outcome Graph en centimes entiers sûrs             |
+| Élevé    | Types Supabase générés en décalage possible           | Contournements par casts et erreurs de contrat              | Régénérer après chaque migration Outcome Graph                            |
+| Moyen    | Worker GitHub Actions non long-running                | Latence, reprises et verrous limités                        | Introduire progressivement `ingestion_jobs` et un worker durable          |
+| Moyen    | npm/pip diffèrent de pnpm/uv cible                    | Commandes du cahier des charges non disponibles             | Migration d’outillage dédiée, avec lockfiles et CI verte                  |
+| Moyen    | Bucket de preuve dédié absent                         | Accès documentaire trop large ou mal attribué               | Bucket privé, chemins UUID et URL signées courtes                         |
 
 ## Plan de migration sans rupture
 

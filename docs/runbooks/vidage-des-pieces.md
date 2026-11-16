@@ -11,7 +11,7 @@ actionnables. Il tourne de deux façons :
 Chaque vente prend le verrou d'écriture du catalogue pour ses passes. La **lecture en avance**
 (`src/document_prefetch.py`) télécharge et lit les pages des ventes suivantes dans des processus à part,
 hors du verrou et sans écriture en base. Historique et cause de la boucle du 04/11/2026 :
-[post-mortem](../audits/2026-11-04-post-mortem-vidage-pieces.md).
+post-mortem (dépôt interne, `docs/audits/2026-11-04-post-mortem-vidage-pieces.md`).
 
 Les requêtes ci-dessous sont en lecture seule. Toute écriture en base (fermer une alerte, remettre des
 tâches en file) est une action du propriétaire.
@@ -130,7 +130,7 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
 ## Plafond de relecture et tâches en attente
 
 Règles posées le 11/11/2026 (lot R6, note
-[file de lecture des pièces](../audits/2026-11-11-file-de-lecture-des-pieces.md)).
+file de lecture des pièces (dépôt interne, `docs/audits/2026-11-11-file-de-lecture-des-pieces.md`)).
 
 - **Plafond de relecture.** Le vidage ne choisit pas une vente pour laquelle il a déjà demandé 2 lectures
   pdf terminées dans les 24 dernières heures, quelle que soit l'empreinte des tâches

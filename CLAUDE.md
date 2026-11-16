@@ -6,6 +6,15 @@ Plateforme d'exploration des ventes immobilières aux enchères en France : appl
 Next.js (App Router, React 19, Tailwind v4, Supabase, Mapbox, hébergée sur Vercel) et
 pipeline de données Python dans `services/data-pipeline/`. Détails dans `README.md`.
 
+## Dépôt public : documentation interne ailleurs
+
+Ce dépôt est public. La documentation interne (feuilles de route, recherche utilisateurs, audits, notes de
+phase, registre RGPD, comptes-rendus de sécurité) vit dans le dépôt privé `Aprivi-dev/immojudis-interne`, aux
+mêmes chemins `docs/…` (détail : `docs/README.md`). Un chemin `docs/…` cité par un agent ou un commentaire et
+absent d'ici se lit là-bas, si ce dépôt est attaché à la session ; sinon, le dire au propriétaire au lieu de
+deviner. Ne jamais écrire dans ce dépôt public : un compte-rendu de faille non corrigée, des données
+personnelles (noms, emails, pages sources capturées), ou de la stratégie (prix, concurrence, feuille de route).
+
 ## Vérifications avant de livrer du code
 
 `npm ci` d'abord si `node_modules/` est absent, puis :
