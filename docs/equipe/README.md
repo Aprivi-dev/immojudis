@@ -1,7 +1,10 @@
 # Comptes-rendus de l'équipe d'agents
 
-Ce dossier reçoit les rapports du chef d'orchestre, un fichier par mission :
-`AAAA-MM-JJ-<sujet>.md`.
+Les rapports du chef d'orchestre, un fichier par mission (`AAAA-MM-JJ-<sujet>.md`), ne sont plus dans ce
+dépôt, qui est public : ils contiennent de la stratégie (prix, concurrence, feuille de route). Depuis le
+16/11/2026 ils vivent dans le dépôt privé `Aprivi-dev/immojudis-interne`, au même chemin `docs/equipe/`.
+Ce dossier ne garde que ce mode d'emploi et la licence des agents adaptés ; `.gitignore` y refuse tout autre
+fichier.
 
 ## Lancer une mission
 
