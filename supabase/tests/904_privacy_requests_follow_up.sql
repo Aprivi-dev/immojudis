@@ -1,6 +1,6 @@
 -- 20261202100000 : suivi des demandes de droits. Échéance de 14 jours pour une rétractation (déclencheur,
 -- sans réécrire les lignes existantes), accusé de réception réel (acknowledged_at nul au dépôt), alertes
--- compliance.privacy_requests.* (échéance proche, dépassée, demande non prise en main), crédits non utilisés
+-- compliance.privacy_requests.* (échéance proche, dépassée, demande reçue à prendre en charge), crédits non utilisés
 -- lus par la garde avant effacement. Droits : service_role seul ; RLS de la table inchangée.
 begin;
 
@@ -122,17 +122,17 @@ values
   -- Ouverte, échéance dépassée.
   ('90300000-0000-4000-8000-000000000012', 'd@example.test', 'access', 'identity_verification',
    '2026-10-01T09:00:00Z', '2026-11-01T09:00:00Z', null, null),
-  -- Reçue il y a 4 jours, personne ne l'a prise en main.
+  -- Reçue il y a cinq minutes : l'alerte « à prendre en charge » s'ouvre sans délai.
   ('90300000-0000-4000-8000-000000000013', 'e@example.test', 'objection', 'received',
-   '2026-12-06T09:00:00Z', '2027-01-06T09:00:00Z', null, null),
+   '2026-12-10T08:55:00Z', '2027-01-06T09:00:00Z', null, null),
   -- Close : jamais comptée, même en retard.
   ('90300000-0000-4000-8000-000000000014', 'f@example.test', 'access', 'completed',
    '2026-09-01T09:00:00Z', '2026-10-01T09:00:00Z', '2026-09-20T09:00:00Z', 'done');
 
 select is(
   public.evaluate_privacy_request_health('2026-12-10T09:00:00Z'),
-  jsonb_build_object('due_soon', 1, 'overdue', 1, 'unacknowledged_operator', 1),
-  'counts open requests due soon, overdue and left unacknowledged, never closed ones'
+  jsonb_build_object('due_soon', 1, 'overdue', 1, 'awaiting_operator', 1),
+  'counts open requests due soon, overdue and awaiting the operator, never closed ones'
 );
 select results_eq(
   $$select alert_key, severity, status, category
@@ -142,7 +142,7 @@ select results_eq(
   $$values
       ('compliance.privacy_requests.due_soon'::text, 'warning'::text, 'open'::text, 'cron'::text),
       ('compliance.privacy_requests.overdue', 'critical', 'open', 'cron'),
-      ('compliance.privacy_requests.unacknowledged_operator', 'warning', 'open', 'cron')$$,
+      ('compliance.privacy_requests.awaiting_operator', 'warning', 'open', 'cron')$$,
   'opens the three compliance alerts with their severities'
 );
 select ok(
@@ -163,7 +163,7 @@ update public.data_subject_requests
  where status <> 'completed';
 select is(
   public.evaluate_privacy_request_health('2026-12-10T11:00:00Z'),
-  jsonb_build_object('due_soon', 0, 'overdue', 0, 'unacknowledged_operator', 0),
+  jsonb_build_object('due_soon', 0, 'overdue', 0, 'awaiting_operator', 0),
   'nothing is counted once every request is closed'
 );
 -- Hystérésis commune (app_private.sync_operational_alert) : l'alerte se referme après deux heures au calme.

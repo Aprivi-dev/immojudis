@@ -98,8 +98,8 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
     "Demande de droits en retard : échéance dépassée",
     "compliance",
   ],
-  "compliance.privacy_requests.unacknowledged_operator": [
-    "Demande de droits reçue, toujours pas prise en main",
+  "compliance.privacy_requests.awaiting_operator": [
+    "Demande de droits à prendre en charge",
     "compliance",
   ],
 };

@@ -24,7 +24,9 @@ import { resolveSiteOrigin } from "@/lib/site-url";
  *
  * Aucun envoi ne fait échouer le dépôt ni la clôture : un échec est journalisé (sans adresse) et repris par
  * `followUpPrivacyRequests`, appelé à chaque passage d'operational-health, jusqu'à `MAX_ATTEMPTS` essais.
- * Si l'email à l'exploitation ne part pas, les alertes `compliance.privacy_requests.*` prennent le relais.
+ * L'exploitation est aussi prévenue sans email : le dépôt ouvre aussitôt l'alerte d'exploitation
+ * `compliance.privacy_requests.awaiting_operator` (canal commun des alertes), refermée quand plus aucune
+ * demande n'est « reçue ». C'est le seul canal tant que `OPERATIONS_ALERT_EMAIL_TO` n'est pas défini.
  *
  * Pourquoi la trace est dans la demande : l'effacement d'un compte purge `email_send_log` (par compte et par
  * adresse). L'email de clôture d'un effacement part APRÈS cette purge, vers `requester_email` et sans compte
@@ -138,7 +140,7 @@ async function writeState(
   if (updateError) throw updateError;
 }
 
-function logFailure(requestId: string, kind: NotificationKind, error: unknown) {
+function logFailure(requestId: string, kind: NotificationKind | "alert", error: unknown) {
   console.warn(
     JSON.stringify({
       scope: "privacy-request-notifications",
@@ -314,6 +316,14 @@ export async function notifyPrivacyRequestReceived(
 ): Promise<{ operator: Outcome; acknowledgement: Outcome }> {
   // L'un après l'autre : chaque envoi relit puis réécrit `metadata` ; en parallèle, le second effacerait
   // la trace du premier.
+  // L'alerte `compliance.privacy_requests.awaiting_operator` s'ouvre tout de suite : c'est le canal qui
+  // prévient l'exploitation quand `OPERATIONS_ALERT_EMAIL_TO` n'est pas défini. Elle part avec la remise
+  // suivante des alertes (operational-health, toutes les 30 minutes) ; un échec ici est rattrapé par ce passage.
+  try {
+    await evaluatePrivacyRequestAlerts(new Date());
+  } catch (error) {
+    logFailure(row.id, "alert", error);
+  }
   const operator = await sendOperatorNotification(row, env, fetchImpl);
   const acknowledgement = await sendAcknowledgement(row, env, fetchImpl);
   return { operator, acknowledgement };
@@ -378,14 +388,21 @@ export async function followUpPrivacyRequests(
     summary.closure[await sendClosure(row, env, fetchImpl)] += 1;
   }
 
+  summary.evaluation = await evaluatePrivacyRequestAlerts(now);
+  return summary;
+}
+
+/**
+ * Alertes `compliance.privacy_requests.*` (migration 20261202100000). `migration_pending` tant que la
+ * fonction n'existe pas (site déployé avant la migration) ; toute autre erreur remonte.
+ */
+async function evaluatePrivacyRequestAlerts(
+  now: Date,
+): Promise<Record<string, unknown> | "migration_pending"> {
   const { data, error } = await supabaseAdmin.rpc("evaluate_privacy_request_health", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    // Site déployé avant la migration : la fonction n'existe pas encore, l'évaluation attend.
-    if ((error as { code?: string }).code !== "PGRST202") throw error;
-  } else {
-    summary.evaluation = record(data as Json);
-  }
-  return summary;
+  if (!error) return record(data as Json);
+  if ((error as { code?: string }).code === "PGRST202") return "migration_pending";
+  throw error;
 }
