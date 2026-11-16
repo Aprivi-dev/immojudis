@@ -505,10 +505,15 @@ from generate_series(1, 4) as sale_number;
 delete from public.auction_enrichment_jobs;
 
 -- Depuis 20261201100000, des tâches prenables non servies depuis 72 h n'ouvrent l'alerte que si leur nombre n'a
--- pas baissé depuis l'observation d'il y a 24 h : la voici (une tâche non servie à l'époque).
+-- pas baissé depuis l'observation prise entre 48 h et 24 h plus tôt, à périmètre égal : la voici (une tâche non
+-- servie à l'époque, aucune source_detail).
 update public.auction_pipeline_control set source_details_enabled = true where id;
 insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
-values ('enrichment-queue', statement_timestamp() - interval '24 hours', '{"unserved_72h": 1}'::jsonb);
+values (
+  'enrichment-queue',
+  statement_timestamp() - interval '24 hours',
+  '{"unserved_72h": 1, "unserved_72h_all": 1, "unserved_72h_source_detail": 0}'::jsonb
+);
 
 -- Deux tâches de lecture de documents en file depuis quatre jours, jamais servies.
 insert into public.auction_enrichment_jobs (
