@@ -6,6 +6,7 @@ import { VAT_EXEMPTION_INVOICE_MENTION } from "@/lib/analysis-offer";
 import { ConfigurationError } from "@/lib/api-errors";
 import { serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { isUuid } from "@/lib/uuid";
 
 /**
  * Socle Stripe partagé par l'abonnement (`billing.ts`), l'achat à l'unité (`billing-sale-unlock.ts`) et
@@ -52,14 +53,34 @@ export function stripeCustomerIdempotencyKey(userId: string): string {
 }
 
 /**
- * Crée le client Stripe du compte. Mêmes paramètres et même clé d'idempotence pour l'abonnement et
- * l'achat à l'unité : deux créations dans les 24 heures de la clé rendent le même client, et des
- * paramètres différents feraient refuser la seconde par Stripe.
+ * Client Stripe du compte : le retrouve chez Stripe par sa métadonnée `user_id`, sinon le crée.
+ * Seule règle des deux parcours (abonnement et achat à l'unité) : la base ne garde l'identifiant du
+ * client que pour l'abonnement, et la clé d'idempotence de la création ne vaut que 24 heures chez
+ * Stripe. Sans cette recherche, deux achats à plus de 24 heures d'intervalle créeraient deux clients.
+ * Une erreur de la recherche remonte : créer quand même referait des doublons.
  */
-export function createStripeCustomer(
+export async function findOrCreateStripeCustomer(
   stripe: Stripe,
   auth: SupabaseAuthContext,
 ): Promise<Stripe.Customer> {
+  // Le jeton vérifié donne un UUID ; on le contrôle quand même avant de l'écrire dans la requête de
+  // recherche, pour qu'aucune valeur ne puisse en changer la syntaxe.
+  if (!isUuid(auth.userId)) throw new Error("Stripe customer: user id is not a UUID.");
+
+  const existing = await stripe.customers.search({
+    query: `metadata['user_id']:'${auth.userId}'`,
+    limit: 100,
+  });
+  const oldest = existing.data
+    .filter((customer) => !customer.deleted)
+    .reduce<
+      Stripe.Customer | undefined
+    >((kept, customer) => (!kept || customer.created < kept.created ? customer : kept), undefined);
+  if (oldest) return oldest;
+
+  // La recherche Stripe n'indexe un nouveau client qu'après un délai : deux créations rapprochées ne
+  // se voient pas. La clé d'idempotence couvre ce délai (24 heures) en rendant le même client, à
+  // condition de garder les mêmes paramètres pour les deux parcours (sinon Stripe refuse la seconde).
   return stripe.customers.create(
     {
       email: typeof auth.claims.email === "string" ? auth.claims.email : undefined,
