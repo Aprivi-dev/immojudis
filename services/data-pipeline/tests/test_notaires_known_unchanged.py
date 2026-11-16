@@ -113,7 +113,9 @@ def test_notaires_details_stay_fresh_three_days_except_near_the_sale():
     far = now + timedelta(days=30)
     assert detail_is_fresh(_row_checked("notaires", now - timedelta(hours=48), far), "u")
     assert not detail_is_fresh(_row_checked("notaires", now - timedelta(hours=80), far), "u")
-    assert not detail_is_fresh(_row_checked("vench", now - timedelta(hours=48), far), "u")
+    # Since 16/11/2026 every source keeps three days, except Licitor (status read on the detail page only).
+    assert detail_is_fresh(_row_checked("vench", now - timedelta(hours=48), far), "u")
+    assert not detail_is_fresh(_row_checked("licitor", now - timedelta(hours=48), far), "u")
     # Within a week of the sale every source keeps the six-hour window.
     assert not detail_is_fresh(_row_checked("notaires", now - timedelta(hours=8), now + timedelta(days=3)), "u")
 

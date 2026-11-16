@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -40,7 +40,8 @@ function request(overrides: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  mocks.fetchPrivacyRequests.mockResolvedValue({ requests: [] });
+  mocks.fetchPrivacyRequests.mockResolvedValue({ requests: [], withdrawablePurchases: [] });
+  mocks.createPrivacyRequestClient.mockResolvedValue({});
 });
 afterEach(() => {
   cleanup();
@@ -90,5 +91,50 @@ describe("/mes-droits (repasse n° 6 et 14)", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.className).toContain("text-danger");
+  });
+});
+
+describe("/mes-droits : rétractation d'un achat à l'unité (M4)", () => {
+  const PURCHASE_ID = "33333333-3333-4333-8333-333333333333";
+
+  it("propose les achats rétractables, rappelle l'article 6 des CGU et envoie l'achat choisi", async () => {
+    mocks.fetchPrivacyRequests.mockResolvedValue({
+      requests: [],
+      withdrawablePurchases: [
+        { id: PURCHASE_ID, paidAt: "2026-11-12T10:00:00.000Z", amountCents: 1900, currency: "eur" },
+      ],
+    });
+    renderPage();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Nature de la demande" }), {
+      target: { value: "contract_withdrawal" },
+    });
+    const order = screen.getByRole("combobox", { name: "Commande concernée" });
+    await screen.findByRole("option", { name: /Achat d’une vente à l’unité du 12 novembre 2026/ });
+    fireEvent.change(order, { target: { value: PURCHASE_ID } });
+    expect(document.body.textContent).toContain(
+      "reconnaît avant le paiement perdre son droit de rétractation une fois l’accès fourni",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Envoyer la demande" }));
+
+    await waitFor(() => expect(mocks.createPrivacyRequestClient).toHaveBeenCalledTimes(1));
+    expect(mocks.createPrivacyRequestClient.mock.calls[0][0]).toEqual({
+      requestType: "contract_withdrawal",
+      message: "",
+      purchaseId: PURCHASE_ID,
+    });
+  });
+
+  it("sans achat choisi, la rétractation vise l'abonnement (aucun achat envoyé)", async () => {
+    renderPage();
+    fireEvent.change(screen.getByRole("combobox", { name: "Nature de la demande" }), {
+      target: { value: "contract_withdrawal" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Envoyer la demande" }));
+    await waitFor(() => expect(mocks.createPrivacyRequestClient).toHaveBeenCalledTimes(1));
+    expect(mocks.createPrivacyRequestClient.mock.calls[0][0]).toEqual({
+      requestType: "contract_withdrawal",
+      message: "",
+    });
   });
 });

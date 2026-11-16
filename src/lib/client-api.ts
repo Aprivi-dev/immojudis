@@ -65,6 +65,9 @@ export {
   executeAdminContractWithdrawal,
   executeAdminPrivacyErasure,
   fetchAdminProfessionalPrivacyExport,
+  fetchAdminContractWithdrawalContext,
+  fetchAdminErasureGuard,
+  fetchAdminAccountPrivacyExport,
 } from "@/lib/client-api/privacy";
 
 export {

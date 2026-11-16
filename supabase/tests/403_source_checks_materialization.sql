@@ -373,7 +373,7 @@ select is(
     0::bigint
   ),
   1::bigint,
-  'the canonical checked_at remains fresh under the six-hour future cadence'
+  'the canonical checked_at remains fresh under the 24-hour near-sale window'
 );
 
 select is(
@@ -445,7 +445,7 @@ update public.auction_sales sale
            context.canonical_url,
            jsonb_build_object(
              'source_name', 'pgtap-source-checks-403',
-             'checked_at', context.p_now - interval '30 hours'
+             'checked_at', context.p_now - interval '90 hours'
            ),
            context.observed_url,
            jsonb_build_object(
@@ -482,7 +482,7 @@ select ok(
        and cache.sale_date = context.p_now - interval '2 days'
        and (
          cache.checks->context.canonical_url->>'checked_at'
-       )::timestamptz = context.p_now - interval '30 hours'
+       )::timestamptz = context.p_now - interval '90 hours'
   ),
   'an update of sale metadata and raw_payload refreshes the compact projection'
 );
@@ -496,7 +496,7 @@ select is(
      where freshness.source_name = 'pgtap-source-checks-403'
   ),
   0::bigint,
-  'the updated canonical check uses the past-sale 24-hour cadence'
+  'the updated canonical check uses the 84-hour default health window (72 h + 12 h tolerance)'
 );
 
 set local role postgres;

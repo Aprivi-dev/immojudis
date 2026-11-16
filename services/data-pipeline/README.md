@@ -741,6 +741,8 @@ NOTAIRES_MAX_PAGES=2
 ```
 
 Tous les scrapers respectent `robots.txt`. Si une source refuse une URL ou masque une partie des documents, le pipeline journalise l'erreur et continue avec les autres sources, sans tentative de contournement.
+`robots.txt` illisible : aucune page n'est demandée. Pendant une panne passagère (délai dépassé, erreur réseau, réponse 5xx), un passage planifié réutilise la dernière politique lue avec succès, 24 heures au plus après cette lecture (RFC 9309 §2.4), Disallow et Crawl-delay compris ; un 401/403, une page de défi ou une copie plus vieille gardent l'arrêt (`src/sources/robots_policy_copies.py`, copie gardée dans `auction_source_state.coverage->'robots_policy_copies'`, diagnostic dans `docs/runbooks/pipeline-source-missed.md`).
+Relecture des fiches connues pendant l'inventaire (`src/freshness.py`) : une carte de liste inchangée (date, prix, statut interrompu) garde la fiche stockée 72 heures, 6 heures si l'audience est dans les 7 jours, 24 heures pour Licitor (seule sa fiche dit qu'une vente est retirée ou annulée). Les tâches `source_detail` créées par la base suivent leur propre cadence (fonction SQL `enqueue_due_source_details_unlocked`).
 `encheres-domaine.gouv.fr` et `immonotairesencheres.com` ne sont pas intégrés tant qu'ils ne publient pas de page/API de listings exploitable sans session JS/cookies.
 
 Initialisation du schéma :

@@ -20,6 +20,9 @@ export const SENT_TEMPLATE_KEYS = [
   "replies_review_digest",
   "agent_request",
   "agent_court_registry",
+  "privacy_request_operator",
+  "privacy_request_acknowledgement",
+  "privacy_request_closure",
 ] as const;
 export type SentTemplateKey = (typeof SENT_TEMPLATE_KEYS)[number];
 
