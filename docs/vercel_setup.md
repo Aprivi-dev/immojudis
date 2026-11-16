@@ -201,7 +201,7 @@ l'appelle toutes les heures (à :35) avec les mêmes secrets Vault ; `vercel.jso
 migration, `on` depuis le 26/10/2026 (migration `20261105100000`).
 
 Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, puis vérifie l'absence
-de dérive du schéma distant. Voir [`operations-phase-3.md`](operations-phase-3.md) pour les SLO,
+de dérive du schéma distant. Voir `operations-phase-3.md` (dépôt interne, `docs/operations-phase-3.md`) pour les SLO,
 tableaux de bord et runbooks.
 
 ### Workflow `Apply Supabase Migrations` : ordre de publication et diagnostic

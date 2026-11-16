@@ -1156,7 +1156,7 @@ l'alerte `pipeline.documents_backlog.low_yield`
 Symptômes, interrupteur et retour arrière :
 [`docs/runbooks/vidage-des-pieces.md`](../../docs/runbooks/vidage-des-pieces.md).
 Incident du 04/11/2026 (boucle « manifest is partial ») :
-[post-mortem](../../docs/audits/2026-11-04-post-mortem-vidage-pieces.md).
+post-mortem (dépôt interne, `docs/audits/2026-11-04-post-mortem-vidage-pieces.md`).
 
 `auction_documents` reprend désormais document par document le texte déjà
 persisté dans `auction_extractions` (statut `verified`) quand le cache local
