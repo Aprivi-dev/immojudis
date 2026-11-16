@@ -12,7 +12,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   getAdminActivation,
   parseActivationWindows,
-  parseUnlockThreshold,
+  parseDiscoveryUnlocks,
 } from "./admin-activation";
 
 const activationRaw = {
@@ -39,12 +39,24 @@ const activationRaw = {
   ],
 };
 
-const thresholdRaw = {
+const discoveryUnlocksRaw = {
   generated_at: "2026-11-10T12:00:00Z",
   discovery_accounts: 120,
   months: [
-    { month_start: "2026-10-31T23:00:00Z", partial: true, unlocked_one: 18, reached_three: 6 },
-    { month_start: "2026-09-30T22:00:00Z", partial: false, unlocked_one: 30, reached_three: 11 },
+    {
+      month_start: "2026-10-31T23:00:00Z",
+      partial: true,
+      unlocked_free: 18,
+      purchased_one: 6,
+      purchases: 9,
+    },
+    {
+      month_start: "2026-09-30T22:00:00Z",
+      partial: false,
+      unlocked_free: 30,
+      purchased_one: 11,
+      purchases: 14,
+    },
   ],
 };
 
@@ -89,25 +101,38 @@ describe("parseActivationWindows", () => {
   });
 });
 
-describe("parseUnlockThreshold", () => {
+describe("parseDiscoveryUnlocks", () => {
   it("reads the current month then the previous one", () => {
-    expect(parseUnlockThreshold(thresholdRaw)).toEqual({
+    expect(parseDiscoveryUnlocks(discoveryUnlocksRaw)).toEqual({
       discoveryAccounts: 120,
       months: [
-        { monthStart: "2026-10-31T23:00:00Z", partial: true, unlockedOne: 18, reachedThree: 6 },
-        { monthStart: "2026-09-30T22:00:00Z", partial: false, unlockedOne: 30, reachedThree: 11 },
+        {
+          monthStart: "2026-10-31T23:00:00Z",
+          partial: true,
+          unlockedFree: 18,
+          purchasedOne: 6,
+          purchases: 9,
+        },
+        {
+          monthStart: "2026-09-30T22:00:00Z",
+          partial: false,
+          unlockedFree: 30,
+          purchasedOne: 11,
+          purchases: 14,
+        },
       ],
     });
   });
 
   it("says « non mesuré » for a month the database did not answer", () => {
-    const parsed = parseUnlockThreshold({ discovery_accounts: 0, months: [] });
+    const parsed = parseDiscoveryUnlocks({ discovery_accounts: 0, months: [] });
     expect(parsed.discoveryAccounts).toBe(0);
     expect(parsed.months[0]).toEqual({
       monthStart: null,
       partial: true,
-      unlockedOne: null,
-      reachedThree: null,
+      unlockedFree: null,
+      purchasedOne: null,
+      purchases: null,
     });
     expect(parsed.months[1].partial).toBe(false);
   });
@@ -123,7 +148,7 @@ describe("getAdminActivation", () => {
   it("reads both indicators with the service client", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockImplementation(async (name: string) => ({
-      data: name === "admin_pilotage_activation" ? activationRaw : thresholdRaw,
+      data: name === "admin_pilotage_activation" ? activationRaw : discoveryUnlocksRaw,
       error: null,
     }));
     const now = new Date("2026-11-10T12:00:00Z");
@@ -131,11 +156,15 @@ describe("getAdminActivation", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("admin_pilotage_activation", {
       p_now: now.toISOString(),
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("admin_pilotage_unlock_threshold", {
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_pilotage_discovery_unlocks", {
       p_now: now.toISOString(),
     });
     expect(result.windows[0].activated).toBe(9);
-    expect(result.unlockThreshold.months[0].reachedThree).toBe(6);
+    expect(result.discoveryUnlocks.months[0].purchasedOne).toBe(6);
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "admin_pilotage_unlock_threshold",
+      expect.anything(),
+    );
   });
 
   it("rethrows a missing database function: the migration is applied, it is an outage", async () => {
