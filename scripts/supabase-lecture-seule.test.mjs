@@ -200,6 +200,55 @@ describe("crochet supabase-lecture-seule", () => {
     expect(isReadOnlyQuery(query)).toBe(false);
   });
 
+  // Schémas et catalogues à secrets : une lecture y donnerait CRON_SECRET, des jetons ou des mots de passe.
+  it.each([
+    "select decrypted_secret from vault.decrypted_secrets",
+    "select name from vault.secrets",
+    "select email, encrypted_password from auth.users",
+    "select count(*) from auth.mfa_factors",
+    "select * from net._http_response",
+    "select * from pgsodium.key",
+    // casse, espaces, guillemets : même schéma
+    "select * from VAULT.decrypted_secrets",
+    "select * from vault . decrypted_secrets",
+    'select * from "vault"."decrypted_secrets"',
+    'select * from "auth".users',
+    'select * from U&"\\0061uth".users',
+    // dans une CTE, une sous-requête ou une jointure
+    "with s as (select * from vault.decrypted_secrets) select count(*) from s",
+    "select (select count(*) from auth.sessions) as n",
+    "select 1 from public.user_profiles p join auth.users u on u.id = p.user_id",
+    // caché derrière un commentaire
+    "select * from vault/* */.decrypted_secrets",
+    // catalogues de mots de passe, avec ou sans préfixe
+    "select rolname, rolpassword from pg_authid",
+    "select * from pg_catalog.pg_shadow",
+    'select * from "pg_authid"',
+    "select * from pg_user_mappings",
+    "select * from pg_largeobject",
+  ])("refuse la lecture d'un schéma ou d'un catalogue à secrets %j", (query) => {
+    expect(refusalReason(query)).toMatch(/lecture interdite/);
+    expect(isReadOnlyQuery(query)).toBe(false);
+  });
+
+  it.each([
+    // un nom interdit dans une chaîne ou un commentaire n'est pas une lecture
+    "select 'vault.decrypted_secrets' as texte",
+    "select 1 -- from auth.users",
+    // tâches planifiées (sans secret) et colonnes ou tables dont le nom contient un mot interdit
+    "select jobname, schedule from cron.job",
+    "select author_id, network from public.auction_sales_authors",
+    "select s.lawyer_name from public.auction_sales s where s.id is not null",
+    "select rolname from pg_roles",
+  ])("laisse lire ce qui ne porte pas de secret %j", (query) => {
+    expect(refusalReason(query)).toBeNull();
+  });
+
+  it("nomme le schéma refusé", () => {
+    expect(refusalReason("select * from vault.decrypted_secrets")).toContain("le schéma vault");
+    expect(refusalReason("select * from pg_authid")).toContain("le catalogue pg_authid");
+  });
+
   it("nomme la fonction refusée", () => {
     expect(refusalReason("select public.run_data_retention()")).toMatch(
       /public\.run_data_retention\(\)/,

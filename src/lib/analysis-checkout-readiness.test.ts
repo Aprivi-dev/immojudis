@@ -11,6 +11,7 @@ import { analysisSubscriptionPriceIds, isRecognisedAnalysisPrice } from "@/lib/b
 import { billingReconciliationConfigured } from "@/lib/billing-reconciliation";
 
 const COMPLETE_ENV = {
+  STRIPE_ANALYSIS_SALES_OPEN: "true",
   STRIPE_SECRET_KEY: "sk_test_ready",
   STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisTest",
   STRIPE_WEBHOOK_SECRET: "whsec_ready",
@@ -100,14 +101,38 @@ describe("interrupteur de vente STRIPE_ANALYSIS_SALES_OPEN (C2)", () => {
     VERCEL_ENV: "production",
   };
 
-  it("absente ou vide, laisse la vente ouverte : le déploiement ne ferme pas la production", () => {
+  it("seule la valeur true ouvre la vente, casse et espaces indifférents", () => {
     expect(analysisCheckoutReadiness(LIVE_ENV).open).toBe(true);
-    for (const value of ["", "  ", "true", "TRUE", " true "]) {
+    for (const value of ["true", "TRUE", " true "]) {
       expect(
         analysisCheckoutReadiness({ ...LIVE_ENV, STRIPE_ANALYSIS_SALES_OPEN: value }).open,
         JSON.stringify(value),
       ).toBe(true);
     }
+  });
+
+  it("est fermée par défaut : absente ou vide, une configuration complète ne vend pas", () => {
+    const { STRIPE_ANALYSIS_SALES_OPEN: _omitted, ...withoutSwitch } = LIVE_ENV;
+    expect(analysisCheckoutReadiness(withoutSwitch)).toEqual({
+      open: false,
+      missing: [],
+      keyModeMismatch: false,
+      salesClosed: true,
+    });
+    for (const value of ["", "  "]) {
+      expect(
+        analysisCheckoutReadiness({ ...LIVE_ENV, STRIPE_ANALYSIS_SALES_OPEN: value }).open,
+        JSON.stringify(value),
+      ).toBe(false);
+    }
+    let refusal: unknown;
+    try {
+      assertAnalysisCheckoutOpen(withoutSwitch);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(PublicApiError);
+    expect(refusal).toMatchObject({ status: 503 });
   });
 
   it("posée à autre chose que true, ferme le checkout même si la configuration est complète", () => {

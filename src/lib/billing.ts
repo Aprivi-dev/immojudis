@@ -369,6 +369,10 @@ export function buildAnalysisCheckoutSessionParams({
       },
     ],
     payment_method_collection: "always",
+    // Carte seule, comme l'achat à l'unité (`billing-sale-unlock.ts`) : sans cette ligne, les moyens actifs
+    // du tableau de bord Stripe s'appliquent. Un prélèvement SEPA peut rendre l'abonnement actif avant
+    // d'être rejeté, plusieurs jours après : l'accès Analyse serait ouvert sans paiement encaissé.
+    payment_method_types: ["card"],
     // Professionals need an invoice in their company's name: collect the
     // billing address and an optional VAT number, and keep them on the customer.
     billing_address_collection: "required",

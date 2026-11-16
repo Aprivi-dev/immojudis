@@ -160,7 +160,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
                 ]
               : []),
             ...(checkoutReadiness.salesClosed
-              ? ["Pour rouvrir la vente : retirer STRIPE_ANALYSIS_SALES_OPEN, puis redéployer."]
+              ? ["Pour ouvrir la vente : poser STRIPE_ANALYSIS_SALES_OPEN=true, puis redéployer."]
               : []),
           ].join(" "),
     },

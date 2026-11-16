@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   saleProcedureWithoutListingSource,
   saleWithoutListingSource,
+  sourceChecksWithoutListingSource,
   sourceConflictsWithoutListingSource,
   sourcePresenceWithoutListingSource,
   unlockedSaleProjection,
@@ -15,7 +16,9 @@ import type { AuctionSale } from "@/lib/types";
  * (supabase/migrations/20261123100000_sale_procedure_without_listing_source.sql):
  * `app_private.sale_procedure_without_listing_source(jsonb, boolean)`,
  * `app_private.source_conflicts_without_listing_source(jsonb)`,
- * `app_private.source_presence_without_listing_source(jsonb)`.
+ * `app_private.source_presence_without_listing_source(jsonb)`, and
+ * `app_private.source_checks_without_listing_source(jsonb)`
+ * (supabase/migrations/20261124100000_source_checks_without_listing_source.sql).
  *
  * The expected values below are the outputs of the SQL functions on `input`, run with PostgreSQL 16
  * when the cases were written (jsonb: key order does not count). `strict` is the discovery view
@@ -606,6 +609,69 @@ const PRESENCE_CASES: Case[] = [
   },
 ];
 
+const CHECK_CASES: Case[] = [
+  {
+    name: "pipeline checks: source name, fingerprints and capture state removed, re-keyed by key order",
+    input: {
+      "https://annonce-privee.example/vente/b": {
+        checked_at: "2026-11-02T08:00:00+00:00",
+        source_name: "plateforme-privee",
+        fingerprint: "f2",
+        evidence_fingerprint: "e2",
+        extractor_version: "source_extraction_20260913_v3",
+        capture_kind: "detail",
+        capture_fingerprints: { detail: { facts: "x" } },
+        detail_status: "complete",
+        display_invalidations: ["https://annonce-privee.example/vente/b"],
+      },
+      "https://annonce.example/vente/a": {
+        checked_at: "2026-11-01T08:00:00+00:00",
+        source_name: "vench",
+        fingerprint: "f1",
+        field: "surface",
+        fields: ["surface", "starting_price"],
+      },
+      "Z-en-capitale": { source_name: "licitor" },
+    },
+    expected: {
+      source_1: {},
+      source_2: {
+        checked_at: "2026-11-02T08:00:00+00:00",
+        extractor_version: "source_extraction_20260913_v3",
+      },
+      source_3: {
+        field: "surface",
+        fields: ["surface", "starting_price"],
+        checked_at: "2026-11-01T08:00:00+00:00",
+      },
+    },
+  },
+  {
+    name: "an entry that is not an object becomes empty",
+    input: {
+      "https://annonce-privee.example/a": "https://annonce-privee.example/a",
+    },
+    expected: {
+      source_1: {},
+    },
+  },
+  {
+    name: "not an object",
+    input: ["https://annonce-privee.example/a"],
+    expected: {},
+  },
+  {
+    name: "null",
+    input: null,
+    expected: {},
+  },
+  {
+    name: "empty",
+    input: {},
+    expected: {},
+  },
+];
+
 const MIGRATION = readFileSync(
   new URL(
     "../../../supabase/migrations/20261123100000_sale_procedure_without_listing_source.sql",
@@ -614,10 +680,18 @@ const MIGRATION = readFileSync(
   "utf8",
 );
 
-function sqlFunction(name: string): string {
+const CHECKS_MIGRATION = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20261124100000_source_checks_without_listing_source.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+function sqlFunction(name: string, migration = MIGRATION): string {
   return (
     new RegExp(`create or replace function app_private\\.${name}\\([\\s\\S]*?\\$\\$;`).exec(
-      MIGRATION,
+      migration,
     )?.[0] ?? ""
   );
 }
@@ -678,10 +752,32 @@ describe("source_presence without the listing source: TypeScript and SQL parity"
   });
 });
 
+describe("source_checks without the listing source: TypeScript and SQL parity", () => {
+  it.each(CHECK_CASES)("$name", ({ input, expected }) => {
+    expect(sourceChecksWithoutListingSource(input)).toEqual(expected);
+  });
+
+  it("keeps the same keys in the SQL function", () => {
+    const sql = sqlFunction("source_checks_without_listing_source", CHECKS_MIGRATION);
+    expect(sql).toContain(
+      "where kept.key in ('checked_at', 'extractor_version', 'field', 'fields')",
+    );
+    expect(sql).toContain('order by checks.key collate "C"');
+  });
+
+  it("serves no source name, url or fingerprint", () => {
+    const text = JSON.stringify(sourceChecksWithoutListingSource(CHECK_CASES[0]!.input));
+    expect(text).not.toMatch(
+      /annonce(-privee)?\.example|plateforme-privee|vench|licitor|fingerprint/,
+    );
+  });
+});
+
 describe("saleWithoutListingSource", () => {
   const [pipeline] = PROCEDURE_CASES;
   const [conflict] = CONFLICT_CASES;
   const [presence] = PRESENCE_CASES;
+  const [check] = CHECK_CASES;
   const sale = {
     id: "sale-1",
     title: "Appartement",
@@ -690,9 +786,10 @@ describe("saleWithoutListingSource", () => {
     source_blocks: { sale_procedure: pipeline!.input, titre: "Appartement" },
     source_conflicts: conflict!.input,
     source_presence: presence!.input,
+    source_checks: check!.input,
   } as unknown as AuctionSale;
 
-  it("projects the procedure, the conflicts and the presence, nothing else (discovery)", () => {
+  it("projects the procedure, the conflicts, the presence and the checks, nothing else (discovery)", () => {
     const projected = saleWithoutListingSource(sale, { documentUrls: false });
     expect(projected.sale_procedure).toEqual(pipeline!.strict);
     expect(projected.source_blocks).toEqual({
@@ -701,6 +798,7 @@ describe("saleWithoutListingSource", () => {
     });
     expect(projected.source_conflicts).toEqual(conflict!.expected);
     expect(projected.source_presence).toEqual(presence!.expected);
+    expect(projected.source_checks).toEqual(check!.expected);
     expect(projected.quality_flags).toEqual(["probable_duplicate"]);
     const text = JSON.stringify(projected);
     expect(text).not.toMatch(/annonce(-privee)?\.example|plateforme-privee|vench|licitor/);
@@ -726,5 +824,6 @@ describe("saleWithoutListingSource", () => {
     expect(unlocked.source_blocks).toEqual(projected.source_blocks);
     expect(unlocked.source_conflicts).toEqual(projected.source_conflicts);
     expect(unlocked.source_presence).toEqual(projected.source_presence);
+    expect(unlocked.source_checks).toEqual(projected.source_checks);
   });
 });
