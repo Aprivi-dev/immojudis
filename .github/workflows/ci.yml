@@ -220,9 +220,28 @@ jobs:
         run: python -m pip install --require-hashes -r requirements-valuation.lock
       - name: Resolve the optional Docling stack
         run: python -m pip install --dry-run -r requirements-docling.txt
+      # The parser tests read third-party pages captured on 2026-10-02. This repository is public, so
+      # they live in the private repository; services/data-pipeline/tests/source_captures.py has the detail.
+      - name: Fetch the captured source pages from the private repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Aprivi-dev/immojudis-interne
+          token: ${{ secrets.INTERNE_READ_TOKEN }}
+          path: .interne
+          sparse-checkout: docs/audits/sources-2026-10-02
+          persist-credentials: false
+      - name: Put the captured pages where the tests read them
+        working-directory: .
+        run: |
+          set -euo pipefail
+          mkdir -p docs/audits
+          mv .interne/docs/audits/sources-2026-10-02 docs/audits/sources-2026-10-02
+          rm -rf .interne
       - name: Lint
         run: python -m ruff check .
       - name: Run tests
+        env:
+          REQUIRE_SOURCE_CAPTURES: "1"
         run: python -m pytest -q
       - name: Audit direct and transitive Python dependencies
         run: |

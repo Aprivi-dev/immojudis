@@ -66,3 +66,7 @@ docs/design/annonce-detail/rendered-*.png
 /docs/equipe/*
 !/docs/equipe/README.md
 !/docs/equipe/licences/
+
+# Public repository: the third-party pages captured for the parser tests live in the private
+# repository. A local copy or link at this path must never be committed.
+/docs/audits/sources-2026-10-02

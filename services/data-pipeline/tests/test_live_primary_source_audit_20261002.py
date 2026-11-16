@@ -22,9 +22,9 @@ from src.enrichment.surface_reasoning import extract_and_apply_deterministic_sur
 from src.normalize import clean_text, normalize_sale
 from src.sources.avoventes import _enrich_sale_from_detail, compact_avoventes_catalogue_html, parse_avoventes_html
 from src.sources.licitor import AQUITAINE_URL, parse_licitor_detail_html, parse_licitor_list_sales
+from tests.source_captures import require_source_captures
 
-ROOT = Path(__file__).resolve().parents[3]
-CAPTURES = ROOT / "docs/audits/sources-2026-10-02/primary"
+CAPTURES = require_source_captures() / "primary"
 
 
 class FrozenClient:
