@@ -15597,7 +15597,10 @@ export type Database = {
       admin_pepite_independence_sales: { Args: never; Returns: Json };
       admin_pilotage_activation: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
-      admin_pilotage_discovery_unlocks: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_discovery_unlocks: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
       admin_sale_signal_feedback_by_sale: {
         Args: { p_limit?: number; p_now?: string };
