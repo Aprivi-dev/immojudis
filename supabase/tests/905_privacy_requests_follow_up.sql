@@ -140,9 +140,9 @@ select results_eq(
      where alert_key like 'compliance.privacy_requests.%'
      order by alert_key$$,
   $$values
-      ('compliance.privacy_requests.due_soon'::text, 'warning'::text, 'open'::text, 'cron'::text),
-      ('compliance.privacy_requests.overdue', 'critical', 'open', 'cron'),
-      ('compliance.privacy_requests.awaiting_operator', 'warning', 'open', 'cron')$$,
+      ('compliance.privacy_requests.awaiting_operator'::text, 'warning'::text, 'open'::text, 'cron'::text),
+      ('compliance.privacy_requests.due_soon', 'warning', 'open', 'cron'),
+      ('compliance.privacy_requests.overdue', 'critical', 'open', 'cron')$$,
   'opens the three compliance alerts with their severities'
 );
 select ok(
