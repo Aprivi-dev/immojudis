@@ -7,6 +7,11 @@ const state = vi.hoisted(() => ({
   log: [] as string[],
   inserts: [] as Array<{ table: string; rows: Row[]; options?: unknown }>,
   failTable: null as string | null,
+  notify: vi.fn(),
+}));
+
+vi.mock("@/lib/privacy-request-notifications", () => ({
+  notifyPrivacyRequestReceived: state.notify,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -91,6 +96,12 @@ vi.mock("@/integrations/supabase/client.server", () => {
         state.log.push(`upsert:${table}`);
         return api;
       },
+      single: () =>
+        Promise.resolve(
+          mode === "insert"
+            ? { data: { id: "new-request", ...state.inserts.at(-1)?.rows[0] }, error: null }
+            : { data: run().data?.[0] ?? null, error: null },
+        ),
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
         Promise.resolve(run()).then(resolve, reject),
     };
@@ -113,8 +124,8 @@ import {
   collectProfessionalData,
   createProfessionalPrivacyRequest,
   eraseProfessionalData,
-  PROFESSIONAL_PRIVACY_SOURCE,
 } from "./information-agent-professional-rights";
+import { PROFESSIONAL_PRIVACY_SOURCE } from "./privacy-request-types";
 
 const EMAIL = "Maitre_Dupont@Cabinet.example";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -208,7 +219,10 @@ function seed() {
   state.failTable = null;
 }
 
-beforeEach(seed);
+beforeEach(() => {
+  state.notify.mockReset();
+  seed();
+});
 
 describe("createProfessionalPrivacyRequest", () => {
   it("enregistre une demande vérifiée sans compte, au nom de l'adresse normalisée", async () => {
@@ -223,6 +237,10 @@ describe("createProfessionalPrivacyRequest", () => {
       identity_status: "verified",
       metadata: { source: PROFESSIONAL_PRIVACY_SOURCE },
     });
+    // E1/E2 : l'exploitation et le demandeur sont prévenus, avec la demande enregistrée.
+    expect(state.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "new-request", request_type: "erasure" }),
+    );
   });
 
   it("ne duplique pas une demande ouverte du même type pour la même adresse", async () => {
@@ -239,6 +257,7 @@ describe("createProfessionalPrivacyRequest", () => {
       createProfessionalPrivacyRequest({ email: EMAIL, requestType: "access" }),
     ).resolves.toEqual({ created: false });
     expect(state.inserts).toEqual([]);
+    expect(state.notify).not.toHaveBeenCalled();
     // Une demande d'un autre type reste possible.
     await expect(
       createProfessionalPrivacyRequest({ email: EMAIL, requestType: "erasure" }),

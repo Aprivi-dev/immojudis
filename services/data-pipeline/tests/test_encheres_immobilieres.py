@@ -200,7 +200,7 @@ def test_list_timeout_does_not_discard_later_reachable_page(monkeypatch) -> None
     assert result.coverage["coverage_complete"] is False
     assert result.coverage["stop_reason"] == "source_errors"
     assert result.coverage["list_fetch_failures"] == [
-        {"url": f"{source.LIST_URL}?page=2", "error": "list page timed out"}
+        {"url": f"{source.LIST_URL}?page=2", "error": "list page timed out", "error_type": "ReadTimeout"}
     ]
 
 

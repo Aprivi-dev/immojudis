@@ -47,12 +47,15 @@ const REPLY_POSSIBLE = [
   "cancellation",
   "commercial_confirmation",
   "lawyer_referral",
+  "privacy_request_acknowledgement",
+  "privacy_request_closure",
 ] as const;
 const UNCHANGED: Record<string, string> = {
   agent_request: "INFORMATION_AGENT_EMAIL_FROM",
   agent_court_registry: "INFORMATION_AGENT_EMAIL_FROM",
   operations_incident: "ALERT_EMAIL_FROM",
   replies_review_digest: "ALERT_EMAIL_FROM",
+  privacy_request_operator: "ALERT_EMAIL_FROM",
   contact_message: "CONTACT_EMAIL_FROM",
 };
 

@@ -55,12 +55,31 @@ def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None
     return timedelta(0) <= age < timedelta(hours=hours)
 
 
-# Sources whose robots.txt Crawl-delay makes a daily re-read of every detail
-# impossible within the scheduled budget. Notaires asks for 10 s between
-# requests: about 810 details take 2 h 20, while it gets two 35-minute runs a
-# day (one inventory every 12 hours). An unchanged list card (date, price, interrupted status) keeps the
-# stored detail this long; any change on the card still triggers a re-read.
-SOURCE_DETAIL_FRESHNESS_HOURS = {"notaires": 72}
+# How long an inventory keeps a stored detail whose list card (date, price, interrupted status: see
+# ``sources.common.listing_signature``) is unchanged; any change on the card still triggers a re-read.
+#
+# 72 hours by default (16/11/2026): a postponement changes the date on the card and a withdrawal removes
+# the card from the list (``source_absence``) or shows a badge on it, so a daily re-read of a detail whose
+# hearing is two months away only fed the enrichment queue. Notaires had 72 hours already (its 10-second
+# Crawl-delay cannot re-read about 810 details within two 35-minute runs a day).
+DETAIL_REREAD_HOURS = 72
+# Sources whose detail page alone says that a sale is withdrawn, cancelled or postponed. Licitor reads
+# « Vente non requise / annulée / reportée » on the detail page (``parse_licitor_detail_html``); its list
+# card has no status field, and « non requise » is no card badge: 72 hours would hide it for three days.
+# (Avoventes also reads these words on the detail page only, but its inventory reads every detail.)
+SOURCE_DETAIL_FRESHNESS_HOURS = {"licitor": 24}
+# A sale whose hearing is within NEAR_SALE_HORIZON keeps a short window. The inventory runs every 12 hours
+# (``autonomous_runner.INVENTORY_CADENCE``), so any window under 12 hours means « re-read at every
+# inventory »; the 5-hour source-detail jobs fill in between.
+NEAR_SALE_HORIZON = timedelta(days=7)
+NEAR_SALE_REREAD_HOURS = 6
+
+
+def detail_reread_hours(source_name: str, sale_date: datetime | None, now: datetime) -> float:
+    """Freshness window of a stored detail for this source and hearing date."""
+    if sale_date is not None and timedelta(0) <= sale_date - now <= NEAR_SALE_HORIZON:
+        return NEAR_SALE_REREAD_HOURS
+    return SOURCE_DETAIL_FRESHNESS_HOURS.get(source_name, DETAIL_REREAD_HOURS)
 
 
 def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
@@ -72,11 +91,9 @@ def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
     if check.get("extractor_version") != SOURCE_EXTRACTION_VERSION:
         return False
     source_name = str(check.get("source_name") or row.get("source_name") or "")
-    hours = SOURCE_DETAIL_FRESHNESS_HOURS.get(source_name, 24)
-    sale_date = aware_timestamp(str(row.get("sale_date")))
-    if sale_date is not None and timedelta(0) <= sale_date - datetime.now(UTC) <= timedelta(days=7):
-        hours = 6
-    return timestamp_is_fresh(check.get("checked_at"), hours=hours)
+    now = datetime.now(UTC)
+    hours = detail_reread_hours(source_name, aware_timestamp(str(row.get("sale_date"))), now)
+    return timestamp_is_fresh(check.get("checked_at"), hours=hours, now=now)
 
 
 def document_fingerprint(documents: list) -> str:

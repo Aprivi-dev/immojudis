@@ -274,7 +274,7 @@ def test_source_check_expires_and_content_change_invalidates_enrichment():
     assert 'llm_display_description' not in changed
     assert changed['llm_display_status'] == 'pending'
     assert 'superseded_analysis' not in changed
-    known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]["checked_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]["checked_at"] = (datetime.now(UTC) - timedelta(days=4)).isoformat()
     assert not detail_is_fresh(known[raw["source_url"]], raw["source_url"])
 
 

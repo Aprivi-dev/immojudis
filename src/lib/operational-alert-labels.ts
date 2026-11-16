@@ -25,12 +25,16 @@ const PLACES = {
   pepites: { href: "/admin/quality?onglet=pepites", label: "Qualité des données › Pépites" },
   clients: { href: "/admin/comptes?onglet=clients", label: "Comptes › Clients" },
   settings: { href: "/admin/settings", label: "Configuration" },
+  compliance: { href: "/admin/compliance", label: "Conformité" },
 } satisfies Record<string, AlertPlace>;
 
 type PlaceId = keyof typeof PLACES;
 type AlertEntry = readonly [label: string, place: PlaceId];
 
 const ALERT_LABELS: Record<string, AlertEntry> = {
+  // Procédures : `docs/runbooks/pipeline-enrichment-stalled.md` (stalled, exhausted),
+  // `docs/runbooks/pipeline-import-unhealthy.md`, `docs/runbooks/pipeline-source-*.md` (familles
+  // `pipeline.source.`) et `docs/runbooks/catalogue-quality-licitor-lot-mismatch.md`.
   "pipeline.enrichment.stalled": ["Enrichissement des fiches à l’arrêt", "operations"],
   "pipeline.enrichment.exhausted": [
     "Fiches abandonnées après toutes les tentatives d’enrichissement",
@@ -86,6 +90,18 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
   "auction_scenarios.snapshot.stale": ["Scénarios d’enchères non recalculés", "settings"],
   "flood_risk.observation.degraded": ["Lecture du risque d’inondation dégradée", "settings"],
   "flood_risk.write_blocked": ["Enregistrement du risque d’inondation bloqué", "settings"],
+  "compliance.privacy_requests.due_soon": [
+    "Demande de droits proche de son échéance",
+    "compliance",
+  ],
+  "compliance.privacy_requests.overdue": [
+    "Demande de droits en retard : échéance dépassée",
+    "compliance",
+  ],
+  "compliance.privacy_requests.unacknowledged_operator": [
+    "Demande de droits reçue, toujours pas prise en main",
+    "compliance",
+  ],
 };
 
 /** `pipeline.source.<source>.<contrôle>` : une alerte par source supervisée. */
@@ -192,6 +208,7 @@ const FALLBACKS: Record<string, AlertEntry> = {
   catalogue: ["Alerte du catalogue non répertoriée", "quality"],
   information_agent: ["Alerte de l’Agent IA non répertoriée", "agentPilot"],
   reference: ["Référentiel externe (loyers, zonage) à actualiser", "settings"],
+  compliance: ["Alerte de conformité non répertoriée", "compliance"],
 };
 const DEFAULT_FALLBACK: AlertEntry = ["Alerte d’exploitation non répertoriée", "settings"];
 

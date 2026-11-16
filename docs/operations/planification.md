@@ -88,6 +88,24 @@ de la fenêtre (le début enregistré d'un passage suit de quelques secondes le 
 `operational-health` est aussi dans `src/lib/health-status.ts` (`HEALTH_OPERATIONAL_MAX_AGE_MINUTES`, 65) :
 changer l'un change l'autre. Si l'on change une garde (`cron_dispatch_due`), refaire ce calcul.
 
+### Seuils des alertes du pipeline
+
+Même règle, appliquée aux alertes du pipeline de collecte par la migration `20261201100000` (16/11/2026, sept
+alertes ouvertes sans incident réel). Procédures : `docs/runbooks/`.
+
+| Alerte                                    | Cadence ou politique en cause                                                                  | Seuil                                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline.import.unhealthy` (âge de file) | déclenchement du workflow à chaque passage d'`operational-health` (30 min), passage de ~29 min | 5 400 s = 2 x 30 min + 29 min, arrondi (1 800 s avant) ; critique au-delà de 7 200 s                                             |
+| `pipeline.source.<source>.missed`         | inventaire toutes les 12 h                                                                     | 18 h (inchangé, `20261020120019`)                                                                                                |
+| `pipeline.source.<source>.stale_listings` | relecture des fiches (`freshness.py`) : 72 h, Licitor 24 h ; vente proche à chaque inventaire  | fenêtre 72 h, Licitor 24 h, 24 h pour une vente dans les 7 jours (un inventaire manqué toléré) ; muette si `.missed` est ouverte |
+| `pipeline.enrichment.stalled`             | ~19 passages par jour du travailleur de la file                                                | bail expiré depuis 24 h, ou tâches prenables non servies depuis 72 h sans baisse en 24 h                                         |
+| `pipeline.enrichment.exhausted`           | file de ~1 300 tâches                                                                          | hausse : greatest(10, 2 % de la file vivante) en 24 h (3 avant) ; reliquat : 50                                                  |
+| `catalogue.quality.licitor_lot_mismatch`  | passage d'`operational-health` (30 min)                                                        | 1 vente, sur deux évaluations consécutives                                                                                       |
+
+La fenêtre de `stale_listings` est la jumelle SQL (`app_private.listing_review_policy()`) de la politique de
+relecture de la collecte (`detail_reread_hours`, `services/data-pipeline/src/freshness.py`) : changer l'une,
+c'est changer l'autre.
+
 Le pilote automatique de l'agent n'est pas dans `cron.stale` : il ne travaille que dans sa plage d'envoi (lundi au
 vendredi hors jours fériés, 9 h 30-11 h 30 et 14 h-16 h 30, heure de Paris), et un passage arrêté par sa garde (hors
 plage, en pause, hors production) compte comme un succès dans `operational_job_runs`. Sa surveillance est l'alerte

@@ -1,6 +1,6 @@
 begin;
 
-select plan(16);
+select plan(18);
 
 select ok(
   position('pipeline.enrichment.exhausted' in lower(pg_get_functiondef(
@@ -162,8 +162,8 @@ select is(
   'a few old dead letters do not open pipeline.enrichment.exhausted'
 );
 
--- A rise: three more jobs used their last attempt during the last 24 hours (the third one is
--- beyond the attempt limit).
+-- Three more jobs used their last attempt during the last 24 hours (the third one is beyond the attempt
+-- limit). Since 20261201100000 a rise needs greatest(10, 2 % of the live queue) of them: three are not one.
 insert into public.auction_enrichment_jobs (
   source_url,
   job_type,
@@ -182,13 +182,13 @@ values
   ('https://example.test/pgtap/464/5', 'pdf', 'failed', 10, 'pgtap-464-new-3', 5, 4, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '2 days', statement_timestamp() - interval '3 hours');
 
 insert into pgtap_464_context(case_name, p_now)
-values ('rise', statement_timestamp() + interval '1 minute');
+values ('three', statement_timestamp() + interval '1 minute');
 
 select lives_ok(
   $sql$
     update pgtap_464_context
        set payload = public.observe_autonomous_pipeline(p_now)
-     where case_name = 'rise';
+     where case_name = 'three';
   $sql$,
   'the observer runs again with three fresh dead letters'
 );
@@ -197,7 +197,7 @@ select is(
   (
     select (payload->'queue'->>'exhausted_24h')::integer
       from pgtap_464_context
-     where case_name = 'rise'
+     where case_name = 'three'
   ),
   3,
   'three jobs became exhausted during the last 24 hours'
@@ -208,14 +208,65 @@ select is(
     select count(*)
       from public.operational_alerts
      where alert_key = 'pipeline.enrichment.exhausted'
+  ),
+  0::bigint,
+  'three fresh dead letters stay under the rise threshold of 10'
+);
+
+-- A rise: seven more, ten in the last 24 hours.
+insert into public.auction_enrichment_jobs (
+  source_url,
+  job_type,
+  status,
+  priority,
+  input_hash,
+  attempt_count,
+  max_attempts,
+  next_attempt_at,
+  created_at,
+  updated_at
+)
+select
+  'https://example.test/pgtap/464/' || (job_number % 5 + 1),
+  'pdf',
+  'failed',
+  10,
+  'pgtap-464-rise-' || job_number,
+  4,
+  4,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '2 days',
+  statement_timestamp() - interval '4 hours'
+from generate_series(1, 7) as job_number;
+
+insert into pgtap_464_context(case_name, p_now)
+values ('rise', statement_timestamp() + interval '2 minutes');
+
+select lives_ok(
+  $sql$
+    update pgtap_464_context
+       set payload = public.observe_autonomous_pipeline(p_now)
+     where case_name = 'rise';
+  $sql$,
+  'the observer runs again with ten fresh dead letters'
+);
+
+select is(
+  (
+    select count(*)
+      from public.operational_alerts
+     where alert_key = 'pipeline.enrichment.exhausted'
        and status = 'open'
        and inactive_since is null
-       and (details->>'exhausted')::integer = 5
-       and (details->>'exhausted_24h')::integer = 3
-       and (details->>'exhausted_24h_threshold')::integer = 3
+       and (details->>'exhausted')::integer = 12
+       and (details->>'exhausted_24h')::integer = 10
+       and (details->>'exhausted_24h_threshold')::integer = 10
+       and (details->>'exhausted_24h_minimum')::integer = 10
+       and (details->>'exhausted_24h_queue_share')::numeric = 0.02
+       and (details->>'exhausted_threshold')::integer = 50
   ),
   1::bigint,
-  'a rise of three dead letters opens pipeline.enrichment.exhausted with its evidence'
+  'a rise of ten dead letters opens pipeline.enrichment.exhausted with its thresholds'
 );
 
 select is(
@@ -249,7 +300,7 @@ select ok(
      where alert_key = 'pipeline.enrichment.exhausted'
        and status = 'open'
   ),
-  'five old dead letters below the backlog threshold turn the alert inactive'
+  'twelve old dead letters below the backlog threshold turn the alert inactive'
 );
 
 -- ... and closes after the two-hour hysteresis of app_private.sync_operational_alert.
@@ -300,7 +351,7 @@ select
   statement_timestamp() - interval '9 days',
   statement_timestamp() - interval '10 days',
   statement_timestamp() - interval '9 days'
-from generate_series(1, 48) as job_number;
+from generate_series(1, 41) as job_number;
 
 insert into pgtap_464_context(case_name, p_now)
 values ('backlog', statement_timestamp() + interval '28 hours');

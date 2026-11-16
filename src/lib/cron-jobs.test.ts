@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   deliverOperationalAlertNotifications: vi.fn(),
   evaluateAutopilotSilence: vi.fn(),
+  followUpPrivacyRequests: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -17,6 +18,11 @@ vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   evaluateAutopilotSilence: mocks.evaluateAutopilotSilence,
 }));
 
+// Suivi des demandes de droits : testé dans `privacy-request-notifications.test.ts`.
+vi.mock("@/lib/privacy-request-notifications", () => ({
+  followUpPrivacyRequests: mocks.followUpPrivacyRequests,
+}));
+
 import { runMonitoredCron } from "@/lib/cron-jobs";
 import { runDataRetention } from "@/lib/data-retention-job";
 import { operationalErrorMessage } from "@/lib/monitored-job.server";
@@ -25,12 +31,14 @@ import { evaluateOperationalHealth } from "@/lib/operational-health-job";
 describe("operational cron errors", () => {
   beforeEach(() => {
     mocks.evaluateAutopilotSilence.mockResolvedValue({ state: "active", lastScheduledRunAt: null });
+    mocks.followUpPrivacyRequests.mockResolvedValue({ evaluation: { overdue: 0 } });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     mocks.deliverOperationalAlertNotifications.mockReset();
     mocks.evaluateAutopilotSilence.mockReset();
+    mocks.followUpPrivacyRequests.mockReset();
     mocks.rpc.mockReset();
     delete process.env.CRON_SECRET;
   });
@@ -97,6 +105,7 @@ describe("operational cron errors", () => {
       pipeline: { ok: true },
       informationAgent: { ok: true },
       informationAgentAutopilot: { state: "active", lastScheduledRunAt: null },
+      privacyRequests: { evaluation: { overdue: 0 } },
       externalAlerts: {
         channel: "github_actions",
         configured: true,
@@ -112,6 +121,26 @@ describe("operational cron errors", () => {
     expect(mocks.evaluateAutopilotSilence).toHaveBeenCalledWith(
       new Date("2026-10-09T10:00:00.000Z"),
     );
+    expect(mocks.followUpPrivacyRequests).toHaveBeenCalledWith(
+      new Date("2026-10-09T10:00:00.000Z"),
+    );
+  });
+
+  it("fails when the privacy-request follow-up fails, and still delivers the alerts", async () => {
+    mocks.rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: "github_actions",
+      configured: true,
+      claimed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+    mocks.followUpPrivacyRequests.mockRejectedValue(new Error("privacy requests unreadable"));
+
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "privacy requests unreadable",
+    );
+    expect(mocks.deliverOperationalAlertNotifications).toHaveBeenCalledTimes(1);
   });
 
   it("fails when the autopilot silence evaluation fails, and still delivers the alerts", async () => {

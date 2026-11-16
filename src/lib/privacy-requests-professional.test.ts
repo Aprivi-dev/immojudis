@@ -12,9 +12,18 @@ const state = vi.hoisted(() => ({
   collect: vi.fn(),
   deleteUser: vi.fn(),
   stripeDel: vi.fn(),
+  stripeSearch: vi.fn(),
+  deletes: [] as string[],
 }));
 
-vi.mock("@/lib/billing", () => ({ getStripe: () => ({ customers: { del: state.stripeDel } }) }));
+vi.mock("@/lib/billing-stripe", () => ({
+  getStripe: () => ({ customers: { del: state.stripeDel } }),
+  findStripeCustomersOfAccount: state.stripeSearch,
+}));
+vi.mock("@/lib/privacy-request-notifications", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/privacy-request-notifications")>()),
+  notifyPrivacyRequestClosed: vi.fn(),
+}));
 vi.mock("@/lib/information-agent-professional-rights", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/information-agent-professional-rights")>()),
   eraseProfessionalData: state.erase,
@@ -31,6 +40,16 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           payload = value;
           return builder;
         },
+        delete: () => ({
+          eq: async (column: string) => {
+            state.deletes.push(column);
+            return { count: 0, error: null };
+          },
+          ilike: async (column: string) => {
+            state.deletes.push(column);
+            return { count: 0, error: null };
+          },
+        }),
         eq: () => builder,
         single: async () => {
           if (payload) {
@@ -74,6 +93,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   state.requestRow = professionalRequest();
   state.updates = [];
+  state.deletes = [];
   state.erase.mockResolvedValue({
     deletedRows: { information_agent_cases: 2, information_agent_missions: 3 },
     storageObjectsQueued: 4,
@@ -123,11 +143,15 @@ describe("effacement d'un professionnel sans compte", () => {
   });
 
   it("ne traite pas comme professionnelle une demande sans compte d'une autre origine", async () => {
+    // Sans compte et sans le lien signé : un compte déjà effacé (F1). La demande est close, par
+    // l'adresse seulement, sans passer par l'effacement des données de l'agent.
     state.requestRow = professionalRequest({ metadata: {} });
-    await expect(executePrivacyErasure({ auth: admin, input })).rejects.toThrow(
-      "Le compte de ce demandeur n'existe plus.",
-    );
+    const report = await executePrivacyErasure({ auth: admin, input });
     expect(state.erase).not.toHaveBeenCalled();
+    expect(state.deleteUser).not.toHaveBeenCalled();
+    expect(state.deletes.sort()).toEqual(["invited_email", "to_address"]);
+    expect(state.updates.at(-1)).toMatchObject({ resolution_code: "erasure_executed" });
+    expect(report.request.subjectKind).toBe("account");
   });
 });
 

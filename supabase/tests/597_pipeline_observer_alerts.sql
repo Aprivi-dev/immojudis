@@ -5,6 +5,8 @@
 --   * pipeline.source.<source>.stale_listings (moins de 80 % d'annonces revues sur deux observations
 --     consécutives, source activée d'au moins 10 ventes actives) ;
 --   * pipeline.enrichment.stalled : un report voulu par le budget IA du jour n'est plus un blocage.
+-- 20261201100000 : stalled demande des tâches non servies depuis 72 h en nombre stable sur 24 h, et la hausse des
+-- tâches épuisées part de 10 ; les cas ci-dessous suivent ces règles.
 -- La fraîcheur des annonces (public.auction_all_source_freshness) est remplacée, dans ce test seulement
 -- (annulé par le rollback), par une lecture d'une table de fixtures : on teste la logique d'alerte, pas le
 -- calcul de fraîcheur, déjà couvert par les tests 402 et 403.
@@ -502,7 +504,13 @@ from generate_series(1, 4) as sale_number;
 -- Les déclencheurs des ventes peuvent créer des révisions ordinaires : on les retire.
 delete from public.auction_enrichment_jobs;
 
--- Deux tâches de lecture de documents en file depuis trois jours.
+-- Depuis 20261201100000, des tâches prenables non servies depuis 72 h n'ouvrent l'alerte que si leur nombre n'a
+-- pas baissé depuis l'observation d'il y a 24 h : la voici (une tâche non servie à l'époque).
+update public.auction_pipeline_control set source_details_enabled = true where id;
+insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
+values ('enrichment-queue', statement_timestamp() - interval '24 hours', '{"unserved_72h": 1}'::jsonb);
+
+-- Deux tâches de lecture de documents en file depuis quatre jours, jamais servies.
 insert into public.auction_enrichment_jobs (
   source_url, job_type, status, priority, input_hash, attempt_count, max_attempts,
   next_attempt_at, created_at, updated_at
@@ -515,9 +523,9 @@ select
   'pgtap-597-pdf-' || job_number,
   0,
   4,
-  statement_timestamp() - interval '1 hour',
-  statement_timestamp() - interval '3 days',
-  statement_timestamp() - interval '3 days'
+  statement_timestamp() - interval '4 days',
+  statement_timestamp() - interval '4 days',
+  statement_timestamp() - interval '4 days'
 from generate_series(1, 2) as job_number;
 
 select public.observe_autonomous_pipeline((select p_now from pgtap_597_context));
@@ -526,12 +534,14 @@ select ok(
   (
     select status = 'open'
       and (details->>'older_than_24h')::integer = 2
+      and (details->>'unserved_72h')::integer = 2
+      and (details->>'unserved_72h_24h_before')::integer = 1
       and (details->>'budget_limited')::boolean = false
       and (details->>'budget_deferred_24h')::integer = 0
     from public.operational_alerts
     where alert_key = 'pipeline.enrichment.stalled'
   ),
-  'sans report par le budget, deux tâches de plus de 24 h ouvrent pipeline.enrichment.stalled'
+  'sans report par le budget, deux tâches non servies depuis 72 h, en nombre stable, ouvrent pipeline.enrichment.stalled'
 );
 
 -- Le budget du jour est atteint : le travailleur remet les tâches en file avec l'erreur du budget, sans
@@ -571,7 +581,7 @@ select ok(
   'la mesure reste visible dans l''observation : deux tâches reportées, deux de plus de 24 h'
 );
 
--- Une tâche de collecte de fiche (aucune IA) en file depuis trois jours reste un blocage.
+-- Une tâche de collecte de fiche (aucune IA) non servie depuis quatre jours reste un blocage.
 insert into public.auction_enrichment_jobs (
   source_url, job_type, status, priority, input_hash, attempt_count, max_attempts,
   next_attempt_at, created_at, updated_at, detail_source_name, detail_source_url
@@ -583,9 +593,9 @@ insert into public.auction_enrichment_jobs (
   'pgtap-597-detail-1',
   0,
   4,
-  statement_timestamp() - interval '1 hour',
-  statement_timestamp() - interval '3 days',
-  statement_timestamp() - interval '3 days',
+  statement_timestamp() - interval '4 days',
+  statement_timestamp() - interval '4 days',
+  statement_timestamp() - interval '4 days',
   'pgtap-597-origin',
   'https://example.test/pgtap/597/3/detail'
 );
@@ -598,11 +608,11 @@ select ok(
     from public.operational_alerts
     where alert_key = 'pipeline.enrichment.stalled'
   ),
-  'même sous budget atteint, une tâche source_detail trop ancienne rouvre l''alerte'
+  'même sous budget atteint, une tâche source_detail non servie depuis 72 h, en nombre stable, rouvre l''alerte'
 );
 
 -- Les tâches épuisées ne viennent pas du budget (le report ne consomme pas de tentative) : l'alerte
--- pipeline.enrichment.exhausted garde son comportement.
+-- pipeline.enrichment.exhausted garde son comportement (hausse : au moins 10 depuis 20261201100000).
 delete from public.operational_alerts where alert_key = 'pipeline.enrichment.exhausted';
 insert into public.auction_enrichment_jobs (
   source_url, job_type, status, priority, input_hash, attempt_count, max_attempts,
@@ -619,7 +629,7 @@ select
   statement_timestamp() - interval '1 hour',
   statement_timestamp() - interval '2 days',
   statement_timestamp() - job_number * interval '1 hour'
-from generate_series(1, 3) as job_number;
+from generate_series(1, 10) as job_number;
 update pgtap_597_context set p_now = statement_timestamp() + interval '1 hour 45 minutes';
 select public.observe_autonomous_pipeline((select p_now from pgtap_597_context));
 
@@ -629,10 +639,10 @@ select is(
     from public.operational_alerts
     where alert_key = 'pipeline.enrichment.exhausted'
       and status = 'open'
-      and (details->>'exhausted_24h')::integer = 3
+      and (details->>'exhausted_24h')::integer = 10
   ),
   1::bigint,
-  'trois tâches épuisées dans les 24 h ouvrent toujours pipeline.enrichment.exhausted, budget atteint ou non'
+  'dix tâches épuisées dans les 24 h ouvrent toujours pipeline.enrichment.exhausted, budget atteint ou non'
 );
 
 -- Les alertes du pilote ne se déclenchent pas quand tout va bien.
