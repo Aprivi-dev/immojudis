@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
  * Deux indicateurs de lecture pour la page admin « Pilotage », sur les données déjà enregistrées
- * (migrations 20261110180000 et 20261124100000, aucune nouvelle donnée) :
+ * (migrations 20261110180000 et 20261125100000, aucune nouvelle donnée) :
  *
  * - l'ACTIVATION, indépendante du quota de déblocages (aucun n'était consommé pendant l'essai) : parmi
  *   les comptes créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail (estimation servie,

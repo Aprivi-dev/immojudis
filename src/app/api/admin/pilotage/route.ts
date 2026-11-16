@@ -48,7 +48,7 @@ export const GET = adminRoute(
           return unavailableOfferOpeningSurvey();
         }),
         // Et pour l'activation (indépendante du déblocage) et le déblocage gratuit et les achats à
-        // l'unité des comptes Découverte. Le site est déployé avant la migration 20261124100000 :
+        // l'unité des comptes Découverte. Le site est déployé avant la migration 20261125100000 :
         // jusqu'à son application, la fonction de la base manque et ces deux cartes sont « non mesuré ».
         getAdminActivation(token, now).catch(() => {
           console.error(

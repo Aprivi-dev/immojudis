@@ -748,7 +748,7 @@ describe("page admin Pilotage", () => {
       const migration = readFileSync(
         join(
           process.cwd(),
-          "supabase/migrations/20261124100000_admin_pilotage_discovery_unlocks.sql",
+          "supabase/migrations/20261125100000_admin_pilotage_discovery_unlocks.sql",
         ),
         "utf8",
       );
