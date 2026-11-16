@@ -73,6 +73,9 @@ describe("redactPersonalText : temps linéaire sur de longues suites d'espaces",
     "longue suite de noms en capitales": `occupé par ${"DUPONT ".repeat(5000)}`,
     "longue suite de prénoms": `Le saisi, ${"Pierre ".repeat(5000)}`,
     "longue suite de NOM Prénom": `occupé par ${"DUPONT Pierre ".repeat(3000)}`,
+    "civilité répétée": `Monsieur${spaces(300)}`.repeat(200),
+    "civilité suivie d'espaces avant un nom": `rue${spaces(20000)}Madame Rose GAUTIER`,
+    "contre répété": `contre${spaces(300)}`.repeat(200),
   };
 
   it.each(Object.entries(texts))("%s", (_name, text) => {
@@ -143,6 +146,55 @@ describe("redactSaleTexts", () => {
       ],
     });
     expect(sale.description).toContain("DUPONT");
+  });
+
+  it("filtre le titre de la fiche", () => {
+    const sale = { id: "sale-3", title: "Maison occupée par Monsieur Gaspard VERNOLET à Lyon" };
+    expect(redactSaleTexts(sale)).toEqual({
+      id: "sale-3",
+      title: "Maison occupée par un occupant à Lyon",
+    });
+  });
+
+  it("filtre les libellés des pièces : nom de fichier remplacé, nom de personne retiré", () => {
+    const base = "https://example.test/pieces";
+    const sale = {
+      id: "sale-4",
+      documents: [
+        { url: `${base}/PV_DURAND_Paul.pdf`, name: "PV_DURAND_Paul.pdf", type: "pdf" },
+        { url: `${base}/download.php?id=7`, label: "download.php" },
+        { url: `${base}/PV%20VERNOLET%20Gaspard`, label: "PV VERNOLET Gaspard" },
+        { url: `${base}/ccv.pdf`, label: "Cahier des conditions de vente" },
+        "autre",
+      ],
+      documents_rich: [
+        {
+          url: `${base}/pv.pdf`,
+          label: "PV descriptif, en présence de Monsieur Gaspard VERNOLET",
+          type: "pdf",
+          extraction_status: "done",
+        },
+        {
+          url: `${base}/scan.jpeg`,
+          label: "SCAN_OSTRAVEN.JPEG",
+          type: null,
+          extraction_status: null,
+        },
+      ],
+    };
+    const redacted = redactSaleTexts(sale);
+    expect(redacted.documents).toEqual([
+      { url: `${base}/PV_DURAND_Paul.pdf`, name: "Pièce jointe", type: "pdf" },
+      { url: `${base}/download.php?id=7`, label: "Pièce jointe" },
+      { url: `${base}/PV%20VERNOLET%20Gaspard`, label: "Pièce jointe" },
+      { url: `${base}/ccv.pdf`, label: "Cahier des conditions de vente" },
+      "autre",
+    ]);
+    expect(redacted.documents_rich.map((document) => document.label)).toEqual([
+      "PV descriptif, en présence d'un particulier",
+      "Pièce jointe",
+    ]);
+    expect(sale.documents[0]).toMatchObject({ name: "PV_DURAND_Paul.pdf" });
   });
 
   it("conserve la forme d'une fiche sans texte libre", () => {

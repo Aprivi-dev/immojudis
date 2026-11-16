@@ -232,9 +232,11 @@
     {
       "name": "domiciliée",
       "input": "Madame Rose GAUTIER domiciliée à Toulouse (31) a été assignée.",
-      "expected": "Madame Rose GAUTIER a été assignée.",
+      "expected": "Un particulier a été assignée.",
       "absent": [
-        "Toulouse"
+        "Toulouse",
+        "GAUTIER",
+        "Rose"
       ]
     },
     {
@@ -313,10 +315,12 @@
     {
       "name": "époux et épouse",
       "input": "Monsieur Alain GIRARD, époux de Madame Brigitte ROY, a été saisi.",
-      "expected": "Monsieur Alain GIRARD, époux, a été saisi.",
+      "expected": "Un particulier, époux, a été saisi.",
       "absent": [
         "ROY",
-        "Brigitte"
+        "Brigitte",
+        "GIRARD",
+        "Alain"
       ]
     },
     {
@@ -340,18 +344,21 @@
     {
       "name": "divorcé",
       "input": "Monsieur Paul ADAM divorcé de Madame Léa ROCHE vit seul.",
-      "expected": "Monsieur Paul ADAM divorcé vit seul.",
+      "expected": "Un particulier divorcé vit seul.",
       "absent": [
         "ROCHE",
-        "Léa"
+        "Léa",
+        "ADAM"
       ]
     },
     {
       "name": "née nom de jeune fille",
       "input": "Madame Anne MOREL, née DUBOIS, est occupante.",
-      "expected": "Madame Anne MOREL, est occupante.",
+      "expected": "Un particulier, est occupante.",
       "absent": [
-        "DUBOIS"
+        "DUBOIS",
+        "MOREL",
+        "Anne"
       ]
     },
     {
@@ -449,10 +456,12 @@
     {
       "name": "adresse personnelle avec chaîne d'état civil",
       "input": "Monsieur Roger DUPONT, né le 02/02/1950 à Brest, de nationalité française, demeurant 2 rue de Siam à Brest, retraité.",
-      "expected": "Monsieur Roger DUPONT, de nationalité française, retraité.",
+      "expected": "Un particulier, de nationalité française, retraité.",
       "absent": [
         "02/02/1950",
-        "rue de Siam"
+        "rue de Siam",
+        "DUPONT",
+        "Roger"
       ]
     },
     {
@@ -942,6 +951,182 @@
       "absent": [
         "ARTAGNAN"
       ]
+    },
+    {
+      "name": "retour à la ligne entre trigger et mot : la civilité seule suffit",
+      "input": "Locataire\nMonsieur Dupont",
+      "expected": "Locataire\nUn particulier",
+      "absent": [
+        "Dupont"
+      ]
+    },
+    {
+      "name": "à l'encontre de Monsieur Prénom NOM",
+      "input": "Poursuites engagées à l'encontre de Monsieur Gaspard VERNOLET, débiteur.",
+      "expected": "Poursuites engagées à l'encontre d'un particulier, débiteur.",
+      "absent": [
+        "VERNOLET",
+        "Gaspard"
+      ]
+    },
+    {
+      "name": "contre M. NOM Prénom",
+      "input": "Procédure de saisie engagée contre M. VERNOLET Gaspard en 2023.",
+      "expected": "Procédure de saisie engagée contre un particulier en 2023.",
+      "absent": [
+        "VERNOLET",
+        "Gaspard"
+      ]
+    },
+    {
+      "name": "contre NOM Prénom sans civilité",
+      "input": "Commandement délivré contre VERNOLET Pierre le 3 mai 2023.",
+      "expected": "Commandement délivré contre un particulier le 3 mai 2023.",
+      "absent": [
+        "VERNOLET",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "en présence de Monsieur",
+      "input": "Constat dressé en présence de Monsieur Gaspard VERNOLET, sans autre occupant.",
+      "expected": "Constat dressé en présence d'un particulier, sans autre occupant.",
+      "absent": [
+        "VERNOLET",
+        "Gaspard"
+      ]
+    },
+    {
+      "name": "en présence de Prénom NOM sans civilité",
+      "input": "Visite effectuée en présence de Paul VERNOLET.",
+      "expected": "Visite effectuée en présence d'un particulier.",
+      "absent": [
+        "VERNOLET",
+        "Paul"
+      ]
+    },
+    {
+      "name": "habitée par Monsieur NOM",
+      "input": "Maison habitée par Monsieur VERNOLET depuis 2015.",
+      "expected": "Maison habitée par un occupant depuis 2015.",
+      "absent": [
+        "VERNOLET"
+      ]
+    },
+    {
+      "name": "habités par Prénom NOM",
+      "input": "Les lieux sont habités par Pierre VERNOLET et sa famille.",
+      "expected": "Les lieux sont habités par un occupant et sa famille.",
+      "absent": [
+        "VERNOLET",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "SCI représentée par M. Prénom NOM, gérant",
+      "input": "SCI Les Ormeaux, représentée par M. Gaspard VERNOLET, gérant, demeurant 3 rue des Acacias 69000 Lyon.",
+      "expected": "SCI Les Ormeaux, représentée par un particulier, gérant.",
+      "absent": [
+        "VERNOLET",
+        "Gaspard",
+        "Acacias"
+      ]
+    },
+    {
+      "name": "civilité sans formule dans un procès-verbal",
+      "input": "Lors de la visite, Mme Vernolet nous a indiqué que le chauffage fonctionnait.",
+      "expected": "Lors de la visite, un particulier nous a indiqué que le chauffage fonctionnait.",
+      "absent": [
+        "Vernolet"
+      ]
+    },
+    {
+      "name": "civilité sans formule en début de phrase",
+      "input": "Visite le 3 mai. M. et Mme VERNOLET étaient présents.",
+      "expected": "Visite le 3 mai. Un particulier étaient présents.",
+      "absent": [
+        "VERNOLET"
+      ]
+    },
+    {
+      "name": "civilité sans formule, Mlle avec un prénom hors liste",
+      "input": "Les clés ont été remises par Mlle Kylia OSTRAVEN au commissaire de justice.",
+      "expected": "Les clés ont été remises par un particulier au commissaire de justice.",
+      "absent": [
+        "OSTRAVEN",
+        "Kylia"
+      ]
+    },
+    {
+      "name": "initiales J.-P. NOM après une formule",
+      "input": "Bien occupé par J.-P. VERNOLET depuis 2015.",
+      "expected": "Bien occupé par un occupant depuis 2015.",
+      "absent": [
+        "VERNOLET",
+        "J.-P."
+      ]
+    },
+    {
+      "name": "initiale J. NOM après une formule",
+      "input": "Procédure engagée contre J. VERNOLET devant le tribunal.",
+      "expected": "Procédure engagée contre un particulier devant le tribunal.",
+      "absent": [
+        "VERNOLET"
+      ]
+    },
+    {
+      "name": "initiale après une civilité",
+      "input": "Le saisi, M. J. VERNOLET, occupe le bien.",
+      "expected": "Le saisi, occupe le bien.",
+      "absent": [
+        "VERNOLET"
+      ]
+    },
+    {
+      "name": "Mr NOM Prénom, demeurant",
+      "input": "Mr VERNOLET Gaspard, demeurant 3 rue des Acacias 69000 Lyon, a été assigné.",
+      "expected": "Un particulier, a été assigné.",
+      "absent": [
+        "VERNOLET",
+        "Gaspard",
+        "Acacias"
+      ]
+    },
+    {
+      "name": "occupé par Mr. avec un prénom hors liste",
+      "input": "Appartement occupé par Mr. Kylian VERNOLET depuis 2019.",
+      "expected": "Appartement occupé par un occupant depuis 2019.",
+      "absent": [
+        "VERNOLET",
+        "Kylian"
+      ]
+    },
+    {
+      "name": "occupé par Mme. avec un prénom hors liste en casse mixte",
+      "input": "Appartement occupé par Mme. Kylia Vernolet, sans bail.",
+      "expected": "Appartement occupé par un occupant, sans bail.",
+      "absent": [
+        "Vernolet",
+        "Kylia"
+      ]
+    },
+    {
+      "name": "occupé par Madame, nom à élision N'",
+      "input": "Appartement occupé par Madame Kylia N'TAKOLA depuis 2019.",
+      "expected": "Appartement occupé par un occupant depuis 2019.",
+      "absent": [
+        "TAKOLA",
+        "Kylia"
+      ]
+    },
+    {
+      "name": "occupé par Monsieur, nom en latin étendu",
+      "input": "Appartement occupé par Monsieur Ömer Kalınyar depuis 2019.",
+      "expected": "Appartement occupé par un occupant depuis 2019.",
+      "absent": [
+        "Kalınyar",
+        "Ömer"
+      ]
     }
   ],
   "unchanged": [
@@ -1146,10 +1331,6 @@
       "input": "Local occupé par EDF Collectivités depuis 2012."
     },
     {
-      "name": "retour à la ligne entre trigger et mot",
-      "input": "Locataire\nMonsieur Dupont"
-    },
-    {
       "name": "locataire en place sans nom",
       "input": "Appartement occupé par le locataire en place, qui paie un loyer mensuel de 480 euros."
     },
@@ -1340,6 +1521,86 @@
     {
       "name": "famille sans nom",
       "input": "Occupé par une famille de trois personnes."
+    },
+    {
+      "name": "contre le mur",
+      "input": "Le meuble est posé contre le mur de la cuisine."
+    },
+    {
+      "name": "en présence de plomb",
+      "input": "Diagnostic réalisé en présence de plomb et d'amiante."
+    },
+    {
+      "name": "représentée par son gérant",
+      "input": "La SCI Les Ormeaux, représentée par son gérant, vend le bien."
+    },
+    {
+      "name": "M. le Maire",
+      "input": "M. le Maire a délivré le permis de construire."
+    },
+    {
+      "name": "Madame la Présidente",
+      "input": "Madame la Présidente du tribunal a fixé l'audience."
+    },
+    {
+      "name": "Monsieur le juge de l'exécution",
+      "input": "Monsieur le juge de l'exécution a ordonné la vente."
+    },
+    {
+      "name": "contre la société",
+      "input": "Procédure engagée contre la société Les Ormeaux."
+    },
+    {
+      "name": "contre un sigle à points",
+      "input": "Procédure engagée contre S.A.R.L. LES ORMEAUX."
+    },
+    {
+      "name": "contre des sociétés en sigle et mot",
+      "input": "Recours contre EDF Collectivités et contre BNP Paribas."
+    },
+    {
+      "name": "à l'encontre de la banque",
+      "input": "Poursuites à l'encontre de la Banque Populaire du Sud."
+    },
+    {
+      "name": "avenue Monsieur Le Prince",
+      "input": "Local situé avenue Monsieur Le Prince, 75006 Paris."
+    },
+    {
+      "name": "rue du Général de Gaulle et contre",
+      "input": "Maison située rue du Général de Gaulle, contre la mairie."
+    },
+    {
+      "name": "en présence de Me, commissaire de justice",
+      "input": "Visite en présence de Me Gaspard VERNOLET, commissaire de justice."
+    },
+    {
+      "name": "en présence de Maitre sans accent",
+      "input": "Constat dressé en présence de Maitre Gaspard VERNOLET, commissaire de justice."
+    },
+    {
+      "name": "représentée par Maître, avocat, demeurant",
+      "input": "SCI Les Ormeaux, représentée par Maître Gaspard VERNOLET, avocat, demeurant 5 rue de la Paix 75002 Paris."
+    },
+    {
+      "name": "habitée par ses propriétaires",
+      "input": "Maison habitée par ses propriétaires."
+    },
+    {
+      "name": "M sans point",
+      "input": "Logement de type M Duplex, M. B au 2e étage."
+    },
+    {
+      "name": "formule de politesse",
+      "input": "Madame, Monsieur, la vente aura lieu au tribunal."
+    },
+    {
+      "name": "main d'œuvre",
+      "input": "Travaux de main d'œuvre réalisés contre facture."
+    },
+    {
+      "name": "initiale M. après un prénom (avocat)",
+      "input": "Ayant pour avocat Maître Jean M. VERNOLET, avocat au barreau de Lyon."
     }
   ]
 }
