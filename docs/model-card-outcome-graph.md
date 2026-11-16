@@ -222,4 +222,4 @@ En cas de doute, le comportement attendu est le refus `insufficient_data`, jamai
 
 Toute promotion d’une version doit conserver : artefact/hash lorsqu’applicable, schéma de features, cutoff d’entraînement, échantillon, métriques, approbateur et date d’approbation. Une correction de contenu crée une nouvelle version. Une version défaillante est retirée; elle n’est pas réécrite.
 
-Les procédures d’accès, d’incident, de migration et de rollback sont décrites dans [`docs/security/outcome-graph.md`](security/outcome-graph.md) et [`docs/runbooks/outcome-graph.md`](runbooks/outcome-graph.md).
+Les procédures d’accès, d’incident, de migration et de rollback sont décrites dans `docs/security/outcome-graph.md` (dépôt interne, `docs/security/outcome-graph.md`) et [`docs/runbooks/outcome-graph.md`](runbooks/outcome-graph.md).
