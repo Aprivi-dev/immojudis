@@ -144,6 +144,7 @@ describe("admin readiness", () => {
   it("marks launch readiness ready when commercial and pipeline envs are configured", () => {
     const items = buildEnvironmentReadiness({
       NEXT_PUBLIC_APP_URL: "https://immojudis.example",
+      STRIPE_ANALYSIS_SALES_OPEN: "true",
       STRIPE_SECRET_KEY: "stripe-secret-test",
       STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisTest",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
@@ -170,6 +171,7 @@ describe("admin readiness", () => {
   it("names the sales switch or the key mode when they close a complete checkout (C2, C3)", () => {
     const complete = {
       NEXT_PUBLIC_APP_URL: "https://immojudis.example",
+      STRIPE_ANALYSIS_SALES_OPEN: "true",
       STRIPE_SECRET_KEY: "sk_live_ready",
       STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisLive",
       STRIPE_WEBHOOK_SECRET: "whsec_live",
@@ -194,7 +196,7 @@ describe("admin readiness", () => {
     expect(checkout({ ...complete, STRIPE_ANALYSIS_SALES_OPEN: "false" })).toMatchObject({
       status: "blocked",
       detail: expect.stringContaining("les abonnés gardent leur accès"),
-      action: "Pour rouvrir la vente : retirer STRIPE_ANALYSIS_SALES_OPEN, puis redéployer.",
+      action: "Pour ouvrir la vente : poser STRIPE_ANALYSIS_SALES_OPEN=true, puis redéployer.",
     });
     expect(checkout({ ...complete, STRIPE_SECRET_KEY: "sk_test_ready" })).toMatchObject({
       status: "blocked",

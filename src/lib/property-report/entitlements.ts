@@ -127,7 +127,7 @@ export function planForSaleDoor(plan: PlanEntitlements, door: SaleFeatureDoor): 
  * investment score and its factors, the risks and the pipeline's risk notes, the source names and
  * urls, the raw payload. The columns `v_auction_sales_unlocked` empties, applied again on the server
  * side so that a sale read for an unlock carries none of them whatever its origin. The source also
- * travels inside `sale_procedure`, `source_conflicts` and `source_presence`
+ * travels inside `sale_procedure`, `source_conflicts`, `source_presence` and `source_checks`
  * (`saleWithoutListingSource`): it is removed there too; the case documents of the unlocked sale keep
  * their url.
  */
@@ -169,10 +169,11 @@ export function unlockedSaleProjection(sale: AuctionSale): AuctionSale {
 export type ListingSourceProjection = { documentUrls: boolean };
 
 /**
- * The sale as the views of a reader without the Analyse offer serve it (migration 20261123100000):
- * `sale_procedure` and `source_blocks.sale_procedure` through `saleProcedureWithoutListingSource`,
- * `source_conflicts` through `sourceConflictsWithoutListingSource`, `source_presence` through
- * `sourcePresenceWithoutListingSource`. Nothing else changes; an absent column stays absent.
+ * The sale as the views of a reader without the Analyse offer serve it (migrations 20261123100000 and
+ * 20261124100000): `sale_procedure` and `source_blocks.sale_procedure` through
+ * `saleProcedureWithoutListingSource`, `source_conflicts` through `sourceConflictsWithoutListingSource`,
+ * `source_presence` through `sourcePresenceWithoutListingSource`, `source_checks` through
+ * `sourceChecksWithoutListingSource`. Nothing else changes; an absent column stays absent.
  */
 export function saleWithoutListingSource(
   sale: AuctionSale,
@@ -183,6 +184,7 @@ export function saleWithoutListingSource(
     source_blocks: sourceBlocks,
     source_conflicts: sourceConflicts,
     source_presence: sourcePresence,
+    source_checks: sourceChecks,
   } = sale;
   return {
     ...sale,
@@ -211,6 +213,9 @@ export function saleWithoutListingSource(
     ...(sourcePresence === undefined
       ? {}
       : { source_presence: sourcePresenceWithoutListingSource(sourcePresence) }),
+    ...(sourceChecks === undefined
+      ? {}
+      : { source_checks: sourceChecksWithoutListingSource(sourceChecks) }),
   };
 }
 
@@ -300,6 +305,38 @@ export function sourcePresenceWithoutListingSource(
           `source_${index + 1}`,
           Object.fromEntries(
             SOURCE_PRESENCE_KEYS.filter((key) => key in entry).map((key) => [key, entry[key]]),
+          ),
+        ];
+      }),
+  );
+}
+
+/**
+ * The keys of a `source_checks` entry the application reads: `checked_at`, `field` and `fields`
+ * (`fact-reliability.ts`), `checked_at` and `extractor_version` (`listing-completeness.ts`).
+ */
+const SOURCE_CHECK_KEYS = ["checked_at", "extractor_version", "field", "fields"] as const;
+
+/**
+ * `source_checks` (`services/data-pipeline/src/freshness.py`) is keyed by the listing urls, and each
+ * check carries `source_name`, the name of the source platform, with fingerprints and the state of the
+ * capture. Without the Analyse offer: entries re-keyed `source_1`, `source_2`... in the order of the
+ * keys (code points, as the C collation of `app_private.source_checks_without_listing_source`,
+ * migration 20261124100000), with `SOURCE_CHECK_KEYS` only.
+ */
+export function sourceChecksWithoutListingSource(
+  value: unknown,
+): NonNullable<AuctionSale["source_checks"]> {
+  const checks = asRecord(value);
+  return Object.fromEntries(
+    Object.keys(checks)
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .map((url, index) => {
+        const entry = asRecord(checks[url]);
+        return [
+          `source_${index + 1}`,
+          Object.fromEntries(
+            SOURCE_CHECK_KEYS.filter((key) => key in entry).map((key) => [key, entry[key]]),
           ),
         ];
       }),

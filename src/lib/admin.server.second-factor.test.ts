@@ -3,6 +3,7 @@ import { adminSecondFactorExposures } from "@/lib/admin.server";
 
 /** Paiement Analyse ouvert : configuration complète (même jeu que analysis-checkout-readiness.test.ts). */
 const PAYMENT_OPEN = {
+  STRIPE_ANALYSIS_SALES_OPEN: "true",
   STRIPE_SECRET_KEY: "sk_live_ready",
   STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisLive",
   STRIPE_WEBHOOK_SECRET: "whsec_ready",
