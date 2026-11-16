@@ -189,7 +189,7 @@ begin
   end if;
   if claim_md5 not in (
     'c1f759eef6cb2c2c450ec153e9a98d12',  -- 20261111070000 et ses prédécesseurs (point de départ)
-    'd905e92e274739192b7611d057ccb697'   -- cette migration, déjà appliquée
+    '6792bdd62a20c6f72147ca0eb206e3a2'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -1969,7 +1969,7 @@ begin
        and (
          v_family = 'all'
          or (v_family = 'source_detail' and j.job_type = 'source_detail')
-         or (v_family in ('enrichment', 'enrichment_oldest') and j.job_type <> 'source_detail')
+         or ((v_family = 'enrichment' or v_family = 'enrichment_oldest') and j.job_type <> 'source_detail')
        )
        and (
          j.job_type <> 'source_detail'

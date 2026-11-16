@@ -6,11 +6,15 @@ liste (`raw_payload->'source_lots'->0->>'starting_price_eur'`). Cas d'origine (a
 Mesure de la sentinelle qualité (`app_private.catalogue_quality_metrics`, migration `20261111100000`), évaluée à
 chaque passage d'`operational-health` (toutes les 30 minutes). Seuil : 0, une vente suffit.
 
-Depuis `20261201100000`, l'alerte ne s'ouvre que si une vente discordante est présente sur **deux évaluations
-consécutives** : un cas transitoire (page à plusieurs lots recalculée entre deux passages) ne sonne plus. Chaque
-évaluation garde sa mesure dans `auction_pipeline_observations` (`source_name = 'catalogue-quality-licitor-lot'`,
-90 jours). Détails : `count`, `previous_count`, `example_sale_ids` (cinq au plus), `licitor_live`,
-`without_card`, `unreadable_card`.
+Depuis `20261201100000`, l'alerte ne s'ouvre que si **la même vente** est discordante sur **deux évaluations
+consécutives** : un cas transitoire (page à plusieurs lots recalculée entre deux passages) ne sonne plus, même si
+une autre vente devient discordante au passage suivant. Chaque évaluation garde sa mesure dans
+`auction_pipeline_observations` (`source_name = 'catalogue-quality-licitor-lot'`) et purge elle-même celles de plus
+de 90 jours. Les identifiants croisés sont `example_sale_ids` (cinq au plus, les premiers par identifiant :
+`example_limit` de `app_private.catalogue_quality_thresholds()`). Limite connue : au-delà de cinq ventes
+discordantes, une vente persistante peut sortir de la liste et n'y revenir qu'une fois les discordances passagères
+disparues. Détails : `count`, `previous_count`, `example_sale_ids`, `previous_sale_ids`, `persistent_sale_ids`
+(ventes discordantes aux deux évaluations), `licitor_live`, `without_card`, `unreadable_card`.
 
 ## Diagnostic
 
