@@ -1,9 +1,10 @@
 -- 20261201100000 (16/11/2026) : recalibrage des alertes d'exploitation du pipeline.
---   * fenêtre de fraîcheur des annonces : app_private.listing_review_policy() (72 h, 24 h pour Licitor et pour une
---     vente dans les 7 jours), jumelle de services/data-pipeline/src/freshness.py, lue par
---     auction_all_source_freshness ;
+--   * politique de relecture : app_private.listing_review_policy() (72 h, 24 h pour Licitor, 6 h pour une audience
+--     dans les 7 jours), jumelle de services/data-pipeline/src/freshness.py ; la santé (auction_all_source_freshness)
+--     applique la politique et, pour une audience proche, une tolérance de 24 h nommée à part ;
 --   * stale_listings ne s'ouvre pas pour une source dont .missed est vraie ou ouverte (une cause = une alerte) ;
---   * .missed relaie la cause d'arrêt déjà écrite par la collecte (coverage.stop_reason, erreurs, échecs) ;
+--   * .missed relaie la cause d'arrêt écrite par la collecte (stop_reason, stop_cause, robots_policy, erreurs,
+--     échecs), jamais robots_policy_copies ;
 --   * pipeline.enrichment.stalled : tâches prenables non servies depuis 72 h dont le nombre n'a pas baissé en 24 h ;
 --   * pipeline.enrichment.exhausted : hausse à partir de greatest(10, 2 % de la file vivante).
 -- Les seuils de pipeline.import.unhealthy (5 400 s) et le lot Licitor sur deux évaluations sont dans les tests 599 et
@@ -16,9 +17,9 @@ select plan(16);
 
 select is(
   app_private.listing_review_policy(),
-  '{"review_hours": 72, "source_review_hours": {"licitor": 24}, "near_sale_review_hours": 24,
-    "near_sale_days": 7}'::jsonb,
-  'the listing review policy: 72 hours, 24 hours for Licitor and for a sale within 7 days'
+  '{"reread_hours": 72, "source_reread_hours": {"licitor": 24}, "near_sale_reread_hours": 6, "near_sale_days": 7,
+    "source_detail_lead_hours": 1, "near_sale_health_window_hours": 24}'::jsonb,
+  'the reread policy (72 h, Licitor 24 h, 6 h within 7 days), the source-detail lead and the near-sale health tolerance'
 );
 
 select ok(
@@ -120,7 +121,10 @@ insert into public.auction_source_state (
 ) values
   -- Inventaire complet il y a 19 h : .missed. Ses annonces ne sont plus revues, par la même cause.
   ('pgtap-903-missed', true, '2026-10-24T00:00:00Z', '2026-10-22T14:00:00Z', '2026-10-23T08:00:00Z',
-   '{"stop_reason": "page_limit_or_count_mismatch", "errors": 2, "http_attempts_including_retries": 41}'::jsonb,
+   '{"stop_reason": "page_limit_or_count_mismatch", "errors": 2, "http_attempts_including_retries": 41,
+     "publication_blocker_details": {"inventory_incomplete": {"stop_cause": "robots_unavailable"}},
+     "robots_policy": {"state": "unavailable", "transient": true, "error_type": "timeout"},
+     "robots_policy_copies": {"https://example.test": {"verified_at": "2026-10-22T00:00:00Z"}}}'::jsonb,
    3, repeat('x', 500)),
   -- Inventaire récent, annonces non revues : stale_listings seule.
   ('pgtap-903-stale', true, '2026-10-24T00:00:00Z', '2026-10-23T08:00:00Z', '2026-10-23T08:00:00Z',
@@ -137,6 +141,9 @@ select ok(
   (
     select status = 'open'
       and details->>'stop_reason' = 'page_limit_or_count_mismatch'
+      and details->>'stop_cause' = 'robots_unavailable'
+      and details->'robots_policy' = '{"state": "unavailable", "transient": true, "error_type": "timeout"}'::jsonb
+      and not details ? 'robots_policy_copies'
       and (details->>'coverage_errors')::integer = 2
       and (details->>'consecutive_failures')::integer = 3
       and (details->>'http_attempts')::integer = 41
@@ -144,7 +151,7 @@ select ok(
     from public.operational_alerts
     where alert_key = 'pipeline.source.pgtap-903-missed.missed'
   ),
-  '.missed carries the stop reason, the errors and the failures the collection already records'
+  '.missed carries the stop reason and cause, the robots policy (not its copies), the errors and the failures'
 );
 
 select is(
@@ -161,12 +168,12 @@ select ok(
   (
     select status = 'open'
       and not (details->>'suppressed_by_missed')::boolean
-      and (details->>'review_hours')::integer = 72
-      and (details->>'near_sale_review_hours')::integer = 24
+      and (details->>'reread_hours')::integer = 72
+      and (details->>'near_sale_health_window_hours')::integer = 24
     from public.operational_alerts
     where alert_key = 'pipeline.source.pgtap-903-stale.stale_listings'
   ),
-  'a source with a recent inventory opens stale_listings, with the review windows in its details'
+  'a source with a recent inventory opens stale_listings, with its reread window and near-sale tolerance'
 );
 
 -- L'inventaire revient : .missed devient inactive mais reste ouverte deux heures ; stale_listings attend.
