@@ -246,6 +246,8 @@ jobs:
       (needs.gate.outputs.should_bootstrap == 'true' ||
       needs.gate.outputs.should_sync == 'true')
     runs-on: ubuntu-24.04
+    # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
+    environment: Production
     timeout-minutes: 120
     defaults:
       run:
