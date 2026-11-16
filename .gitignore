@@ -60,3 +60,9 @@ docs/design/annonce-detail/rendered-*.png
 !.claude/hooks/
 .env*.local
 .flood-risk-runner
+
+# Public repository: team reports (pricing, competition, roadmap) live in the private repository
+# Aprivi-dev/immojudis-interne. Only the how-to and the agents' licence stay here.
+/docs/equipe/*
+!/docs/equipe/README.md
+!/docs/equipe/licences/
