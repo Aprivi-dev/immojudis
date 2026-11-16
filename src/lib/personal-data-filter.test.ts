@@ -73,6 +73,9 @@ describe("redactPersonalText : temps linéaire sur de longues suites d'espaces",
     "longue suite de noms en capitales": `occupé par ${"DUPONT ".repeat(5000)}`,
     "longue suite de prénoms": `Le saisi, ${"Pierre ".repeat(5000)}`,
     "longue suite de NOM Prénom": `occupé par ${"DUPONT Pierre ".repeat(3000)}`,
+    "civilité répétée": `Monsieur${spaces(300)}`.repeat(200),
+    "civilité suivie d'espaces avant un nom": `rue${spaces(20000)}Madame Rose GAUTIER`,
+    "contre répété": `contre${spaces(300)}`.repeat(200),
   };
 
   it.each(Object.entries(texts))("%s", (_name, text) => {
@@ -143,6 +146,14 @@ describe("redactSaleTexts", () => {
       ],
     });
     expect(sale.description).toContain("DUPONT");
+  });
+
+  it("filtre le titre de la fiche", () => {
+    const sale = { id: "sale-3", title: "Maison occupée par Monsieur Gaspard VERNOLET à Lyon" };
+    expect(redactSaleTexts(sale)).toEqual({
+      id: "sale-3",
+      title: "Maison occupée par un occupant à Lyon",
+    });
   });
 
   it("conserve la forme d'une fiche sans texte libre", () => {

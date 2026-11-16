@@ -82,6 +82,7 @@ def test_redact_payload_only_touches_text_keys() -> None:
 
 def test_redact_storage_row_covers_columns_payload_and_observations() -> None:
     row = {
+        "title": "Maison occupée par Monsieur Gaspard VERNOLET à Lyon",
         "description": "Appartement occupé par Monsieur Pierre DUPONT suivant bail.",
         "risk_notes": "Locataire Madame Sara LOPEZ",
         "investment_summary": None,
@@ -98,6 +99,7 @@ def test_redact_storage_row_covers_columns_payload_and_observations() -> None:
     }
     result = redact_storage_row(row)
     assert result is row
+    assert row["title"] == "Maison occupée par un occupant à Lyon"
     assert row["description"] == "Appartement occupé par un occupant suivant bail."
     assert row["risk_notes"] == "Locataire"
     assert row["surface_evidence"] == "Surface de 62 m² occupée par un occupant"
@@ -232,6 +234,9 @@ _LONG_WHITESPACE_TEXTS = {
     "longue suite de mots en casse mixte": lambda n: "occupé par " + "Pierre Martin " * (15 * n),
     "famille et indivision répétées": lambda n: ("la famille" + " " * 300 + "indivision" + " " * 300) * (n // 2),
     "associé répété": lambda n: ("l'associé de" + " " * 300) * n,
+    "civilité répétée": lambda n: ("Monsieur" + " " * 300) * n,
+    "espaces avant une civilité": lambda n: "rue" + " " * (100 * n) + "Madame Rose GAUTIER",
+    "contre répété": lambda n: ("contre" + " " * 300) * n,
 }
 _LINEARITY_BASE_SIZE = 200
 
