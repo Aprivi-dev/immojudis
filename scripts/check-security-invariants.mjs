@@ -964,6 +964,59 @@ if (!listingSourceSql) {
     }
   }
 }
+// source_checks (20261124100000): the checks are keyed by the listing urls and each one carries the name
+// of the source platform (source_name), fingerprints and the state of the capture. The projection re-keys
+// them and keeps the four keys the application reads; both views serve the column through it only.
+const sourceChecksName = "20261124100000_source_checks_without_listing_source.sql";
+const sourceChecksSql = (migrationSources.get(sourceChecksName) ?? "").replace(
+  /^[ \t]*--[^\n]*$/gm,
+  "",
+);
+const sourceChecksFunction =
+  /create\s+or\s+replace\s+function\s+app_private\.source_checks_without_listing_source\(p_checks\s+jsonb\)[\s\S]*?\$\$;/i.exec(
+    sourceChecksSql,
+  )?.[0] ?? "";
+if (!sourceChecksFunction) {
+  failures.push("The source checks migration (20261124100000) is missing");
+} else {
+  if (
+    !/where\s+kept\.key\s+in\s*\(\s*'checked_at'\s*,\s*'extractor_version'\s*,\s*'field'\s*,\s*'fields'\s*\)/i.test(
+      sourceChecksFunction,
+    ) ||
+    !/jsonb_object_agg\(\s*'source_'\s*\|\|\s*ranked\.rank\s*,/i.test(sourceChecksFunction) ||
+    /jsonb_object_agg\(\s*checks\.key\b/i.test(sourceChecksFunction)
+  ) {
+    failures.push(
+      "source_checks_without_listing_source keeps the listing urls or more than checked_at, extractor_version, field and fields",
+    );
+  }
+  if (
+    !/\bimmutable\b/i.test(sourceChecksFunction) ||
+    !/security\s+invoker/i.test(sourceChecksFunction) ||
+    !/set\s+search_path\s*=\s*''/i.test(sourceChecksFunction)
+  ) {
+    failures.push(
+      "source_checks_without_listing_source is not IMMUTABLE SECURITY INVOKER with an empty search_path",
+    );
+  }
+  if (
+    !/revoke\s+all\s+on\s+function\s+app_private\.source_checks_without_listing_source\(jsonb\)\s+from\s+public,\s*anon/i.test(
+      sourceChecksSql,
+    ) ||
+    !/grant\s+execute\s+on\s+function\s+app_private\.source_checks_without_listing_source\(jsonb\)\s+to\s+authenticated,\s*service_role\s*;/i.test(
+      sourceChecksSql,
+    ) ||
+    /grant\s+execute\s+on\s+function\s+app_private\.source_checks_without_listing_source\(jsonb\)\s+to\s+[^;]*\banon\b/i.test(
+      sourceChecksSql,
+    )
+  ) {
+    failures.push(
+      "app_private.source_checks_without_listing_source(jsonb) is not closed to anon and open to authenticated and service_role",
+    );
+  }
+}
+const CHECKS_CALL =
+  "app_private.source_checks_without_listing_source(s.raw_payload -> 'source_checks') as source_checks,";
 const CONFLICTS_CALL =
   "app_private.source_conflicts_without_listing_source(s.raw_payload -> 'source_conflicts') as source_conflicts,";
 const PRESENCE_CALL =
@@ -989,6 +1042,7 @@ for (const [view, keepDocumentUrls] of [
   const sql = last?.sql ?? "";
   const body = sql
     .replaceAll(procedureCall, "")
+    .replaceAll(CHECKS_CALL, "")
     .replaceAll(CONFLICTS_CALL, "")
     .replaceAll(PRESENCE_CALL, "");
   if (
@@ -997,16 +1051,18 @@ for (const [view, keepDocumentUrls] of [
     !sql.includes(`${procedureCall} as sale_procedure,`) ||
     (view === "v_auction_sales_discovery" &&
       !sql.includes(`jsonb_build_object('sale_procedure', ${procedureCall}) as source_blocks,`)) ||
+    !sql.includes(CHECKS_CALL) ||
     !sql.includes(CONFLICTS_CALL) ||
     !sql.includes(`${PRESENCE_CALL}\n    as source_presence,`) ||
     /sale_procedure_without_listing_source\(/i.test(body) ||
     /(?:^|,)\s*(?:\w+\.)?sale_procedure\s*(?:,|\bfrom\b)/i.test(body) ||
     /jsonb_build_object\(\s*'sale_procedure'\s*,\s*(?:\w+\.)?sale_procedure\s*\)/i.test(body) ||
     /'source_conflicts'/i.test(body) ||
+    /source_checks/i.test(body) ||
     /auction_sale_source_presence_json\(/i.test(body)
   ) {
     failures.push(
-      `${view} does not serve sale_procedure, source_conflicts and source_presence through their listing source projections`,
+      `${view} does not serve sale_procedure, source_checks, source_conflicts and source_presence through their listing source projections`,
     );
   }
 }

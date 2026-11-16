@@ -3,10 +3,10 @@
 Déclarés dans `.claude/settings.json` (`PreToolUse`) ; le premier l'est aussi dans l'en-tête de
 l'agent `qualite-donnees`. Un crochet qui sort en code 2 bloque l'appel d'outil.
 
-| Script                          | Outils visés                                                                                                                                                                                                                                  | Effet                                                                                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `supabase-lecture-seule.mjs`    | `mcp__Supabase__execute_sql`                                                                                                                                                                                                                  | N'autorise que SELECT / WITH / EXPLAIN sans mot-clé d'écriture et dont chaque appel de fonction figure dans une liste blanche de fonctions de lecture pure. |
-| `bloquer-ecriture-supabase.mjs` | `apply_migration`, `deploy_edge_function`, `create_edge_function_secret`, `create_branch`, `delete_branch`, `merge_branch`, `reset_branch`, `rebase_branch`, `create_project`, `pause_project`, `restore_project` (préfixe `mcp__Supabase__`) | Bloque avec « interdit : aucun agent n'écrit dans la base ; passez par une migration et la CI ». Seule exception : la base de test (voir plus bas).         |
+| Script                          | Outils visés                                                                                                                                                                                                                                  | Effet                                                                                                                                                                                                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `supabase-lecture-seule.mjs`    | `mcp__Supabase__execute_sql`                                                                                                                                                                                                                  | N'autorise que SELECT / WITH / EXPLAIN sans mot-clé d'écriture et dont chaque appel de fonction figure dans une liste blanche de fonctions de lecture pure. Refuse toute lecture des schémas et catalogues à secrets (`vault`, `pgsodium`, `net`, `auth`, `pg_authid`…). |
+| `bloquer-ecriture-supabase.mjs` | `apply_migration`, `deploy_edge_function`, `create_edge_function_secret`, `create_branch`, `delete_branch`, `merge_branch`, `reset_branch`, `rebase_branch`, `create_project`, `pause_project`, `restore_project` (préfixe `mcp__Supabase__`) | Bloque avec « interdit : aucun agent n'écrit dans la base ; passez par une migration et la CI ». Seule exception : la base de test (voir plus bas).                                                                                                                      |
 
 Tests : `scripts/supabase-lecture-seule.test.mjs` et `scripts/bloquer-ecriture-supabase.test.mjs`.
 
@@ -47,6 +47,15 @@ Dans `supabase-lecture-seule.mjs` : fonction native de lecture pure dans `ALLOWE
 fonction Immojudis dans `ALLOWED_PROJECT_FUNCTIONS`, qualifiée du schéma, seulement après avoir
 vérifié dans les migrations qu'elle est `stable` ou `immutable`, qu'elle n'écrit pas et que les
 fonctions qu'elle appelle sont de même nature. Ajouter un cas au test.
+
+## Schémas à secrets
+
+Depuis l'audit du 16/11/2026, une lecture de `vault`, `pgsodium`, `net` ou `auth`, ou des catalogues
+`pg_authid`, `pg_shadow`, `pg_user_mappings` et `pg_largeobject`, est refusée, quelle que soit la façon de
+l'écrire (casse, guillemets, CTE, sous-requête) : ces objets portent `CRON_SECRET`, des mots de passe
+hachés, des jetons de session et des secrets TOTP. Un texte hostile lu par un agent (annonce, pièce) ne
+doit pas pouvoir les faire lire. Les diagnostics des runbooks qui lisent `auth.users` se lancent dans
+l'éditeur SQL de Supabase, par le propriétaire. Listes : `SECRET_SCHEMAS` et `SECRET_RELATIONS`.
 
 Limites connues : `EXPLAIN ANALYZE` est refusé (il exécute la requête) ; les listes de colonnes
 d'alias ne sont acceptées qu'avec `AS` (`as t(a, b)`) et pour la première CTE

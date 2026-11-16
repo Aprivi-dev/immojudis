@@ -21,8 +21,8 @@ rien de manquant ni de fermé :
 - l'identité légale `NEXT_PUBLIC_LEGAL_*` ;
 - le canal de confirmation contractuelle : `RESEND_API_KEY`, l'expéditeur (`TRANSACTIONAL_EMAIL_FROM` ou
   `ALERT_EMAIL_FROM`) et `SITE_URL` ;
-- l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN` : absent, la vente est ouverte ; posé à toute autre valeur
-  que `true`, il ferme le checkout (voir le § 5).
+- l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN`, fermé par défaut depuis le 16/11/2026 : seule la valeur
+  `true` ouvre la vente ; absent ou posé à toute autre valeur, il ferme le checkout (voir le § 5).
 
 Deux autres contrôles du mode, hors de cette garde :
 
@@ -62,6 +62,10 @@ Un événement non listé est journalisé « ignored » : sans danger, mais inut
 
 ## 2. Réglages du tableau de bord Stripe (test, puis à refaire en production)
 
+Moyens de paiement : le code n'accepte que la carte (`payment_method_types: ["card"]`), pour l'abonnement comme
+pour l'achat à l'unité. Activer un autre moyen dans le tableau de bord ne l'ajoute donc pas au checkout. Un
+prélèvement SEPA pourrait rendre un abonnement actif avant d'être rejeté, plusieurs jours après.
+
 1. **Facturation → Factures → Pied de page par défaut** : « TVA non applicable, art. 293 B du CGI ». Le code le
    met déjà sur chaque client qu'il crée ; ce réglage couvre un client créé à la main.
 2. **Portail client** (Paramètres → Billing → Portail client) : **enregistrer** une configuration (sans elle,
@@ -96,12 +100,13 @@ Compte Stripe : « environnement de test Immojudis ». Déjà créés le 09/11/2
 
 ### Variables Vercel (cible Preview, limitées à la branche de recette)
 
-| Variable                   | Valeur                                                    |
-| -------------------------- | --------------------------------------------------------- |
-| `STRIPE_SECRET_KEY`        | `sk_test_…` (Stripe → Développeurs → Clés API, mode test) |
-| `STRIPE_ANALYSIS_PRICE_ID` | `price_1UZxcpA15i2ch0eFyrVWw4yk`                          |
-| `STRIPE_WEBHOOK_SECRET`    | `whsec_…` du point de terminaison de test                 |
-| `SITE_URL`                 | URL du Preview                                            |
+| Variable                     | Valeur                                                    |
+| ---------------------------- | --------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`          | `sk_test_…` (Stripe → Développeurs → Clés API, mode test) |
+| `STRIPE_ANALYSIS_PRICE_ID`   | `price_1UZxcpA15i2ch0eFyrVWw4yk`                          |
+| `STRIPE_WEBHOOK_SECRET`      | `whsec_…` du point de terminaison de test                 |
+| `SITE_URL`                   | URL du Preview                                            |
+| `STRIPE_ANALYSIS_SALES_OPEN` | `true` (sans elle, la vente est fermée)                   |
 
 Redéployer le Preview après chaque changement de variable.
 
@@ -133,19 +138,21 @@ La page `/admin/compliance`, panneau « Activation commerciale », doit tout aff
    vers `https://immojudis.com/api/stripe/webhook` avec les événements du § 1.
 4. Vercel, cible **Production** : `STRIPE_SECRET_KEY` (`sk_live_…`, type « sensitive » ; le build refuse toute
    autre clé), `STRIPE_WEBHOOK_SECRET` (celui du point de terminaison en mode **live**),
-   `STRIPE_ANALYSIS_PRICE_ID`. Ne pas poser `STRIPE_ANALYSIS_SALES_OPEN`. Retirer `ALLOW_INCOMPLETE_LAUNCH_CONFIG`
+   `STRIPE_ANALYSIS_PRICE_ID`. Poser `STRIPE_ANALYSIS_SALES_OPEN=true` en dernier : c'est elle qui ouvre la vente.
+   Retirer `ALLOW_INCOMPLETE_LAUNCH_CONFIG`
    (il faut pour cela le § 6, `ADMIN_MFA_REQUIRED=true`). Redéployer.
 5. Premier paiement réel avec sa propre carte, puis remboursement depuis Stripe : vérifier l'accès, la facture,
    les emails, puis la fin d'accès.
 
 ## 5. Retour arrière
 
-- **Fermer la vente** sans toucher aux abonnés : dans Vercel, cible Production, poser
-  `STRIPE_ANALYSIS_SALES_OPEN=false`, puis redéployer. Le checkout se ferme (`analysisCheckoutReadiness`), les
+- **Fermer la vente** sans toucher aux abonnés : dans Vercel, cible Production, passer
+  `STRIPE_ANALYSIS_SALES_OPEN` à `false` (ou la retirer), puis redéployer. Le checkout se ferme (`analysisCheckoutReadiness`), les
   textes repassent en « pas encore ouverte », et le panneau « Activation commerciale » de `/admin/compliance`
   affiche « Vente fermée ». Le Price reste reconnu et le rapprochement continue : les abonnés en cours gardent leur
   accès, leurs renouvellements, le portail et la résiliation.
-- **Rouvrir la vente** : retirer `STRIPE_ANALYSIS_SALES_OPEN` (ou la passer à `true`), puis redéployer.
+- **Rouvrir la vente** : passer `STRIPE_ANALYSIS_SALES_OPEN` à `true`, puis redéployer. Retirer la variable ne
+  rouvre pas la vente : absente, la vente est fermée.
 - **Ne jamais retirer `STRIPE_ANALYSIS_PRICE_ID` pour fermer la vente.** Sans lui, le Price des abonnés n'est plus
   reconnu : leur prochain événement d'abonnement les fait passer en Découverte alors qu'ils sont prélevés
   (`isRecognisedAnalysisPrice`, `src/lib/billing.ts`), et le rapprochement quotidien se tait

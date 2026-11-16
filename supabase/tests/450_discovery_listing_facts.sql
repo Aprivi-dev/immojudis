@@ -15,8 +15,14 @@ select is(
   'discovery view keeps the source URL private'
 );
 
+-- Depuis 20261124100000, la ré-indexation est faite par app_private.source_checks_without_listing_source,
+-- qui retire aussi le nom de la plateforme des valeurs (détail : supabase/tests/902).
 select ok(
-  (select pg_get_viewdef('public.v_auction_sales_discovery'::regclass) ~ '''source_''::text \|\| checks\.ordinality'),
+  (select pg_get_viewdef('public.v_auction_sales_discovery'::regclass)
+            ~ 'app_private\.source_checks_without_listing_source\(')
+  and app_private.source_checks_without_listing_source(
+        '{"https://annonce.example/vente/450": {"checked_at": "2026-11-01T08:00:00+00:00"}}'::jsonb
+      ) = '{"source_1": {"checked_at": "2026-11-01T08:00:00+00:00"}}'::jsonb,
   'source checks are re-keyed by an opaque rank instead of the listing URL'
 );
 
