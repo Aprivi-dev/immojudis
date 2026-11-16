@@ -332,7 +332,7 @@ describe("CeilingPlanner readability", () => {
     for (const summary of summaries) expect(summary.querySelector("svg")).not.toBeNull();
   });
 
-  it("defines the trade terms in an accessible popover that links to the guide", () => {
+  it("defines the trade terms in an accessible popover that links to the guide", async () => {
     renderPlanner();
     const simulator = screen
       .getByRole("heading", { name: "Si vous l’emportez à…" })
@@ -344,8 +344,8 @@ describe("CeilingPlanner readability", () => {
     const trigger = within(simulator).getByRole("button", { name: "Définition : adjudication" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
+    const note = await within(simulator).findByRole("note");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    const note = within(simulator).getByRole("note");
     expect(note.textContent).toContain("Attribution du bien au meilleur enchérisseur");
     expect(within(note).getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
       "/ventes-immobilieres-judiciaires#lexique-adjudication",

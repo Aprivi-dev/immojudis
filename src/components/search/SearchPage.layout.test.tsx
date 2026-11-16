@@ -278,3 +278,19 @@ describe("/sales : « dont M cette semaine »", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("semaine");
   });
 });
+
+describe("/sales : encart des avocats en fin de liste", () => {
+  it("se charge après le premier rendu, en fin de liste, avec sa hauteur minimale", async () => {
+    const fourRows = [...rows, { ...rows[0], id: "sale-d", city: "Ville d" }] as AuctionSale[];
+    state.fetchSearchResults.mockResolvedValue(fourRows);
+    state.fetchSearchCount.mockResolvedValue(fourRows.length);
+    renderPage({});
+
+    const cards = await screen.findAllByRole("article");
+    const slot = await screen.findByRole("heading", {
+      name: "Vous êtes avocat ? Présentez votre cabinet ici",
+    });
+    expect(slot.closest("section")?.className).toContain("min-h-[320px]");
+    expect(before(cards[cards.length - 1], slot)).toBe(true);
+  });
+});

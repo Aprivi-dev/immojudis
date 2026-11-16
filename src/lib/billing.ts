@@ -42,7 +42,7 @@ import {
 import { asJson } from "@/lib/supabase-json";
 import {
   type BillingSessionResponse,
-  createStripeCustomer,
+  findOrCreateStripeCustomer,
   getStripe,
   getUserSubscription,
   isStripeMissingOrCancelled,
@@ -745,7 +745,7 @@ async function ensureStripeCustomer(
   const subscription = await getUserSubscription(auth);
   if (subscription?.stripe_customer_id) return subscription.stripe_customer_id;
 
-  const customer = await createStripeCustomer(getStripe(), auth);
+  const customer = await findOrCreateStripeCustomer(getStripe(), auth);
   const { data, error } = await supabaseAdmin.rpc("attach_analyse_checkout_customer", {
     p_checkout_token: reservationToken,
     p_stripe_customer_id: customer.id,

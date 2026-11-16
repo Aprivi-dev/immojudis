@@ -7,7 +7,7 @@ import { formatInteger, queryErrorMessage } from "@/components/admin/admin-forma
 import { AdminPanelLoading, useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { formatDate, formatPrice, formatShareAsPercent, formatShortDateTime } from "@/lib/format";
-import type { AdminActivation, UnlockThreshold } from "@/lib/admin-activation";
+import type { AdminActivation, DiscoveryUnlocks } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type {
@@ -95,7 +95,7 @@ const SECTIONS: Section[] = [
         event: true,
       },
       {
-        label: "dont déblocages du mois",
+        label: "dont déblocage gratuit déjà utilisé",
         value: (p) => p.events.quotaReached.unlocks,
         accounts: (p) => p.events.accounts.quotaReached.unlocks,
         detail: true,
@@ -419,7 +419,7 @@ function PilotageTables({ data }: { data: AdminPilotageResponse }) {
 
       <ActivationCard activation={data.activation ?? null} />
 
-      <UnlockThresholdCard threshold={data.activation?.unlockThreshold ?? null} />
+      <DiscoveryUnlocksCard discoveryUnlocks={data.activation?.discoveryUnlocks ?? null} />
 
       <BidCeilingCard summary={data.bidCeilings ?? null} />
 
@@ -537,11 +537,11 @@ function ReminderAccuracyCard({ accuracy }: { accuracy: SaleReminderAccuracy | n
 /** Les signaux dont la page lit les retours, avec leur libellé et leurs motifs (dans cet ordre). */
 /**
  * Estimations servies (événement `bid_ceiling_calculated`, nom conservé pour les données déjà
- * enregistrées) : l'indicateur d'usage qui reste lisible pendant l'offre de lancement, où « Déblocages
- * de ventes » et « dont déblocages du mois » valent 0 faute de déblocage consommé (tous les comptes
- * ont alors l'accès Analyse). L'estimation part à l'ouverture de la fiche, avant tout calcul : elle ne
- * dit pas qu'un plafond a été travaillé (le calcul se fait dans le navigateur, mesuré à part par
- * l'événement d'audience `ceiling_viewed`).
+ * enregistrées) : l'indicateur d'usage qui restait lisible pendant l'offre de lancement, désormais
+ * coupée, où aucun déblocage n'était consommé (tous les comptes avaient l'accès Analyse).
+ * L'estimation part à l'ouverture de la fiche, avant tout calcul : elle ne dit pas qu'un plafond a
+ * été travaillé (le calcul se fait dans le navigateur, mesuré à part par l'événement d'audience
+ * `ceiling_viewed`).
  */
 function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
   const windows = [7, 30].map((days) => summary?.windows.find((window) => window.days === days));
@@ -551,8 +551,9 @@ function BidCeilingCard({ summary }: { summary: BidCeilingSummary | null }) {
       <p className="mt-1 text-sm text-brand-navy/70">
         Comptes ayant reçu l’estimation de marché d’au moins une fiche et ventes concernées. Elle
         est servie à l’ouverture de la fiche, avant tout calcul : ce n’est pas un plafond calculé.
-        Pendant l’offre de lancement, aucun déblocage n’est consommé : les lignes « Déblocages »
-        ci-dessus valent 0 et ne disent rien de l’usage ; celle-ci, si. Administrateurs exclus.
+        Pendant l’offre de lancement, désormais coupée, aucun déblocage n’était consommé : sur une
+        fenêtre qui la recouvre, les lignes « Déblocages » ci-dessus sous-estiment l’usage ;
+        celle-ci, non. Administrateurs exclus.
       </p>
       <div className="mt-4 grid gap-6 sm:grid-cols-2">
         {[7, 30].map((days, index) => {
@@ -709,8 +710,8 @@ export function formatShare(numerator: number | null, denominator: number | null
 }
 
 /**
- * Activation, définie sans le quota de déblocages (qui vaut 0 pendant l'essai) : parmi les comptes créés
- * dans la fenêtre, ceux qui ont ouvert une fiche en détail, posé un favori ou créé une alerte.
+ * Activation, définie sans le quota de déblocages (qui valait 0 pendant l'essai) : parmi les comptes
+ * créés dans la fenêtre, ceux qui ont ouvert une fiche en détail, posé un favori ou créé une alerte.
  */
 function ActivationCard({ activation }: { activation: AdminActivation | null }) {
   return (
@@ -765,51 +766,49 @@ function ActivationCard({ activation }: { activation: AdminActivation | null }) 
 }
 
 /**
- * Part des comptes Découverte qui atteignent 3 déblocages dans le mois : la mesure à lire avant
- * toute décision sur le prix ou sur un pass (n° 97). Le seuil est celui que compte la base
- * (`admin_pilotage_unlock_threshold`, écrit en dur dans sa migration) : un test vérifie l'accord.
- * C'était le quota mensuel du compte gratuit ; depuis que ce compte ne débloque plus qu'une vente
- * en tout (`PLAN_LIMITS.decouverte.saleUnlocks`), il ne le suit plus.
+ * Comptes Découverte, mois de Paris par mois : ceux qui ont pris leur déblocage gratuit (une vente en
+ * tout) et ceux qui ont payé au moins un achat à l'unité, avec le nombre de ces achats
+ * (`admin_pilotage_discovery_unlocks`). Les parts ont pour dénominateur les comptes Découverte
+ * d'aujourd'hui.
  */
-export const UNLOCK_THRESHOLD = 3;
-
-function UnlockThresholdCard({ threshold }: { threshold: UnlockThreshold | null }) {
-  const discovery = threshold?.discoveryAccounts ?? null;
+function DiscoveryUnlocksCard({ discoveryUnlocks }: { discoveryUnlocks: DiscoveryUnlocks | null }) {
+  const discovery = discoveryUnlocks?.discoveryAccounts ?? null;
   return (
     <AdminPanel className="mt-6 p-5">
-      <AdminSectionHeading title={`Comptes Découverte à ${UNLOCK_THRESHOLD} déblocages`} />
+      <AdminSectionHeading title="Comptes Découverte : déblocage gratuit et achats à l’unité" />
       <p className="mt-1 text-sm text-brand-navy/70">
-        Parmi les comptes Découverte (adresse confirmée, sans accès Analyse ni essai en cours) :
-        ceux qui ont débloqué au moins une vente dans le mois de Paris, et ceux qui ont atteint les{" "}
-        {UNLOCK_THRESHOLD} déblocages. Le nombre de comptes Découverte est celui d’aujourd’hui pour
-        les deux mois. Administrateurs exclus.
+        Parmi les comptes Découverte (adresse confirmée, sans accès Analyse) : ceux qui ont pris
+        leur déblocage gratuit dans le mois de Paris, et ceux qui ont payé au moins une vente à
+        l’unité. Un achat remboursé ou contesté n’est pas compté. Le nombre de comptes Découverte
+        est celui d’aujourd’hui pour les deux mois. Administrateurs exclus.
       </p>
       <p className="mt-2 text-sm">
         <span className="text-brand-navy/70">Comptes Découverte aujourd’hui : </span>
         <span className="font-semibold tabular-nums">{formatCount(discovery)}</span>
       </p>
       <div className="mt-4 grid gap-6 sm:grid-cols-2">
-        {(threshold?.months ?? [null, null]).map((month, index) => {
+        {(discoveryUnlocks?.months ?? [null, null]).map((month, index) => {
           const lines = [
             {
-              label: "ont débloqué au moins une vente",
-              text: formatCount(month?.unlockedOne ?? null),
+              label: "ont pris leur déblocage gratuit",
+              text: formatCount(month?.unlockedFree ?? null),
             },
             {
-              label: `ont atteint ${UNLOCK_THRESHOLD} déblocages`,
-              text: formatCount(month?.reachedThree ?? null),
+              label: "Part des comptes Découverte ayant pris leur déblocage gratuit",
+              text: formatShare(month?.unlockedFree ?? null, discovery),
             },
             {
-              label: `Part des comptes Découverte à ${UNLOCK_THRESHOLD} déblocages`,
-              text: formatShare(month?.reachedThree ?? null, discovery),
+              label: "ont acheté au moins une vente",
+              text: formatCount(month?.purchasedOne ?? null),
             },
             {
-              label: "Part de ceux qui ont débloqué une vente",
-              text: formatShare(month?.reachedThree ?? null, month?.unlockedOne ?? null),
+              label: "Part des comptes Découverte ayant acheté",
+              text: formatShare(month?.purchasedOne ?? null, discovery),
             },
+            { label: "Achats payés", text: formatCount(month?.purchases ?? null) },
           ];
           return (
-            <div key={index} data-threshold-month={index === 0 ? "current" : "previous"}>
+            <div key={index} data-discovery-month={index === 0 ? "current" : "previous"}>
               <h3 className="text-sm font-semibold text-brand-navy">
                 {index === 0 ? "Mois en cours (depuis le 1er)" : "Mois précédent"}
                 {month?.monthStart ? ` · ${formatDate(month.monthStart)}` : ""}

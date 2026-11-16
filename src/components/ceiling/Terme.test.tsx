@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { axe } from "vitest-axe";
-import { afterEach, describe, expect, it } from "vitest";
-import { Terme } from "./Terme";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { TERME_LABELS, Terme } from "./Terme";
+import { TERMES } from "./termes-definitions";
 
 afterEach(cleanup);
 
 describe("Terme", () => {
-  it("shows the word and a help button that opens a short definition", () => {
+  it("shows the word and a help button that opens a short definition", async () => {
     render(
       <p>
         <Terme terme="surenchere">surenchère</Terme>
@@ -22,7 +23,7 @@ describe("Terme", () => {
 
     fireEvent.click(button);
 
-    const note = screen.getByRole("note");
+    const note = await screen.findByRole("note");
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(button.getAttribute("aria-controls")).toBe(note.id);
     expect(note.textContent).toContain("Offre formée après une adjudication");
@@ -31,19 +32,19 @@ describe("Terme", () => {
     );
   });
 
-  it("closes on Escape, giving the focus back to the button", () => {
+  it("closes on Escape, giving the focus back to the button", async () => {
     render(<Terme terme="portage" />);
     const button = screen.getByRole("button", { name: "Définition : portage" });
 
     fireEvent.click(button);
-    expect(screen.getByRole("note")).toBeTruthy();
+    expect(await screen.findByRole("note")).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(screen.queryByRole("note")).toBeNull();
     expect(document.activeElement).toBe(button);
   });
 
-  it("closes on a click outside, and toggles with the button", () => {
+  it("closes on a click outside, and toggles with the button", async () => {
     render(
       <div>
         <Terme terme="liberation" />
@@ -53,7 +54,7 @@ describe("Terme", () => {
     const button = screen.getByRole("button", { name: "Définition : libération du bien" });
 
     fireEvent.click(button);
-    expect(screen.getByRole("note")).toBeTruthy();
+    expect(await screen.findByRole("note")).toBeTruthy();
     fireEvent.pointerDown(screen.getByText("ailleurs"));
     expect(screen.queryByRole("note")).toBeNull();
 
@@ -73,6 +74,7 @@ describe("Terme", () => {
     ).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "Définition : émoluments" }));
+    await screen.findByRole("note");
     expect(
       (await axe(container, { rules: { "color-contrast": { enabled: false } } })).violations,
     ).toEqual([]);
@@ -132,17 +134,20 @@ describe("Terme : glossaire et zone d'appui", () => {
       "Avocat qui conduit la procédure pour le compte du créancier",
       "lexique-avocat-poursuivant",
     ],
-  ] as const)("définit « %s » avec un texte court et neutre", (terme, label, extrait, ancre) => {
-    render(<Terme terme={terme} />);
-    expect(screen.getByText(label)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: `Définition : ${label}` }));
-    const note = screen.getByRole("note");
-    expect(note.textContent).toContain(extrait);
-    expect(note.textContent).not.toMatch(/conseill|recommand|mieux vaut/i);
-    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
-      `/ventes-immobilieres-judiciaires#${ancre}`,
-    );
-  });
+  ] as const)(
+    "définit « %s » avec un texte court et neutre",
+    async (terme, label, extrait, ancre) => {
+      render(<Terme terme={terme} />);
+      expect(screen.getByText(label)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: `Définition : ${label}` }));
+      const note = await screen.findByRole("note");
+      expect(note.textContent).toContain(extrait);
+      expect(note.textContent).not.toMatch(/conseill|recommand|mieux vaut/i);
+      expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+        `/ventes-immobilieres-judiciaires#${ancre}`,
+      );
+    },
+  );
 
   it("peut n'afficher que le bouton quand le mot est écrit à côté", () => {
     render(
@@ -154,12 +159,12 @@ describe("Terme : glossaire et zone d'appui", () => {
     expect(screen.getByRole("button", { name: "Définition : enchère plafond" })).toBeTruthy();
   });
 
-  it("relie le bouton à sa bulle (aria-controls) même fermée", () => {
+  it("relie le bouton à sa bulle (aria-controls) même fermée", async () => {
     render(<Terme terme="adjudication" />);
     const button = screen.getByRole("button", { name: "Définition : adjudication" });
     expect(button.getAttribute("aria-controls")).toBeTruthy();
     fireEvent.click(button);
-    expect(screen.getByRole("note").id).toBe(button.getAttribute("aria-controls"));
+    expect((await screen.findByRole("note")).id).toBe(button.getAttribute("aria-controls"));
   });
 
   it("garde l'icône à 16 px mais une zone d'appui de 44 px", () => {
@@ -172,14 +177,14 @@ describe("Terme : glossaire et zone d'appui", () => {
     expect(button.querySelector("svg")?.getAttribute("class")).toContain("h-4 w-4");
   });
 
-  it('ouvre la bulle au-dessus du mot avec placement="top"', () => {
+  it('ouvre la bulle au-dessus du mot avec placement="top"', async () => {
     render(<Terme terme="portage" placement="top" />);
     fireEvent.click(screen.getByRole("button", { name: "Définition : portage" }));
-    expect(screen.getByRole("note").className).toContain("bottom-full");
+    expect((await screen.findByRole("note")).className).toContain("bottom-full");
     cleanup();
     render(<Terme terme="portage" />);
     fireEvent.click(screen.getByRole("button", { name: "Définition : portage" }));
-    expect(screen.getByRole("note").className).toContain("top-full");
+    expect((await screen.findByRole("note")).className).toContain("top-full");
   });
 });
 
@@ -213,11 +218,11 @@ describe("Terme : ventes notariales", () => {
     ],
   ] as const)(
     "définit « %s » et renvoie à l'article sur les ventes notariales, pas au lexique judiciaire",
-    (terme, label, extrait, lien) => {
+    async (terme, label, extrait, lien) => {
       render(<Terme terme={terme} />);
       expect(screen.getByText(label)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: `Définition : ${label}` }));
-      const note = screen.getByRole("note");
+      const note = await screen.findByRole("note");
       expect(note.textContent).toContain(extrait);
       expect(note.textContent).not.toMatch(/conseill|recommand|mieux vaut/i);
       expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(lien);
@@ -233,10 +238,10 @@ describe("Terme : ventes notariales", () => {
     expect(sectionIds).toContain("notaire");
   });
 
-  it("n'écrit ni « enchère » ni « adjudication » dans le terme ni la définition de l'offre plafond", () => {
+  it("n'écrit ni « enchère » ni « adjudication » dans le terme ni la définition de l'offre plafond", async () => {
     render(<Terme terme="offre-plafond" />);
     fireEvent.click(screen.getByRole("button", { name: "Définition : offre plafond" }));
-    expect(screen.getByRole("note").textContent).not.toMatch(/ench[èe]re|adjudication/i);
+    expect((await screen.findByRole("note")).textContent).not.toMatch(/ench[èe]re|adjudication/i);
   });
 });
 
@@ -249,8 +254,47 @@ describe("Terme : définitions reprises du guide (repasse n° 26)", () => {
     );
     render(<Terme terme="avocat-poursuivant" />);
     fireEvent.click(screen.getByRole("button", { name: "Définition : avocat poursuivant" }));
-    const definition = screen.getByRole("note").firstElementChild?.textContent ?? "";
+    const definition = (await screen.findByRole("note")).firstElementChild?.textContent ?? "";
     expect(definition.length).toBeGreaterThan(40);
     expect(guide).toContain(`term: "Avocat poursuivant",\n    def: "${definition}"`);
+  });
+});
+
+describe("Terme : définitions chargées au premier usage", () => {
+  it("garde les libellés du premier rendu identiques à ceux des définitions", () => {
+    expect(TERME_LABELS).toEqual(
+      Object.fromEntries(Object.entries(TERMES).map(([key, entry]) => [key, entry.label])),
+    );
+  });
+
+  it("ne garde pas la bulle ouverte si le chargement échoue, journalise, et retente au clic suivant", async () => {
+    vi.resetModules();
+    let attempts = 0;
+    vi.doMock("./termes-definitions", async (importOriginal) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("réseau coupé");
+      return importOriginal();
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { Terme: FreshTerme } = await import("./Terme");
+      render(<FreshTerme terme="portage" />);
+      const button = screen.getByRole("button", { name: "Définition : portage" });
+
+      fireEvent.click(button);
+      await waitFor(() => expect(button.getAttribute("aria-expanded")).toBe("false"));
+      expect(screen.queryByRole("note")).toBeNull();
+      expect(errors).toHaveBeenCalledWith(
+        "[terme] Chargement des définitions en échec",
+        expect.any(String),
+      );
+
+      fireEvent.click(button);
+      expect((await screen.findByRole("note")).textContent).toContain("Ce que coûte le bien");
+    } finally {
+      errors.mockRestore();
+      vi.doUnmock("./termes-definitions");
+      vi.resetModules();
+    }
   });
 });
