@@ -11,7 +11,7 @@ import {
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import {
   type BillingSessionResponse,
-  createStripeCustomer,
+  findOrCreateStripeCustomer,
   getStripe,
   getUserSubscription,
   resolveBillingOrigin,
@@ -109,7 +109,7 @@ export async function createSaleUnlockCheckoutSession({
 
   const customerId =
     (await getUserSubscription(auth))?.stripe_customer_id ??
-    (await createStripeCustomer(stripe, auth)).id;
+    (await findOrCreateStripeCustomer(stripe, auth)).id;
   const acceptanceId = randomUUID();
   const expiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_CHECKOUT_EXPIRY_MINUTES * 60;
   const session = await stripe.checkout.sessions.create(

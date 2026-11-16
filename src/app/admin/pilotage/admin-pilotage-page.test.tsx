@@ -21,7 +21,6 @@ import {
   MASKED,
   NOT_MEASURED,
   REMINDER_VERDICT_LABELS,
-  UNLOCK_THRESHOLD,
 } from "./admin-pilotage-page";
 
 const mocks = vi.hoisted(() => ({ fetchPilotage: vi.fn(), fetchInterviewees: vi.fn() }));
@@ -177,7 +176,7 @@ describe("page admin Pilotage", () => {
     await screen.findByRole("rowheader", { name: "Exports agenda (.ics)" });
     // calendarExports vaut 0 : masqué comme les autres valeurs inférieures à 5.
     expect(cells("Exports agenda (.ics)")[0]).toBe(`${MASKED}${MASKED} comptes`);
-    expect(cells("dont déblocages du mois")[0]).toBe(`${MASKED}${MASKED} comptes`);
+    expect(cells("dont déblocage gratuit déjà utilisé")[0]).toBe(`${MASKED}${MASKED} comptes`);
     expect(cells("Fiches avec valeur de référence servie")[0]).toBe("1421 comptes");
     expect(screen.queryByText(/^[0-4]$/)).toBeNull();
   });
@@ -638,7 +637,7 @@ describe("page admin Pilotage", () => {
     });
   });
 
-  describe("activation, unlock threshold and interviews", () => {
+  describe("activation, Discovery unlocks and purchases, and interviews", () => {
     const activation = {
       generatedAt: "2026-11-10T12:00:00Z",
       windows: [
@@ -661,20 +660,22 @@ describe("page admin Pilotage", () => {
           createdAlert: 10,
         },
       ],
-      unlockThreshold: {
+      discoveryUnlocks: {
         discoveryAccounts: 120,
         months: [
           {
             monthStart: "2026-10-31T23:00:00Z",
             partial: true,
-            unlockedOne: 18,
-            reachedThree: 6,
+            unlockedFree: 18,
+            purchasedOne: 6,
+            purchases: 9,
           },
           {
             monthStart: "2026-09-30T22:00:00Z",
             partial: false,
-            unlockedOne: 30,
-            reachedThree: 3,
+            unlockedFree: 30,
+            purchasedOne: 3,
+            purchases: 3,
           },
         ],
       },
@@ -708,29 +709,54 @@ describe("page admin Pilotage", () => {
       expect(values).toEqual(Array(14).fill(NOT_MEASURED));
     });
 
-    it("shows the share of Discovery accounts that reached 3 unlocks, month by month", async () => {
+    it("shows the free unlock and the unit purchases of Discovery accounts, month by month", async () => {
       mocks.fetchPilotage.mockResolvedValue({ ...data, activation });
       renderPage();
 
-      await screen.findByRole("heading", { name: "Comptes Découverte à 3 déblocages" });
-      const current = '[data-threshold-month="current"]';
-      expect(inside(current, "ont débloqué au moins une vente")).toBe("18");
-      expect(inside(current, "ont atteint 3 déblocages")).toBe("6");
-      expect(inside(current, "Part des comptes Découverte à 3 déblocages")).toBe("5 %");
-      expect(inside(current, "Part de ceux qui ont débloqué une vente")).toBe("33 %");
-      expect(inside('[data-threshold-month="previous"]', "ont atteint 3 déblocages")).toBe(MASKED);
+      await screen.findByRole("heading", {
+        name: "Comptes Découverte : déblocage gratuit et achats à l’unité",
+      });
+      expect(document.body.textContent).not.toContain("3 déblocages");
+      const current = '[data-discovery-month="current"]';
+      expect(inside(current, "ont pris leur déblocage gratuit")).toBe("18");
+      expect(inside(current, "Part des comptes Découverte ayant pris leur déblocage gratuit")).toBe(
+        "15 %",
+      );
+      expect(inside(current, "ont acheté au moins une vente")).toBe("6");
+      expect(inside(current, "Part des comptes Découverte ayant acheté")).toBe("5 %");
+      expect(inside(current, "Achats payés")).toBe("9");
+      const previous = '[data-discovery-month="previous"]';
+      expect(inside(previous, "ont pris leur déblocage gratuit")).toBe("30");
+      expect(inside(previous, "ont acheté au moins une vente")).toBe(MASKED);
+      expect(inside(previous, "Achats payés")).toBe(MASKED);
     });
 
-    it("counts at the database the same threshold as the one it names", () => {
+    it("says « non mesuré » for the Discovery unlocks and purchases without the aggregate", async () => {
+      mocks.fetchPilotage.mockResolvedValue(data);
+      renderPage();
+
+      await screen.findByRole("heading", {
+        name: "Comptes Découverte : déblocage gratuit et achats à l’unité",
+      });
+      const values = Array.from(document.querySelectorAll("[data-discovery-month] dd")).map(
+        (value) => value.textContent,
+      );
+      expect(values).toEqual(Array(10).fill(NOT_MEASURED));
+    });
+
+    it("counts at the database the free unlocks and the paid purchases the card names", () => {
       const migration = readFileSync(
-        join(process.cwd(), "supabase/migrations/20261110180000_admin_pilotage_activation.sql"),
+        join(
+          process.cwd(),
+          "supabase/migrations/20261125100000_admin_pilotage_discovery_unlocks.sql",
+        ),
         "utf8",
       );
-      const thresholds = [...migration.matchAll(/'reached_three'[\s\S]*?u\.sales >= (\d+)\)/g)];
-      expect(thresholds).toHaveLength(2);
-      for (const [, threshold] of thresholds) {
-        expect(Number(threshold)).toBe(UNLOCK_THRESHOLD);
-      }
+      expect(migration).toContain("unlock_row.source = 'free'");
+      expect(migration).toContain("purchase.state = 'paid'");
+      expect(migration).toContain(
+        "drop function if exists public.admin_pilotage_unlock_threshold(timestamptz);",
+      );
     });
 
     it("computes shares without ever turning a missing figure into 0 %", () => {

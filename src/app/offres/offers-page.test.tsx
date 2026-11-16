@@ -610,7 +610,7 @@ describe("page Offres", () => {
     expect(screen.getByRole("status", { name: "Chargement de l’offre" })).toBeTruthy();
   });
 
-  it("définit l'enchère plafond là où elle est présentée, vers le lexique du guide", () => {
+  it("définit l'enchère plafond là où elle est présentée, vers le lexique du guide", async () => {
     render(<OffersPage />);
 
     // Une bulle près du titre du bénéfice, une dans le comparatif.
@@ -622,7 +622,7 @@ describe("page Offres", () => {
     ).toBeTruthy();
 
     fireEvent.click(hints[0]);
-    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+    expect((await screen.findByRole("link", { name: "En savoir plus" })).getAttribute("href")).toBe(
       "/ventes-immobilieres-judiciaires#lexique-enchere-plafond",
     );
   });

@@ -5,13 +5,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
  * Deux indicateurs de lecture pour la page admin « Pilotage », sur les données déjà enregistrées
- * (migration 20261110180000, aucune nouvelle donnée) :
+ * (migrations 20261110180000 et 20261125100000, aucune nouvelle donnée) :
  *
- * - l'ACTIVATION, indépendante du quota de déblocages (qui vaut 0 pendant l'essai) : parmi les comptes
- *   créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail (estimation servie, détail de pépite
- *   ou déblocage), posé un premier favori ou créé une première alerte ;
- * - la part des comptes Découverte qui atteignent les 3 déblocages du mois de Paris (n° 97 : on mesure
- *   avant de toucher au prix de l'offre Analyse).
+ * - l'ACTIVATION, indépendante du quota de déblocages (aucun n'était consommé pendant l'essai) : parmi
+ *   les comptes créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail (estimation servie,
+ *   détail de pépite ou déblocage), posé un premier favori ou créé une première alerte ;
+ * - les comptes Découverte qui, dans le mois de Paris, ont pris leur déblocage gratuit (une vente en tout)
+ *   ou payé au moins un achat à l'unité, et le nombre de ces achats.
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
  * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
@@ -31,26 +31,28 @@ export type ActivationWindow = {
   createdAlert: ActivationCount;
 };
 
-type UnlockThresholdMonth = {
+type DiscoveryUnlocksMonth = {
   /** Début du mois de Paris (ISO). */
   monthStart: string | null;
   /** Vrai pour le mois en cours (compté depuis le 1er seulement). */
   partial: boolean;
-  /** Comptes Découverte ayant débloqué au moins une vente dans le mois, et au moins trois. */
-  unlockedOne: ActivationCount;
-  reachedThree: ActivationCount;
+  /** Comptes Découverte ayant pris leur déblocage gratuit dans le mois. */
+  unlockedFree: ActivationCount;
+  /** Comptes Découverte ayant payé au moins un achat à l'unité dans le mois, et nombre de ces achats. */
+  purchasedOne: ActivationCount;
+  purchases: ActivationCount;
 };
 
-export type UnlockThreshold = {
-  /** Comptes Découverte à cet instant : adresse confirmée, ni administrateur ni accès Analyse (essai compris). */
+export type DiscoveryUnlocks = {
+  /** Comptes Découverte à cet instant : adresse confirmée, ni administrateur ni accès Analyse. */
   discoveryAccounts: ActivationCount;
-  months: UnlockThresholdMonth[];
+  months: DiscoveryUnlocksMonth[];
 };
 
 export type AdminActivation = {
   generatedAt: string | null;
   windows: ActivationWindow[];
-  unlockThreshold: UnlockThreshold;
+  discoveryUnlocks: DiscoveryUnlocks;
 };
 
 const count = z.number().int().nonnegative().nullish();
@@ -68,27 +70,29 @@ const activationSchema = z.object({
     }),
   ),
 });
-const thresholdSchema = z.object({
+const discoveryUnlocksSchema = z.object({
   generated_at: z.string().nullish(),
   discovery_accounts: count,
   months: z.array(
     z.object({
       month_start: z.string().nullish(),
       partial: z.boolean().nullish(),
-      unlocked_one: count,
-      reached_three: count,
+      unlocked_free: count,
+      purchased_one: count,
+      purchases: count,
     }),
   ),
 });
 
 const WINDOW_DAYS = [7, 30] as const;
 
-function unavailableUnlockThreshold(): UnlockThreshold {
+function unavailableDiscoveryUnlocks(): DiscoveryUnlocks {
+  const empty = { monthStart: null, unlockedFree: null, purchasedOne: null, purchases: null };
   return {
     discoveryAccounts: null,
     months: [
-      { monthStart: null, partial: true, unlockedOne: null, reachedThree: null },
-      { monthStart: null, partial: false, unlockedOne: null, reachedThree: null },
+      { ...empty, partial: true },
+      { ...empty, partial: false },
     ],
   };
 }
@@ -106,7 +110,7 @@ export function unavailableActivation(): AdminActivation {
       addedFavorite: null,
       createdAlert: null,
     })),
-    unlockThreshold: unavailableUnlockThreshold(),
+    discoveryUnlocks: unavailableDiscoveryUnlocks(),
   };
 }
 
@@ -133,10 +137,10 @@ export function parseActivationWindows(raw: unknown): {
   };
 }
 
-/** Lit la réponse JSON de `admin_pilotage_unlock_threshold` : mois en cours, puis mois précédent. */
-export function parseUnlockThreshold(raw: unknown): UnlockThreshold {
-  const summary = thresholdSchema.parse(raw);
-  const fallback = unavailableUnlockThreshold().months;
+/** Lit la réponse JSON de `admin_pilotage_discovery_unlocks` : mois en cours, puis mois précédent. */
+export function parseDiscoveryUnlocks(raw: unknown): DiscoveryUnlocks {
+  const summary = discoveryUnlocksSchema.parse(raw);
+  const fallback = unavailableDiscoveryUnlocks().months;
   return {
     discoveryAccounts: summary.discovery_accounts ?? null,
     months: fallback.map((empty, index) => {
@@ -145,8 +149,9 @@ export function parseUnlockThreshold(raw: unknown): UnlockThreshold {
         ? {
             monthStart: entry.month_start ?? null,
             partial: entry.partial ?? empty.partial,
-            unlockedOne: entry.unlocked_one ?? null,
-            reachedThree: entry.reached_three ?? null,
+            unlockedFree: entry.unlocked_free ?? null,
+            purchasedOne: entry.purchased_one ?? null,
+            purchases: entry.purchases ?? null,
           }
         : empty;
     }),
@@ -160,17 +165,17 @@ export async function getAdminActivation(
 ): Promise<AdminActivation> {
   await assertAdminAuth(authToken);
 
-  const [activation, threshold] = await Promise.all([
+  const [activation, discoveryUnlocks] = await Promise.all([
     supabaseAdmin.rpc("admin_pilotage_activation", { p_now: now.toISOString() }),
-    supabaseAdmin.rpc("admin_pilotage_unlock_threshold", { p_now: now.toISOString() }),
+    supabaseAdmin.rpc("admin_pilotage_discovery_unlocks", { p_now: now.toISOString() }),
   ]);
-  for (const { error } of [activation, threshold]) {
+  for (const { error } of [activation, discoveryUnlocks]) {
     if (error) throw error;
   }
   const windows = parseActivationWindows(activation.data);
   return {
     generatedAt: windows.generatedAt,
     windows: windows.windows,
-    unlockThreshold: parseUnlockThreshold(threshold.data),
+    discoveryUnlocks: parseDiscoveryUnlocks(discoveryUnlocks.data),
   };
 }

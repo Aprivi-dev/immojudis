@@ -37,7 +37,7 @@ export const GET = adminRoute(
           console.error("[admin-pilotage] retours sur les signaux d'une vente indisponibles");
           return unavailableSaleSignalFeedback();
         }),
-        // Et pour les plafonds d'enchère calculés, qui remplacent « 3 déblocages » pendant l'offre.
+        // Et pour les estimations servies (plafonds d'enchère).
         getAdminBidCeilings(token, now).catch(() => {
           console.error("[admin-pilotage] plafonds d'enchère calculés indisponibles");
           return unavailableBidCeilings();
@@ -47,9 +47,13 @@ export const GET = adminRoute(
           console.error("[admin-pilotage] réponses du questionnaire d'ouverture indisponibles");
           return unavailableOfferOpeningSurvey();
         }),
-        // Et pour l'activation (indépendante du quota) et la part des comptes Découverte à 3 déblocages.
+        // Et pour l'activation (indépendante du déblocage) et le déblocage gratuit et les achats à
+        // l'unité des comptes Découverte. Le site est déployé avant la migration 20261125100000 :
+        // jusqu'à son application, la fonction de la base manque et ces deux cartes sont « non mesuré ».
         getAdminActivation(token, now).catch(() => {
-          console.error("[admin-pilotage] activation et seuil de déblocages indisponibles");
+          console.error(
+            "[admin-pilotage] activation et déblocages des comptes Découverte indisponibles",
+          );
           return unavailableActivation();
         }),
       ]);

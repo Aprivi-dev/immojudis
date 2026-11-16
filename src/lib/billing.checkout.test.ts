@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   adminRpc: vi.fn(),
   checkoutCreate: vi.fn(),
   customersCreate: vi.fn(),
+  customersSearch: vi.fn(),
   pricesRetrieve: vi.fn(),
   subscriptionsList: vi.fn(),
   sessionsList: vi.fn(),
@@ -23,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("stripe", () => ({
   default: class FakeStripe {
-    customers = { create: mocks.customersCreate };
+    customers = { create: mocks.customersCreate, search: mocks.customersSearch };
     prices = { retrieve: mocks.pricesRetrieve };
     subscriptions = { list: mocks.subscriptionsList };
     coupons = { create: mocks.couponsCreate, del: mocks.couponsDel };
@@ -81,6 +82,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
     mocks.launchState.mockResolvedValue({ active: false, degraded: false });
     mocks.sessionsExpire.mockResolvedValue({});
     mocks.sessionsList.mockResolvedValue({ data: [] });
+    mocks.customersSearch.mockResolvedValue({ data: [], has_more: false });
     previousStripeSecret = process.env.STRIPE_SECRET_KEY;
     previousAnalysisPrice = process.env.STRIPE_ANALYSIS_PRICE_ID;
     process.env.STRIPE_SECRET_KEY = "sk_test_billing";
@@ -158,6 +160,9 @@ describe("createPlanCheckoutSession customer reservation", () => {
     });
 
     expect(mocks.customersCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.customersSearch.mock.calls[0]?.[0]).toMatchObject({
+      query: `metadata['user_id']:'${USER_ID}'`,
+    });
     expect(mocks.customersCreate.mock.calls[0]?.[1]).toEqual({
       idempotencyKey: stripeCustomerIdempotencyKey(USER_ID),
     });

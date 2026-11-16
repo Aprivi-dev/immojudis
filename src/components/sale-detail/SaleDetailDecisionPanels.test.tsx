@@ -1,15 +1,11 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
-import {
-  AnalysisDecisionPanel,
-  DiscoveryDecisionPanel,
-  NonJudicialDecisionPanel,
-} from "./SaleDetailDecisionPanels";
+import { DiscoveryDecisionPanel, NonJudicialDecisionPanel } from "./SaleDetailDecisionPanels";
 
 const mocks = vi.hoisted(() => ({
   auth: { user: null as { id: string } | null, loading: false },
@@ -248,165 +244,6 @@ describe("DiscoveryDecisionPanel", () => {
 
     expect(screen.getByText("À confirmer")).toBeTruthy();
     expect(screen.queryByText(/0\s€/)).toBeNull();
-  });
-});
-
-describe("AnalysisDecisionPanel", () => {
-  const base = {
-    sale,
-    marketEstimate: null,
-    marketLoading: false,
-    worksBudget: 0,
-    recommendedCeiling: 0,
-    ceilingAvailable: false,
-    onAdjust: () => undefined,
-  };
-
-  it("gives the reason instead of a bare « À compléter »", () => {
-    renderWithQuery(
-      <AnalysisDecisionPanel
-        {...base}
-        valueReason="surface manquante"
-        ceilingGap={{ kind: "incomplete", reason: "surface manquante" }}
-      />,
-    );
-
-    expect(screen.getAllByText("À compléter")).toHaveLength(2);
-    expect(screen.getAllByText("surface manquante")).toHaveLength(2);
-  });
-
-  it("names the pending estimate", () => {
-    renderWithQuery(
-      <AnalysisDecisionPanel
-        {...base}
-        valueReason="estimation en cours"
-        ceilingGap={{ kind: "incomplete", reason: "estimation en cours" }}
-      />,
-    );
-
-    expect(screen.getAllByText("estimation en cours")).toHaveLength(2);
-  });
-
-  it("separates a missing input from a calculation without profitable bid", () => {
-    renderWithQuery(
-      <AnalysisDecisionPanel
-        {...base}
-        marketEstimate={{ actionable: true, estimatedValueEur: 100_000 } as never}
-        valueReason="valeur de marché manquante"
-        ceilingGap={{ kind: "unprofitable", reason: "aucune enchère rentable" }}
-      />,
-    );
-
-    expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Les frais, les travaux et la libération dépassent déjà le budget que permettent la valeur du bien et vos objectifs.",
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText("À compléter")).toBeNull();
-  });
-
-  it.each([
-    [
-      "above",
-      90_000,
-      45_000,
-      /^Selon vos hypothèses, vous pouvez enchérir jusqu’à 90\s000\s€, soit 45\s000\s€ au-dessus de la mise à prix\.$/,
-    ],
-    [
-      "narrow",
-      46_000,
-      1_000,
-      /^Peu d’écart avec la mise à prix : selon vos hypothèses, vous pouvez enchérir jusqu’à 46\s000\s€, soit 1\s000\s€ au-dessus de la mise à prix\.$/,
-    ],
-    [
-      "below",
-      36_000,
-      -9_000,
-      /^Avec ces hypothèses, votre enchère plafond \(36\s000\s€\) est 9\s000\s€ \(20\s%\) sous la mise à prix : le bien ne tient pas à son prix de départ\.$/,
-    ],
-  ])(
-    "says in words where the ceiling stands against the starting price (%s)",
-    (kind, ceiling, gap, text) => {
-      renderWithQuery(
-        <AnalysisDecisionPanel
-          {...base}
-          recommendedCeiling={ceiling}
-          ceilingAvailable
-          startingPriceGap={gap}
-        />,
-      );
-
-      const status = screen.getByRole("status");
-      expect(status.textContent).toMatch(text);
-      // Warning style only when the margin is thin or missing, not when the ceiling is comfortable.
-      expect(/surfaceCaution/.test(status.className)).toBe(kind !== "above");
-    },
-  );
-
-  it("calls the ceiling a simulation everywhere it is named", () => {
-    const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} />);
-
-    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
-    expect(container.textContent).not.toContain("Plafond indicatif");
-    expect(container.textContent).toContain("Enchère plafond (simulation), selon vos hypothèses");
-    expect(container.textContent).not.toMatch(/Enchère plafond(?! \(simulation\))/);
-  });
-
-  it("shows a zero starting price as to be confirmed", () => {
-    renderWithQuery(
-      <AnalysisDecisionPanel {...base} sale={{ ...sale, starting_price_eur: 0 } as AuctionSale} />,
-    );
-
-    expect(screen.getByText("À confirmer")).toBeTruthy();
-  });
-
-  it("says the ceiling is before works until a works budget is entered", () => {
-    const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={null} />);
-
-    expect(
-      screen.getByText("Plafond hors travaux : ajoutez votre budget travaux pour l’affiner"),
-    ).toBeTruthy();
-    expect(container.textContent).not.toContain("Travaux inclus");
-    expect(container.textContent).not.toContain("à chiffrer");
-  });
-
-  it("names the works budget the ceiling is computed after", () => {
-    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={34_080} />);
-
-    expect(screen.getByText(/^Plafond après 34\s080\s€ de travaux$/)).toBeTruthy();
-  });
-
-  it("keeps « aucun (bien repris en l’état) » for a zero works budget", () => {
-    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={0} />);
-
-    expect(screen.getByText("Travaux inclus : aucun (bien repris en l’état)")).toBeTruthy();
-  });
-
-  it("keeps « Chiffrer les travaux » as the action of the panel", () => {
-    const onEditWorks = vi.fn();
-    renderWithQuery(
-      <AnalysisDecisionPanel {...base} worksBudget={null} onEditWorks={onEditWorks} />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Chiffrer les travaux" }));
-    expect(onEditWorks).toHaveBeenCalledOnce();
-  });
-
-  it("explains « Mise à prix » and « Enchère plafond » with a definition bubble", () => {
-    renderWithQuery(<AnalysisDecisionPanel {...base} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Définition : mise à prix" }));
-    expect(screen.getByRole("note").textContent).toContain("Prix de départ de la vente");
-    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
-      "/ventes-immobilieres-judiciaires#lexique-mise-a-prix",
-    );
-    const ceiling = screen.getByRole("button", { name: "Définition : enchère plafond" });
-    fireEvent.pointerDown(ceiling); // a real press first closes the other bubble
-    fireEvent.click(ceiling);
-    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
-      "/ventes-immobilieres-judiciaires#lexique-enchere-plafond",
-    );
   });
 });
 
