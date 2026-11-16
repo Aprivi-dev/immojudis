@@ -4,15 +4,24 @@
 
 Depuis `20261201100000`, l'alerte signale un **blocage** de la file d'enrichissement
 (`auction_enrichment_jobs`), et non plus son âge : avec une file de plus de 1 000 tâches et un débit inférieur
-à la file, « une tâche de plus de 24 h » était toujours vraie. Elle s'ouvre dans l'un de ces deux cas :
+à la file, « une tâche de plus de 24 h » était toujours vraie. Elle s'ouvre dans l'un de ces trois cas :
 
 - **(a) bail expiré** (`expired_lease_24h`) : une tâche `running` dont le bail de 30 minutes a expiré depuis
   plus de 24 h (`coalesce(locked_at, updated_at)` de plus de 24 h 30), budget IA atteint ou non. La revendication
   aurait dû la reprendre : voir « Tâche `running` jamais reprise » plus bas.
 - **(b) file qui ne bouge plus** : des tâches **prenables** restent non servies depuis plus de **72 h**
-  (`unserved_72h`), **et** leur nombre n'a pas baissé depuis l'observation `enrichment-queue` d'il y a au moins
-  24 h (`unserved_72h_24h_before`, prise à `unserved_72h_compared_at`). Une file longue qui avance n'ouvre rien ;
-  sans observation de comparaison (premier jour après la migration), (b) n'ouvre rien non plus.
+  (`unserved_72h`), **et** leur nombre n'a pas baissé en un jour. Chaque observation `enrichment-queue` garde les
+  deux mesures : `unserved_72h_all` (toutes familles) et `unserved_72h_source_detail`. La mesure du régime courant
+  (`unserved_72h_measure` : `unserved_72h_source_detail` sous budget atteint, `unserved_72h_all` sinon) est
+  comparée à **la même mesure** de l'observation la plus récente prise **entre 48 h et 24 h** avant le passage
+  (`unserved_72h_24h_before`, prise à `unserved_72h_compared_at`) : un budget atteint aujourd'hui et pas hier ne
+  compare pas deux périmètres différents. Une file longue qui avance n'ouvre rien ; sans observation dans cette
+  fenêtre (premier jour après la migration, observateur arrêté plus de 24 h), (b) n'ouvre rien non plus.
+- **(c) tâche oubliée** : une tâche prenable n'est pas servie depuis plus de **7 jours** (`unserved_7d`, toutes
+  familles, budget atteint ou non, sans tendance). La famille `enrichment_oldest` sert les plus anciennes une
+  prise générale sur quatre, chaque jour avant le premier refus du budget IA : ce cas ne doit plus arriver. S'il
+  arrive, la voie `enrichment_oldest` ne tourne pas (journal du travailleur, « Équité de la file » plus bas) ou le
+  budget IA est nul depuis une semaine.
 
 « Prenable » est la colonne `claimable` de l'observateur, les mêmes conditions que la revendication : vente
 gardée (échéance de conservation matérialisée et non dépassée), révision la plus récente, source active et non
@@ -30,8 +39,8 @@ Le budget IA du jour (`LLM_DAILY_BUDGET_EUR` côté collecte, `daily_ai_budget_u
 reporter les tâches qui utilisent l'IA : le travailleur les remet en file avec l'erreur « Daily … budget
 exhausted », rend la tentative et fixe la prochaine à minuit UTC (`defer_budget_jobs`). Après le premier refus du
 jour, il ne prend plus que des tâches `source_detail` (`_run_enrichment_queue_worker`). Quand une tâche a été
-reportée dans les 24 h (`budget_limited`), le cas (b) ne compte donc que les tâches `source_detail` ; le cas (a)
-compte toujours. La mesure reste visible dans `auction_pipeline_observations` (`source_name = 'enrichment-queue'`,
+reportée dans les 24 h (`budget_limited`), le cas (b) ne compte donc que les tâches `source_detail` ; les cas (a)
+et (c) comptent toujours. La mesure reste visible dans `auction_pipeline_observations` (`source_name = 'enrichment-queue'`,
 `budget_deferred_24h`).
 
 Un retard structurel dû au budget ne s'alerte pas ; il se décide : relever `daily_ai_budget_usd` (route
@@ -40,10 +49,12 @@ d'administration du pilote) ou accepter l'attente.
 ### Diagnostic
 
 1. `select details from operational_alerts where alert_key = 'pipeline.enrichment.stalled';`
-   (`expired_lease_24h`, `unserved_72h`, `unserved_72h_24h_before`, `budget_limited`, `claimable_due`).
+   (`expired_lease_24h`, `unserved_72h`, `unserved_72h_measure`, `unserved_72h_24h_before`, `unserved_7d`,
+   `budget_limited`, `claimable_due`).
 2. Tendance de la file :
-   `select observed_at, metrics->'unserved_72h', metrics->'claimable_due', metrics->'backlog' from
-auction_pipeline_observations where source_name = 'enrichment-queue' order by observed_at desc limit 96;`
+   `select observed_at, metrics->'unserved_72h_all', metrics->'unserved_72h_source_detail', metrics->'unserved_7d',
+metrics->'budget_limited', metrics->'claimable_due', metrics->'backlog' from auction_pipeline_observations where
+source_name = 'enrichment-queue' order by observed_at desc limit 96;`
 3. Tâches comptées, en lecture seule (le cas, et ce qui rend une tâche prenable) :
 
 ```sql
@@ -172,8 +183,8 @@ Depuis `20261201100000` :
   travailleur se replie sur `enrichment` jusqu'à la fin du passage et le note dans son journal.
 - **Descriptions sans objet closes.** Depuis `20261112110000`, une tâche `display_description` ne produit plus
   rien : le travailleur la termine sans appel. La migration a clos de la même façon (statut `completed`) celles
-  qui restaient en file, en échec avec essais restants ou en `running` au bail expiré ; les épuisées n'ont pas été
-  touchées. **Une création subsiste** : la publication d'un fait de l'agent d'information
+  qui restaient en file, en échec avec essais restants ou en `running` au bail expiré avec essais restants ; les
+  épuisées n'ont pas été touchées. **Une création subsiste** : la publication d'un fait de l'agent d'information
   (`app_private.apply_information_agent_fact`, migration `20261119100900`) insère encore une tâche
   `display_description` (priorité 90) ; le travailleur la termine aussitôt. Contrôle :
   `select count(*) from auction_enrichment_jobs where job_type = 'display_description' and created_at > now() -

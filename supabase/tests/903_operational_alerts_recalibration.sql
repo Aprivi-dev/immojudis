@@ -1,25 +1,28 @@
 -- 20261201100000 (16/11/2026) : recalibrage des alertes d'exploitation du pipeline.
 --   * politique de relecture : app_private.listing_review_policy() (72 h, 24 h pour Licitor, 6 h pour une audience
 --     dans les 7 jours), jumelle de services/data-pipeline/src/freshness.py ; la santé (auction_all_source_freshness)
---     applique la politique et, pour une audience proche, une tolérance de 24 h nommée à part ;
+--     applique la politique plus la tolérance d'un inventaire (health_reread_tolerance_hours, 12 h : 84 h, Licitor
+--     36 h) et, pour une audience proche, une tolérance de 24 h nommée à part ;
 --   * stale_listings ne s'ouvre pas pour une source dont .missed est vraie ou ouverte (une cause = une alerte) ;
 --   * .missed relaie la cause d'arrêt écrite par la collecte (stop_reason, stop_cause, robots_policy, erreurs,
 --     échecs), jamais robots_policy_copies ;
---   * pipeline.enrichment.stalled : tâches prenables non servies depuis 72 h dont le nombre n'a pas baissé en 24 h ;
+--   * pipeline.enrichment.stalled : tâches prenables non servies depuis 72 h dont le nombre n'a pas baissé depuis
+--     l'observation prise entre 48 h et 24 h plus tôt, à périmètre égal (budget atteint ou non) ; ou une tâche
+--     prenable non servie depuis 7 jours ;
 --   * pipeline.enrichment.exhausted : hausse à partir de greatest(10, 2 % de la file vivante).
 -- Les seuils de pipeline.import.unhealthy (5 400 s) et le lot Licitor sur deux évaluations sont dans les tests 599 et
 -- 872 ; le bail expiré depuis 24 h dans 459 et 897.
 begin;
 
-select plan(16);
+select plan(20);
 
 -- 1. La politique de relecture -------------------------------------------------------------------------------------
 
 select is(
   app_private.listing_review_policy(),
   '{"reread_hours": 72, "source_reread_hours": {"licitor": 24}, "near_sale_reread_hours": 6, "near_sale_days": 7,
-    "source_detail_lead_hours": 1, "near_sale_health_window_hours": 24}'::jsonb,
-  'the reread policy (72 h, Licitor 24 h, 6 h within 7 days), the source-detail lead and the near-sale health tolerance'
+    "source_detail_lead_hours": 1, "health_reread_tolerance_hours": 12, "near_sale_health_window_hours": 24}'::jsonb,
+  'the reread policy (72 h, Licitor 24 h, 6 h within 7 days), the source-detail lead and the two health tolerances'
 );
 
 select ok(
@@ -56,9 +59,15 @@ values
   ('pgtap-903-far', 'https://example.test/pgtap/903/far-48h', 'upcoming', '2026-10-30T12:00:00Z',
    '{"source_checks": {"https://example.test/pgtap/903/far-48h":
      {"source_name": "pgtap-903-far", "checked_at": "2026-09-26T12:00:00Z"}}}'::jsonb),
-  ('pgtap-903-far', 'https://example.test/pgtap/903/far-74h', 'upcoming', '2026-10-30T12:00:00Z',
-   '{"source_checks": {"https://example.test/pgtap/903/far-74h":
-     {"source_name": "pgtap-903-far", "checked_at": "2026-09-25T10:00:00Z"}}}'::jsonb),
+  ('pgtap-903-far', 'https://example.test/pgtap/903/far-86h', 'upcoming', '2026-10-30T12:00:00Z',
+   '{"source_checks": {"https://example.test/pgtap/903/far-86h":
+     {"source_name": "pgtap-903-far", "checked_at": "2026-09-24T22:00:00Z"}}}'::jsonb),
+  ('licitor', 'https://example.test/pgtap/903/licitor-34h', 'upcoming', '2026-10-30T12:00:00Z',
+   '{"source_checks": {"https://example.test/pgtap/903/licitor-34h":
+     {"source_name": "licitor", "checked_at": "2026-09-27T02:00:00Z"}}}'::jsonb),
+  ('licitor', 'https://example.test/pgtap/903/licitor-38h', 'upcoming', '2026-10-30T12:00:00Z',
+   '{"source_checks": {"https://example.test/pgtap/903/licitor-38h":
+     {"source_name": "licitor", "checked_at": "2026-09-26T22:00:00Z"}}}'::jsonb),
   ('pgtap-903-near', 'https://example.test/pgtap/903/near-22h', 'upcoming', '2026-09-30T12:00:00Z',
    '{"source_checks": {"https://example.test/pgtap/903/near-22h":
      {"source_name": "pgtap-903-near", "checked_at": "2026-09-27T14:00:00Z"}}}'::jsonb),
@@ -73,7 +82,17 @@ select is(
     where source_name = 'pgtap-903-far'
   ),
   '1/2',
-  'a sale beyond 7 days is fresh when reviewed 48 hours ago, stale at 74 hours'
+  'a sale beyond 7 days is fresh when reviewed 48 hours ago, stale at 86 hours (72 h + 12 h tolerance)'
+);
+
+select is(
+  (
+    select fresh_listings || '/' || active_listings
+    from public.auction_all_source_freshness('2026-09-28T12:00:00Z')
+    where source_name = 'licitor'
+  ),
+  '1/2',
+  'a Licitor sale beyond 7 days is fresh when reviewed 34 hours ago, stale at 38 hours (24 h + 12 h tolerance)'
 );
 
 select is(
@@ -169,11 +188,13 @@ select ok(
     select status = 'open'
       and not (details->>'suppressed_by_missed')::boolean
       and (details->>'reread_hours')::integer = 72
+      and (details->>'health_reread_tolerance_hours')::integer = 12
+      and (details->>'health_window_hours')::integer = 84
       and (details->>'near_sale_health_window_hours')::integer = 24
     from public.operational_alerts
     where alert_key = 'pipeline.source.pgtap-903-stale.stale_listings'
   ),
-  'a source with a recent inventory opens stale_listings, with its reread window and near-sale tolerance'
+  'a source with a recent inventory opens stale_listings, with its reread window and both health tolerances'
 );
 
 -- L'inventaire revient : .missed devient inactive mais reste ouverte deux heures ; stale_listings attend.
@@ -192,7 +213,7 @@ select is(
   'while .missed is still open (two-hour hysteresis), stale_listings stays closed'
 );
 
--- 4. pipeline.enrichment.stalled : non servies depuis 72 h ET pas de baisse en 24 h --------------------------------
+-- 4. pipeline.enrichment.stalled : non servies depuis 72 h ET pas de baisse en un jour, à périmètre égal ------------
 
 delete from public.operational_alerts;
 delete from public.auction_pipeline_observations;
@@ -227,6 +248,9 @@ select public.observe_autonomous_pipeline((select p_now from pgtap_903_context))
 select ok(
   (
     select (metrics->>'unserved_72h')::integer = 2
+      and (metrics->>'unserved_72h_all')::integer = 2
+      and (metrics->>'unserved_72h_source_detail')::integer = 0
+      and (metrics->>'unserved_7d')::integer = 0
       and (metrics->>'expired_lease_24h')::integer = 0
     from public.auction_pipeline_observations
     where source_name = 'enrichment-queue'
@@ -247,6 +271,7 @@ select ok(
     select status = 'open'
       and inactive_since is null
       and (details->>'unserved_72h')::integer = 2
+      and details->>'unserved_72h_measure' = 'unserved_72h_all'
       and (details->>'unserved_72h_24h_before')::integer = 2
       and (details->>'unserved_72h_compared_at')::timestamptz
         = (select p_now - interval '24 hours' from pgtap_903_context)
@@ -291,6 +316,108 @@ select is(
   ),
   1,
   'a fact pass waiting for the document reading of its sale is not counted as unserved'
+);
+
+-- Le régime a changé depuis la veille : hier sans budget atteint (toutes familles : 4, dont 1 source_detail),
+-- aujourd'hui budget atteint (seules les source_detail comptent : 1). La comparaison porte sur la même mesure
+-- (source_detail : 1 hier, 1 aujourd'hui), pas sur unserved_72h d'hier (4), qui aurait masqué le blocage.
+delete from public.operational_alerts;
+delete from public.auction_pipeline_observations;
+delete from public.auction_enrichment_jobs;
+insert into public.auction_source_state (source_name, enabled, next_inventory_at)
+values ('pgtap-903-detail', true, statement_timestamp() + interval '1 day');
+update pgtap_903_context set p_now = statement_timestamp() + interval '1 hour';
+
+insert into public.auction_enrichment_jobs (
+  source_url, job_type, status, priority, input_hash, attempt_count, max_attempts,
+  next_attempt_at, created_at, updated_at, detail_source_name, detail_source_url
+)
+select 'https://example.test/pgtap/903/queue/' || job_number, 'pdf', 'queued', 10, 'pgtap-903-regime-' || job_number,
+       0, 4,
+       statement_timestamp() - interval '4 days',
+       statement_timestamp() - interval '4 days',
+       statement_timestamp() - interval '4 days',
+       null, null
+from generate_series(1, 3) as job_number
+union all
+select 'https://example.test/pgtap/903/queue/1', 'source_detail', 'queued', 10, 'pgtap-903-regime-detail', 0, 4,
+       statement_timestamp() - interval '4 days',
+       statement_timestamp() - interval '4 days',
+       statement_timestamp() - interval '4 days',
+       'pgtap-903-detail', 'https://example.test/pgtap/903/queue/1/detail'
+union all
+-- Reportée par le budget IA du jour (defer_budget_jobs) : budget_limited.
+select 'https://example.test/pgtap/903/queue/2', 'fact_extraction', 'queued', 10, 'pgtap-903-regime-deferred', 0, 4,
+       statement_timestamp() + interval '12 hours',
+       statement_timestamp() - interval '4 days',
+       statement_timestamp(),
+       null, null;
+update public.auction_enrichment_jobs
+set last_error = 'Daily LLM budget exhausted: 5.0000 EUR spent of 5 EUR, request needs up to 0.0100 EUR'
+where input_hash = 'pgtap-903-regime-deferred';
+
+insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
+values (
+  'enrichment-queue',
+  (select p_now - interval '25 hours' from pgtap_903_context),
+  '{"budget_limited": false, "unserved_72h": 4, "unserved_72h_all": 4, "unserved_72h_source_detail": 1}'::jsonb
+);
+select public.observe_autonomous_pipeline((select p_now from pgtap_903_context));
+
+select ok(
+  (
+    select status = 'open'
+      and (details->>'budget_limited')::boolean
+      and details->>'unserved_72h_measure' = 'unserved_72h_source_detail'
+      and (details->>'unserved_72h')::integer = 1
+      and (details->>'unserved_72h_all')::integer = 4
+      and (details->>'unserved_72h_24h_before')::integer = 1
+    from public.operational_alerts
+    where alert_key = 'pipeline.enrichment.stalled'
+  ),
+  'budget reached today but not yesterday: today''s source_detail count is compared with yesterday''s, and opens'
+);
+
+-- Une observation de plus de 48 h ne dit plus rien de la veille : pas de comparaison, pas d'alerte.
+delete from public.operational_alerts;
+delete from public.auction_pipeline_observations;
+insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
+values (
+  'enrichment-queue',
+  (select p_now - interval '49 hours' from pgtap_903_context),
+  '{"budget_limited": true, "unserved_72h": 1, "unserved_72h_all": 4, "unserved_72h_source_detail": 1}'::jsonb
+);
+select public.observe_autonomous_pipeline((select p_now from pgtap_903_context));
+
+select ok(
+  not exists (
+    select 1
+    from public.operational_alerts
+    where alert_key = 'pipeline.enrichment.stalled'
+      and status = 'open'
+  ),
+  'an observation older than 48 hours is not a comparison: the trend opens nothing'
+);
+
+-- Une tâche prenable non servie depuis plus de 7 jours ouvre l'alerte sans comparaison, budget atteint ou non.
+delete from public.operational_alerts;
+delete from public.auction_pipeline_observations;
+update public.auction_enrichment_jobs
+set next_attempt_at = statement_timestamp() - interval '8 days',
+    updated_at = statement_timestamp() - interval '8 days'
+where input_hash = 'pgtap-903-regime-2';
+select public.observe_autonomous_pipeline((select p_now from pgtap_903_context));
+
+select ok(
+  (
+    select status = 'open'
+      and (details->>'unserved_7d')::integer = 1
+      and (details->>'unserved_7d_after_days')::integer = 7
+      and details->'unserved_72h_24h_before' = 'null'::jsonb
+    from public.operational_alerts
+    where alert_key = 'pipeline.enrichment.stalled'
+  ),
+  'a claimable job unserved for more than 7 days opens pipeline.enrichment.stalled without any comparison'
 );
 
 -- 5. pipeline.enrichment.exhausted : greatest(10, 2 % de la file vivante) -----------------------------------------
