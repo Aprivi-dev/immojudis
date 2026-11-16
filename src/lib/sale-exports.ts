@@ -44,6 +44,7 @@ import {
 } from "@/lib/search/search-filters";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { listPepiteSaleIds } from "@/lib/pepite-sale-ids";
+import { redactSaleTexts } from "@/lib/personal-data-filter";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -259,7 +260,10 @@ export async function exportSalesCsv({
     sourceLimit: EXPORT_SOURCE_LIMIT,
     rentSession: createRentLookupSession(),
   });
-  const rows = sales.slice(0, Math.min(EXPORT_ROW_LIMIT, rowBudget));
+  // Les textes libres quittent le serveur : filtrés comme les rapports partagés.
+  const rows = sales
+    .slice(0, Math.min(EXPORT_ROW_LIMIT, rowBudget))
+    .map((sale) => redactSaleTexts(sale));
   const content = buildSalesCsv(rows, origin);
 
   await recordSalesDataExport({
@@ -315,7 +319,8 @@ export async function exportSalesApiFeed({
     sourceLimit: API_SOURCE_LIMIT,
     rentSession,
   });
-  const rows = sales.slice(0, limit);
+  // Les textes libres quittent le serveur : filtrés comme les rapports partagés.
+  const rows = sales.slice(0, limit).map((sale) => redactSaleTexts(sale));
   // Loyers de la carte ANIL à la commune, pour les seules lignes rendues.
   const rents = await rentSession.load(rows);
 
