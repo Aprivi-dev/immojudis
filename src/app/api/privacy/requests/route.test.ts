@@ -5,6 +5,7 @@ import { createFakeSupabase, type FakeSupabase } from "@/test/fake-supabase";
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   enforceUser: vi.fn(),
+  send: vi.fn(),
   db: null as unknown as FakeSupabase,
 }));
 
@@ -24,6 +25,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: new Proxy({}, { get: (_, key) => Reflect.get(mocks.db.client, key) }),
 }));
 vi.mock("@/lib/billing", () => ({ getStripe: vi.fn() }));
+vi.mock("@/lib/send-tracked-email", () => ({ sendTrackedEmail: mocks.send }));
 
 import { GET, POST } from "./route";
 
@@ -185,5 +187,125 @@ describe("/api/privacy/requests", () => {
       code: "INTERNAL_ERROR",
     });
     expect(mocks.db.rows("data_subject_requests")).toHaveLength(2);
+  });
+
+  function purchase(id: string, userId: string, daysAgo: number, state = "paid") {
+    return {
+      id,
+      user_id: userId,
+      state,
+      paid_at: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+      amount_cents: 1900,
+      currency: "eur",
+    };
+  }
+
+  it("M4 : liste les achats à l'unité rétractables du compte, et seulement eux", async () => {
+    mocks.db = createFakeSupabase(
+      {
+        data_subject_requests: [],
+        sale_unlock_purchases: [
+          purchase("p-recent", "user-1", 2),
+          purchase("p-old", "user-1", 20),
+          purchase("p-refunded", "user-1", 1, "refunded"),
+          purchase("p-other", "user-2", 1),
+        ],
+      },
+      { defaults: DEFAULTS },
+    );
+
+    const body = await (await GET(request("GET"))).json();
+
+    expect(body.withdrawablePurchases).toEqual([
+      expect.objectContaining({ id: "p-recent", amountCents: 1900, currency: "eur" }),
+    ]);
+  });
+
+  it("M4 : enregistre la rétractation d'un achat rétractable, refuse les autres sans écrire", async () => {
+    mocks.db = createFakeSupabase(
+      {
+        data_subject_requests: [],
+        sale_unlock_purchases: [
+          purchase("33333333-3333-4333-8333-333333333333", "user-1", 2),
+          purchase("55555555-5555-4555-8555-555555555555", "user-1", 20),
+        ],
+      },
+      { defaults: DEFAULTS },
+    );
+    const valid = "33333333-3333-4333-8333-333333333333";
+
+    const refused = await POST(
+      request("POST", {
+        requestType: "contract_withdrawal",
+        // Payé il y a 20 jours : hors du délai de rétractation.
+        purchaseId: "55555555-5555-4555-8555-555555555555",
+      }),
+    );
+    expect(refused.status).toBe(400);
+    expect(mocks.db.rows("data_subject_requests")).toHaveLength(0);
+
+    const wrongType = await POST(request("POST", { requestType: "access", purchaseId: valid }));
+    expect(wrongType.status).toBe(400);
+
+    const response = await POST(
+      request("POST", { requestType: "contract_withdrawal", purchaseId: valid }),
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.db.rows("data_subject_requests")[0]).toMatchObject({
+      request_type: "contract_withdrawal",
+      metadata: {
+        source: "authenticated_rights_portal",
+        withdrawal_target: { kind: "sale_unlock_purchase", purchase_id: valid },
+      },
+    });
+  });
+
+  it("un achat déduit du premier mois d'un abonnement n'est ni listé ni rétractable (400)", async () => {
+    const deducted = "66666666-6666-4666-8666-666666666666";
+    mocks.db = createFakeSupabase(
+      {
+        data_subject_requests: [],
+        sale_unlock_purchases: [
+          purchase("p-recent", "user-1", 2),
+          { ...purchase(deducted, "user-1", 2), deducted_checkout_session_id: "cs_analyse" },
+        ],
+      },
+      { defaults: DEFAULTS },
+    );
+
+    const body = await (await GET(request("GET"))).json();
+    expect(body.withdrawablePurchases.map((item: { id: string }) => item.id)).toEqual(["p-recent"]);
+
+    const refused = await POST(
+      request("POST", { requestType: "contract_withdrawal", purchaseId: deducted }),
+    );
+    expect(refused.status).toBe(400);
+    expect(mocks.db.rows("data_subject_requests")).toHaveLength(0);
+  });
+
+  it("E1 : un échec d'envoi des emails ne fait pas échouer le dépôt", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("ALERT_EMAIL_FROM", "Immojudis <alertes@immojudis.test>");
+    vi.stubEnv("SITE_URL", "https://immojudis.test");
+    vi.stubEnv("OPERATIONS_ALERT_EMAIL_TO", "proprietaire@immojudis.test");
+    mocks.send.mockRejectedValue(new Error("Resend down"));
+    try {
+      const response = await POST(request("POST", { requestType: "erasure" }));
+
+      expect(response.status).toBe(201);
+      expect(mocks.send).toHaveBeenCalled();
+      const [filed] = mocks.db.rows("data_subject_requests", {
+        user_id: "user-1",
+        request_type: "erasure",
+      });
+      expect(filed?.metadata).toMatchObject({
+        notifications: {
+          operator: { status: "pending", attempts: 1 },
+          acknowledgement: { status: "pending", attempts: 1 },
+        },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

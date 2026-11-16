@@ -3,9 +3,10 @@
 --   * cron.stale pour sale-reminders se referme d'elle-même dès que la tâche a réussi une fois
 --     (première exécution du 20/10 : l'alerte ouverte depuis l'ajout de la tâche à la liste) ;
 --   * un seul échec d'import dans l'heure, file vide, n'ouvre plus pipeline.import.unhealthy.
+--   * 20261201100000 : l'âge de file qui ouvre pipeline.import.unhealthy passe de 1 800 s à 5 400 s.
 begin;
 
-select plan(29);
+select plan(30);
 
 delete from public.operational_alerts;
 delete from public.operational_job_runs;
@@ -405,7 +406,8 @@ select is(
   'un import bloqué depuis plus de 3 heures est toujours critique'
 );
 
--- Une file qui attend depuis plus de 30 minutes ouvre toujours l'alerte.
+-- Depuis 20261201100000, une file ouvre l'alerte au-delà de 5 400 s (2 x la cadence de 30 min + un passage de
+-- ~29 min) : une heure d'attente n'est pas un incident.
 delete from public.operational_alerts where alert_key = 'pipeline.import.unhealthy';
 delete from public.auction_runs;
 insert into public.auction_runs (status, created_at, updated_at)
@@ -416,10 +418,23 @@ select is(
   (
     select count(*)
     from public.operational_alerts
+    where alert_key = 'pipeline.import.unhealthy'
+  ),
+  0::bigint,
+  'une exécution en file depuis une heure n''ouvre plus l''alerte'
+);
+
+update public.auction_runs set created_at = '2026-10-20T10:25:00Z', updated_at = '2026-10-20T10:25:00Z';
+select public.evaluate_operational_health((select p_now from pgtap_599_context));
+
+select is(
+  (
+    select severity || ' ' || (details->>'maximum_queued_age_seconds')
+    from public.operational_alerts
     where alert_key = 'pipeline.import.unhealthy' and status = 'open'
   ),
-  1::bigint,
-  'une exécution en file depuis plus de 30 minutes ouvre l''alerte'
+  'warning 5400',
+  'une exécution en file depuis plus de 5 400 s ouvre l''alerte (avertissement, critique au-delà de 7 200 s)'
 );
 
 -- L'alerte actuelle se referme dès que l'état redevient sain.

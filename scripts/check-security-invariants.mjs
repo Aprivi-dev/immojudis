@@ -2976,6 +2976,84 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Demandes de droits (conformité, 20261202100000) : public.data_subject_requests reste réservée au rôle de
+// service (RLS activée, fermée à public, anon et authenticated, aucune politique, aucun droit accordé à un
+// rôle du navigateur dans aucune migration) ; les fonctions du suivi (alertes d'échéance, crédits lus par la
+// garde avant effacement) sont, dans leur dernière définition, SECURITY DEFINER à search_path vide, retirées
+// à public, anon et authenticated et jamais accordées à un rôle du navigateur. La route cron qui les appelle
+// est operational-health, déjà couverte par « cron-routes-authenticated ».
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const migrations = [...migrationSources].map(([name, source]) => [name, stripSql(source)]);
+  const allSql = migrations.map(([, sql]) => sql).join("\n");
+  if (
+    !/alter\s+table\s+(?:only\s+)?public\.data_subject_requests\s+enable\s+row\s+level\s+security/i.test(
+      allSql,
+    )
+  ) {
+    failures.push("public.data_subject_requests does not enable row level security");
+  }
+  if (
+    !/revoke\s+all\s+on\s+table\s+public\.data_subject_requests\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      allSql,
+    )
+  ) {
+    failures.push("public.data_subject_requests is not closed to public, anon and authenticated");
+  }
+  if (/create\s+policy[^;]*\bon\s+public\.data_subject_requests\b/i.test(allSql)) {
+    failures.push("public.data_subject_requests is opened by a policy (service_role only)");
+  }
+  for (const [name, sql] of migrations) {
+    for (const statement of sql.split(";")) {
+      if (!/^\s*grant\s/i.test(statement)) continue;
+      if (!/\bpublic\.data_subject_requests\b/i.test(statement)) continue;
+      const roles = statement.replace(/^[\s\S]*?\bto\b/i, "").replace(/\bpublic\.[a-z0-9_]+/gi, "");
+      if (/\b(?:anon|authenticated|public)\b/i.test(roles)) {
+        failures.push(`${name} grants a right on public.data_subject_requests to a browser role`);
+      }
+    }
+  }
+  for (const fn of [
+    "public.evaluate_privacy_request_health",
+    "public.account_sale_unlock_credits",
+  ]) {
+    const pattern = fn.replace(".", "\\.");
+    const definition = migrations
+      .flatMap(([, sql]) => [
+        ...sql.matchAll(
+          new RegExp(`create\\s+or\\s+replace\\s+function\\s+${pattern}\\([\\s\\S]*?\\$\\$;`, "gi"),
+        ),
+      ])
+      .at(-1)?.[0];
+    if (!definition) {
+      failures.push(`${fn} is not created by a migration`);
+      continue;
+    }
+    if (
+      !/security\s+definer/i.test(definition) ||
+      !/set\s+search_path\s*=\s*''/i.test(definition)
+    ) {
+      failures.push(`${fn} is not a SECURITY DEFINER function with an empty search_path`);
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${pattern}\\s*\\([^)]*\\)\\s+from\\s+public,\\s*anon,\\s*authenticated`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(`${fn} is executable by public, anon or authenticated`);
+    }
+    if (
+      new RegExp(
+        `grant\\s+(?:execute|all)[^;]*\\bon\\s+function\\s+${pattern}\\s*\\([^)]*\\)\\s+to\\s+[^;]*\\b(?:public|anon|authenticated)\\b`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(`${fn} is granted to a browser role`);
+    }
+  }
+}
+
 // Registre des pièces (lot R1, 20261116100000 à 20261116100500) : tables fermées, journaux en ajout seul,
 // held_fields écrite par la seule projection, déclencheur de retenue en tête, projection hors de portée de
 // l'API, observations jamais rattachées à une autre vente, aucune clé étrangère vers auction_sales. Les
@@ -3039,6 +3117,7 @@ console.log(
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
       "email-send-log-service-role-only-and-no-body",
+      "privacy-requests-service-role-only",
       "information-agent-publication-journal-and-core-service-only",
       "information-agent-no-automatic-publication-path",
       ...factRegistryInvariantNames,

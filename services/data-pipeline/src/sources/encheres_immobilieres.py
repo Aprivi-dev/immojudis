@@ -119,7 +119,7 @@ def scrape_encheres_immobilieres_aquitaine_result(
         except Exception as exc:
             LOGGER.error("EncheresImmobilieres list fetch failed for %s: %s", page_url, exc)
             errors.append(f"{page_url}: {exc}")
-            list_fetch_failures.append({"url": page_url, "error": str(exc)})
+            list_fetch_failures.append({"url": page_url, "error": str(exc), "error_type": type(exc).__name__})
             if not _continue_after_list_fetch_error(exc):
                 break
             consecutive_fetch_failures += 1

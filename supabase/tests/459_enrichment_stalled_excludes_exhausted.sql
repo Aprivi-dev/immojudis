@@ -160,7 +160,8 @@ select is(
   'exhausted failed jobs alone no longer hold pipeline.enrichment.stalled open'
 );
 
--- A failed job with attempts left will be retried: it still counts as delayed.
+-- A job with attempts left still counts as delayed. Since 20261201100000 age alone no longer opens
+-- pipeline.enrichment.stalled: this one is a running job whose 30-minute lease expired two days ago, a blockage.
 insert into public.auction_enrichment_jobs (
   source_url,
   job_type,
@@ -170,18 +171,20 @@ insert into public.auction_enrichment_jobs (
   attempt_count,
   max_attempts,
   next_attempt_at,
+  locked_at,
   created_at,
   updated_at
 )
 values (
   'https://example.test/pgtap/459/retryable',
   'pdf',
-  'failed',
+  'running',
   10,
   'pgtap-459-retryable-v1',
   1,
   4,
-  statement_timestamp() + interval '1 hour',
+  statement_timestamp() - interval '3 days',
+  statement_timestamp() - interval '2 days',
   statement_timestamp() - interval '3 days',
   statement_timestamp() - interval '2 days'
 );
@@ -195,7 +198,7 @@ select lives_ok(
        set payload = public.observe_autonomous_pipeline(p_now)
      where case_name = 'retryable';
   $sql$,
-  'the observer runs again with a retryable old failed job'
+  'the observer runs again with an old job that has attempts left'
 );
 
 select is(
@@ -205,7 +208,7 @@ select is(
      where case_name = 'retryable'
   ),
   1,
-  'a failed job with attempts left is still counted as older than 24 hours'
+  'a job with attempts left is still counted as older than 24 hours'
 );
 
 select is(
@@ -226,7 +229,7 @@ select is(
        and status = 'open'
   ),
   1::bigint,
-  'a retryable old job opens pipeline.enrichment.stalled'
+  'an old job whose lease expired a day ago opens pipeline.enrichment.stalled'
 );
 
 -- Once the retryable job completes, only exhausted jobs remain: the alert goes inactive, then

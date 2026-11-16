@@ -11,7 +11,9 @@
 
 ## Fraîcheur
 
-Une signature prix/date ne suffit plus à sauter une fiche. La dernière vérification propre à cette URL doit dater de moins de 24 heures, ou de 6 heures si la vente intervient dans les sept jours. Une modification du contenu invalide les versions documentaires et de synthèse.
+Une signature prix/date ne suffit plus à sauter une fiche. La dernière vérification propre à cette URL doit dater de moins de 72 heures (24 heures pour Licitor), ou de 6 heures si la vente intervient dans les sept jours (`detail_reread_hours`, `services/data-pipeline/src/freshness.py`, depuis le 16/11/2026). Une modification du contenu invalide les versions documentaires et de synthèse.
+
+La santé du pipeline (`pipeline.source.<source>.stale_listings`) mesure la même politique avec sa jumelle SQL, `app_private.listing_review_policy()` (migration `20261201100000`) : 72 heures, 24 heures pour Licitor, plus une tolérance nommée de 12 heures (la relecture suit l'inventaire de 12 heures : fenêtres de 84 et 36 heures) ; pour une audience dans les sept jours, elle applique une autre tolérance de 24 heures nommée à part (un inventaire de 12 heures manqué toléré). Les tâches `source_detail` de relecture tombent une heure avant la fin de la fenêtre (71 h, 23 h, 5 h). Changer l'une, c'est changer l'autre, dans le même lot ; voir `docs/runbooks/pipeline-source-stale-listings.md`.
 
 Les PDF sont revalidés quotidiennement avec `If-None-Match` et `If-Modified-Since` lorsque le serveur fournit ces en-têtes. Sans validateur, le téléchargement est répété. Un remplacement est écrit atomiquement ; l'ancien fichier est conservé sous son SHA-256 dans `versions/`. Ces fichiers suivent la rétention du cache d'extraction GitHub, qui ne constitue pas une archive permanente.
 
@@ -48,12 +50,12 @@ Les jobs suivent les délais et le nombre maximal de tentatives de `auction_enri
 
 ### Jobs d'enrichissement épuisés (alerte `pipeline.enrichment.exhausted`)
 
-Un job `failed` dont `attempt_count >= max_attempts` n'est plus jamais pris en charge : c'est une lettre morte. Il ne compte pas dans `pipeline.enrichment.stalled` (il ne pourrait jamais la fermer) mais dans `evidence.exhausted` de l'observation `enrichment-queue`. L'observateur `observe_autonomous_pipeline` ouvre un avertissement séparé, `pipeline.enrichment.exhausted` (catégorie `import`, migration `20261025110000_enrichment_exhausted_alert.sql`), quand :
+Un job `failed` dont `attempt_count >= max_attempts` n'est plus jamais pris en charge : c'est une lettre morte. Il ne compte pas dans `pipeline.enrichment.stalled` (il ne pourrait jamais la fermer ; règle de blocage dans `docs/runbooks/pipeline-enrichment-stalled.md`) mais dans `evidence.exhausted` de l'observation `enrichment-queue`. L'observateur `observe_autonomous_pipeline` ouvre un avertissement séparé, `pipeline.enrichment.exhausted` (catégorie `import`, migration `20261025110000_enrichment_exhausted_alert.sql`), quand :
 
-- au moins **3** jobs sont devenus épuisés pendant les dernières 24 heures (`evidence.exhausted_24h`, d'après `updated_at` de la dernière tentative) : une source ou un type de document se met à échouer pour de bon ;
+- au moins **greatest(10, 2 % de la file vivante)** jobs sont devenus épuisés pendant les dernières 24 heures (`evidence.exhausted_24h`, d'après `updated_at` de la dernière tentative ; file vivante = `backlog` moins les jobs épuisés ; 3 jusqu'à `20261201100000`) : une source ou un type de document se met à échouer pour de bon ;
 - ou au moins **50** jobs épuisés attendent une décision (`evidence.exhausted`) : un reliquat que personne n'a traité.
 
-Les seuils sont recopiés dans les détails de l'alerte (`exhausted_24h_threshold`, `exhausted_threshold`). La hausse se referme d'elle-même 24 heures après le dernier nouvel épuisement (plus deux heures d'hystérésis) ; le reliquat se referme quand les jobs sont relancés ou annulés. Les jobs d'une vente retirée, passée ou remplacée par une révision plus récente sont en principe annulés par la prochaine prise en charge de la file (vérifier dans `claim_auction_enrichment_jobs*`) : ils quittent alors le décompte sans action.
+Les seuils sont recopiés dans les détails de l'alerte (`exhausted_24h_threshold`, le seuil calculé, `exhausted_24h_minimum`, `exhausted_24h_queue_share`, `exhausted_threshold`). La hausse se referme d'elle-même 24 heures après le dernier nouvel épuisement (plus deux heures d'hystérésis) ; le reliquat se referme quand les jobs sont relancés ou annulés. Les jobs d'une vente retirée, passée ou remplacée par une révision plus récente sont en principe annulés par la prochaine prise en charge de la file (vérifier dans `claim_auction_enrichment_jobs*`) : ils quittent alors le décompte sans action.
 
 Reprise manuelle (en `service_role`, jamais sans avoir compris la cause ; ne pas relancer en boucle) :
 

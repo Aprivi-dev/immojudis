@@ -26,6 +26,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.sources import robots_policy_copies
 from src.sources.common import ScrapeResult
 
 LOGGER = logging.getLogger(__name__)
@@ -117,6 +118,8 @@ def run_source_in_subprocess(
         "max_pages": max_pages,
         "fetch_detail_heavy": bool(fetch_detail_heavy),
         "publish_batches": on_batch is not None,
+        # The child process does not read the database: it gets the parent's stored robots.txt copies.
+        robots_policy_copies.COVERAGE_KEY: robots_policy_copies.installed_json(),
     }
     command = [
         python_executable or sys.executable,

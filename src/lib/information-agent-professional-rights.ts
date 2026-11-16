@@ -2,6 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeSignedLinkEmail } from "@/lib/information-agent-signed-link";
 import { chunks } from "@/lib/chunks";
+import { notifyPrivacyRequestReceived } from "@/lib/privacy-request-notifications";
+import { PROFESSIONAL_PRIVACY_SOURCE } from "@/lib/privacy-request-types";
 
 /**
  * Accès et effacement pour un professionnel contacté par l'agent d'information, sans compte.
@@ -13,7 +15,6 @@ import { chunks } from "@/lib/chunks";
  * adresse (voir `executePrivacyErasure`).
  */
 
-export const PROFESSIONAL_PRIVACY_SOURCE = "information_agent_professional_link";
 const PROFESSIONAL_REQUEST_TYPES = ["access", "erasure"] as const;
 export type ProfessionalRequestType = (typeof PROFESSIONAL_REQUEST_TYPES)[number];
 
@@ -25,9 +26,13 @@ export function isProfessionalRequestType(value: unknown): value is Professional
   return (PROFESSIONAL_REQUEST_TYPES as readonly unknown[]).includes(value);
 }
 
-/** Échappe `\`, `%` et `_` : une adresse contient souvent `_`, qui joindrait une autre adresse. */
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+/**
+ * Échappe `\`, `%` et `_` : une adresse contient souvent `_`, qui joindrait une autre adresse. PostgREST
+ * lit `*` comme `%` dans `like`/`ilike`, sans échappement possible : il devient `_` (un seul caractère).
+ * Le motif reste plus large que l'adresse : l'appelant ne retient que l'égalité exacte.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_*]/g, (char) => (char === "*" ? "_" : `\\${char}`));
 }
 
 type PageResult<T> = PromiseLike<{ data: T[] | null; error: { message?: string } | null }>;
@@ -66,16 +71,22 @@ export async function createProfessionalPrivacyRequest({
   if (countError) throw countError;
   if ((count ?? 0) > 0) return { created: false };
 
-  const { error } = await supabaseAdmin.from("data_subject_requests").insert({
-    user_id: null,
-    requester_email: requesterEmail,
-    request_type: requestType,
-    // Le lien signé prouve que le demandeur tient l'adresse : l'identité est celle de l'adresse.
-    identity_status: "verified",
-    message: null,
-    metadata: { source: PROFESSIONAL_PRIVACY_SOURCE, verification: "signed_email_link" },
-  });
+  const { data, error } = await supabaseAdmin
+    .from("data_subject_requests")
+    .insert({
+      user_id: null,
+      requester_email: requesterEmail,
+      request_type: requestType,
+      // Le lien signé prouve que le demandeur tient l'adresse : l'identité est celle de l'adresse.
+      identity_status: "verified",
+      message: null,
+      metadata: { source: PROFESSIONAL_PRIVACY_SOURCE, verification: "signed_email_link" },
+    })
+    .select("id,request_type,requester_email,user_id,submitted_at,due_at,status,metadata")
+    .single();
   if (error) throw error;
+  // Exploitation prévenue, accusé de réception à l'adresse : jamais une cause d'échec du dépôt.
+  await notifyPrivacyRequestReceived(data);
   return { created: true };
 }
 
