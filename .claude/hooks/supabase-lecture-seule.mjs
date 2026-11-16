@@ -3,13 +3,15 @@
 // Déclaré au niveau du projet (.claude/settings.json) et dans l'en-tête de l'agent qualite-donnees.
 // Code de sortie 2 = requête bloquée. Test : scripts/supabase-lecture-seule.test.mjs.
 //
-// Trois couches, toutes en refus par défaut :
+// Quatre couches, toutes en refus par défaut :
 //  1. la requête doit commencer par SELECT / WITH / EXPLAIN / SHOW / TABLE / VALUES ;
 //  2. aucun mot-clé d'écriture (INSERT, UPDATE, INTO, FOR SHARE…) n'est toléré, même dans une CTE ;
 //  3. tout appel de fonction `nom(` ou `schéma.nom(` doit figurer dans une liste blanche de
 //     fonctions de lecture pure. Un SELECT peut en effet écrire ou agir via une fonction
 //     (`select public.run_data_retention()`, `set_config`, `pg_terminate_backend`, `nextval`,
-//     `dblink_exec`, `lo_import`…) : tout ce qui n'est pas listé est refusé.
+//     `dblink_exec`, `lo_import`…) : tout ce qui n'est pas listé est refusé ;
+//  4. aucun schéma ni catalogue qui porte des secrets n'est lisible (`vault`, `auth`, `net`, `pgsodium`,
+//     `pg_authid`…), même par un SELECT : voir SECRET_SCHEMAS et SECRET_RELATIONS.
 //
 // Échec fermé : toute erreur du script, entrée illisible ou requête vide sort en code 2. Seul le
 // code 2 bloque côté Claude Code (tout autre code non nul laisse passer) : les commandes déclarées
@@ -98,7 +100,9 @@ const ALLOWED_PROJECT_FUNCTIONS = new Set([
 // Un seul passage sur le texte : les commentaires (-- et /* */ imbriqués) deviennent un espace et
 // les littéraux ('...', E'...', $tag$...$tag$) un '' vide. Retirer les commentaires avant les
 // chaînes laisserait passer `select '--'; drop table x`, et l'inverse `select /* ' */ 1; drop …`.
-export function stripCommentsAndStrings(query) {
+// `keepIdentifiers` : le nom d'un identifiant entre guillemets est gardé (`"auth"` reste `"auth"`), pour la
+// recherche des schémas interdits ; sans lui, tout identifiant entre guillemets devient `"x"`.
+export function stripCommentsAndStrings(query, { keepIdentifiers = false } = {}) {
   let out = "";
   let i = 0;
   while (i < query.length) {
@@ -120,6 +124,7 @@ export function stripCommentsAndStrings(query) {
     } else if (c === "'" || c === '"') {
       // E'...' : le antislash échappe aussi (sinon, les guillemets doublés suffisent).
       const escapes = c === "'" && /[eE]$/.test(out) && !/[\w$][eE]$/.test(out);
+      const start = i + 1;
       i += 1;
       while (i < query.length) {
         if (escapes && query[i] === "\\") i += 2;
@@ -127,8 +132,9 @@ export function stripCommentsAndStrings(query) {
         else if (query[i] === c) break;
         else i += 1;
       }
+      const name = query.slice(start, i).replaceAll('""', "");
       i += 1;
-      out += c === "'" ? "''" : '"x"';
+      out += c === "'" ? "''" : keepIdentifiers ? `"${name}"` : '"x"';
     } else if (c === "$") {
       const tag = /^\$(?:[A-Za-z_\u0080-￿][\w\u0080-￿]*)?\$/.exec(query.slice(i))?.[0];
       if (tag && !/[\w$]$/.test(out)) {
@@ -189,6 +195,38 @@ function findDisallowedCall(stripped) {
   return null;
 }
 
+// Schémas dont aucune relation n'est lisible : ils portent des secrets ou des identifiants de connexion.
+//   vault, pgsodium : secrets déchiffrés (CRON_SECRET, mot de passe du collecteur…) et clés ;
+//   net : file et réponses de pg_net, avec les en-têtes d'autorisation des appels sortants ;
+//   auth : mots de passe hachés, jetons de session et de récupération, secrets TOTP, adresses email.
+// Les diagnostics des runbooks qui lisent `auth.users` se lancent dans l'éditeur SQL de Supabase, par le
+// propriétaire. `cron` (tâches planifiées, sans secret : elles lisent Vault à l'exécution) reste lisible.
+const SECRET_SCHEMAS = words("vault pgsodium net auth");
+// Catalogues de mots de passe et de données hors schéma, lisibles sans préfixe (pg_catalog est toujours
+// dans le chemin de recherche).
+const SECRET_RELATIONS = words("pg_authid pg_shadow pg_user_mappings pg_largeobject");
+const SECRET_SCHEMA_REFERENCE = new RegExp(
+  String.raw`(?<![\w$\u0080-￿])"?(${SECRET_SCHEMAS.join("|")})"?\s*\.`,
+  "i",
+);
+const SECRET_RELATION_REFERENCE = new RegExp(
+  String.raw`(?<![\w$\u0080-￿])"?(${SECRET_RELATIONS.join("|")})"?(?![\w$\u0080-￿])`,
+  "i",
+);
+// `U&"\0061uth"` : identifiant à échappements Unicode, qui écrirait un nom interdit sans le montrer.
+const UNICODE_IDENTIFIER = /(?<![\w$])u&"/i;
+
+// Premier schéma ou catalogue à secrets nommé dans la requête (commentaires et chaînes retirés, noms des
+// identifiants entre guillemets gardés), ou null.
+function findSecretReference(query) {
+  const text = stripCommentsAndStrings(query, { keepIdentifiers: true });
+  if (UNICODE_IDENTIFIER.test(text)) return 'un identifiant U&"…"';
+  const schema = SECRET_SCHEMA_REFERENCE.exec(text);
+  if (schema) return `le schéma ${schema[1].toLowerCase()}`;
+  const relation = SECRET_RELATION_REFERENCE.exec(text);
+  return relation ? `le catalogue ${relation[1].toLowerCase()}` : null;
+}
+
 // Retourne null si la requête est une lecture autorisée, sinon la raison du refus.
 export function refusalReason(query) {
   if (typeof query !== "string" || query.trim() === "") return "requête vide ou illisible.";
@@ -199,6 +237,13 @@ export function refusalReason(query) {
     if (!READ_START.test(part) || WRITE_KEYWORDS.test(part) || ROW_LOCK.test(part)) {
       return "seules les requêtes SQL en lecture (SELECT, WITH, EXPLAIN) sont autorisées.";
     }
+  }
+  const secret = findSecretReference(query);
+  if (secret !== null) {
+    return (
+      `lecture interdite : ${secret} porte des secrets ou des identifiants de connexion ` +
+      "(voir SECRET_SCHEMAS dans .claude/hooks/supabase-lecture-seule.mjs)."
+    );
   }
   const call = findDisallowedCall(stripped);
   if (call !== null) {
