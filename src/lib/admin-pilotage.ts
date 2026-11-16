@@ -111,7 +111,7 @@ export type AdminPilotageResponse = AdminPilotage & {
   bidCeilings?: BidCeilingSummary;
   /** Réponses du questionnaire de la liste d'attente : profils, repères de prix, entretiens acceptés. */
   offerOpeningSurvey?: OfferOpeningSurveySummary;
-  /** Activation indépendante du quota, et part des comptes Découverte à 3 déblocages (n° 86 et 97). */
+  /** Activation indépendante du déblocage, et déblocage gratuit et achats à l'unité des comptes Découverte. */
   activation?: AdminActivation;
 };
 

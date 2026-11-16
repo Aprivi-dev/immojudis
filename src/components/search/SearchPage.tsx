@@ -98,7 +98,6 @@ import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { useSearchAccountData, useSearchStatisticsData } from "./use-search-account-data";
 import { SaleComparisonBar } from "./SaleComparisonBar";
-import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import type { FollowedCardData } from "./FollowedSalesSummary";
 import {
   SearchDraft,
@@ -154,6 +153,15 @@ const LazyMonDemarrage = dynamic(
 const LazyFollowedSalesPanel = dynamic(
   () => import("./FollowedSalesSummary").then((mod) => mod.FollowedSalesPanel),
   { ssr: false },
+);
+
+// Encart des avocats, en fin de liste : chargé après l'hydratation. `ssr: false` est voulu : rendu
+// côté serveur, son chunk serait préchargé dans le HTML de la page, et le poids de `/sales` ne
+// baisserait qu'en apparence. L'espace réservé a la hauteur minimale de l'encart (`min-h-[320px]`)
+// pour que son arrivée ne décale pas la page.
+const LazySearchLawyerPlacement = dynamic(
+  () => import("./SearchLawyerPlacement").then((mod) => mod.SearchLawyerPlacement),
+  { ssr: false, loading: () => <div aria-hidden className="min-h-[320px]" /> },
 );
 
 const LazySearchStatisticsPanel = dynamic(
@@ -1248,7 +1256,7 @@ export function SearchPage({
               // Encart des avocats : en fin de liste, sur la première page seulement.
               sponsoredPlacement={
                 page === 1 ? (
-                  <SearchLawyerPlacement
+                  <LazySearchLawyerPlacement
                     geographicLabel={geographicLabel}
                     city={search.city}
                     department={search.department}

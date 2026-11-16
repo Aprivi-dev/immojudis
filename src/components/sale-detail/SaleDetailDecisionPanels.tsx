@@ -4,166 +4,21 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Terme } from "@/components/ceiling/Terme";
-import type { CeilingWording } from "@/components/sale-detail/SaleListing";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { isMarketGapPosition } from "@/components/sale-detail/MarketReference";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  UNPROFITABLE_EXPLANATION,
-  UNPROFITABLE_HEADLINE,
-  type CeilingGap,
-} from "@/lib/bid-ceiling-gaps";
-import { describeCeilingStartGap } from "@/lib/ceiling-start-gap";
 import { fetchValuePreview } from "@/lib/client-api";
 import { formatNumber, formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { MARKET_GAP_BAND_LABELS } from "@/lib/market-gap-band";
-import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
-import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
-
-export function AnalysisDecisionPanel({
-  sale,
-  marketEstimate,
-  marketLoading,
-  worksBudget,
-  recommendedCeiling,
-  ceilingAvailable,
-  startingPriceGap,
-  ceilingGap = null,
-  ceilingWording = null,
-  valueReason,
-  onAdjust,
-  onEditWorks,
-}: {
-  sale: AuctionSale;
-  /** The ceiling projection is enough here: this panel is also served to an unlocked sale. */
-  marketEstimate: CeilingMarketEstimate | null;
-  marketLoading: boolean;
-  /** `null`: not computable yet; `0`: no works retained. */
-  worksBudget: number | null;
-  recommendedCeiling: number;
-  ceilingAvailable: boolean;
-  /** `startingPriceGap` of the ceiling plan: ceiling minus starting price, when both exist. */
-  startingPriceGap?: number | null;
-  /** Why the ceiling is not a number (missing input, or no profitable bid). */
-  ceilingGap?: CeilingGap | null;
-  /** Wording of the ceiling of this sale (« offre plafond »…); absent: the tribunal's. */
-  ceilingWording?: CeilingWording | null;
-  /** Why the market value is missing, when it is (« surface manquante », …). */
-  valueReason?: string;
-  onAdjust: () => void;
-  /** Opens the Travaux tab, where the works budget is chosen. */
-  onEditWorks?: () => void;
-}) {
-  const ceiling = ceilingAvailable ? recommendedCeiling : null;
-  const marketValue =
-    marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
-  const ceilingLabel = ceilingWording?.label ?? "Enchère plafond (simulation)";
-  const startLabel = ceilingWording?.byOffers ? "Première offre possible" : "Mise à prix";
-  const missingMarker = (label: string): { main: string; note?: string; compact?: boolean } => {
-    if (label === startLabel) return { main: "À confirmer" };
-    if (label === "Valeur estimée") {
-      return marketLoading
-        ? { main: "Calcul…" }
-        : { main: "À compléter", note: valueReason ?? "valeur de marché manquante" };
-    }
-    if (ceilingGap?.kind === "unprofitable") {
-      return { main: UNPROFITABLE_HEADLINE, note: UNPROFITABLE_EXPLANATION, compact: true };
-    }
-    return {
-      main: "À compléter",
-      note: ceilingGap?.reason ?? valueReason ?? "valeur de marché manquante",
-    };
-  };
-  const startGap = describeCeilingStartGap(
-    {
-      available: ceilingAvailable,
-      reachable: ceilingAvailable,
-      maxBid: recommendedCeiling,
-      // The engine's gap when the caller has it; the same difference otherwise.
-      startingPriceGap:
-        startingPriceGap !== undefined
-          ? startingPriceGap
-          : sale.starting_price_eur != null && sale.starting_price_eur > 0
-            ? recommendedCeiling - sale.starting_price_eur
-            : null,
-    },
-    sale.starting_price_eur,
-    ceilingWording?.terms,
-  );
-  const markers = comparisonMarkerPositions({
-    start:
-      sale.starting_price_eur != null && sale.starting_price_eur > 0
-        ? sale.starting_price_eur
-        : null,
-    ceiling,
-    market: marketValue,
-    startLabel,
-    ceilingLabel,
-  });
-
-  return (
-    <aside className={panelStyles.estimationCard} aria-label="Votre analyse de prix">
-      <dl className={panelStyles.priceGrid}>
-        {markers.map((marker) => {
-          const missing = marker.value == null ? missingMarker(marker.label) : null;
-          return (
-            <div key={marker.label}>
-              <dt>{markerLabel(marker.label)}</dt>
-              <dd className={missing?.compact ? panelStyles.textValue : undefined}>
-                {marker.value != null ? formatPrice(marker.value) : missing?.main}
-                {missing?.note ? (
-                  <small className={panelStyles.valueNote}>{missing.note}</small>
-                ) : null}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-      <div className={panelStyles.estimationFoot}>
-        <p>
-          <strong>{worksLine(worksBudget)}</strong>
-          <span>{ceilingLabel}, selon vos hypothèses de marché, de frais et de travaux.</span>
-        </p>
-        <div>
-          {onEditWorks ? (
-            <button type="button" onClick={onEditWorks}>
-              {worksBudget != null && worksBudget > 0
-                ? "Modifier les travaux"
-                : "Chiffrer les travaux"}
-            </button>
-          ) : null}
-          <a href="#calculation" onClick={onAdjust}>
-            Ajuster mes hypothèses
-          </a>
-          <a href="#why-this-ceiling">Voir le calcul</a>
-        </div>
-      </div>
-      {getMarketValuationSurfaces(sale).builtSurfaceEstimated ? (
-        <p className={panelStyles.surfaceCaution}>
-          Surface provisoire : {getMarketValuationSurfaces(sale).builtSurfaceAssumption}. À
-          confirmer avant de retenir ce plafond.
-        </p>
-      ) : null}
-      {startGap ? (
-        <p
-          role="status"
-          className={startGap.kind === "above" ? undefined : panelStyles.surfaceCaution}
-        >
-          {startGap.text}
-        </p>
-      ) : null}
-    </aside>
-  );
-}
 
 export function NonJudicialDecisionPanel({
   sale,
@@ -314,23 +169,9 @@ function comparablesTeaserLine({ count, radiusM }: { count: number; radiusM: num
   return `${formatNumber(count)} vente${s} comparable${s} trouvée${s} dans un rayon de ${formatNumber(radiusM)} m`;
 }
 
-/**
- * What the ceiling rests on as far as works go. Without a works budget the ceiling is NOT after
- * works: say so, rather than « Travaux inclus : à chiffrer » which read as if works were counted.
- */
-function worksLine(worksBudget: number | null): string {
-  if (worksBudget == null) {
-    return "Plafond hors travaux : ajoutez votre budget travaux pour l’affiner";
-  }
-  return worksBudget > 0
-    ? `Plafond après ${formatPrice(worksBudget)} de travaux`
-    : "Travaux inclus : aucun (bien repris en l’état)";
-}
-
 /** The two terms a reader may not know get a « ? » definition; the others stay plain text. */
 function markerLabel(label: string): ReactNode {
   if (label === "Mise à prix") return <Terme terme="mise-a-prix">{label}</Terme>;
-  if (label === "Première offre possible") return <Terme terme="premiere-offre">{label}</Terme>;
   if (label === "Offre plafond (simulation)") {
     return <Terme terme="offre-plafond">{label}</Terme>;
   }
@@ -346,31 +187,4 @@ function startingPriceOrConfirm(value: number | null | undefined): string {
 /** A model estimate is not precise to the euro: show it to the nearest thousand. */
 function roundedValue(value: number | null | undefined): number | null {
   return value == null ? null : Math.round(value / 1000) * 1000;
-}
-
-function comparisonMarkerPositions({
-  start,
-  ceiling,
-  market,
-  startLabel,
-  ceilingLabel,
-}: {
-  start: number | null;
-  ceiling: number | null;
-  market: number | null;
-  startLabel: string;
-  ceilingLabel: string;
-}) {
-  const values = [start, ceiling, market].filter((value): value is number => value != null);
-  const min = values.length ? Math.min(...values) : 0;
-  const max = values.length ? Math.max(...values) : 1;
-  const span = Math.max(1, max - min);
-  const position = (value: number | null, fallback: number) =>
-    value == null ? fallback : 8 + ((value - min) / span) * 84;
-
-  return [
-    { label: startLabel, value: start, position: position(start, 8) },
-    { label: ceilingLabel, value: ceiling, position: position(ceiling, 50) },
-    { label: "Valeur estimée", value: market, position: position(market, 92) },
-  ];
 }

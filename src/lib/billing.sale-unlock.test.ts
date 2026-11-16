@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   sessionsExpire: vi.fn(),
   pricesRetrieve: vi.fn(),
   customersCreate: vi.fn(),
+  customersSearch: vi.fn(),
   paymentIntentsRetrieve: vi.fn(),
   chargesRetrieve: vi.fn(),
   subscriptionsRetrieve: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock("stripe", () => ({
       },
     };
     prices = { retrieve: mocks.pricesRetrieve };
-    customers = { create: mocks.customersCreate };
+    customers = { create: mocks.customersCreate, search: mocks.customersSearch };
     paymentIntents = { retrieve: mocks.paymentIntentsRetrieve };
     charges = { retrieve: mocks.chargesRetrieve };
     subscriptions = { retrieve: mocks.subscriptionsRetrieve, cancel: mocks.subscriptionsCancel };
@@ -227,6 +228,7 @@ beforeEach(() => {
     status: "open",
   });
   mocks.sessionsExpire.mockResolvedValue({});
+  mocks.customersSearch.mockResolvedValue({ data: [], has_more: false });
   mocks.recordSaleUnlockAcceptance.mockResolvedValue(undefined);
   mocks.sendCommercialConfirmation.mockResolvedValue("sent");
   mocks.paymentIntentsRetrieve.mockResolvedValue({ metadata: {} });
@@ -330,6 +332,26 @@ describe("création de la session d'achat", () => {
     });
     expect(mocks.sessionsCreate.mock.calls[0]![0]).toMatchObject({ customer: "cus_new" });
     expect(rpcCalls("attach_analyse_checkout_customer")).toHaveLength(0);
+  });
+
+  it("réutilise le client Stripe déjà créé par un achat précédent, sans en créer un second", async () => {
+    mocks.customersSearch.mockResolvedValue({
+      data: [{ id: "cus_previous", created: 1_700_000_000 }],
+      has_more: false,
+    });
+
+    await createSaleUnlockCheckoutSession({
+      auth: authContext(null),
+      origin: "https://immojudis.test",
+      saleId: SALE_ID,
+      consent,
+    });
+
+    expect(mocks.customersSearch.mock.calls[0]![0]).toMatchObject({
+      query: `metadata['user_id']:'${USER_ID}'`,
+    });
+    expect(mocks.customersCreate).not.toHaveBeenCalled();
+    expect(mocks.sessionsCreate.mock.calls[0]![0]).toMatchObject({ customer: "cus_previous" });
   });
 
   it("refuse un Price qui n'est pas un paiement unique de 19 € en EUR, avant toute réservation", async () => {
