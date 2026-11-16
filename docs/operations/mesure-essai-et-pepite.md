@@ -72,11 +72,15 @@ de la vue Inscriptions).
   l'essai) : parmi les comptes créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail
   (`sale_unlocked`, `bid_ceiling_calculated` ou `pepite_detail_served`), posé un favori ou créé une
   alerte. La part affichée a pour dénominateur les comptes à adresse confirmée.
-- **Comptes Découverte à 3 déblocages** (n° 97, « mesurer avant de toucher au prix ») : pour le mois de
-  Paris en cours et le précédent, les comptes Découverte (adresse confirmée, sans accès Analyse ni essai
-  en cours), ceux qui ont débloqué au moins une vente et ceux qui en ont débloqué trois. Pendant l'essai,
-  personne ne consomme de déblocage : le chiffre ne devient lisible qu'après les premières fins d'essai.
-  Le nombre de comptes Découverte est celui d'aujourd'hui pour les deux mois.
+- **Comptes Découverte : déblocage gratuit et achats à l'unité** (migration `20261124100000`, qui
+  remplace la carte « Comptes Découverte à 3 déblocages » et la fonction
+  `admin_pilotage_unlock_threshold` depuis qu'un compte gratuit ne débloque plus qu'une vente en tout) :
+  pour le mois de Paris en cours et le précédent, parmi les comptes Découverte (adresse confirmée, sans
+  accès Analyse), ceux qui ont pris leur déblocage gratuit dans le mois (lignes `user_sale_unlocks` de
+  source `free`), ceux qui ont payé au moins un achat à l'unité dans le mois (`sale_unlock_purchases`
+  à l'état `paid`, daté par `paid_at` : un achat remboursé, contesté ou au litige perdu n'est pas
+  compté) et le nombre de ces achats. Fonction `public.admin_pilotage_discovery_unlocks`. Le nombre de
+  comptes Découverte est celui d'aujourd'hui pour les deux mois.
 - **Événements d'audience** (Vercel Analytics) : `home_cta_clicked` (`target` : `signup` ou `browse`),
   `sale_unlock_confirmed`, `ceiling_viewed`, `shared_report_viewed` et la propriété `surface` de
   `alert_created` (`department`, `tribunal`, `hearings`, `sale`, `search`). Depuis `/alertes/creer` et
