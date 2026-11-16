@@ -21,7 +21,8 @@ import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
  *   `live_` ou `test_`) ferme aussi la garde : en production, seul le mode réel l'ouvre ;
  * - l'identité légale publiée (`NEXT_PUBLIC_LEGAL_*`) ;
  * - le canal de confirmation contractuelle (Resend, expéditeur, `SITE_URL`) ;
- * - l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN` (C2, 14/11) : il ferme le checkout sans
+ * - l'interrupteur de vente `STRIPE_ANALYSIS_SALES_OPEN` (C2, 14/11 ; fermé par défaut depuis le 16/11) :
+ *   sans la valeur `true`, il ferme le checkout sans
  *   toucher au Price reconnu (`isRecognisedAnalysisPrice`) ni au rapprochement
  *   (`billingReconciliationConfigured`), qui lisent `STRIPE_ANALYSIS_PRICE_ID` et non cette
  *   garde. Les abonnés en cours gardent donc leur accès et leurs renouvellements.
@@ -81,14 +82,14 @@ function expectedStripeKeyMode(env: Pick<NodeJS.ProcessEnv, string>): StripeKeyM
 }
 
 /**
- * La vente est-elle ouverte selon `STRIPE_ANALYSIS_SALES_OPEN` ? Absente ou vide : ouverte, pour que
- * le déploiement de cet interrupteur ne ferme pas la production, qui vend déjà sans lui. Posée, seule
- * la valeur `true` garde la vente ouverte : `false`, mais aussi `0`, `non` ou une faute de frappe la
- * ferment, puisque poser la variable sert à fermer.
+ * La vente est-elle ouverte selon `STRIPE_ANALYSIS_SALES_OPEN` ? Fermée par défaut depuis l'audit du
+ * 16/11/2026, comme l'achat à l'unité (`STRIPE_SALE_UNLOCK_SALES_OPEN`) : seule la valeur `true` (casse
+ * et espaces indifférents) l'ouvre. Absente, vide, `false`, `0`, `non` ou une faute de frappe : fermée.
+ * Poser la clé Stripe, le Price et le secret de webhook ne suffit donc plus à vendre ; ouvrir la vente
+ * est un geste explicite. La production porte `STRIPE_ANALYSIS_SALES_OPEN=true` depuis le 16/11/2026.
  */
 function analysisSalesOpen(env: Pick<NodeJS.ProcessEnv, string>): boolean {
-  const value = serverEnv(env).stripe.analysisSalesOpen?.toLowerCase();
-  return !value || value === "true";
+  return serverEnv(env).stripe.analysisSalesOpen?.toLowerCase() === "true";
 }
 
 export function analysisCheckoutReadiness(

@@ -295,7 +295,7 @@ export function serverEnv(source?: EnvSource) {
       analysisPriceId: env.STRIPE_ANALYSIS_PRICE_ID,
       /** Anciens Price encore facturés à des abonnés, séparés par des virgules. */
       legacyAnalysisPriceIds: env.STRIPE_ANALYSIS_LEGACY_PRICE_IDS,
-      /** Interrupteur de vente, tel quel : `analysisSalesOpen` (absent : vente ouverte). */
+      /** Interrupteur de vente, tel quel : `analysisSalesOpen` (seul `true` ouvre la vente). */
       analysisSalesOpen: env.STRIPE_ANALYSIS_SALES_OPEN,
       /**
        * Produit Stripe de l'offre Analyse (facultatif) : restreint le bon de réduction des achats à

@@ -42,7 +42,7 @@ describe("saleUnlockCheckoutReadiness", () => {
     expect(() => assertSaleUnlockCheckoutOpen(OPEN_ENV)).not.toThrow();
   });
 
-  it("est fermé par défaut : interrupteur absent ou vide (l'inverse de STRIPE_ANALYSIS_SALES_OPEN)", () => {
+  it("est fermé par défaut : interrupteur absent ou vide (comme STRIPE_ANALYSIS_SALES_OPEN)", () => {
     const { STRIPE_SALE_UNLOCK_SALES_OPEN: _omitted, ...withoutSwitch } = OPEN_ENV;
     expect(saleUnlockCheckoutReadiness(withoutSwitch)).toMatchObject({
       open: false,
