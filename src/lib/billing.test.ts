@@ -197,6 +197,8 @@ describe("billing helpers", () => {
         trial_period_days: ANALYSIS_TRIAL_DAYS,
       },
     });
+    // Carte seule : un prélèvement SEPA ouvrirait l'accès avant d'être encaissé.
+    expect(params.payment_method_types).toEqual(["card"]);
     expect(params).not.toHaveProperty("payment_intent_data");
   });
 
