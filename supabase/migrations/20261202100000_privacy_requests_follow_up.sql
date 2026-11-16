@@ -19,8 +19,13 @@ set local lock_timeout = '5s';
 --                                                             PRIVACY_DEADLINE_WARNING_DAYS, vérifié par un
 --                                                             test Vitest)
 --        compliance.privacy_requests.overdue                 critique : échéance dépassée
---        compliance.privacy_requests.unacknowledged_operator avertissement : demande restée « reçue » plus
---                                                             de 3 jours (personne ne l'a prise en main)
+--        compliance.privacy_requests.awaiting_operator       avertissement : au moins une demande au statut
+--                                                             « reçue », sans délai (personne ne l'a encore prise
+--                                                             en main). C'est le canal qui prévient l'exploitation
+--                                                             d'un dépôt quand OPERATIONS_ALERT_EMAIL_TO n'est pas
+--                                                             défini ; le dépôt appelle aussi cette évaluation.
+--                                                             Se referme (hystérésis commune) quand plus aucune
+--                                                             demande n'est « reçue ».
 --      Catégorie `cron` : operational_alerts_category_check n'est pas touchée. Aucune donnée personnelle dans
 --      les détails : des nombres et des dates. Appelée par evaluateOperationalHealth
 --      (src/lib/operational-health-job.ts), à chaque passage de operational-health.
@@ -82,13 +87,12 @@ as $$
 declare
   open_statuses constant text[] := array['received', 'identity_verification', 'in_review'];
   warning_days constant integer := 7;
-  unacknowledged_days constant integer := 3;
   due_soon_count integer;
   next_due timestamptz;
   overdue_count integer;
   oldest_overdue timestamptz;
-  unacknowledged_count integer;
-  oldest_unacknowledged timestamptz;
+  awaiting_count integer;
+  oldest_awaiting timestamptz;
 begin
   select count(*)::integer, min(request.due_at)
   into due_soon_count, next_due
@@ -104,10 +108,9 @@ begin
     and request.due_at < p_now;
 
   select count(*)::integer, min(request.submitted_at)
-  into unacknowledged_count, oldest_unacknowledged
+  into awaiting_count, oldest_awaiting
   from public.data_subject_requests request
-  where request.status = 'received'
-    and request.submitted_at < p_now - pg_catalog.make_interval(days => unacknowledged_days);
+  where request.status = 'received';
 
   perform app_private.sync_operational_alert(
     'compliance.privacy_requests.due_soon',
@@ -132,22 +135,18 @@ begin
   );
 
   perform app_private.sync_operational_alert(
-    'compliance.privacy_requests.unacknowledged_operator',
+    'compliance.privacy_requests.awaiting_operator',
     'cron',
     'warning',
-    jsonb_build_object(
-      'count', unacknowledged_count,
-      'oldest_submitted_at', oldest_unacknowledged,
-      'maximum_age_days', unacknowledged_days
-    ),
-    unacknowledged_count > 0,
+    jsonb_build_object('count', awaiting_count, 'oldest_submitted_at', oldest_awaiting),
+    awaiting_count > 0,
     p_now
   );
 
   return jsonb_build_object(
     'due_soon', due_soon_count,
     'overdue', overdue_count,
-    'unacknowledged_operator', unacknowledged_count
+    'awaiting_operator', awaiting_count
   );
 end;
 $$;
@@ -157,7 +156,7 @@ revoke all on function public.evaluate_privacy_request_health(timestamptz)
 grant execute on function public.evaluate_privacy_request_health(timestamptz) to service_role;
 
 comment on function public.evaluate_privacy_request_health(timestamptz) is
-  'Alertes de suivi des demandes de droits (échéance à 7 jours, échéance dépassée, demande reçue non prise en main depuis 3 jours). Nombres et dates seulement. Réservée à service_role.';
+  'Alertes de suivi des demandes de droits (échéance à 7 jours, échéance dépassée, demande reçue à prendre en charge). Nombres et dates seulement. Réservée à service_role.';
 
 -- 4. Crédits non utilisés, pour la garde avant effacement ---------------------------------------------------
 create or replace function public.account_sale_unlock_credits(p_user_id uuid)

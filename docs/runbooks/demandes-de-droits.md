@@ -8,11 +8,16 @@ Migration : `supabase/migrations/20261202100000_privacy_requests_follow_up.sql`.
 
 ## Ce qui prévient qui
 
-| Moment                                          | Destinataire                                 | Contenu                                                                                                                                                                                                     |
-| ----------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dépôt (compte ou lien signé d'un professionnel) | l'exploitation (`OPERATIONS_ALERT_EMAIL_TO`) | nature, date, échéance, lien vers Conformité. Jamais l'adresse ni le message du demandeur.                                                                                                                  |
-| Dépôt                                           | le demandeur (`requester_email`)             | accusé de réception : nature, date, échéance, suivi (Mes droits, ou réponse à l'adresse)                                                                                                                    |
-| Clôture (traitée, refusée)                      | le demandeur (`requester_email`)             | suites données, « Réponse au demandeur » saisie dans le panneau ; pour un effacement, ce qui est effacé et ce qui est conservé (citations de la politique de confidentialité) ; pour un refus RGPD, la CNIL |
+| Moment                                          | Destinataire                                                                                         | Contenu                                                                                                                                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dépôt (compte ou lien signé d'un professionnel) | l'exploitation, par l'alerte `compliance.privacy_requests.awaiting_operator`                         | alerte d'exploitation ouverte dès le dépôt (canal commun : « Alertes ouvertes », workflow GitHub), lien vers Conformité                                                                                     |
+| Dépôt                                           | l'exploitation, par email direct (`OPERATIONS_ALERT_EMAIL_TO`), seulement si la variable est définie | nature, date, échéance, lien vers Conformité. Jamais l'adresse ni le message du demandeur.                                                                                                                  |
+| Dépôt                                           | le demandeur (`requester_email`)                                                                     | accusé de réception : nature, date, échéance, suivi (Mes droits, ou réponse à l'adresse)                                                                                                                    |
+| Clôture (traitée, refusée)                      | le demandeur (`requester_email`)                                                                     | suites données, « Réponse au demandeur » saisie dans le panneau ; pour un effacement, ce qui est effacé et ce qui est conservé (citations de la politique de confidentialité) ; pour un refus RGPD, la CNIL |
+
+Pour recevoir aussi un email direct au dépôt, définir `OPERATIONS_ALERT_EMAIL_TO` sur Vercel (Production). Sans
+elle (cas actuel), l'exploitation n'est prévenue que par l'alerte d'exploitation, ouverte au dépôt et notifiée à la
+remise suivante des alertes (passage d'`operational-health`, 30 minutes au plus).
 
 Un échec d'envoi ne fait jamais échouer le dépôt ni la clôture. Il est journalisé (`privacy-request-notifications`,
 sans adresse) et repris à chaque passage d'`operational-health` (30 min), cinq essais au plus. L'état de chaque
@@ -26,17 +31,17 @@ La trace durable est `metadata.notifications.closure`, gardée avec la demande (
 
 ## Alertes d'exploitation
 
-Évaluées à chaque passage d'`operational-health` (`public.evaluate_privacy_request_health`), notifiées par le
+Évaluées à chaque dépôt et à chaque passage d'`operational-health` (`public.evaluate_privacy_request_health`), notifiées par le
 canal commun (« Alertes ouvertes », email, GitHub), refermées deux heures après le retour au calme :
 
-| Clé                                                   | Gravité       | Condition                                          |
-| ----------------------------------------------------- | ------------- | -------------------------------------------------- |
-| `compliance.privacy_requests.due_soon`                | avertissement | demande ouverte à 7 jours ou moins de son échéance |
-| `compliance.privacy_requests.overdue`                 | critique      | échéance dépassée                                  |
-| `compliance.privacy_requests.unacknowledged_operator` | avertissement | demande restée « Reçue » plus de 3 jours           |
+| Clé                                             | Gravité       | Condition                                                                   |
+| ----------------------------------------------- | ------------- | --------------------------------------------------------------------------- |
+| `compliance.privacy_requests.due_soon`          | avertissement | demande ouverte à 7 jours ou moins de son échéance                          |
+| `compliance.privacy_requests.overdue`           | critique      | échéance dépassée                                                           |
+| `compliance.privacy_requests.awaiting_operator` | avertissement | au moins une demande au statut « Reçue », sans délai : ouverte dès le dépôt |
 
 Conduite à tenir : ouvrir Conformité, passer la demande à « Vérification identité » ou « En cours » (l'alerte
-« non prise en main » se referme), la traiter avant l'échéance. Échéance : un mois (RGPD), 14 jours pour une
+« à prendre en charge » se referme, deux heures après qu'aucune demande n'est plus « Reçue »), la traiter avant l'échéance. Échéance : un mois (RGPD), 14 jours pour une
 rétractation (remboursement dû 14 jours après la notification).
 
 Avant la migration, l'évaluation est sautée sans erreur (`evaluation: "migration_pending"` dans le résultat du
@@ -82,7 +87,8 @@ identifiant Stripe ou Resend brut. Le fichier se remet à l'adresse du demandeur
 
 ## Variables d'environnement
 
-Aucune nouvelle. Exploitation : `OPERATIONS_ALERT_EMAIL_TO`, `RESEND_API_KEY`, `ALERT_EMAIL_FROM`. Demandeur :
+Aucune nouvelle. Email direct à l'exploitation (facultatif, non défini en production aujourd'hui) :
+`OPERATIONS_ALERT_EMAIL_TO`, `RESEND_API_KEY`, `ALERT_EMAIL_FROM`. Demandeur :
 `RESEND_API_KEY`, `TRANSACTIONAL_EMAIL_FROM` (à défaut `ALERT_EMAIL_FROM`), `SITE_URL`. Effacement : `STRIPE_SECRET_KEY`
 (désormais lue à chaque effacement d'un compte, pour la recherche des clients).
 

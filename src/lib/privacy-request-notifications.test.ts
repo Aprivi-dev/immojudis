@@ -94,6 +94,10 @@ describe("notifyPrivacyRequestReceived (E1, E2)", () => {
     const outcome = await notifyPrivacyRequestReceived(row(), { env: ENV });
 
     expect(outcome).toEqual({ operator: "sent", acknowledgement: "sent" });
+    // L'alerte « à prendre en charge » s'ouvre au dépôt, sans attendre le passage suivant.
+    expect(state.rpc).toHaveBeenCalledWith("evaluate_privacy_request_health", {
+      p_now: expect.any(String),
+    });
     const operator = state.send.mock.calls.find(
       ([input]) => input.templateKey === "privacy_request_operator",
     )?.[0];
@@ -136,6 +140,23 @@ describe("notifyPrivacyRequestReceived (E1, E2)", () => {
     });
     // Le journal ne porte ni l'adresse ni le message du demandeur.
     expect(JSON.stringify(warn.mock.calls)).not.toContain("client@example.test");
+    warn.mockRestore();
+  });
+
+  it("sans email à l'exploitation configuré, l'alerte d'exploitation s'ouvre quand même", async () => {
+    await notifyPrivacyRequestReceived(row(), { env: {} });
+    expect(state.rpc).toHaveBeenCalledWith("evaluate_privacy_request_health", {
+      p_now: expect.any(String),
+    });
+  });
+
+  it("un échec de l'évaluation des alertes ne fait pas échouer le dépôt", async () => {
+    state.rpc.mockRejectedValue(new Error("database down"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(notifyPrivacyRequestReceived(row(), { env: ENV })).resolves.toEqual({
+      operator: "sent",
+      acknowledgement: "sent",
+    });
     warn.mockRestore();
   });
 
