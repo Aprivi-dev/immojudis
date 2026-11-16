@@ -28,6 +28,8 @@ jobs:
         # imply that its unconfigured access has been certified.
         source: ${{ fromJSON(inputs.audit_kind == 'absent_details' && (inputs.source_group == 'vench' && '["vench"]' || '["licitor"]') || inputs.audit_kind == 'reconciliation' && '["agrasc","avoventes","cessions_etat","info_encheres"]' || inputs.source_group == 'encheres_publiques' && '["encheres_publiques"]' || inputs.source_group == 'notarial' && '["notaires","agrasc"]' || inputs.source_group == 'followup' && '["avoventes","vench","encheres_immobilieres"]' || inputs.source_group == 'cloud' && '["petites_affiches","cessions_etat"]' || '["avoventes","licitor","vench","info_encheres","petites_affiches","cessions_etat","agrasc","encheres_immobilieres","notaires"]') }}
     runs-on: ubuntu-24.04
+    # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
+    environment: Production
     timeout-minutes: 20
     env:
       # Honest, contactable crawler identity; a repository variable overrides it.
