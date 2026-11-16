@@ -29,10 +29,8 @@ auction_runs where id = <run_id>;` puis le workflow `data-pipeline.yml` correspo
 - Source tombée ou bloquée : laisser faire l'ordonnanceur (nouvelle tentative au prochain passage) ; si le
   blocage dure, suspendre la source (`suspended_until`, `suspension_reason`) plutôt que laisser l'alerte
   ouverte sans fin, et noter la cause.
-- Run bloqué (`running` depuis plus de 3 h) : alerte `pipeline.import.unhealthy` (sa procédure est dans le
-  dépôt interne, `docs/operations-phase-3.md`). En bref : contrôler `auction_runs` puis le workflow
-  `data-pipeline.yml` associé ; ne pas démarrer un second run tant qu'un run sain est actif ; marquer
-  explicitement un run réellement abandonné, puis relancer le worker.
+- Run bloqué (`running` depuis plus de 3 h) : voir `pipeline.import.unhealthy` dans
+  `docs/runbooks/pipeline-import-unhealthy.md`.
 - Pilote coupé ou plus aucune source récente : `docs/runbooks/pipeline-scheduler-disabled.md` et
   `docs/runbooks/pipeline-inventory-stale.md`.
 - Cause de code (décodage de la source cassé) : corriger dans `services/data-pipeline/`, jamais en base.

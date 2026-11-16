@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Json } from "@/integrations/supabase/types";
 
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -65,7 +66,7 @@ const ENV = {
   OPERATIONS_ALERT_EMAIL_TO: "proprietaire@immojudis.test",
 };
 
-function row(metadata: Record<string, unknown> = { source: "authenticated_rights_portal" }) {
+function row(metadata: Json = { source: "authenticated_rights_portal" }) {
   return {
     id: REQUEST_ID,
     request_type: "erasure",
@@ -158,8 +159,8 @@ describe("notifyPrivacyRequestClosed", () => {
         erasureExecuted: true,
         response: null,
       },
-    ) as Record<string, unknown>;
-    state.metadata = metadata;
+    );
+    state.metadata = metadata as Record<string, unknown>;
     const outcome = await notifyPrivacyRequestClosed(
       { ...row(metadata), user_id: null, status: "completed" },
       { env: ENV },

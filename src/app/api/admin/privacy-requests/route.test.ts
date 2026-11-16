@@ -22,8 +22,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import { GET, PATCH, POST } from "./route";
-import { POST as withdrawal } from "./withdrawal/route";
+import { GET as withdrawalContext, POST as withdrawal } from "./withdrawal/route";
 import { GET as professionalExport } from "./professional-export/route";
+import { GET as accountExport } from "./account-export/route";
+import { GET as erasureGuard } from "./erasure-guard/route";
 
 const REQUEST_ID = "4d1b3e0a-6f5e-4a39-8d3b-1f2a4c6e8a10";
 const url = "https://immojudis.test/api/admin/privacy-requests";
@@ -93,6 +95,33 @@ describe("routes admin de confidentialité", () => {
           path: `/professional-export?requestId=${REQUEST_ID}`,
         }),
     ],
+    [
+      "GET export d'un compte",
+      (token) =>
+        call(accountExport, {
+          method: "GET",
+          token,
+          path: `/account-export?requestId=${REQUEST_ID}`,
+        }),
+    ],
+    [
+      "GET garde avant effacement",
+      (token) =>
+        call(erasureGuard, {
+          method: "GET",
+          token,
+          path: `/erasure-guard?requestId=${REQUEST_ID}`,
+        }),
+    ],
+    [
+      "GET objet de la rétractation",
+      (token) =>
+        call(withdrawalContext, {
+          method: "GET",
+          token,
+          path: `/withdrawal?requestId=${REQUEST_ID}`,
+        }),
+    ],
   ];
 
   it.each(calls)("%s : 401 sans jeton, sans rien lire", async (_name, run) => {
@@ -147,13 +176,21 @@ describe("routes admin de confidentialité", () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("GET export professionnel : 400 pour un identifiant de demande invalide", async () => {
-    const response = await call(professionalExport, {
-      method: "GET",
-      path: "/professional-export?requestId=pas-un-uuid",
-    });
+  it.each([
+    ["export professionnel", professionalExport, "/professional-export"],
+    ["export d'un compte", accountExport, "/account-export"],
+    ["garde avant effacement", erasureGuard, "/erasure-guard"],
+    ["objet de la rétractation", withdrawalContext, "/withdrawal"],
+  ] as const)(
+    "GET %s : 400 pour un identifiant de demande invalide",
+    async (_name, handler, path) => {
+      const response = await call(handler, {
+        method: "GET",
+        path: `${path}?requestId=pas-un-uuid`,
+      });
 
-    expect(response.status).toBe(400);
-    expect(mocks.from).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(400);
+      expect(mocks.from).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -2,7 +2,11 @@ import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { VAT_EXEMPTION_INVOICE_MENTION } from "@/lib/analysis-offer";
-import { findOrCreateStripeCustomer, stripeCustomerIdempotencyKey } from "@/lib/billing-stripe";
+import {
+  findOrCreateStripeCustomer,
+  findStripeCustomersOfAccount,
+  stripeCustomerIdempotencyKey,
+} from "@/lib/billing-stripe";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -82,5 +86,29 @@ describe("findOrCreateStripeCustomer", () => {
       "Stripe search unavailable",
     );
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("findStripeCustomersOfAccount", () => {
+  beforeEach(() => search.mockReset());
+
+  it("rend les clients non supprimés retrouvés par la métadonnée user_id (seule requête)", async () => {
+    search.mockResolvedValue({
+      data: [
+        { id: "cus_a", created: 1 },
+        { id: "cus_gone", created: 2, deleted: true },
+        { id: "cus_b", created: 3 },
+      ],
+    });
+    await expect(findStripeCustomersOfAccount(stripe, USER_ID)).resolves.toEqual([
+      { id: "cus_a", created: 1 },
+      { id: "cus_b", created: 3 },
+    ]);
+    expect(search).toHaveBeenCalledWith({ query: `metadata['user_id']:'${USER_ID}'`, limit: 100 });
+  });
+
+  it("refuse un identifiant qui n'est pas un UUID, sans appeler Stripe", async () => {
+    await expect(findStripeCustomersOfAccount(stripe, "x' OR 1")).rejects.toThrow(/UUID/);
+    expect(search).not.toHaveBeenCalled();
   });
 });

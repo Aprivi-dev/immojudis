@@ -26,7 +26,7 @@ const PAGE_SIZE = 1000;
 /** Au-delà, la table est marquée `truncated` : l'administrateur complète à la main. */
 const MAX_ROWS_PER_TABLE = 10_000;
 
-export const EXCLUDED_COLUMN =
+const EXCLUDED_COLUMN =
   /(token|secret|password|hash|signature|idempotency|api_key|^stripe_|payment_intent|checkout_session|resend_email_id|deduction_reserved|provider_message_id)/i;
 
 type Row = Record<string, unknown>;

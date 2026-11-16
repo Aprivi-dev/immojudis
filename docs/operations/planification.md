@@ -118,6 +118,12 @@ chaque midi et chaque soir. Elle ne se referme qu'après un passage planifié, o
 automatiquement ou en pause, et deux heures plus tard seulement (comme toute alerte d'exploitation). Conduite à
 tenir : `docs/runbooks/information-agent.md`, « Si aucun passage n'a lieu ».
 
+Les demandes de droits ne sont pas une tâche à part : `operational-health` évalue aussi, à chacun de ses passages,
+les alertes `compliance.privacy_requests.*` (`public.evaluate_privacy_request_health`, migration `20261202100000` :
+échéance proche, dépassée, demande non prise en main) et reprend les emails de suivi restés en attente (accusé de
+réception, prévenance de l'exploitation, clôture). Avant la migration, l'évaluation est sautée sans erreur. Conduite
+à tenir : `docs/runbooks/demandes-de-droits.md`.
+
 La complétude des annonces est recalculée par lots de 300 ventes (variable
 `LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ
 1 950 ventes en ligne, soit une réévaluation quotidienne de chacune (les ventes jamais évaluées,

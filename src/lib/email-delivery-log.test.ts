@@ -90,6 +90,8 @@ describe("la suppression durable ne dépend jamais du journal des envois", () =>
       path.join("src", "lib", "email-delivery-log.ts"),
       path.join("src", "lib", "send-tracked-email.ts"),
       path.join("src", "lib", "privacy-requests.ts"),
+      // Export des données d'un titulaire de compte (demande d'accès ou de portabilité).
+      path.join("src", "lib", "privacy-account-export.ts"),
       path.join("src", "lib", "information-agent-professional-rights.ts"),
       path.join("src", "lib", "admin-emails", "history.ts"),
       // Affichage de l'état de remise dans l'onglet Envois de l'agent (voir le test suivant).
