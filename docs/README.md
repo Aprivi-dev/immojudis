@@ -10,8 +10,8 @@ Depuis le 16/11/2026, la documentation interne (feuilles de route, recherche uti
 phase, registre RGPD, sécurité) n'est plus dans ce dépôt, qui est public. Elle est dans le dépôt privé
 `Aprivi-dev/immojudis-interne`, aux mêmes chemins : un fichier cité ici comme `docs/roadmaps/…`,
 `docs/recherche/…`, `docs/audits/…`, `docs/security/…`, `docs/archive/…`, `docs/operations-phase-*.md`,
-`docs/compliance-phase-6.md`, `docs/rgpd-*.md` ou `docs/operations/…` (sauf `planification.md`) et absent de ce
-dépôt se lit là-bas. Tout nouveau document de ce type s'écrit dans le dépôt privé, pas ici.
+`docs/compliance-phase-6.md`, `docs/rgpd-*.md`, `docs/operations/…` (sauf `planification.md`) ou
+`docs/equipe/…` (sauf son `README.md`) et absent de ce dépôt se lit là-bas. Tout nouveau document de ce type s'écrit dans le dépôt privé, pas ici.
 
 ## 1. Apprendre : comprendre le produit et la plateforme
 
