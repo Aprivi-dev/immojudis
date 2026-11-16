@@ -8,6 +8,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
+from src import general_lane_claims
 from src.admission import is_expired
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import (
@@ -92,7 +93,7 @@ from src.storage.supabase_client import (
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
 SOURCE_DETAIL_FAMILY = "source_detail"
-ENRICHMENT_FAMILY = "enrichment"
+ENRICHMENT_FAMILY = general_lane_claims.ENRICHMENT_FAMILY
 # Keep a bounded general-enrichment lane even while source-detail is larger.
 # Four slots preserve source-detail priority while reserving 25% of worker
 # claims for display/fact/PDF jobs instead of allowing a persistent detail
@@ -329,7 +330,8 @@ def _claim_enrichment_queue_jobs(*, limit: int, family: str | None) -> list[dict
     else:
         if family not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
             raise ValueError(f"Unknown enrichment queue family: {family!r}")
-        jobs = claim_auction_enrichment_jobs_family_from_supabase(family=family, limit=limit)
+        claim, general = claim_auction_enrichment_jobs_family_from_supabase, family == ENRICHMENT_FAMILY
+        jobs = general_lane_claims.claim_general_jobs(claim, limit=limit) if general else claim(family=family, limit=limit)
     _record_worker_claimed_job_ids(jobs)
     return jobs
 
@@ -1096,6 +1098,7 @@ def run_enrichment_queue_worker(
     claimed_token = _WORKER_CLAIMED_JOB_IDS.set(set())
     deferred_token = _WORKER_DEFERRED_JOB_IDS.set(set())
     budget_token = _WORKER_LLM_BUDGET_EXHAUSTED.set(False)
+    general_token = general_lane_claims.start_worker_general_claims()  # one general claim in four is oldest-first
     try:
         return _run_enrichment_queue_worker(
             max_jobs=max_jobs,
@@ -1116,6 +1119,7 @@ def run_enrichment_queue_worker(
                 exc_info=True,
             )
         finally:
+            general_lane_claims.end_worker_general_claims(general_token)
             _WORKER_LLM_BUDGET_EXHAUSTED.reset(budget_token)
             _WORKER_DEFERRED_JOB_IDS.reset(deferred_token)
             _WORKER_CLAIMED_JOB_IDS.reset(claimed_token)

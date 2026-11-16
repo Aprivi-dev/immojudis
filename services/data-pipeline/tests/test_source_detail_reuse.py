@@ -124,3 +124,25 @@ def test_noop_rechecks_locked_catalogue_and_exact_lease(monkeypatch, scenario):
             assert state == expected_state
         finally:
             db.rollback()
+
+
+@pytest.mark.parametrize(
+    ('source', 'sale_in', 'checked_ago', 'satisfied'),
+    [
+        ('vench', timedelta(days=60), timedelta(hours=30), True),  # 72 h policy: due after 71 h
+        ('vench', timedelta(days=60), timedelta(hours=71), False),
+        ('licitor', timedelta(days=60), timedelta(hours=22), True),  # Licitor 24 h: due after 23 h
+        ('licitor', timedelta(days=60), timedelta(hours=23), False),
+        ('vench', timedelta(days=3), timedelta(hours=4), True),  # hearing within 7 days, 6 h: due after 5 h
+        ('vench', timedelta(days=3), timedelta(hours=5), False),
+    ],
+)
+def test_recurring_job_cadence_is_the_reread_policy_less_one_hour(source, sale_in, checked_ago, satisfied):
+    # 16/11/2026: twin of enqueue_due_source_details_unlocked, which reads app_private.listing_review_policy().
+    job, payload = _proof()
+    job['detail_source_name'] = source
+    job['created_at'] = NOW - checked_ago - timedelta(minutes=1)
+    check = payload['source_checks'][ALIAS]
+    check['source_name'] = source
+    check['checked_at'] = (NOW - checked_ago).isoformat()
+    assert reuse.verified_detail_satisfies_job(payload, NOW + sale_in, 'upcoming', job, now=NOW) is satisfied

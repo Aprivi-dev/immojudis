@@ -1,7 +1,7 @@
 """« Description et faits attendent la lecture des pièces de leur vente » : trois copies, comparées ici.
 
-1. La revendication (``claim_auction_enrichment_jobs_family``, 20261111050000 ; 20261111060000 et 20261111070000
-   ne changent que l'ordre de tri) ne prend pas la tâche.
+1. La revendication (``claim_auction_enrichment_jobs_family``, garde posée par 20261111050000, redéfinition complète
+   dans 20261201100000) ne prend pas la tâche.
 2. L'observateur de la file (``waits_for_pdf`` de sa dernière définition, 20261201100000) ne la compte pas comme
    immobile.
 3. Le worker (``storage.supabase_client.has_eligible_pdf_job_for_sale``) reporte une passe de faits.
@@ -20,7 +20,9 @@ import pytest
 from src.storage import supabase_client
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
-CLAIM_MIGRATION = "20261111050000_enrichment_claim_pdf_first.sql"
+# La dernière définition complète de la revendication (20261111050000 à 20261111070000 la retouchaient sur place ; le
+# SQL assemblé est interdit depuis le lot R2b, d'où la redéfinition complète).
+CLAIM_MIGRATION = "20261201100000_operational_alerts_recalibration.sql"
 # La dernière définition de observe_autonomous_pipeline (elle remplace celle de 20261119101000).
 OBSERVER_MIGRATION = "20261201100000_operational_alerts_recalibration.sql"
 CLAIM_FUNCTION = "claim_auction_enrichment_jobs_family"
@@ -46,16 +48,21 @@ def _rules(sql: str) -> list[tuple[str, str]]:
     return [(match["types"], match["pdf"]) for match in _RULE.finditer(_normalized(sql))]
 
 
-def _claim_patch() -> str:
-    text = (MIGRATIONS / CLAIM_MIGRATION).read_text(encoding="utf-8")
-    return text[text.index("$new$") : text.rindex("$new$")]
+def _definition(migration: str, function: str) -> str:
+    """Text of one ``create or replace function`` of a migration, up to the end of its body."""
+    text = (MIGRATIONS / migration).read_text(encoding="utf-8")
+    start = text.lower().index(f"create or replace function public.{function}(")
+    tag = re.search(r"\bas (\$[a-z_]*\$)", text[start:], re.IGNORECASE)
+    assert tag is not None, (migration, function)
+    body_start = start + tag.end()
+    return text[start : text.index(tag[1], body_start) + len(tag[1])]
 
 
 def test_the_claim_and_the_observer_hold_back_the_same_jobs_behind_the_same_pdf_jobs() -> None:
     expected = [(HELD_JOB_TYPES, PDF_STILL_ADVANCES)]
 
-    assert _rules(_claim_patch()) == expected
-    assert _rules((MIGRATIONS / OBSERVER_MIGRATION).read_text(encoding="utf-8")) == expected
+    assert _rules(_definition(CLAIM_MIGRATION, CLAIM_FUNCTION)) == expected
+    assert _rules(_definition(OBSERVER_MIGRATION, "observe_autonomous_pipeline")) == expected
 
 
 def test_the_observer_compared_is_its_latest_definition() -> None:
@@ -74,7 +81,6 @@ def test_no_later_migration_changes_the_claim_rule_alone() -> None:
         for path in sorted(MIGRATIONS.glob("*.sql"))
         if path.name > CLAIM_MIGRATION and CLAIM_FUNCTION in path.read_text(encoding="utf-8")
     ]
-    assert later, "the head-start patches of 11/11 mention the claim"
     for path in later:
         text = path.read_text(encoding="utf-8")
         assert f"create or replace function public.{CLAIM_FUNCTION}" not in text.lower(), path.name

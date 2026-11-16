@@ -93,18 +93,24 @@ changer l'un change l'autre. Si l'on change une garde (`cron_dispatch_due`), ref
 Même règle, appliquée aux alertes du pipeline de collecte par la migration `20261201100000` (16/11/2026, sept
 alertes ouvertes sans incident réel). Procédures : `docs/runbooks/`.
 
-| Alerte                                    | Cadence ou politique en cause                                                                  | Seuil                                                                                                                            |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `pipeline.import.unhealthy` (âge de file) | déclenchement du workflow à chaque passage d'`operational-health` (30 min), passage de ~29 min | 5 400 s = 2 x 30 min + 29 min, arrondi (1 800 s avant) ; critique au-delà de 7 200 s                                             |
-| `pipeline.source.<source>.missed`         | inventaire toutes les 12 h                                                                     | 18 h (inchangé, `20261020120019`)                                                                                                |
-| `pipeline.source.<source>.stale_listings` | relecture des fiches (`freshness.py`) : 72 h, Licitor 24 h ; vente proche à chaque inventaire  | fenêtre 72 h, Licitor 24 h, 24 h pour une vente dans les 7 jours (un inventaire manqué toléré) ; muette si `.missed` est ouverte |
-| `pipeline.enrichment.stalled`             | ~19 passages par jour du travailleur de la file                                                | bail expiré depuis 24 h, ou tâches prenables non servies depuis 72 h sans baisse en 24 h                                         |
-| `pipeline.enrichment.exhausted`           | file de ~1 300 tâches                                                                          | hausse : greatest(10, 2 % de la file vivante) en 24 h (3 avant) ; reliquat : 50                                                  |
-| `catalogue.quality.licitor_lot_mismatch`  | passage d'`operational-health` (30 min)                                                        | 1 vente, sur deux évaluations consécutives                                                                                       |
+| Alerte                                    | Cadence ou politique en cause                                                                                        | Seuil                                                                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline.import.unhealthy` (âge de file) | déclenchement du workflow à chaque passage d'`operational-health` (30 min), passage de ~29 min                       | 5 400 s = 2 x 30 min + 29 min, arrondi (1 800 s avant) ; critique au-delà de 7 200 s                                                              |
+| `pipeline.source.<source>.missed`         | inventaire toutes les 12 h                                                                                           | 18 h (inchangé, `20261020120019`)                                                                                                                 |
+| `pipeline.source.<source>.stale_listings` | relecture des fiches (`freshness.py`) : 72 h, Licitor 24 h, 6 h à moins de 7 jours de l'audience (chaque inventaire) | fenêtre 72 h, Licitor 24 h ; tolérance de 24 h pour une audience dans les 7 jours (un inventaire manqué toléré) ; muette si `.missed` est ouverte |
+| `pipeline.enrichment.stalled`             | ~19 passages par jour du travailleur de la file                                                                      | bail expiré depuis 24 h, ou tâches prenables non servies depuis 72 h sans baisse en 24 h                                                          |
+| `pipeline.enrichment.exhausted`           | file de ~1 300 tâches                                                                                                | hausse : greatest(10, 2 % de la file vivante) en 24 h (3 avant) ; reliquat : 50                                                                   |
+| `catalogue.quality.licitor_lot_mismatch`  | passage d'`operational-health` (30 min)                                                                              | 1 vente, sur deux évaluations consécutives                                                                                                        |
 
-La fenêtre de `stale_listings` est la jumelle SQL (`app_private.listing_review_policy()`) de la politique de
-relecture de la collecte (`detail_reread_hours`, `services/data-pipeline/src/freshness.py`) : changer l'une,
-c'est changer l'autre.
+La politique de relecture est écrite une fois côté SQL (`app_private.listing_review_policy()`), jumelle de
+`detail_reread_hours` (`services/data-pipeline/src/freshness.py`) : changer l'une, c'est changer l'autre. En
+dérivent, sous des noms distincts, la cadence des tâches `source_detail` (une heure avant la fin de la fenêtre :
+71 h, 23 h pour Licitor, 5 h près de l'audience ; `enqueue_due_source_details_unlocked` et sa jumelle
+`source_detail_reuse.py`) et la tolérance de 24 h de la santé pour une audience proche.
+
+La voie générale de la file d'enrichissement réserve une prise sur quatre à l'ancienneté (famille
+`enrichment_oldest`, `services/data-pipeline/src/general_lane_claims.py`) : voir
+`docs/runbooks/pipeline-enrichment-stalled.md`, « Équité de la file ».
 
 Le pilote automatique de l'agent n'est pas dans `cron.stale` : il ne travaille que dans sa plage d'envoi (lundi au
 vendredi hors jours fériés, 9 h 30-11 h 30 et 14 h-16 h 30, heure de Paris), et un passage arrêté par sa garde (hors

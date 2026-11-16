@@ -15,13 +15,12 @@ set local lock_timeout = '5s';
 --
 -- 2. pipeline.source.<source>.stale_listings :
 --    (a) la fenêtre de fraîcheur suit la politique de relecture de la collecte. Une seule source de vérité côté SQL :
---        app_private.listing_review_policy(), JUMELLE de detail_reread_hours
---        (services/data-pipeline/src/freshness.py) : changer l'une, c'est changer l'autre. Relecture par défaut toutes
---        les 72 h, donc une annonce est revue si elle l'a été depuis moins de 72 h ; 24 h pour Licitor (exception de
---        SOURCE_DETAIL_FRESHNESS_HOURS) et pour une vente dans les 7 jours. La collecte relit ces ventes proches à chaque inventaire (cadence de 12 h) : 24 h
---        tolèrent un inventaire manqué (2 x 12 h) sans alerter, pas deux. Le 16/11, notaires était à 0,46 avec la
---        fenêtre de 24 h alors que la collecte ne relit ses fiches que toutes les 72 h, volontairement.
---        public.auction_all_source_freshness lit la politique ; tout le reste de la fonction est recopié tel quel.
+--        app_private.listing_review_policy(), JUMELLE de detail_reread_hours (services/data-pipeline/src/freshness.py) :
+--        relecture après 72 h, 24 h pour Licitor, 6 h pour une audience dans les 7 jours. La santé applique la
+--        politique (72 h, Licitor 24 h) ; pour une audience proche, elle applique une TOLÉRANCE nommée à part
+--        (near_sale_health_window_hours, 24 h) : la relecture y suit l'inventaire de 12 h, 24 h en tolèrent un manqué.
+--        Le 16/11, notaires était à 0,46 avec une fenêtre de 24 h alors que la collecte ne relit ses fiches que toutes
+--        les 72 h. public.auction_all_source_freshness lit la politique ; le reste de la fonction est recopié tel quel.
 --    (b) une cause = une alerte : stale_listings ne s'ouvre pas pour une source dont .missed est vraie à ce passage ou
 --        encore ouverte (Enchères Immobilières le 16/11 : stale_listings n'était que la conséquence de .missed).
 --        Détail : suppressed_by_missed.
@@ -52,24 +51,30 @@ set local lock_timeout = '5s';
 --
 -- 6. pipeline.source.<source>.missed : les détails relaient la cause d'arrêt que la collecte écrit DÉJÀ dans
 --    auction_source_state (coverage.stop_reason, ou celle du résumé du run, coverage.errors, consecutive_failures,
---    last_attempt_at, suspended_until, suspension_reason, last_error tronqué à 300 caractères). http_attempts était
---    déjà dans l'évidence. Aucune nouvelle clé n'est attendue de la collecte.
+--    last_attempt_at, suspended_until, suspension_reason, last_error tronqué à 300 caractères), plus
+--    coverage.publication_blocker_details.inventory_incomplete.stop_cause et coverage.robots_policy (absents : null).
+--    coverage.robots_policy_copies n'est pas relayé. http_attempts était déjà dans l'évidence.
 --
--- Non modifié : la revendication des tâches (claim_auction_enrichment_jobs_family). Son classement contient déjà un
--- terme d'ancienneté non borné (1 point par heure d'attente) et les familles source_detail et enrichment sont des
--- voies séparées, réparties par le travailleur Python : docs/runbooks/pipeline-enrichment-stalled.md, « Équité de
--- la file ».
+-- 7. Cadence des tâches source_detail (enqueue_due_source_details_unlocked) : 71 h, 23 h pour Licitor, 5 h près de
+--    l'audience au lieu de 23 h / 5 h, dérivée de la politique (section 7 plus bas).
 --
--- Sans réparation de données : aucune ligne existante n'est modifiée. Une base dont l'observateur, la fraîcheur, la
--- sentinelle qualité ou la santé d'exploitation n'ont pas le corps attendu fait échouer la migration (refuser de
--- deviner).
+-- 8. Tâches display_description encore ouvertes : closes comme le travailleur les clôt, sans appel (section 8).
+--
+-- 9. Famille enrichment_oldest de la revendication : part réservée à l'ancienneté (section 9).
+--
+-- Seule écriture de données : la clôture de la section 8, par une instruction générale. Une base dont une des
+-- fonctions redéfinies n'a pas le corps attendu fait échouer la migration (refuser de deviner).
 --
 -- Invariant (services/data-pipeline/tests/test_pipeline_cadence_invariants.py) : un seul seuil
 -- « ) < p_now - interval 'N hours'; » dans ce fichier, celui de .missed (18 heures).
 --
 -- RETOUR ARRIÈRE : réappliquer les définitions de 20261119101000 (observateur), 20261008102328 (fraîcheur),
 -- 20261111100000 (sentinelle qualité), la définition d'evaluate_operational_health ci-dessous avec 1800 au lieu de
--- 5400 (et sans maximum_queued_age_seconds), puis drop function app_private.listing_review_policy(). Les lignes
+-- 5400 (et sans maximum_queued_age_seconds), les définitions d'enqueue_due_source_details_unlocked, de
+-- claim_auction_enrichment_jobs_family et de claim_auction_enrichment_jobs_request ci-dessous sans leurs
+-- changements (le travailleur se replie seul sur enrichment), remettre la contrainte des reçus à ('source_detail',
+-- 'enrichment') après purge des reçus enrichment_oldest, puis drop function app_private.listing_review_policy(). La
+-- clôture des display_description ne se défait pas (elles ne faisaient plus rien). Les lignes
 -- catalogue-quality-licitor-lot peuvent rester (purgées à 90 jours).
 
 -- Gardes de départ : empreinte md5 du corps (pg_proc.prosrc) de la définition précédente, ou de celle de cette
@@ -95,7 +100,7 @@ declare
 begin
   if observer_md5 not in (
     '0763c61fb793f2891eb842f48e50dd2e',  -- 20261119101000 (point de départ)
-    'c4b39635acdec51fea83a35fbbd365c1'   -- cette migration, déjà appliquée
+    'e8c25b983c0eb800263caed468b9c88a'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -105,7 +110,7 @@ begin
   end if;
   if freshness_md5 not in (
     'febaf8c3831ac1100ebde8c71ee0dab5',  -- 20261008102328 (point de départ)
-    '19eef044a54bb48cfb805c3acd11c16f'   -- cette migration, déjà appliquée
+    '9dce90edb113ece30ffc6ad37e99c279'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -135,16 +140,26 @@ parallel safe
 security invoker
 set search_path = ''
 as $$
-  -- Jumelle de services/data-pipeline/src/freshness.py (detail_reread_hours) : la collecte relit une fiche au plus
-  -- tard après review_hours (DETAIL_REREAD_HOURS), ou après la valeur propre à sa source (source_review_hours,
-  -- SOURCE_DETAIL_FRESHNESS_HOURS : Licitor, dont seule la fiche dit « non requise / annulée / reportée ») ; une
-  -- vente dans les near_sale_days jours (NEAR_SALE_HORIZON) est relue à chaque inventaire de 12 h, et
-  -- near_sale_review_hours en tolère un manqué (2 x 12 h).
+  -- POLITIQUE DE RELECTURE, jumelle de services/data-pipeline/src/freshness.py (detail_reread_hours) : une fiche
+  -- est relue au plus tard après reread_hours (DETAIL_REREAD_HOURS), ou après la valeur propre à sa source
+  -- (source_reread_hours, SOURCE_DETAIL_FRESHNESS_HOURS : Licitor, dont seule la fiche dit « non requise /
+  -- annulée / reportée »), ou après near_sale_reread_hours (NEAR_SALE_REREAD_HOURS) pour une audience dans les
+  -- near_sale_days jours (NEAR_SALE_HORIZON).
+  --
+  -- Deux valeurs en dérivent, chacune sous son propre nom :
+  --   * source_detail_lead_hours : la tâche source_detail est créée une heure avant la fin de la fenêtre
+  --     (71 h, 23 h pour Licitor, 5 h près de l'audience ; enqueue_due_source_details_unlocked, et sa jumelle
+  --     services/data-pipeline/src/source_detail_reuse.py) ;
+  --   * near_sale_health_window_hours : TOLÉRANCE de la santé du pipeline (stale_listings) pour une audience
+  --     proche. La relecture y suit l'inventaire de 12 h ; 24 h en tolèrent un manqué (2 x 12 h), pas deux. Ce
+  --     n'est pas une durée de relecture.
   select pg_catalog.jsonb_build_object(
-    'review_hours', 72,
-    'source_review_hours', pg_catalog.jsonb_build_object('licitor', 24),
-    'near_sale_review_hours', 24,
-    'near_sale_days', 7
+    'reread_hours', 72,
+    'source_reread_hours', pg_catalog.jsonb_build_object('licitor', 24),
+    'near_sale_reread_hours', 6,
+    'near_sale_days', 7,
+    'source_detail_lead_hours', 1,
+    'near_sale_health_window_hours', 24
   );
 $$;
 
@@ -152,7 +167,7 @@ revoke all on function app_private.listing_review_policy() from public, anon, au
 grant execute on function app_private.listing_review_policy() to service_role;
 
 comment on function app_private.listing_review_policy() is
-  'Fenêtre de fraîcheur des annonces de la santé du pipeline : revue depuis moins de 72 h (24 h pour Licitor), 24 h pour une vente dans les 7 jours. Jumelle de services/data-pipeline/src/freshness.py (politique de relecture de la collecte) : changer l''une, c''est changer l''autre. Lue par auction_all_source_freshness et observe_autonomous_pipeline.';
+  'Politique de relecture des fiches : 72 h, 24 h pour Licitor, 6 h pour une audience dans les 7 jours. Jumelle de services/data-pipeline/src/freshness.py (detail_reread_hours) : changer l''une, c''est changer l''autre. En dérivent la cadence des tâches source_detail (une heure plus tôt : enqueue_due_source_details_unlocked) et, sous un nom distinct, la tolérance de 24 h de la santé pour une audience proche (auction_all_source_freshness, observe_autonomous_pipeline).';
 
 create or replace function public.auction_all_source_freshness(
   p_now timestamptz default now()
@@ -168,10 +183,10 @@ begin
 
   return query
     with policy as (
-      select (settings.value->>'review_hours')::integer as review_hours,
-             settings.value->'source_review_hours' as source_review_hours,
-             pg_catalog.make_interval(hours => (settings.value->>'near_sale_review_hours')::integer)
-               as near_sale_review_window,
+      select (settings.value->>'reread_hours')::integer as reread_hours,
+             settings.value->'source_reread_hours' as source_reread_hours,
+             pg_catalog.make_interval(hours => (settings.value->>'near_sale_health_window_hours')::integer)
+               as near_sale_health_window,
              pg_catalog.make_interval(days => (settings.value->>'near_sale_days')::integer) as near_sale_horizon
         from (select app_private.listing_review_policy() as value) settings
     ),
@@ -225,11 +240,11 @@ begin
              where latest.checked_at >= p_now -
                case
                  when latest.sale_date between p_now and p_now + policy.near_sale_horizon
-                   then policy.near_sale_review_window
+                   then policy.near_sale_health_window
                  else pg_catalog.make_interval(
                    hours => coalesce(
-                     (policy.source_review_hours->>latest.source_name)::integer,
-                     policy.review_hours
+                     (policy.source_reread_hours->>latest.source_name)::integer,
+                     policy.reread_hours
                    )
                  )
                end
@@ -531,6 +546,8 @@ begin
           source_row.coverage->>'stop_reason',
           source_row.run_summary->'scrape_coverage'->source_row.source_name->>'stop_reason'
         ),
+        'stop_cause', source_row.coverage->'publication_blocker_details'->'inventory_incomplete'->'stop_cause',
+        'robots_policy', source_row.coverage->'robots_policy',
         'coverage_errors', source_row.coverage->'errors',
         'consecutive_failures', source_row.consecutive_failures,
         'last_attempt_at', source_row.last_attempt_at,
@@ -596,11 +613,11 @@ begin
         'previous_freshness_ratio', previous_ratio,
         'freshness_ratio_threshold', 0.8,
         'minimum_active_listings', 10,
-        'review_hours', coalesce(
-          review_policy->'source_review_hours'->source_row.source_name,
-          review_policy->'review_hours'
+        'reread_hours', coalesce(
+          review_policy->'source_reread_hours'->source_row.source_name,
+          review_policy->'reread_hours'
         ),
-        'near_sale_review_hours', review_policy->'near_sale_review_hours',
+        'near_sale_health_window_hours', review_policy->'near_sale_health_window_hours',
         'suppressed_by_missed', missed_open
       ),
       source_row.enabled
@@ -1415,6 +1432,728 @@ $function$;
 
 revoke all on function app_private.evaluate_operational_health(timestamptz) from public, anon, authenticated;
 grant execute on function app_private.evaluate_operational_health(timestamptz) to service_role;
+
+-- 7. Cadence des tâches source_detail : redéfinition COMPLÈTE de public.enqueue_due_source_details_unlocked. Point de
+-- départ : 20260929183000 et ses retouches en place (20260929233000, 20260929235000), rejouées sur une base jetable et
+-- recopiées À L'IDENTIQUE, garde md5. Cette fonction crée les ~460 tâches source_detail quotidiennes : elle relisait
+-- chaque fiche toutes les 23 h (5 h près de l'audience) alors que la collecte ne la relit plus que toutes les 72 h.
+-- Seule change la cadence, dérivée de app_private.listing_review_policy() : une heure avant la fin de la fenêtre de
+-- relecture, soit 71 h, 23 h pour Licitor, 5 h pour une audience dans les 7 jours. Jumelle Python :
+-- services/data-pipeline/src/source_detail_reuse.py (verified_detail_satisfies_job).
+do $guard_enqueue$
+declare
+  enqueue_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
+  );
+begin
+  if enqueue_md5 not in (
+    '2172362c089fd62026b80c4c7b32dbdd',  -- 20260929235000 et ses prédécesseurs (point de départ)
+    '50da248c54ca798771b76488485a8d11'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format(
+        'Unexpected source-detail enqueue body (md5 %s); refusing the reread cadence.', enqueue_md5
+      );
+  end if;
+end;
+$guard_enqueue$;
+
+create or replace function public.enqueue_due_source_details_unlocked(
+  p_now timestamptz default now(),
+  p_limit integer default 500
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  inserted integer;
+  -- Cadence dérivée de la politique de relecture (une seule source SQL) : une heure avant la fin de la fenêtre.
+  v_policy constant jsonb := app_private.listing_review_policy();
+  v_lead integer := (v_policy->>'source_detail_lead_hours')::integer;
+begin
+  if not exists (
+    select 1
+      from public.auction_pipeline_control
+     where id
+       and enabled
+       and source_details_enabled
+  ) then
+    return 0;
+  end if;
+
+  perform app_private.assert_auction_sale_source_checks_complete();
+
+  with base as materialized (
+    select
+      s.source_url as canonical_url,
+      s.source_name,
+      s.sale_date,
+      cache.checks as checks,
+      -- A sale less than 24 hours old cannot have reached its retention
+      -- deadline unless an explicit sale window overrides the headline date.
+      -- Avoid the expensive JSON/date calculation for the common case.
+      case
+        when s.sale_date > p_now - interval '24 hours'
+          and not coalesce(s.sale_procedure ? 'sale_window', false)
+          and not coalesce(s.sale_procedure ? 'sale_session', false)
+          and not coalesce(s.raw_payload ? 'source_sale_schedule', false)
+          then true
+        else coalesce(
+          app_private.sale_retention_deadline(
+            s.sale_date, s.status, s.sale_procedure, s.raw_payload
+          ) > p_now,
+          true
+        )
+      end as retention_eligible
+    from public.auction_sales s
+    join app_private.auction_sale_source_checks cache
+      on cache.sale_id = s.id
+    where s.status in ('active', 'upcoming', 'postponed', 'unknown')
+  ),
+  eligible_aliases as materialized (
+    select
+      b.canonical_url,
+      b.sale_date,
+      b.checks,
+      u.source_name,
+      u.source_url
+    from base b
+    cross join lateral (
+      select
+        b.source_name as source_name,
+        b.canonical_url as source_url
+      where b.canonical_url is not null
+
+      union
+
+      select
+        o.source_name,
+        o.source_url
+      from public.auction_observations o
+      where o.canonical_source_url = b.canonical_url
+
+      union
+
+      select
+        c.value->>'source_name' as source_name,
+        c.key as source_url
+      from jsonb_each(b.checks) c
+    ) u
+    join public.auction_source_state state
+      on state.source_name = u.source_name
+    where u.source_url is not null
+      and not app_private.source_detail_url_is_excluded(u.source_url)
+      and state.enabled
+      and (
+        state.suspended_until is null
+        or state.suspended_until <= p_now
+      )
+      and b.retention_eligible
+  ),
+  checked as materialized (
+    select
+      e.*,
+      app_private.pipeline_checked_at(
+        e.checks->e.source_url->>'checked_at',
+        p_now
+      ) as checked,
+      case
+        when e.sale_date between p_now
+          and p_now + pg_catalog.make_interval(days => (v_policy->>'near_sale_days')::integer)
+          then pg_catalog.make_interval(hours => (v_policy->>'near_sale_reread_hours')::integer - v_lead)
+        else pg_catalog.make_interval(
+          hours => coalesce(
+            (v_policy->'source_reread_hours'->>e.source_name)::integer,
+            (v_policy->>'reread_hours')::integer
+          ) - v_lead
+        )
+      end as cadence
+    from eligible_aliases e
+  ),
+  due as (
+    select
+      c.*,
+      'source_detail_v1:' ||
+        md5(
+          c.source_name || ':' ||
+          c.source_url || ':' ||
+          coalesce(extract(epoch from c.checked)::text, 'never') || ':' ||
+          (p_now at time zone 'UTC')::date::text
+        ) as signature
+    from checked c
+    where c.checked is null
+       or c.checked + c.cadence <= p_now
+  ),
+  chosen as (
+    select d.*
+    from due d
+    where not exists (
+      select 1
+      from public.auction_enrichment_jobs j
+      where j.source_url = d.canonical_url
+        and j.job_type = 'source_detail'
+        and j.detail_source_name = d.source_name
+        and j.detail_source_url = d.source_url
+        and j.input_hash = d.signature
+    )
+      and not exists (
+        select 1
+        from public.auction_enrichment_jobs j
+        where j.source_url = d.canonical_url
+          and j.job_type = 'source_detail'
+          and j.detail_source_name = d.source_name
+          and j.detail_source_url = d.source_url
+          and (
+            j.status in ('queued', 'running')
+            or (
+              j.status = 'failed'
+              and j.attempt_count < j.max_attempts
+            )
+          )
+      )
+    order by
+      d.checked nulls first,
+      d.canonical_url,
+      d.source_name,
+      d.source_url
+    limit greatest(1, least(p_limit, 1000))
+  )
+  insert into public.auction_enrichment_jobs (
+    source_url,
+    job_type,
+    input_hash,
+    detail_source_name,
+    detail_source_url,
+    priority
+  )
+  select
+    canonical_url,
+    'source_detail',
+    signature,
+    source_name,
+    source_url,
+    100
+  from chosen
+  on conflict (source_url, job_type, input_hash) do nothing;
+
+  get diagnostics inserted = row_count;
+  return inserted;
+end;
+$function$;
+
+revoke all on function public.enqueue_due_source_details_unlocked(timestamptz, integer)
+  from public, anon, authenticated;
+grant execute on function public.enqueue_due_source_details_unlocked(timestamptz, integer)
+  to service_role;
+
+-- 8. Tâches display_description sans objet. Depuis 20261112110000, rien ne produit plus de synthèse : le travailleur
+-- termine une tâche display_description reçue sans aucun appel (services/data-pipeline/src/queued_runner.py,
+-- « The AI display synthesis was removed ») en posant status = 'completed', completed_at, locked_at = null,
+-- last_error = null, updated_at (finish_auction_enrichment_job_in_supabase). Avec un score bas (vente lointaine),
+-- celles qui restent en file n'arrivaient jamais en tête de la voie générale. Elles sont closes ici de la même façon,
+-- par une instruction générale : en file, en échec avec des essais restants, ou en running au bail expiré. Les tâches
+-- épuisées (lettres mortes) ne sont pas touchées : elles relèvent de pipeline.enrichment.exhausted. Le nombre
+-- d'essais n'est pas incrémenté (aucune prise n'a eu lieu).
+update public.auction_enrichment_jobs
+   set status = 'completed',
+       completed_at = statement_timestamp(),
+       locked_at = null,
+       last_error = null,
+       updated_at = statement_timestamp()
+ where job_type = 'display_description'
+   and (
+     status = 'queued'
+     or (status = 'failed' and attempt_count < max_attempts)
+     or (status = 'running' and coalesce(locked_at, updated_at) < statement_timestamp() - interval '30 minutes')
+   );
+
+-- 9. Part réservée à l'ancienneté dans la voie générale : famille enrichment_oldest. Redéfinition COMPLÈTE de
+-- public.claim_auction_enrichment_jobs_family. Point de départ : 20260929220000 et ses retouches en place
+-- (20261001083619, 20261111050000, 20261111060000, 20261111070000), rejouées sur une base jetable et recopiées À
+-- L'IDENTIQUE, garde md5. enrichment_oldest prend les mêmes tâches que enrichment (mêmes filtres : conservation,
+-- révision, bail en cours, attente de la tâche pdf de la vente ; bail expiré repris, dernière tentative passée en
+-- échec) mais les sert par échéance la plus ancienne (next_attempt_at). Le 16/11, la voie générale traitait ~115
+-- tâches par jour pour ~600 en file : le bonus de 168 points d'une vente proche faisait passer toute tâche d'une vente
+-- proche devant, et une lecture de pièces au bail expiré depuis le 11/11 (vente lointaine) n'arrivait jamais en tête.
+-- Le travailleur demande enrichment_oldest une prise générale sur quatre (queued_runner.py) : les ventes proches gardent
+-- trois prises sur quatre. La famille enrichment garde exactement son ordre.
+do $guard_claim$
+declare
+  claim_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
+  );
+  request_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_request(uuid,text,integer)'::regprocedure
+  );
+begin
+  if claim_md5 not in (
+    'c1f759eef6cb2c2c450ec153e9a98d12',  -- 20261111070000 et ses prédécesseurs (point de départ)
+    'd905e92e274739192b7611d057ccb697'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format('Unexpected enrichment claim body (md5 %s); refusing the oldest-first lane.', claim_md5);
+  end if;
+  if request_md5 not in (
+    '130fbfa9fc410b7fa5695d18c49ae15c',  -- 20260913105127 (point de départ)
+    'a05bc13d7786d27f322c7b76fff6bd4f'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format('Unexpected claim request body (md5 %s); refusing the oldest-first lane.', request_md5);
+  end if;
+end;
+$guard_claim$;
+
+create or replace function public.claim_auction_enrichment_jobs_family(
+  p_family text,
+  p_limit integer default 10
+)
+returns setof public.auction_enrichment_jobs
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  v_family text := lower(trim(coalesce(p_family, '')));
+  v_claim_limit integer := greatest(1, least(coalesce(p_limit, 10), 100));
+begin
+  if v_family not in ('source_detail', 'enrichment', 'enrichment_oldest', 'all') then
+    raise exception 'Unknown enrichment queue family: %', p_family
+      using errcode = '22023';
+  end if;
+
+  -- Detail work can also be claimed through the historical all-family RPC.
+  -- Serialize only the short SQL claim section; the worker performs HTTP and
+  -- OCR after this transaction has returned its leases.
+  if v_family in ('source_detail', 'all') then
+    perform pg_advisory_xact_lock(
+      hashtextextended('immojudis-enrichment-source-detail-claim', 0)
+    );
+  end if;
+
+  -- Retain an audit trail; obsolete work must never consume a retry or a
+  -- network/LLM call. A fenced row is authoritative: NULL means the policy
+  -- keeps the sale, while a non-materialized row is conservatively kept until
+  -- the bounded backfill/trigger has made its deadline ready.
+  update public.auction_enrichment_jobs j
+     set status = 'cancelled',
+         locked_at = null,
+         updated_at = now(),
+         last_error = 'Listing removed, expired or explicitly cancelled'
+   where (j.status in ('queued', 'failed')
+       or (j.status = 'running'
+           and coalesce(j.locked_at, j.updated_at) < now() - interval '30 minutes'))
+     and not exists (
+       select 1
+         from public.auction_sales s
+        where s.source_url = j.source_url
+          and s.status in ('active', 'unknown', 'upcoming', 'postponed', 'past')
+          and (
+            not s.retention_deadline_materialized
+            or s.retention_deadline is null
+            or s.retention_deadline > now()
+          )
+     );
+
+  with ranked as (
+    select id,
+           row_number() over (
+             partition by source_url, job_type, detail_source_name, detail_source_url
+             order by created_at desc, (input_hash like 'pipeline_v2:%') desc, id desc
+           ) as revision_rank
+      from public.auction_enrichment_jobs
+     where status <> 'cancelled'
+  )
+  update public.auction_enrichment_jobs j
+     set status = 'cancelled',
+         locked_at = null,
+         updated_at = now(),
+         last_error = 'Superseded by a newer input revision'
+    from ranked r
+   where r.id = j.id
+     and r.revision_rank > 1
+     and (
+       j.status in ('queued', 'failed')
+       or (j.status = 'running'
+           and coalesce(j.locked_at, j.updated_at) < now() - interval '30 minutes')
+     );
+
+  update public.auction_enrichment_jobs
+     set status = 'failed',
+         locked_at = null,
+         updated_at = now(),
+         last_error = 'Worker lease expired and retry budget exhausted'
+   where status = 'running'
+     and coalesce(locked_at, updated_at) < now() - interval '30 minutes'
+     and attempt_count >= max_attempts;
+
+  if v_family = 'source_detail' then
+    -- Rank within every source first. Ordering those first rows by the
+    -- source's last claim gives a round-robin batch: with N sources, ranks
+    -- 1..N are selected before rank N+1 is considered. The outer join back to
+    -- jobs/sales is deliberate so FOR UPDATE can retain the old row locks.
+    return query
+    with eligible as (
+      select j.id,
+             j.source_url,
+             j.detail_source_name,
+             j.priority,
+             j.created_at,
+             state.last_detail_claim_at,
+             coalesce((s.sale_date between now() and now() + interval '7 days'), false) as is_near
+        from public.auction_enrichment_jobs j
+        join public.auction_sales s on s.source_url = j.source_url
+        join public.auction_source_state state
+          on state.source_name = j.detail_source_name
+       where (
+         j.status in ('queued', 'failed')
+         or (j.status = 'running'
+             and coalesce(j.locked_at, j.updated_at) < now() - interval '30 minutes')
+       )
+         and j.next_attempt_at <= now()
+         and j.attempt_count < j.max_attempts
+         and j.job_type = 'source_detail'
+         and exists (
+           select 1
+             from public.auction_pipeline_control c
+            where c.id and c.enabled and c.source_details_enabled
+         )
+         and state.enabled
+         and (state.suspended_until is null or state.suspended_until <= now())
+         and s.status in ('active', 'unknown', 'upcoming', 'postponed', 'past')
+         and s.retention_deadline_materialized
+         and (s.retention_deadline is null or s.retention_deadline > now())
+         and not exists (
+           select 1
+             from public.auction_enrichment_jobs active
+            where active.source_url = j.source_url
+              and active.status = 'running'
+              and coalesce(active.locked_at, active.updated_at) >= now() - interval '30 minutes'
+         )
+    ), ranked_details as (
+      select e.*,
+             row_number() over (
+               partition by e.detail_source_name
+               order by e.is_near desc,
+                        e.priority + extract(epoch from (now() - e.created_at)) / 3600 desc,
+                        e.created_at,
+                        e.id
+             ) as source_rank
+        from eligible e
+    ), candidates as (
+      select j.id
+        from ranked_details r
+        join public.auction_enrichment_jobs j on j.id = r.id
+        join public.auction_sales s on s.source_url = j.source_url
+       order by r.source_rank,
+                r.last_detail_claim_at nulls first,
+                r.detail_source_name,
+                r.is_near desc,
+                r.priority + extract(epoch from (now() - r.created_at)) / 3600 desc,
+                r.created_at,
+                r.id
+       for update of j, s skip locked
+       limit v_claim_limit
+    ), claimed as (
+      update public.auction_enrichment_jobs j
+         set status = 'running',
+             attempt_count = j.attempt_count + 1,
+             locked_at = statement_timestamp(),
+             updated_at = statement_timestamp(),
+             last_error = null
+        from candidates c
+       where c.id = j.id
+      returning j.*
+    ), touched_sources as (
+      update public.auction_source_state state
+         set last_detail_claim_at = statement_timestamp(),
+             updated_at = statement_timestamp()
+       where state.source_name in (
+         select c.detail_source_name
+           from claimed c
+          where c.detail_source_name is not null
+       )
+      returning state.source_name
+    )
+    select c.*
+      from claimed c
+      cross join (select count(*) from touched_sources) touched;
+    return;
+  end if;
+
+  -- Keep the enrichment and historical all-family order and eligibility
+  -- unchanged. The all-family claim still records detail sources that it
+  -- happens to lease, so legacy callers participate in the same fairness clock.
+  return query
+  with candidates as (
+    select j.id
+      from public.auction_enrichment_jobs j
+      join public.auction_sales s on s.source_url = j.source_url
+     where (
+       j.status in ('queued', 'failed')
+       or (j.status = 'running'
+           and coalesce(j.locked_at, j.updated_at) < now() - interval '30 minutes')
+     )
+       and j.next_attempt_at <= now()
+       and j.attempt_count < j.max_attempts
+       and (
+         v_family = 'all'
+         or (v_family = 'source_detail' and j.job_type = 'source_detail')
+         or (v_family in ('enrichment', 'enrichment_oldest') and j.job_type <> 'source_detail')
+       )
+       and (
+         j.job_type <> 'source_detail'
+         or (
+           exists (
+             select 1
+               from public.auction_pipeline_control c
+              where c.id and c.enabled and c.source_details_enabled
+           )
+           and exists (
+             select 1
+               from public.auction_source_state state
+              where state.source_name = j.detail_source_name
+                and state.enabled
+                and (state.suspended_until is null or state.suspended_until <= now())
+           )
+         )
+       )
+       and s.status in ('active', 'unknown', 'upcoming', 'postponed', 'past')
+       and s.retention_deadline_materialized
+       and (s.retention_deadline is null or s.retention_deadline > now())
+       and not exists (
+         select 1
+           from public.auction_enrichment_jobs active
+          where active.source_url = j.source_url
+            and active.status = 'running'
+            and coalesce(active.locked_at, active.updated_at) >= now() - interval '30 minutes'
+       )
+       -- Description et faits attendent la lecture des pièces de leur vente (has_eligible_pdf_job_for_sale).
+       and (
+         j.job_type not in ('display_description', 'fact_extraction')
+         or not exists (
+           select 1
+             from public.auction_enrichment_jobs pdf
+            where pdf.source_url = j.source_url
+              and pdf.job_type = 'pdf'
+              and pdf.status in ('queued', 'running', 'failed')
+              and (pdf.status = 'running' or pdf.attempt_count < pdf.max_attempts)
+         )
+       )
+     order by (v_family = 'all' and j.job_type = 'source_detail') desc,
+              -- Part réservée à l'ancienneté (20261201100000) : enrichment_oldest sert d'abord la tâche échue depuis
+              -- le plus longtemps, quel que soit son score ; ailleurs cette clé vaut null partout et l'ordre ne change
+              -- pas.
+              case when v_family = 'enrichment_oldest' then j.next_attempt_at end nulls last,
+              j.priority
+                + case when j.job_type = 'pdf' then 24 else 0 end
+                + extract(epoch from (now() - j.created_at)) / 3600
+                + case
+                    when coalesce((s.sale_date between now() and now() + interval '7 days'), false)
+                      then 168
+                    else 0
+                  end desc,
+              j.created_at,
+              j.id
+     for update of j, s skip locked
+     limit v_claim_limit
+  ), claimed as (
+    update public.auction_enrichment_jobs j
+       set status = 'running',
+           attempt_count = j.attempt_count + 1,
+           locked_at = statement_timestamp(),
+           updated_at = statement_timestamp(),
+           last_error = null
+      from candidates c
+     where c.id = j.id
+    returning j.*
+  ), touched_sources as (
+    update public.auction_source_state state
+       set last_detail_claim_at = statement_timestamp(),
+           updated_at = statement_timestamp()
+     where state.source_name in (
+       select c.detail_source_name
+         from claimed c
+        where c.job_type = 'source_detail'
+          and c.detail_source_name is not null
+     )
+    returning state.source_name
+  )
+  select c.*
+    from claimed c
+    cross join (select count(*) from touched_sources) touched;
+end;
+$function$;
+
+revoke all on function public.claim_auction_enrichment_jobs_family(text, integer)
+  from public, anon, authenticated;
+grant execute on function public.claim_auction_enrichment_jobs_family(text, integer)
+  to service_role;
+
+-- Les reçus d'idempotence admettent la nouvelle famille (table privée de quelques lignes par passage).
+alter table app_private.auction_enrichment_claim_receipts
+  drop constraint if exists auction_enrichment_claim_receipts_family_check;
+alter table app_private.auction_enrichment_claim_receipts
+  add constraint auction_enrichment_claim_receipts_family_check
+  check (family in ('source_detail', 'enrichment', 'enrichment_oldest'));
+
+-- Redéfinition COMPLÈTE de public.claim_auction_enrichment_jobs_request (20260913105127, garde md5 ci-dessus) : seule la
+-- liste des familles admises change. Une base sans cette migration refuse enrichment_oldest (22023) : le travailleur se
+-- replie alors sur enrichment, le déploiement marche dans les deux ordres.
+create or replace function public.claim_auction_enrichment_jobs_request(
+  p_request_id uuid,
+  p_family text,
+  p_limit integer default 1
+)
+returns setof public.auction_enrichment_jobs
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_family text := lower(trim(coalesce(p_family, '')));
+  v_limit integer := p_limit;
+  v_receipt app_private.auction_enrichment_claim_receipts%rowtype;
+  v_snapshot jsonb;
+  v_snapshot_count integer;
+  v_valid_count integer;
+  v_queue_claim_not_before timestamptz;
+begin
+  if p_request_id is null
+     or v_family not in ('source_detail', 'enrichment', 'enrichment_oldest')
+     or v_limit is null
+     or v_limit < 1
+     or v_limit > 100 then
+    raise exception 'Invalid queue claim request arguments'
+      using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('immojudis:queue-claim-request:' || p_request_id::text, 0)
+  );
+
+  select *
+    into v_receipt
+    from app_private.auction_enrichment_claim_receipts
+   where request_id = p_request_id;
+
+  if found then
+    if v_receipt.family <> v_family or v_receipt.claim_limit <> v_limit then
+      raise exception 'Queue claim request id already used with different family or limit'
+        using errcode = '22023';
+    end if;
+
+    -- A request UUID is never allowed to reserve another slot.  Return the
+    -- original leases only while every lease is still an exact live lease;
+    -- if any member is obsolete, replay is intentionally empty.
+    select count(*)
+      into v_snapshot_count
+      from jsonb_array_elements(v_receipt.snapshot);
+    if v_snapshot_count = 0 then
+      return;
+    end if;
+
+    select count(*)
+      into v_valid_count
+      from jsonb_array_elements(v_receipt.snapshot) with ordinality as item(value, ordinal)
+      join public.auction_enrichment_jobs j
+        on j.id = (item.value->>'id')::uuid
+       and j.status = 'running'
+       and j.attempt_count = (item.value->>'attempt_count')::integer
+       and j.locked_at = (item.value->>'locked_at')::timestamptz
+       and j.locked_at >= statement_timestamp() - interval '30 minutes';
+    if v_valid_count <> v_snapshot_count then
+      return;
+    end if;
+
+    return query
+    select j.*
+      from jsonb_array_elements(v_receipt.snapshot) with ordinality as item(value, ordinal)
+      join public.auction_enrichment_jobs j
+        on j.id = (item.value->>'id')::uuid
+       and j.status = 'running'
+       and j.attempt_count = (item.value->>'attempt_count')::integer
+       and j.locked_at = (item.value->>'locked_at')::timestamptz
+       and j.locked_at >= statement_timestamp() - interval '30 minutes'
+     order by item.ordinal;
+    return;
+  end if;
+
+  -- A long provider backoff is persisted outside the worker process.  The
+  -- direct DB writer and this RPC use the same short transaction lock, so a
+  -- new request cannot slip between the backoff check and the family claim.
+  perform pg_advisory_xact_lock(
+    hashtextextended('immojudis:queue-claim-backoff', 0)
+  );
+  select queue_claim_not_before
+    into v_queue_claim_not_before
+    from public.auction_pipeline_control
+   where id;
+  if v_queue_claim_not_before is not null
+     and v_queue_claim_not_before > statement_timestamp() then
+    return;
+  end if;
+
+  -- The family RPC and receipt insert are in this same transaction.  A
+  -- rollback before the insert leaves the request reusable; once the receipt
+  -- commits, all later deliveries are replay-only.
+  select coalesce(
+           jsonb_agg(
+             jsonb_build_object(
+               'ordinal', claimed.ordinal,
+               'id', claimed.id,
+               'attempt_count', claimed.attempt_count,
+               'locked_at', claimed.locked_at
+             ) order by claimed.ordinal
+           ),
+           '[]'::jsonb
+         )
+    into v_snapshot
+    from (
+      select row_number() over () as ordinal, claimed.*
+        from public.claim_auction_enrichment_jobs_family(v_family, v_limit) as claimed
+    ) claimed;
+
+  insert into app_private.auction_enrichment_claim_receipts
+    (request_id, family, claim_limit, snapshot)
+  values (p_request_id, v_family, v_limit, v_snapshot);
+
+  -- Return the same live leases that were recorded in the receipt.  This also
+  -- keeps an empty claim a normal successful response.
+  select count(*)
+    into v_snapshot_count
+    from jsonb_array_elements(v_snapshot);
+  if v_snapshot_count = 0 then
+    return;
+  end if;
+
+  return query
+  select j.*
+    from jsonb_array_elements(v_snapshot) with ordinality as item(value, ordinal)
+    join public.auction_enrichment_jobs j
+      on j.id = (item.value->>'id')::uuid
+     and j.status = 'running'
+     and j.attempt_count = (item.value->>'attempt_count')::integer
+     and j.locked_at = (item.value->>'locked_at')::timestamptz
+     and j.locked_at >= statement_timestamp() - interval '30 minutes'
+   order by item.ordinal;
+end;
+$$;
+
+revoke all on function public.claim_auction_enrichment_jobs_request(uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.claim_auction_enrichment_jobs_request(uuid, text, integer)
+  to service_role;
 
 notify pgrst, 'reload schema';
 

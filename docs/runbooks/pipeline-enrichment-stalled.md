@@ -87,8 +87,10 @@ La revendication (`claim_auction_enrichment_jobs_family`) reprend une tâche `ru
 a expiré, avec une tentative de plus, et la passe en `failed` à sa dernière tentative (test
 `supabase/tests/898_enrichment_claim_reclaims_expired_lease.sql`). Une tâche reprise est classée comme une tâche
 en file : elle n'a aucune priorité propre. Une lecture de pièces restée en `running` depuis le 11/11/2026 n'a
-pas été reprise ; selon le code de la revendication, seules quatre raisons l'expliquent, que la requête suivante
-départage (lecture seule) :
+pas été reprise. Relevé du 16/11 : tentative 1 sur 4, échue, vente `upcoming` prenable, aucun autre bail. Cause :
+le dernier cas ci-dessous, la tâche attendait son tour derrière les ventes proches (« Équité de la file ») ;
+corrigé par la famille `enrichment_oldest` (`20261201100000`). Selon le code de la revendication, seules ces
+raisons l'expliquent ; la requête suivante les départage (lecture seule) :
 
 ```sql
 select j.id, j.attempt_count, j.max_attempts, j.next_attempt_at, j.locked_at, j.created_at,
@@ -139,8 +141,10 @@ select j.id, j.attempt_count, j.max_attempts, j.next_attempt_at, j.locked_at, j.
   tâche n'est pas annulée) mais jamais prenable tant que son échéance de conservation n'est pas matérialisée.
   Corriger la matérialisation, pas la tâche.
 - `autre_bail_en_cours` vrai : une autre tâche de la même vente renouvelle sans cesse son bail.
-- Tout est vrai et `taches_devant` est grand : la tâche attend simplement son tour dans la voie générale
-  (classement ci-dessous) ; c'est un problème de débit.
+- Tout est vrai et `taches_devant` est grand : la tâche attend son tour dans la voie générale. Depuis
+  `20261201100000`, une prise générale sur quatre la sert par ancienneté (`enrichment_oldest`) : elle doit être
+  reprise dans les passages qui suivent. Si elle ne l'est pas, vérifier dans le journal du travailleur que la
+  famille n'est pas refusée (« The database refused the enrichment_oldest queue family »).
 
 Tant qu'elle reste en `running`, la description et les faits de sa vente l'attendent (la garde compte une tâche
 `pdf` `running` quel que soit son bail). Ne pas la modifier par son identifiant sans avoir établi la cause.
@@ -153,11 +157,30 @@ faits, descriptions). Trois tâches `source_detail` pour une générale, ou une 
 plus longue ; après le premier refus du budget IA, plus aucune générale jusqu'à la fin du passage. Une
 description et une tâche `source_detail` ne sont donc jamais classées l'une contre l'autre par la base.
 
-Dans la voie générale, la revendication classe par score : `priority` + **âge en heures** (sans plafond) + 24 si
-`pdf` + 168 si la vente a lieu dans les 7 jours. Une tâche qui attend finit donc par passer devant : une
-description vieille de 15 jours (360 points d'âge) passe devant une lecture de pièces du jour (24 points). Une
-description ou une passe de faits n'est en revanche jamais prise tant que la tâche `pdf` de sa vente peut encore
-avancer : une description « jamais touchée » attend le plus souvent sa lecture de pièces. Requête de contrôle :
+Dans la voie générale, la famille `enrichment` classe par score : `priority` + âge en heures + 24 si `pdf` + 168 si
+la vente a lieu dans les 7 jours. Le 16/11/2026, la voie traitait ~115 tâches par jour pour ~600 en file : le bonus
+de 168 points renouvelé chaque jour par les nouvelles ventes proches tenait en queue, pendant des jours, les tâches
+des ventes lointaines (la lecture de pièces au bail expiré du 11/11, des lectures du 06/11).
+
+Depuis `20261201100000` :
+
+- **Part réservée à l'ancienneté.** La famille `enrichment_oldest` prend les mêmes tâches que `enrichment` (mêmes
+  filtres : conservation, révision, bail en cours, attente des pièces ; bail expiré repris) mais par échéance la
+  plus ancienne (`next_attempt_at`). Pendant un passage, le travailleur la demande une prise générale sur quatre
+  (`services/data-pipeline/src/general_lane_claims.py`) ; les ventes proches gardent trois prises sur quatre et la
+  famille `enrichment` garde son ordre. Une base sans la migration refuse la famille (SQLSTATE 22023) : le
+  travailleur se replie sur `enrichment` jusqu'à la fin du passage et le note dans son journal.
+- **Descriptions sans objet closes.** Depuis `20261112110000`, une tâche `display_description` ne produit plus
+  rien : le travailleur la termine sans appel. La migration a clos de la même façon (statut `completed`) celles
+  qui restaient en file, en échec avec essais restants ou en `running` au bail expiré ; les épuisées n'ont pas été
+  touchées. **Une création subsiste** : la publication d'un fait de l'agent d'information
+  (`app_private.apply_information_agent_fact`, migration `20261119100900`) insère encore une tâche
+  `display_description` (priorité 90) ; le travailleur la termine aussitôt. Contrôle :
+  `select count(*) from auction_enrichment_jobs where job_type = 'display_description' and created_at > now() -
+interval '24 hours';`
+
+Une passe de faits n'est jamais prise tant que la tâche `pdf` de sa vente peut encore avancer. Requête de
+contrôle :
 
 ```sql
 select j.job_type,
