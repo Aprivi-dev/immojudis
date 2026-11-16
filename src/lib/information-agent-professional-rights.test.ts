@@ -124,6 +124,7 @@ import {
   collectProfessionalData,
   createProfessionalPrivacyRequest,
   eraseProfessionalData,
+  escapeLikePattern,
 } from "./information-agent-professional-rights";
 import { PROFESSIONAL_PRIVACY_SOURCE } from "./privacy-request-types";
 
@@ -222,6 +223,13 @@ function seed() {
 beforeEach(() => {
   state.notify.mockReset();
   seed();
+});
+
+describe("escapeLikePattern", () => {
+  it("échappe \\, % et _, et ramène * (lu comme % par PostgREST) à un seul caractère", () => {
+    expect(escapeLikePattern("a_b%c\\d@x.fr")).toBe("a\\_b\\%c\\\\d@x.fr");
+    expect(escapeLikePattern("*@x.fr")).toBe("_@x.fr");
+  });
 });
 
 describe("createProfessionalPrivacyRequest", () => {

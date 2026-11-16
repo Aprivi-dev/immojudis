@@ -463,6 +463,12 @@ function WithdrawalSection({
                 {facts.withinWithdrawalPeriod ? "en cours" : "dépassé"}.
               </li>
               <li>Accès fourni (vente ouverte avec cet achat) : {yesNo(facts.accessProvided)}.</li>
+              <li className={facts.deducted ? "text-danger" : undefined}>
+                Déduit du premier mois d’un abonnement : {yesNo(facts.deducted)}.
+                {facts.deducted
+                  ? " Plus remboursable seul : l’exécution sera refusée ; traitez la rétractation de l’abonnement, ou rejetez la demande avec vos motifs."
+                  : ""}
+              </li>
               <li>
                 Renonciation expresse cochée avant le paiement : {yesNo(facts.waiverAcknowledged)} ;
                 confirmation de commande envoyée : {yesNo(facts.confirmationSent)}.

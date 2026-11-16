@@ -26,9 +26,13 @@ export function isProfessionalRequestType(value: unknown): value is Professional
   return (PROFESSIONAL_REQUEST_TYPES as readonly unknown[]).includes(value);
 }
 
-/** Échappe `\`, `%` et `_` : une adresse contient souvent `_`, qui joindrait une autre adresse. */
+/**
+ * Échappe `\`, `%` et `_` : une adresse contient souvent `_`, qui joindrait une autre adresse. PostgREST
+ * lit `*` comme `%` dans `like`/`ilike`, sans échappement possible : il devient `_` (un seul caractère).
+ * Le motif reste plus large que l'adresse : l'appelant ne retient que l'égalité exacte.
+ */
 export function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+  return value.replace(/[\\%_*]/g, (char) => (char === "*" ? "_" : `\\${char}`));
 }
 
 type PageResult<T> = PromiseLike<{ data: T[] | null; error: { message?: string } | null }>;

@@ -4,11 +4,14 @@ import type Stripe from "stripe";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { ANALYSIS_CHECKOUT_EXPIRY_MINUTES } from "@/lib/analysis-offer";
 import { PublicApiError } from "@/lib/api-errors";
 import { getStripe } from "@/lib/billing";
 import { formatPriceWithCents } from "@/lib/format/numbers";
 import { withinWithdrawalPeriod } from "@/lib/privacy-deadline";
 import {
+  hasLiveDeductionReservation,
+  isDeductedPurchase,
   updatePrivacyRequestForAdmin,
   withdrawalPurchaseIdOf,
   type PrivacyRequestAdminSummary,
@@ -207,6 +210,7 @@ export async function executeContractWithdrawal({
       requestId: request.id,
       userId: request.user_id,
       purchaseId,
+      now,
     });
     const updated = await closeWithdrawal({
       auth,
@@ -382,14 +386,18 @@ async function refundSaleUnlockPurchase({
   requestId,
   userId,
   purchaseId,
+  now,
 }: {
   requestId: string;
   userId: string;
   purchaseId: string;
+  now: Date;
 }): Promise<{ refundedCents: number; note: string }> {
   const { data: purchase, error } = await supabaseAdmin
     .from("sale_unlock_purchases")
-    .select("id,user_id,state,payment_intent_id,amount_cents")
+    .select(
+      "id,user_id,state,payment_intent_id,amount_cents,deducted_checkout_session_id,deduction_reserved_token,deduction_reserved_at",
+    )
     .eq("id", purchaseId)
     .maybeSingle();
   if (error) throw error;
@@ -398,6 +406,20 @@ async function refundSaleUnlockPurchase({
   }
   if (purchase.state === "refunded") {
     return { refundedCents: 0, note: "Achat déjà remboursé : aucun nouveau remboursement." };
+  }
+  // Son prix a déjà été rendu par la remise sur le premier mois de l'abonnement : le rembourser aussi
+  // le paierait deux fois. La rétractation porte alors sur l'abonnement.
+  if (isDeductedPurchase(purchase)) {
+    throw new PublicApiError(
+      "Achat déduit du premier mois d'un abonnement : il n'est plus remboursable seul, rien n'a été remboursé. Traitez la rétractation de l'abonnement, ou clôturez la demande avec vos motifs.",
+      409,
+    );
+  }
+  if (hasLiveDeductionReservation(purchase, now)) {
+    throw new PublicApiError(
+      `Achat réservé pour la remise d'un paiement d'abonnement en cours : rien n'a été remboursé. Relancez une fois ce paiement abouti ou expiré (${ANALYSIS_CHECKOUT_EXPIRY_MINUTES} minutes au plus).`,
+      409,
+    );
   }
   if (purchase.state !== "paid" || !purchase.payment_intent_id) {
     throw new PublicApiError(
@@ -452,6 +474,8 @@ export type ContractWithdrawalContext =
         withinWithdrawalPeriod: boolean;
         /** Une vente a été ouverte avec cet achat (vente achetée, ou crédit utilisé). */
         accessProvided: boolean;
+        /** Déduit du premier mois d'un abonnement : plus remboursable seul (l'exécution est refusée). */
+        deducted: boolean;
         /** Renonciation expresse cochée avant le paiement (preuve d'acceptation) ; `null` : introuvable. */
         waiverAcknowledged: boolean | null;
         /** Confirmation de commande envoyée (support durable) ; `null` : aucune trace. */
@@ -496,7 +520,9 @@ export async function getContractWithdrawalContext({
   }
   const { data: purchase, error: purchaseError } = await supabaseAdmin
     .from("sale_unlock_purchases")
-    .select("id,user_id,state,paid_at,amount_cents,currency,commercial_acceptance_id")
+    .select(
+      "id,user_id,state,paid_at,amount_cents,currency,commercial_acceptance_id,deducted_checkout_session_id",
+    )
     .eq("id", purchaseId)
     .maybeSingle();
   if (purchaseError) throw purchaseError;
@@ -538,6 +564,7 @@ export async function getContractWithdrawalContext({
       currency: purchase.currency,
       withinWithdrawalPeriod: withinWithdrawalPeriod(purchase.paid_at),
       accessProvided: (unlocks.count ?? 0) > 0,
+      deducted: isDeductedPurchase(purchase),
       waiverAcknowledged: evidence ? evidence.withdrawal_waiver_acknowledged === true : null,
       confirmationSent: confirmation.data ? confirmation.data.status === "sent" : null,
     },
