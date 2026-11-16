@@ -80,14 +80,6 @@ export const privacyRequestAdminUpdateSchema = z
         message: "Un code de résolution est requis pour clôturer la demande.",
       });
     }
-    // Art. 12.4 RGPD : un refus est motivé auprès du demandeur.
-    if (input.status === "rejected" && !input.response?.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["response"],
-        message: "Indiquez au demandeur les motifs du refus.",
-      });
-    }
   });
 
 export type PrivacyRequestType = z.infer<typeof privacyRequestTypeSchema>;
@@ -206,7 +198,7 @@ export function withdrawalPurchaseIdOf(metadata: Json | null | undefined): strin
  * Achats à l'unité du compte payés depuis moins de `WITHDRAWAL_PERIOD_DAYS` jours et pas encore
  * remboursés : ceux dont la rétractation peut être demandée.
  */
-export async function listWithdrawablePurchases(
+async function listWithdrawablePurchases(
   userId: string,
   now: Date = new Date(),
 ): Promise<WithdrawablePurchase[]> {
@@ -400,6 +392,10 @@ export async function updatePrivacyRequestForAdmin({
   assertErasureClosure(current, input);
   const terminal = isClosed(input.status);
   const closing = terminal && !isClosed(current.status);
+  // Art. 12.4 RGPD : un refus est motivé auprès du demandeur, dans l'email de clôture.
+  if (closing && input.status === "rejected" && !input.response?.trim()) {
+    throw new PublicApiError("Indiquez au demandeur les motifs du refus.", 400);
+  }
   const now = new Date().toISOString();
   const { data, error } = await supabaseAdmin
     .from("data_subject_requests")
@@ -546,10 +542,7 @@ export type ErasureGuard = {
  * non utilisé. Le crédit se lit par la base (`account_sale_unlock_credits`, migration 20261202100000) ;
  * sans elle, il est « non vérifiable » et la confirmation est exigée quand même.
  */
-export async function computeErasureGuard(
-  userId: string,
-  now: Date = new Date(),
-): Promise<ErasureGuard> {
+async function computeErasureGuard(userId: string, now: Date = new Date()): Promise<ErasureGuard> {
   const [subscription, purchases, credits] = await Promise.all([
     supabaseAdmin
       .from("user_subscriptions")

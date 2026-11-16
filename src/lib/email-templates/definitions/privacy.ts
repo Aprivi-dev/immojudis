@@ -46,9 +46,8 @@ const acknowledgement: EmailTemplateDefinition = {
   sender: "TRANSACTIONAL_EMAIL_FROM",
   level: "readonly",
   async sample() {
-    const { buildPrivacyRequestAcknowledgementMessage } = await import(
-      "@/lib/privacy-request-emails"
-    );
+    const { buildPrivacyRequestAcknowledgementMessage } =
+      await import("@/lib/privacy-request-emails");
     const envelope = { from: SAMPLE_FROM, to: SAMPLE_RECIPIENT, appUrl: SAMPLE_APP_URL };
     return [
       variantFromMessage(

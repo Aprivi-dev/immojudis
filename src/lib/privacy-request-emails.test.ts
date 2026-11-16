@@ -62,9 +62,7 @@ describe("emails de suivi d'une demande de droits", () => {
     expect(message.subject).toBe(
       "Nous avons bien reçu votre demande : Rétractation d’une commande",
     );
-    expect(message.text).toContain(
-      "Échéance de réponse : 29 novembre 2026 (délai de 14 jours)",
-    );
+    expect(message.text).toContain("Échéance de réponse : 29 novembre 2026 (délai de 14 jours)");
     expect(message.text).toContain("https://immojudis.test/mes-droits");
     const professional = buildPrivacyRequestAcknowledgementMessage(
       { ...facts, subjectKind: "information_agent_professional" },

@@ -245,7 +245,8 @@ function PrivacyRequestEditor({
 
   const terminal = status === "completed" || status === "rejected";
   const closed = request.status === "completed" || request.status === "rejected";
-  const missingResponse = status === "rejected" && !response.trim();
+  // Le refus est motivé dans l'email de clôture : exigé seulement au moment de clore.
+  const missingResponse = status === "rejected" && !closed && !response.trim();
 
   return (
     <article className="admin-panel rounded-lg p-4">
@@ -338,7 +339,8 @@ function PrivacyRequestEditor({
           />
         </label>
         <label className="grid gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground md:col-span-2">
-          Réponse au demandeur {status === "rejected" ? "(obligatoire : motifs du refus)" : ""}
+          Réponse au demandeur{" "}
+          {status === "rejected" && !closed ? "(obligatoire : motifs du refus)" : ""}
           <textarea
             value={response}
             maxLength={2000}

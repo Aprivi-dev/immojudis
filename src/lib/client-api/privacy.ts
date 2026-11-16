@@ -62,9 +62,7 @@ export function fetchAdminContractWithdrawalContext(
   requestId: string,
 ): Promise<ContractWithdrawalContext> {
   const search = new URLSearchParams({ requestId });
-  return apiRequest<ContractWithdrawalContext>(
-    "/api/admin/privacy-requests/withdrawal?" + search,
-  );
+  return apiRequest<ContractWithdrawalContext>("/api/admin/privacy-requests/withdrawal?" + search);
 }
 
 /** Garde avant effacement : ce qui serait perdu avec le compte (administrateur). */

@@ -2,7 +2,8 @@
 
 1. La revendication (``claim_auction_enrichment_jobs_family``, 20261111050000 ; 20261111060000 et 20261111070000
    ne changent que l'ordre de tri) ne prend pas la tâche.
-2. L'observateur de la file (``waits_for_pdf`` de 20261119101000) ne la compte pas comme immobile.
+2. L'observateur de la file (``waits_for_pdf`` de sa dernière définition, 20261201100000) ne la compte pas comme
+   immobile.
 3. Le worker (``storage.supabase_client.has_eligible_pdf_job_for_sale``) reporte une passe de faits.
 
 Aucune fonction SQL ne les partage (seconde relecture du lot D, 14/11/2026) : ce test les fait changer ensemble.
@@ -20,7 +21,8 @@ from src.storage import supabase_client
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 CLAIM_MIGRATION = "20261111050000_enrichment_claim_pdf_first.sql"
-OBSERVER_MIGRATION = "20261119101000_enrichment_stalled_counts_immobile_jobs.sql"
+# La dernière définition de observe_autonomous_pipeline (elle remplace celle de 20261119101000).
+OBSERVER_MIGRATION = "20261201100000_operational_alerts_recalibration.sql"
 CLAIM_FUNCTION = "claim_auction_enrichment_jobs_family"
 
 # The guard, comments and line breaks removed: the job types it holds back and what a pdf job of the same sale must
@@ -54,6 +56,16 @@ def test_the_claim_and_the_observer_hold_back_the_same_jobs_behind_the_same_pdf_
 
     assert _rules(_claim_patch()) == expected
     assert _rules((MIGRATIONS / OBSERVER_MIGRATION).read_text(encoding="utf-8")) == expected
+
+
+def test_the_observer_compared_is_its_latest_definition() -> None:
+    later = [
+        path.name
+        for path in sorted(MIGRATIONS.glob("*.sql"))
+        if path.name > OBSERVER_MIGRATION
+        and "function public.observe_autonomous_pipeline" in path.read_text(encoding="utf-8").lower()
+    ]
+    assert later == [], "point OBSERVER_MIGRATION at the latest definition of observe_autonomous_pipeline"
 
 
 def test_no_later_migration_changes_the_claim_rule_alone() -> None:

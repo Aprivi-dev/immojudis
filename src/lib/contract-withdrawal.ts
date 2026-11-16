@@ -368,7 +368,7 @@ async function closeWithdrawal({
 }
 
 /** Clé d'idempotence stable par achat : un achat n'est remboursé qu'une fois, quelle que soit la demande. */
-export function saleUnlockWithdrawalIdempotencyKey(purchaseId: string): string {
+function saleUnlockWithdrawalIdempotencyKey(purchaseId: string): string {
   return `immojudis-sale-unlock-withdrawal-${purchaseId}`;
 }
 
