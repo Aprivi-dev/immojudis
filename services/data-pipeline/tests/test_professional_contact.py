@@ -69,6 +69,22 @@ def test_keep_professional_drops_what_names_a_private_person() -> None:
     assert keep_professional(None) is None
 
 
+def test_keep_professional_keeps_a_civility_followed_by_a_professional_role() -> None:
+    # Noms inventés. Une civilité suivie d'un nom puis d'un rôle désigne le professionnel.
+    contact = "Monsieur Gaspard VERNOLET, avocat au barreau de Lyon"
+    assert keep_professional(contact) == contact
+    assert keep_professional("Madame Kylia OSTRAVEN, commissaire de justice") is not None
+    assert keep_professional("M. Gaspard VERNOLET Notaire à Dijon") is not None
+    # Sans rôle professionnel, la civilité nomme un particulier : toujours rejeté.
+    assert keep_professional("Monsieur Gaspard VERNOLET, demeurant 3 rue des Acacias 69000 Lyon") is None
+    assert keep_professional("Monsieur Gaspard VERNOLET") is None
+    # Le rôle n'excuse pas une autre personne nommée dans le même texte.
+    assert keep_professional("Monsieur Gaspard VERNOLET, avocat de Madame Kylia OSTRAVEN") is None
+    # Le rôle doit suivre directement le nom : ici, l'avocat est celui d'un particulier.
+    assert keep_professional("Monsieur Gaspard VERNOLET représenté par son avocat") is None
+    assert keep_professional("Madame Kylia OSTRAVEN assistée de son notaire, Maître Jean MODELE") is None
+
+
 def test_rpva_addresses_are_never_kept() -> None:
     # Décision juridique : l'adresse RPVA est réservée à la procédure, pas à un contact public.
     assert clear_email("rpva.modele@avocat-conseil.fr") is None
