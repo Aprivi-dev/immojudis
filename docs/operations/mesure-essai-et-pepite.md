@@ -72,7 +72,7 @@ de la vue Inscriptions).
   l'essai) : parmi les comptes créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail
   (`sale_unlocked`, `bid_ceiling_calculated` ou `pepite_detail_served`), posé un favori ou créé une
   alerte. La part affichée a pour dénominateur les comptes à adresse confirmée.
-- **Comptes Découverte : déblocage gratuit et achats à l'unité** (migration `20261124100000`, qui
+- **Comptes Découverte : déblocage gratuit et achats à l'unité** (migration `20261125100000`, qui
   remplace la carte « Comptes Découverte à 3 déblocages » et la fonction
   `admin_pilotage_unlock_threshold` depuis qu'un compte gratuit ne débloque plus qu'une vente en tout) :
   pour le mois de Paris en cours et le précédent, parmi les comptes Découverte (adresse confirmée, sans

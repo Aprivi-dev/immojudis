@@ -1,4 +1,4 @@
--- Activation (20261110180000) et comptes Découverte : déblocage gratuit et achats à l'unité (20261124100000,
+-- Activation (20261110180000) et comptes Découverte : déblocage gratuit et achats à l'unité (20261125100000,
 -- qui remplace la part des comptes Découverte à 3 déblocages) pour la page « Pilotage » : service_role seul,
 -- administrateurs exclus, activation indépendante du quota (fiche ouverte, favori ou alerte), aucun nom ni
 -- identifiant dans la réponse. Les chiffres sont comparés à des relevés pris entre les étapes des données de
