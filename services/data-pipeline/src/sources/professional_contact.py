@@ -50,10 +50,13 @@ _PROFESSIONAL_ROLES = (
     r"avocats?|notaires?|commissaires?\s+de\s+justice|huissiers?|mandataires?\s+judiciaires?"
     r"|liquidateurs?|administrateurs?\s+judiciaires?|greffiers?"
 )
-# Civilité d'un professionnel : suivie d'un nom (sans virgule ni retour à la ligne) puis de son rôle.
+# Un mot du nom : commence par une majuscule (« Gaspard », « VERNOLET », « Le », « d'Aubrac »).
+_NAME_WORD = r"(?:[dDlL]['’])?[A-ZÀ-ÖØ-Þ][\w'’.-]*"
+# Civilité d'un professionnel : suivie de son nom (un à cinq mots à majuscule, rien d'autre) puis
+# directement de son rôle. « Monsieur X représenté par son avocat » n'est donc pas un professionnel.
 _PROFESSIONAL_CIVILITY_RE = re.compile(
     r"(?<![\w.])(?:Monsieur|Madame|Mademoiselle|MONSIEUR|MADAME|Mme|MME|Mlle|Mr\.?|MR\.?|M\.)[^\S\r\n]+"
-    rf"(?=[^,;\r\n]{{1,80}}?,?[^\S\r\n]*(?i:{_PROFESSIONAL_ROLES})\b)"
+    rf"(?={_NAME_WORD}(?:[^\S\r\n]+{_NAME_WORD}){{0,4}},?[^\S\r\n]+(?i:{_PROFESSIONAL_ROLES})\b)"
 )
 
 

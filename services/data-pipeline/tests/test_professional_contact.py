@@ -80,6 +80,9 @@ def test_keep_professional_keeps_a_civility_followed_by_a_professional_role() ->
     assert keep_professional("Monsieur Gaspard VERNOLET") is None
     # Le rôle n'excuse pas une autre personne nommée dans le même texte.
     assert keep_professional("Monsieur Gaspard VERNOLET, avocat de Madame Kylia OSTRAVEN") is None
+    # Le rôle doit suivre directement le nom : ici, l'avocat est celui d'un particulier.
+    assert keep_professional("Monsieur Gaspard VERNOLET représenté par son avocat") is None
+    assert keep_professional("Madame Kylia OSTRAVEN assistée de son notaire, Maître Jean MODELE") is None
 
 
 def test_rpva_addresses_are_never_kept() -> None:
