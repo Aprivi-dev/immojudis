@@ -344,8 +344,8 @@ describe("CeilingPlanner readability", () => {
     const trigger = within(simulator).getByRole("button", { name: "Définition : adjudication" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
     const note = await within(simulator).findByRole("note");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(note.textContent).toContain("Attribution du bien au meilleur enchérisseur");
     expect(within(note).getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
       "/ventes-immobilieres-judiciaires#lexique-adjudication",
