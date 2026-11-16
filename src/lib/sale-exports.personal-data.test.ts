@@ -57,6 +57,14 @@ const sale = {
   id: "sale-with-name",
   title: "Maison occupée par Monsieur Gaspard VERNOLET à Lyon",
   investment_summary: "Bien loué à Madame Kylia VERNOLET, loyer de 600 euros.",
+  documents_rich: [
+    {
+      url: "https://example.test/pieces/PV_VERNOLET_Gaspard.pdf",
+      label: "PV_VERNOLET_Gaspard.pdf",
+      type: "pdf",
+      extraction_status: null,
+    },
+  ],
 };
 
 describe("export CSV et flux API : filtre des noms de personnes", () => {
@@ -78,6 +86,8 @@ describe("export CSV et flux API : filtre des noms de personnes", () => {
     const [item] = feed.data;
     expect(item.title).toBe("Maison occupée par un occupant à Lyon");
     expect(item.scoring.summary).toBe("Bien loué à un locataire, loyer de 600 euros.");
-    expect(JSON.stringify(feed)).not.toContain("VERNOLET");
+    expect(item.documents.items[0].label).toBe("Pièce jointe");
+    // L'adresse de la pièce reste celle de la source (elle n'est pas un texte affiché).
+    expect(JSON.stringify({ ...item, documents: null })).not.toContain("VERNOLET");
   });
 });

@@ -4,8 +4,10 @@ Seul le professionnel est lu : jamais une partie saisie, un occupant ni un créa
 Le garde-fou contre une personne physique est :data:`PROFESSIONAL_PREFIX_RE` : un nom n'est retenu que
 s'il commence par une marque de professionnel (Maître, SCP, SELARL, cabinet, étude…), jamais par
 « Monsieur X ». Le filtre de données personnelles (:mod:`src.personal_data`) s'y ajoute en seconde
-ligne : il ne réécrit un nom qu'après une formule (« demeurant », « née le », « locataire »…) ; il ne
-reconnaît donc pas à lui seul un « Prénom NOM » isolé.
+ligne : il réécrit un nom après une formule (« demeurant », « née le », « locataire »…) ou après une
+civilité (« Monsieur X »), mais pas un « Prénom NOM » isolé ni un nom précédé de « Me » ou « Maître ».
+Une civilité suivie d'un nom puis d'un rôle professionnel (« Monsieur X, avocat ») désigne le
+professionnel : :func:`keep_professional` la garde.
 
 Les adresses masquées par Cloudflare (« [email protected] », ``data-cfemail``) ne sont ni décodées ni
 reprises par ces briques (Vench, Petites Affiches) : seule une adresse publiée en clair est lue. Seul
@@ -43,6 +45,16 @@ _BAR_STOP_WORDS = frozenset(
 )
 _BAR_RE = re.compile(r"\bbarreau\s+(?:de\s+la\s+|de\s+l['’]\s*|d['’]\s*|des\s+|du\s+|de\s+)?(?P<tail>.*)", re.I | re.S)
 _WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*")
+# Rôles d'un professionnel de la vente ou de la procédure, nommés juste après son nom.
+_PROFESSIONAL_ROLES = (
+    r"avocats?|notaires?|commissaires?\s+de\s+justice|huissiers?|mandataires?\s+judiciaires?"
+    r"|liquidateurs?|administrateurs?\s+judiciaires?|greffiers?"
+)
+# Civilité d'un professionnel : suivie d'un nom (sans virgule ni retour à la ligne) puis de son rôle.
+_PROFESSIONAL_CIVILITY_RE = re.compile(
+    r"(?<![\w.])(?:Monsieur|Madame|Mademoiselle|MONSIEUR|MADAME|Mme|MME|Mlle|Mr\.?|MR\.?|M\.)[^\S\r\n]+"
+    rf"(?=[^,;\r\n]{{1,80}}?,?[^\S\r\n]*(?i:{_PROFESSIONAL_ROLES})\b)"
+)
 
 
 def fold(value: object | None) -> str:
@@ -52,14 +64,17 @@ def fold(value: object | None) -> str:
 def keep_professional(value: object | None) -> str | None:
     """Texte nettoyé, ou ``None`` si le filtre de données personnelles le réécrit.
 
-    Ce n'est pas le garde-fou contre une personne physique : le filtre ne réécrit un nom qu'après une
-    formule (« demeurant », « née le »…). Le vrai garde-fou est :data:`PROFESSIONAL_PREFIX_RE`, que
-    l'appelant applique au nom (Petites Affiches : ``_lawyer_name``).
+    Une civilité suivie d'un nom puis d'un rôle professionnel (« Monsieur Paul X, avocat au barreau de
+    Lyon ») est lue comme « Me » pour ce contrôle : le professionnel est gardé ; le reste du texte passe
+    le filtre comme avant (« Monsieur X, demeurant … » reste rejeté). Ce n'est pas le garde-fou contre
+    une personne physique : c'est :data:`PROFESSIONAL_PREFIX_RE`, que l'appelant applique au nom
+    (Petites Affiches : ``_lawyer_name``).
     """
     text = clean_text(value)
-    if not text or redact_personal_text(text) != text:
+    if not text:
         return None
-    return text
+    checked = _PROFESSIONAL_CIVILITY_RE.sub("Me ", text)
+    return text if redact_personal_text(checked) == checked else None
 
 
 def clear_email(value: object | None) -> str | None:
