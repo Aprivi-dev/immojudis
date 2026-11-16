@@ -17,7 +17,9 @@ set local lock_timeout = '5s';
 --    (a) la fenêtre de fraîcheur suit la politique de relecture de la collecte. Une seule source de vérité côté SQL :
 --        app_private.listing_review_policy(), JUMELLE de detail_reread_hours (services/data-pipeline/src/freshness.py) :
 --        relecture après 72 h, 24 h pour Licitor, 6 h pour une audience dans les 7 jours. La santé applique la
---        politique (72 h, Licitor 24 h) ; pour une audience proche, elle applique une TOLÉRANCE nommée à part
+--        politique plus une TOLÉRANCE nommée (health_reread_tolerance_hours, 12 h) : la fiche due n'est relue qu'au
+--        passage d'inventaire suivant (toutes les 12 h), donc entre 72 h et 84 h (Licitor : 24 h à 36 h). Fenêtres de
+--        santé : 84 h, 36 h pour Licitor. Pour une audience proche, une autre tolérance nommée, distincte
 --        (near_sale_health_window_hours, 24 h) : la relecture y suit l'inventaire de 12 h, 24 h en tolèrent un manqué.
 --        Le 16/11, notaires était à 0,46 avec une fenêtre de 24 h alors que la collecte ne relit ses fiches que toutes
 --        les 72 h. public.auction_all_source_freshness lit la politique ; le reste de la fonction est recopié tel quel.
@@ -30,12 +32,19 @@ set local lock_timeout = '5s';
 --    blocage :
 --    (a) une tâche running dont le bail de 30 minutes a expiré depuis plus de 24 h (inchangé, expired_lease_24h) ;
 --    (b) OU des tâches PRENABLES (colonne claimable : vente gardée, révision la plus récente, source active, aucun
---        bail en cours sur la vente ; hors attente d'une tâche pdf de la même vente ; sous budget_limited, seules
---        les source_detail, comme avant) non servies depuis plus de 72 h (ni écrites ni attendues :
---        greatest(updated_at, next_attempt_at)), unserved_72h, ET leur nombre n'a pas baissé depuis l'observation
---        enrichment-queue d'il y a au moins 24 h (unserved_72h_24h_before, unserved_72h_compared_at). Sans
---        observation de comparaison (premier jour après cette migration), (b) n'ouvre rien : une file qui se vide
---        n'est pas bloquée, une file qui ne bouge plus l'est.
+--        bail en cours sur la vente ; hors attente d'une tâche pdf de la même vente) non servies depuis plus de 72 h
+--        (ni écrites ni attendues : greatest(updated_at, next_attempt_at)), ET leur nombre n'a pas baissé en un jour.
+--        Les deux mesures sont gardées dans chaque observation enrichment-queue : unserved_72h_all (toutes les
+--        familles) et unserved_72h_source_detail. La mesure du régime courant (sous budget_limited, seules les
+--        source_detail, comme avant ; sinon toutes ; unserved_72h) est comparée à LA MÊME mesure de l'observation la
+--        plus récente prise entre 48 h et 24 h avant ce passage (unserved_72h_24h_before, unserved_72h_compared_at) :
+--        un changement de régime entre hier et aujourd'hui ne compare pas deux périmètres différents. Sans
+--        observation dans cette fenêtre (premier jour après cette migration, observateur arrêté plus de 24 h), (b)
+--        n'ouvre rien : une file qui se vide n'est pas bloquée, une file qui ne bouge plus l'est ;
+--    (c) OU une tâche prenable n'est pas servie depuis plus de 7 jours (unserved_7d, toutes familles, sans tendance).
+--        La famille enrichment_oldest (section 9) sert d'abord les plus anciennes, une prise générale sur quatre, chaque
+--        jour avant le premier refus du budget IA : ce cas ne doit plus arriver, c'est un vrai signal (budget IA nul
+--        pendant une semaine compris).
 --    Les compteurs d'avant (older_than_24h, immobile_24h, etc.) restent dans les détails et l'observation.
 --
 -- 4. pipeline.enrichment.exhausted : la hausse ouvre l'alerte à partir de greatest(10, 2 % de la file vivante)
@@ -43,10 +52,14 @@ set local lock_timeout = '5s';
 --    inchangé. Le 16/11 : 6 en 24 h pour ~1 280 tâches vivantes (seuil désormais 26). Seuils dans les détails.
 --
 -- 5. catalogue.quality.licitor_lot_mismatch (app_private.evaluate_catalogue_quality_health) : ne s'ouvre que si une
---    vente discordante est présente sur deux évaluations consécutives (seuil 0 conservé). Chaque évaluation garde
---    sa mesure dans public.auction_pipeline_observations (source_name = 'catalogue-quality-licitor-lot', même
---    rétention de 90 jours, purgée par observe_autonomous_pipeline). Cas particulier assumé : c'est la seule mesure
---    du catalogue dont un cas transitoire est connu (recalcul d'une page Licitor à plusieurs lots entre deux
+--    MÊME vente est discordante sur deux évaluations consécutives (seuil 0 conservé). Chaque évaluation garde sa
+--    mesure dans public.auction_pipeline_observations (source_name = 'catalogue-quality-licitor-lot'), dont les
+--    identifiants de ventes discordantes (example_sale_ids, bornés à example_limit de
+--    app_private.catalogue_quality_thresholds(), 5, premiers par identifiant) ; l'alerte croise ceux de l'évaluation
+--    précédente et ceux de celle-ci (persistent_sale_ids). Limite connue : au-delà de 5 ventes discordantes, une vente
+--    persistante peut sortir de la liste ; elle y revient dès que les discordances passagères disparaissent. Les
+--    lignes de plus de 90 jours sont purgées par l'évaluation elle-même. Cas particulier assumé : c'est la seule
+--    mesure du catalogue dont un cas transitoire est connu (recalcul d'une page Licitor à plusieurs lots entre deux
 --    passages) ; les autres invariants gardent leur règle.
 --
 -- 6. pipeline.source.<source>.missed : les détails relaient la cause d'arrêt que la collecte écrit DÉJÀ dans
@@ -62,24 +75,30 @@ set local lock_timeout = '5s';
 --
 -- 9. Famille enrichment_oldest de la revendication : part réservée à l'ancienneté (section 9).
 --
--- Seule écriture de données : la clôture de la section 8, par une instruction générale. Une base dont une des
--- fonctions redéfinies n'a pas le corps attendu fait échouer la migration (refuser de deviner).
+-- Seules écritures de données : la clôture de la section 8, par une instruction générale, et la purge à 90 jours des
+-- lignes catalogue-quality-licitor-lot faite à chaque évaluation. Une base dont une des fonctions redéfinies n'a pas
+-- le corps attendu fait échouer la migration (refuser de deviner) : toutes les gardes sont vérifiées en tête, avant
+-- toute écriture.
 --
 -- Invariant (services/data-pipeline/tests/test_pipeline_cadence_invariants.py) : un seul seuil
 -- « ) < p_now - interval 'N hours'; » dans ce fichier, celui de .missed (18 heures).
 --
 -- RETOUR ARRIÈRE : réappliquer les définitions de 20261119101000 (observateur), 20261008102328 (fraîcheur),
--- 20261111100000 (sentinelle qualité), la définition d'evaluate_operational_health ci-dessous avec 1800 au lieu de
--- 5400 (et sans maximum_queued_age_seconds), les définitions d'enqueue_due_source_details_unlocked, de
--- claim_auction_enrichment_jobs_family et de claim_auction_enrichment_jobs_request ci-dessous sans leurs
--- changements (le travailleur se replie seul sur enrichment), remettre la contrainte des reçus à ('source_detail',
--- 'enrichment') après purge des reçus enrichment_oldest, puis drop function app_private.listing_review_policy(). La
+-- 20261111100000 (sentinelle qualité) ; la définition d'evaluate_operational_health ci-dessous avec 1800 au lieu de
+-- 5400 (et sans maximum_queued_age_seconds) ; celle d'enqueue_due_source_details_unlocked ci-dessous avec la cadence
+-- en dur d'avant (interval '5 hours' près de l'audience, interval '23 hours' sinon) et sans v_policy ni v_lead, soit
+-- le corps posé par 20260929233000 et retouché par 20260929235000 (md5 659f9a9ddf2e18724b56d12fc5551675) ; celles de
+-- claim_auction_enrichment_jobs_family et de claim_auction_enrichment_jobs_request ci-dessous sans enrichment_oldest
+-- (le travailleur se replie seul sur enrichment) ; remettre la contrainte des reçus à ('source_detail',
+-- 'enrichment') après purge des reçus enrichment_oldest ; puis drop function app_private.listing_review_policy(). La
 -- clôture des display_description ne se défait pas (elles ne faisaient plus rien). Les lignes
--- catalogue-quality-licitor-lot peuvent rester (purgées à 90 jours).
+-- catalogue-quality-licitor-lot peuvent rester (l'observateur purge toute la table à 90 jours).
 
--- Gardes de départ : empreinte md5 du corps (pg_proc.prosrc) de la définition précédente, ou de celle de cette
--- migration (migration rejouée). Tout autre corps fait échouer la migration : une modification faite hors migration
--- serait sinon écrasée sans le dire.
+-- Gardes de départ, toutes ici, avant toute écriture : empreinte md5 du corps (pg_proc.prosrc) de la définition en
+-- place avant cette migration, ou de celle de cette migration (migration rejouée). Tout autre corps fait échouer la
+-- migration : une modification faite hors migration serait sinon écrasée sans le dire. Les empreintes de départ ont
+-- été vérifiées en rejouant toutes les migrations depuis zéro sur une base jetable (et, pour
+-- enqueue_due_source_details_unlocked, sur le corps lu en production).
 do $guard$
 declare
   observer_md5 text := (
@@ -97,10 +116,30 @@ declare
       from pg_catalog.pg_proc procedure_row
      where procedure_row.oid = 'app_private.evaluate_catalogue_quality_health(timestamptz)'::regprocedure
   );
+  health_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'app_private.evaluate_operational_health(timestamptz)'::regprocedure
+  );
+  enqueue_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
+  );
+  claim_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
+  );
+  request_md5 text := (
+    select md5(procedure_row.prosrc)
+      from pg_catalog.pg_proc procedure_row
+     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_request(uuid,text,integer)'::regprocedure
+  );
 begin
   if observer_md5 not in (
     '0763c61fb793f2891eb842f48e50dd2e',  -- 20261119101000 (point de départ)
-    'e8c25b983c0eb800263caed468b9c88a'   -- cette migration, déjà appliquée
+    'd856b3203eefa71d79fff70c52ddebf3'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -110,7 +149,7 @@ begin
   end if;
   if freshness_md5 not in (
     'febaf8c3831ac1100ebde8c71ee0dab5',  -- 20261008102328 (point de départ)
-    '9dce90edb113ece30ffc6ad37e99c279'   -- cette migration, déjà appliquée
+    '0f2757aa7525e5081d5769b0de6df68a'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -120,7 +159,7 @@ begin
   end if;
   if quality_md5 not in (
     '51458f11eab23c275460d89df460267a',  -- 20261111100000 (point de départ)
-    '115f8bb5eedcdc0ed0d21ff3bc0b7d84'   -- cette migration, déjà appliquée
+    '82b7f71681b2d7aa18adf9e581ca375b'   -- cette migration, déjà appliquée
   ) then
     raise exception using
       errcode = '55000',
@@ -128,8 +167,55 @@ begin
         'Unexpected catalogue quality body (md5 %s); refusing the alert recalibration.', quality_md5
       );
   end if;
+  if health_md5 not in (
+    '18d10ed8ab3afbd15699fbe0ca04c311',  -- 20261117100600 et ses prédécesseurs (point de départ)
+    'a3ffbb215334372e19ab6cc250d2e3f3'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format(
+        'Unexpected operational health body (md5 %s); refusing the import queue threshold.', health_md5
+      );
+  end if;
+  if enqueue_md5 not in (
+    '659f9a9ddf2e18724b56d12fc5551675',  -- 20260929233000 retouchée par 20260929235000 (point de départ)
+    '7890130d6f61ca2747ba4b366720457c'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format(
+        'Unexpected source-detail enqueue body (md5 %s); refusing the reread cadence.', enqueue_md5
+      );
+  end if;
+  if claim_md5 not in (
+    'c1f759eef6cb2c2c450ec153e9a98d12',  -- 20261111070000 et ses prédécesseurs (point de départ)
+    'd905e92e274739192b7611d057ccb697'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format('Unexpected enrichment claim body (md5 %s); refusing the oldest-first lane.', claim_md5);
+  end if;
+  if request_md5 not in (
+    '130fbfa9fc410b7fa5695d18c49ae15c',  -- 20260913105127 (point de départ)
+    'a05bc13d7786d27f322c7b76fff6bd4f'   -- cette migration, déjà appliquée
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = format('Unexpected claim request body (md5 %s); refusing the oldest-first lane.', request_md5);
+  end if;
 end;
 $guard$;
+
+-- 9 (contrainte). Les reçus d'idempotence de la revendication admettent la nouvelle famille enrichment_oldest. La
+-- contrainte change ici, juste après les gardes et AVANT l'écriture de la section 8 : le verrou exclusif de la table
+-- des reçus (30 jours de reçus, purgés par la tâche quotidienne de rétention) est pris avant ceux des tâches. La
+-- liste de valeurs ne fait que s'élargir : les lignes en place la respectent déjà, la contrainte est posée not valid
+-- (pas de relecture de 30 jours de reçus sous ce verrou). Elle s'applique pleinement à toute nouvelle ligne.
+alter table app_private.auction_enrichment_claim_receipts
+  drop constraint if exists auction_enrichment_claim_receipts_family_check;
+alter table app_private.auction_enrichment_claim_receipts
+  add constraint auction_enrichment_claim_receipts_family_check
+  check (family in ('source_detail', 'enrichment', 'enrichment_oldest')) not valid;
 
 -- 2 (a). Politique de relecture des annonces : seule source de vérité côté SQL.
 create or replace function app_private.listing_review_policy()
@@ -146,19 +232,24 @@ as $$
   -- annulée / reportée »), ou après near_sale_reread_hours (NEAR_SALE_REREAD_HOURS) pour une audience dans les
   -- near_sale_days jours (NEAR_SALE_HORIZON).
   --
-  -- Deux valeurs en dérivent, chacune sous son propre nom :
+  -- Trois valeurs en dérivent, chacune sous son propre nom :
   --   * source_detail_lead_hours : la tâche source_detail est créée une heure avant la fin de la fenêtre
   --     (71 h, 23 h pour Licitor, 5 h près de l'audience ; enqueue_due_source_details_unlocked, et sa jumelle
   --     services/data-pipeline/src/source_detail_reuse.py) ;
-  --   * near_sale_health_window_hours : TOLÉRANCE de la santé du pipeline (stale_listings) pour une audience
-  --     proche. La relecture y suit l'inventaire de 12 h ; 24 h en tolèrent un manqué (2 x 12 h), pas deux. Ce
-  --     n'est pas une durée de relecture.
+  --   * health_reread_tolerance_hours : TOLÉRANCE de la santé du pipeline (stale_listings) ajoutée à reread_hours
+  --     et à source_reread_hours. Une fiche due n'est relue qu'au passage d'inventaire suivant (toutes les 12 h) :
+  --     la relecture réelle tombe entre 72 h et 84 h (Licitor : 24 h à 36 h). Fenêtres de santé : 84 h, 36 h ;
+  --   * near_sale_health_window_hours : TOLÉRANCE de la santé pour une audience proche, distincte de la
+  --     précédente et appliquée seule (pas ajoutée à near_sale_reread_hours). La relecture y suit l'inventaire de
+  --     12 h ; 24 h en tolèrent un manqué (2 x 12 h), pas deux.
+  -- Les deux tolérances ne sont pas des durées de relecture : la collecte ne les lit pas.
   select pg_catalog.jsonb_build_object(
     'reread_hours', 72,
     'source_reread_hours', pg_catalog.jsonb_build_object('licitor', 24),
     'near_sale_reread_hours', 6,
     'near_sale_days', 7,
     'source_detail_lead_hours', 1,
+    'health_reread_tolerance_hours', 12,
     'near_sale_health_window_hours', 24
   );
 $$;
@@ -167,7 +258,7 @@ revoke all on function app_private.listing_review_policy() from public, anon, au
 grant execute on function app_private.listing_review_policy() to service_role;
 
 comment on function app_private.listing_review_policy() is
-  'Politique de relecture des fiches : 72 h, 24 h pour Licitor, 6 h pour une audience dans les 7 jours. Jumelle de services/data-pipeline/src/freshness.py (detail_reread_hours) : changer l''une, c''est changer l''autre. En dérivent la cadence des tâches source_detail (une heure plus tôt : enqueue_due_source_details_unlocked) et, sous un nom distinct, la tolérance de 24 h de la santé pour une audience proche (auction_all_source_freshness, observe_autonomous_pipeline).';
+  'Politique de relecture des fiches : 72 h, 24 h pour Licitor, 6 h pour une audience dans les 7 jours. Jumelle de services/data-pipeline/src/freshness.py (detail_reread_hours) : changer l''une, c''est changer l''autre. En dérivent la cadence des tâches source_detail (une heure plus tôt : enqueue_due_source_details_unlocked) et, sous des noms distincts, les tolérances de la santé (auction_all_source_freshness, observe_autonomous_pipeline) : 12 h ajoutées à la fenêtre de relecture (84 h, 36 h pour Licitor ; health_reread_tolerance_hours), 24 h pour une audience proche (near_sale_health_window_hours).';
 
 create or replace function public.auction_all_source_freshness(
   p_now timestamptz default now()
@@ -185,6 +276,7 @@ begin
     with policy as (
       select (settings.value->>'reread_hours')::integer as reread_hours,
              settings.value->'source_reread_hours' as source_reread_hours,
+             (settings.value->>'health_reread_tolerance_hours')::integer as health_reread_tolerance_hours,
              pg_catalog.make_interval(hours => (settings.value->>'near_sale_health_window_hours')::integer)
                as near_sale_health_window,
              pg_catalog.make_interval(days => (settings.value->>'near_sale_days')::integer) as near_sale_horizon
@@ -241,11 +333,12 @@ begin
                case
                  when latest.sale_date between p_now and p_now + policy.near_sale_horizon
                    then policy.near_sale_health_window
+                 -- Fenêtre de relecture plus la tolérance d'un passage d'inventaire (84 h, 36 h pour Licitor).
                  else pg_catalog.make_interval(
                    hours => coalesce(
                      (policy.source_reread_hours->>latest.source_name)::integer,
                      policy.reread_hours
-                   )
+                   ) + policy.health_reread_tolerance_hours
                  )
                end
            )
@@ -289,6 +382,8 @@ declare
   unserved integer;
   unserved_claimable integer;
   unserved_claimable_source_detail integer;
+  unserved_week integer;
+  unserved_measure text;
   unserved_previous integer;
   unserved_previous_at timestamptz;
   alert_active boolean;
@@ -305,9 +400,14 @@ declare
   review_policy constant jsonb := app_private.listing_review_policy();
   publication_stale_after constant interval := interval '36 hours';
   -- Une tâche prenable non servie depuis 72 h (trois jours de passages du travailleur) dont le nombre ne baisse pas
-  -- sur 24 h : la file ne l'atteindra pas d'elle-même.
+  -- en un jour : la file ne l'atteindra pas d'elle-même. Comparaison avec l'observation la plus récente prise entre
+  -- 48 h et 24 h avant ce passage ; plus ancienne, elle ne dit plus rien de la veille.
   unserved_after constant interval := interval '72 hours';
   unserved_trend_window constant interval := interval '24 hours';
+  unserved_trend_window_limit constant interval := interval '48 hours';
+  -- Une tâche prenable non servie depuis 7 jours : la part réservée à l'ancienneté (enrichment_oldest) aurait dû la
+  -- prendre. Signal indépendant de la tendance.
+  unserved_week_after constant interval := interval '7 days';
   -- Hausse des tâches épuisées : au moins 10, et au moins 2 % de la file vivante.
   exhausted_recent_minimum constant integer := 10;
   exhausted_recent_share constant numeric := 0.02;
@@ -602,9 +702,10 @@ begin
         ) < p_now - publication_stale_after,
       p_now
     );
-    -- Annonces non revues : moins de 80 % des annonces actives de la source ont été revues dans la fenêtre de
-    -- app_private.listing_review_policy(), sur deux observations consécutives, pour une source activée d'au moins
-    -- 10 ventes, sauf si .missed porte déjà la cause.
+    -- Annonces non revues : moins de 80 % des annonces actives de la source ont été revues dans la fenêtre de santé
+    -- de app_private.listing_review_policy() (relecture + tolérance d'un inventaire, ou tolérance « audience
+    -- proche »), sur deux observations consécutives, pour une source activée d'au moins 10 ventes, sauf si .missed
+    -- porte déjà la cause.
     perform app_private.sync_operational_alert(
       'pipeline.source.' || source_row.source_name || '.stale_listings',
       'import',
@@ -617,6 +718,11 @@ begin
           review_policy->'source_reread_hours'->source_row.source_name,
           review_policy->'reread_hours'
         ),
+        'health_reread_tolerance_hours', review_policy->'health_reread_tolerance_hours',
+        'health_window_hours', coalesce(
+          (review_policy->'source_reread_hours'->>source_row.source_name)::integer,
+          (review_policy->>'reread_hours')::integer
+        ) + (review_policy->>'health_reread_tolerance_hours')::integer,
         'near_sale_health_window_hours', review_policy->'near_sale_health_window_hours',
         'suppressed_by_missed', missed_open
       ),
@@ -760,8 +866,10 @@ begin
        and classified.status <> 'running'
        and greatest(classified.updated_at, classified.next_attempt_at) < p_now - interval '24 hours'
   ), unserved_candidates as (
-    -- Non servie : prenable, ni écrite ni attendue depuis 72 h.
-    select classified.job_type
+    -- Non servie : prenable, ni écrite ni attendue depuis 72 h (over_a_week : depuis 7 jours).
+    select classified.job_type,
+           greatest(classified.updated_at, classified.next_attempt_at) < p_now - unserved_week_after
+             as over_a_week
       from classified
      where classified.claimable
        and not classified.waits_for_pdf
@@ -773,9 +881,10 @@ begin
          (select count(*) from immobile_candidates),
          (select count(*) from immobile_candidates where job_type = 'source_detail'),
          (select count(*) from unserved_candidates),
-         (select count(*) from unserved_candidates where job_type = 'source_detail')
+         (select count(*) from unserved_candidates where job_type = 'source_detail'),
+         (select count(*) from unserved_candidates where over_a_week)
     into claimable_due, excluded_due, immobile_claimable, immobile_claimable_source_detail,
-         unserved_claimable, unserved_claimable_source_detail;
+         unserved_claimable, unserved_claimable_source_detail, unserved_week;
 
   select count(*),
          count(*) filter (
@@ -804,19 +913,22 @@ begin
   -- Après le premier refus du budget IA du jour, le worker ne prend plus que des tâches source_detail
   -- (queued_runner._run_enrichment_queue_worker) : sous budget_limited, les autres attendent sans être touchées,
   -- un report voulu. Les mesures (b) ne comptent alors que les tâches source_detail ; le cas (a) (bail expiré
-  -- depuis 24 h) compte toujours.
+  -- depuis 24 h) et le cas (c) (7 jours, toutes familles) comptent toujours.
   immobile := immobile_running
     + case when budget_deferred > 0 then immobile_claimable_source_detail else immobile_claimable end;
+  unserved_measure := case when budget_deferred > 0 then 'unserved_72h_source_detail' else 'unserved_72h_all' end;
   unserved := case when budget_deferred > 0 then unserved_claimable_source_detail else unserved_claimable end;
 
-  -- Valeur de comparaison : la dernière observation de la file vieille d'au moins 24 h qui porte la mesure.
-  select (observation.metrics->>'unserved_72h')::integer,
+  -- Valeur de comparaison : LA MÊME mesure (même périmètre que le régime courant) dans l'observation de la file la
+  -- plus récente prise entre 48 h et 24 h avant ce passage. Aucune dans cette fenêtre : pas de comparaison.
+  select (observation.metrics->>unserved_measure)::integer,
          observation.observed_at
     into unserved_previous, unserved_previous_at
     from public.auction_pipeline_observations observation
    where observation.source_name = 'enrichment-queue'
      and observation.observed_at <= p_now - unserved_trend_window
-     and observation.metrics ? 'unserved_72h'
+     and observation.observed_at >= p_now - unserved_trend_window_limit
+     and observation.metrics ? unserved_measure
    order by observation.observed_at desc
    limit 1;
 
@@ -831,7 +943,10 @@ begin
     'budget_limited', budget_deferred > 0,
     'immobile_24h', immobile,
     'expired_lease_24h', immobile_running,
-    'unserved_72h', unserved
+    'unserved_72h', unserved,
+    'unserved_72h_all', unserved_claimable,
+    'unserved_72h_source_detail', unserved_claimable_source_detail,
+    'unserved_7d', unserved_week
   );
   insert into public.auction_pipeline_observations(source_name, observed_at, metrics)
   values ('enrichment-queue', p_now, evidence);
@@ -840,15 +955,19 @@ begin
     'import',
     'warning',
     evidence || jsonb_build_object(
+      'unserved_72h_measure', unserved_measure,
       'unserved_72h_24h_before', unserved_previous,
       'unserved_72h_compared_at', unserved_previous_at,
       'unserved_after_hours', 72,
+      'unserved_trend_window_hours', pg_catalog.jsonb_build_array(24, 48),
+      'unserved_7d_after_days', 7,
       'expired_lease_after_hours', 24
     ),
-    -- Un bail expiré depuis 24 h sans reprise est un blocage. Sinon, des tâches prenables qui attendent depuis
-    -- 72 h ne signalent un blocage que si leur nombre n'a pas baissé en 24 h : une file longue qui avance n'est
-    -- pas bloquée.
+    -- Un bail expiré depuis 24 h sans reprise est un blocage, comme une tâche prenable non servie depuis 7 jours.
+    -- Sinon, des tâches prenables qui attendent depuis 72 h ne signalent un blocage que si leur nombre n'a pas
+    -- baissé en un jour, à périmètre égal : une file longue qui avance n'est pas bloquée.
     immobile_running > 0
+      or unserved_week > 0
       or (
         unserved > 0
         and unserved_previous is not null
@@ -890,7 +1009,8 @@ grant execute on function public.observe_autonomous_pipeline(timestamptz)
   to service_role;
 
 -- 5. Sentinelle qualité : redéfinition COMPLÈTE de app_private.evaluate_catalogue_quality_health(timestamptz),
--- point de départ 20261111100000. Seul change le lot Licitor discordant (deux évaluations consécutives).
+-- point de départ 20261111100000. Seul change le lot Licitor discordant (même vente sur deux évaluations
+-- consécutives, mesure gardée et purgée à 90 jours ici).
 create or replace function app_private.evaluate_catalogue_quality_health(
   p_now timestamptz default statement_timestamp()
 )
@@ -909,6 +1029,8 @@ declare
   v_metric jsonb;
   v_key text;
   v_licitor_previous integer;
+  v_licitor_previous_ids jsonb;
+  v_licitor_persistent_ids jsonb;
   v_day_start timestamptz := pg_catalog.date_trunc('day', p_now, 'UTC');
 begin
   -- Invariants : une seule vente en ligne suffit.
@@ -925,16 +1047,26 @@ begin
   end loop;
 
   -- Lot Licitor discordant : invariant aussi, mais un cas transitoire est connu (page à plusieurs lots recalculée
-  -- entre deux passages). Il faut une vente discordante à l'évaluation précédente ET à celle-ci. Chaque évaluation
-  -- garde sa mesure (catalogue-quality-licitor-lot) pour la suivante.
+  -- entre deux passages). Il faut que la MÊME vente soit discordante à l'évaluation précédente ET à celle-ci : les
+  -- identifiants (example_sale_ids, bornés à example_limit de catalogue_quality_thresholds()) sont croisés. Chaque
+  -- évaluation garde sa mesure (catalogue-quality-licitor-lot) pour la suivante et purge celles de plus de 90 jours
+  -- (même rétention que le reste de la table, sans dépendre du pilote).
   v_metric := v_metrics -> 'metrics' -> 'licitor_lot_mismatch';
-  select (observation.metrics ->> 'count')::integer
-    into v_licitor_previous
+  select (observation.metrics ->> 'count')::integer,
+         coalesce(observation.metrics -> 'example_sale_ids', '[]'::jsonb)
+    into v_licitor_previous, v_licitor_previous_ids
     from public.auction_pipeline_observations observation
    where observation.source_name = 'catalogue-quality-licitor-lot'
      and observation.observed_at < p_now
    order by observation.observed_at desc
    limit 1;
+  select coalesce(pg_catalog.jsonb_agg(current_id.value order by current_id.value), '[]'::jsonb)
+    into v_licitor_persistent_ids
+    from pg_catalog.jsonb_array_elements(coalesce(v_metric -> 'example_sale_ids', '[]'::jsonb)) current_id
+   where coalesce(v_licitor_previous_ids, '[]'::jsonb) @> pg_catalog.jsonb_build_array(current_id.value);
+  delete from public.auction_pipeline_observations
+   where source_name = 'catalogue-quality-licitor-lot'
+     and observed_at < p_now - interval '90 days';
   insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
   values ('catalogue-quality-licitor-lot', p_now, v_metric);
   perform app_private.sync_operational_alert(
@@ -945,9 +1077,11 @@ begin
       'live_sales', v_live,
       'maximum_count', 0,
       'previous_count', v_licitor_previous,
+      'previous_sale_ids', v_licitor_previous_ids,
+      'persistent_sale_ids', v_licitor_persistent_ids,
       'consecutive_observations', 2
     ),
-    (v_metric ->> 'count')::integer > 0 and coalesce(v_licitor_previous, 0) > 0,
+    pg_catalog.jsonb_array_length(v_licitor_persistent_ids) > 0,
     p_now
   );
 
@@ -1015,36 +1149,15 @@ revoke all on function app_private.evaluate_catalogue_quality_health(timestamptz
 grant execute on function app_private.evaluate_catalogue_quality_health(timestamptz) to service_role;
 
 comment on function app_private.evaluate_catalogue_quality_health(timestamptz) is
-  'Alertes catalogue.quality.* sur les ventes en ligne (lot Licitor discordant : deux évaluations consécutives), et cliché quotidien des mesures (auction_pipeline_observations, catalogue-quality). Appelée par evaluate_operational_health ; ne renvoie rien.';
+  'Alertes catalogue.quality.* sur les ventes en ligne (lot Licitor discordant : même vente sur deux évaluations consécutives ; mesure gardée 90 jours dans auction_pipeline_observations, catalogue-quality-licitor-lot), et cliché quotidien des mesures (auction_pipeline_observations, catalogue-quality). Appelée par evaluate_operational_health ; ne renvoie rien.';
 
 -- 1. pipeline.import.unhealthy : redéfinition COMPLÈTE de app_private.evaluate_operational_health(timestamptz). Depuis
 -- le lot R2b (20261118100000), une migration n'exécute plus de SQL assemblé (scripts/check-security-invariants) : la
 -- méthode des retouches précédentes (pg_get_functiondef puis remplacement) n'est plus permise. Point de départ : la
 -- définition de 20261101120200 et ses retouches en place (20261104100100, 20261106100300, 20261108100000,
 -- 20261110120100, 20261110120200, 20261110120400, 20261111100000, 20261117100600), rejouées sur une base jetable et
--- recopiées À L'IDENTIQUE ; la garde md5 ci-dessous refuse tout autre corps. Seuls changent le seuil d'âge de file
+-- recopiées À L'IDENTIQUE ; la garde md5 de tête refuse tout autre corps. Seuls changent le seuil d'âge de file
 -- (1 800 s -> 5 400 s) et la clé maximum_queued_age_seconds des détails.
-do $guard_health$
-declare
-  health_md5 text := (
-    select md5(procedure_row.prosrc)
-      from pg_catalog.pg_proc procedure_row
-     where procedure_row.oid = 'app_private.evaluate_operational_health(timestamptz)'::regprocedure
-  );
-begin
-  if health_md5 not in (
-    '18d10ed8ab3afbd15699fbe0ca04c311',  -- 20261117100600 et ses prédécesseurs (point de départ)
-    'a3ffbb215334372e19ab6cc250d2e3f3'   -- cette migration, déjà appliquée
-  ) then
-    raise exception using
-      errcode = '55000',
-      message = format(
-        'Unexpected operational health body (md5 %s); refusing the import queue threshold.', health_md5
-      );
-  end if;
-end;
-$guard_health$;
-
 create or replace function app_private.evaluate_operational_health(
   p_now timestamptz default statement_timestamp()
 )
@@ -1434,33 +1547,14 @@ revoke all on function app_private.evaluate_operational_health(timestamptz) from
 grant execute on function app_private.evaluate_operational_health(timestamptz) to service_role;
 
 -- 7. Cadence des tâches source_detail : redéfinition COMPLÈTE de public.enqueue_due_source_details_unlocked. Point de
--- départ : 20260929183000 et ses retouches en place (20260929233000, 20260929235000), rejouées sur une base jetable et
--- recopiées À L'IDENTIQUE, garde md5. Cette fonction crée les ~460 tâches source_detail quotidiennes : elle relisait
+-- départ : la définition de 20260929233000 (conservation lue dans la valeur matérialisée retention_deadline) retouchée
+-- en place par 20260929235000 (cache app_private.auction_sale_source_checks), recopiée À L'IDENTIQUE du corps lu en
+-- production (pg_proc.prosrc) et vérifiée en rejouant toutes les migrations sur une base jetable ; garde md5 de tête.
+-- Cette fonction crée les ~460 tâches source_detail quotidiennes : elle relisait
 -- chaque fiche toutes les 23 h (5 h près de l'audience) alors que la collecte ne la relit plus que toutes les 72 h.
 -- Seule change la cadence, dérivée de app_private.listing_review_policy() : une heure avant la fin de la fenêtre de
 -- relecture, soit 71 h, 23 h pour Licitor, 5 h pour une audience dans les 7 jours. Jumelle Python :
 -- services/data-pipeline/src/source_detail_reuse.py (verified_detail_satisfies_job).
-do $guard_enqueue$
-declare
-  enqueue_md5 text := (
-    select md5(procedure_row.prosrc)
-      from pg_catalog.pg_proc procedure_row
-     where procedure_row.oid = 'public.enqueue_due_source_details_unlocked(timestamptz,integer)'::regprocedure
-  );
-begin
-  if enqueue_md5 not in (
-    '2172362c089fd62026b80c4c7b32dbdd',  -- 20260929235000 et ses prédécesseurs (point de départ)
-    '50da248c54ca798771b76488485a8d11'   -- cette migration, déjà appliquée
-  ) then
-    raise exception using
-      errcode = '55000',
-      message = format(
-        'Unexpected source-detail enqueue body (md5 %s); refusing the reread cadence.', enqueue_md5
-      );
-  end if;
-end;
-$guard_enqueue$;
-
 create or replace function public.enqueue_due_source_details_unlocked(
   p_now timestamptz default now(),
   p_limit integer default 500
@@ -1494,22 +1588,12 @@ begin
       s.source_name,
       s.sale_date,
       cache.checks as checks,
-      -- A sale less than 24 hours old cannot have reached its retention
-      -- deadline unless an explicit sale window overrides the headline date.
-      -- Avoid the expensive JSON/date calculation for the common case.
-      case
-        when s.sale_date > p_now - interval '24 hours'
-          and not coalesce(s.sale_procedure ? 'sale_window', false)
-          and not coalesce(s.sale_procedure ? 'sale_session', false)
-          and not coalesce(s.raw_payload ? 'source_sale_schedule', false)
-          then true
-        else coalesce(
-          app_private.sale_retention_deadline(
-            s.sale_date, s.status, s.sale_procedure, s.raw_payload
-          ) > p_now,
-          true
-        )
-      end as retention_eligible
+      -- A ready NULL deadline is a retained sale, not an incomplete backfill.
+      -- Use the same persisted policy as the purge and family claim paths.
+      (
+        s.retention_deadline_materialized
+        and (s.retention_deadline is null or s.retention_deadline > p_now)
+      ) as retention_eligible
     from public.auction_sales s
     join app_private.auction_sale_source_checks cache
       on cache.sale_id = s.id
@@ -1651,14 +1735,18 @@ revoke all on function public.enqueue_due_source_details_unlocked(timestamptz, i
 grant execute on function public.enqueue_due_source_details_unlocked(timestamptz, integer)
   to service_role;
 
--- 8. Tâches display_description sans objet. Depuis 20261112110000, rien ne produit plus de synthèse : le travailleur
--- termine une tâche display_description reçue sans aucun appel (services/data-pipeline/src/queued_runner.py,
+-- 8. Tâches display_description sans objet. Depuis 20261112110000, plus aucune synthèse n'est produite : le
+-- travailleur termine une tâche display_description reçue sans aucun appel (services/data-pipeline/src/queued_runner.py,
 -- « The AI display synthesis was removed ») en posant status = 'completed', completed_at, locked_at = null,
--- last_error = null, updated_at (finish_auction_enrichment_job_in_supabase). Avec un score bas (vente lointaine),
--- celles qui restent en file n'arrivaient jamais en tête de la voie générale. Elles sont closes ici de la même façon,
--- par une instruction générale : en file, en échec avec des essais restants, ou en running au bail expiré. Les tâches
--- épuisées (lettres mortes) ne sont pas touchées : elles relèvent de pipeline.enrichment.exhausted. Le nombre
--- d'essais n'est pas incrémenté (aucune prise n'a eu lieu).
+-- last_error = null, updated_at (finish_auction_enrichment_job_in_supabase). Des tâches display_description sont
+-- encore créées : le déclencheur de 20260911091913 n'en crée plus depuis 20261112110000, mais
+-- app_private.apply_information_agent_fact (20261119100900) en crée une à chaque fait accepté. Avec un score bas
+-- (vente lointaine), celles qui restaient en file n'arrivaient jamais en tête de la voie générale. Celles d'aujourd'hui
+-- sont closes ici de la même façon, par une instruction générale : en file, en échec avec des essais restants, ou en
+-- running au bail expiré avec des essais restants. Les suivantes sont absorbées par la part réservée à l'ancienneté
+-- (section 9), puis closes sans appel par le travailleur. Les tâches épuisées (lettres mortes, y compris un running
+-- au bail expiré sans essai restant, que la revendication passe en échec) ne sont pas touchées : elles relèvent de
+-- pipeline.enrichment.exhausted. Le nombre d'essais n'est pas incrémenté (aucune prise n'a eu lieu).
 update public.auction_enrichment_jobs
    set status = 'completed',
        completed_at = statement_timestamp(),
@@ -1669,51 +1757,23 @@ update public.auction_enrichment_jobs
    and (
      status = 'queued'
      or (status = 'failed' and attempt_count < max_attempts)
-     or (status = 'running' and coalesce(locked_at, updated_at) < statement_timestamp() - interval '30 minutes')
+     or (
+       status = 'running'
+       and attempt_count < max_attempts
+       and coalesce(locked_at, updated_at) < statement_timestamp() - interval '30 minutes'
+     )
    );
 
 -- 9. Part réservée à l'ancienneté dans la voie générale : famille enrichment_oldest. Redéfinition COMPLÈTE de
 -- public.claim_auction_enrichment_jobs_family. Point de départ : 20260929220000 et ses retouches en place
 -- (20261001083619, 20261111050000, 20261111060000, 20261111070000), rejouées sur une base jetable et recopiées À
--- L'IDENTIQUE, garde md5. enrichment_oldest prend les mêmes tâches que enrichment (mêmes filtres : conservation,
+-- L'IDENTIQUE, garde md5 de tête. enrichment_oldest prend les mêmes tâches que enrichment (mêmes filtres : conservation,
 -- révision, bail en cours, attente de la tâche pdf de la vente ; bail expiré repris, dernière tentative passée en
 -- échec) mais les sert par échéance la plus ancienne (next_attempt_at). Le 16/11, la voie générale traitait ~115
 -- tâches par jour pour ~600 en file : le bonus de 168 points d'une vente proche faisait passer toute tâche d'une vente
 -- proche devant, et une lecture de pièces au bail expiré depuis le 11/11 (vente lointaine) n'arrivait jamais en tête.
 -- Le travailleur demande enrichment_oldest une prise générale sur quatre (queued_runner.py) : les ventes proches gardent
 -- trois prises sur quatre. La famille enrichment garde exactement son ordre.
-do $guard_claim$
-declare
-  claim_md5 text := (
-    select md5(procedure_row.prosrc)
-      from pg_catalog.pg_proc procedure_row
-     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
-  );
-  request_md5 text := (
-    select md5(procedure_row.prosrc)
-      from pg_catalog.pg_proc procedure_row
-     where procedure_row.oid = 'public.claim_auction_enrichment_jobs_request(uuid,text,integer)'::regprocedure
-  );
-begin
-  if claim_md5 not in (
-    'c1f759eef6cb2c2c450ec153e9a98d12',  -- 20261111070000 et ses prédécesseurs (point de départ)
-    'd905e92e274739192b7611d057ccb697'   -- cette migration, déjà appliquée
-  ) then
-    raise exception using
-      errcode = '55000',
-      message = format('Unexpected enrichment claim body (md5 %s); refusing the oldest-first lane.', claim_md5);
-  end if;
-  if request_md5 not in (
-    '130fbfa9fc410b7fa5695d18c49ae15c',  -- 20260913105127 (point de départ)
-    'a05bc13d7786d27f322c7b76fff6bd4f'   -- cette migration, déjà appliquée
-  ) then
-    raise exception using
-      errcode = '55000',
-      message = format('Unexpected claim request body (md5 %s); refusing the oldest-first lane.', request_md5);
-  end if;
-end;
-$guard_claim$;
-
 create or replace function public.claim_auction_enrichment_jobs_family(
   p_family text,
   p_limit integer default 10
@@ -2000,14 +2060,7 @@ revoke all on function public.claim_auction_enrichment_jobs_family(text, integer
 grant execute on function public.claim_auction_enrichment_jobs_family(text, integer)
   to service_role;
 
--- Les reçus d'idempotence admettent la nouvelle famille (table privée de quelques lignes par passage).
-alter table app_private.auction_enrichment_claim_receipts
-  drop constraint if exists auction_enrichment_claim_receipts_family_check;
-alter table app_private.auction_enrichment_claim_receipts
-  add constraint auction_enrichment_claim_receipts_family_check
-  check (family in ('source_detail', 'enrichment', 'enrichment_oldest'));
-
--- Redéfinition COMPLÈTE de public.claim_auction_enrichment_jobs_request (20260913105127, garde md5 ci-dessus) : seule la
+-- Redéfinition COMPLÈTE de public.claim_auction_enrichment_jobs_request (20260913105127, garde md5 de tête) : seule la
 -- liste des familles admises change. Une base sans cette migration refuse enrichment_oldest (22023) : le travailleur se
 -- replie alors sur enrichment, le déploiement marche dans les deux ordres.
 create or replace function public.claim_auction_enrichment_jobs_request(
