@@ -116,3 +116,13 @@ def test_a_collection_prewait_fits_in_its_dispatch_lease() -> None:
     queued_lease = timedelta(minutes=60)
     prewait = timedelta(seconds=runner.COLLECTION_CATALOGUE_PREWAIT_SECONDS)
     assert prewait + WORKFLOW_STARTUP + HEALTH_TICK <= queued_lease
+
+
+def test_python_and_sql_read_the_queue_lease_with_one_rule() -> None:
+    """Point F6 : le lanceur et l'expiration des baux valident running_lease_seconds de la même façon."""
+    from src.autonomous_runner import RUNNING_LEASE_SECONDS_PATTERN
+
+    _lease, migration = _enrichment_lease()
+    text = (MIGRATIONS / migration).read_text(encoding="utf-8")
+    assert f"r.summary->>'running_lease_seconds' ~ '^{RUNNING_LEASE_SECONDS_PATTERN}$'" in text
+    assert re.fullmatch(RUNNING_LEASE_SECONDS_PATTERN, str(int(_lease.total_seconds())))

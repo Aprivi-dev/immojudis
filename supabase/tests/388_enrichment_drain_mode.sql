@@ -235,8 +235,8 @@ delete from public.auction_runs
     where case_name in ('recent-source', 'recent-source-collection')
  );
 
--- An overdue source gets its collection turn while the streak is empty, even
--- though drain mode is active and the queue is due.
+-- An overdue source is claimed by the collection lane, even though drain mode
+-- is active and the queue is due (two lanes since 20261203100000).
 update public.auction_pipeline_control
    set source_dispatch_streak = 0,
        next_enrichment_at = statement_timestamp() + interval '1 hour'
@@ -251,13 +251,13 @@ values ('overdue-source', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'overdue-source'),
   'collect',
-  'drain mode preserves a fair collection turn for a source overdue by more than one hour'
+  'drain mode leaves an overdue source to the collection lane'
 );
 
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   1,
-  'the fair source turn advances the persisted collection streak'
+  'a collection claim still advances the persisted streak (kept for a rollback)'
 );
 
 delete from public.auction_runs
@@ -292,7 +292,7 @@ select is(
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   0,
-  'the fair queue turn resets the source streak'
+  'the queue claim still resets the persisted streak'
 );
 
 select ok(
@@ -305,7 +305,7 @@ select ok(
        and attempt_count < max_attempts
        and next_attempt_at <= statement_timestamp()
   ),
-  'a scheduler collection turn leaves the due queue available'
+  'a collection claim leaves the due queue available'
 );
 
 delete from public.auction_runs
@@ -341,7 +341,7 @@ values ('expired-window', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'expired-window'),
   'collect',
-  'an expired drain window restores the normal source-first cadence'
+  'an expired drain window restores the normal queue cadence'
 );
 
 select app_private.set_enrichment_drain_until(null);

@@ -2956,8 +2956,9 @@ def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkey
     """17/11/2026 : la file tourne à côté des collectes ; chaque écriture du travailleur doit tenir le verrou.
 
     Le chemin réel de ``python -m src.queued_runner --enrichment-only`` : ``run_with_catalogue_lock``, puis le
-    travailleur, un lot réclamé et terminé. La réclamation et la fin de la tâche (écritures en base) doivent voir le
-    verrou des écritures du catalogue tenu ; le test échoue si l'une d'elles passe hors du bloc qui le tient.
+    travailleur et un lot réclamé. Chaque écriture en base de ce chemin (réclamation, rejeu des faits d'une vente,
+    fin des tâches) doit voir le verrou des écritures du catalogue tenu ; le test échoue si l'une d'elles passe hors
+    du bloc qui le tient. Hermétique : aucune base, quelle que soit ``SUPABASE_DB_URL``.
     """
     from src import catalogue_lock
     from src.catalogue_lock import catalogue_writer_lock
@@ -2969,6 +2970,10 @@ def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkey
             handles = list(catalogue_lock._HELD)
         return bool(handles) and not any(handle.lost for handle in handles)
 
+    def write(name: str):
+        return lambda *args, **kwargs: writes.append((name, lock_held())) or True
+
+    sale_url = "https://example.test/sale"
     claimed = {"done": False}
 
     def claim(*, limit: int, family: str | None) -> list[dict[str, object]]:
@@ -2976,14 +2981,20 @@ def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkey
         if family != queued_runner.ENRICHMENT_FAMILY or claimed["done"]:
             return []
         claimed["done"] = True
-        return [{"id": "job-1", "job_type": "display_description", "source_url": "https://example.test/sale"}]
+        return [
+            {"id": "job-1", "job_type": "display_description", "source_url": sale_url},
+            {"id": "job-2", "job_type": "fact_claims", "source_url": sale_url, "fact_claims_snapshot": {}},
+        ]
 
+    sale = SimpleNamespace(source_name="vench", source_url=sale_url, source_urls=[sale_url], documents=[])
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": ""})
+    monkeypatch.setattr(queued_runner, "_log_worker_claim_status_snapshot", lambda _ids: None)
     monkeypatch.setattr(queued_runner, "_claim_enrichment_queue_jobs", claim)
-    monkeypatch.setattr(
-        queued_runner,
-        "finish_auction_enrichment_job_in_supabase",
-        lambda job_id, **kwargs: writes.append(("finish", lock_held())) or True,
-    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _url: sale)
+    monkeypatch.setattr(queued_runner, "require_encheres_publiques_sale_access", lambda **_kwargs: None)
+    monkeypatch.setattr(queued_runner, "require_sale_not_withdrawn", lambda *_args: None)
+    monkeypatch.setattr(queued_runner, "retry_fact_claims_to_supabase", write("fact_claims"))
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", write("finish"))
     monkeypatch.setattr(
         queued_runner,
         "catalogue_writer_lock",
@@ -2995,8 +3006,8 @@ def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkey
 
     assert queued_runner.run_with_catalogue_lock() == 0
 
-    assert ("finish", True) in writes
-    assert writes and all(held for _name, held in writes), writes
+    assert [name for name, _held in writes if name != "claim"] == ["finish", "fact_claims", "finish"]
+    assert all(held for _name, held in writes), writes
     assert not lock_held()
 
 
@@ -3008,7 +3019,7 @@ def test_the_worker_claims_nothing_once_a_collection_is_pending(monkeypatch, tmp
     report = tmp_path / "report.json"
     monkeypatch.setenv(ENRICHMENT_WORKER_REPORT_ENV, str(report))
     pending = iter([False, True])
-    monkeypatch.setattr(collection_priority, "collection_pending_now", lambda: next(pending))
+    monkeypatch.setattr(collection_priority, "yield_to_sources", lambda: next(pending))
     batches: list[str] = []
     monkeypatch.setattr(
         queued_runner,
