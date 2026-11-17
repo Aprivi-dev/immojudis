@@ -1,39 +1,7 @@
 # Exact historical public browser credentials/configuration. These entries are
 # commit-scoped so new findings in later history remain visible.
-08c0019d388b8ab40c7c310b01a0da047b09748a:src/lib/google-maps.ts:gcp-api-key:11
+b1b3e38b704571b314da1adb2c011ef4d2f50ea1:src/lib/google-maps.ts:gcp-api-key:11
 ee2b1eec9553c62815ac5b676c5b00ebe10a7c25:src/integrations/supabase/client.ts:jwt:8
-
-# Exact third-party HTML capture fingerprints from the reviewed fixture commit.
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-109932.html:gcp-api-key:228
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-list.html:gcp-api-key:434
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/primary/licitor-110031.html:gcp-api-key:234
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html:generic-api-key:41
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html:generic-api-key:41
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html:generic-api-key:41
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html:generic-api-key:71
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html:generic-api-key:71
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html:generic-api-key:71
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html:generic-api-key:420
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:515
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:516
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html:generic-api-key:492
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html:generic-api-key:494
-d60a482ec0b940e349d7483164f6133ab592c588:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-109932.html:gcp-api-key:228
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-list.html:gcp-api-key:434
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/primary/licitor-110031.html:gcp-api-key:234
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html:generic-api-key:41
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-6053-response.html:generic-api-key:41
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/info-list-response.html:generic-api-key:41
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-165934-response.html:generic-api-key:71
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-165875-response.html:generic-api-key:71
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/petites-list-response.html:generic-api-key:71
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/secondary/responses/agrasc-evry-2075541-response.html:generic-api-key:420
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:515
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-dom.html:generic-api-key:516
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2074289-bordeaux-response.html:generic-api-key:492
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-response.html:generic-api-key:494
-f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517
 
 # False positive: a comparison with the unscoped surface field name, not a credential.
 74561252b1ccc8ee92a2026b885b01a2aba4484b:services/data-pipeline/src/sources/cessions_etat_extraction.py:generic-api-key:492
@@ -43,10 +11,10 @@ f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/
 d46b6b5ec91647314a12c31788c24a066b4b41ba:services/data-pipeline/src/enrichment/display_consistency.py:generic-api-key:238
 # False positives in branches of the 03/11/2026 quality audit that were superseded before merge: field-name
 # constants and comparisons (land_surface_m2, pdf_tribunal_extraction, postal_code_inference), not credentials.
-7c6495bba56de2bff274555e52799a911a848bd4:services/data-pipeline/src/enrichment/display_consistency.py:generic-api-key:236
-0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/src/pdf_tribunal.py:generic-api-key:29
-0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/tests/test_pdf_tribunal.py:generic-api-key:9
-ccf491c9ad3ef3f293e395a0af27169b62749859:services/data-pipeline/src/commune_insee.py:generic-api-key:210
+c735a0d348186b734b1f3bbb98f950c72379a370:services/data-pipeline/src/enrichment/display_consistency.py:generic-api-key:236
+50dd9ad140a0ed273a7e5c422e527c45bee8c0ea:services/data-pipeline/src/pdf_tribunal.py:generic-api-key:29
+50dd9ad140a0ed273a7e5c422e527c45bee8c0ea:services/data-pipeline/tests/test_pdf_tribunal.py:generic-api-key:9
+ef03f7697beb655f2e56241991d7f19aefee8aa6:services/data-pipeline/src/commune_insee.py:generic-api-key:210
 
 # Licitor multi-lot capture (03/11/2026): public Google Maps browser key of licitor.com, redacted in the next commit.
 8697f761cda9fe040c15979787c83a5d43453c0e:services/data-pipeline/tests/fixtures/licitor_fiche_deux_lots_cannes_le_cannet.html:gcp-api-key:288
