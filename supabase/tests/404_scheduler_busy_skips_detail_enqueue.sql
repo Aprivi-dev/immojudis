@@ -1,9 +1,10 @@
 begin;
 
-select plan(20);
+select plan(21);
 
--- The dispatcher must not pay the source-detail admission cost while an
--- existing run still owns the single pipeline lease.  Replace the public
+-- The dispatcher must not pay the source-detail admission cost while existing
+-- runs own both scheduling lanes (collections and the enrichment queue, one
+-- active run each since 20261203100000), nor while a manual run blocks it.  Replace the public
 -- entry point only inside this fixture transaction, before switching to the
 -- worker role.  SECURITY DEFINER lets the wrapper increment the temporary
 -- table after SET ROLE; the transaction rollback restores the production
@@ -66,7 +67,7 @@ select ok(
     'perform public.enqueue_due_source_details(now_at,500);'
     in pg_get_functiondef('public.claim_autonomous_pipeline_run()'::regprocedure)
   ) > position(
-    'if active_id is not null then'
+    'end loop;'
     in pg_get_functiondef('public.claim_autonomous_pipeline_run()'::regprocedure)
   )
   and position(
@@ -109,7 +110,9 @@ select is(
 
 delete from public.auction_runs where id = '40400000-0000-4000-8000-000000000001';
 
--- A running scheduler-owned worker is also a hard single-writer boundary.
+-- A running scheduler-owned collection keeps its own lane busy.  The queue
+-- lane is still free: the claim admits due source details for it (the queue
+-- works beside collections), but has no due queue to dispatch here.
 insert into public.auction_runs (
   id, status, source, scheduler_owned, started_at, created_at, updated_at, summary, errors
 )
@@ -128,19 +131,21 @@ values (
 select is(
   public.claim_autonomous_pipeline_run(),
   null::jsonb,
-  'a running scheduler-owned worker keeps the scheduler blocked'
+  'a running scheduler-owned collection keeps its lane blocked'
 );
 
 select is(
   (select calls from pgtap_scheduler_enqueue_calls),
-  0,
-  'a running scheduler-owned worker skips source-detail admission'
+  1,
+  'the free queue lane still admits source details beside a running collection'
 );
 
-delete from public.auction_runs where id = '40400000-0000-4000-8000-000000000002';
+update pg_temp.pgtap_scheduler_enqueue_calls set calls = 0;
 
--- An accepted queued dispatch already has an external delivery in flight; it
--- must not be re-admitted or made to compete with source-detail discovery.
+-- The collection above stays running.  An accepted queued dispatch of the
+-- queue already has an external delivery in flight; it must not be
+-- re-admitted, and with both lanes busy the claim skips source-detail
+-- discovery.
 insert into public.auction_runs (
   id, status, source, scheduler_owned, started_at, created_at, updated_at, summary, errors
 )
@@ -174,10 +179,11 @@ select is(
 select is(
   (select calls from pgtap_scheduler_enqueue_calls),
   0,
-  'an accepted queued dispatch skips source-detail admission'
+  'with both lanes busy the scheduler skips source-detail admission'
 );
 
-delete from public.auction_runs where id = '40400000-0000-4000-8000-000000000003';
+delete from public.auction_runs
+ where id in ('40400000-0000-4000-8000-000000000002', '40400000-0000-4000-8000-000000000003');
 
 -- A due retry increments the existing dispatch attempt and returns the same
 -- run id.  It is not a new scheduler decision, so the expensive detail scan
@@ -327,14 +333,14 @@ values ('expired-manual', public.claim_autonomous_pipeline_run());
 
 select is(
   (select payload->>'mode' from pgtap_scheduler_claims where case_name = 'expired-manual'),
-  'enrichment',
-  'an expired manual lease does not block a new due queue claim'
+  'collect',
+  'an expired manual lease does not block a new claim: the due source is collected first'
 );
 
 select is(
   (select payload->>'source' from pgtap_scheduler_claims where case_name = 'expired-manual'),
-  'enrichment-queue',
-  'the post-expiry claim keeps the queue/source arbitration path'
+  'pgtap-404-expired-source',
+  'the post-expiry claim collects the due source on its lane'
 );
 
 select is(
@@ -376,6 +382,16 @@ select is(
   ),
   1::bigint,
   'the existing due queue job remains available after the admission pass'
+);
+
+-- The second claim of the tick takes the queue lane.
+insert into pgtap_scheduler_claims (case_name, payload)
+values ('expired-manual-queue', public.claim_autonomous_pipeline_run());
+
+select is(
+  (select payload->>'source' from pgtap_scheduler_claims where case_name = 'expired-manual-queue'),
+  'enrichment-queue',
+  'the second claim after the expiry dispatches the due queue'
 );
 
 select is(

@@ -127,3 +127,27 @@ def merge_trigger_present(monkeypatch):
 def _no_document_prefetch_processes(monkeypatch):
     """Le vidage des pièces prépare les ventes suivantes dans des processus à part : jamais dans les tests."""
     monkeypatch.setenv("DOCUMENT_BACKLOG_PREFETCH_WORKERS", "0")
+
+
+@pytest.fixture(autouse=True)
+def _no_pending_collection(monkeypatch):
+    """La voie d'enrichissement lit en base si une collecte est demandée (``src.collection_priority``) : jamais ici.
+
+    Sans base, aucune collecte n'est demandée ; les tests de la priorité posent eux-mêmes la réponse.
+    """
+    from src import collection_priority
+
+    monkeypatch.setattr(collection_priority, "collection_pending_now", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def _catalogue_free_before_collections(monkeypatch):
+    """Avant de démarrer, une collecte planifiée attend le verrou du catalogue (``src.autonomous_runner``) : libre ici.
+
+    Seulement si le lanceur est déjà importé par le module de test ; ses tests de l'attente la rétablissent.
+    """
+    import sys
+
+    runner = sys.modules.get("src.autonomous_runner")
+    if runner is not None:
+        monkeypatch.setattr(runner, "_catalogue_writer_free", lambda db_url, *, wait_seconds: True)

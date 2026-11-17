@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -8,7 +9,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
-from src import general_lane_claims
+from src import collection_priority, general_lane_claims
 from src.admission import is_expired
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import (
@@ -30,10 +31,13 @@ from src.enrichment.extract_structured import (
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
 from src.enrichment_queue_limits import (
+    COLLECTION_PENDING_STOP_REASON,
     ENRICHMENT_BUDGET_SECONDS,
     ENRICHMENT_BUDGET_SECONDS_ENV,
     ENRICHMENT_MAX_JOBS,
     ENRICHMENT_MAX_JOBS_ENV,
+    ENRICHMENT_WORKER_REPORT_ENV,
+    QUEUES_EMPTY_STOP_REASON,
 )
 from src.freshness import document_fingerprint, documents_are_current, settle_source_change_without_documents
 from src.geocode import geocode_sale, sale_needs_position
@@ -1193,6 +1197,11 @@ def _run_enrichment_queue_worker(
         if now >= claim_deadline:
             stop_reason = "budget" if now >= deadline else "finalization_margin"
             break
+        if collection_priority.collection_pending_now():
+            # A collection was requested: claim nothing more. The process then ends and releases the catalogue
+            # writer lock, which the collection waits for before it starts (src.collection_priority).
+            stop_reason = COLLECTION_PENDING_STOP_REASON
+            break
         if _WORKER_LLM_BUDGET_EXHAUSTED.get():
             # A budget exception restores every claimed job's attempt and
             # gives it a future wake-up.  Do not immediately claim another
@@ -1255,7 +1264,7 @@ def _run_enrichment_queue_worker(
         if not count:
             # Neither family is currently claimable. Avoid spinning against
             # paused/empty queues until the next scheduled worker.
-            stop_reason = "queues_empty"
+            stop_reason = QUEUES_EMPTY_STOP_REASON
             break
         handled += count
         if claimed_family is not None:
@@ -1293,7 +1302,32 @@ def _run_enrichment_queue_worker(
         stop_reason,
         _enrichment_claim_batch_size(SOURCE_DETAIL_FAMILY),
     )
+    _write_worker_report(
+        {
+            "stop_reason": stop_reason,
+            "handled": handled,
+            "handled_by_family": dict(handled_by_family),
+            "elapsed_seconds": round(elapsed_seconds, 1),
+            "budget_seconds": budget_seconds,
+        }
+    )
     return handled
+
+
+def _write_worker_report(report: dict[str, object]) -> None:
+    """Hand this pass's stop reason and counts to the scheduled unit (``ENRICHMENT_WORKER_REPORT_ENV``).
+
+    The unit reads it to decide whether to start another pass (src.autonomous_runner). Without the variable (manual
+    run, tests) nothing is written; a write failure is only logged, the unit then ends after this pass.
+    """
+    path = (os.getenv(ENRICHMENT_WORKER_REPORT_ENV) or "").strip()
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle)
+    except OSError as exc:
+        LOGGER.warning("Enrichment worker report not written: %s", exc)
 
 
 def _read_worker_claim_status_counts(job_ids: set[str]) -> dict[str, int] | None:

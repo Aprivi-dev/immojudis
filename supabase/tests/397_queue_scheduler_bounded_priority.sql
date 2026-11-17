@@ -87,11 +87,11 @@ select ok(
     )
   ) > 0
   and position(
-    'active_id' in pg_get_functiondef(
+    'collection_busy' in pg_get_functiondef(
       'public.claim_autonomous_pipeline_run()'::regprocedure
     )
   ) > 0,
-  'the scheduler keeps its advisory lock and active-run single-writer guard'
+  'the scheduler keeps its advisory lock and one active run per lane (20261203100000)'
 );
 
 update public.auction_pipeline_control
@@ -239,8 +239,9 @@ delete from public.auction_runs
    where case_name = 'no-job-due-queue'
  );
 
--- A queue due alongside two overdue sources proves the bounded priority in
--- the actual claim RPC: one source gets a turn, then the queue gets the next.
+-- A queue due alongside two overdue sources: the first claim of the tick
+-- collects one source, the second gives the queue its own lane while that
+-- collection is still active (20261203100000).
 update public.auction_pipeline_control
    set source_dispatch_streak = 0,
        next_enrichment_at = statement_timestamp() - interval '5 minutes'
@@ -310,20 +311,13 @@ select is(
   'the source turn increments the persisted streak'
 );
 
-delete from public.auction_runs
- where id = (
-   select (payload->>'id')::uuid
-   from pgtap_bounded_claims
-   where case_name = 'old-source-first'
- );
-
 insert into pgtap_bounded_claims (case_name, payload)
 values ('queue-after-source', public.claim_autonomous_pipeline_run());
 
 select is(
   (select payload->>'mode' from pgtap_bounded_claims where case_name = 'queue-after-source'),
   'enrichment',
-  'the queue receives the next scheduler turn after one overdue source'
+  'the queue receives the second claim of the tick, beside the active collection'
 );
 
 select is(
@@ -354,14 +348,14 @@ select ok(
     from public.auction_source_state
     where source_name = 'pgtap-bounded-old-b'
   ),
-  'queue priority does not postpone the remaining source inventory turn'
+  'the queue lane does not postpone the remaining source inventory turn'
 );
 
 delete from public.auction_runs
- where id = (
+ where id in (
    select (payload->>'id')::uuid
    from pgtap_bounded_claims
-   where case_name = 'queue-after-source'
+   where case_name in ('old-source-first', 'queue-after-source')
  );
 
 -- No source due and no eligible queue: the scheduler returns no run and
