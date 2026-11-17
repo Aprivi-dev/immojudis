@@ -157,7 +157,7 @@ values ('eligible-future-queue', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_bounded_claims where case_name = 'eligible-future-queue'),
   'collect',
-  'a due source keeps its turn while an eligible queue is not yet due'
+  'a due source is collected while an eligible queue is not yet due'
 );
 
 select ok(
@@ -302,13 +302,13 @@ values ('old-source-first', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_bounded_claims where case_name = 'old-source-first'),
   'collect',
-  'the first overdue source keeps one bounded collection turn'
+  'the first claim of the tick collects the most overdue source'
 );
 
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   1,
-  'the source turn increments the persisted streak'
+  'a collection claim still increments the persisted streak (kept for a rollback)'
 );
 
 insert into pgtap_bounded_claims (case_name, payload)
@@ -339,7 +339,7 @@ select ok(
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   0,
-  'the queue claim resets the source streak'
+  'the queue claim still resets the persisted streak'
 );
 
 select ok(

@@ -431,17 +431,17 @@ def test_pdf_photos_failure_is_reported_and_never_raises(monkeypatch) -> None:
 
 # --- Voie d'enrichissement séparée des collectes (17/11/2026) ---------------------------------------------------
 
-ORIGINAL_CATALOGUE_WRITER_FREE = autonomous_runner._catalogue_writer_free
+ORIGINAL_CATALOGUE_WRITER = autonomous_runner._catalogue_writer
 LANE_RUN_ID = "00000000-0000-0000-0000-0000000000a1"
 
 
 def _lane_db(updates: list, statements: list, *, source: str = "enrichment-queue", lease: str | None = "7200",
-             queued_source: str | None = None):
+             queued_source: str | None = None, lease_until: str | None = None, on_update=None):
     class FakeDb:
         def execute(self, statement, params):
             statements.append(statement)
-            if "select source from public.auction_runs" in statement:
-                return SimpleNamespace(fetchone=lambda: (queued_source,) if queued_source else None)
+            if "select source, summary" in statement:
+                return SimpleNamespace(fetchone=lambda: (queued_source, lease_until) if queued_source else None)
             if "returning source" in statement:
                 return SimpleNamespace(fetchone=lambda: (source,))
             if "running_lease_seconds" in statement:
@@ -456,6 +456,8 @@ def _lane_db(updates: list, statements: list, *, source: str = "enrichment-queue
                 return SimpleNamespace(fetchone=lambda: (0,))
             if "update public.auction_runs set status=%s" in statement:
                 updates.append(params)
+                if on_update is not None:
+                    on_update()
             return SimpleNamespace(fetchone=lambda: None)
 
     return lambda _url: nullcontext(FakeDb())
@@ -520,10 +522,15 @@ def test_the_enrichment_lane_waits_for_a_collection_and_skips_its_passes(monkeyp
     from src import collection_priority
 
     updates, statements = [], []
-    calls = _lane_setup(monkeypatch, ["collection_pending", "queues_empty"])
+    clock = [0.0]
+    calls = _lane_setup(monkeypatch, ["collection_pending", "queues_empty"], clock=clock)
     monkeypatch.setattr(collection_priority, "collection_pending_now", lambda: True)
     waits = iter([0.0, 600.0])
-    monkeypatch.setattr(collection_priority, "wait_while_collection_pending", lambda *, deadline: next(waits))
+
+    def wait(*, deadline: float) -> None:
+        clock[0] += next(waits)
+
+    monkeypatch.setattr(collection_priority, "wait_while_collection_pending", wait)
 
     assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
 
@@ -568,38 +575,146 @@ def test_without_the_lane_or_its_lease_an_enrichment_unit_runs_one_cycle(monkeyp
     assert updates[0][2].obj["scheduler_budget_seconds"] == autonomous_runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS
 
 
-def test_a_collection_waits_for_the_catalogue_writer_before_its_claim(monkeypatch) -> None:
-    updates, statements = [], []
-    waited: list[tuple[float, int]] = []
+def _recording_locks(monkeypatch, events: list, statements: list, *, granted: bool = True):
+    """Le tour des sources et le verrou du catalogue, notés à leur prise et à leur rendu."""
+    from contextlib import contextmanager
+
+    from src import source_traffic
+
+    held: dict[str, int] = {"traffic": 0, "catalogue": 0}
+
+    def recorder(name):
+        @contextmanager
+        def lock(_db_url, *, label, wait_seconds, **_kwargs):
+            events.append((name, "take", wait_seconds, len(statements)))
+            held[name] += 1
+            try:
+                yield granted
+            finally:
+                held[name] -= 1
+                events.append((name, "release", None, len(statements)))
+
+        return lock
+
+    monkeypatch.setattr(source_traffic, "source_traffic_turn", recorder("traffic"))
+    monkeypatch.setattr(autonomous_runner, "_catalogue_writer", recorder("catalogue"))
+    return held
+
+
+def test_a_collection_takes_its_source_turn_and_waits_for_the_catalogue_writer_before_its_claim(monkeypatch) -> None:
+    updates, statements, events = [], [], []
     _lane_setup(monkeypatch, [])
-    monkeypatch.setattr(
-        autonomous_runner,
-        "_catalogue_writer_free",
-        lambda db_url, *, wait_seconds: waited.append((wait_seconds, len(statements))) or True,
-    )
+    held = _recording_locks(monkeypatch, events, statements)
 
     connect = _lane_db(updates, statements, source="vench", queued_source="vench")
     assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
 
     claim_index = next(index for index, statement in enumerate(statements) if "returning source" in statement)
-    assert waited == [(autonomous_runner.COLLECTION_CATALOGUE_PREWAIT_SECONDS, claim_index)]
+    budget = autonomous_runner.COLLECTION_CATALOGUE_PREWAIT_SECONDS
+    # Statements executed before each event: only the read of the queued run precedes the claim.
+    assert events[0][:2] == ("traffic", "take") and events[0][3] <= claim_index
+    assert abs(events[0][2] - budget) < 5
+    assert events[1][:2] == ("catalogue", "take") and events[2][:2] == ("catalogue", "release")
+    assert events[2][3] <= claim_index
+    # The source turn is kept until the very end: the run is closed and finish_source runs inside it.
+    assert events[-1][:2] == ("traffic", "release")
+    assert held == {"traffic": 0, "catalogue": 0}
     assert updates[0][2].obj["catalogue_prewait"]["timed_out"] is False
 
 
-def test_an_enrichment_run_does_not_wait_for_the_catalogue_writer(monkeypatch) -> None:
-    updates, statements = [], []
-    _lane_setup(monkeypatch, ["queues_empty"])
+def test_the_closing_writes_of_a_collection_hold_the_catalogue_writer_lock(monkeypatch) -> None:
+    """Point M3 : src.main a rendu le verrou ; la clôture du run et finish_source le reprennent."""
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, [])
+    held = _recording_locks(monkeypatch, events, statements)
+    seen: list[tuple[str, int, int]] = []
     monkeypatch.setattr(
-        autonomous_runner, "_catalogue_writer_free", lambda db_url, *, wait_seconds: pytest.fail("no wait")
+        autonomous_runner,
+        "finish_source",
+        lambda _db_url, _run_id, connect: seen.append(("finish_source", held["catalogue"], held["traffic"])),
     )
+
+    connect = _lane_db(
+        updates, statements, source="vench", queued_source="vench",
+        on_update=lambda: seen.append(("close", held["catalogue"], held["traffic"])),
+    )
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+
+    assert seen == [("close", 1, 1), ("finish_source", 1, 1)]
+
+
+def test_a_collection_never_waits_past_its_dispatch_lease(monkeypatch) -> None:
+    """Point F1 : la pré-attente s'arrête 5 minutes avant le bail de la ligne en file."""
+    from datetime import UTC, datetime, timedelta
+
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, [])
+    _recording_locks(monkeypatch, events, statements)
+    lease_until = (datetime.now(UTC) + timedelta(minutes=12)).isoformat()
+
+    connect = _lane_db(updates, statements, source="vench", queued_source="vench", lease_until=lease_until)
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+
+    assert 400 < events[0][2] <= 12 * 60 - autonomous_runner.QUEUED_LEASE_MARGIN_SECONDS
+    assert updates[0][2].obj["catalogue_prewait"]["budget_seconds"] <= 7 * 60
+
+
+def test_an_expired_dispatch_lease_leaves_no_wait(monkeypatch) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    statements: list = []
+    lease_until = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    connect = _lane_db([], statements, queued_source="licitor", lease_until=lease_until)
+    assert autonomous_runner._collection_wait_budget("postgresql://test", LANE_RUN_ID, connect=connect) == 0.0
+
+
+def test_an_enrichment_run_takes_no_collection_lock(monkeypatch) -> None:
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, ["queues_empty"])
+    _recording_locks(monkeypatch, events, statements)
 
     connect = _lane_db(updates, statements, queued_source="enrichment-queue")
     assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+    assert not [event for event in events if event[0] == "catalogue"]
     assert "catalogue_prewait" not in updates[0][2].obj
 
 
+def test_optional_passes_that_contact_a_site_run_inside_the_source_traffic_turn(monkeypatch) -> None:
+    """Point M4 : une collecte qui démarre pendant une passe externe attend son tour."""
+    updates, statements, events = [], [], []
+    calls = _lane_setup(monkeypatch, ["queues_empty"])
+    held = _recording_locks(monkeypatch, events, statements)
+    during: dict[str, int] = {}
+    run = autonomous_runner.subprocess.run
+
+    def run_and_note(command, **kwargs):
+        during[command[2]] = held["traffic"]
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run_and_note)
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    assert len(calls) == 6
+    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+                   "src.sources.licitor_history_refresh"):
+        assert during[module] == 1, module
+    # The worker takes the turn itself, batch by batch (src.collection_priority.yield_to_sources).
+    assert during["src.queued_runner"] == 0 and during["src.document_reading"] == 0
+
+
+def test_an_external_pass_is_skipped_when_the_source_turn_does_not_come(monkeypatch) -> None:
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, ["queues_empty"])
+    _recording_locks(monkeypatch, events, statements, granted=False)
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+    skipped = updates[0][2].obj["enrichment_unit"]["cycles"][0]["passes_skipped"]
+    assert set(skipped) == autonomous_runner.EXTERNAL_PASS_KEYS
+    assert set(skipped.values()) == {"source_traffic_busy"}
+
+
 @pytest.mark.parametrize("acquired", [True, False])
-def test_the_collection_prewait_takes_and_releases_the_catalogue_writer_lock(monkeypatch, acquired) -> None:
+def test_the_catalogue_writer_helper_yields_whether_it_holds_the_lock(monkeypatch, acquired) -> None:
     from contextlib import contextmanager
 
     seen: list[dict] = []
@@ -612,7 +727,8 @@ def test_the_collection_prewait_takes_and_releases_the_catalogue_writer_lock(mon
         yield None
 
     monkeypatch.setattr(autonomous_runner, "catalogue_writer_lock", lock)
-    assert ORIGINAL_CATALOGUE_WRITER_FREE("postgresql://test", wait_seconds=12.0) is acquired
+    with ORIGINAL_CATALOGUE_WRITER("postgresql://test", label="t", wait_seconds=12.0) as held:
+        assert held is acquired
     assert seen[0]["wait_seconds"] == 12.0 and seen[0]["heartbeat_seconds"] == 0
 
 

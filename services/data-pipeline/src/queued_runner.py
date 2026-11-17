@@ -1188,8 +1188,8 @@ def _run_enrichment_queue_worker(
         due_counts,
     )
     slot, yielded = 0, False
-    # A pending collection stops the claims: the process ends and releases the catalogue writer lock it waits for.
-    while handled < max_jobs and not (yielded := collection_priority.collection_pending_now()):
+    # A pending collection (or source traffic turn) stops the claims; ending releases the catalogue writer lock.
+    while handled < max_jobs and not (yielded := collection_priority.yield_to_sources()):
         now = time.monotonic()
         if now >= claim_deadline:
             stop_reason = "budget" if now >= deadline else "finalization_margin"

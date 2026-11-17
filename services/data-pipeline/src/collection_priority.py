@@ -4,8 +4,9 @@ La file d'enrichissement a sa propre voie de planification (``claim_autonomous_p
 20261203100000) et son propre groupe de concurrence GitHub : elle tourne pendant qu'une collecte est demandée ou en
 cours. Elle ne travaille pourtant jamais en même temps qu'elle :
 
-* le travailleur (``src.queued_runner``) ne prend plus de lot dès qu'une collecte est en attente ou en cours, et rend
-  le verrou des écritures du catalogue en se terminant ;
+* le travailleur (``src.queued_runner``) ne prend plus de lot dès qu'une collecte est en attente ou en cours, ou
+  qu'un autre processus tient ou attend le tour de parole vers les sources (``yield_to_sources``), et rend le verrou
+  des écritures du catalogue en se terminant ;
 * l'unité d'enrichissement (``src.autonomous_runner``) attend la fin de la collecte avant le passage suivant, et
   saute ses passes facultatives tant qu'une collecte est demandée ;
 * la collecte attend, avant de démarrer (et avant que son budget ne coure), que le verrou du catalogue soit libre :
@@ -74,6 +75,25 @@ def collection_pending(db_url: str, *, connect: Callable[..., Any] | None = None
 def collection_pending_now() -> bool:
     """``collection_pending`` sur la base configurée (False sans base)."""
     return collection_pending(str(load_settings().get("supabase_db_url") or ""))
+
+
+_WORKER_TURNS: dict[str, Any] = {}
+
+
+def yield_to_sources() -> bool:
+    """Avant chaque lot du travailleur : True s'il doit céder la place, sinon il garde le tour des sources.
+
+    Cède quand une collecte est demandée, ou quand un autre processus tient ou attend le tour de parole vers les
+    sources (``src.source_traffic``) : la copie des photos d'une collecte, une collecte qui attend avant de démarrer.
+    Le tour pris ici couvre le lot qui suit ; il est rendu au lot suivant (ou à la fin du processus).
+    """
+    if collection_pending_now():
+        return True
+    from src.source_traffic import SourceTrafficTurns
+
+    db_url = str(load_settings().get("supabase_db_url") or "")
+    turns = _WORKER_TURNS.setdefault(db_url, SourceTrafficTurns(db_url))
+    return not turns.try_take()
 
 
 def wait_while_collection_pending(

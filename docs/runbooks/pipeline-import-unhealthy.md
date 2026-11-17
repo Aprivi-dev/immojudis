@@ -3,13 +3,13 @@
 Les exécutions de collecte (`public.auction_runs`) ne passent plus. Évaluée par `operational-health` à chaque
 passage (toutes les 30 minutes, `app_private.evaluate_operational_health`). Elle s'ouvre dans l'un de ces cas :
 
-| Condition                                                              | Sévérité      | Détail                       |
-| ---------------------------------------------------------------------- | ------------- | ---------------------------- |
-| au moins 3 exécutions `failed` dans l'heure                            | avertissement | `failed_last_hour`           |
-| au moins 1 échec dans l'heure **et** une exécution en file             | avertissement | `failed_last_hour`, `queued` |
-| une exécution `running` démarrée il y a plus de 3 h                    | critique      | `stuck_running`              |
-| l'exécution en file la plus ancienne attend depuis plus de **5 400 s** | avertissement | `oldest_queued_age_seconds`  |
-| ... depuis plus de 7 200 s                                             | critique      | `oldest_queued_age_seconds`  |
+| Condition                                                                        | Sévérité      | Détail                                       |
+| -------------------------------------------------------------------------------- | ------------- | -------------------------------------------- |
+| au moins 3 exécutions `failed` dans l'heure                                      | avertissement | `failed_last_hour`                           |
+| au moins 1 échec dans l'heure **et** une exécution en file depuis plus de 30 min | avertissement | `failed_last_hour`, `queued_over_30_minutes` |
+| une exécution `running` démarrée il y a plus de 3 h                              | critique      | `stuck_running`                              |
+| l'exécution en file la plus ancienne attend depuis plus de **5 400 s**           | avertissement | `oldest_queued_age_seconds`                  |
+| ... depuis plus de 7 200 s                                                       | critique      | `oldest_queued_age_seconds`                  |
 
 Seuil d'âge de file (`maximum_queued_age_seconds`, migration `20261201100000`) : 2 x la cadence de 30 minutes
 (c'est `operational-health` qui déclenche le workflow `data-pipeline.yml`) + la durée d'un passage d'environ
@@ -23,7 +23,10 @@ blocage. Une unité de la file reste `running` jusqu'à 105 minutes (bail de 7 2
 résumé ; les collectes gardent 3 600 s) : bien sous le seuil `stuck_running` de 3 h, qui n'a pas changé. Une collecte
 peut rester `queued` jusqu'à 25 minutes de plus qu'avant : avant de démarrer, elle attend que le travailleur de la
 file finisse le lot qu'il tient (`summary->'catalogue_prewait'`) ; une exécution en file dure donc au plus
-démarrage (~5 min) + 25 min, sous le seuil de 5 400 s, qui n'a pas changé non plus.
+démarrage (~5 min) + 25 min, sous le seuil de 5 400 s, qui n'a pas changé non plus. Pour la même raison, la
+condition « un échec dans l'heure et une file » ne compte que les exécutions en file depuis plus de 30 minutes
+(`queued_over_30_minutes`, migration `20261203100000`) : une collecte en pré-attente à côté d'un échec n'ouvre plus
+l'alerte.
 
 ## Diagnostic
 

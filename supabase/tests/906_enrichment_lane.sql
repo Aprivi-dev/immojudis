@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(20);
 
 -- Voie d'enrichissement séparée des collectes (migration 20261203100000) : une exécution active au plus par voie,
 -- un bail d'exécution propre à la file écrit dans son résumé, et une nouvelle tentative de lancement par voie.
@@ -180,6 +180,85 @@ select is(
   (select payload->>'attempt' from pgtap_lane_claims where ordinal = 6),
   '2',
   'the queue retry increments its own dispatch attempt'
+);
+
+-- A collection that ended while a queue unit is still running: the collection lane takes the next due source.
+delete from public.auction_runs where status in ('queued', 'running');
+insert into public.auction_runs (status, source, scheduler_owned, started_at, summary, errors)
+values ('running', 'enrichment-queue', true, statement_timestamp() - interval '20 minutes',
+        '{"running_lease_seconds": 7200}'::jsonb, '{}'::jsonb);
+insert into public.auction_runs (status, source, scheduler_owned, started_at, finished_at, summary, errors)
+values ('succeeded', 'pgtap-lane-a', true, statement_timestamp() - interval '15 minutes',
+        statement_timestamp() - interval '1 minute', '{}'::jsonb, '{}'::jsonb);
+update public.auction_source_state
+   set next_inventory_at = statement_timestamp() - interval '1 minute'
+ where source_name = 'pgtap-lane-b';
+
+insert into pgtap_lane_claims values (7, public.claim_autonomous_pipeline_run());
+
+select is(
+  (select payload->>'source' from pgtap_lane_claims where ordinal = 7),
+  'pgtap-lane-b',
+  'the collection lane starts again as soon as the previous collection ended, beside a running queue unit'
+);
+
+-- A queue run dispatched before this migration (no running_lease_seconds) keeps the one-hour lease.
+delete from public.auction_runs where status in ('queued', 'running');
+insert into public.auction_runs (id, status, source, scheduler_owned, started_at, summary, errors)
+values ('90600000-0000-4000-8000-000000000002', 'running', 'enrichment-queue', true,
+        statement_timestamp() - interval '61 minutes', '{}'::jsonb, '{}'::jsonb);
+select public.claim_autonomous_pipeline_run();
+
+select is(
+  (select summary->>'completion_status' from public.auction_runs
+    where id = '90600000-0000-4000-8000-000000000002'),
+  'lease_expired',
+  'a queue run without its own lease (dispatched before the lanes) expires after 60 minutes, as before'
+);
+
+-- AI prediction cap: counted over the last 30 minutes of an execution, so a long queue unit keeps the cap of one
+-- pass per half hour instead of hitting it after three passes.  The daily budget is not changed.
+delete from public.auction_runs where status in ('queued', 'running');
+update public.auction_pipeline_control
+   set max_ai_predictions_per_run = 2,
+       daily_ai_budget_usd = 1000
+ where id;
+insert into public.auction_runs (id, status, source, scheduler_owned, started_at, summary, errors)
+values ('90600000-0000-4000-8000-000000000001', 'running', 'enrichment-queue', true,
+        statement_timestamp() - interval '90 minutes', '{"running_lease_seconds": 7200}'::jsonb, '{}'::jsonb);
+insert into public.auction_pipeline_usage (run_id, model, reserved_usd, created_at)
+values
+  ('90600000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 0.001, statement_timestamp() - interval '80 minutes'),
+  ('90600000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 0.001, statement_timestamp() - interval '70 minutes'),
+  ('90600000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 0.001, statement_timestamp() - interval '40 minutes');
+
+select lives_ok(
+  $$select public.reserve_pipeline_prediction('90600000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 1000, 100)$$,
+  'calls older than 30 minutes do not count against the per-execution cap'
+);
+
+select throws_ok(
+  $$select public.reserve_pipeline_prediction('90600000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 1000, 100)$$
+  || $$ from generate_series(1, 2)$$,
+  'P0001',
+  'AI prediction budget exhausted for this execution',
+  'the cap still applies within 30 minutes'
+);
+
+select is(
+  (select count(*) from public.auction_pipeline_usage
+    where run_id = '90600000-0000-4000-8000-000000000001'
+      and created_at >= statement_timestamp() - interval '30 minutes'),
+  1::bigint,
+  'only the reservation granted within the window was recorded'
+);
+
+select ok(
+  position('daily_ai_budget_usd' in pg_get_functiondef(
+    'public.reserve_pipeline_prediction(uuid,text,integer,integer)'::regprocedure)) > 0
+  and position('Daily AI budget exhausted' in pg_get_functiondef(
+    'public.reserve_pipeline_prediction(uuid,text,integer,integer)'::regprocedure)) > 0,
+  'the daily AI budget check is unchanged'
 );
 
 -- A manual run still blocks the whole scheduler.

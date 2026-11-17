@@ -233,9 +233,23 @@ Décision du propriétaire, étape 1 : la file tourne en continu, séparée des 
   attend ce verrou 25 minutes au plus (`catalogue_prewait` dans son résumé) : le lot en cours se termine. Le
   travailleur n'écrit le catalogue que sous ce verrou (test
   `test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock`).
+- **Un seul processus à la fois vers les sources.** Verrou consultatif `immojudis:source-traffic:v1`
+  (`src/source_traffic.py`) : une collecte planifiée le prend avant de démarrer (avec l'attente du verrou du
+  catalogue, bornée par 25 min et par le bail de sa ligne en file moins 5 min) et le garde jusqu'à la fin de ses
+  écritures, elles-mêmes faites sous le verrou du catalogue ; la copie de ses photos le prend à son tour (4 min
+  d'attente au plus, sinon reportée) ; l'unité le prend autour de chaque passe qui contacte un hôte (sinon
+  `source_traffic_busy`) ; le travailleur le reprend lot par lot sans attendre et cède dès qu'un autre l'attend.
+  Une collecte n'interroge donc jamais un site en même temps que la file.
+- **Plafond d'appels IA par exécution.** `max_ai_predictions_per_run` (90) se compte sur les 30 dernières minutes de
+  l'exécution (migration `20261203100000`) : chaque passage d'une unité garde le plafond d'un passage d'avant
+  (24 appels en moyenne, 39 au plus sur 56 passages mesurés). Le budget quotidien (`daily_ai_budget_usd`) et le
+  plafond horaire restent les garde-fous globaux. Un report « AI prediction budget exhausted for this execution » ne
+  devrait plus se voir en régime normal.
 - **Retour arrière sans commit.** Variable de dépôt GitHub `ENRICHMENT_LANE=off` : chaque unité de la file ne
-  fait plus qu'un passage (environ 30 minutes), toujours dans son groupe. Retour complet : réappliquer l'ancien
-  corps de `claim_autonomous_pipeline_run` (voir l'en-tête de la migration).
+  fait plus qu'un passage (environ 30 minutes), toujours dans son groupe. Retour complet :
+  `supabase/maintenance/20261203100000_restore_pipeline_scheduler_before_lanes.sql` remet les corps exacts d'avant
+  la migration (dont `claim_autonomous_pipeline_run` : 20260929153000 retouchée par 20260929235500, 20261001070853
+  et 20261016100000, md5 `0ee8bdb4cd09923283f3f3a357852b0f`), quand aucune unité de file ne tourne.
 
 Une unité `running` de la file à côté d'une collecte `running` est l'état normal. Le cas (a) ci-dessus (bail d'une
 tâche) et l'observation `enrichment-queue` ne dépendent pas du nombre d'unités : rien n'y change.

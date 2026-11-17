@@ -438,7 +438,9 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PHOTO_MIRROR_BUDGET_MINUTES: ${{ vars.PHOTO_MIRROR_BUDGET_MINUTES || '15' }}
           PHOTO_MIRROR_MAX_PHOTOS: ${{ vars.PHOTO_MIRROR_MAX_PHOTOS || '400' }}
-        run: python -m src.photo_mirror --automatic
+        # Un seul processus à la fois vers les sources (src/source_traffic.py) : la copie attend au plus 4 min que le
+        # travailleur de la file finisse son lot, sinon elle passe au tour suivant (4 + 20 min sous le délai de 25).
+        run: python -m src.source_traffic --wait-seconds 240 -- python -m src.photo_mirror --automatic
 
       - name: Flag partial collection
         if: always() && steps.pipeline.outputs.source_warning == 'true'
