@@ -217,9 +217,15 @@ Décision du propriétaire, étape 1 : la file tourne en continu, séparée des 
   exécution active. La file part dans son propre groupe de concurrence GitHub (`immojudis-enrichment-queue`,
   entrée `enrichment_only`), les collectes restent dans `immojudis-data-pipeline`.
 - **Unité de la file.** Elle enchaîne des passages comme avant (travailleur : 180 tâches et 1 200 s au plus, puis
-  vidage des pièces, lecture, positions, photos, historique Licitor) jusqu'à son bail (`running_lease_seconds`,
-  7 200 s, écrit par le planificateur) moins 15 minutes, soit 105 minutes ; elle s'arrête plus tôt quand la file
-  est vide ou que le travailleur échoue. Elle part au passage d'`operational-health` qui suit sa fin.
+  passes facultatives) jusqu'à son bail (`running_lease_seconds`, 7 200 s, écrit par le planificateur) moins 15
+  minutes, soit 105 minutes ; elle s'arrête plus tôt quand la file est vide ou que le travailleur échoue. Elle part au
+  passage d'`operational-health` qui suit sa fin.
+- **Pas une requête de plus par site.** Les passes facultatives qui contactent un hôte extérieur (vidage des pièces,
+  positions BAN, photos des pièces, historique Licitor) gardent leur volume d'avant la voie, environ 17 tours par
+  jour : une fois par unité au plus, et seulement si aucune exécution de la file qui les a faites n'a fini depuis
+  24 h / 17 (85 min ; `EXTERNAL_PASS_KEYS` et `EXTERNAL_PASS_MIN_INTERVAL`, `src/autonomous_runner.py`). Sinon,
+  `passes_skipped` porte `site_cadence`. La lecture des pièces (IA seulement, bornée par le budget IA) suit chaque
+  passage du travailleur.
 - **Jamais en même temps qu'une collecte.** Dès qu'une collecte est demandée (lancement en vol ou accepté, ou
   exécution manuelle en file) ou en cours, le travailleur ne prend plus de lot et se termine, ce qui rend le
   verrou des écritures du catalogue ; l'unité attend la fin de la collecte (`collection_wait_seconds`) et saute ses

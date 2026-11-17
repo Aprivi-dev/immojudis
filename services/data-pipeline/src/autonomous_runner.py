@@ -693,6 +693,22 @@ COLLECTION_CATALOGUE_PREWAIT_SECONDS = ENRICHMENT_WORKER_TIMEOUT_SECONDS
 ENRICHMENT_LEASE_MARGIN_SECONDS = 15 * 60
 # A worker pass shorter than this is mostly its finalization margin: the unit ends instead.
 ENRICHMENT_MIN_PASS_SECONDS = 5 * 60
+# Optional passes that contact an external host (attachments, Licitor history, BAN) keep their daily volume of
+# before the lane, about 17 a day (owner, 17/11/2026: not one more request per site): at most once per unit, and only
+# when no enrichment run that ran it finished in the last 24 h / 17. The document reading (LLM only) runs every cycle.
+EXTERNAL_PASS_MIN_INTERVAL = timedelta(hours=24) / 17
+EXTERNAL_PASS_KEYS = frozenset({
+    'document_backlog_exit_code', 'address_positions_exit_code', 'pdf_photos_exit_code', 'licitor_history_exit_code',
+})
+
+
+def _external_pass_due(db_url: str, run_id: str, key: str, *, connect: Callable[[str], Any]) -> bool:
+    """True when no other enrichment run that recorded ``key`` finished within ``EXTERNAL_PASS_MIN_INTERVAL``."""
+    with connect(db_url) as db:
+        row = db.execute("""select max(finished_at) from public.auction_runs
+            where source='enrichment-queue' and id<>%s and summary ? %s""", (run_id, key)).fetchone()
+    last = aware_timestamp(row[0]) if row and isinstance(row[0], datetime) else None
+    return last is None or last <= datetime.now(UTC) - EXTERNAL_PASS_MIN_INTERVAL
 ENRICHMENT_WORKER_COMMAND = (sys.executable, '-m', 'src.queued_runner', '--enrichment-only')
 
 
@@ -767,7 +783,7 @@ class EnrichmentUnit:
 
 
 def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, budget: int, deadline: float | None,
-                          licitor_withdrawn: bool) -> str | None:
+                          licitor_withdrawn: bool, external_pass_due: Callable[[str], bool]) -> str | None:
     """One worker pass, then the optional passes; returns the worker's stop reason (None: no report)."""
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='enrichment-worker-') as directory:
@@ -805,6 +821,8 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, budget: 
     for key, run_pass, timeout in passes:
         if deadline is not None and deadline - time.monotonic() < timeout:
             skipped[key] = 'unit_budget'
+        elif key in EXTERNAL_PASS_KEYS and (key in unit.exit_codes or not external_pass_due(key)):
+            skipped[key] = 'site_cadence'
         elif collection_priority.collection_pending_now():
             # Never next to a collection: the passes also fetch from the sources (attachments, Licitor history).
             skipped[key] = COLLECTION_PENDING_STOP_REASON
@@ -817,7 +835,8 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, budget: 
     return worker_stop
 
 
-def _run_enrichment_unit(env: dict[str, str], *, unit_seconds: int | None, licitor_withdrawn: bool) -> EnrichmentUnit:
+def _run_enrichment_unit(env: dict[str, str], *, unit_seconds: int | None, licitor_withdrawn: bool,
+                         external_pass_due: Callable[[str], bool]) -> EnrichmentUnit:
     """Run the enrichment queue for one scheduled unit.
 
     Without ``unit_seconds`` (a run dispatched before the separate lane existed): one cycle, as before. With it, the
@@ -835,7 +854,8 @@ def _run_enrichment_unit(env: dict[str, str], *, unit_seconds: int | None, licit
                 unit.stop_reason = 'unit_budget'
                 break
         worker_stop = _run_enrichment_cycle(
-            env, unit, budget=budget, deadline=deadline, licitor_withdrawn=licitor_withdrawn
+            env, unit, budget=budget, deadline=deadline, licitor_withdrawn=licitor_withdrawn,
+            external_pass_due=external_pass_due,
         )
         if deadline is None:
             break
@@ -903,7 +923,10 @@ def execute(run_id: str, *, enrichment_lane: bool = False,
         lease = _enrichment_lane_lease_seconds(db_url, run_id, connect=connect) if enrichment_lane else None
         unit_seconds = lease - ENRICHMENT_LEASE_MARGIN_SECONDS if lease else None
         budget = unit_seconds or ENRICHMENT_WORKER_TIMEOUT_SECONDS
-        unit = _run_enrichment_unit(env, unit_seconds=unit_seconds, licitor_withdrawn=LICITOR_SOURCE in withdrawn)
+        unit = _run_enrichment_unit(
+            env, unit_seconds=unit_seconds, licitor_withdrawn=LICITOR_SOURCE in withdrawn,
+            external_pass_due=lambda key: _external_pass_due(db_url, run_id, key, connect=connect),
+        )
         code, failure = unit.worker_code, unit.failure
     else:
         if source not in SOURCE_NAMES:
