@@ -6,6 +6,7 @@ from contextlib import nullcontext
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from src import enrichment_claim_schedule, pdf_deadline
@@ -1256,6 +1257,8 @@ def test_enrichment_worker_can_fallback_to_detail_when_relief_general_slot_is_em
 
 
 def test_worker_stops_general_claims_after_llm_budget_exhaustion_and_keeps_caps(monkeypatch) -> None:
+    # A database without the document-reading family (migration 20261205100000): the rule of before.
+    monkeypatch.setattr(queued_runner.general_lane_claims, "pdf_family_available", lambda: False)
     calls: list[tuple[int, str]] = []
     budget_exhausted = False
     monkeypatch.setattr(
@@ -1384,6 +1387,11 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
     def claim(*, family: str, limit: int) -> list[dict[str, object]]:
         nonlocal detail_number, general_claims
         claim_calls.append((family, limit))
+        if family == "enrichment_pdf":
+            # A database without migration 20261205100000 refuses the document-reading family: the rule of before.
+            request = httpx.Request("POST", "https://supabase.test/rest/v1/rpc/claim_auction_enrichment_jobs_request")
+            response = httpx.Response(400, json={"code": "22023", "message": "refused"}, request=request)
+            raise httpx.HTTPStatusError("refused", request=request, response=response)
         if family == queued_runner.ENRICHMENT_FAMILY:
             general_claims += 1
             if general_claims > 1:
@@ -1430,10 +1438,13 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
     with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
         assert queued_runner.run_enrichment_queue_worker(max_jobs=4, budget_seconds=1200) == 4
 
+    # After the refusal of the AI budget, one claim of document readings is refused by the database (22023), once:
+    # from then on, no general claim until the end of the run, as before.
     assert [family for family, _ in claim_calls] == [
         queued_runner.SOURCE_DETAIL_FAMILY,
         queued_runner.ENRICHMENT_FAMILY,
         queued_runner.SOURCE_DETAIL_FAMILY,
+        "enrichment_pdf",
         queued_runner.SOURCE_DETAIL_FAMILY,
     ]
     assert general_claims == 1
@@ -1457,6 +1468,8 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
 
 
 def test_worker_does_not_fallback_to_general_after_budget_breaker_when_details_empty(monkeypatch) -> None:
+    # A database without the document-reading family (migration 20261205100000): the rule of before.
+    monkeypatch.setattr(queued_runner.general_lane_claims, "pdf_family_available", lambda: False)
     calls: list[str] = []
     monkeypatch.setattr(
         queued_runner,

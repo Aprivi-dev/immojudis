@@ -26,6 +26,9 @@ ENRICHMENT_WORKER_REPORT_ENV = "PIPELINE_ENRICHMENT_WORKER_REPORT"
 COLLECTION_PENDING_STOP_REASON = "collection_pending"
 #: Raison d'arrêt du travailleur qui n'a plus rien trouvé à prendre dans la file.
 QUEUES_EMPTY_STOP_REASON = "queues_empty"
+#: Raison d'arrêt du travailleur qui n'a plus trouvé que des passes de faits refusées par le budget IA (les lectures de
+#: pièces, sans IA, ont continué jusqu'à la dernière) : ce n'est pas une file vide.
+LLM_BUDGET_STOP_REASON = "llm_budget_exhausted"
 
 
 def finish_worker_pass(stop_reason: str, yielded: bool, handled: int, handled_by_family: dict[str, int],

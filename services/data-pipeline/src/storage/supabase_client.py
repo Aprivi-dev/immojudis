@@ -845,8 +845,9 @@ def fetch_next_queued_run_from_supabase() -> dict[str, Any] | None:
     return rows[0]
 
 
-# enrichment_oldest: the general lane served by oldest due date (migration 20261201100000).
-ENRICHMENT_QUEUE_FAMILIES = frozenset({'source_detail', 'enrichment', 'enrichment_oldest'})
+# enrichment_oldest: the general lane served by oldest due date (migration 20261201100000); enrichment_pdf: its document
+# readings only (migration 20261205100000).
+ENRICHMENT_QUEUE_FAMILIES = frozenset({'source_detail', 'enrichment', 'enrichment_oldest', 'enrichment_pdf'})
 
 
 class QueueClaimDeferred(RuntimeError):

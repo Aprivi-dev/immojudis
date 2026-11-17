@@ -3,13 +3,17 @@
 Moved out of ``src.queued_runner`` on 17/11/2026 with the parallel lane (its size ceiling,
 ``tests/test_source_file_sizes.py``): the mixed worker alternates the two families with these rules
 (``_enrichment_family_cycle``), while a worker of the parallel lane claims its own family only (``--family``), with
-the same claim sizes (``_enrichment_claim_limit``). The code below is unchanged.
+the same claim sizes (``_enrichment_claim_limit``). The code moved is unchanged.
+
+``GeneralClaimPlan`` (17/11/2026, first unit of the parallel lane in production): after a refusal of the AI budget,
+the general claims are document readings only for a while, and one general worker of the lane claims them first.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 
 from src import general_lane_claims
 from src.config import load_settings
@@ -31,6 +35,63 @@ GENERAL_BACKLOG_RELIEF_CYCLE = (
     SOURCE_DETAIL_FAMILY,
     ENRICHMENT_FAMILY,
 )
+# After a refusal of the AI budget (hourly request cap, daily budget, cap of the execution), the general claims are
+# document readings only (no AI call) for this long, then a fact pass is tried again. The hourly cap counts the calls
+# of the last 60 minutes (reserve_llm_request): its slots come back as the oldest calls age out, so a fixed wait would
+# leave them unused; one refused reservation per worker every 5 minutes at most, the deferred jobs keep their attempt.
+FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS = 5 * 60
+#: One claim of the worker: (family, document readings only).
+Claim = tuple[str, bool]
+
+
+@dataclass
+class GeneralClaimPlan:
+    """The claims of one worker run, in the order to try them, slot after slot.
+
+    Incident of 17/11/2026 (first unit of the parallel lane): the general workers stopped at the first refusal of the
+    hourly AI cap and 189 document readings, which call no AI, waited in the queue. After a refusal
+    (``budget_refused``), the general claims are document readings only (``enrichment_pdf``) for
+    ``FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS``; the fact passes stay queued without spending an attempt. ``pdf_first``
+    (one general worker of the parallel lane): document readings first, the other general jobs when none is left. A
+    database without the document-reading family (``general_lane_claims.pdf_family_available``) keeps the rule of
+    before: no general claim after a refusal.
+    """
+
+    family: str | None
+    pdf_first: bool
+    family_cycle: tuple[str, ...]
+    facts_resume_at: float | None = None
+    llm_budget_refusals: int = 0
+
+    def __post_init__(self) -> None:
+        if self.pdf_first and self.family != ENRICHMENT_FAMILY:
+            raise ValueError(f"Document readings first is a general worker, not {self.family!r}")
+
+    def budget_refused(self, now: float) -> None:
+        self.llm_budget_refusals += 1
+        self.facts_resume_at = now + FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS
+        LOGGER.info("AI budget refused: document readings only for the next %ss", FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS)
+
+    def facts_paused(self, now: float) -> bool:
+        return self.facts_resume_at is not None and now < self.facts_resume_at
+
+    def claims(self, slot: int, now: float) -> list[Claim]:
+        """The claims of this slot: the next one is tried only when the previous one was empty. None at all: a
+        general worker whose database refuses the document-reading family while the AI budget refuses."""
+        paused = self.facts_paused(now)
+        pdf_claims = general_lane_claims.pdf_family_available()
+        general: list[Claim] = [(ENRICHMENT_FAMILY, paused)] if pdf_claims or not paused else []
+        if self.family == ENRICHMENT_FAMILY:
+            if self.pdf_first and pdf_claims and not paused:
+                return [(ENRICHMENT_FAMILY, True), (ENRICHMENT_FAMILY, False)]
+            return general
+        if self.family is not None:
+            # A worker of the parallel lane claims its own family only: no ratio, no alternate.
+            return [(self.family, False)]
+        detail: list[Claim] = [(SOURCE_DETAIL_FAMILY, False)]
+        if self.family_cycle[slot % len(self.family_cycle)] == SOURCE_DETAIL_FAMILY:
+            return detail + general
+        return general + detail
 
 
 def _read_due_enrichment_family_counts() -> dict[str, int]:

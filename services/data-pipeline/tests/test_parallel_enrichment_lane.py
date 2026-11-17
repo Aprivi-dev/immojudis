@@ -119,8 +119,10 @@ def test_the_mixed_worker_still_alternates_both_families(monkeypatch) -> None:
 
 
 def test_the_general_worker_stops_after_the_first_ai_budget_refusal(monkeypatch, tmp_path) -> None:
+    """Repli : une base sans la famille enrichment_pdf (migration 20261205100000) garde la règle d'avant."""
     from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV, read_worker_report
 
+    monkeypatch.setattr(queued_runner.general_lane_claims, "pdf_family_available", lambda: False)
     report = tmp_path / "report.json"
     monkeypatch.setenv(ENRICHMENT_WORKER_REPORT_ENV, str(report))
     claims: list[str] = []
@@ -137,6 +139,185 @@ def test_the_general_worker_stops_after_the_first_ai_budget_refusal(monkeypatch,
     written = read_worker_report(str(report))
     assert written["stop_reason"] == "llm_budget_exhausted"
     assert written["family"] == "enrichment"
+
+
+# --- Budget IA atteint : les pièces continuent (incident du 17/11/2026, 15:30-15:54 UTC) ---------------------------
+
+
+class _Clock:
+    """Horloge monotone du travailleur : chaque prise dure ``step`` secondes."""
+
+    def __init__(self, step: float) -> None:
+        self.now, self.step = 1_000.0, step
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _budget_worker(monkeypatch, tmp_path, outcomes, *, step: float = 10.0, **worker):
+    """Run a worker whose batches follow ``outcomes(claims, pdf_only)``: (handled, AI budget refused)."""
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV, read_worker_report
+
+    report = tmp_path / "report.json"
+    monkeypatch.setenv(ENRICHMENT_WORKER_REPORT_ENV, str(report))
+    monkeypatch.setattr(queued_runner, "_read_due_enrichment_family_counts", lambda: {})
+    clock = _Clock(step)
+    monkeypatch.setattr(queued_runner.time, "monotonic", clock)
+    claims: list[tuple[str, bool]] = []
+
+    def batch(*, limit, family, provider_clients=None, pdf_only=False):
+        claims.append((family, pdf_only))
+        clock.now += clock.step
+        handled, refused = outcomes(claims, pdf_only)
+        if refused:
+            # What run_enrichment_queue_batch does on PipelineBudgetExhausted: jobs deferred without an attempt.
+            queued_runner._WORKER_LLM_BUDGET_EXHAUSTED.set(True)
+        return handled
+
+    monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", batch)
+    handled = queued_runner.run_enrichment_queue_worker(**worker)
+    return claims, handled, read_worker_report(str(report))
+
+
+def test_after_an_ai_budget_refusal_the_general_worker_goes_on_with_the_document_readings(monkeypatch, tmp_path):
+    """Le défaut du 17/11 : refus du plafond horaire, 189 pièces en file ; le processus doit continuer sur les pièces."""
+    readings_left = 4
+
+    def outcomes(claims, pdf_only):
+        nonlocal readings_left
+        if not pdf_only:
+            return 1, True  # a fact pass: Hourly LLM request budget exhausted, deferred without an attempt
+        if readings_left:
+            readings_left -= 1
+            return 1, False
+        return 0, False
+
+    claims, handled, report = _budget_worker(
+        monkeypatch, tmp_path, outcomes, max_jobs=50, budget_seconds=1200, family="enrichment"
+    )
+
+    assert claims == [("enrichment", False)] + [("enrichment", True)] * 5
+    assert handled == 5
+    # Only fact passes refused by the AI budget are left: not an empty queue, and no claim loop.
+    assert report["stop_reason"] == "llm_budget_exhausted"
+    assert report["llm_budget_refusals"] == 1
+
+
+def test_the_fact_passes_are_tried_again_five_minutes_after_the_refusal(monkeypatch, tmp_path):
+    """Fenêtre horaire glissante : un essai des faits toutes les 5 minutes au plus, les pièces entre-temps."""
+    from src.enrichment_claim_schedule import FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS
+
+    assert FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS == 300
+
+    def outcomes(claims, pdf_only):
+        # The first fact pass is refused, the second one (after the pause) is accepted again.
+        refused = not pdf_only and sum(1 for _, only in claims if not only) == 1
+        return 1, refused
+
+    claims, _handled, report = _budget_worker(
+        monkeypatch, tmp_path, outcomes, step=60.0, max_jobs=10, budget_seconds=1200, family="enrichment"
+    )
+
+    # One claim a minute: refusal after the first one, then document readings only for five minutes.
+    assert [pdf_only for _, pdf_only in claims] == [False, True, True, True, True, True, False, False, False, False]
+    assert report["llm_budget_refusals"] == 1
+    assert report["stop_reason"] == "max_jobs"
+
+
+def test_refused_probes_are_bounded_while_the_budget_stays_closed(monkeypatch, tmp_path):
+    """Plafond fermé tout le passage : au plus un essai des faits refusé toutes les 5 minutes."""
+
+    def outcomes(claims, pdf_only):
+        return 1, not pdf_only
+
+    claims, _handled, report = _budget_worker(
+        monkeypatch, tmp_path, outcomes, step=30.0, max_jobs=180, budget_seconds=1200, family="enrichment"
+    )
+
+    refused = sum(1 for _, pdf_only in claims if not pdf_only)
+    # 1 140 s of claims (the last 60 s are the finalization margin): 4 refused probes, never one per claim.
+    assert refused == report["llm_budget_refusals"] == 4
+    assert len(claims) == 38
+
+
+def test_the_pdf_first_worker_claims_document_readings_before_the_other_general_jobs(monkeypatch, tmp_path):
+    readings_left = 2
+
+    def outcomes(claims, pdf_only):
+        nonlocal readings_left
+        if pdf_only:
+            if readings_left:
+                readings_left -= 1
+                return 1, False
+            return 0, False
+        return (1, False) if len(claims) < 6 else (0, False)
+
+    claims, handled, report = _budget_worker(
+        monkeypatch, tmp_path, outcomes, max_jobs=50, budget_seconds=1200, family="enrichment", pdf_first=True
+    )
+
+    assert claims == [
+        ("enrichment", True), ("enrichment", True),  # the readings first
+        ("enrichment", True), ("enrichment", False),  # none left: the other general jobs
+        ("enrichment", True), ("enrichment", False),  # every claim looks for a reading first
+    ]
+    assert handled == 3
+    assert report["pdf_first"] is True
+    assert report["stop_reason"] == "queues_empty"
+
+
+def test_the_pdf_first_worker_without_the_migration_keeps_the_general_claims(monkeypatch, tmp_path):
+    monkeypatch.setattr(queued_runner.general_lane_claims, "pdf_family_available", lambda: False)
+
+    def outcomes(claims, pdf_only):
+        return (1, False) if len(claims) < 3 else (0, False)
+
+    claims, _handled, _report = _budget_worker(
+        monkeypatch, tmp_path, outcomes, max_jobs=50, budget_seconds=1200, family="enrichment", pdf_first=True
+    )
+    assert claims == [("enrichment", False)] * 3
+
+
+def test_the_mixed_worker_goes_on_with_details_and_document_readings_after_a_refusal(monkeypatch, tmp_path):
+    """Retour au travailleur unique (PIPELINE_ENRICHMENT_GENERAL_WORKERS=0) : même règle pour ses prises générales."""
+    left = {"source_detail": 3, "pdf": 2}
+
+    def outcomes(claims, pdf_only):
+        family = claims[-1][0]
+        if family == "enrichment" and not pdf_only:
+            return 1, True
+        key = "pdf" if pdf_only else family
+        if left[key]:
+            left[key] -= 1
+            return 1, False
+        return 0, False
+
+    claims, handled, report = _budget_worker(monkeypatch, tmp_path, outcomes, max_jobs=50, budget_seconds=1200)
+
+    assert ("enrichment", False) in claims
+    after_refusal = claims[claims.index(("enrichment", False)) + 1:]
+    assert ("enrichment", False) not in after_refusal
+    assert after_refusal.count(("enrichment", True)) >= 2  # the document readings went on
+    assert left == {"source_detail": 0, "pdf": 0}
+    assert report["family"] == "mixed"
+    assert report["stop_reason"] == "llm_budget_exhausted"
+
+
+def test_document_readings_first_is_only_for_a_general_worker() -> None:
+    with pytest.raises(ValueError):
+        queued_runner.run_enrichment_queue_worker(max_jobs=1, budget_seconds=60, family="source_detail", pdf_first=True)
+
+
+def test_the_pdf_first_argument_needs_the_general_family(monkeypatch, capsys) -> None:
+    import sys
+
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "2")
+    monkeypatch.setattr(
+        sys, "argv", ["src.queued_runner", "--enrichment-only", "--family", "source_detail", "--pdf-first"]
+    )
+    monkeypatch.setattr(queued_runner, "catalogue_writer_lock", lambda **_k: pytest.fail("no lock with bad arguments"))
+    assert queued_runner.run_with_catalogue_lock() == queued_runner.LANE_SETTINGS_EXIT_CODE
+    assert "--pdf-first needs --family enrichment" in capsys.readouterr().out
 
 
 def test_a_family_worker_is_refused_outside_the_parallel_lane(monkeypatch, capsys) -> None:
