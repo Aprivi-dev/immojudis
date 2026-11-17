@@ -575,8 +575,12 @@ def test_without_the_lane_or_its_lease_an_enrichment_unit_runs_one_cycle(monkeyp
     assert updates[0][2].obj["scheduler_budget_seconds"] == autonomous_runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS
 
 
-def _recording_locks(monkeypatch, events: list, statements: list, *, granted: bool = True):
-    """Le tour des sources et le verrou du catalogue, notés à leur prise et à leur rendu."""
+def _recording_locks(monkeypatch, events: list, statements: list, *, granted: bool = True,
+                     refused_labels: frozenset[str] = frozenset()):
+    """Le tour des sources et le verrou du catalogue, notés à leur prise et à leur rendu.
+
+    ``refused_labels`` : demandes refusées même quand ``granted`` est vrai.
+    """
     from contextlib import contextmanager
 
     from src import source_traffic
@@ -589,7 +593,7 @@ def _recording_locks(monkeypatch, events: list, statements: list, *, granted: bo
             events.append((name, "take", wait_seconds, len(statements)))
             held[name] += 1
             try:
-                yield granted
+                yield granted and label not in refused_labels
             finally:
                 held[name] -= 1
                 events.append((name, "release", None, len(statements)))
@@ -705,12 +709,27 @@ def test_optional_passes_that_contact_a_site_run_inside_the_source_traffic_turn(
 def test_an_external_pass_is_skipped_when_the_source_turn_does_not_come(monkeypatch) -> None:
     updates, statements, events = [], [], []
     _lane_setup(monkeypatch, ["queues_empty"])
-    _recording_locks(monkeypatch, events, statements, granted=False)
+    # The unit's own wait before the cycle gets its turn; each external pass is refused it.
+    _recording_locks(monkeypatch, events, statements, refused_labels=autonomous_runner.EXTERNAL_PASS_KEYS)
 
     assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
     skipped = updates[0][2].obj["enrichment_unit"]["cycles"][0]["passes_skipped"]
     assert set(skipped) == autonomous_runner.EXTERNAL_PASS_KEYS
     assert set(skipped.values()) == {"source_traffic_busy"}
+
+
+def test_an_enrichment_unit_whose_source_turn_does_not_come_ends_cleanly(monkeypatch) -> None:
+    """17/11/2026 : une attente du tour coupée ne fait plus mourir l'unité ; elle s'arrête, raison lisible."""
+    updates, statements, events = [], [], []
+    calls = _lane_setup(monkeypatch, ["budget"])
+    _recording_locks(monkeypatch, events, statements, granted=False)
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+    summary = updates[0][2].obj
+    assert summary["enrichment_unit"]["stop_reason"] == "source_traffic_busy"
+    assert summary["enrichment_unit"]["cycles"] == []
+    assert not _workers(calls)
+    assert "runner" not in updates[0][1].obj
 
 
 @pytest.mark.parametrize("acquired", [True, False])

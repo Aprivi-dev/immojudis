@@ -108,9 +108,44 @@ def test_the_second_job_waits_for_the_first(capsys) -> None:
     assert clock.sleeps == [15, 15]
     statements = [sql for sql, _ in connection.statements]
     assert statements.count("select pg_advisory_lock(hashtextextended(%s, 0))") == 3
-    assert statements[-2:] == ["set lock_timeout = 0", "select pg_advisory_unlock(hashtextextended(%s, 0))"]
+    # Each wait lifts the session's statement_timeout, bounded by lock_timeout, and puts both back after it.
+    assert statements[-7:] == [
+        "select current_setting('statement_timeout')",
+        "set statement_timeout = 0",
+        "set lock_timeout = '15000ms'",
+        "select pg_advisory_lock(hashtextextended(%s, 0))",
+        "set lock_timeout = 0",
+        "select set_config('statement_timeout', %s, false)",
+        "select pg_advisory_unlock(hashtextextended(%s, 0))",
+    ]
     out = capsys.readouterr().out
     assert "waits for the lock" in out and "lock acquired" in out
+
+
+class QueryCanceled(Exception):
+    sqlstate = "57014"
+
+
+def test_a_wait_cut_by_a_statement_timeout_is_a_lock_that_did_not_come() -> None:
+    """17/11/2026 : une attente annulée (57014) ne fait plus mourir l'appelant ; le délai d'origine est rétabli."""
+
+    class Cancelled(FakeConnection):
+        def execute(self, statement, parameters=()):
+            if statement == "select current_setting('statement_timeout')":
+                self.statements.append((statement, ()))
+                return type("Cursor", (), {"fetchone": lambda self_: ("2min",)})()
+            if statement.startswith("select pg_advisory_lock"):
+                self.statements.append((statement, tuple(parameters)))
+                raise QueryCanceled("canceling statement due to statement timeout")
+            return super().execute(statement, parameters)
+
+    connection = Cancelled([])
+    sql = catalogue_lock.lock_sql("exclusive")[1]
+    assert catalogue_lock.queued_wait(connection, sql, CATALOGUE_WRITER_LOCK_NAME, 30) is False
+    assert connection.statements[-2:] == [
+        ("set lock_timeout = 0", ()),
+        ("select set_config('statement_timeout', %s, false)", ("2min",)),
+    ]
 
 
 def test_waiting_gives_up_after_the_configured_time_and_closes_the_connection() -> None:
