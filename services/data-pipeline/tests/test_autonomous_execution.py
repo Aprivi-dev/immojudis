@@ -427,3 +427,343 @@ def test_pdf_photos_failure_is_reported_and_never_raises(monkeypatch) -> None:
     monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
 
     assert autonomous_runner._run_pdf_photos({}) == 1
+
+
+# --- Voie d'enrichissement séparée des collectes (17/11/2026) ---------------------------------------------------
+
+ORIGINAL_CATALOGUE_WRITER = autonomous_runner._catalogue_writer
+LANE_RUN_ID = "00000000-0000-0000-0000-0000000000a1"
+
+
+def _lane_db(updates: list, statements: list, *, source: str = "enrichment-queue", lease: str | None = "7200",
+             queued_source: str | None = None, lease_until: str | None = None, on_update=None):
+    class FakeDb:
+        def execute(self, statement, params):
+            statements.append(statement)
+            if "select source, summary" in statement:
+                return SimpleNamespace(fetchone=lambda: (queued_source, lease_until) if queued_source else None)
+            if "returning source" in statement:
+                return SimpleNamespace(fetchone=lambda: (source,))
+            if "running_lease_seconds" in statement:
+                return SimpleNamespace(fetchone=lambda: (lease,))
+            if "select summary from public.auction_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ({},))
+            if "select status,count(*)" in statement:
+                return SimpleNamespace(fetchall=lambda: [("completed", 3)])
+            if "jsonb_object_agg" in statement:
+                return SimpleNamespace(fetchone=lambda: ({"source_detail": {"completed": 2}, "pdf": {"completed": 1}},))
+            if "attempt_count>=max_attempts" in statement:
+                return SimpleNamespace(fetchone=lambda: (0,))
+            if "update public.auction_runs set status=%s" in statement:
+                updates.append(params)
+                if on_update is not None:
+                    on_update()
+            return SimpleNamespace(fetchone=lambda: None)
+
+    return lambda _url: nullcontext(FakeDb())
+
+
+def _lane_setup(monkeypatch, stops: list[str], *, worker_seconds: float = 0.0, clock: list[float] | None = None):
+    """Le travailleur écrit son compte rendu ; ``clock`` avance de ``worker_seconds`` à chaque passage."""
+    import json as json_module
+
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV
+
+    calls: list[tuple[list[str], dict]] = []
+    remaining = list(stops)
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[2] == "src.queued_runner":
+            if clock is not None:
+                clock[0] += worker_seconds
+            with open(kwargs["env"][ENRICHMENT_WORKER_REPORT_ENV], "w", encoding="utf-8") as handle:
+                json_module.dump({"stop_reason": remaining.pop(0), "handled": 4}, handle)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+    if clock is not None:
+        monkeypatch.setattr(autonomous_runner.time, "monotonic", lambda: clock[0])
+    return calls
+
+
+def _workers(calls):
+    return [kwargs for command, kwargs in calls if command[2] == "src.queued_runner"]
+
+
+def test_the_enrichment_lane_chains_worker_passes_until_the_queue_is_empty(monkeypatch) -> None:
+    updates, statements = [], []
+    calls = _lane_setup(monkeypatch, ["budget", "queues_empty"])
+
+    connect = _lane_db(updates, statements)
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=connect) == 0
+
+    workers = _workers(calls)
+    assert len(workers) == 2
+    assert all(kwargs["env"][ENRICHMENT_BUDGET_SECONDS_ENV] == str(ENRICHMENT_BUDGET_SECONDS) for kwargs in workers)
+    assert all(kwargs["timeout"] == autonomous_runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS for kwargs in workers)
+    # Each cycle: the worker, then the optional passes, as a unit did before the lane.
+    assert [command[2] for command, _ in calls].count("src.document_reading") == 2
+    summary = updates[0][2].obj
+    unit = summary["enrichment_unit"]
+    assert unit["mode"] == "lane"
+    assert unit["unit_seconds"] == 7200 - autonomous_runner.ENRICHMENT_LEASE_MARGIN_SECONDS
+    assert unit["stop_reason"] == "queues_empty"
+    assert [cycle["worker_stop_reason"] for cycle in unit["cycles"]] == ["budget", "queues_empty"]
+    assert summary["scheduler_budget_seconds"] == unit["unit_seconds"]
+    assert summary["enrichment_jobs_by_type"] == {"source_detail": {"completed": 2}, "pdf": {"completed": 1}}
+    assert summary["document_reading_exit_code"] == 0
+
+
+def test_the_enrichment_lane_waits_for_a_collection_and_skips_its_passes(monkeypatch) -> None:
+    from src import collection_priority
+
+    updates, statements = [], []
+    clock = [0.0]
+    calls = _lane_setup(monkeypatch, ["collection_pending", "queues_empty"], clock=clock)
+    monkeypatch.setattr(collection_priority, "collection_pending_now", lambda: True)
+    waits = iter([0.0, 600.0])
+
+    def wait(*, deadline: float) -> None:
+        clock[0] += next(waits)
+
+    monkeypatch.setattr(collection_priority, "wait_while_collection_pending", wait)
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    # No optional pass next to a collection: they also fetch from the sources.
+    assert [command[2] for command, _ in calls] == ["src.queued_runner", "src.queued_runner"]
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["collection_wait_seconds"] == 600.0
+    assert set(unit["cycles"][0]["passes_skipped"].values()) == {"collection_pending"}
+    assert "document_backlog_exit_code" not in updates[0][2].obj
+
+
+def test_the_enrichment_lane_never_outlasts_its_lease(monkeypatch) -> None:
+    updates, statements = [], []
+    clock = [0.0]
+    calls = _lane_setup(monkeypatch, ["budget"] * 10, worker_seconds=1500.0, clock=clock)
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    unit_seconds = 7200 - autonomous_runner.ENRICHMENT_LEASE_MARGIN_SECONDS
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["stop_reason"] == "unit_budget"
+    assert clock[0] <= unit_seconds
+    # The last cycle has no time left for its optional passes: they are skipped, never cut.
+    assert set(unit["cycles"][-1]["passes_skipped"].values()) == {"unit_budget"}
+    for kwargs in _workers(calls):
+        assert int(kwargs["env"][ENRICHMENT_BUDGET_SECONDS_ENV]) >= autonomous_runner.ENRICHMENT_MIN_PASS_SECONDS
+
+
+@pytest.mark.parametrize("lane,lease", [(False, "7200"), (True, None)])
+def test_without_the_lane_or_its_lease_an_enrichment_unit_runs_one_cycle(monkeypatch, lane, lease) -> None:
+    """Ancien planificateur (pas de bail écrit) ou ENRICHMENT_LANE=off : un seul passage, comme avant."""
+    updates, statements = [], []
+    calls = _lane_setup(monkeypatch, ["budget", "budget"])
+
+    assert autonomous_runner.execute(
+        LANE_RUN_ID, enrichment_lane=lane, connect=_lane_db(updates, statements, lease=lease)
+    ) == 0
+
+    assert len(_workers(calls)) == 1
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["mode"] == "single_cycle"
+    assert updates[0][2].obj["scheduler_budget_seconds"] == autonomous_runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS
+
+
+def _recording_locks(monkeypatch, events: list, statements: list, *, granted: bool = True):
+    """Le tour des sources et le verrou du catalogue, notés à leur prise et à leur rendu."""
+    from contextlib import contextmanager
+
+    from src import source_traffic
+
+    held: dict[str, int] = {"traffic": 0, "catalogue": 0}
+
+    def recorder(name):
+        @contextmanager
+        def lock(_db_url, *, label, wait_seconds, **_kwargs):
+            events.append((name, "take", wait_seconds, len(statements)))
+            held[name] += 1
+            try:
+                yield granted
+            finally:
+                held[name] -= 1
+                events.append((name, "release", None, len(statements)))
+
+        return lock
+
+    monkeypatch.setattr(source_traffic, "source_traffic_turn", recorder("traffic"))
+    monkeypatch.setattr(autonomous_runner, "_catalogue_writer", recorder("catalogue"))
+    return held
+
+
+def test_a_collection_takes_its_source_turn_and_waits_for_the_catalogue_writer_before_its_claim(monkeypatch) -> None:
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, [])
+    held = _recording_locks(monkeypatch, events, statements)
+
+    connect = _lane_db(updates, statements, source="vench", queued_source="vench")
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+
+    claim_index = next(index for index, statement in enumerate(statements) if "returning source" in statement)
+    budget = autonomous_runner.COLLECTION_CATALOGUE_PREWAIT_SECONDS
+    # Statements executed before each event: only the read of the queued run precedes the claim.
+    assert events[0][:2] == ("traffic", "take") and events[0][3] <= claim_index
+    assert abs(events[0][2] - budget) < 5
+    assert events[1][:2] == ("catalogue", "take") and events[2][:2] == ("catalogue", "release")
+    assert events[2][3] <= claim_index
+    # The source turn is kept until the very end: the run is closed and finish_source runs inside it.
+    assert events[-1][:2] == ("traffic", "release")
+    assert held == {"traffic": 0, "catalogue": 0}
+    assert updates[0][2].obj["catalogue_prewait"]["timed_out"] is False
+
+
+def test_the_closing_writes_of_a_collection_hold_the_catalogue_writer_lock(monkeypatch) -> None:
+    """Point M3 : src.main a rendu le verrou ; la clôture du run et finish_source le reprennent."""
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, [])
+    held = _recording_locks(monkeypatch, events, statements)
+    seen: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        autonomous_runner,
+        "finish_source",
+        lambda _db_url, _run_id, connect: seen.append(("finish_source", held["catalogue"], held["traffic"])),
+    )
+
+    connect = _lane_db(
+        updates, statements, source="vench", queued_source="vench",
+        on_update=lambda: seen.append(("close", held["catalogue"], held["traffic"])),
+    )
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+
+    assert seen == [("close", 1, 1), ("finish_source", 1, 1)]
+
+
+def test_a_collection_never_waits_past_its_dispatch_lease(monkeypatch) -> None:
+    """Point F1 : la pré-attente s'arrête 5 minutes avant le bail de la ligne en file."""
+    from datetime import UTC, datetime, timedelta
+
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, [])
+    _recording_locks(monkeypatch, events, statements)
+    lease_until = (datetime.now(UTC) + timedelta(minutes=12)).isoformat()
+
+    connect = _lane_db(updates, statements, source="vench", queued_source="vench", lease_until=lease_until)
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+
+    assert 400 < events[0][2] <= 12 * 60 - autonomous_runner.QUEUED_LEASE_MARGIN_SECONDS
+    assert updates[0][2].obj["catalogue_prewait"]["budget_seconds"] <= 7 * 60
+
+
+def test_an_expired_dispatch_lease_leaves_no_wait(monkeypatch) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    statements: list = []
+    lease_until = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    connect = _lane_db([], statements, queued_source="licitor", lease_until=lease_until)
+    assert autonomous_runner._collection_wait_budget("postgresql://test", LANE_RUN_ID, connect=connect) == 0.0
+
+
+def test_an_enrichment_run_takes_no_collection_lock(monkeypatch) -> None:
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, ["queues_empty"])
+    _recording_locks(monkeypatch, events, statements)
+
+    connect = _lane_db(updates, statements, queued_source="enrichment-queue")
+    assert autonomous_runner.execute(LANE_RUN_ID, connect=connect) == 0
+    assert not [event for event in events if event[0] == "catalogue"]
+    assert "catalogue_prewait" not in updates[0][2].obj
+
+
+def test_optional_passes_that_contact_a_site_run_inside_the_source_traffic_turn(monkeypatch) -> None:
+    """Point M4 : une collecte qui démarre pendant une passe externe attend son tour."""
+    updates, statements, events = [], [], []
+    calls = _lane_setup(monkeypatch, ["queues_empty"])
+    held = _recording_locks(monkeypatch, events, statements)
+    during: dict[str, int] = {}
+    run = autonomous_runner.subprocess.run
+
+    def run_and_note(command, **kwargs):
+        during[command[2]] = held["traffic"]
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run_and_note)
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    assert len(calls) == 6
+    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+                   "src.sources.licitor_history_refresh"):
+        assert during[module] == 1, module
+    # The worker takes the turn itself, batch by batch (src.collection_priority.yield_to_sources).
+    assert during["src.queued_runner"] == 0 and during["src.document_reading"] == 0
+
+
+def test_an_external_pass_is_skipped_when_the_source_turn_does_not_come(monkeypatch) -> None:
+    updates, statements, events = [], [], []
+    _lane_setup(monkeypatch, ["queues_empty"])
+    _recording_locks(monkeypatch, events, statements, granted=False)
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+    skipped = updates[0][2].obj["enrichment_unit"]["cycles"][0]["passes_skipped"]
+    assert set(skipped) == autonomous_runner.EXTERNAL_PASS_KEYS
+    assert set(skipped.values()) == {"source_traffic_busy"}
+
+
+@pytest.mark.parametrize("acquired", [True, False])
+def test_the_catalogue_writer_helper_yields_whether_it_holds_the_lock(monkeypatch, acquired) -> None:
+    from contextlib import contextmanager
+
+    seen: list[dict] = []
+
+    @contextmanager
+    def lock(db_url, **kwargs):
+        seen.append(kwargs)
+        if not acquired:
+            raise catalogue_lock.CatalogueLockTimeout("busy")
+        yield None
+
+    monkeypatch.setattr(autonomous_runner, "catalogue_writer_lock", lock)
+    with ORIGINAL_CATALOGUE_WRITER("postgresql://test", label="t", wait_seconds=12.0) as held:
+        assert held is acquired
+    assert seen[0]["wait_seconds"] == 12.0 and seen[0]["heartbeat_seconds"] == 0
+
+
+def test_passes_that_contact_a_site_keep_their_daily_volume(monkeypatch) -> None:
+    """Pas une requête de plus par site : au plus une fois par unité, et 24 h / 17 après la précédente."""
+    updates, statements = [], []
+    calls = _lane_setup(monkeypatch, ["budget", "budget", "queues_empty"])
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    modules = [command[2] for command, _ in calls]
+    # Three cycles: the LLM-only reading every cycle, the passes that contact a host once.
+    assert modules.count("src.document_reading") == 3
+    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+                   "src.sources.licitor_history_refresh"):
+        assert modules.count(module) == 1, module
+    skipped = updates[0][2].obj["enrichment_unit"]["cycles"][1]["passes_skipped"]
+    assert set(skipped) == autonomous_runner.EXTERNAL_PASS_KEYS
+    assert set(skipped.values()) == {"site_cadence"}
+
+
+@pytest.mark.parametrize("minutes_ago,due", [(None, True), (90, True), (80, False)])
+def test_a_site_pass_waits_for_its_interval_after_the_last_unit_that_ran_it(minutes_ago, due) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    seen = []
+    finished = None if minutes_ago is None else datetime.now(UTC) - timedelta(minutes=minutes_ago)
+
+    class FakeDb:
+        def execute(self, statement, params):
+            seen.append(params)
+            return SimpleNamespace(fetchone=lambda: (finished,))
+
+    assert autonomous_runner._external_pass_due(
+        "postgresql://test", "run-1", "licitor_history_exit_code", connect=lambda _url: nullcontext(FakeDb())
+    ) is due
+    assert seen == [("run-1", "licitor_history_exit_code")]
+    assert autonomous_runner.EXTERNAL_PASS_MIN_INTERVAL == timedelta(hours=24) / 17

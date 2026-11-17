@@ -7,15 +7,19 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable, Iterable
+import tempfile
+import time
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
-from src import source_withdrawal
-from src.catalogue_lock import LOCK_WAIT_ENV
+from src import collection_priority, source_traffic, source_withdrawal
+from src.catalogue_lock import LOCK_WAIT_ENV, CatalogueLockTimeout, catalogue_writer_lock
 from src.config import (
     AUTONOMOUS_RUN_ID_ENV,
     CADASTRE_ENRICH_ENABLED_ENV,
@@ -27,10 +31,14 @@ from src.config import (
 )
 from src.document_reading import READING_ENABLED_ENV
 from src.enrichment_queue_limits import (
+    COLLECTION_PENDING_STOP_REASON,
     ENRICHMENT_BUDGET_SECONDS,
     ENRICHMENT_BUDGET_SECONDS_ENV,
     ENRICHMENT_MAX_JOBS,
     ENRICHMENT_MAX_JOBS_ENV,
+    ENRICHMENT_WORKER_REPORT_ENV,
+    QUEUES_EMPTY_STOP_REASON,
+    read_worker_report,
 )
 from src.run_finalizer import register_run
 from src.source_absence import (
@@ -675,12 +683,253 @@ def _skip_withdrawn_run(db_url: str, run_id: str, source: str, *, connect: Calla
             (Jsonb({'completion_status': 'skipped', 'skipped_reason': 'source_withdrawn'}), run_id))
 
 
-def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) -> int:
+# Hard bound of one worker pass: its own budget, plus five minutes to end the batch it holds when the budget ends.
+ENRICHMENT_WORKER_OVERRUN_SECONDS = 5 * 60
+ENRICHMENT_WORKER_TIMEOUT_SECONDS = ENRICHMENT_BUDGET_SECONDS + ENRICHMENT_WORKER_OVERRUN_SECONDS
+# Before it starts, a collection waits for the catalogue writer lock (src.collection_priority) at most as long as a
+# worker pass can still hold it. The wait happens before the run is claimed: its lease and budget do not run yet.
+COLLECTION_CATALOGUE_PREWAIT_SECONDS = ENRICHMENT_WORKER_TIMEOUT_SECONDS
+# An enrichment unit of the separate lane works until its run lease (set by the scheduler in the run summary,
+# ``running_lease_seconds``) minus this margin: start-up after the claim, closing writes, and a pass that ends late.
+ENRICHMENT_LEASE_MARGIN_SECONDS = 15 * 60
+# A valid running_lease_seconds: the same pattern as the lease expiry of claim_autonomous_pipeline_run (SQL anchors it
+# with ^ and $; tests/test_pipeline_cadence_invariants.py checks that both read the value with this one rule).
+RUNNING_LEASE_SECONDS_PATTERN = r'[1-9][0-9]{0,5}'
+# A collection's pre-wait ends this long before the dispatch lease of its queued run (lease_until in its summary).
+QUEUED_LEASE_MARGIN_SECONDS = 5 * 60
+# An optional pass that contacts a host waits this long at most for the source traffic turn, else it is skipped.
+EXTERNAL_PASS_TRAFFIC_WAIT_SECONDS = 60
+# A worker pass shorter than this is mostly its finalization margin: the unit ends instead.
+ENRICHMENT_MIN_PASS_SECONDS = 5 * 60
+# Optional passes that contact an external host (attachments, Licitor history, BAN) keep their daily volume of
+# before the lane, about 17 a day (owner, 17/11/2026: not one more request per site): at most once per unit, and only
+# when no enrichment run that ran it finished in the last 24 h / 17. The document reading (LLM only) runs every cycle.
+EXTERNAL_PASS_MIN_INTERVAL = timedelta(hours=24) / 17
+EXTERNAL_PASS_KEYS = frozenset({
+    'document_backlog_exit_code', 'address_positions_exit_code', 'pdf_photos_exit_code', 'licitor_history_exit_code',
+})
+
+
+def _external_pass_due(db_url: str, run_id: str, key: str, *, connect: Callable[[str], Any]) -> bool:
+    """True when no other enrichment run that recorded ``key`` finished within ``EXTERNAL_PASS_MIN_INTERVAL``."""
+    with connect(db_url) as db:
+        row = db.execute("""select max(finished_at) from public.auction_runs
+            where source='enrichment-queue' and id<>%s and summary ? %s""", (run_id, key)).fetchone()
+    last = aware_timestamp(row[0]) if row and isinstance(row[0], datetime) else None
+    return last is None or last <= datetime.now(UTC) - EXTERNAL_PASS_MIN_INTERVAL
+ENRICHMENT_WORKER_COMMAND = (sys.executable, '-m', 'src.queued_runner', '--enrichment-only')
+
+
+def _worker_failure(code: int) -> str | None:
+    if code == WATCHDOG_EXIT_CODE:
+        return (
+            'Worker watchdog fired: a step stayed blocked until the end of the budget; '
+            'see the "WATCHDOG" line and the stage journal in the job log'
+        )
+    return None
+
+
+def _run_worker(command: list[str], env: dict[str, str], timeout: float) -> tuple[int, str | None]:
+    try:
+        code = subprocess.run(command, env=env, timeout=timeout, check=False).returncode
+    except subprocess.TimeoutExpired:
+        return 1, 'Execution budget exceeded; committed checkpoints preserved'
+    except Exception as exc:
+        return 1, str(exc)[:1000]
+    return code, _worker_failure(code)
+
+
+@contextmanager
+def _catalogue_writer(db_url: str, *, label: str, wait_seconds: float) -> Iterator[bool]:
+    """Hold the catalogue writer lock for the block; yields False (without it) when it stayed busy ``wait_seconds``."""
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(catalogue_writer_lock(db_url, label=label, wait_seconds=wait_seconds, heartbeat_seconds=0))
+        except CatalogueLockTimeout:
+            yield False
+            return
+        yield True
+
+
+def _collection_wait_budget(db_url: str, run_id: str, *, connect: Callable[[str], Any]) -> float | None:
+    """Seconds a queued scheduled collection may wait before it starts; None for any other run.
+
+    At most ``COLLECTION_CATALOGUE_PREWAIT_SECONDS``, and never past its dispatch lease (lease_until) minus
+    ``QUEUED_LEASE_MARGIN_SECONDS``: the scheduler would expire a run that waits longer.
+    """
+    with connect(db_url) as db:
+        row = db.execute("""select source, summary #>> '{github_dispatch,lease_until}' from public.auction_runs
+            where id=%s and scheduler_owned and status='queued'""", (run_id,)).fetchone()
+    if not row or row[0] == collection_priority.ENRICHMENT_SOURCE:
+        return None
+    budget = float(COLLECTION_CATALOGUE_PREWAIT_SECONDS)
+    lease_until = aware_timestamp(row[1]) if len(row) > 1 else None
+    if lease_until is not None:
+        left = (lease_until - datetime.now(UTC)).total_seconds() - QUEUED_LEASE_MARGIN_SECONDS
+        budget = max(0.0, min(budget, left))
+    return budget
+
+
+def _enrichment_lane_lease_seconds(db_url: str, run_id: str, *, connect: Callable[[str], Any]) -> int | None:
+    """Run lease the scheduler gave this enrichment run (migration 20261203100000); None before that migration."""
+    with connect(db_url) as db:
+        row = db.execute("""select summary->>'running_lease_seconds' from public.auction_runs where id=%s""",
+                         (run_id,)).fetchone()
+    value = row[0] if row else None
+    return int(value) if isinstance(value, str) and re.fullmatch(RUNNING_LEASE_SECONDS_PATTERN, value) else None
+
+
+@dataclass
+class EnrichmentUnit:
+    """What one scheduled enrichment unit did: one worker pass and its optional passes per cycle."""
+
+    worker_code: int = 0
+    failure: str | None = None
+    # Last exit code of each optional pass, under the run summary keys used since they exist.
+    exit_codes: dict[str, int] = field(default_factory=dict)
+    cycles: list[dict[str, Any]] = field(default_factory=list)
+    collection_wait_seconds: float = 0.0
+    stop_reason: str = 'single_cycle'
+
+
+def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: str, budget: int,
+                          deadline: float | None, licitor_withdrawn: bool,
+                          external_pass_due: Callable[[str], bool]) -> str | None:
+    """One worker pass, then the optional passes; returns the worker's stop reason (None: no report)."""
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix='enrichment-worker-') as directory:
+        report_path = os.path.join(directory, 'report.json')
+        code, failure = _run_worker(
+            list(ENRICHMENT_WORKER_COMMAND),
+            {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
+            budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
+        )
+        report = read_worker_report(report_path) or {}
+    if code:
+        unit.worker_code, unit.failure = code, failure
+    worker_stop = report.get('stop_reason') if isinstance(report.get('stop_reason'), str) else None
+    cycle: dict[str, Any] = {
+        'worker_exit_code': code,
+        'worker_seconds': round(time.monotonic() - started, 1),
+        'worker_stop_reason': worker_stop,
+        'worker_handled': report.get('handled'),
+        'worker_handled_by_family': report.get('handled_by_family'),
+    }
+    # A failed worker leaves the catalogue in an unknown state: the passes that read or write it wait for the next
+    # cycle. The Licitor history tick does not depend on the queue and keeps running, as before.
+    passes: list[tuple[str, Callable[[dict[str, str]], int], float]] = []
+    if code == 0:
+        passes += [
+            ('document_backlog_exit_code', _run_document_backlog, DOCUMENT_BACKLOG_BUDGET_SECONDS),
+            ('document_reading_exit_code', _run_document_reading, DOCUMENT_READING_BUDGET_SECONDS),
+            ('address_positions_exit_code', _run_address_positions, ADDRESS_POSITIONS_BUDGET_SECONDS),
+            ('pdf_photos_exit_code', _run_pdf_photos, PDF_PHOTOS_BUDGET_SECONDS),
+        ]
+    if not licitor_withdrawn:
+        passes.append(('licitor_history_exit_code', _run_licitor_history_refresh,
+                       LICITOR_HISTORY_BUDGET_SECONDS + LICITOR_SNAPSHOT_ONLY_SECONDS))
+    skipped: dict[str, str] = {}
+    for key, run_pass, timeout in passes:
+        if deadline is not None and deadline - time.monotonic() < timeout:
+            skipped[key] = 'unit_budget'
+        elif key in EXTERNAL_PASS_KEYS and (key in unit.exit_codes or not external_pass_due(key)):
+            skipped[key] = 'site_cadence'
+        elif collection_priority.collection_pending_now():
+            # Never next to a collection: the passes also fetch from the sources (attachments, Licitor history).
+            skipped[key] = COLLECTION_PENDING_STOP_REASON
+        elif key in EXTERNAL_PASS_KEYS:
+            # One process at a time talks to the sources (src.source_traffic): a collection that starts now waits.
+            with source_traffic.source_traffic_turn(
+                db_url, label=key, wait_seconds=EXTERNAL_PASS_TRAFFIC_WAIT_SECONDS
+            ) as turn:
+                if turn:
+                    unit.exit_codes[key] = run_pass(env)
+                else:
+                    skipped[key] = 'source_traffic_busy'
+        else:
+            unit.exit_codes[key] = run_pass(env)
+    if skipped:
+        cycle['passes_skipped'] = skipped
+    cycle['seconds'] = round(time.monotonic() - started, 1)
+    unit.cycles.append(cycle)
+    return worker_stop
+
+
+def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int | None, licitor_withdrawn: bool,
+                         external_pass_due: Callable[[str], bool]) -> EnrichmentUnit:
+    """Run the enrichment queue for one scheduled unit.
+
+    Without ``unit_seconds`` (a run dispatched before the separate lane existed): one cycle, as before. With it, the
+    unit chains cycles until its deadline, waits while a collection is pending, and ends when the worker failed, found
+    the queues empty or left no report.
+    """
+    unit = EnrichmentUnit()
+    deadline = None if unit_seconds is None else time.monotonic() + unit_seconds
+    while True:
+        budget = ENRICHMENT_BUDGET_SECONDS
+        if deadline is not None:
+            waited = time.monotonic()
+            collection_priority.wait_while_collection_pending(deadline=deadline)
+            # The collection's end (photo copy, closing writes) still holds the source traffic turn: wait for it too,
+            # or the worker would yield again at once.
+            with source_traffic.source_traffic_turn(
+                db_url, label='enrichment unit', wait_seconds=max(1.0, deadline - time.monotonic())
+            ):
+                pass
+            unit.collection_wait_seconds += time.monotonic() - waited
+            budget = min(budget, int(deadline - time.monotonic()) - ENRICHMENT_WORKER_OVERRUN_SECONDS)
+            if budget < ENRICHMENT_MIN_PASS_SECONDS:
+                unit.stop_reason = 'unit_budget'
+                break
+        worker_stop = _run_enrichment_cycle(
+            env, unit, db_url=db_url, budget=budget, deadline=deadline, licitor_withdrawn=licitor_withdrawn,
+            external_pass_due=external_pass_due,
+        )
+        if deadline is None:
+            break
+        if unit.worker_code:
+            unit.stop_reason = 'worker_failed'
+            break
+        if worker_stop is None:
+            unit.stop_reason = 'worker_report_missing'
+            break
+        if worker_stop == QUEUES_EMPTY_STOP_REASON:
+            unit.stop_reason = QUEUES_EMPTY_STOP_REASON
+            break
+    return unit
+
+
+def execute(run_id: str, *, enrichment_lane: bool = False,
+            connect: Callable[[str], Any] = postgres_connect) -> int:
+    """Run one scheduled unit; ``enrichment_lane``: dispatched in the enrichment queue's own concurrency group."""
     run_id = str(UUID(run_id))
     settings = load_settings()
     db_url = str(settings.get('supabase_db_url') or '')
     if not db_url:
         raise RuntimeError('Automatic execution requires transactional PostgreSQL')
+    wait_budget = _collection_wait_budget(db_url, run_id, connect=connect)
+    if wait_budget is None:
+        return _execute_claimed(run_id, db_url, enrichment_lane=enrichment_lane, prewait=None, connect=connect)
+    # A scheduled collection: take the source traffic turn (the queue worker ends the batch it holds, its optional
+    # passes end) and wait for the catalogue writer lock, before the run is claimed and its budget runs. The turn is
+    # kept until the end-of-collection writes. Past the wait budget the collection starts anyway, as before the lanes.
+    started = time.monotonic()
+    deadline = started + wait_budget
+    with source_traffic.source_traffic_turn(
+        db_url, label='scheduled collection', wait_seconds=max(1.0, deadline - started)
+    ) as turn:
+        with _catalogue_writer(
+            db_url, label='scheduled collection (before start)', wait_seconds=max(1.0, deadline - time.monotonic())
+        ) as free:
+            pass
+        prewait = {'seconds': round(time.monotonic() - started, 1), 'budget_seconds': round(wait_budget, 1),
+                   'timed_out': not (turn and free)}
+        return _execute_claimed(run_id, db_url, enrichment_lane=enrichment_lane, prewait=prewait, connect=connect)
+
+
+def _execute_claimed(run_id: str, db_url: str, *, enrichment_lane: bool, prewait: dict[str, Any] | None,
+                     connect: Callable[[str], Any]) -> int:
+    collection_prewait = prewait
     # Claim once even when GitHub dispatch was retried after an uncertain response.
     with connect(db_url) as db:
         row = db.execute("""update public.auction_runs set status='running',started_at=now(),updated_at=now()
@@ -715,9 +964,20 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
     }
     # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
     env['PYTHONFAULTHANDLER'] = '1'
+    failure = None
+    execution_started = datetime.now(UTC)
+    unit: EnrichmentUnit | None = None
     if source == 'enrichment-queue':
-        command = [sys.executable,'-m','src.queued_runner','--enrichment-only']
-        budget = 25 * 60
+        # The separate lane (own GitHub concurrency group, lease written by the scheduler) chains cycles until its
+        # lease; otherwise one cycle, as before the lane existed (old scheduler or old dispatcher still deployed).
+        lease = _enrichment_lane_lease_seconds(db_url, run_id, connect=connect) if enrichment_lane else None
+        unit_seconds = lease - ENRICHMENT_LEASE_MARGIN_SECONDS if lease else None
+        budget = unit_seconds or ENRICHMENT_WORKER_TIMEOUT_SECONDS
+        unit = _run_enrichment_unit(
+            env, db_url=db_url, unit_seconds=unit_seconds, licitor_withdrawn=LICITOR_SOURCE in withdrawn,
+            external_pass_due=lambda key: _external_pass_due(db_url, run_id, key, connect=connect),
+        )
+        code, failure = unit.worker_code, unit.failure
     else:
         if source not in SOURCE_NAMES:
             raise ValueError('Unknown scheduled source')
@@ -736,123 +996,116 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
             # in a row. The source stops reading details LICITOR_BUDGET_MARGIN_SECONDS
             # before the hard kill, publishes the whole list and resumes next run.
             env[LICITOR_SOURCE_BUDGET_ENV] = str(budget - LICITOR_BUDGET_MARGIN_SECONDS)
-    failure = None
-    execution_started = datetime.now(UTC)
-    try:
-        result = subprocess.run(command, env=env, timeout=budget, check=False)
-        code = result.returncode
-    except subprocess.TimeoutExpired:
-        code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
-    except Exception as exc:
-        code, failure = 1, str(exc)[:1000]
-    if code == WATCHDOG_EXIT_CODE:
-        failure = (
-            'Worker watchdog fired: a step stayed blocked until the end of the budget; '
-            'see the "WATCHDOG" line and the stage journal in the job log'
-        )
+        code, failure = _run_worker(command, env, budget)
     worker_code = code
-    backlog_code = _run_document_backlog(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    # Like the document reading: a failed worker leaves the catalogue in an unknown state, the positions wait for the next tick.
-    positions_code = _run_address_positions(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    # Same rule: the photos of the attachments wait for a tick whose worker succeeded.
-    pdf_photos_code = _run_pdf_photos(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    licitor_history_code = (
-        _run_licitor_history_refresh(env)
-        if source == 'enrichment-queue' and LICITOR_SOURCE not in withdrawn
-        else None
-    )
     # Exit 2 from src.main means "published, but an enabled source was empty or
     # failed": the run itself succeeded, so keep it succeeded and hand the
     # warning to the workflow instead of recording a worker failure.
     source_warning = source != 'enrichment-queue' and code == SOURCE_WARNING_EXIT_CODE
     if source_warning:
         code = worker_code = 0
-    with connect(db_url) as db:
-        existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
-        summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
-                   "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
-        if source_warning:
-            summary["source_warning"] = True
-        if backlog_code is not None:
-            summary["document_backlog_exit_code"] = backlog_code
-        if reading_code is not None:
-            summary["document_reading_exit_code"] = reading_code
-        if positions_code is not None:
-            summary["address_positions_exit_code"] = positions_code
-        if pdf_photos_code is not None:
-            summary["pdf_photos_exit_code"] = pdf_photos_code
-        if licitor_history_code is not None:
-            summary["licitor_history_exit_code"] = licitor_history_code
-        elif source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:
-            summary["licitor_history_skipped"] = "source_withdrawn"
-        run_errors: dict[str, list[str]] = {}
-        counts: dict[object, object] = {}
-        exhausted = 0
-        if worker_code:
-            run_errors['runner'] = [failure or f'Worker exited with status {worker_code}']
-        if source == 'enrichment-queue':
-            counts = dict(db.execute("select status,count(*) from public.auction_enrichment_jobs where updated_at>=%s group by status", (execution_started,)).fetchall())
-            summary['enrichment_jobs'] = counts
-            exhausted = db.execute("""select count(*) from public.auction_enrichment_jobs
-                where updated_at>=%s and status='failed' and attempt_count>=max_attempts""",
-                (execution_started,)).fetchone()[0]
-            summary['enrichment_jobs_exhausted'] = exhausted
-            completed = _enrichment_completed(counts)
-            summary['enrichment_jobs_completed'] = completed
-            summary['enrichment_jobs_terminal'] = _enrichment_terminal(counts)
-            if exhausted:
-                exhausted_rows = db.execute("""select id,job_type,attempt_count,max_attempts
-                    from public.auction_enrichment_jobs
-                    where updated_at>=%s and status='failed' and attempt_count>=max_attempts
-                    order by updated_at desc limit 20""", (execution_started,)).fetchall()
-                summary['enrichment_jobs_exhausted_details'] = [
-                    _enrichment_exhausted_detail(row) for row in (exhausted_rows or [])
+    with ExitStack() as end_writes:
+        # src.main released the catalogue writer lock when it ended. The closing writes of a collection (run close,
+        # source state, presence, absences, withdrawals) take it again, so no queue worker writes a sale meanwhile.
+        if source != 'enrichment-queue' and not end_writes.enter_context(_catalogue_writer(
+                db_url, label=f'collection end ({source})', wait_seconds=COLLECTION_CATALOGUE_PREWAIT_SECONDS)):
+            print(f'::warning title=Fin de collecte hors verrou ({source})::catalogue writer lock still busy')
+        with connect(db_url) as db:
+            existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
+            summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
+                       "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
+            if source_warning:
+                summary["source_warning"] = True
+            if collection_prewait is not None:
+                summary["catalogue_prewait"] = collection_prewait
+            if unit is not None:
+                summary.update(unit.exit_codes)
+                summary["enrichment_unit"] = {
+                    "mode": "lane" if unit_seconds else "single_cycle",
+                    "unit_seconds": unit_seconds,
+                    "stop_reason": unit.stop_reason,
+                    "collection_wait_seconds": round(unit.collection_wait_seconds, 1),
+                    "cycles": unit.cycles,
+                }
+            if source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:
+                summary["licitor_history_skipped"] = "source_withdrawn"
+            run_errors: dict[str, list[str]] = {}
+            counts: dict[object, object] = {}
+            exhausted = 0
+            if worker_code:
+                run_errors['runner'] = [failure or f'Worker exited with status {worker_code}']
+            if source == 'enrichment-queue':
+                counts = dict(db.execute("select status,count(*) from public.auction_enrichment_jobs where updated_at>=%s group by status", (execution_started,)).fetchall())
+                summary['enrichment_jobs'] = counts
+                # Per job type and final status (measure of the separate lane, docs/runbooks/pipeline-enrichment-stalled.md).
+                by_type = db.execute("""select coalesce(jsonb_object_agg(job_type, statuses), '{}'::jsonb) from (
+                        select job_type, jsonb_object_agg(status, jobs) as statuses from (
+                            select job_type, status, count(*) as jobs from public.auction_enrichment_jobs
+                             where updated_at>=%s group by job_type, status) per_status
+                         group by job_type) per_type""", (execution_started,)).fetchone()
+                summary['enrichment_jobs_by_type'] = by_type[0] if by_type and isinstance(by_type[0], dict) else {}
+                exhausted = db.execute("""select count(*) from public.auction_enrichment_jobs
+                    where updated_at>=%s and status='failed' and attempt_count>=max_attempts""",
+                    (execution_started,)).fetchone()[0]
+                summary['enrichment_jobs_exhausted'] = exhausted
+                completed = _enrichment_completed(counts)
+                summary['enrichment_jobs_completed'] = completed
+                summary['enrichment_jobs_terminal'] = _enrichment_terminal(counts)
+                if exhausted:
+                    exhausted_rows = db.execute("""select id,job_type,attempt_count,max_attempts
+                        from public.auction_enrichment_jobs
+                        where updated_at>=%s and status='failed' and attempt_count>=max_attempts
+                        order by updated_at desc limit 20""", (execution_started,)).fetchall()
+                    summary['enrichment_jobs_exhausted_details'] = [
+                        _enrichment_exhausted_detail(row) for row in (exhausted_rows or [])
+                    ]
+                    exhaustion_message = f'{exhausted} enrichment job(s) exhausted their retry budget'
+                    run_errors['enrichment_jobs'] = [exhaustion_message]
+                    # The completion-status decision below requires at least one
+                    # successfully completed job. Never replace a non-zero worker
+                    # code; its systemic failure must remain visible.
+                    if worker_code == 0 and completed == 0:
+                        code, failure = 1, 'Exhausted enrichment jobs reported without worker progress'
+                        run_errors['runner'] = [failure]
+            existing_completion = existing_summary.get('completion_status') if isinstance(existing_summary, dict) else None
+            existing_coverage = (existing_summary.get('scrape_coverage') or {}).get(source, {}) if isinstance(existing_summary, dict) else {}
+            source_budget_stop = bool(isinstance(existing_coverage, dict) and existing_coverage.get('budget_exhausted'))
+            # A source can finish its bounded collection and publish a useful
+            # partial result with exit code 0. Preserve that explicit status instead
+            # of replacing it with the scheduler's transport status.
+            if source == 'enrichment-queue' and worker_code:
+                summary['completion_status'] = 'interrupted'
+            elif source == 'enrichment-queue' and exhausted and worker_code == 0 and _enrichment_completed(counts) > 0:
+                summary['completion_status'] = 'partial_success'
+            elif source_budget_stop:
+                summary['completion_status'] = 'partial_success'
+                summary['stop_reason'] = 'source_budget_exhausted'
+            elif existing_completion in {'partial_success', 'partial', 'scoped_partial', 'incomplete'}:
+                summary['completion_status'] = existing_completion
+            elif source == 'enrichment-queue' and exhausted:
+                summary['completion_status'] = 'interrupted' if worker_code else 'retry_exhausted'
+            elif code:
+                summary['completion_status'] = 'interrupted'
+            elif source == 'enrichment-queue' and counts.get('failed'):
+                summary['completion_status'] = 'partial_success'
+            else:
+                summary['completion_status'] = 'complete'
+            if source == 'enrichment-queue' and counts.get('failed') and 'enrichment_jobs' not in run_errors:
+                run_errors['enrichment_jobs'] = [
+                    f"{int(counts.get('failed') or 0)} enrichment job(s) failed and remain retryable"
                 ]
-                exhaustion_message = f'{exhausted} enrichment job(s) exhausted their retry budget'
-                run_errors['enrichment_jobs'] = [exhaustion_message]
-                # The completion-status decision below requires at least one
-                # successfully completed job. Never replace a non-zero worker
-                # code; its systemic failure must remain visible.
-                if worker_code == 0 and completed == 0:
-                    code, failure = 1, 'Exhausted enrichment jobs reported without worker progress'
-                    run_errors['runner'] = [failure]
-        existing_completion = existing_summary.get('completion_status') if isinstance(existing_summary, dict) else None
-        existing_coverage = (existing_summary.get('scrape_coverage') or {}).get(source, {}) if isinstance(existing_summary, dict) else {}
-        source_budget_stop = bool(isinstance(existing_coverage, dict) and existing_coverage.get('budget_exhausted'))
-        # A source can finish its bounded collection and publish a useful
-        # partial result with exit code 0. Preserve that explicit status instead
-        # of replacing it with the scheduler's transport status.
-        if source == 'enrichment-queue' and worker_code:
-            summary['completion_status'] = 'interrupted'
-        elif source == 'enrichment-queue' and exhausted and worker_code == 0 and _enrichment_completed(counts) > 0:
-            summary['completion_status'] = 'partial_success'
-        elif source_budget_stop:
-            summary['completion_status'] = 'partial_success'
-            summary['stop_reason'] = 'source_budget_exhausted'
-        elif existing_completion in {'partial_success', 'partial', 'scoped_partial', 'incomplete'}:
-            summary['completion_status'] = existing_completion
-        elif source == 'enrichment-queue' and exhausted:
-            summary['completion_status'] = 'interrupted' if worker_code else 'retry_exhausted'
-        elif code:
-            summary['completion_status'] = 'interrupted'
-        elif source == 'enrichment-queue' and counts.get('failed'):
-            summary['completion_status'] = 'partial_success'
-        else:
-            summary['completion_status'] = 'complete'
-        if source == 'enrichment-queue' and counts.get('failed') and 'enrichment_jobs' not in run_errors:
-            run_errors['enrichment_jobs'] = [
-                f"{int(counts.get('failed') or 0)} enrichment job(s) failed and remain retryable"
-            ]
-        close_open_run(db, run_id, 'failed' if code else 'succeeded', summary, run_errors)
-        # src.main closes its own run: close_open_run then leaves it as it is, and the scheduler facts and errors are
-        # still added.
-        merge_into_run_report(db, run_id, summary, run_errors)
-    finish_source(db_url, run_id, connect=connect)
+            close_open_run(db, run_id, 'failed' if code else 'succeeded', summary, run_errors)
+            # src.main closes its own run: close_open_run then leaves it as it is, and the scheduler facts and errors are
+            # still added.
+            merge_into_run_report(db, run_id, summary, run_errors)
+        finish_source(db_url, run_id, connect=connect)
     return SOURCE_WARNING_EXIT_CODE if source_warning and not code else code
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
-    raise SystemExit(execute(parser.parse_args().run_id))
+    parser.add_argument('--enrichment-lane', action='store_true',
+                        help="the unit runs in the enrichment queue's own concurrency group (separate lane)")
+    arguments = parser.parse_args()
+    raise SystemExit(execute(arguments.run_id, enrichment_lane=arguments.enrichment_lane))

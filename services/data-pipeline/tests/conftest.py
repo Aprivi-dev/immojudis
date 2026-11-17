@@ -127,3 +127,37 @@ def merge_trigger_present(monkeypatch):
 def _no_document_prefetch_processes(monkeypatch):
     """Le vidage des pièces prépare les ventes suivantes dans des processus à part : jamais dans les tests."""
     monkeypatch.setenv("DOCUMENT_BACKLOG_PREFETCH_WORKERS", "0")
+
+
+@pytest.fixture(autouse=True)
+def _no_pending_collection(monkeypatch):
+    """La voie d'enrichissement lit en base si une collecte est demandée (``src.collection_priority``) : jamais ici.
+
+    Sans base, aucune collecte n'est demandée et le tour des sources est libre ; les tests de la priorité posent
+    eux-mêmes la réponse.
+    """
+    from src import collection_priority
+
+    monkeypatch.setattr(collection_priority, "collection_pending_now", lambda: False)
+    monkeypatch.setattr(collection_priority, "yield_to_sources", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def _free_locks_around_scheduled_units(monkeypatch):
+    """Le lanceur prend le tour des sources et le verrou du catalogue (``src.source_traffic``, ``src.autonomous_runner``).
+
+    Accordés d'emblée ici ; les tests de ces verrous les rétablissent ou les remplacent eux-mêmes.
+    """
+    import sys
+    from contextlib import contextmanager
+
+    from src import source_traffic
+
+    @contextmanager
+    def granted(*_args, **_kwargs):
+        yield True
+
+    monkeypatch.setattr(source_traffic, "source_traffic_turn", granted)
+    runner = sys.modules.get("src.autonomous_runner")
+    if runner is not None:
+        monkeypatch.setattr(runner, "_catalogue_writer", granted)

@@ -3,9 +3,9 @@
 ## Exécution
 
 - Découverte multi-sources : une unité par source au plus toutes les 12 heures, réservée par l'ordonnanceur SQL (tick pg_cron de 15 minutes) qui déclenche `workflow_dispatch` ; le lancement manuel (admin) reste possible.
-- File documentaire et IA : une unité toutes les 30 minutes par le même ordonnanceur (ou à la demande avec `enrichment_only=true`).
+- File documentaire et IA : sa propre voie depuis le 17/11/2026 (migration `20261203100000`) : une unité de 105 minutes au plus, relancée au passage d'`operational-health` qui suit sa fin, qui cède la place à chaque collecte (`docs/runbooks/pipeline-enrichment-stalled.md`, « Voie séparée des collectes ») ; ou à la demande avec `enrichment_only=true`.
 - `workflow_dispatch` conserve le scan manuel et ajoute `enrichment_only`. Le workflow n'a pas de cron GitHub.
-- Un seul workflow écrivain à la fois ; aucune annulation du run actif.
+- Un seul écrivain du catalogue à la fois (verrou des écritures du catalogue) ; aucune annulation du run actif.
 - Scan : 10 biens documentaires et 20 synthèses maximum. Le reliquat est enregistré en base.
 - Worker manuel : deux jobs réservés à la fois, budget de 40 minutes ; reprise au prochain lancement manuel.
 

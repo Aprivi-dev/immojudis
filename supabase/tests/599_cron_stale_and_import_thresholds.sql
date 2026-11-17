@@ -6,7 +6,7 @@
 --   * 20261201100000 : l'âge de file qui ouvre pipeline.import.unhealthy passe de 1 800 s à 5 400 s.
 begin;
 
-select plan(30);
+select plan(31);
 
 delete from public.operational_alerts;
 delete from public.operational_job_runs;
@@ -367,13 +367,24 @@ select is(
   'trois échecs dans l''heure ouvrent pipeline.import.unhealthy (avertissement)'
 );
 
--- Un échec dans l'heure, mais une file qui attend : incident.
+-- Un échec dans l'heure et une exécution en file depuis 5 minutes : depuis 20261203100000, une collecte attend en
+-- file le verrou du catalogue (25 min au plus) à côté de la voie de la file ; l'alerte reste fermée.
 delete from public.operational_alerts where alert_key = 'pipeline.import.unhealthy';
 delete from public.auction_runs;
 insert into public.auction_runs (status, finished_at, created_at, updated_at)
 values ('failed', '2026-10-20T11:40:00Z', '2026-10-20T11:30:00Z', '2026-10-20T11:40:00Z');
 insert into public.auction_runs (status, created_at, updated_at)
 values ('queued', '2026-10-20T11:55:00Z', '2026-10-20T11:55:00Z');
+select public.evaluate_operational_health((select p_now from pgtap_599_context));
+
+select is(
+  (select count(*) from public.operational_alerts where alert_key = 'pipeline.import.unhealthy'),
+  0::bigint,
+  'un échec dans l''heure et une exécution en file depuis 5 minutes (pré-attente) n''ouvrent pas l''alerte'
+);
+
+-- Un échec dans l'heure, mais une file qui attend depuis plus de 30 minutes : incident.
+update public.auction_runs set created_at = '2026-10-20T11:25:00Z' where status = 'queued';
 select public.evaluate_operational_health((select p_now from pgtap_599_context));
 
 select is(
@@ -384,9 +395,10 @@ select is(
       and status = 'open'
       and (details->>'failed_last_hour')::integer = 1
       and (details->>'queued')::integer = 1
+      and (details->>'queued_over_30_minutes')::integer = 1
   ),
   1::bigint,
-  'un échec dans l''heure avec une exécution en file ouvre l''alerte'
+  'un échec dans l''heure avec une exécution en file depuis plus de 30 minutes ouvre l''alerte'
 );
 
 -- Un import bloqué (plus de 3 h) reste critique, comme avant.

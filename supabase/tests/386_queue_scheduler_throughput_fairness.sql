@@ -116,9 +116,10 @@ delete from public.auction_runs
  where source in ('pgtap-throughput-source', 'enrichment-queue')
    and status = 'queued';
 
--- Multiple independent overdue sources prove the actual claim RPC gives the
--- queue a turn after one collection claim, then resumes collection. The
--- transaction rolls all fixtures back at the end of the test.
+-- Multiple independent overdue sources prove the actual two-lane claim RPC
+-- (20261203100000) gives the queue its own turn while a collection is active,
+-- then resumes collection. The transaction rolls all fixtures back at the end
+-- of the test.
 insert into public.auction_source_state (source_name, enabled, next_inventory_at)
 values
   ('pgtap-throughput-a', true, statement_timestamp() - interval '4 hours'),
@@ -161,16 +162,14 @@ select is(
   'the first overdue source keeps its collection turn'
 );
 
-delete from public.auction_runs
- where id = (select (payload->>'id')::uuid from pgtap_throughput_claims where ordinal = 1);
-
+-- The first collection stays active: the queue lane does not wait for it.
 insert into pgtap_throughput_claims (ordinal, payload)
 values (2, public.claim_autonomous_pipeline_run());
 
 select is(
   (select payload->>'mode' from pgtap_throughput_claims where ordinal = 2),
   'enrichment',
-  'the due queue runs after one overdue source claim'
+  'the due queue runs on its own lane while the overdue source is collected'
 );
 
 select is(
@@ -185,7 +184,7 @@ select is(
 );
 
 delete from public.auction_runs
- where id = (select (payload->>'id')::uuid from pgtap_throughput_claims where ordinal = 2);
+ where id in (select (payload->>'id')::uuid from pgtap_throughput_claims where ordinal in (1, 2));
 
 insert into pgtap_throughput_claims (ordinal, payload)
 values (3, public.claim_autonomous_pipeline_run());
@@ -193,7 +192,7 @@ values (3, public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_throughput_claims where ordinal = 3),
   'collect',
-  'collection resumes after the bounded queue turn'
+  'collection resumes once its lane is free again'
 );
 
 delete from public.auction_runs

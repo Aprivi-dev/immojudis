@@ -1,3 +1,4 @@
+import json
 import sys
 import time
 import types
@@ -2949,3 +2950,112 @@ def test_a_lock_lost_during_the_last_batch_still_fails_the_job(monkeypatch, caps
 
     assert queued_runner.run_with_catalogue_lock() == LOCK_LOST_EXIT_CODE
     assert "Verrou du catalogue perdu" in capsys.readouterr().out
+
+
+def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkeypatch) -> None:
+    """17/11/2026 : la file tourne à côté des collectes ; chaque écriture du travailleur doit tenir le verrou.
+
+    Le chemin réel de ``python -m src.queued_runner --enrichment-only`` : ``run_with_catalogue_lock``, puis le
+    travailleur et un lot réclamé. Chaque écriture en base de ce chemin (réclamation, rejeu des faits d'une vente,
+    fin des tâches) doit voir le verrou des écritures du catalogue tenu ; le test échoue si l'une d'elles passe hors
+    du bloc qui le tient. Hermétique : aucune base, quelle que soit ``SUPABASE_DB_URL``.
+    """
+    from src import catalogue_lock
+    from src.catalogue_lock import catalogue_writer_lock
+
+    writes: list[tuple[str, bool]] = []
+
+    def lock_held() -> bool:
+        with catalogue_lock._HELD_GUARD:
+            handles = list(catalogue_lock._HELD)
+        return bool(handles) and not any(handle.lost for handle in handles)
+
+    def write(name: str):
+        return lambda *args, **kwargs: writes.append((name, lock_held())) or True
+
+    sale_url = "https://example.test/sale"
+    claimed = {"done": False}
+
+    def claim(*, limit: int, family: str | None) -> list[dict[str, object]]:
+        writes.append(("claim", lock_held()))
+        if family != queued_runner.ENRICHMENT_FAMILY or claimed["done"]:
+            return []
+        claimed["done"] = True
+        return [
+            {"id": "job-1", "job_type": "display_description", "source_url": sale_url},
+            {"id": "job-2", "job_type": "fact_claims", "source_url": sale_url, "fact_claims_snapshot": {}},
+        ]
+
+    sale = SimpleNamespace(source_name="vench", source_url=sale_url, source_urls=[sale_url], documents=[])
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": ""})
+    monkeypatch.setattr(queued_runner, "_log_worker_claim_status_snapshot", lambda _ids: None)
+    monkeypatch.setattr(queued_runner, "_claim_enrichment_queue_jobs", claim)
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _url: sale)
+    monkeypatch.setattr(queued_runner, "require_encheres_publiques_sale_access", lambda **_kwargs: None)
+    monkeypatch.setattr(queued_runner, "require_sale_not_withdrawn", lambda *_args: None)
+    monkeypatch.setattr(queued_runner, "retry_fact_claims_to_supabase", write("fact_claims"))
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", write("finish"))
+    monkeypatch.setattr(
+        queued_runner,
+        "catalogue_writer_lock",
+        lambda **kwargs: catalogue_writer_lock(
+            "postgresql://example/db", connect=lambda url: _LockSession(), heartbeat_seconds=0, **kwargs
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["src.queued_runner", "--enrichment-only"])
+
+    assert queued_runner.run_with_catalogue_lock() == 0
+
+    assert [name for name, _held in writes if name != "claim"] == ["finish", "fact_claims", "finish"]
+    assert all(held for _name, held in writes), writes
+    assert not lock_held()
+
+
+def test_the_worker_claims_nothing_once_a_collection_is_pending(monkeypatch, tmp_path) -> None:
+    """La file cède la place : plus aucun lot dès qu'une collecte est demandée, et le lanceur en est informé."""
+    from src import collection_priority
+    from src.enrichment_queue_limits import COLLECTION_PENDING_STOP_REASON, ENRICHMENT_WORKER_REPORT_ENV
+
+    report = tmp_path / "report.json"
+    monkeypatch.setenv(ENRICHMENT_WORKER_REPORT_ENV, str(report))
+    pending = iter([False, True])
+    monkeypatch.setattr(collection_priority, "yield_to_sources", lambda: next(pending))
+    batches: list[str] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "run_enrichment_queue_batch",
+        lambda *, limit, family, provider_clients=None: batches.append(family) or 1,
+    )
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=50, budget_seconds=600) == 1
+
+    assert len(batches) == 1
+    written = json.loads(report.read_text(encoding="utf-8"))
+    assert written["stop_reason"] == COLLECTION_PENDING_STOP_REASON
+    assert written["handled"] == 1
+
+
+def test_the_worker_reports_an_empty_queue_to_the_scheduled_unit(monkeypatch, tmp_path) -> None:
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV, QUEUES_EMPTY_STOP_REASON
+
+    report = tmp_path / "report.json"
+    monkeypatch.setenv(ENRICHMENT_WORKER_REPORT_ENV, str(report))
+    monkeypatch.setattr(
+        queued_runner, "run_enrichment_queue_batch", lambda *, limit, family, provider_clients=None: 0
+    )
+
+    assert queued_runner.run_enrichment_queue_worker(max_jobs=50, budget_seconds=600) == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["stop_reason"] == QUEUES_EMPTY_STOP_REASON
+
+
+def test_the_worker_writes_no_report_without_the_runner_variable(monkeypatch, tmp_path) -> None:
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV
+
+    monkeypatch.delenv(ENRICHMENT_WORKER_REPORT_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        queued_runner, "run_enrichment_queue_batch", lambda *, limit, family, provider_clients=None: 0
+    )
+
+    queued_runner.run_enrichment_queue_worker(max_jobs=5, budget_seconds=600)
+    assert list(tmp_path.iterdir()) == []
