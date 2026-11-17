@@ -9,6 +9,7 @@ from typing import Any
 
 from src.source_checkpoint import configure_publisher, flush_publications
 from src.source_process import WORKER_EVENT_PREFIX
+from src.sources import robots_policy_copies
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
@@ -90,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(payload, dict):
             raise ValueError("worker payload must be an object")
         _configure_batch_publisher(bool(payload.get("publish_batches")))
+        robots_policy_copies.install([payload.get(robots_policy_copies.COVERAGE_KEY)])
         try:
             result = collect_source(args.source, payload)
         finally:

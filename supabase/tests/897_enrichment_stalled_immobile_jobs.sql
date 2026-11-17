@@ -1,6 +1,8 @@
 -- 20261119101000 (14/11/2026, T6 et D12) : pipeline.enrichment.stalled compte à part les tâches immobiles depuis
 -- 24 h (ni écrites ni attendues), budget IA atteint ou non. Avant, un report du budget dans les 24 h ne laissait
 -- regarder que les tâches source_detail : une lecture de pièces restée en running, bail expiré, ne sonnait pas.
+-- 20261201100000 : le bail expiré depuis 24 h ouvre toujours l'alerte ; une tâche prenable intacte depuis 24 h n'est
+-- plus qu'une mesure (immobile_24h).
 begin;
 
 select plan(13);
@@ -230,19 +232,22 @@ select lives_ok(
   'the observer runs once the budget deferral is over'
 );
 
+-- Since 20261201100000 immobile_24h stays a measure: the alert needs 72 hours without service and a count that did
+-- not fall in 24 hours (supabase/tests/903_operational_alerts_recalibration.sql).
 select ok(
   (
     select not (payload->'queue'->>'budget_limited')::boolean
        and (payload->'queue'->>'immobile_24h')::integer = 1
+       and (payload->'queue'->>'unserved_72h')::integer = 0
        and (
-         select alert.status = 'open' and alert.inactive_since is null
+         select alert.status = 'open' and alert.inactive_since is not null
            from public.operational_alerts alert
           where alert.alert_key = 'pipeline.enrichment.stalled'
        )
       from pgtap_897_context
      where case_name = 'untouched'
   ),
-  'without the AI budget, a claimable job untouched for 24 hours is immobile and opens the alert'
+  'without the AI budget, a claimable job untouched for two days is counted as immobile but does not reopen the alert'
 );
 
 select * from finish();

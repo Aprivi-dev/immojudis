@@ -6,69 +6,42 @@ import Clock from "lucide-react/dist/esm/icons/clock.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import { useState } from "react";
 import { formatDate } from "@/lib/format/dates";
+import { formatPriceWithCents } from "@/lib/format/numbers";
+import { WITHDRAWAL_PERIOD_DAYS } from "@/lib/privacy-deadline";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { Badge, buttonClasses, Card, Notice, PageShell } from "@/components/ui/primitives";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
-import type { PrivacyRequestType } from "@/lib/privacy-requests";
+import {
+  PRIVACY_REQUEST_TYPE_OPTIONS as requestOptions,
+  privacyRequestTypeLabel as requestTypeLabel,
+  type PrivacyRequestType,
+} from "@/lib/privacy-request-types";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
-
-const requestOptions: Array<{ value: PrivacyRequestType; label: string; detail: string }> = [
-  {
-    value: "access",
-    label: "Accéder à mes données",
-    detail: "Obtenir une copie et les informations associées.",
-  },
-  {
-    value: "portability",
-    label: "Portabilité",
-    detail: "Recevoir les données fournies dans un format exploitable.",
-  },
-  {
-    value: "rectification",
-    label: "Rectification",
-    detail: "Corriger une information inexacte ou incomplète.",
-  },
-  {
-    value: "erasure",
-    label: "Effacement / compte",
-    detail: "Demander la suppression du compte et des données effaçables.",
-  },
-  {
-    value: "restriction",
-    label: "Limitation",
-    detail: "Demander le gel temporaire d’un traitement contesté.",
-  },
-  {
-    value: "objection",
-    label: "Opposition",
-    detail: "Contester un traitement fondé sur l’intérêt légitime.",
-  },
-  {
-    value: "consent_withdrawal",
-    label: "Retirer un consentement",
-    detail: "Retirer un accord facultatif, notamment pour les alertes email.",
-  },
-  {
-    value: "contract_withdrawal",
-    label: "Rétractation Analyse",
-    detail: "Notifier une rétractation liée à une commande Analyse.",
-  },
-];
 
 export function RightsPage() {
   const queryClient = useQueryClient();
   const [requestType, setRequestType] = useState<PrivacyRequestType>("access");
   const [message, setMessage] = useState("");
+  /** Rétractation : achat à l'unité visé ; vide pour l'abonnement Analyse. */
+  const [purchaseId, setPurchaseId] = useState("");
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.privacyRequests(),
     queryFn: fetchPrivacyRequests,
   });
+  const purchases = data?.withdrawablePurchases ?? [];
+  const withdrawal = requestType === "contract_withdrawal";
   const mutation = useMutation({
-    mutationFn: () => createPrivacyRequestClient({ requestType, message }),
+    mutationFn: () =>
+      createPrivacyRequestClient({
+        requestType,
+        message,
+        ...(withdrawal && purchaseId ? { purchaseId } : {}),
+      }),
     onSuccess: async () => {
       setMessage("");
+      setPurchaseId("");
       toast.success("Demande enregistrée. Son échéance est visible ci-dessous.");
       await queryClient.invalidateQueries({ queryKey: queryKeys.privacyRequests() });
     },
@@ -112,6 +85,32 @@ export function RightsPage() {
           <p id="rights-request-detail" className="mt-2 text-sm leading-relaxed text-ink-soft">
             {requestOptions.find((option) => option.value === requestType)?.detail}
           </p>
+          {withdrawal ? (
+            <label className="mt-5 grid gap-2 text-sm font-semibold text-brand-navy">
+              Commande concernée
+              <select
+                value={purchaseId}
+                onChange={(event) => setPurchaseId(event.target.value)}
+                aria-describedby="rights-withdrawal-detail"
+                className="form-input font-normal"
+              >
+                <option value="">Abonnement Analyse</option>
+                {purchases.map((purchase) => (
+                  <option key={purchase.id} value={purchase.id}>
+                    Achat d’une vente à l’unité du {formatDate(purchase.paidAt)} (
+                    {formatPriceWithCents(purchase.amountCents / 100)})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {withdrawal ? (
+            <p id="rights-withdrawal-detail" className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {purchaseId
+                ? "Pour l’achat d’une vente à l’unité (article 2 bis des conditions générales), l’analyse de la vente est fournie dès la confirmation du paiement, à la demande expresse du client, qui reconnaît avant le paiement perdre son droit de rétractation une fois l’accès fourni. Votre demande sera examinée et vous recevrez une réponse par email."
+                : `Seuls les achats à l’unité payés il y a moins de ${WITHDRAWAL_PERIOD_DAYS} jours sont proposés.`}
+            </p>
+          ) : null}
           <label className="mt-5 grid gap-2 text-sm font-semibold text-brand-navy">
             Précisions utiles
             <textarea
@@ -218,10 +217,6 @@ function StatusBadge({ status }: { status: string }) {
       {statusLabel(status)}
     </Badge>
   );
-}
-
-function requestTypeLabel(value: PrivacyRequestType) {
-  return requestOptions.find((option) => option.value === value)?.label ?? value;
 }
 
 function statusLabel(value: string) {

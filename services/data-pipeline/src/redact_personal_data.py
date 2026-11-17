@@ -12,6 +12,9 @@ Ce que la collecte écrit désormais est déjà filtré (`redact_storage_row`) :
 rattraper les lignes écrites avant. Le recalcul complet (workflow « Recompute Existing Sales »)
 les rattraperait aussi, en repassant par l'écriture, mais il refait toute la normalisation : ce
 script ne touche que les textes.
+
+En production, il se lance par le workflow manuel « Redact personal data in stored texts » (compte par
+défaut ; écriture seulement avec `apply` et `confirm_target` = production).
 """
 
 from __future__ import annotations

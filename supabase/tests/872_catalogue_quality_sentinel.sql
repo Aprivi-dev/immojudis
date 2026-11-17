@@ -9,9 +9,11 @@
 --     identifiants en exemple, et se ferment deux heures après le retour sous le seuil ;
 --   * un cliché par jour UTC dans auction_pipeline_observations (catalogue-quality) ;
 --   * evaluate_operational_health garde ses appels précédents.
+--   * 20261201100000 : le lot Licitor discordant ne s'ouvre que si la MÊME vente l'est à deux évaluations
+--     consécutives ; l'évaluation purge ses mesures de plus de 90 jours (catalogue-quality-licitor-lot).
 begin;
 
-select plan(25);
+select plan(28);
 
 -- Les fonctions ----------------------------------------------------------------------------------------------
 
@@ -211,7 +213,8 @@ select is(
 -- Les alertes, seuils par défaut --------------------------------------------------------------------------------
 
 delete from public.operational_alerts;
-delete from public.auction_pipeline_observations where source_name = 'catalogue-quality';
+delete from public.auction_pipeline_observations
+where source_name in ('catalogue-quality', 'catalogue-quality-licitor-lot');
 
 select public.evaluate_operational_health('2026-11-10T10:00:00Z'::timestamptz);
 
@@ -224,10 +227,10 @@ select is(
   array[
     'catalogue.quality.bedrooms_ge_rooms',
     'catalogue.quality.land_with_rooms',
-    'catalogue.quality.licitor_lot_mismatch',
     'catalogue.quality.price_per_m2_implausible'
   ],
-  'the invariants and the price per m² open; the ratio (under 100 live sales) and the documents (under 30) do not'
+  'the invariants and the price per m² open; the Licitor lot waits for a second evaluation (20261201100000); the '
+  || 'ratio (under 100 live sales) and the documents (under 30) do not'
 );
 
 select ok(
@@ -239,16 +242,6 @@ select ok(
   'every catalogue quality alert is an import warning, queued for notification'
 );
 
-select is(
-  (
-    select details
-    from public.operational_alerts
-    where alert_key = 'catalogue.quality.licitor_lot_mismatch'
-  ),
-  '{"count": 1, "licitor_live": 5, "without_card": 1, "unreadable_card": 1, "live_sales": 17, "maximum_count": 0,
-    "example_sale_ids": ["c8720000-1000-4000-8000-000000000008"]}'::jsonb,
-  'the details carry the count, the threshold and example sale ids'
-);
 
 select is(
   (
@@ -306,6 +299,20 @@ select is(
   ),
   '1/1',
   'an acknowledged sale is no longer counted, only reported as acknowledged'
+);
+
+select is(
+  (
+    select details
+    from public.operational_alerts
+    where alert_key = 'catalogue.quality.licitor_lot_mismatch' and status = 'open'
+  ),
+  '{"count": 1, "licitor_live": 5, "without_card": 1, "unreadable_card": 1, "live_sales": 17, "maximum_count": 0,
+    "previous_count": 1, "consecutive_observations": 2,
+    "example_sale_ids": ["c8720000-1000-4000-8000-000000000008"],
+    "previous_sale_ids": ["c8720000-1000-4000-8000-000000000008"],
+    "persistent_sale_ids": ["c8720000-1000-4000-8000-000000000008"]}'::jsonb,
+  'the Licitor lot opens on the second evaluation in a row; the details carry the count, the thresholds and examples'
 );
 
 select is(
@@ -384,6 +391,49 @@ select is(
   ),
   0,
   'the latest snapshot holds the repaired values'
+);
+
+-- 20261201100000 : deux ventes Licitor DIFFÉRENTES discordantes à deux évaluations de suite n'ouvrent rien ; la
+-- même vente, si. Une mesure de plus de 90 jours est purgée par l'évaluation elle-même.
+insert into public.auction_pipeline_observations (source_name, observed_at, metrics)
+values ('catalogue-quality-licitor-lot', '2026-08-01T10:00:00Z', '{"count": 1, "example_sale_ids": []}'::jsonb);
+update public.auction_sales set starting_price_eur = 90000 where id = 'c8720000-1000-4000-8000-000000000008';
+select public.evaluate_operational_health('2026-11-11T11:00:00Z'::timestamptz);
+update public.auction_sales set starting_price_eur = 80000 where id = 'c8720000-1000-4000-8000-000000000008';
+update public.auction_sales set starting_price_eur = 30000 where id = 'c8720000-1000-4000-8000-000000000009';
+select public.evaluate_operational_health('2026-11-11T11:30:00Z'::timestamptz);
+
+select is(
+  (
+    select status
+    from public.operational_alerts
+    where alert_key = 'catalogue.quality.licitor_lot_mismatch'
+  ),
+  'resolved',
+  'a different Licitor sale on each of two evaluations in a row does not open the alert'
+);
+
+select public.evaluate_operational_health('2026-11-11T12:00:00Z'::timestamptz);
+
+select is(
+  (
+    select status || ':' || (details -> 'persistent_sale_ids')::text
+    from public.operational_alerts
+    where alert_key = 'catalogue.quality.licitor_lot_mismatch'
+  ),
+  'open:["c8720000-1000-4000-8000-000000000009"]',
+  'the same Licitor sale on two evaluations in a row opens it'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.auction_pipeline_observations
+    where source_name = 'catalogue-quality-licitor-lot'
+      and observed_at < '2026-11-11T12:00:00Z'::timestamptz - interval '90 days'
+  ),
+  0,
+  'the evaluation purges its own Licitor measures older than 90 days'
 );
 
 select * from finish();

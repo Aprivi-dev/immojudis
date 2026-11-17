@@ -63,19 +63,9 @@ export async function findOrCreateStripeCustomer(
   stripe: Stripe,
   auth: SupabaseAuthContext,
 ): Promise<Stripe.Customer> {
-  // Le jeton vérifié donne un UUID ; on le contrôle quand même avant de l'écrire dans la requête de
-  // recherche, pour qu'aucune valeur ne puisse en changer la syntaxe.
-  if (!isUuid(auth.userId)) throw new Error("Stripe customer: user id is not a UUID.");
-
-  const existing = await stripe.customers.search({
-    query: `metadata['user_id']:'${auth.userId}'`,
-    limit: 100,
-  });
-  const oldest = existing.data
-    .filter((customer) => !customer.deleted)
-    .reduce<
-      Stripe.Customer | undefined
-    >((kept, customer) => (!kept || customer.created < kept.created ? customer : kept), undefined);
+  const oldest = (await findStripeCustomersOfAccount(stripe, auth.userId)).reduce<
+    Stripe.Customer | undefined
+  >((kept, customer) => (!kept || customer.created < kept.created ? customer : kept), undefined);
   if (oldest) return oldest;
 
   // La recherche Stripe n'indexe un nouveau client qu'après un délai : deux créations rapprochées ne
@@ -95,6 +85,24 @@ export async function findOrCreateStripeCustomer(
       idempotencyKey: stripeCustomerIdempotencyKey(auth.userId),
     },
   );
+}
+
+/**
+ * Clients Stripe (non supprimés) rattachés au compte par leur métadonnée `user_id` : seule requête qui
+ * les retrouve, pour la création (`findOrCreateStripeCustomer`) comme pour l'effacement du compte.
+ */
+export async function findStripeCustomersOfAccount(
+  stripe: Stripe,
+  userId: string,
+): Promise<Stripe.Customer[]> {
+  // Le jeton vérifié donne un UUID ; on le contrôle quand même avant de l'écrire dans la requête de
+  // recherche, pour qu'aucune valeur ne puisse en changer la syntaxe.
+  if (!isUuid(userId)) throw new Error("Stripe customer: user id is not a UUID.");
+  const found = await stripe.customers.search({
+    query: `metadata['user_id']:'${userId}'`,
+    limit: 100,
+  });
+  return found.data.filter((customer) => !customer.deleted);
 }
 
 export async function getUserSubscription(

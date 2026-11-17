@@ -1,0 +1,95 @@
+name: Redact personal data in stored texts
+
+# Catch-up of the name filter (src/personal_data.py) on the texts already stored: the collection filters
+# what it writes, but the rows written before a filter change keep their old text until this runs
+# (python -m src.redact_personal_data).
+#
+# Guards:
+#   * without inputs the run only counts, inside a read-only transaction: nothing is written;
+#   * it writes only when started with `apply` = true AND `confirm_target` = production (exactly);
+#     `apply` alone, or a different `confirm_target`, stops the job before anything is read;
+#   * the write takes the catalogue writer lock (src/catalogue_lock.py), like a collection;
+#   * the log shows counts per table and per field, never a text and never a row id: this repository
+#     and its logs are public, and an id would point at a sale whose text still names someone.
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write the filtered texts (default: count only, nothing is written)"
+        type: boolean
+        default: false
+      confirm_target:
+        description: "Must be exactly 'production' when apply is checked"
+        type: string
+        default: ""
+      all_statuses:
+        description: "Also scan past sales (default: upcoming sales only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-redact-personal-data
+  cancel-in-progress: false
+
+jobs:
+  redact:
+    name: Count or write the filtered texts
+    runs-on: ubuntu-24.04
+    # Évalué avant l'environnement : le workflow ne lit la production que depuis main, jamais depuis une branche.
+    if: github.ref == 'refs/heads/main'
+    environment: Production
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      # Inputs go through the environment, never into the script text. No secret in this step.
+      - name: Check the apply confirmation
+        # Runs before the checkout: the job's default directory does not exist yet.
+        working-directory: .
+        env:
+          APPLY: ${{ inputs.apply }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+        run: |
+          if [ "$APPLY" = "true" ] && [ "$CONFIRM_TARGET" != "production" ]; then
+            echo "::error title=Redact personal data::apply needs confirm_target to be exactly 'production'; nothing was run."
+            exit 1
+          fi
+          if [ "$APPLY" = "true" ]; then
+            echo "::warning title=Redact personal data::apply=true and confirm_target=production: this launch writes."
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Count or write the filtered texts
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          APPLY: ${{ inputs.apply }}
+          ALL_STATUSES: ${{ inputs.all_statuses }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = "true" ]; then args+=(--apply); fi
+          if [ "$ALL_STATUSES" = "true" ]; then args+=(--all-statuses); fi
+          report="$RUNNER_TEMP/redact-personal-data.json"
+          python -m src.redact_personal_data "${args[@]}" > "$report"
+          # Counts only: the sample ids stay out of the public log.
+          jq 'del(.tables[].sample_ids)' "$report"
