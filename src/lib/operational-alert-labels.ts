@@ -111,6 +111,8 @@ const SOURCE_CHECK_LABELS: Record<string, string> = {
   publication: "échecs de publication",
   publication_stale: "publication complète en retard",
   stale_listings: "fiches non revérifiées à temps",
+  // Migration 20261204100000 : site muet depuis 72 h, collectes et fiches arrêtées 7 jours, rien n'est retiré.
+  suspended_unreachable: "site injoignable, collectes suspendues 7 jours",
 };
 
 /** `fact_registry.<contrôle>` : les treize contrôles quotidiens du registre (migration 20261118100300). */

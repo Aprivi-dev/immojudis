@@ -306,6 +306,23 @@ jobs:
           # Retour arrière de la voie d'enrichissement sans commit : la variable de dépôt ENRICHMENT_LANE=off ramène
           # chaque unité de la file à un seul passage (environ 30 min), comme avant le 17/11/2026.
           ENRICHMENT_LANE: ${{ vars.ENRICHMENT_LANE || 'on' }}
+          # Voie parallèle (décision du 17/11/2026) : un processus pour les fiches et N pour les pièces et les faits,
+          # côte à côte dans chaque unité (services/data-pipeline/src/enrichment_lane_settings.py). Variable de dépôt
+          # PIPELINE_ENRICHMENT_GENERAL_WORKERS, de 0 à 3 ; « 0 » ramène le travailleur mixte unique, en verrous
+          # exclusifs et sans tours par hôte, sans commit (une chaîne non vide n'est jamais remplacée par le défaut).
+          # « 0 » ne ramène pas tout l'avant : l'attente des verrous dans la file de PostgreSQL, la copie commune de
+          # robots.txt et le report sans essai d'une publication sur lock_timeout restent, quel que soit N. Défaut 2 et non 3 : chaque processus garde trois
+          # connexions de session (verrou du catalogue, tour des sources, tours par hôte) ; voir
+          # docs/runbooks/pipeline-enrichment-stalled.md, « Voie parallèle ». Vides, les deux réglages suivants suivent N
+          # (shared et on dès que N ≥ 1, exclusive et off sinon) ; une combinaison incohérente est refusée au démarrage.
+          PIPELINE_ENRICHMENT_GENERAL_WORKERS: ${{ vars.PIPELINE_ENRICHMENT_GENERAL_WORKERS || '2' }}
+          PIPELINE_WORKER_LOCK_MODE: ${{ vars.PIPELINE_WORKER_LOCK_MODE }}
+          PIPELINE_HOST_TURNS: ${{ vars.PIPELINE_HOST_TURNS }}
+          # Site injoignable (services/data-pipeline/src/source_suspension.py) : sonde de robots.txt espacée (1 h, 2 h,
+          # 4 h, puis 6 h) et suspension de 7 jours après 72 h d'échecs relevés. « off » rétablit l'espacement
+          # progressif d'avant et ne pose plus de suspension, sans commit (une suspension déjà posée court jusqu'à son
+          # terme). La copie commune de robots.txt et l'attente sans requête après un échec récent restent.
+          PIPELINE_SOURCE_AUTO_SUSPEND: ${{ vars.PIPELINE_SOURCE_AUTO_SUSPEND || 'on' }}
           # Garde contre un appel bloqué (src/stage_watchdog.py) : manuel, src.main se termine avec le
           # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
           # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).

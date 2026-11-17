@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,8 @@ from src.pdf_document_types import canonical_document_type, refined_document_typ
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text, write_pdf_text_cache
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
-from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, ensure_pdf_deadline
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, PdfHostTurnBusy, ensure_pdf_deadline
+from src.host_turn import HostTurnWaitExceeded
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
@@ -75,6 +77,8 @@ from src.pdf_page_analysis import (
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.pipeline_usage import QueueJobDeferred
+from src.source_suspension import suspended_host_until
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
@@ -352,6 +356,13 @@ def download_documents(
             # Rien n'est consigné comme « bloqué » : lever le retrait la remet dans la file.
             LOGGER.info("Skipping document hosted by a withdrawn source %s", url)
             continue
+        resume_at = suspended_host_until(url, str(settings.get("supabase_db_url") or ""))
+        if resume_at is not None:
+            # Site d'une source suspendue parce qu'il ne répond plus (src/source_suspension.py) : aucune requête ;
+            # la tâche attend la reprise sans consommer d'essai.
+            raise QueueJobDeferred(
+                f"Document host suspended (source unreachable) until {resume_at.isoformat()}", retry_after=resume_at
+            )
         if _is_robots_disallowed_licitor_document(url):
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
             if stats is not None:
@@ -455,7 +466,9 @@ def download_documents(
                             archive = sale_dir / "versions"
                             archive.mkdir(exist_ok=True)
                             (archive / (hashlib.sha256(previous).hexdigest() + file_path.suffix)).write_bytes(previous)
-                    temporary = file_path.with_suffix(file_path.suffix + ".tmp")
+                    # One name per process: the manual drain and its preparation processes can download the same
+                    # sale as a lane worker; each writes its own file, then replaces the target atomically.
+                    temporary = file_path.with_suffix(f"{file_path.suffix}.{os.getpid()}.tmp")
                     temporary.write_bytes(content)
                     temporary.replace(file_path)
                     metadata = {
@@ -616,17 +629,28 @@ def _download_document_response(
         require_ep_url(current_url, load_settings())
         ensure_pdf_deadline(operation="following document redirect")
         try:
-            # robots.txt and the per-host delay apply to every hop, including
-            # redirects to another origin.
-            _DOCUMENT_POLITENESS.wait_turn(current_url)
+            # robots.txt, the per-host delay and the cross-process host turn apply to
+            # every hop, including redirects to another origin.
+            with _DOCUMENT_POLITENESS.turn(current_url):
+                ensure_pdf_deadline(operation="starting document HTTP request")
+                response = _send_pinned_document_request(
+                    current_url,
+                    headers=headers,
+                    timeout_seconds=timeout_seconds,
+                )
         except DocumentRobotsDisallowed as exc:
             raise PermanentDocumentFailure("robots_disallowed", str(exc)) from exc
-        ensure_pdf_deadline(operation="starting document HTTP request")
-        response = _send_pinned_document_request(
-            current_url,
-            headers=headers,
-            timeout_seconds=timeout_seconds,
-        )
+        except HostTurnWaitExceeded as exc:
+            # Another process kept the host busy: coordination, not a failed download. The claim is released without
+            # spending its attempt (src.queued_runner), 30 min later; a busy host is logged as such, not as the cutoff.
+            if not exc.deadline_reached:
+                raise PdfHostTurnBusy(exc.host, exc.waited) from exc
+            raise PdfDeadlineExceeded(
+                f"PDF worker deadline reached while waiting for the turn of {exc.host}; retry resumes",
+                checkpointed_pages=0,
+                total_pages=0,
+                new_progress_pages=0,
+            ) from exc
         status_code = int(getattr(response, "status_code", 200))
         if status_code not in DOCUMENT_REDIRECT_STATUS_CODES:
             return response

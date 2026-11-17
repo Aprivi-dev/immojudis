@@ -900,6 +900,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-passes", default=os.getenv("DOCUMENT_BACKLOG_MAX_PASSES"))
     args = parser.parse_args(argv)
     limits = limits_from_inputs(args.max_sales, args.budget_minutes, args.max_passes)
+    # The manual drain runs in its own concurrency group, next to the lane's workers and without the source traffic
+    # turn: it takes the turn of each host it downloads from, like them (src.host_turn ; off when they are off).
+    from src import host_turn
+
+    host_turn.activate()
     report = run_document_backlog(limits)
     summary = report.as_dict()
     lock_lost = report.stop_reason == LOCK_LOST_STOP_REASON

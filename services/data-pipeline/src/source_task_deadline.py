@@ -11,6 +11,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from datetime import datetime
 
 _SOURCE_TASK_DEADLINE: ContextVar[float | None] = ContextVar(
     "source_task_deadline",
@@ -32,6 +33,23 @@ class SourceTaskDeadlineExceeded(RuntimeError):
         self.deadline = deadline
         self.remaining = remaining
         super().__init__(f"Source-detail task deadline reached during {operation}")
+
+
+class HostTurnBusy(SourceTaskDeadlineExceeded):
+    """The host stayed busy (another process held its turn), before the task deadline: the task is released without
+    spending an attempt and comes back after ``retry_not_before`` (``src.host_turn``)."""
+
+    def __init__(self, host: str, waited: float, retry_not_before: datetime) -> None:
+        super().__init__(f"waiting for the host turn of {host}")
+        self.host = host
+        self.waited = waited
+        self.retry_not_before = retry_not_before
+
+    def __str__(self) -> str:
+        return (
+            f"Host turn of {self.host} not obtained after {self.waited:.0f} s (busy); "
+            f"retry after {self.retry_not_before.isoformat()}"
+        )
 
 
 @contextmanager

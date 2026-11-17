@@ -130,6 +130,21 @@ def _no_document_prefetch_processes(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _single_worker_lane_by_default(monkeypatch):
+    """Les réglages de la voie parallèle (``src.enrichment_lane_settings``) viennent du workflow : jamais de
+    l'environnement de la machine qui lance les tests. Sans eux, travailleur unique, verrous exclusifs, pas de tours
+    par hôte ; les tests de la voie parallèle les posent eux-mêmes."""
+    from src import enrichment_lane_settings
+
+    for name in (
+        enrichment_lane_settings.GENERAL_WORKERS_ENV,
+        enrichment_lane_settings.WORKER_LOCK_MODE_ENV,
+        enrichment_lane_settings.HOST_TURNS_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_pending_collection(monkeypatch):
     """La voie d'enrichissement lit en base si une collecte est demandée (``src.collection_priority``) : jamais ici.
 

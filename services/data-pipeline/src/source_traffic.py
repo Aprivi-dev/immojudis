@@ -17,6 +17,11 @@ avec une attente ne passe pas devant elle). Le travailleur ne peut donc pas affa
 
 Une connexion de session est nécessaire (``catalogue_lock.session_lock_url``) ; un battement garde la session
 ouverte. Sans base (exécution locale, tests), le tour est toujours accordé.
+
+Modes (voie parallèle, 17/11/2026) : les travailleurs de la voie prennent le tour en partage
+(``PIPELINE_WORKER_LOCK_MODE``, ``src.enrichment_lane_settings``) : ils parlent aux sources côte à côte, chacun
+attendant le tour de l'hôte qu'il interroge (``src.host_turn``). Tout le reste le prend en exclusif. Une demande
+exclusive en attente fait échouer leurs prises partagées : ils cèdent la place comme avant.
 """
 
 from __future__ import annotations
@@ -30,15 +35,13 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from src.catalogue_lock import LOCK_HEARTBEAT_SECONDS, session_lock_url
+from src.catalogue_lock import EXCLUSIVE, LOCK_HEARTBEAT_SECONDS, lock_sql, queued_wait, session_lock_url
 from src.config import load_settings
 
 LOGGER = logging.getLogger(__name__)
 
 SOURCE_TRAFFIC_LOCK_NAME = "immojudis:source-traffic:v1"
-_LOCK_SQL = "select pg_advisory_lock(hashtextextended(%s, 0))"
-_TRY_LOCK_SQL = "select pg_try_advisory_lock(hashtextextended(%s, 0))"
-_UNLOCK_SQL = "select pg_advisory_unlock(hashtextextended(%s, 0))"
+_TRY_LOCK_SQL, _LOCK_SQL, _UNLOCK_SQL = lock_sql(EXCLUSIVE)
 
 
 def _default_connect(url: str) -> Any:
@@ -68,12 +71,7 @@ def source_traffic_turn(
     connection.autocommit = True
     stop = threading.Event()
     try:
-        connection.execute(f"set lock_timeout = '{max(1, int(wait_seconds * 1000))}ms'")
-        try:
-            connection.execute(_LOCK_SQL, (SOURCE_TRAFFIC_LOCK_NAME,))
-        except Exception as exc:  # noqa: BLE001 - lock_timeout (55P03) : le tour n'est pas venu
-            if getattr(exc, "sqlstate", None) != "55P03":
-                raise
+        if not queued_wait(connection, _LOCK_SQL, SOURCE_TRAFFIC_LOCK_NAME, wait_seconds):
             print(f"Source traffic turn not obtained within {wait_seconds:g} s; {label} does not run.", flush=True)
             yield False
             return
@@ -95,11 +93,15 @@ def source_traffic_turn(
 
 
 class SourceTrafficTurns:
-    """Le tour du travailleur de la file, pris lot par lot sans attendre et rendu avant le lot suivant."""
+    """Le tour du travailleur de la file, pris lot par lot sans attendre et rendu avant le lot suivant.
 
-    def __init__(self, db_url: str, *, connect: Callable[[str], Any] | None = None) -> None:
+    ``mode`` : ``exclusive`` (travailleur unique) ou ``shared`` (travailleurs de la voie parallèle).
+    """
+
+    def __init__(self, db_url: str, *, connect: Callable[[str], Any] | None = None, mode: str = EXCLUSIVE) -> None:
         self._db_url = db_url
         self._connect = connect or _default_connect
+        self._try_sql, _, self._unlock_sql = lock_sql(mode)
         self._connection: Any = None
         self._held = False
 
@@ -111,9 +113,9 @@ class SourceTrafficTurns:
             self._connection = self._connect(session_lock_url(self._db_url))
             self._connection.autocommit = True
         if self._held:
-            self._connection.execute(_UNLOCK_SQL, (SOURCE_TRAFFIC_LOCK_NAME,))
+            self._connection.execute(self._unlock_sql, (SOURCE_TRAFFIC_LOCK_NAME,))
             self._held = False
-        row = self._connection.execute(_TRY_LOCK_SQL, (SOURCE_TRAFFIC_LOCK_NAME,)).fetchone()
+        row = self._connection.execute(self._try_sql, (SOURCE_TRAFFIC_LOCK_NAME,)).fetchone()
         self._held = bool(row and row[0])
         return self._held
 

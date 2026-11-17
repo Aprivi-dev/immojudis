@@ -7,7 +7,8 @@ import math
 import re
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +16,7 @@ from typing import Any
 import httpx
 
 from src.config import load_settings
+from src.host_turn import HostTurnWaitExceeded, host_turn
 from src.llm_requests import (
     RESERVATION_KEY,
     LLMRequestTransportAmbiguous,
@@ -36,6 +38,7 @@ LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 VISION_IMAGE_TOKEN_CEILING = 16_384
 _LAST_REPLICATE_REQUEST_AT = 0.0
+REPLICATE_HOST = "api.replicate.com"
 _REPLICATE_REQUEST_LOCK = threading.Lock()
 _REQUEST_METADATA: ContextVar[dict[str, Any] | None] = ContextVar("replicate_request_metadata", default=None)
 _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY: ContextVar[bool] = ContextVar(
@@ -521,72 +524,73 @@ class ReplicateClient:
         for attempt in range(1, attempts + 1):
             ensure_llm_task_deadline("starting Replicate request attempt")
             self._respect_min_interval()
-            ensure_llm_task_deadline("reserving Replicate request")
-            # Une prédiction envoyée sans le temps d'en lire la réponse (« Prefer: wait » plus une marge) est
-            # abandonnée par délai de lecture alors que Replicate la calcule et la facture, puis rejouée au
-            # passage suivant : 216 fois en 30 jours (09/11/2026), dont 167 payées deux fois. On la reporte.
-            # Seulement quand l'échéance borne tout un passage (require_answer_time) : celle d'un appel
-            # unique (lecture des pièces, 90 s) est son budget entier et le refuserait à chaque fois.
-            remaining = llm_task_deadline_remaining()
-            needed = min(float(self.timeout_seconds or 180), float(self.wait_seconds or 60) + 30)
-            if llm_answer_time_required() and remaining is not None and remaining < needed:
-                raise LLMTaskDeadlineExceeded("starting a Replicate prediction too close to the deadline", remaining=remaining)
-            reservation_id = reserve_llm_request(
-                provider="replicate",
-                model=str(self.model),
-                request_kind=request_kind,
-                attempt_number=attempt,
-                max_calls_per_hour=int(settings.get("replicate_max_calls_per_hour") or 0),
-                request_key=_request_key_for_payload(str(self.model), payload),
-            )
-            reservation = None
-            try:
-                # Keep the autonomous run budget in place.  If it rejects this
-                # request, release the hourly reservation because no POST was
-                # sent and therefore no external call was consumed.
-                # UTF-8 bytes bound the prompt's token count conservatively;
-                # leave room for the provider's chat template as well.
-                # The autonomous usage reservation has no release primitive;
-                # if the cutoff lands after it, leave that ledger conservative
-                # while releasing only the request reservation below.
-                ensure_llm_task_deadline("reserving autonomous prediction")
-                model_input = payload.get("input") or {}
-                prompt_text = str(model_input.get("prompt") or "")
-                system_text = str(
-                    model_input.get("system_prompt") or model_input.get("system_instruction") or ""
+            # Left just before the POST (or on any failure before it): the spacing counts from there.
+            with self._start_turn():
+                # Une prédiction envoyée sans le temps d'en lire la réponse (« Prefer: wait » plus une marge) est
+                # abandonnée par délai de lecture alors que Replicate la calcule et la facture, puis rejouée au
+                # passage suivant : 216 fois en 30 jours (09/11/2026), dont 167 payées deux fois. On la reporte.
+                # Seulement quand l'échéance borne tout un passage (require_answer_time) : celle d'un appel
+                # unique (lecture des pièces, 90 s) est son budget entier et le refuserait à chaque fois.
+                remaining = llm_task_deadline_remaining()
+                needed = min(float(self.timeout_seconds or 180), float(self.wait_seconds or 60) + 30)
+                if llm_answer_time_required() and remaining is not None and remaining < needed:
+                    raise LLMTaskDeadlineExceeded("starting a Replicate prediction too close to the deadline", remaining=remaining)
+                reservation_id = reserve_llm_request(
+                    provider="replicate",
+                    model=str(self.model),
+                    request_kind=request_kind,
+                    attempt_number=attempt,
+                    max_calls_per_hour=int(settings.get("replicate_max_calls_per_hour") or 0),
+                    request_key=_request_key_for_payload(str(self.model), payload),
                 )
-                output_cap = int(
-                    model_input.get("max_tokens")
-                    or model_input.get("max_output_tokens")
-                    or model_input.get("max_new_tokens")
-                    or self.max_tokens
-                    or 512
-                )
-                image_inputs = model_input.get("image")
-                image_count = len(image_inputs) if isinstance(image_inputs, list) else 0
-                reservation = reserve_prediction(
-                    str(self.model),
-                    input_token_ceiling=(
-                        len(prompt_text.encode("utf-8"))
-                        + len(system_text.encode("utf-8"))
-                        + 256
-                        + image_count * VISION_IMAGE_TOKEN_CEILING
-                    ),
-                    output_token_ceiling=output_cap,
-                )
-                request_timeout = llm_task_bounded_timeout(
-                    float(self.timeout_seconds or 180),
-                    "sending Replicate prediction",
-                )
-            except Exception as exc:
-                if isinstance(exc, LLMTaskDeadlineExceeded):
-                    release_llm_request(
-                        reservation_id,
-                        reason=f"LLM task deadline reached before Replicate POST: {exc}",
+                reservation = None
+                try:
+                    # Keep the autonomous run budget in place.  If it rejects this
+                    # request, release the hourly reservation because no POST was
+                    # sent and therefore no external call was consumed.
+                    # UTF-8 bytes bound the prompt's token count conservatively;
+                    # leave room for the provider's chat template as well.
+                    # The autonomous usage reservation has no release primitive;
+                    # if the cutoff lands after it, leave that ledger conservative
+                    # while releasing only the request reservation below.
+                    ensure_llm_task_deadline("reserving autonomous prediction")
+                    model_input = payload.get("input") or {}
+                    prompt_text = str(model_input.get("prompt") or "")
+                    system_text = str(
+                        model_input.get("system_prompt") or model_input.get("system_instruction") or ""
                     )
-                else:
-                    release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
-                raise
+                    output_cap = int(
+                        model_input.get("max_tokens")
+                        or model_input.get("max_output_tokens")
+                        or model_input.get("max_new_tokens")
+                        or self.max_tokens
+                        or 512
+                    )
+                    image_inputs = model_input.get("image")
+                    image_count = len(image_inputs) if isinstance(image_inputs, list) else 0
+                    reservation = reserve_prediction(
+                        str(self.model),
+                        input_token_ceiling=(
+                            len(prompt_text.encode("utf-8"))
+                            + len(system_text.encode("utf-8"))
+                            + 256
+                            + image_count * VISION_IMAGE_TOKEN_CEILING
+                        ),
+                        output_token_ceiling=output_cap,
+                    )
+                    request_timeout = llm_task_bounded_timeout(
+                        float(self.timeout_seconds or 180),
+                        "sending Replicate prediction",
+                    )
+                except Exception as exc:
+                    if isinstance(exc, LLMTaskDeadlineExceeded):
+                        release_llm_request(
+                            reservation_id,
+                            reason=f"LLM task deadline reached before Replicate POST: {exc}",
+                        )
+                    else:
+                        release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
+                    raise
             try:
                 response = httpx.post(
                     endpoint,
@@ -698,6 +702,27 @@ class ReplicateClient:
                 now = time.monotonic()
                 ensure_llm_task_deadline("starting Replicate request after cadence")
             _LAST_REPLICATE_REQUEST_AT = now
+
+    @contextmanager
+    def _start_turn(self) -> Iterator[None]:
+        """Parallel lane: the starts of every process are spaced too (src.host_turn, the same rule as the sites).
+
+        Taken before the reservations (a turn that does not come wastes none of them) and left just before the POST:
+        the next process cannot send its own before ``min_interval`` after ours. Never held during the answer.
+        """
+        min_interval = float(self.min_interval_seconds or 0)
+        if min_interval <= 0:
+            yield
+            return
+        turn = host_turn(REPLICATE_HOST, delay_seconds=min_interval, deadline_remaining=llm_task_deadline_remaining)
+        try:
+            turn.__enter__()
+        except HostTurnWaitExceeded as exc:
+            raise LLMTaskDeadlineExceeded("waiting for the Replicate start turn of the other workers") from exc
+        try:
+            yield
+        finally:
+            turn.__exit__(None, None, None)
 
     def _mark_request_finished(self) -> None:
         # The limiter spaces prediction starts, not completions. With Replicate's

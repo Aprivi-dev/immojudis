@@ -28,6 +28,17 @@ checks then stop the writer with ``CatalogueLockLost``:
 In the document backlog, a pass it runs can still write its checkpoint or its
 sale after a heartbeat failure that happens during that pass; the drain stops
 right after. Likewise, a batch the queue worker already claimed runs to its end.
+
+Modes (17/11/2026, parallel enrichment lane): the lock is ``exclusive`` by
+default. The queue workers of the lane take it ``shared``
+(``PIPELINE_WORKER_LOCK_MODE``, ``src.enrichment_lane_settings``), so that
+several of them write side by side (each sale write is still serialised by the
+publication transaction lock and its version guard), while every other writer
+(collections, recompute, document backlog, anonymisation, positions...) keeps
+it exclusive and waits for all of them. A waiting request is queued by
+PostgreSQL (``pg_advisory_lock`` bounded by ``lock_timeout``), and a new shared
+request conflicts with a queued exclusive one: the workers can never starve a
+collection.
 """
 
 from __future__ import annotations
@@ -57,8 +68,61 @@ TRANSACTION_POOLER_PORT = "6543"
 #: Exit code of a writer that stopped because its lock was lost (any non-zero code fails the job).
 LOCK_LOST_EXIT_CODE = 1
 
-_TRY_LOCK_SQL = "select pg_try_advisory_lock(hashtextextended(%s, 0))"
-_UNLOCK_SQL = "select pg_advisory_unlock(hashtextextended(%s, 0))"
+EXCLUSIVE = "exclusive"
+SHARED = "shared"
+#: (first non-blocking attempt, queued wait, release) per mode.
+_LOCK_SQL = {
+    EXCLUSIVE: (
+        "select pg_try_advisory_lock(hashtextextended(%s, 0))",
+        "select pg_advisory_lock(hashtextextended(%s, 0))",
+        "select pg_advisory_unlock(hashtextextended(%s, 0))",
+    ),
+    SHARED: (
+        "select pg_try_advisory_lock_shared(hashtextextended(%s, 0))",
+        "select pg_advisory_lock_shared(hashtextextended(%s, 0))",
+        "select pg_advisory_unlock_shared(hashtextextended(%s, 0))",
+    ),
+}
+_TRY_LOCK_SQL, _WAIT_LOCK_SQL, _UNLOCK_SQL = _LOCK_SQL[EXCLUSIVE]
+LOCK_NOT_AVAILABLE_SQLSTATE = "55P03"
+#: SQLSTATE of a cancelled statement (``statement_timeout``, ``pg_cancel_backend``).
+QUERY_CANCELED_SQLSTATE = "57014"
+
+
+def lock_sql(mode: str) -> tuple[str, str, str]:
+    """The statements of an advisory lock in ``mode`` (``exclusive`` or ``shared``), shared with ``src.source_traffic``."""
+    if mode not in _LOCK_SQL:
+        raise ValueError(f"Unknown lock mode: {mode!r}")
+    return _LOCK_SQL[mode]
+
+
+def queued_wait(connection: Any, sql: str, key: str, seconds: float) -> bool:
+    """Wait in PostgreSQL's queue for ``seconds`` at most (``lock_timeout``); False when the lock did not come.
+
+    While it waits, the request is queued: a later request that conflicts with it (a shared request behind an
+    exclusive one) queues behind it instead of passing it.
+
+    The only blocking wait for a session advisory lock in the pipeline (``catalogue_writer_lock``,
+    ``src.source_traffic``). The session's ``statement_timeout`` (2 min, ``supabase_client.connect``) must not cut
+    it: on 17/11/2026 it cancelled the source turn wait of an enrichment unit behind a 13-minute collection (57014),
+    and the unit died. It is lifted for this one statement, whose wait stays bounded by ``lock_timeout``, then put
+    back to its previous value: the heartbeat and the unlock keep it. A wait cut all the same (57014) is a turn that
+    did not come, like 55P03.
+    """
+    row = connection.execute("select current_setting('statement_timeout')").fetchone()
+    statement_timeout = str(row[0]) if row else "0"
+    connection.execute("set statement_timeout = 0")
+    connection.execute(f"set lock_timeout = '{max(1, int(seconds * 1000))}ms'")
+    try:
+        connection.execute(sql, (key,))
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) not in {LOCK_NOT_AVAILABLE_SQLSTATE, QUERY_CANCELED_SQLSTATE}:
+            raise
+        return False
+    finally:
+        connection.execute("set lock_timeout = 0")
+        connection.execute("select set_config('statement_timeout', %s, false)", (statement_timeout,))
+    return True
 
 
 class CatalogueLockTimeout(RuntimeError):
@@ -154,13 +218,16 @@ def catalogue_writer_lock(
     poll_seconds: float = LOCK_POLL_SECONDS,
     heartbeat_seconds: float = LOCK_HEARTBEAT_SECONDS,
     connect: Callable[[str], Any] | None = None,
-    sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    mode: str = EXCLUSIVE,
 ) -> Iterator[CatalogueLockHandle]:
     """Hold the catalogue writer lock for the duration of the ``with`` block.
 
+    ``mode``: ``exclusive`` (default, every writer but the lane's queue workers) or
+    ``shared`` (queue workers of the parallel lane, ``src.queued_runner``).
     Waits up to ``wait_seconds`` (``PIPELINE_LOCK_WAIT_SECONDS``, 55 minutes by
-    default) for another job to finish, polling every ``poll_seconds``. Without
+    default) for another job to finish, queued in PostgreSQL, and says so every
+    ``poll_seconds``. Without
     a database URL the lock cannot be taken: that is an error in GitHub Actions
     and whenever Supabase is configured (the catalogue has no write path
     without the direct connection), and a logged no-op otherwise (local
@@ -183,16 +250,16 @@ def catalogue_writer_lock(
         def connect(target: str) -> Any:
             return connect_postgres(target)
 
+    try_sql, wait_sql, unlock_sql = lock_sql(mode)
     wait = _lock_wait_seconds() if wait_seconds is None else float(wait_seconds)
     connection = connect(session_lock_url(url))
     connection.autocommit = True
     deadline = clock() + wait
     waited = False
     try:
-        while True:
-            row = connection.execute(_TRY_LOCK_SQL, (CATALOGUE_WRITER_LOCK_NAME,)).fetchone()
-            if row and row[0]:
-                break
+        row = connection.execute(try_sql, (CATALOGUE_WRITER_LOCK_NAME,)).fetchone()
+        acquired = bool(row and row[0])
+        while not acquired:
             if clock() >= deadline:
                 raise CatalogueLockTimeout(
                     f"Another job has been writing the catalogue for more than {wait:g} s; "
@@ -201,9 +268,11 @@ def catalogue_writer_lock(
             if not waited:
                 print(f"Catalogue is being written by another job; {label} waits for the lock.", flush=True)
                 waited = True
-            sleep(min(poll_seconds, max(0.0, deadline - clock())))
+            acquired = queued_wait(
+                connection, wait_sql, CATALOGUE_WRITER_LOCK_NAME, min(poll_seconds, max(0.001, deadline - clock()))
+            )
         if waited:
-            print(f"Catalogue writer lock acquired by {label}.", flush=True)
+            print(f"Catalogue writer lock acquired by {label} ({mode}).", flush=True)
 
         handle = CatalogueLockHandle(label)
         stop = threading.Event()
@@ -226,7 +295,7 @@ def catalogue_writer_lock(
             if beat.is_alive():
                 beat.join(timeout=5)
             try:
-                connection.execute(_UNLOCK_SQL, (CATALOGUE_WRITER_LOCK_NAME,))
+                connection.execute(unlock_sql, (CATALOGUE_WRITER_LOCK_NAME,))
             except Exception:
                 # Closing the session releases the lock anyway.
                 LOGGER.warning("Could not unlock the catalogue writer lock explicitly", exc_info=True)

@@ -28,16 +28,20 @@ COLLECTION_PENDING_STOP_REASON = "collection_pending"
 QUEUES_EMPTY_STOP_REASON = "queues_empty"
 
 
-def finish_worker_pass(stop_reason: str, yielded: bool, handled: int, handled_by_family: dict[str, int]) -> str:
+def finish_worker_pass(stop_reason: str, yielded: bool, handled: int, handled_by_family: dict[str, int],
+                       details: dict[str, object] | None = None) -> str:
     """Raison d'arrêt finale d'un passage du travailleur, rendue au lanceur dans ``ENRICHMENT_WORKER_REPORT_ENV``.
 
     ``yielded`` : le passage a cédé la place à une collecte. Sans la variable (lancement manuel, tests), rien n'est
-    écrit ; une écriture impossible est seulement notée, l'unité s'arrête alors après ce passage.
+    écrit ; une écriture impossible est seulement notée, l'unité s'arrête alors après ce passage. ``details`` :
+    mesures du passage (famille, secondes, prises par type de tâche, OCR, attentes de tour par hôte, reports pour
+    ``lock_timeout``), recopiées telles quelles dans le compte rendu.
     """
     reason = COLLECTION_PENDING_STOP_REASON if yielded else stop_reason
     path = (os.getenv(ENRICHMENT_WORKER_REPORT_ENV) or "").strip()
     if path:
-        report = {"stop_reason": reason, "handled": handled, "handled_by_family": dict(handled_by_family)}
+        report = {**(details or {}), "stop_reason": reason, "handled": handled,
+                  "handled_by_family": dict(handled_by_family)}
         try:
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(report, handle)
