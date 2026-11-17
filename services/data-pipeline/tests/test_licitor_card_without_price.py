@@ -23,9 +23,9 @@ from src.catalogue_proof import CatalogueEvidence, public_page_proof
 from src.normalize import normalize_sale
 from src.sources import licitor
 from src.sources.licitor import parse_licitor_list_html, parse_licitor_list_sales
+from tests.source_captures import require_source_captures
 
 FIXTURE = Path(__file__).parent / "fixtures" / "licitor_liste_carte_sans_mise_a_prix.html"
-CAPTURE = Path(__file__).resolve().parents[3] / "docs/audits/sources-2026-10-02/primary/licitor-list.html"
 LIST_URL = "https://www.licitor.com/ventes-aux-encheres-immobilieres/sud-est-mediterrannee/prochaines-ventes.html"
 AD = "https://www.licitor.com/annonce/90/00/{}/vente-aux-encheres/{}/isere/9000{}.html"
 PRICED_NEIGHBOUR = AD.format("01", "un-appartement/exempleville", "01")
@@ -311,7 +311,7 @@ _PAGINATED = (
 
 def _existing_layouts() -> dict[str, str]:
     return {
-        "capture_2026_10_02": CAPTURE.read_text(encoding="utf-8"),
+        "capture_2026_10_02": (require_source_captures() / "primary/licitor-list.html").read_text(encoding="utf-8"),
         "result_card": _RESULT_CARD,
         "lots_sharing_one_url": _LOTS_SHARING_ONE_URL,
         "price_beside_the_link": _PRICE_BESIDE_THE_LINK,
