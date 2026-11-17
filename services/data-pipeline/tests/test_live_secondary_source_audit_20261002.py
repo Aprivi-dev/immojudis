@@ -16,7 +16,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -45,9 +44,9 @@ from src.sources.vench import (
 from src.sources.vench import (
     parse_vench_list_html,
 )
+from tests.source_captures import require_source_captures
 
-ROOT = Path(__file__).resolve().parents[3]
-AUDIT = ROOT / "docs/audits/sources-2026-10-02/secondary"
+AUDIT = require_source_captures() / "secondary"
 CAPTURES = AUDIT / "responses"
 MANIFEST = json.loads((AUDIT / "manifest.json").read_text())
 MANIFEST_BY_ID = {str(item["id"]): item for item in MANIFEST}
