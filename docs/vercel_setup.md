@@ -76,7 +76,10 @@ Le pipeline ne peut ensuite démarrer que par **déclenchement manuel** : si
 l'identifiant du run. Il n'existe aucun fallback planifié. Si le dispatch
 échoue, la ligne reste `queued` jusqu'à une nouvelle action manuelle.
 
-Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase :
+Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans Supabase. Ils se créent dans
+l'**environnement `Production`** du dépôt (Settings → Environments → Production), restreint à la branche `main`,
+jamais au niveau du dépôt : un secret de dépôt serait lisible par un workflow lancé depuis n'importe quelle
+branche. Les workflows qui les lisent déclarent `environment: Production`.
 
 | Secret GitHub Actions       | Requis | Description                                                                                                                    |
 | --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
