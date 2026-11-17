@@ -17,6 +17,14 @@ Seuil d'âge de file (`maximum_queued_age_seconds`, migration `20261201100000`) 
 Jusqu'au 16/11/2026 le seuil était de 1 800 s, égal à la cadence : une file de 1 802 s ouvrait l'alerte sans
 incident. Un passage manqué ne suffit plus à alerter, deux oui.
 
+**Deux voies depuis le 17/11/2026** (migration `20261203100000`) : les collectes et la file d'enrichissement ont
+chacune au plus une exécution active. Une exécution `running` de chaque voie en même temps est l'état normal, pas un
+blocage. Une unité de la file reste `running` jusqu'à 105 minutes (bail de 7 200 s, `running_lease_seconds` dans son
+résumé ; les collectes gardent 3 600 s) : bien sous le seuil `stuck_running` de 3 h, qui n'a pas changé. Une collecte
+peut rester `queued` jusqu'à 25 minutes de plus qu'avant : avant de démarrer, elle attend que le travailleur de la
+file finisse le lot qu'il tient (`summary->'catalogue_prewait'`) ; une exécution en file dure donc au plus
+démarrage (~5 min) + 25 min, sous le seuil de 5 400 s, qui n'a pas changé non plus.
+
 ## Diagnostic
 
 1. Lire l'alerte :
@@ -42,7 +50,10 @@ order by started_at desc limit 5;` (une alerte `cron.stale` ouverte pour cette t
 
 ## Décision
 
-- **File qui attend** (`oldest_queued_age_seconds`) : le workflow n'est plus déclenché ou ne démarre pas.
+- **File qui attend** (`oldest_queued_age_seconds`) : le workflow n'est plus déclenché ou ne démarre pas. Une
+  collecte `queued` dont le run GitHub tourne et affiche « Catalogue is being written by another job » attend le
+  verrou du catalogue (25 min au plus) : un travail manuel qui écrit le catalogue (recalcul, vidage des pièces) le
+  tient, ou le travailleur de la file n'a pas cédé (voir `pipeline-enrichment-stalled.md`, « Voie séparée »).
   `operational-health` en retard : voir [`operational-health-arret`](operational-health-arret.md). Workflow
   déclenché mais en attente de runner, ou refusé : vérifier GitHub Actions (quota, panne). Ne pas créer de
   seconde exécution à la main tant que la première est en file.

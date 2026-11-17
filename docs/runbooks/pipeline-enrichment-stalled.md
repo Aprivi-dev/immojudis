@@ -207,6 +207,72 @@ select j.job_type,
  group by 1, 2;
 ```
 
+### Voie séparée des collectes (17/11/2026)
+
+Décision du propriétaire, étape 1 : la file tourne en continu, séparée des collectes (migration `20261203100000`,
+`services/data-pipeline/src/collection_priority.py`, `src/autonomous_runner.py`).
+
+- **Qui lance quoi.** À chaque passage d'`operational-health` (30 min), le site appelle
+  `claim_autonomous_pipeline_run()` une fois par voie : une collecte due, puis la file. Chaque voie a au plus une
+  exécution active. La file part dans son propre groupe de concurrence GitHub (`immojudis-enrichment-queue`,
+  entrée `enrichment_only`), les collectes restent dans `immojudis-data-pipeline`.
+- **Unité de la file.** Elle enchaîne des passages comme avant (travailleur : 180 tâches et 1 200 s au plus, puis
+  vidage des pièces, lecture, positions, photos, historique Licitor) jusqu'à son bail (`running_lease_seconds`,
+  7 200 s, écrit par le planificateur) moins 15 minutes, soit 105 minutes ; elle s'arrête plus tôt quand la file
+  est vide ou que le travailleur échoue. Elle part au passage d'`operational-health` qui suit sa fin.
+- **Jamais en même temps qu'une collecte.** Dès qu'une collecte est demandée (lancement en vol ou accepté, ou
+  exécution manuelle en file) ou en cours, le travailleur ne prend plus de lot et se termine, ce qui rend le
+  verrou des écritures du catalogue ; l'unité attend la fin de la collecte (`collection_wait_seconds`) et saute ses
+  passes facultatives (`passes_skipped`). La collecte, avant d'être prise et avant que son budget ne coure,
+  attend ce verrou 25 minutes au plus (`catalogue_prewait` dans son résumé) : le lot en cours se termine. Le
+  travailleur n'écrit le catalogue que sous ce verrou (test
+  `test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock`).
+- **Retour arrière sans commit.** Variable de dépôt GitHub `ENRICHMENT_LANE=off` : chaque unité de la file ne
+  fait plus qu'un passage (environ 30 minutes), toujours dans son groupe. Retour complet : réappliquer l'ancien
+  corps de `claim_autonomous_pipeline_run` (voir l'en-tête de la migration).
+
+Une unité `running` de la file à côté d'une collecte `running` est l'état normal. Le cas (a) ci-dessus (bail d'une
+tâche) et l'observation `enrichment-queue` ne dépendent pas du nombre d'unités : rien n'y change.
+
+**Mesure** (à lire deux jours après la mise en production ; les lignes `auction_runs` de la file portent
+`summary->'enrichment_unit'` et `summary->'enrichment_jobs_by_type'` depuis ce lot) :
+
+```sql
+-- Durée de travail de la file par jour, attente des collectes déduite.
+select date_trunc('day', started_at) as jour,
+       count(*) as unites,
+       count(*) filter (where summary #>> '{enrichment_unit,mode}' = 'lane') as unites_voie_separee,
+       round(sum(extract(epoch from finished_at - started_at)) / 3600, 1) as heures_unites,
+       round(sum(coalesce((summary #>> '{enrichment_unit,collection_wait_seconds}')::numeric, 0)) / 3600, 1)
+         as heures_attente_collectes,
+       jsonb_agg(summary #>> '{enrichment_unit,stop_reason}') as raisons_arret
+  from public.auction_runs
+ where source = 'enrichment-queue' and started_at >= now() - interval '3 days' and finished_at is not null
+ group by 1 order by 1;
+
+-- Tâches traitées par type et par jour (statut final atteint pendant les unités).
+select date_trunc('day', r.started_at) as jour, t.key as type_tache,
+       sum(coalesce((t.value->>'completed')::integer, 0)) as terminees,
+       sum(coalesce((t.value->>'failed')::integer, 0)) as en_echec
+  from public.auction_runs r
+  cross join lateral jsonb_each(coalesce(r.summary->'enrichment_jobs_by_type', '{}'::jsonb)) t
+ where r.source = 'enrichment-queue' and r.started_at >= now() - interval '3 days'
+ group by 1, 2 order by 1, 2;
+
+-- Taille de la file (prenables ou non), par type et par site.
+select job_type, detail_source_name, status, count(*)
+  from public.auction_enrichment_jobs
+ where status in ('queued', 'running', 'failed') and attempt_count < max_attempts
+ group by 1, 2, 3 order by 1, 2, 3;
+
+-- Attente des collectes avant démarrage (doit rester de quelques secondes à quelques minutes).
+select source, count(*), max((summary #>> '{catalogue_prewait,seconds}')::numeric) as attente_max_s,
+       count(*) filter (where summary #>> '{catalogue_prewait,timed_out}' = 'true') as attentes_depassees
+  from public.auction_runs
+ where source <> 'enrichment-queue' and scheduler_owned and started_at >= now() - interval '3 days'
+ group by 1 order by 1;
+```
+
 ## `exhausted`
 
 Une tâche `failed` dont `attempt_count >= max_attempts` n'est plus jamais prise (lettre morte). L'alerte s'ouvre
