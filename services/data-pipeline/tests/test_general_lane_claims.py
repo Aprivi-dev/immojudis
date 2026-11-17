@@ -84,3 +84,76 @@ def test_the_worker_routes_its_general_claims_through_the_lane(monkeypatch) -> N
         lane.end_worker_general_claims(token)
 
     assert families == ["enrichment"] * 3 + ["enrichment_oldest", "source_detail"]
+
+
+def _pdf_claim(*, refuse: str | None = None):
+    families: list[str] = []
+
+    def claim(*, family: str, limit: int) -> list[dict[str, object]]:
+        families.append(family)
+        if refuse is not None:
+            request = httpx.Request("POST", "https://supabase.test/rest/v1/rpc/claim_auction_enrichment_jobs_request")
+            response = httpx.Response(400, json={"code": refuse, "message": "refused"}, request=request)
+            raise httpx.HTTPStatusError("refused", request=request, response=response)
+        return [{"id": "pdf-1", "job_type": "pdf"}]
+
+    return claim, families
+
+
+def test_document_readings_only_claim_the_enrichment_pdf_family() -> None:
+    # 17/11/2026: the AI budget refuses the fact passes, the document readings (no AI) go on.
+    claim, families = _pdf_claim()
+    token = lane.start_worker_general_claims()
+    try:
+        assert lane.claim_pdf_jobs(claim, limit=1) == [{"id": "pdf-1", "job_type": "pdf"}]
+        assert lane.pdf_family_available()
+        # The document readings never count towards the oldest-first share of the general claims.
+        assert [lane.claim_general_jobs(claim, limit=1) for _ in range(3)]
+    finally:
+        lane.end_worker_general_claims(token)
+    assert families == ["enrichment_pdf"] + ["enrichment"] * 3
+
+
+def test_a_database_without_the_pdf_family_is_asked_once_per_run() -> None:
+    claim, families = _pdf_claim(refuse="22023")
+    token = lane.start_worker_general_claims()
+    try:
+        assert lane.claim_pdf_jobs(claim, limit=1) == []
+        assert not lane.pdf_family_available()
+        assert lane.claim_pdf_jobs(claim, limit=1) == []
+    finally:
+        lane.end_worker_general_claims(token)
+    assert families == ["enrichment_pdf"]
+    assert lane.pdf_family_available()  # outside a worker run
+
+
+def test_another_pdf_claim_error_is_not_mistaken_for_a_missing_family() -> None:
+    claim, _families = _pdf_claim(refuse="42501")
+    token = lane.start_worker_general_claims()
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            lane.claim_pdf_jobs(claim, limit=1)
+        assert lane.pdf_family_available()
+    finally:
+        lane.end_worker_general_claims(token)
+
+
+def test_the_worker_routes_its_document_reading_claims_through_the_lane(monkeypatch) -> None:
+    from src import queued_runner
+    from src.storage import supabase_client
+
+    families: list[str] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_family_from_supabase",
+        lambda *, family, limit: families.append(family) or [],
+    )
+    token = lane.start_worker_general_claims()
+    try:
+        queued_runner._claim_enrichment_queue_jobs(limit=1, family="enrichment", pdf_only=True)
+        with pytest.raises(ValueError):
+            queued_runner._claim_enrichment_queue_jobs(limit=1, family="source_detail", pdf_only=True)
+    finally:
+        lane.end_worker_general_claims(token)
+    assert families == ["enrichment_pdf"]
+    assert "enrichment_pdf" in supabase_client.ENRICHMENT_QUEUE_FAMILIES

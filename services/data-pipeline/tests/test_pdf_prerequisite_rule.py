@@ -1,7 +1,7 @@
 """« Description et faits attendent la lecture des pièces de leur vente » : trois copies, comparées ici.
 
 1. La revendication (``claim_auction_enrichment_jobs_family``, garde posée par 20261111050000, redéfinition complète
-   dans 20261201100000) ne prend pas la tâche.
+   dans 20261201100000 puis dans 20261205100000) ne prend pas la tâche.
 2. L'observateur de la file (``waits_for_pdf`` de sa dernière définition, 20261201100000) ne la compte pas comme
    immobile.
 3. Le worker (``storage.supabase_client.has_eligible_pdf_job_for_sale``) reporte une passe de faits.
@@ -21,8 +21,9 @@ from src.storage import supabase_client
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 # La dernière définition complète de la revendication (20261111050000 à 20261111070000 la retouchaient sur place ; le
-# SQL assemblé est interdit depuis le lot R2b, d'où la redéfinition complète).
-CLAIM_MIGRATION = "20261201100000_operational_alerts_recalibration.sql"
+# SQL assemblé est interdit depuis le lot R2b, d'où la redéfinition complète). 20261205100000 ajoute la famille
+# enrichment_pdf et garde la règle.
+CLAIM_MIGRATION = "20261205100000_enrichment_pdf_claim_family.sql"
 # La dernière définition de observe_autonomous_pipeline (elle remplace celle de 20261119101000).
 OBSERVER_MIGRATION = "20261201100000_operational_alerts_recalibration.sql"
 CLAIM_FUNCTION = "claim_auction_enrichment_jobs_family"

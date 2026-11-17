@@ -19,7 +19,7 @@ Depuis `20261201100000`, l'alerte signale un **blocage** de la file d'enrichisse
   fenêtre (premier jour après la migration, observateur arrêté plus de 24 h), (b) n'ouvre rien non plus.
 - **(c) tâche oubliée** : une tâche prenable n'est pas servie depuis plus de **7 jours** (`unserved_7d`, toutes
   familles, budget atteint ou non, sans tendance). La famille `enrichment_oldest` sert les plus anciennes une
-  prise générale sur quatre, chaque jour avant le premier refus du budget IA : ce cas ne doit plus arriver. S'il
+  prise générale sur quatre, hors des pauses dues au budget IA : ce cas ne doit plus arriver. S'il
   arrive, la voie `enrichment_oldest` ne tourne pas (journal du travailleur, « Équité de la file » plus bas) ou le
   budget IA est nul depuis une semaine.
 
@@ -37,8 +37,17 @@ sans tendance), `claimable_due`, `excluded_due`, `backlog`.
 
 Le budget IA du jour (`LLM_DAILY_BUDGET_EUR` côté collecte, `daily_ai_budget_usd` côté contrôle du pilote) fait
 reporter les tâches qui utilisent l'IA : le travailleur les remet en file avec l'erreur « Daily … budget
-exhausted », rend la tentative et fixe la prochaine à minuit UTC (`defer_budget_jobs`). Après le premier refus du
-jour, il ne prend plus que des tâches `source_detail` (`_run_enrichment_queue_worker`). Quand une tâche a été
+exhausted », rend la tentative et fixe la prochaine à minuit UTC (`defer_budget_jobs`). Le plafond horaire d'appels
+(« Hourly LLM request budget exhausted », 60 appels sur les 60 dernières minutes, `reserve_llm_request`) et celui de
+l'exécution (90 par 30 min) font de même, prochaine tentative 30 min plus tard. Seules les passes de faits
+(`fact_extraction`) appellent l'IA ; la lecture des pièces (`pdf` : téléchargement, OCR local) jamais. Depuis
+`20261205100000`, après un refus, les prises générales du travailleur ne sont plus que des lectures de pièces
+(famille `enrichment_pdf`) pendant 5 minutes, puis une passe de faits est réessayée
+(`GeneralClaimPlan` et `FACT_PASSES_RETRY_AFTER_BUDGET_SECONDS`, `src/enrichment_claim_schedule.py`) : une réservation refusée par processus toutes les
+5 minutes au plus, aucune tentative perdue. Quand il ne reste rien d'autre que ces passes de faits, le passage
+s'arrête avec `llm_budget_exhausted` (voir « Voie parallèle » plus bas). Avant `20261205100000` (et sur une base sans
+la migration, qui refuse la famille en 22023), après le premier refus le travailleur ne prenait plus que des tâches
+`source_detail`. Quand une tâche a été
 reportée dans les 24 h (`budget_limited`), le cas (b) ne compte donc que les tâches `source_detail` ; les cas (a)
 et (c) comptent toujours. La mesure reste visible dans `auction_pipeline_observations` (`source_name = 'enrichment-queue'`,
 `budget_deferred_24h`).
@@ -165,7 +174,8 @@ Tant qu'elle reste en `running`, la description et les faits de sa vente l'atten
 Le travailleur alterne deux voies, réparties côté Python (`_enrichment_family_cycle` dans
 `services/data-pipeline/src/queued_runner.py`) : `source_detail` (collecte des fiches) et `enrichment` (pièces,
 faits, descriptions). Trois tâches `source_detail` pour une générale, ou une sur deux quand la file générale est
-plus longue ; après le premier refus du budget IA, plus aucune générale jusqu'à la fin du passage. Une
+plus longue ; après un refus du budget IA, ses prises générales ne sont plus que des lectures de pièces
+(`enrichment_pdf`) pendant 5 minutes (« Report voulu par le budget IA » plus haut). Une
 description et une tâche `source_detail` ne sont donc jamais classées l'une contre l'autre par la base.
 
 Dans la voie générale, la famille `enrichment` classe par score : `priority` + âge en heures + 24 si `pdf` + 168 si
@@ -305,8 +315,10 @@ relectures de fiches (`source_detail`) et N processus ne prennent que la famille
 `python -m src.queued_runner --enrichment-only --family source_detail|enrichment`). L'unité attend la fin de
 tous les processus, puis fait ses passes facultatives comme avant ; l'échec d'un processus n'arrête pas les autres
 (il arrête l'unité après le passage, comme l'échec du travailleur unique). Le cycle n'est « à vide »
-(`queues_empty`, fin de l'unité) que si **tous** les processus le sont : un processus de fiches à vide en quelques
-secondes attend le cycle suivant. Les sorties sont préfixées `[famille#n]` ; si l'unité s'arrête (exception, job
+(fin de l'unité) que si **tous** les processus le sont : un processus de fiches à vide en quelques
+secondes attend le cycle suivant. Raison d'arrêt du cycle à vide : `llm_budget_exhausted` si un processus général n'a
+plus trouvé que des passes de faits refusées par le budget IA, `queues_empty` seulement sinon. Les sorties sont
+préfixées `[famille#n]` ; si l'unité s'arrête (exception, job
 annulé), les processus encore en vie sont terminés. Une tâche n'est reprise par un autre processus qu'après 30 min
 sans nouvelle (`locked_at`) : un processus de la voie est tué 25 min au plus après le début de son passage, et
 chaque processus télécharge dans son propre fichier temporaire.
@@ -354,6 +366,33 @@ chaque processus télécharge dans son propre fichier temporaire.
   l'essai est consommé, pour qu'une tâche ne revienne pas sans fin.
 - **Plafond IA** : tous les processus portent le `AUTONOMOUS_RUN_ID` de l'unité ; `max_ai_predictions_per_run`
   (90 par 30 min) reste celui de l'unité entière, le budget quotidien et le plafond horaire ne changent pas.
+- **Budget IA atteint : les pièces continuent** (migration `20261205100000`, famille `enrichment_pdf`). Incident de
+  la première unité (17/11, 15:30-15:54 UTC) : chaque processus général s'arrêtait au premier refus du plafond
+  horaire (`llm_budget_exhausted`), l'unité prenait cet arrêt pour une file vide et se terminait en `queues_empty`
+  au bout de 24 min, avec 189 lectures de pièces et 175 passes de faits échues en file (3 pièces terminées en deux
+  heures). Désormais, après un refus, un processus général ne prend plus que des lectures de pièces pendant 5 min,
+  puis réessaie une passe de faits ; il ne s'arrête en `llm_budget_exhausted` que lorsqu'aucune pièce n'est prenable.
+  L'unité continue tant qu'un processus a travaillé jusqu'à son budget, et ne se termine en `llm_budget_exhausted`
+  que si tous les processus sont à vide et qu'il reste des faits bloqués par le budget. Chaque processus compte ses
+  refus (`llm_budget_refusals` du compte rendu).
+- **Un processus « pièces d'abord »** : avec N ≥ 2, le premier processus général (`--pdf-first`) demande d'abord
+  les lectures de pièces (`enrichment_pdf`), puis la famille générale quand il n'en reste aucune ; les autres gardent
+  l'ordre par score (+24 pour une pièce) et la part `enrichment_oldest`. Les faits d'une vente attendent de toute
+  façon sa lecture de pièces, et sont bornés par le plafond horaire (60 appels par heure, un document peut en
+  demander plus de 100) : un processus suffit à les servir. Avec N = 1, le processus garde l'ordre par score, sans
+  quoi les faits attendraient la fin de tout l'arriéré de pièces pendant que le budget IA reste inutilisé.
+  `pdf_first` est dans le compte rendu de chaque processus.
+- **Base sans `20261205100000`** : elle refuse la famille (22023) ; le travailleur le note (« The database refused the
+  enrichment_pdf queue family ») et garde, jusqu'à la fin de son passage, la règle d'avant (plus aucune prise
+  générale après le premier refus du budget IA, prise générale ordinaire pour le processus « pièces d'abord »).
+  L'unité s'arrête alors en `llm_budget_exhausted`, pièces en attente ou non : appliquer la migration.
+- **Écart de 11 s entre deux démarrages Replicate : inchangé.** Il vient de la limite que Replicate peut appliquer
+  à un compte (6 créations de prédiction par minute, rafale de 1 : `src/config.py`, `replicate_min_interval_seconds`).
+  Rien dans le dépôt n'établit que le compte en est sorti ; sous cette limite, un écart plus court ferait des 429.
+  Sous le plafond horaire, il ne freine pas : 60 appels espacés de 11 s prennent 11 min, et le plafond est atteint
+  bien avant la fin de l'heure. Les ~70 s d'attente par processus et par cycle relevés le 17/11 viennent des faits
+  pris par les deux processus à la fois ; avec la reprise des pièces, ils ne coûtent plus que ces secondes, pas le
+  passage.
 - **Calcul** : `OMP_NUM_THREADS` (et BLAS) = 4 / (N + 1), Tesseract à un fil (`OMP_THREAD_LIMIT=1`) : N OCR à la
   fois sur 4 vCPU, sans surcharge (Docling coupé : aucun modèle chargé N fois). Délais d'OCR inchangés (60 s par
   page pour ~1 s mesurée).
@@ -369,7 +408,8 @@ chaque processus télécharge dans son propre fichier temporaire.
 
 ```sql
 -- Tâches prises par type et par processus, secondes d'OCR, attentes de tour par hôte, reports pour lock_timeout.
-select date_trunc('day', r.started_at) as jour, w->>'family' as famille, count(*) as passages,
+select date_trunc('day', r.started_at) as jour, w->>'family' as famille,
+       coalesce((w->>'pdf_first')::boolean, false) as pieces_d_abord, count(*) as passages,
        sum(coalesce((w->>'handled')::integer, 0)) as traitees,
        sum(coalesce((w->'claimed_by_job_type'->>'pdf')::integer, 0)) as pdf_prises,
        sum(coalesce((w->'claimed_by_job_type'->>'fact_extraction')::integer, 0)) as faits_pris,
@@ -378,12 +418,14 @@ select date_trunc('day', r.started_at) as jour, w->>'family' as famille, count(*
        round(sum(coalesce((w->'host_turns'->>'wait_seconds')::numeric, 0))) as attente_tours_s,
        sum(coalesce((w->'host_turns'->>'timeouts')::integer, 0)) as tours_depasses,
        sum(coalesce((w->>'publication_lock_deferrals')::integer, 0)) as reports_lock_timeout,
+       sum(coalesce((w->>'llm_budget_refusals')::integer, 0)) as refus_budget_ia,
+       count(*) filter (where w->>'stop_reason' = 'llm_budget_exhausted') as arrets_budget_ia,
        count(*) filter (where (w->>'exit_code')::integer <> 0) as processus_en_echec
   from public.auction_runs r
   cross join lateral jsonb_array_elements(coalesce(r.summary #> '{enrichment_unit,cycles}', '[]'::jsonb)) c
   cross join lateral jsonb_array_elements(coalesce(c->'workers', '[]'::jsonb)) w
  where r.source = 'enrichment-queue' and r.started_at >= now() - interval '3 days'
- group by 1, 2 order by 1, 2;
+ group by 1, 2, 3 order by 1, 2, 3;
 
 -- Pièces lues par jour (tâches pdf terminées) et fiches en attente.
 select date_trunc('day', completed_at) as jour, count(*) as pieces_lues
@@ -412,7 +454,9 @@ select run_id, date_trunc('hour', created_at) + interval '30 min' * floor(extrac
 **Critères de réussite**, deux jours après la mise en production : pièces lues ≥ 130 par jour ; fiches en attente
 < 100 ; aucun report `lock_timeout` non repris (troisième requête vide) ; attente des collectes avant démarrage
 inchangée (dernière requête de la section précédente) ; appels IA sous leurs plafonds (aucune tranche à 90, aucun
-« Daily AI budget exhausted » avant l'heure habituelle). Sinon : `PIPELINE_ENRICHMENT_GENERAL_WORKERS=1`, ou `0`.
+« Daily AI budget exhausted » avant l'heure habituelle) ; aucune unité terminée en `queues_empty` ou en
+`llm_budget_exhausted` alors que des lectures de pièces prenables attendaient (comparer `raisons_arret` de la
+première requête de la section précédente avec la taille de la file `pdf`). Sinon : `PIPELINE_ENRICHMENT_GENERAL_WORKERS=1`, ou `0`.
 
 ## `exhausted`
 

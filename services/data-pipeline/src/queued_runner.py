@@ -32,6 +32,7 @@ from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, creat
 from src.enrichment_claim_schedule import (
     ENRICHMENT_FAMILY,
     SOURCE_DETAIL_FAMILY,
+    GeneralClaimPlan,
     _enrichment_claim_batch_size,
     _enrichment_claim_limit,
     _enrichment_family_cycle,
@@ -43,6 +44,8 @@ from src.enrichment_queue_limits import (
     ENRICHMENT_BUDGET_SECONDS_ENV,
     ENRICHMENT_MAX_JOBS,
     ENRICHMENT_MAX_JOBS_ENV,
+    LLM_BUDGET_STOP_REASON,
+    QUEUES_EMPTY_STOP_REASON,
 )
 from src.freshness import document_fingerprint, documents_are_current, settle_source_change_without_documents
 from src.geocode import geocode_sale, sale_needs_position
@@ -329,8 +332,12 @@ def run_data_refresh_request(request: dict[str, object]) -> int:
     return 0
 
 
-def _claim_enrichment_queue_jobs(*, limit: int, family: str | None) -> list[dict[str, object]]:
-    if family is None:
+def _claim_enrichment_queue_jobs(*, limit: int, family: str | None, pdf_only: bool = False) -> list[dict[str, object]]:
+    if pdf_only:
+        if family != ENRICHMENT_FAMILY:
+            raise ValueError(f"Document readings only is a general claim, not {family!r}")
+        jobs = general_lane_claims.claim_pdf_jobs(claim_auction_enrichment_jobs_family_from_supabase, limit=limit)
+    elif family is None:
         # Keep the old call shape for manual/legacy callers and for workers
         # deployed before the family RPC migration.
         jobs = claim_auction_enrichment_jobs_from_supabase(limit=limit)
@@ -575,11 +582,16 @@ def run_enrichment_queue_batch(
     family: str | None = None,
     provider_clients: dict[str, object] | None = None,
     claimed_jobs: list[dict[str, object]] | None = None,
+    pdf_only: bool = False,
 ) -> int:
     # Before each batch (14/11/2026, D19): once the heartbeat of the catalogue writer lock failed, the worker claims
     # nothing more and stops with ``CatalogueLockLost`` (no-op when this process holds no lock).
     ensure_catalogue_lock_held()
-    jobs = _claim_enrichment_queue_jobs(limit=limit, family=family) if claimed_jobs is None else list(claimed_jobs)
+    jobs = (
+        _claim_enrichment_queue_jobs(limit=limit, family=family, **({"pdf_only": True} if pdf_only else {}))
+        if claimed_jobs is None
+        else list(claimed_jobs)
+    )
     if claimed_jobs is not None:
         _record_worker_claimed_job_ids(jobs)
     if not jobs:
@@ -1084,8 +1096,9 @@ def run_enrichment_queue_batch_with_deadline(
     worker_deadline: float,
     finalization_margin_seconds: float,
     claimed_jobs: list[dict[str, object]] | None = None,
+    pdf_only: bool = False,
 ) -> int:
-    """Run one claim with task cutoffs that leave worker finalization time."""
+    """Run one claim with task cutoffs that leave worker finalization time; ``pdf_only``: document readings only."""
 
     pdf_deadline = worker_deadline - finalization_margin_seconds
     if time.monotonic() >= pdf_deadline:
@@ -1102,6 +1115,7 @@ def run_enrichment_queue_batch_with_deadline(
             family=family,
             provider_clients=provider_clients,
             **({"claimed_jobs": claimed_jobs} if claimed_jobs is not None else {}),
+            **({"pdf_only": True} if pdf_only else {}),
         )
 
 
@@ -1110,11 +1124,14 @@ def run_enrichment_queue_worker(
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
     family: str | None = None,
+    pdf_first: bool = False,
 ) -> int:
     """Run one worker and emit an optional post-claim status snapshot.
 
     ``family`` (parallel lane): the worker claims only that family, ``source_detail`` or ``enrichment`` (PDF,
     facts, descriptions, with the oldest-first share). ``None``: the mixed worker, alternating both families.
+    ``pdf_first`` (a general worker of the parallel lane): document readings first, the other general jobs when none
+    is left.
     """
     if family is not None and family not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
         raise ValueError(f"Unknown enrichment queue family: {family!r}")
@@ -1127,6 +1144,7 @@ def run_enrichment_queue_worker(
             max_jobs=max_jobs,
             budget_seconds=budget_seconds,
             family=family,
+            pdf_first=pdf_first,
         )
     finally:
         try:
@@ -1154,6 +1172,7 @@ def _run_enrichment_queue_worker(
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
     family: str | None = None,
+    pdf_first: bool = False,
 ) -> int:
     """Run one fair, bounded queue worker.
 
@@ -1166,8 +1185,9 @@ def _run_enrichment_queue_worker(
     ordering are unchanged. An empty preferred lane immediately gives its slot
     to the other lane. A deferred general claim remains a queue outcome for
     compatibility with direct callers. Once the bounded worker sees an actual
-    provider-budget exhaustion, it stops claiming the general lane for this
-    run and spends its remaining fixed budget on source-detail work.
+    provider-budget exhaustion, its general claims are document readings only
+    for a while (``GeneralClaimPlan``); when nothing but fact passes is left,
+    it stops with ``llm_budget_exhausted``.
 
     The claim batch size is deliberately independent from the job budget. It
     reduces claim overhead without increasing the worker's maximum work or
@@ -1211,89 +1231,57 @@ def _run_enrichment_queue_worker(
         # A worker of the parallel lane claims its own family only: no ratio, no alternate.
         due_counts, family_cycle = {}, (family,)
     LOGGER.info(
-        "Enrichment worker lane cycle: family=%s source_detail=%s enrichment=%s due_estimate=%s",
+        "Enrichment worker lane cycle: family=%s pdf_first=%s source_detail=%s enrichment=%s due_estimate=%s",
         family or "mixed",
+        pdf_first,
         family_cycle.count(SOURCE_DETAIL_FAMILY),
         family_cycle.count(ENRICHMENT_FAMILY),
         due_counts,
     )
     slot, yielded = 0, False
+    plan = GeneralClaimPlan(family=family, pdf_first=pdf_first, family_cycle=family_cycle)
     # A pending collection (or source traffic turn) stops the claims; ending releases the catalogue writer lock.
     while handled < max_jobs and not (yielded := collection_priority.yield_to_sources()):
         now = time.monotonic()
         if now >= claim_deadline:
             stop_reason = "budget" if now >= deadline else "finalization_margin"
             break
-        if family is not None:
-            if family == ENRICHMENT_FAMILY and _WORKER_LLM_BUDGET_EXHAUSTED.get():
-                # The general worker of the parallel lane has nothing else to claim: the source-detail worker
-                # runs beside it. Same rule as the mixed worker: no general claim after the first budget refusal.
-                stop_reason = "llm_budget_exhausted"
+        if _WORKER_LLM_BUDGET_EXHAUSTED.get():
+            # A budget exception restores every claimed job's attempt and gives it a future wake-up: the fact passes
+            # (AI) wait, the document readings (OCR, no AI) go on (GeneralClaimPlan).
+            _WORKER_LLM_BUDGET_EXHAUSTED.set(False)
+            plan.budget_refused(now)
+        facts_paused = plan.facts_paused(now)
+        count, claimed_family, out_of_time = 0, None, False
+        # The preferred claim, then the next one only when it was empty.
+        for position, (claim_family, pdf_only) in enumerate(plan.claims(slot, now)):
+            if position and (now := time.monotonic()) >= claim_deadline:
+                stop_reason, out_of_time = ("budget" if now >= deadline else "finalization_margin"), True
                 break
-            preferred, alternate = family, None
-        elif _WORKER_LLM_BUDGET_EXHAUSTED.get():
-            # A budget exception restores every claimed job's attempt and
-            # gives it a future wake-up.  Do not immediately claim another
-            # general job that will hit the same guard; use the remaining
-            # fixed worker budget for source-detail work instead.
-            preferred = SOURCE_DETAIL_FAMILY
-            alternate = None
-        else:
-            preferred = family_cycle[slot % len(family_cycle)]
-            alternate = ENRICHMENT_FAMILY if preferred == SOURCE_DETAIL_FAMILY else SOURCE_DETAIL_FAMILY
-        preferred_limit = _enrichment_claim_limit(
-            preferred,
-            slot=slot,
-            remaining=max_jobs - handled,
-            family_cycle=family_cycle,
-        )
-        claim_batches += 1
-        batch_started_at = time.monotonic()
-        count = run_enrichment_queue_batch_with_deadline(
-            limit=preferred_limit,
-            family=preferred,
-            provider_clients=provider_clients,
-            worker_deadline=deadline,
-            finalization_margin_seconds=finalization_margin_seconds,
-        )
-        batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
-        elapsed_by_family[preferred] += batch_elapsed
-        max_batch_elapsed_by_family[preferred] = max(
-            max_batch_elapsed_by_family[preferred],
-            batch_elapsed,
-        )
-        claimed_family = preferred if count else None
-        if not count and alternate is not None:
-            now = time.monotonic()
-            if now >= claim_deadline:
-                stop_reason = "budget" if now >= deadline else "finalization_margin"
-                break
-            alternate_limit = _enrichment_claim_limit(
-                alternate,
-                slot=slot,
-                remaining=max_jobs - handled,
-                family_cycle=family_cycle,
-            )
+            claim_limit = _enrichment_claim_limit(claim_family, slot=slot, remaining=max_jobs - handled,
+                                                  family_cycle=family_cycle)
             claim_batches += 1
             batch_started_at = time.monotonic()
             count = run_enrichment_queue_batch_with_deadline(
-                limit=alternate_limit,
-                family=alternate,
+                limit=claim_limit,
+                family=claim_family,
                 provider_clients=provider_clients,
                 worker_deadline=deadline,
                 finalization_margin_seconds=finalization_margin_seconds,
+                pdf_only=pdf_only,
             )
             batch_elapsed = max(time.monotonic() - batch_started_at, 0.0)
-            elapsed_by_family[alternate] += batch_elapsed
-            max_batch_elapsed_by_family[alternate] = max(
-                max_batch_elapsed_by_family[alternate],
-                batch_elapsed,
-            )
-            claimed_family = alternate if count else None
+            elapsed_by_family[claim_family] += batch_elapsed
+            max_batch_elapsed_by_family[claim_family] = max(max_batch_elapsed_by_family[claim_family], batch_elapsed)
+            if count:
+                claimed_family = claim_family
+                break
+        if out_of_time:
+            break
         if not count:
-            # Neither family is currently claimable. Avoid spinning against
-            # paused/empty queues until the next scheduled worker.
-            stop_reason = "queues_empty"
+            # Nothing claimable. Avoid spinning against paused/empty queues until the next scheduled worker. While the
+            # AI budget refuses, what is left may be fact passes only: they are not an empty queue.
+            stop_reason = LLM_BUDGET_STOP_REASON if facts_paused else QUEUES_EMPTY_STOP_REASON
             break
         handled += count
         if claimed_family is not None:
@@ -1308,6 +1296,8 @@ def _run_enrichment_queue_worker(
         stop_reason, yielded, handled, handled_by_family,
         details={
             "family": family or "mixed",
+            "pdf_first": pdf_first,
+            "llm_budget_refusals": plan.llm_budget_refusals,
             "seconds": round(elapsed_seconds, 1),
             "claimed_by_job_type": dict(_WORKER_CLAIMED_BY_TYPE),
             "ocr_seconds": round(pdf_ocr.ocr_seconds(), 1),
@@ -1492,12 +1482,22 @@ def _family_argument(argv: list[str]) -> str | None:
     return value
 
 
+def _pdf_first_argument(argv: list[str], family: str | None) -> bool:
+    """``--pdf-first``: a general worker of the parallel lane that claims document readings first."""
+    if "--pdf-first" not in argv:
+        return False
+    if family != ENRICHMENT_FAMILY:
+        raise LaneSettingsError(f"--pdf-first needs --family {ENRICHMENT_FAMILY}")
+    return True
+
+
 def _run_as_script() -> int:
     if "--enrichment-only" in sys.argv:
         # Detail claims are bounded batches, while each job is still processed
         # sequentially so GitHub serializes writers and the queue lease stays
         # visible in the worker summary.
-        claim_outcomes = run_enrichment_queue_worker(family=_family_argument(sys.argv))
+        family = _family_argument(sys.argv)
+        claim_outcomes = run_enrichment_queue_worker(family=family, pdf_first=_pdf_first_argument(sys.argv, family))
         print(
             f'Enrichment worker recorded {claim_outcomes} bounded claim outcomes; '
             'terminal statuses are reported separately'
@@ -1515,6 +1515,7 @@ def run_with_catalogue_lock() -> int:
     try:
         settings = lane_settings()
         family = _family_argument(sys.argv)
+        _pdf_first_argument(sys.argv, family)
         if family is not None and not settings.parallel:
             raise LaneSettingsError(
                 "--family is the parallel lane: it needs PIPELINE_ENRICHMENT_GENERAL_WORKERS from 1 to 3"

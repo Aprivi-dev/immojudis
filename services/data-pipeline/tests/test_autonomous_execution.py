@@ -952,7 +952,11 @@ def test_a_failed_worker_does_not_stop_the_others_and_stops_the_unit(monkeypatch
     "reasons,expected",
     [
         (["queues_empty", "queues_empty"], "queues_empty"),
-        (["queues_empty", "llm_budget_exhausted"], "queues_empty"),
+        # 17/11/2026: fact passes refused by the AI budget are left; readable stop reason, not an empty queue.
+        (["queues_empty", "llm_budget_exhausted"], "llm_budget_exhausted"),
+        (["queues_empty", "llm_budget_exhausted", "llm_budget_exhausted"], "llm_budget_exhausted"),
+        # A general worker still reading documents keeps the unit going.
+        (["queues_empty", "llm_budget_exhausted", "budget"], "budget"),
         (["budget", "queues_empty"], "budget"),
         # M1: the source-detail worker (first) is idle within seconds while a general one runs to its budget.
         (["queues_empty", "budget"], "budget"),
@@ -969,6 +973,58 @@ def test_one_stop_reason_per_cycle(reasons, expected) -> None:
         for reason in reasons
     ]
     assert autonomous_runner._cycle_stop_reason(workers) == expected
+
+
+def test_the_unit_goes_on_while_document_readings_are_left_under_the_ai_budget(monkeypatch) -> None:
+    """Incident du 17/11/2026 : unité terminée « queues_empty » au bout de 24 min, 189 pièces échues en file.
+
+    Le processus des fiches a vidé sa file ; les processus généraux, refusés par le budget IA, lisent les pièces jusqu'à
+    leur budget : l'unité continue. Elle ne s'arrête que lorsqu'il ne reste que des faits refusés par le budget IA, avec
+    une raison lisible.
+    """
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "2")
+    empty = {"stop_reason": "queues_empty", "handled": 0, "handled_by_family": {}}
+    reading = {"stop_reason": "budget", "handled": 8, "handled_by_family": {"enrichment": 8},
+               "claimed_by_job_type": {"pdf": 7, "fact_extraction": 1}, "llm_budget_refusals": 1}
+    blocked = {"stop_reason": "llm_budget_exhausted", "handled": 0, "handled_by_family": {}, "llm_budget_refusals": 1}
+    _calls, launched = _parallel_setup(
+        monkeypatch,
+        {"source_detail": [empty, empty, empty], "enrichment": [reading, reading, reading, blocked, blocked, blocked]},
+    )
+    updates, statements = [], []
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert [cycle["worker_stop_reason"] for cycle in unit["cycles"]] == ["budget", "budget", "llm_budget_exhausted"]
+    assert unit["stop_reason"] == "llm_budget_exhausted"
+    assert unit["cycles"][0]["workers"][1]["llm_budget_refusals"] == 1
+    # The first general worker claims the document readings first, the second one keeps the score order.
+    general = [command for command, _ in launched if command[command.index("--family") + 1] == "enrichment"]
+    assert [autonomous_runner.PDF_FIRST_WORKER_ARGUMENT in command for command in general] == [True, False] * 3
+    assert [worker["family"] for worker in unit["cycles"][0]["workers"]] == ["source_detail", "enrichment", "enrichment"]
+
+
+def test_a_single_general_worker_keeps_the_score_order(monkeypatch) -> None:
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "1")
+    empty = {"stop_reason": "queues_empty", "handled": 0, "handled_by_family": {}}
+    _calls, launched = _parallel_setup(monkeypatch, {"source_detail": [empty], "enrichment": [empty]})
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db([], [])) == 0
+    assert not any(autonomous_runner.PDF_FIRST_WORKER_ARGUMENT in command for command, _ in launched)
+
+
+def test_the_single_mixed_worker_ends_the_unit_with_a_readable_budget_reason(monkeypatch) -> None:
+    """PIPELINE_ENRICHMENT_GENERAL_WORKERS=0 : même fin d'unité que la voie parallèle."""
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "0")
+    calls = _lane_setup(monkeypatch, ["budget", "llm_budget_exhausted"])
+    updates, statements = [], []
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["stop_reason"] == "llm_budget_exhausted"
+    assert len(_workers(calls)) == 2
 
 
 def test_zero_general_workers_keeps_the_single_mixed_worker_unchanged(monkeypatch) -> None:

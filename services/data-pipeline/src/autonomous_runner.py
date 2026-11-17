@@ -40,6 +40,7 @@ from src.enrichment_queue_limits import (
     ENRICHMENT_MAX_JOBS,
     ENRICHMENT_MAX_JOBS_ENV,
     ENRICHMENT_WORKER_REPORT_ENV,
+    LLM_BUDGET_STOP_REASON,
     QUEUES_EMPTY_STOP_REASON,
     read_worker_report,
 )
@@ -771,7 +772,12 @@ THREAD_LIMIT_ENVS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS
 # A worker still running when the unit stops (exception, SIGTERM of a cancelled job) gets this long to end.
 LANE_WORKER_TERMINATE_SECONDS = 10
 # A cycle stops the unit when every worker found nothing left it may claim.
-IDLE_WORKER_STOP_REASONS = frozenset({QUEUES_EMPTY_STOP_REASON, 'llm_budget_exhausted'})
+IDLE_WORKER_STOP_REASONS = frozenset({QUEUES_EMPTY_STOP_REASON, LLM_BUDGET_STOP_REASON})
+# With two general workers or more, the first one claims document readings first (``--pdf-first``): the readings
+# always have a worker that serves them before the fact passes, which wait for them anyway, and the fact passes keep
+# the other ones. A single general worker keeps the score order (+24 for a reading), or the fact passes would wait for
+# the whole reading backlog while the AI budget goes unused.
+PDF_FIRST_WORKER_ARGUMENT = '--pdf-first'
 
 
 def _worker_failure(code: int) -> str | None:
@@ -850,6 +856,8 @@ class LaneWorker:
             'exit_code': self.code,
             'seconds': round(self.seconds, 1),
             'stop_reason': report.get('stop_reason'),
+            'pdf_first': report.get('pdf_first'),
+            'llm_budget_refusals': report.get('llm_budget_refusals'),
             'handled': report.get('handled'),
             'claimed_by_job_type': report.get('claimed_by_job_type'),
             'ocr_seconds': report.get('ocr_seconds'),
@@ -882,7 +890,8 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
     They share the unit's environment, hence its ``AUTONOMOUS_RUN_ID``: the AI cap per execution
     (``reserve_pipeline_prediction``, 90 calls per 30 minutes) stays the unit's. A failed or killed worker does
     not stop the others; each is bounded by the same budget plus the overrun. Their output is prefixed with
-    ``[family#n]``. If the unit itself stops (exception, SIGTERM), the workers still running are terminated.
+    ``[family#n]``. If the unit itself stops (exception, SIGTERM), the workers still running are terminated. With two
+    general workers or more, the first one claims document readings first (``PDF_FIRST_WORKER_ARGUMENT``).
     """
     families = [SOURCE_DETAIL_WORKER_FAMILY] + [GENERAL_WORKER_FAMILY] * general_workers
     worker_env = {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), **_lane_thread_env(len(families))}
@@ -897,6 +906,8 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
         for index, family in enumerate(families):
             report_path = os.path.join(directory, f'report-{index}-{family}.json')
             command = [*ENRICHMENT_WORKER_COMMAND, '--family', family]
+            if family == GENERAL_WORKER_FAMILY and index == 1 and general_workers >= 2:
+                command.append(PDF_FIRST_WORKER_ARGUMENT)
             try:
                 process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -945,16 +956,19 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
 
 
 def _cycle_stop_reason(workers: list[LaneWorker]) -> str | None:
-    """One stop reason for the cycle: None when a report is missing, ``queues_empty`` only when no worker had
-    anything left to claim, a collection when one worker yielded to it, otherwise the first worker's that still had
-    work (an idle source-detail worker never ends the unit while a general one ran to its budget)."""
+    """One stop reason for the cycle: None when a report is missing, a collection when one worker yielded to it, the
+    first worker's that still had work (an idle source-detail worker never ends the unit while a general one ran to
+    its budget), and when no worker had anything left to claim: ``llm_budget_exhausted`` if fact passes refused by the
+    AI budget are left, ``queues_empty`` only otherwise."""
     reasons = [worker.report.get('stop_reason') for worker in workers]
     if any(not isinstance(reason, str) for reason in reasons):
         return None
     if COLLECTION_PENDING_STOP_REASON in reasons:
         return COLLECTION_PENDING_STOP_REASON
     busy = [str(reason) for reason in reasons if reason not in IDLE_WORKER_STOP_REASONS]
-    return busy[0] if busy else QUEUES_EMPTY_STOP_REASON
+    if busy:
+        return busy[0]
+    return LLM_BUDGET_STOP_REASON if LLM_BUDGET_STOP_REASON in reasons else QUEUES_EMPTY_STOP_REASON
 
 
 @dataclass
@@ -1059,7 +1073,7 @@ def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int 
 
     Without ``unit_seconds`` (a run dispatched before the separate lane existed): one cycle, as before. With it, the
     unit chains cycles until its deadline, waits while a collection is pending, and ends when the worker failed, found
-    the queues empty or left no report.
+    nothing left to claim (the queues empty, or only fact passes refused by the AI budget) or left no report.
     """
     unit = EnrichmentUnit()
     deadline = None if unit_seconds is None else time.monotonic() + unit_seconds
@@ -1095,8 +1109,8 @@ def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int 
         if worker_stop is None:
             unit.stop_reason = 'worker_report_missing'
             break
-        if worker_stop == QUEUES_EMPTY_STOP_REASON:
-            unit.stop_reason = QUEUES_EMPTY_STOP_REASON
+        if worker_stop in IDLE_WORKER_STOP_REASONS:
+            unit.stop_reason = worker_stop
             break
     return unit
 
