@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
 
 import pytest
 
@@ -20,9 +19,9 @@ from src.lot_scope import surface_reasoning_context
 from src.normalize import normalize_sale
 from src.sources.cessions_etat import parse_cessions_etat_detail_html
 from src.sources.notaires import parse_notaires_detail_json
+from tests.source_captures import require_source_captures
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-AUDIT_DIR = REPO_ROOT / "docs/audits/sources-2026-10-02/dynamic"
+AUDIT_DIR = require_source_captures() / "dynamic"
 
 
 def _replay_final(stem: str):
