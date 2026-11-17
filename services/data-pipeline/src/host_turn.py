@@ -13,9 +13,15 @@ l'empêche ; les deux clients l'appellent autour de chaque requête (lecture de 
   plus tôt que nous ne l'aurions fait nous-mêmes. Le rendu est différé (fil d'arrière-plan) : le processus travaille
   ailleurs pendant ce temps (OCR, autre hôte) ;
 * l'attente est bornée par l'échéance de la tâche (``deadline_remaining``) et par ``MAX_WAIT_SECONDS`` ; au-delà,
-  ``HostTurnWaitExceeded`` : l'appelant remet la tâche en file sans consommer d'essai ;
+  ``HostTurnWaitExceeded`` : l'appelant remet la tâche en file sans consommer d'essai, ``BUSY_RETRY_DELAY_SECONDS``
+  plus tard quand l'hôte était seulement occupé (pas à l'échéance), et pendant ``BUSY_COOLDOWN_SECONDS`` ce
+  processus n'attend plus le tour de cet hôte (échec immédiat) ;
 * un processus qui meurt perd sa session et le serveur rend ses tours ; une session perdue en cours de route vide
-  la table des tours tenus (ils sont rendus côté serveur).
+  la table des tours tenus (ils sont rendus côté serveur) et compte comme « tour perdu » chaque tour dont une
+  requête était en cours (``HostTurnStats.lost``, journal en erreur) : un autre processus a pu interroger le site
+  en même temps. Une erreur SQL sur une session encore ouverte ne vide rien (les verrous restent tenus) ;
+* un battement (``select 1``, toutes les ``HEARTBEAT_SECONDS``) garde la session ouverte tant qu'un tour est tenu,
+  pendant un long téléchargement comme pendant le délai du site.
 
 Équité : les demandes ne bloquent pas la connexion (une seule par processus, ``pg_try_advisory_lock`` répété toutes
 les ``POLL_SECONDS``). Un processus qui attend se signale en prenant en partage la clé d'attente
@@ -23,10 +29,13 @@ les ``POLL_SECONDS``). Un processus qui attend se signale en prenant en partage 
 d'abord que personne n'attend (prise exclusive d'essai de cette clé), sinon il le rend à son échéance et se remet
 dans l'attente, derrière.
 
-Réglage ``PIPELINE_HOST_TURNS`` (``src.enrichment_lane_settings``). Seuls les travailleurs de la voie les prennent
-(``activate``, appelé par ``src.queued_runner``) : tout autre processus qui parle aux sources (collecte, copie des
-photos, passes de l'unité) tient le tour des sources en exclusif (``src.source_traffic``), donc seul. Éteint, non
-activé ou sans base, le tour est toujours accordé et rien ne change.
+Réglage ``PIPELINE_HOST_TURNS`` (``src.enrichment_lane_settings``). Les prennent (``activate``) : les travailleurs de
+la voie (``src.queued_runner``) et le vidage manuel des pièces (``python -m src.document_backlog`` et ses processus de
+préparation, ``src.document_prefetch``), qui tourne dans son propre groupe de concurrence, sans le tour des sources.
+Tout autre processus qui parle aux sources (collecte, copie des photos, passes de l'unité) tient le tour des sources
+en exclusif (``src.source_traffic``), donc seul face aux autres. Éteint, non activé ou sans base, le tour est
+toujours accordé et rien ne change : avec ``PIPELINE_HOST_TURNS=off``, le vidage manuel et le travailleur peuvent
+interroger le même site en même temps, comme avant la voie parallèle.
 """
 
 from __future__ import annotations
@@ -51,6 +60,13 @@ POLL_SECONDS = 0.5
 MAX_WAIT_SECONDS = 180.0
 #: Celui qui rend son tour à des processus qui attendent se remet en file un peu après eux.
 YIELD_BACKOFF_SECONDS = 2 * POLL_SECONDS
+#: Battement de la session tant qu'un tour est tenu (même valeur que celui du verrou du catalogue).
+HEARTBEAT_SECONDS = 60.0
+#: Après une attente dépassée sur un hôte, ce processus n'attend plus son tour pendant ce délai (échec immédiat) :
+#: jamais plusieurs attentes de ``MAX_WAIT_SECONDS`` d'affilée sur un hôte occupé.
+BUSY_COOLDOWN_SECONDS = 600.0
+#: Une tâche rendue parce que le tour de son hôte n'est pas venu n'est reprise qu'après ce délai.
+BUSY_RETRY_DELAY_SECONDS = 15 * 60
 
 _TRY_LOCK_SQL = "select pg_try_advisory_lock(hashtextextended(%s, 0))"
 _UNLOCK_SQL = "select pg_advisory_unlock(hashtextextended(%s, 0))"
@@ -93,6 +109,7 @@ class HostTurnStats:
     waits: int = 0
     wait_seconds: float = 0.0
     timeouts: int = 0
+    lost: int = 0
     by_host: dict[str, float] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
@@ -101,6 +118,7 @@ class HostTurnStats:
             "waits": self.waits,
             "wait_seconds": round(self.wait_seconds, 1),
             "timeouts": self.timeouts,
+            "lost": self.lost,
             "slowest_hosts": {host: round(seconds, 1) for host, seconds in slowest},
         }
 
@@ -128,12 +146,15 @@ class HostTurns:
         self._held: dict[str, _Held] = {}
         # Hôtes rendus à des processus qui attendaient : pas de nouvelle demande avant cette heure.
         self._backoff_until: dict[str, float] = {}
+        # Hôtes dont l'attente a été dépassée : échec immédiat jusqu'à cette heure (BUSY_COOLDOWN_SECONDS).
+        self._busy_until: dict[str, float] = {}
         self._releaser: threading.Thread | None = None
+        self._last_query = clock()
         self.stats = HostTurnStats()
 
     # -- connexion ---------------------------------------------------------------------------------------------
 
-    def _execute(self, sql: str, key: str) -> bool:
+    def _execute(self, sql: str, key: str | None) -> bool:
         with self._db:
             if self._connection is None:
                 from src.catalogue_lock import session_lock_url
@@ -148,17 +169,35 @@ class HostTurns:
                 self._connection = connect(session_lock_url(self._db_url))
                 self._connection.autocommit = True
             try:
-                row = self._connection.execute(sql, (key,)).fetchone()
+                row = self._connection.execute(sql, (key,) if key is not None else ()).fetchone()
             except Exception:
-                # Session perdue : le serveur a rendu tous ses verrous. Rien n'est plus tenu ici.
-                self._drop_connection()
+                if _session_lost(self._connection):
+                    # Session perdue : le serveur a rendu tous ses verrous. Rien n'est plus tenu ici.
+                    self._drop_connection()
+                # Sinon (erreur SQL, session encore ouverte) : les verrous de la session restent tenus.
                 raise
+            self._last_query = self._clock()
         return bool(row and row[0])
+
+    def heartbeat_due_now(self) -> None:
+        """Garde la session ouverte tant qu'un tour est tenu (fil d'arrière-plan, et tests)."""
+        with self._state:
+            idle = bool(self._held) and self._clock() - self._last_query >= HEARTBEAT_SECONDS
+        if idle:
+            try:
+                self._execute("select 1", None)
+            except Exception:  # noqa: BLE001 - session perdue : comptée par _drop_connection
+                LOGGER.warning("Host turn heartbeat failed")
 
     def _drop_connection(self) -> None:
         connection, self._connection = self._connection, None
         with self._state:
-            if self._held:
+            in_use = sorted(host for host, held in self._held.items() if held.users)
+            if in_use:
+                # Une requête était en cours sous ces tours : un autre processus a pu interroger le site en même temps.
+                self.stats.lost += len(in_use)
+                LOGGER.error("Host turn session lost during a request: turn(s) of %s lost", ", ".join(in_use))
+            elif self._held:
                 LOGGER.warning("Host turn session lost: %s turn(s) released by the server", len(self._held))
             self._held.clear()
             self._state.notify_all()
@@ -182,6 +221,10 @@ class HostTurns:
         with self._state:
             held = self._held.get(host)
             reuse = held is not None and not held.yielding
+            busy = held is None and started < self._busy_until.get(host, float("-inf"))
+        if busy:
+            self.stats.timeouts += 1
+            raise HostTurnWaitExceeded(host, 0.0, deadline_reached=False)
         if reuse and not self._others_waiting(host):
             with self._state:
                 held = self._held.get(host)
@@ -204,12 +247,15 @@ class HostTurns:
                         with self._state:
                             self._held[host] = _Held(users=1)
                             self._backoff_until.pop(host, None)
+                            self._ensure_background()
                         break
                     if not announced:
                         announced = self._execute(_TRY_LOCK_SHARED_SQL, wait_key)
                 waited = self._clock() - started
                 if waited >= max_wait:
                     self.stats.timeouts += 1
+                    with self._state:
+                        self._busy_until[host] = self._clock() + BUSY_COOLDOWN_SECONDS
                     raise HostTurnWaitExceeded(host, waited, deadline_reached=True)
                 self._sleep(min(self._poll, max(0.0, max_wait - waited)))
         finally:
@@ -232,9 +278,13 @@ class HostTurns:
             held.users = max(0, held.users - 1)
             held.release_at = max(held.release_at, self._clock() + max(0.0, float(delay_seconds)))
             self._state.notify_all()
-            if self._releaser is None or not self._releaser.is_alive():
-                self._releaser = threading.Thread(target=self._release_due, name="host-turn-releaser", daemon=True)
-                self._releaser.start()
+            self._ensure_background()
+
+    def _ensure_background(self) -> None:
+        """Le fil qui rend les tours échus et bat la session, tant qu'un tour est tenu (appelé sous ``_state``)."""
+        if self._releaser is None or not self._releaser.is_alive():
+            self._releaser = threading.Thread(target=self._release_due, name="host-turn-releaser", daemon=True)
+            self._releaser.start()
 
     def release_due_now(self) -> None:
         """Rend les tours dont le délai est écoulé (fil d'arrière-plan, et tests).
@@ -258,6 +308,7 @@ class HostTurns:
     def _release_due(self) -> None:
         while True:
             self.release_due_now()
+            self.heartbeat_due_now()
             with self._state:
                 idle = [held.release_at for held in self._held.values() if held.users == 0]
                 if not self._held:
@@ -269,6 +320,11 @@ class HostTurns:
     def held_hosts(self) -> list[str]:
         with self._state:
             return sorted(self._held)
+
+
+def _session_lost(connection: Any) -> bool:
+    """La session ne répond plus (fermée ou cassée) : ses verrous sont rendus côté serveur."""
+    return connection is None or bool(getattr(connection, "closed", False)) or bool(getattr(connection, "broken", False))
 
 
 _TURNS: dict[str, HostTurns] = {}
@@ -329,7 +385,9 @@ def host_turn(
     try:
         active.acquire(host, max_wait=max_wait)
     except HostTurnWaitExceeded as exc:
-        exc.deadline_reached = remaining is not None and remaining <= MAX_WAIT_SECONDS
+        # A wait that ran to its end stopped at the task deadline when that came before MAX_WAIT_SECONDS; an
+        # immediate refusal (host still busy, BUSY_COOLDOWN_SECONDS) never did.
+        exc.deadline_reached = exc.deadline_reached and remaining is not None and remaining <= MAX_WAIT_SECONDS
         raise
     except Exception as exc:
         # Base injoignable : sans tour, pas de requête (une requête de trop vaut moins qu'une tâche remise en file).

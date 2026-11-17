@@ -19,8 +19,9 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from src.config import source_budget_seconds
-from src.host_turn import HostTurnWaitExceeded, host_turn
+from src.host_turn import BUSY_RETRY_DELAY_SECONDS, HostTurnWaitExceeded, host_turn
 from src.source_task_deadline import (
+    HostTurnBusy,
     SourceTaskDeadlineExceeded,
     ensure_source_task_deadline,
     source_task_bounded_timeout,
@@ -475,15 +476,24 @@ def robots_failure_class(error: BaseException) -> str:
     if isinstance(status_code, int):
         return robots_policy_copies.failure_class(status_code=status_code)
     if getattr(error, "transient", False):
-        return robots_policy_copies.failure_class(error=error)
+        # The wrapper is itself an httpx.NetworkError: classify what it wraps.
+        return robots_policy_copies.failure_class(error=error.__cause__ or error)
     return robots_policy_copies.HTTP_ERROR
 
 
 def _robots_failure_status(error: BaseException) -> dict[str, Any]:
-    """Why robots.txt could not be verified, for the run summary: no page content, a bounded message."""
+    """Why robots.txt could not be verified, for the run summary: no page content, a bounded message.
+
+    ``observed_by`` and ``observed_at``: who saw the failure and when (``source_suspension`` counts only the pages
+    client): this client now when it sent the request, otherwise the recorder of the shared failure it inherited.
+    """
     status_code = getattr(getattr(error, "response", None), "status_code", None)
     probe_not_before = getattr(error, "probe_not_before", None)
+    inherited = isinstance(getattr(error, "recorded_failure_class", None), str)
+    observed_at = getattr(error, "recorded_failure_at", None) if inherited else datetime.now(UTC)
     return {
+        "observed_by": getattr(error, "recorded_failure_by", None) if inherited else robots_policy_copies.PAGES,
+        "observed_at": observed_at.isoformat() if isinstance(observed_at, datetime) else None,
         "state": "refused" if isinstance(error, RobotsAccessRefusedError) else "unavailable",
         "error_type": type(error.__cause__ or error).__name__,
         "transient": bool(getattr(error, "transient", False)),
@@ -631,6 +641,8 @@ class PoliteHttpClient:
                 message, origin=origin, transient=True, probe_not_before=failure.probe_not_before()
             )
             error.recorded_failure_class = failure.failure_class
+            error.recorded_failure_by = failure.recorded_by
+            error.recorded_failure_at = failure.failed_at
             raise error
         try:
             response = self._fetch_robots(url, probe=decision.probe)
@@ -638,9 +650,9 @@ class PoliteHttpClient:
             rules = _parse_robots_response(response, self.user_agent)
         except (RobotsUnavailableError, RobotsAccessRefusedError) as exc:
             if key is not None and not isinstance(exc.__cause__, HostTurnWaitExceeded):
-                robots_policy_store.save_failure(
-                    key, robots_policy_copies.RobotsFailure(robots_failure_class(exc), datetime.now(UTC))
-                )
+                robots_policy_store.save_failure(key, robots_policy_copies.RobotsFailure(
+                    robots_failure_class(exc), datetime.now(UTC), recorded_by=robots_policy_copies.PAGES
+                ))
             raise
         return rules, None
 
@@ -685,7 +697,11 @@ class PoliteHttpClient:
                 yield
         except HostTurnWaitExceeded as exc:
             if source_task_deadline_remaining() is not None:
-                raise SourceTaskDeadlineExceeded(f"waiting for the host turn of {exc.host}") from exc
+                if exc.deadline_reached:
+                    raise SourceTaskDeadlineExceeded(f"waiting for the host turn of {exc.host}") from exc
+                # Only busy: the task comes back later, not at once behind the same busy host.
+                retry = datetime.now(UTC) + timedelta(seconds=BUSY_RETRY_DELAY_SECONDS)
+                raise HostTurnBusy(exc.host, exc.waited, retry) from exc
             raise
 
     def _get_robots_with_retries(self, url: str, origin: str | None, *, probe: bool = False) -> httpx.Response:

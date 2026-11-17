@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,7 @@ from src.pdf_document_types import canonical_document_type, refined_document_typ
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text, write_pdf_text_cache
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
-from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, ensure_pdf_deadline
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, PdfHostTurnBusy, ensure_pdf_deadline
 from src.host_turn import HostTurnWaitExceeded
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
@@ -465,7 +466,9 @@ def download_documents(
                             archive = sale_dir / "versions"
                             archive.mkdir(exist_ok=True)
                             (archive / (hashlib.sha256(previous).hexdigest() + file_path.suffix)).write_bytes(previous)
-                    temporary = file_path.with_suffix(file_path.suffix + ".tmp")
+                    # One name per process: the manual drain and its preparation processes can download the same
+                    # sale as a lane worker; each writes its own file, then replaces the target atomically.
+                    temporary = file_path.with_suffix(f"{file_path.suffix}.{os.getpid()}.tmp")
                     temporary.write_bytes(content)
                     temporary.replace(file_path)
                     metadata = {
@@ -638,8 +641,10 @@ def _download_document_response(
         except DocumentRobotsDisallowed as exc:
             raise PermanentDocumentFailure("robots_disallowed", str(exc)) from exc
         except HostTurnWaitExceeded as exc:
-            # Another process kept the host busy until the worker cutoff (or the bounded wait): coordination, not a
-            # failed download. The claim is released without spending its attempt (src.queued_runner).
+            # Another process kept the host busy: coordination, not a failed download. The claim is released without
+            # spending its attempt (src.queued_runner), 30 min later; a busy host is logged as such, not as the cutoff.
+            if not exc.deadline_reached:
+                raise PdfHostTurnBusy(exc.host, exc.waited) from exc
             raise PdfDeadlineExceeded(
                 f"PDF worker deadline reached while waiting for the turn of {exc.host}; retry resumes",
                 checkpointed_pages=0,

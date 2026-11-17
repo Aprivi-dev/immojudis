@@ -115,9 +115,17 @@ requêtes de mesure : `docs/runbooks/pipeline-enrichment-stalled.md`, « Voie s�
 
 | Passe de l'unité de la file                                             | Cadence                                                                                                                                                                                          |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Travailleur (fiches, pièces, faits)                                     | en continu, hors collectes, passages de 1 200 s au plus ; 1 processus de fiches + N (0 à 3, 2 par défaut) de pièces et de faits côte à côte depuis le 17/11/2026 (« Voie parallèle » du runbook) |
+| Travailleur (fiches, pièces, faits)                                     | en continu, hors collectes, passages de 1 200 s au plus ; 1 processus de fiches + N (1 à 3, 2 par défaut) de pièces et de faits côte à côte depuis le 17/11/2026, ou, avec N = 0, le travailleur mixte unique (« Voie parallèle » du runbook) |
 | Lecture des pièces (IA seulement)                                       | après chaque passage du travailleur                                                                                                                                                              |
 | Vidage des pièces, positions BAN, photos des pièces, historique Licitor | une fois par unité au plus, 85 min au moins après la précédente (~17 par jour, comme avant)                                                                                                      |
+
+Ce que rétablit chaque réglage, sans commit (variables de dépôt ; détail dans la « Voie parallèle » du runbook) :
+`PIPELINE_ENRICHMENT_GENERAL_WORKERS=0` ramène le travailleur mixte unique, en verrous exclusifs et sans tours par
+hôte ; `ENRICHMENT_LANE=off` ramène un seul passage par unité ; `PIPELINE_SOURCE_AUTO_SUSPEND=off` ramène
+l'espacement progressif des collectes d'une source muette et ne pose plus de suspension. Aucun ne ramène
+l'avant à l'identique : la copie commune de robots.txt (et l'attente sans requête après un échec récent),
+l'attente des verrous dans la file de PostgreSQL, le report sans essai d'une publication sur `lock_timeout` et le
+report des pièces d'un site déjà suspendu restent, quels que soient ces réglages.
 
 La voie générale de la file d'enrichissement réserve une prise sur quatre à l'ancienneté (famille
 `enrichment_oldest`, `services/data-pipeline/src/general_lane_claims.py`) : voir

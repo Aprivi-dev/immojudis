@@ -57,7 +57,7 @@ from src.main import (
     PipelineOptions,
     run_pipeline,
 )
-from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, pdf_deadline_scope
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, PdfHostTurnBusy, pdf_deadline_scope
 from src.pdf_enrichment import PDF_FINALIZATION_MARGIN_SECONDS, enrich_sale_from_pdfs
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_pass_outcomes import (
@@ -856,7 +856,7 @@ def run_enrichment_queue_batch(
             except Exception as exc:
                 # 15 s of lock_timeout on the publication lock: the other workers of the parallel lane publish.
                 # The transaction rolled back; the pass is retried without spending an attempt.
-                deferral = publication_lock_deferral(exc)
+                deferral = publication_lock_deferral(exc, jobs=sale_jobs)
                 if deferral is None:
                     raise
                 raise deferral from exc
@@ -899,12 +899,11 @@ def run_enrichment_queue_batch(
             _record_worker_deferred_job_ids(sale_jobs)
             _defer_enrichment_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
-            LOGGER.info(
-                "PDF extraction deferred at worker deadline after %s/%s pages for %s",
-                exc.checkpointed_pages,
-                exc.total_pages,
-                source_url,
-            )
+            if isinstance(exc, PdfHostTurnBusy):  # a busy host (src.host_turn), not the worker deadline
+                LOGGER.info("PDF download deferred for %s: %s", source_url, exc)
+            else:
+                LOGGER.info("PDF extraction deferred at worker deadline after %s/%s pages for %s",
+                            exc.checkpointed_pages, exc.total_pages, source_url)
             continue
         except PdfExtractionDeferred as exc:
             if exc.progress_made:

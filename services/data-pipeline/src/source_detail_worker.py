@@ -24,6 +24,7 @@ from src.source_detail import (
 )
 from src.source_detail_reuse import complete_already_verified_detail_job
 from src.source_task_deadline import (
+    HostTurnBusy,
     SourceTaskDeadlineExceeded,
     ensure_source_task_deadline,
     source_task_deadline_scope,
@@ -115,6 +116,9 @@ def run_source_detail_jobs(
                     clients=provider_clients,
                     on_deferred=report_deferred,
                 )
+            except HostTurnBusy as exc:
+                # Not the deadline: only this job waits for its busy host; the batch goes on.
+                _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=report_deferred)
             except SourceTaskDeadlineExceeded as exc:
                 released_ids = _release_deadline_claims(
                     batch[index:],
@@ -169,13 +173,19 @@ def _release_deadline_claim(
     exc: SourceTaskDeadlineExceeded,
     on_deferred: Callable[[list[str]], None] | None = None,
 ) -> None:
-    """Release one claim after a cooperative source-task cutoff."""
+    """Release one claim after a cooperative source-task cutoff, or after its host stayed busy (later, then)."""
 
-    release_source_detail_job_without_attempt(
-        job,
-        reason=f"Source-detail task deadline reached during {exc.operation}",
-        settings=settings,
-    )
+    if isinstance(exc, HostTurnBusy):
+        LOGGER.info("Source-detail job %s released: %s", job.get("id"), exc)
+        release_source_detail_job_without_attempt(
+            job, reason=str(exc), settings=settings, retry_not_before=exc.retry_not_before
+        )
+    else:
+        release_source_detail_job_without_attempt(
+            job,
+            reason=f"Source-detail task deadline reached during {exc.operation}",
+            settings=settings,
+        )
     job_id = str(job.get("id") or "").strip()
     if job_id and on_deferred is not None:
         on_deferred([job_id])
@@ -350,7 +360,7 @@ def process_source_detail_job(
         _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
-        deferral = publication_lock_deferral(exc)
+        deferral = publication_lock_deferral(exc, jobs=[job])
         if deferral is not None:
             # The transaction rolled back: the claim is intact. Waiting for the publication lock is coordination
             # between the workers of the parallel lane, not a failed read.

@@ -802,9 +802,10 @@ def _parallel_setup(monkeypatch, reports: dict[str, list[dict]], *, codes: dict[
     remaining = {family: list(items) for family, items in reports.items()}
 
     class FakeProcess:
-        def __init__(self, command, env):
+        def __init__(self, command, env, **_streams):
             launched.append((command, env))
             self.family = command[command.index("--family") + 1]
+            self.stdout = None
             report = remaining[self.family].pop(0)
             if report is not None:
                 with open(env[ENRICHMENT_WORKER_REPORT_ENV], "w", encoding="utf-8") as handle:
@@ -813,7 +814,13 @@ def _parallel_setup(monkeypatch, reports: dict[str, list[dict]], *, codes: dict[
         def wait(self, timeout=None):
             return (codes or {}).get(self.family, 0)
 
+        def poll(self):
+            return self.wait()
+
         def kill(self):
+            pass
+
+        def terminate(self):
             pass
 
     monkeypatch.setattr(autonomous_runner.subprocess, "Popen", FakeProcess)
@@ -861,6 +868,66 @@ def test_the_parallel_lane_runs_one_source_detail_worker_and_n_general_workers(m
     assert [command[2] for command, _ in calls].count("src.document_reading") == 2
 
 
+def test_an_idle_source_detail_worker_does_not_end_the_unit_while_a_general_one_works(monkeypatch) -> None:
+    """M1 : le processus des fiches à vide en quelques secondes n'arrête pas l'unité ; il attend le cycle suivant."""
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "1")
+    empty = {"stop_reason": "queues_empty", "handled": 0, "handled_by_family": {}}
+    busy = {"stop_reason": "budget", "handled": 5, "handled_by_family": {"enrichment": 5}}
+    _calls, launched = _parallel_setup(
+        monkeypatch, {"source_detail": [empty, empty], "enrichment": [busy, empty]}
+    )
+    updates, statements = [], []
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert [cycle["worker_stop_reason"] for cycle in unit["cycles"]] == ["budget", "queues_empty"]
+    assert unit["stop_reason"] == "queues_empty"
+    # One detail process per cycle: an idle one ends and is started again with the next cycle, never in a loop.
+    families = [command[command.index("--family") + 1] for command, _ in launched]
+    assert families == ["source_detail", "enrichment"] * 2
+
+
+def test_workers_still_running_are_terminated_when_the_unit_stops(monkeypatch, tmp_path) -> None:
+    """F1 : une exception (ou SIGTERM, changé en SystemExit) du parent ne laisse aucun processus orphelin."""
+    events: list[str] = []
+
+    class Hanging:
+        def __init__(self, command, env, **_streams):
+            self.index = len(events)
+            self.stdout = None
+            self.ended = False
+            events.append("start")
+
+        def wait(self, timeout=None):
+            if not self.ended and timeout is not None and timeout > autonomous_runner.LANE_WORKER_TERMINATE_SECONDS:
+                raise KeyboardInterrupt  # the job is cancelled while the parent waits
+            self.ended = True
+            return -15
+
+        def poll(self):
+            return -15 if self.ended else None
+
+        def terminate(self):
+            events.append("terminate")
+
+        def kill(self):
+            events.append("kill")
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "Popen", Hanging)
+    with pytest.raises(KeyboardInterrupt):
+        autonomous_runner._run_lane_workers(1, {}, 600, str(tmp_path))
+    assert events == ["start", "start", "terminate", "terminate"]
+
+
+def test_worker_output_is_prefixed_with_its_family_and_number(capsys) -> None:
+    """F2 : les sorties des processus côte à côte se distinguent ; les commandes GitHub restent en tête de ligne."""
+    import io
+
+    autonomous_runner._relay_output(io.BytesIO(b"Batch claimed\n::warning title=x::y\n"), "[enrichment#1]")
+    assert capsys.readouterr().out.splitlines() == ["[enrichment#1] Batch claimed", "::warning title=x::y"]
+
+
 def test_a_failed_worker_does_not_stop_the_others_and_stops_the_unit(monkeypatch) -> None:
     monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "1")
     report = {"stop_reason": "budget", "handled": 3, "handled_by_family": {"source_detail": 3}}
@@ -887,6 +954,11 @@ def test_a_failed_worker_does_not_stop_the_others_and_stops_the_unit(monkeypatch
         (["queues_empty", "queues_empty"], "queues_empty"),
         (["queues_empty", "llm_budget_exhausted"], "queues_empty"),
         (["budget", "queues_empty"], "budget"),
+        # M1: the source-detail worker (first) is idle within seconds while a general one runs to its budget.
+        (["queues_empty", "budget"], "budget"),
+        (["queues_empty", "budget", "queues_empty"], "budget"),
+        (["queues_empty", "queues_empty", "budget"], "budget"),
+        (["llm_budget_exhausted", "queues_empty", "budget"], "budget"),
         (["budget", "collection_pending"], "collection_pending"),
         (["budget", None], None),
     ],

@@ -10,7 +10,7 @@ set local lock_timeout = '5s';
 --      processus de fiches et jusqu'à trois processus de pièces côte à côte, un site aurait reçu jusqu'à quatre
 --      lectures au lieu d'une. Une ligne par origine (schéma://hôte:port) : les règles retenues pour notre agent,
 --      le Crawl-delay, l'heure de lecture, l'empreinte de l'agent (jamais l'agent lui-même), et le dernier échec
---      (classe, heure). Mêmes règles de fraîcheur et de repli que les copies par source déjà gardées dans
+--      (classe, heure, échecs consécutifs, client qui l'a relevé). Mêmes règles de fraîcheur et de repli que les copies par source déjà gardées dans
 --      auction_source_state.coverage (services/data-pipeline/src/sources/robots_policy_copies.py, RFC 9309 §2.4) :
 --      lue depuis moins de 30 min, la copie tient lieu de lecture ; plus vieille, elle ne sert que de repli d'une
 --      panne passagère, 24 h au plus. Un refus (401, 403, page de défi) n'est jamais gardé comme une politique :
@@ -63,6 +63,10 @@ create table if not exists app_private.robots_policies (
     or last_failure_class in ('no_tcp_response', 'timeout', 'server_error', 'access_refused', 'http_error')
   ),
   last_failure_at timestamptz,
+  -- Échecs consécutifs (la sonde suivante s'espace : 60 min, 2 h, 4 h, puis 6 h) et client qui a relevé le dernier :
+  -- « pages » (client d'une source, seul compté pour la suspension) ou « documents » (pièces jointes).
+  failure_count integer not null default 0 check (failure_count >= 0),
+  last_failure_by text check (last_failure_by is null or last_failure_by in ('pages', 'documents')),
   updated_at timestamptz not null default now(),
   constraint robots_policies_copy_complete check (
     (verified_at is null and rules is null and user_agent_digest is null)

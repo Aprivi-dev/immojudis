@@ -164,6 +164,27 @@ def test_a_publication_lock_timeout_is_a_deferral_without_attempt() -> None:
     assert pipeline_usage.publication_lock_deferral(RuntimeError("boom")) is None
 
 
+def test_only_explicit_causes_are_followed_and_the_deferrals_are_bounded() -> None:
+    """F6 : un délai de verrou vu seulement en contexte n'est pas l'issue de la publication ; une tâche n'est pas
+    reportée sans fin : au-delà de PUBLICATION_LOCK_MAX_DEFERRALS reports d'affilée, l'essai est consommé."""
+    implicit = RuntimeError("cleanup failed")
+    implicit.__context__ = _LockTimeout("canceling statement due to lock timeout")
+    assert pipeline_usage.publication_lock_deferral(implicit) is None
+
+    error = _LockTimeout("canceling statement due to lock timeout")
+    limit = pipeline_usage.PUBLICATION_LOCK_MAX_DEFERRALS
+    job: dict = {"id": "job-1", "last_error": None}
+    for count in range(1, limit + 1):
+        deferral = pipeline_usage.publication_lock_deferral(error, jobs=[job])
+        assert deferral is not None and str(deferral).startswith(f"Publication lock busy (lock_timeout) [{count}/{limit}]")
+        job["last_error"] = str(deferral)
+    assert pipeline_usage.publication_lock_deferral(error, jobs=[job]) is None
+    # Another error in between restarts the count.
+    job["last_error"] = "OCR failed"
+    assert str(pipeline_usage.publication_lock_deferral(error, jobs=[job])).startswith(
+        f"Publication lock busy (lock_timeout) [1/{limit}]")
+
+
 def test_a_general_publication_stopped_by_lock_timeout_keeps_its_attempt(monkeypatch) -> None:
     sale = SimpleNamespace(
         source_name="vench", source_url="https://example.test/sale", source_urls=[], documents=[], status="upcoming",
@@ -428,6 +449,37 @@ def test_a_lost_session_hands_the_turn_back(turns_factory, database_url) -> None
         pass
 
 
+def test_an_sql_error_on_a_live_session_keeps_the_turns_and_a_lost_session_marks_them_lost(
+        turns_factory, database_url) -> None:
+    """F3 : seule une session perdue vide la table des tours ; un tour perdu pendant une requête est compté."""
+    holder = turns_factory()
+    with host_turn.host_turn("https://busy.example.test/a", delay_seconds=0, turns=holder):
+        with pytest.raises(psycopg.errors.DivisionByZero):
+            holder._execute("select 1 / 0", None)
+        assert holder.held_hosts() == ["busy.example.test"]  # still held: the session is alive
+        pid = holder._connection.info.backend_pid
+        with _connect(database_url) as admin:
+            admin.execute("select pg_terminate_backend(%s)", (pid,))
+        with pytest.raises(psycopg.OperationalError):
+            holder._execute("select 1", None)
+        assert holder.held_hosts() == []
+    assert holder.stats.lost == 1 and holder.stats.to_json()["lost"] == 1
+
+
+def test_the_host_turn_session_beats_while_a_turn_is_held(turns_factory) -> None:
+    now = [0.0]
+    holder = turns_factory(clock=lambda: now[0])
+    holder.acquire("slow.example.test", max_wait=5)
+    queries: list[str] = []
+    execute = holder._execute
+    holder._execute = lambda sql, key: queries.append(sql) or execute(sql, key)  # type: ignore[method-assign]
+    holder.heartbeat_due_now()
+    assert queries == []  # just used
+    now[0] += host_turn.HEARTBEAT_SECONDS
+    holder.heartbeat_due_now()  # the background thread may beat at the same moment
+    assert queries and set(queries) == {"select 1"}
+
+
 def test_a_waiting_process_passes_before_the_holder_takes_the_host_again(turns_factory) -> None:
     holder, waiter = turns_factory(), turns_factory()
     order: list[str] = []
@@ -462,6 +514,32 @@ def test_only_an_activated_lane_worker_takes_host_turns(monkeypatch) -> None:
     assert host_turn._process_turns() is None
 
 
+def test_the_manual_document_drain_and_its_preparation_processes_take_host_turns(monkeypatch) -> None:
+    """M6 : le vidage manuel des pièces tourne à côté des travailleurs, sans le tour des sources : tours par hôte."""
+    from src import document_backlog, document_prefetch
+
+    monkeypatch.setattr(host_turn, "_ACTIVE", threading.Event())
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "2")
+    monkeypatch.setattr(document_backlog, "run_document_backlog",
+                        lambda limits: pytest.fail("stop here") if not host_turn._ACTIVE.is_set() else
+                        document_backlog.BacklogReport(outcomes=[], elapsed_seconds=1.0))
+    monkeypatch.setattr(document_backlog, "_run_document_reading", lambda: "disabled")
+    monkeypatch.setattr(document_backlog, "_record_yield", lambda summary: None)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    assert document_backlog.main([]) == 0
+    assert host_turn._ACTIVE.is_set()
+
+    monkeypatch.setenv("PDF_HOST_MIN_DELAY_SECONDS", "2.0")  # restored after the test (_init_worker sets it)
+    monkeypatch.setattr(host_turn, "_ACTIVE", threading.Event())
+    document_prefetch._init_worker(2.0)  # what each spawned preparation process runs first
+    assert host_turn._ACTIVE.is_set()
+
+    monkeypatch.setattr(host_turn, "_ACTIVE", threading.Event())
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "0")
+    document_prefetch._init_worker(2.0)
+    assert not host_turn._ACTIVE.is_set()  # host turns off: as before the parallel lane
+
+
 def test_without_the_setting_no_turn_is_taken(monkeypatch) -> None:
     monkeypatch.setattr(host_turn, "_process_turns", lambda: None)
     with host_turn.host_turn("https://example.test/a", delay_seconds=1):
@@ -482,7 +560,7 @@ def test_a_page_request_waiting_too_long_for_its_turn_releases_the_detail_task(m
 
     monkeypatch.setattr(common, "host_turn", busy)
     with source_task_deadline_scope(time.monotonic() + 600):
-        with pytest.raises(SourceTaskDeadlineExceeded, match="host turn"):
+        with pytest.raises(SourceTaskDeadlineExceeded, match="(?i)host turn"):
             client.get("https://source.example/annonce")
 
 
@@ -499,6 +577,65 @@ def test_a_document_waiting_too_long_for_its_turn_is_deferred_without_attempt(mo
         with pytest.raises(PdfDeadlineExceeded):
             pdf_enrichment._download_document_response("https://docs.example.test/a.pdf", headers={},
                                                        timeout_seconds=5)
+
+
+def test_a_busy_host_is_reported_as_such_and_its_task_comes_back_later(monkeypatch) -> None:
+    """F5 : un hôte occupé n'est pas « l'échéance du passage » ; la tâche revient 15 min plus tard, pas aussitôt."""
+    from src.pdf_deadline import PdfHostTurnBusy
+    from src.source_task_deadline import HostTurnBusy
+
+    _freeze_source_clock(monkeypatch)
+    _patch_http_client(monkeypatch, [[_Response(200, text="User-agent: *\nAllow: /")]])
+    client = common.PoliteHttpClient(base_url="https://source.example", user_agent=USER_AGENT, delay_seconds=0,
+                                     timeout_seconds=1)
+
+    @contextmanager
+    def busy(url, **_kwargs):
+        raise HostTurnWaitExceeded("source.example", 180.0, deadline_reached=False)
+        yield
+
+    monkeypatch.setattr(common, "host_turn", busy)
+    with source_task_deadline_scope(time.monotonic() + 600):
+        with pytest.raises(HostTurnBusy) as raised:
+            client.get("https://source.example/annonce")
+    delay = raised.value.retry_not_before - datetime.now(UTC)
+    assert timedelta(minutes=14) < delay <= timedelta(minutes=15)
+    assert "busy" in str(raised.value) and "deadline" not in str(raised.value)
+
+    released = []
+    monkeypatch.setattr(source_detail_worker, "release_source_detail_job_without_attempt",
+                        lambda job, **kwargs: released.append(kwargs))
+    source_detail_worker._release_deadline_claim({"id": "j-1"}, settings={}, exc=raised.value)
+    assert released[0]["retry_not_before"] == raised.value.retry_not_before
+    assert released[0]["reason"].startswith("Host turn of source.example not obtained after 180 s (busy)")
+
+    class Busy:
+        @contextmanager
+        def turn(self, url):
+            raise HostTurnWaitExceeded("docs.example.test", 180.0, deadline_reached=False)
+            yield
+
+    monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", Busy())
+    with pdf_deadline_scope(time.monotonic() + 600):
+        with pytest.raises(PdfHostTurnBusy, match="docs.example.test not obtained after 180 s"):
+            pdf_enrichment._download_document_response("https://docs.example.test/a.pdf", headers={},
+                                                       timeout_seconds=5)
+
+
+def test_after_a_timed_out_wait_the_process_does_not_wait_again_for_that_host(turns_factory) -> None:
+    holder, waiter = turns_factory(), turns_factory()
+    with host_turn.host_turn("https://busy.example.test/a", delay_seconds=0, turns=holder):
+        with pytest.raises(HostTurnWaitExceeded):
+            waiter.acquire("busy.example.test", max_wait=0.3)
+        started = time.monotonic()
+        with pytest.raises(HostTurnWaitExceeded) as raised:
+            with host_turn.host_turn("https://busy.example.test/b", delay_seconds=0, turns=waiter,
+                                     deadline_remaining=lambda: 60):
+                pytest.fail("no turn")
+        assert time.monotonic() - started < 0.2  # refused at once: no second wait on the busy host
+        assert raised.value.deadline_reached is False
+    with host_turn.host_turn("https://other.example.test/a", delay_seconds=0, turns=waiter):
+        pass  # other hosts are not affected
 
 
 # --- Copie commune de robots.txt ------------------------------------------------------------------------------
@@ -678,12 +815,51 @@ def test_the_store_tolerates_a_database_without_the_migration(monkeypatch, datab
     robots_policy_store.save_failure("https://example.test:443", RobotsFailure("timeout", datetime.now(UTC)))
 
 
+def test_the_shared_failure_counts_consecutive_failures_and_keeps_its_recorder(database_url) -> None:
+    """M5/M4 sur un vrai PostgreSQL : la série d'échecs s'allonge, une lecture réussie la remet à zéro."""
+    import re
+
+    migration = (Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+                 / "20261204100000_robots_policies_and_unreachable_sources.sql").read_text(encoding="utf-8")
+    create = re.search(r"create table if not exists app_private\.robots_policies \(.*?\n\);", migration, re.S)
+    assert create is not None
+    key = "https://silent.example.test:443"
+    with psycopg.connect(database_url) as db:  # one transaction, rolled back
+        if db.execute("select to_regclass('app_private.robots_policies')").fetchone()[0] is not None:
+            pytest.skip("the disposable database already has the table")
+        db.execute("create schema if not exists app_private")
+        db.execute(create.group(0))
+        start = datetime(2026, 11, 17, tzinfo=UTC)
+        for hours, recorder in ((0, "pages"), (1, "documents"), (3, "pages")):
+            db.execute(robots_policy_store._SAVE_FAILURE_SQL, (key, "timeout", start + timedelta(hours=hours), recorder))
+        row = db.execute("select failure_count, last_failure_by from app_private.robots_policies where origin = %s",
+                         (key,)).fetchone()
+        assert row == (3, "pages")
+        db.execute(robots_policy_store._SAVE_VERIFIED_SQL,
+                   (key, psycopg.types.json.Jsonb([]), None, start + timedelta(hours=4), "0" * 16))
+        row = db.execute("""select failure_count, last_failure_by, last_failure_class
+            from app_private.robots_policies where origin = %s""", (key,)).fetchone()
+        assert row == (0, None, None)
+        db.execute(robots_policy_store._SAVE_FAILURE_SQL, (key, "timeout", start + timedelta(hours=5), "documents"))
+        assert db.execute("select failure_count from app_private.robots_policies where origin = %s",
+                          (key,)).fetchone() == (1,)
+        db.rollback()
+
+
 # --- Source injoignable (lot 5) -------------------------------------------------------------------------------
 
 
-def _coverage(failure_class: str | None, *, state: str = "unavailable") -> dict:
-    robots = {"state": state, "transient": True, "failure_class": failure_class} if failure_class else {"state": "verified"}
+def _coverage(failure_class: str | None, *, state: str = "unavailable", observed_by: str | None = "pages",
+              observed_at: datetime | None = None) -> dict:
+    robots = {"state": state, "transient": True, "failure_class": failure_class, "observed_by": observed_by,
+              "observed_at": observed_at.isoformat() if observed_at else None} if failure_class else {"state": "verified"}
     return {"robots_policy": robots}
+
+
+def _series(since: datetime, failures: int, last: datetime) -> dict:
+    """Couverture précédente d'une source muette depuis ``since`` : ``failures`` échecs relevés, le dernier à ``last``."""
+    return {"unreachable_since": since.isoformat(), "unreachable_observed_failures": failures,
+            "unreachable_last_observed_at": last.isoformat()}
 
 
 def test_a_passing_robots_outage_is_probed_hourly_once_the_shared_copy_exists() -> None:
@@ -691,7 +867,10 @@ def test_a_passing_robots_outage_is_probed_hourly_once_the_shared_copy_exists() 
     decision = source_suspension.decide({}, _coverage("no_tcp_response"), now=now, probe_available=True)
     assert decision.probe_at == now + timedelta(minutes=60)
     assert decision.unreachable_since == now and decision.suspend_until is None
-    assert decision.coverage() == {"failure_class": "no_tcp_response", "unreachable_since": now.isoformat()}
+    assert decision.coverage() == {
+        "failure_class": "no_tcp_response", "unreachable_since": now.isoformat(), "robots_failures": 1,
+        "unreachable_observed_failures": 1, "unreachable_last_observed_at": now.isoformat(),
+    }
     without = source_suspension.decide({}, _coverage("no_tcp_response"), now=now, probe_available=False)
     assert without.probe_at is None  # before the migration: the backoff of before, never more requests
     pages = {**_coverage("no_tcp_response", state="reused_copy"), "requests_attempted": 3, "requests_succeeded": 0}
@@ -704,7 +883,7 @@ def test_seventy_two_hours_without_an_answer_suspend_the_source_for_seven_days()
     now = datetime.now(UTC)
     since = now - timedelta(hours=72, minutes=1)
     decision = source_suspension.decide(
-        {"unreachable_since": since.isoformat()}, _coverage("timeout"), now=now, probe_available=True
+        _series(since, 11, now - timedelta(hours=6)), _coverage("timeout"), now=now, probe_available=True
     )
     assert decision.unreachable_since == since
     assert decision.suspend_until == now + timedelta(days=7)
@@ -721,6 +900,192 @@ def test_only_connection_failures_count_towards_the_suspension(coverage) -> None
         {"unreachable_since": (now - timedelta(days=4)).isoformat()}, coverage, now=now, probe_available=True
     )
     assert decision.unreachable_since is None and decision.suspend_until is None
+
+
+def _walk(steps: list[tuple[timedelta, dict]], *, start: datetime, auto_suspend: bool = True):
+    """Fins de collecte successives : (heure relative, couverture) ; rend la dernière décision."""
+    previous: dict = {}
+    decision = None
+    for offset, coverage in steps:
+        now = start + offset
+        decision = source_suspension.decide(previous, coverage, now=now, probe_available=True,
+                                            auto_suspend=auto_suspend)
+        previous = {**previous, **decision.coverage()}
+    return decision
+
+
+def test_a_hole_in_the_observations_restarts_the_clock() -> None:
+    """M3 : après une pause du pipeline, un seul échec ne suspend pas la source 7 jours."""
+    start = datetime.now(UTC) - timedelta(days=5)
+    before_pause = [(timedelta(hours=hour), _coverage("timeout", observed_at=start + timedelta(hours=hour)))
+                    for hour in (0, 6, 12, 18, 24, 30)]
+    resumed = start + timedelta(hours=96)
+    decision = _walk([*before_pause, (timedelta(hours=96), _coverage("timeout", observed_at=resumed))], start=start)
+    assert decision.unreachable_since == resumed
+    assert decision.observed_failures == 1 and decision.suspend_until is None
+
+
+def test_seventy_two_hours_need_enough_observed_failures() -> None:
+    start = datetime.now(UTC) - timedelta(days=4)
+    sparse = [(timedelta(hours=hour), _coverage("no_tcp_response", observed_at=start + timedelta(hours=hour)))
+              for hour in (0, 12, 24, 36, 48, 60, 72)]
+    assert _walk(sparse[:-1], start=start).suspend_until is None
+    decision = _walk(sparse, start=start)
+    assert decision.observed_failures == 7 and decision.suspend_until is not None
+    # The same failure read again by a later collection (not due yet) is counted once.
+    again = _walk([*sparse[:2], (timedelta(hours=13), _coverage("no_tcp_response",
+                                                                observed_at=start + timedelta(hours=12)))],
+                  start=start)
+    assert again.observed_failures == 2
+
+
+def test_a_failure_seen_by_the_documents_client_never_moves_the_suspension_clock() -> None:
+    """M4 : seul le client des pages de la source compte ; un échec relevé par les pièces ne fait rien avancer."""
+    now = datetime.now(UTC)
+    fresh = source_suspension.decide({}, _coverage("timeout", observed_by="documents"), now=now, probe_available=True)
+    assert fresh.unreachable_since is None and fresh.observed_failures == 0
+    previous = _series(now - timedelta(hours=80), 10, now - timedelta(hours=5))
+    kept = source_suspension.decide(previous, _coverage("timeout", observed_by="documents"), now=now,
+                                    probe_available=True)
+    assert kept.observed_failures == 10 and kept.last_observed_at == now - timedelta(hours=5)
+    assert kept.suspend_until is not None  # the series of the pages client alone reached 72 h
+    assert fresh.probe_at == now + timedelta(minutes=60)  # the probe spacing still follows any passing failure
+
+
+def test_the_pages_client_says_who_saw_the_failure(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    failed_at = datetime.now(UTC) - timedelta(minutes=10)
+    store = _Store(SharedPolicy(None, RobotsFailure("timeout", failed_at, recorded_by="documents")))
+    store.install(monkeypatch)
+    _patch_http_client(monkeypatch, [[]])
+    status = _client().coverage_metrics()["robots_policy"]
+    assert status["observed_by"] == "documents" and status["observed_at"] == failed_at.isoformat()
+
+    store.shared = None
+    _patch_http_client(monkeypatch, [[httpx.ConnectTimeout("no answer")] * 4])
+    own = _client().coverage_metrics()["robots_policy"]
+    assert own["observed_by"] == "pages"
+    assert [(failure.failure_class, failure.recorded_by) for failure in store.failures] == [("no_tcp_response", "pages")]
+
+
+def test_the_documents_client_records_its_failures_as_its_own(monkeypatch) -> None:
+    from src import document_politeness
+
+    monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", True)
+    store = _Store()
+    store.install(monkeypatch)
+
+    def broken(_url):
+        raise ValueError("bad redirect target")
+
+    politeness = document_politeness.DocumentPoliteness(
+        user_agent=lambda: USER_AGENT, fetch_robots=broken, sleep=lambda _s: None, min_delay_seconds=0,
+    )
+    assert politeness.is_disallowed("https://docs.example.test/a.pdf") is None
+    # Not a network failure: never a "timeout" that would count as a silent site.
+    assert [(failure.failure_class, failure.recorded_by) for failure in store.failures] == [("http_error", "documents")]
+
+
+def _tls_error() -> httpx.ConnectError:
+    import ssl
+
+    error = httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    error.__cause__ = ssl.SSLCertVerificationError("certificate verify failed")
+    return error
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (httpx.ConnectTimeout("no answer"), "no_tcp_response"),
+        (httpx.ConnectError("connection refused"), "no_tcp_response"),
+        (httpx.ReadTimeout("slow"), "timeout"),
+        (httpx.RemoteProtocolError("cut"), "timeout"),
+        (_tls_error(), "http_error"),
+        (ValueError("not a URL"), "http_error"),
+        (httpx.UnsupportedProtocol("ftp"), "http_error"),
+    ],
+)
+def test_only_network_errors_are_connection_failures(error, expected) -> None:
+    assert robots_policy_copies.failure_class(error=error) == expected
+
+
+def test_the_probe_spacing_grows_to_six_hours() -> None:
+    hours = [robots_policy_copies.probe_interval(n).total_seconds() / 3600 for n in range(1, 7)]
+    assert hours == [1, 2, 4, 6, 6, 6]
+    failure = RobotsFailure("timeout", datetime(2026, 11, 17, tzinfo=UTC), count=3)
+    assert failure.probe_not_before() == datetime(2026, 11, 17, 4, tzinfo=UTC)
+
+
+def _requests_in(hours: float, *, delays: list[timedelta], per_run: int) -> int:
+    """Requêtes vers robots.txt après la collecte en échec de l'heure 0 (exclue), sur ``hours`` heures."""
+    elapsed, runs = timedelta(0), 0
+    for delay in delays:
+        elapsed += delay
+        if elapsed > timedelta(hours=hours):
+            break
+        runs += 1
+    return runs * per_run
+
+
+def test_a_silent_site_never_receives_more_requests_than_before() -> None:
+    """M5 : la sonde (une requête, espacée de 1 h à 6 h) contre l'ancien régime (quatre essais, 30 min à 6 h)."""
+    old = [autonomous_runner.next_attempt(failures=n, access_denied=False, retry_not_before=None, now=datetime(
+        2026, 1, 1, tzinfo=UTC)) - datetime(2026, 1, 1, tzinfo=UTC) for n in range(1, 40)]
+    new = [robots_policy_copies.probe_interval(n) for n in range(1, 40)]
+    for hours in (24, 72):
+        before = _requests_in(hours, delays=old, per_run=4)
+        after = _requests_in(hours, delays=new, per_run=1)
+        assert after < before, (hours, after, before)
+    assert _requests_in(24, delays=new, per_run=1) == 5 and _requests_in(24, delays=old, per_run=4) == 24
+    assert _requests_in(72, delays=new, per_run=1) == 13 and _requests_in(72, delays=old, per_run=4) == 56
+    # Steady state: four a day, against sixteen.
+    assert timedelta(days=1) / robots_policy_copies.PROBE_MAX_INTERVAL == 4
+
+
+def test_the_collection_probes_follow_the_same_spacing() -> None:
+    now = datetime.now(UTC)
+    decision = source_suspension.decide({"robots_failures": 2}, _coverage("server_error"), now=now,
+                                        probe_available=True)
+    assert decision.robots_failures == 3 and decision.probe_at == now + timedelta(hours=4)
+
+
+@pytest.mark.parametrize("raw,enabled", [("", True), ("on", True), ("off", False), ("OFF", False), ("maybe", True)])
+def test_the_auto_suspend_switch(monkeypatch, raw, enabled) -> None:
+    monkeypatch.setenv("PIPELINE_SOURCE_AUTO_SUSPEND", raw)
+    assert source_suspension.auto_suspend_enabled() is enabled
+
+
+def test_auto_suspend_off_brings_back_the_spacing_of_before_and_no_suspension(monkeypatch) -> None:
+    """M2 : sans commit, ni sonde espacée ni suspension ; la fin de collecte reprend next_attempt."""
+    monkeypatch.setenv("PIPELINE_SOURCE_AUTO_SUSPEND", "off")
+    since = datetime.now(UTC) - timedelta(hours=80)
+    db = _FinishDb(_coverage("no_tcp_response"), _series(since, 12, datetime.now(UTC) - timedelta(hours=6)))
+    _finish(monkeypatch, db)
+    next_inventory, suspended = db.update[4], db.update[5]
+    assert suspended is None and db.update[6] is None
+    # Fourth consecutive failure: 15 * 2**4 = 240 minutes, as before.
+    assert next_inventory - datetime.now(UTC) > timedelta(minutes=239)
+
+
+def test_a_suspended_host_returns_the_stored_date(monkeypatch) -> None:
+    """F7 : la date vient de la base, jamais d'un repli inventé."""
+    until = datetime.now(UTC) + timedelta(days=3)
+    rows = [("encheres_immobilieres", until), ("other", None)]
+
+    class Db:
+        def execute(self, *_a):
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    import src.storage.supabase_client as supabase_client
+
+    monkeypatch.setattr(supabase_client, "connect", lambda *_a, **_k: nullcontext(Db()))
+    source_suspension.reset_cache()
+    try:
+        assert source_suspension._suspended_sources("db") == {"encheres_immobilieres": until}
+        assert source_suspension.suspended_host_until("https://encheresimmobilieres.fr/a.pdf", "db") == until
+    finally:
+        source_suspension.reset_cache()
 
 
 def test_documents_of_a_suspended_site_wait_without_a_request(monkeypatch) -> None:
@@ -794,7 +1159,7 @@ def test_without_the_migration_the_backoff_of_before_stays(monkeypatch) -> None:
 
 def test_a_source_silent_for_72_hours_is_suspended_without_withdrawing_anything(monkeypatch) -> None:
     since = datetime.now(UTC) - timedelta(hours=73)
-    db = _FinishDb(_coverage("no_tcp_response"), {"unreachable_since": since.isoformat()})
+    db = _FinishDb(_coverage("no_tcp_response"), _series(since, 12, datetime.now(UTC) - timedelta(hours=6)))
     withdrawals = []
     monkeypatch.setattr(autonomous_runner, "_withdraw_missing_sales", lambda *a, **k: withdrawals.append(a))
     _finish(monkeypatch, db)
@@ -804,3 +1169,50 @@ def test_a_source_silent_for_72_hours_is_suspended_without_withdrawing_anything(
     assert db.update[6].startswith("source_unreachable:")
     assert withdrawals == []
     assert db.synced
+
+
+# --- Bail des tâches et fichiers temporaires (M7) ---------------------------------------------------------------
+
+
+def test_a_lane_worker_never_outlives_the_thirty_minute_claim_lease() -> None:
+    """M7 : une tâche n'est reprise qu'après 30 min sans nouvelle (``locked_at``, revendication SQL). Un processus de
+    la voie est tué au plus tard 25 min après le début de son passage (budget de 20 min plafonné, plus 5 min) : un
+    autre processus ne peut pas reprendre une tâche que le premier traite encore. Si ce test casse, il faut un
+    battement de ``locked_at`` par tâche."""
+    lease = timedelta(minutes=30)
+    assert autonomous_runner.ENRICHMENT_BUDGET_SECONDS == 1200
+    assert timedelta(seconds=autonomous_runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS) <= lease - timedelta(minutes=5)
+    migration = (Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+                 / "20261201100000_operational_alerts_recalibration.sql").read_text(encoding="utf-8")
+    assert "coalesce(j.locked_at, j.updated_at) < now() - interval '30 minutes'" in migration
+
+
+def test_each_process_downloads_into_its_own_temporary_file(tmp_path, monkeypatch) -> None:
+    """M7 : le vidage manuel et un travailleur peuvent télécharger la même vente : jamais le même ``.tmp``."""
+    import os as os_module
+    from pathlib import Path as PathType
+
+    from src.normalize import normalize_sale
+    from src.pdf_enrichment import PdfEnrichmentStats, download_documents
+
+    class Response:
+        content = b"%PDF-1.4\n%%EOF"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    written: list[str] = []
+    original = PathType.write_bytes
+
+    def note(self, data):
+        written.append(self.name)
+        return original(self, data)
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda url, **kwargs: Response())
+    monkeypatch.setattr(PathType, "write_bytes", note)
+    sale = normalize_sale({"source_name": "info_encheres", "source_url": "https://www.info-encheres.com/vente-a.html",
+                           "documents": [{"label": "Cahier", "url": "https://example.test/cahier.pdf", "type": "pdf"}]})
+    assert len(download_documents(sale, output_root=tmp_path, stats=PdfEnrichmentStats())) == 1
+    temporary = [name for name in written if name.endswith(".tmp")]
+    assert temporary and all(name.endswith(f".pdf.{os_module.getpid()}.tmp") for name in temporary)

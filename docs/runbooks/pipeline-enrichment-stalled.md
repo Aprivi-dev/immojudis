@@ -239,7 +239,11 @@ Décision du propriétaire, étape 1 : la file tourne en continu, séparée des 
   écritures, elles-mêmes faites sous le verrou du catalogue ; la copie de ses photos le prend à son tour (4 min
   d'attente au plus, sinon reportée) ; l'unité le prend autour de chaque passe qui contacte un hôte (sinon
   `source_traffic_busy`) ; le travailleur le reprend lot par lot sans attendre et cède dès qu'un autre l'attend.
-  Une collecte n'interroge donc jamais un site en même temps que la file.
+  Une collecte n'interroge donc jamais un site en même temps que la file. Ces attentes de verrou ne sont jamais
+  coupées par le `statement_timeout` de 2 min de la session (incident du 17/11/2026 : une unité morte en
+  `QueryCanceled` derrière une collecte de 13 min) : seul leur `lock_timeout` les borne
+  (`catalogue_lock.queued_wait`). Une unité dont le tour des sources n'est pas venu s'arrête proprement,
+  `stop_reason` = `source_traffic_busy`.
 - **Plafond d'appels IA par exécution.** `max_ai_predictions_per_run` (90) se compte sur les 30 dernières minutes de
   l'exécution (migration `20261203100000`) : chaque passage d'une unité garde le plafond d'un passage d'avant
   (24 appels en moyenne, 39 au plus sur 56 passages mesurés). Le budget quotidien (`daily_ai_budget_usd`) et le
@@ -300,7 +304,12 @@ relectures de fiches (`source_detail`) et N processus ne prennent que la famille
 `fact_extraction`, `enrichment_oldest`), côte à côte (`src/autonomous_runner.py`, `_run_lane_workers` ;
 `python -m src.queued_runner --enrichment-only --family source_detail|enrichment`). L'unité attend la fin de
 tous les processus, puis fait ses passes facultatives comme avant ; l'échec d'un processus n'arrête pas les autres
-(il arrête l'unité après le passage, comme l'échec du travailleur unique).
+(il arrête l'unité après le passage, comme l'échec du travailleur unique). Le cycle n'est « à vide »
+(`queues_empty`, fin de l'unité) que si **tous** les processus le sont : un processus de fiches à vide en quelques
+secondes attend le cycle suivant. Les sorties sont préfixées `[famille#n]` ; si l'unité s'arrête (exception, job
+annulé), les processus encore en vie sont terminés. Une tâche n'est reprise par un autre processus qu'après 30 min
+sans nouvelle (`locked_at`) : un processus de la voie est tué 25 min au plus après le début de son passage, et
+chaque processus télécharge dans son propre fichier temporaire.
 
 - **Réglages** (variables de dépôt GitHub, `src/enrichment_lane_settings.py`) :
   `PIPELINE_ENRICHMENT_GENERAL_WORKERS` (0 à 3, **2 par défaut**), `PIPELINE_WORKER_LOCK_MODE`
@@ -308,7 +317,12 @@ tous les processus, puis fait ses passes facultatives comme avant ; l'échec d'u
   `on` dès que N ≥ 1). N ≥ 1 avec `exclusive` ou avec `off` est refusé au démarrage de l'unité (run `failed`,
   erreur « Enrichment lane settings refused: … ») et du travailleur (code 3).
 - **Retour arrière, sans commit** : `PIPELINE_ENRICHMENT_GENERAL_WORKERS=0` ramène le travailleur mixte unique,
-  verrous exclusifs, sans tours par hôte, à l'identique. Puis, si besoin, `ENRICHMENT_LANE=off`.
+  en verrous exclusifs et sans tours par hôte. Puis, si besoin, `ENRICHMENT_LANE=off` (un seul passage par unité)
+  et `PIPELINE_SOURCE_AUTO_SUSPEND=off` (espacement progressif d'avant pour une source muette, plus de nouvelle
+  suspension ; `docs/runbooks/pipeline-source-missed.md`). **Ce n'est pas l'avant à l'identique** : restent, quel
+  que soit N, l'attente des verrous dans la file de PostgreSQL (au lieu d'essais espacés), la copie commune de
+  robots.txt et l'attente sans requête après un échec récent, le report sans essai d'une publication sur
+  `lock_timeout`, et le report des pièces d'un site suspendu (`suspended_host_until`).
 - **Jamais deux écrivains sur une vente** : la revendication refuse une tâche dont la vente a une tâche `running`
   de moins de 30 min et verrouille la tâche et la vente (`for update of j, s skip locked`) ; toutes les
   revendications passent par `claim_auction_enrichment_jobs_request`, sérialisées par le verrou de transaction
@@ -321,15 +335,23 @@ tous les processus, puis fait ses passes facultatives comme avant ; l'échec d'u
 - **Tours par hôte** (`src/host_turn.py`) : jamais deux processus sur le même site en même temps. Le tour d'un
   hôte (clé `immojudis:host-turn:v1:<hôte sans www>`) est tenu pendant la requête et ses reprises, puis rendu une
   fois écoulé le délai du site (le nôtre ou le `Crawl-delay`). Attente bornée (180 s ou l'échéance du passage) :
-  au-delà, la tâche est remise en file sans perdre d'essai. Les démarrages Replicate passent par la même règle
-  (`api.replicate.com`, 11 s entre deux démarrages, tous processus confondus). Seuls les processus de la voie
-  prennent ces tours : tout autre processus qui parle aux sources tient le tour des sources en exclusif, donc seul.
+  au-delà, la tâche est remise en file sans perdre d'essai, 15 min plus tard (fiches ; 30 min pour les pièces)
+  quand l'hôte était seulement occupé, journalisée « Host turn of … not obtained after … s (busy) », et le
+  processus n'attend plus cet hôte pendant 10 min. Une session de tours perdue pendant une requête compte un tour
+  perdu (`host_turns.lost` du compte rendu) ; un battement garde la session ouverte tant qu'un tour est tenu. Les démarrages Replicate passent par la même règle
+  (`api.replicate.com`, 11 s entre deux envois, tous processus confondus : le tour est pris avant les réservations
+  et rendu juste avant l'envoi). Seuls les processus de la voie
+  prennent ces tours, ainsi que le vidage manuel des pièces (`python -m src.document_backlog` et ses processus de
+  préparation, groupe de concurrence à part) quand ils sont allumés ; tout autre processus qui parle aux sources
+  tient le tour des sources en exclusif, donc seul.
 - **robots.txt commun** (`app_private.robots_policies`, migration `20261204100000`) : une lecture de moins de
   30 min tient lieu de lecture pour tous les processus ; au-delà, elle reste le repli d'une panne passagère
-  (24 h). Lectures par hôte et par jour : 48 au plus (avant : une par passage, ~72, et une par processus).
+  (24 h). Lectures par hôte et par jour : 48 au plus (avant : une par passage, ~72, et une par processus). Après
+  un échec, la sonde suivante s'espace : 1 h, 2 h, 4 h, puis 6 h (`robots_policy_copies.probe_interval`).
 - **`lock_timeout` de publication** (15 s sur le verrou de publication) : la publication est annulée et la tâche
   remise en file 5 min plus tard **sans perdre d'essai** (`pipeline_usage.publication_lock_deferral`), pour les
-  fiches comme pour les pièces.
+  fiches comme pour les pièces ; 6 fois d'affilée au plus (`last_error` porte le compte, « [n/6] ») : au-delà,
+  l'essai est consommé, pour qu'une tâche ne revienne pas sans fin.
 - **Plafond IA** : tous les processus portent le `AUTONOMOUS_RUN_ID` de l'unité ; `max_ai_predictions_per_run`
   (90 par 30 min) reste celui de l'unité entière, le budget quotidien et le plafond horaire ne changent pas.
 - **Calcul** : `OMP_NUM_THREADS` (et BLAS) = 4 / (N + 1), Tesseract à un fil (`OMP_THREAD_LIMIT=1`) : N OCR à la

@@ -64,6 +64,10 @@ def _init_worker(host_delay_seconds: float) -> None:
     from src.document_politeness import HOST_DELAY_ENV
 
     os.environ[HOST_DELAY_ENV] = str(host_delay_seconds)
+    # Spawned: the parent's activation does not carry over. The same host turns as the drain (src.host_turn).
+    from src import host_turn
+
+    host_turn.activate()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
 
