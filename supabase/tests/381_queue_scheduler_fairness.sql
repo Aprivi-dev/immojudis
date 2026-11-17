@@ -49,13 +49,15 @@ select is(
   'a queue that is not due never preempts collection'
 );
 
+-- Since 20261203100000 the collections and the queue are two scheduling lanes: the dispatcher no longer arbitrates
+-- between them (the helper stays in place for a rollback, its pure rule is still tested above).
 select ok(
   position(
     'pipeline_queue_should_preempt_source' in pg_get_functiondef(
       'public.claim_autonomous_pipeline_run()'::regprocedure
     )
-  ) > 0,
-  'the autonomous dispatcher uses the bounded arbitration helper'
+  ) = 0,
+  'the two-lane dispatcher no longer arbitrates between the queue and a source'
 );
 
 select ok(
@@ -115,9 +117,9 @@ select ok(
 );
 
 -- Exercise the dispatcher with a small, isolated fixture.  The helper tests
--- above prove the pure arbitration rule; these calls prove that the claim RPC
--- actually sends a due queue ahead of a recent source and gives an older
--- source its collection turn while leaving the queue pending.
+-- above prove the pure arbitration rule; these calls prove that the two-lane
+-- claim RPC (20261203100000) collects a due source at once and still claims
+-- the due queue in the same tick, on its own lane.
 set local role service_role;
 
 update public.auction_pipeline_control
@@ -181,18 +183,20 @@ create temporary table pgtap_scheduler_claims (
 ) on commit drop;
 
 insert into pgtap_scheduler_claims (case_name, payload)
+values ('recent-source-collection', public.claim_autonomous_pipeline_run());
+insert into pgtap_scheduler_claims (case_name, payload)
 values ('recent-source', public.claim_autonomous_pipeline_run());
 
 select is(
-  (select payload->>'mode' from pgtap_scheduler_claims where case_name = 'recent-source'),
-  'enrichment',
-  'a due queue preempts a source that is less than one hour late'
+  (select payload->>'source' from pgtap_scheduler_claims where case_name = 'recent-source-collection'),
+  'pgtap-scheduler-recent',
+  'a source less than one hour late is collected at once: the queue no longer preempts it'
 );
 
 select is(
   (select payload->>'source' from pgtap_scheduler_claims where case_name = 'recent-source'),
   'enrichment-queue',
-  'the recent-source arbitration creates an enrichment queue run'
+  'the second claim of the tick creates the enrichment queue run on its own lane'
 );
 
 select is(
@@ -243,21 +247,21 @@ select is(
 
 select ok(
   (
-    select next_inventory_at <= statement_timestamp()
+    select next_inventory_at >= statement_timestamp() + interval '11 hours'
     from public.auction_source_state
     where source_name = 'pgtap-scheduler-recent'
   ),
-  'queue preemption does not postpone the recent source inventory turn'
+  'the collected recent source moves to its next inventory turn'
 );
 
 -- Remove the first fixture run so the next scheduler decision can exercise
 -- the older-source branch in the same transaction.  The test transaction
 -- rolls back all fixture changes at the end of the file.
 delete from public.auction_runs
- where id = (
+ where id in (
    select (payload->>'id')::uuid
    from pgtap_scheduler_claims
-   where case_name = 'recent-source'
+   where case_name in ('recent-source', 'recent-source-collection')
  );
 delete from public.auction_source_state
  where source_name = 'pgtap-scheduler-recent';

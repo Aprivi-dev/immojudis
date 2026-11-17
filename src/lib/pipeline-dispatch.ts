@@ -18,6 +18,12 @@ type DispatchResult = {
   status?: string;
 };
 const DISPATCH_INTERVAL_MS = 15 * 60 * 1000;
+/**
+ * Collections and the enrichment queue are two scheduling lanes (migration 20261203100000): the SQL claim returns
+ * at most one unit per call and per lane, so a tick asks once per lane. Before that migration the second call
+ * finds the first run still active and returns nothing.
+ */
+const PIPELINE_LANES = 2;
 
 /** Parse both forms allowed by RFC 9110 Retry-After. */
 export function retryAfterAt(value: string | null, now = new Date()): Date | null {
@@ -72,8 +78,26 @@ async function recordDispatchResult(
   return data as DispatchResult | null;
 }
 
-/** Called by the existing authenticated 15-minute health tick. SQL owns due times. */
+/**
+ * Called by the authenticated health tick. SQL owns due times and lanes: one claim per lane, each dispatched
+ * before the next claim. A failed dispatch stops the tick and is reported, as before the lanes existed.
+ */
 export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
+  const runs: Record<string, unknown>[] = [];
+  let reason: unknown;
+  for (let lane = 0; lane < PIPELINE_LANES; lane += 1) {
+    const result = await dispatchDueRun();
+    if (result.dispatched !== true) {
+      reason = result.reason;
+      break;
+    }
+    runs.push(result);
+  }
+  return runs.length ? { dispatched: true, runs } : { dispatched: false, reason };
+}
+
+/** Claim one due unit (or a due retry) and dispatch it to GitHub Actions. */
+export async function dispatchDueRun(): Promise<Record<string, unknown>> {
   const { githubToken: token, repository, workflow, ref } = serverEnv().pipeline;
   // Do this before claiming a row: a missing token must not consume a retry or
   // create a lease that the scheduler cannot deliver.
@@ -109,6 +133,8 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
             run_id: data.id,
             source: data.mode === "collect" ? data.source : "all",
             automatic: "true",
+            // The enrichment lane has its own concurrency group in data-pipeline.yml.
+            ...(data.mode === "enrichment" ? { enrichment_only: "true" } : {}),
           },
         }),
         signal: AbortSignal.timeout(12_000),
