@@ -1027,12 +1027,16 @@ def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int 
             # or the worker would yield again at once.
             with source_traffic.source_traffic_turn(
                 db_url, label='enrichment unit', wait_seconds=max(1.0, deadline - time.monotonic())
-            ):
+            ) as turn:
                 pass
             unit.collection_wait_seconds += time.monotonic() - waited
             budget = min(budget, int(deadline - time.monotonic()) - ENRICHMENT_WORKER_OVERRUN_SECONDS)
             if budget < ENRICHMENT_MIN_PASS_SECONDS:
                 unit.stop_reason = 'unit_budget'
+                break
+            if not turn:
+                # Still busy (wait cut short): the workers would yield at once. The unit ends cleanly instead.
+                unit.stop_reason = 'source_traffic_busy'
                 break
         worker_stop = _run_enrichment_cycle(
             env, unit, db_url=db_url, budget=budget, deadline=deadline, licitor_withdrawn=licitor_withdrawn,

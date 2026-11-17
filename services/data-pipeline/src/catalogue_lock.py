@@ -85,6 +85,8 @@ _LOCK_SQL = {
 }
 _TRY_LOCK_SQL, _WAIT_LOCK_SQL, _UNLOCK_SQL = _LOCK_SQL[EXCLUSIVE]
 LOCK_NOT_AVAILABLE_SQLSTATE = "55P03"
+#: SQLSTATE of a cancelled statement (``statement_timeout``, ``pg_cancel_backend``).
+QUERY_CANCELED_SQLSTATE = "57014"
 
 
 def lock_sql(mode: str) -> tuple[str, str, str]:
@@ -99,16 +101,27 @@ def queued_wait(connection: Any, sql: str, key: str, seconds: float) -> bool:
 
     While it waits, the request is queued: a later request that conflicts with it (a shared request behind an
     exclusive one) queues behind it instead of passing it.
+
+    The only blocking wait for a session advisory lock in the pipeline (``catalogue_writer_lock``,
+    ``src.source_traffic``). The session's ``statement_timeout`` (2 min, ``supabase_client.connect``) must not cut
+    it: on 17/11/2026 it cancelled the source turn wait of an enrichment unit behind a 13-minute collection (57014),
+    and the unit died. It is lifted for this one statement, whose wait stays bounded by ``lock_timeout``, then put
+    back to its previous value: the heartbeat and the unlock keep it. A wait cut all the same (57014) is a turn that
+    did not come, like 55P03.
     """
+    row = connection.execute("select current_setting('statement_timeout')").fetchone()
+    statement_timeout = str(row[0]) if row else "0"
+    connection.execute("set statement_timeout = 0")
     connection.execute(f"set lock_timeout = '{max(1, int(seconds * 1000))}ms'")
     try:
         connection.execute(sql, (key,))
     except Exception as exc:
-        if getattr(exc, "sqlstate", None) != LOCK_NOT_AVAILABLE_SQLSTATE:
+        if getattr(exc, "sqlstate", None) not in {LOCK_NOT_AVAILABLE_SQLSTATE, QUERY_CANCELED_SQLSTATE}:
             raise
         return False
     finally:
         connection.execute("set lock_timeout = 0")
+        connection.execute("select set_config('statement_timeout', %s, false)", (statement_timeout,))
     return True
 
 

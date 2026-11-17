@@ -35,7 +35,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from src.catalogue_lock import EXCLUSIVE, LOCK_HEARTBEAT_SECONDS, lock_sql, session_lock_url
+from src.catalogue_lock import EXCLUSIVE, LOCK_HEARTBEAT_SECONDS, lock_sql, queued_wait, session_lock_url
 from src.config import load_settings
 
 LOGGER = logging.getLogger(__name__)
@@ -71,12 +71,7 @@ def source_traffic_turn(
     connection.autocommit = True
     stop = threading.Event()
     try:
-        connection.execute(f"set lock_timeout = '{max(1, int(wait_seconds * 1000))}ms'")
-        try:
-            connection.execute(_LOCK_SQL, (SOURCE_TRAFFIC_LOCK_NAME,))
-        except Exception as exc:  # noqa: BLE001 - lock_timeout (55P03) : le tour n'est pas venu
-            if getattr(exc, "sqlstate", None) != "55P03":
-                raise
+        if not queued_wait(connection, _LOCK_SQL, SOURCE_TRAFFIC_LOCK_NAME, wait_seconds):
             print(f"Source traffic turn not obtained within {wait_seconds:g} s; {label} does not run.", flush=True)
             yield False
             return
