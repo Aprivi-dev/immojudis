@@ -34,6 +34,9 @@ const READ_ONLY = [
   "contact_message",
   "agent_request",
   "agent_court_registry",
+  "privacy_request_operator",
+  "privacy_request_acknowledgement",
+  "privacy_request_closure",
 ];
 
 describe("registre des emails", () => {

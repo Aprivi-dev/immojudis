@@ -14,7 +14,7 @@ publication sont détaillés (couverture et annotation du journal) avec la date 
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -183,6 +183,8 @@ def test_a_blocked_publication_says_why_since_when_and_which_items_are_stuck(mon
     details = saved["publication_blocker_details"]
     assert details["inventory_incomplete"] == {
         "stop_reason": "source_errors",
+        # Ni robots.txt ni page de liste en cause : la cause est la raison d'arrêt de la couverture.
+        "stop_cause": "source_errors",
         "errors": 1,
         "pages_fetched": 9,
         "advertised_total": 198,
@@ -224,3 +226,126 @@ def test_a_complete_publication_prints_no_warning_and_has_no_blocked_since(monke
     assert db.saved_coverage["publication_blocked_since"] is None
     assert db.saved_coverage["publication_blocker_details"] == {}
     assert "Publication incomplète" not in capsys.readouterr().out
+
+
+def test_an_inventory_stopped_by_an_unreadable_robots_txt_says_so(monkeypatch, capsys) -> None:
+    # Enchères Immobilières, 16/11/2026 : 7 passages sur 14 arrêtés avant toute requête, l'alerte ne montrait que
+    # « http_attempts 0 ».
+    robots_error = "robots.txt could not be verified for https://encheresimmobilieres.fr/robots.txt: timed out"
+    coverage = {
+        "coverage_complete": False,
+        "stop_reason": "source_errors",
+        "errors": 1,
+        "pages_fetched": 0,
+        "http_attempts_including_retries": 0,
+        "robots_policy": {
+            "state": "unavailable",
+            "error_type": "ReadTimeout",
+            "transient": True,
+            "status_code": None,
+            "error": robots_error,
+        },
+        "list_fetch_failures": [
+            {"url": "https://encheresimmobilieres.fr/biens-en-vente", "error": robots_error,
+             "error_type": "RobotsUnavailableError"},
+        ],
+    }
+
+    db, _, _ = _finish(monkeypatch, source="encheres_immobilieres", status="succeeded", coverage=coverage,
+                       decisions={})
+
+    details = db.saved_coverage["publication_blocker_details"]["inventory_incomplete"]
+    assert details["stop_cause"] == "robots_unavailable"
+    assert details["robots_policy"] == {
+        "state": "unavailable", "error_type": "ReadTimeout", "transient": True, "error": robots_error,
+    }
+    assert details["list_fetch_failures_count"] == 1
+    assert details["list_fetch_failures_sample"] == [
+        {"url": "https://encheresimmobilieres.fr/biens-en-vente", "error_type": "RobotsUnavailableError",
+         "error": robots_error},
+    ]
+    assert "stop_cause=robots_unavailable" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("robots_policy", "list_failures", "expected"),
+    [
+        ({"state": "refused", "error_type": "RobotsAccessRefusedError"}, [], "robots_refused"),
+        ({"state": "verified"}, [{"url": "https://example.test/list", "error": "HTTP 500"}], "list_fetch_failed"),
+        ({"state": "reused_copy", "copy_age_hours": 13.5}, [], "page_limit_or_count_mismatch"),
+    ],
+)
+def test_the_stop_cause_names_the_failing_step(monkeypatch, robots_policy, list_failures, expected) -> None:
+    coverage = {"coverage_complete": False, "stop_reason": "page_limit_or_count_mismatch",
+                "robots_policy": robots_policy, "list_fetch_failures": list_failures, "listings_emitted": 3}
+
+    db, _, _ = _finish(monkeypatch, source="encheres_immobilieres", coverage=coverage)
+
+    details = db.saved_coverage["publication_blocker_details"]["inventory_incomplete"]
+    assert details["stop_cause"] == expected
+    assert details["robots_policy"] == robots_policy
+
+
+def _copy(verified_at: datetime, *, disallow: str) -> dict:
+    return {"verified_at": verified_at.isoformat(), "rules": [["disallow", disallow]], "crawl_delay": 5.0,
+            "user_agent_digest": "0123456789abcdef"}
+
+
+class _DbWithStoredCopies(_Db):
+    def __init__(self, *, stored_coverage, **kwargs):
+        super().__init__(**kwargs)
+        self.stored_coverage = stored_coverage
+
+    def execute(self, sql, params=None):
+        if "select consecutive_failures" in sql:
+            return _Rows((0, None, self.stored_coverage))
+        return super().execute(sql, params)
+
+
+def _finish_with_stored(monkeypatch, *, stored_coverage, coverage) -> dict:
+    db = _DbWithStoredCopies(stored_coverage=stored_coverage, source="encheres_immobilieres", status="succeeded",
+                             coverage=coverage, decisions={"published": 5})
+    monkeypatch.setattr(autonomous_runner, "record_source_presence", lambda *args: None)
+    monkeypatch.setattr(autonomous_runner, "withdraw_missing_sales", lambda *a, **k: None)
+    autonomous_runner.finish_source("db", "run-1", connect=lambda url: nullcontext(db))
+    return db.saved_coverage
+
+
+def test_the_robots_txt_copy_survives_a_run_that_did_not_read_it(monkeypatch) -> None:
+    origin = "https://encheresimmobilieres.fr:443"
+    stored = _copy(datetime.now(UTC) - timedelta(hours=3), disallow="/admin")
+
+    saved = _finish_with_stored(
+        monkeypatch,
+        stored_coverage={"robots_policy_copies": {origin: stored}},
+        coverage={"coverage_complete": True, "listings_emitted": 5},
+    )
+
+    assert saved["robots_policy_copies"] == {origin: stored}
+
+
+def test_a_fresher_robots_txt_copy_replaces_the_stored_one(monkeypatch) -> None:
+    origin = "https://encheresimmobilieres.fr:443"
+    stored = _copy(datetime.now(UTC) - timedelta(hours=20), disallow="/old")
+    fresh = _copy(datetime.now(UTC) - timedelta(minutes=5), disallow="/new")
+
+    saved = _finish_with_stored(
+        monkeypatch,
+        stored_coverage={"robots_policy_copies": {origin: stored}},
+        coverage={"coverage_complete": True, "listings_emitted": 5, "robots_policy_copies": {origin: fresh}},
+    )
+
+    assert saved["robots_policy_copies"] == {origin: fresh}
+
+
+def test_a_robots_txt_copy_older_than_24_hours_is_dropped(monkeypatch) -> None:
+    origin = "https://encheresimmobilieres.fr:443"
+    stale = _copy(datetime.now(UTC) - timedelta(hours=25), disallow="/admin")
+
+    saved = _finish_with_stored(
+        monkeypatch,
+        stored_coverage={"robots_policy_copies": {origin: stale}},
+        coverage={"coverage_complete": True, "listings_emitted": 5, "robots_policy_copies": {origin: stale}},
+    )
+
+    assert "robots_policy_copies" not in saved

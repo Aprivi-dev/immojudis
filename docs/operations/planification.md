@@ -88,6 +88,31 @@ de la fenêtre (le début enregistré d'un passage suit de quelques secondes le 
 `operational-health` est aussi dans `src/lib/health-status.ts` (`HEALTH_OPERATIONAL_MAX_AGE_MINUTES`, 65) :
 changer l'un change l'autre. Si l'on change une garde (`cron_dispatch_due`), refaire ce calcul.
 
+### Seuils des alertes du pipeline
+
+Même règle, appliquée aux alertes du pipeline de collecte par la migration `20261201100000` (16/11/2026, sept
+alertes ouvertes sans incident réel). Procédures : `docs/runbooks/`.
+
+| Alerte                                    | Cadence ou politique en cause                                                                                        | Seuil                                                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline.import.unhealthy` (âge de file) | déclenchement du workflow à chaque passage d'`operational-health` (30 min), passage de ~29 min                       | 5 400 s = 2 x 30 min + 29 min, arrondi (1 800 s avant) ; critique au-delà de 7 200 s                                                                        |
+| `pipeline.source.<source>.missed`         | inventaire toutes les 12 h                                                                                           | 18 h (inchangé, `20261020120019`)                                                                                                                           |
+| `pipeline.source.<source>.stale_listings` | relecture des fiches (`freshness.py`) : 72 h, Licitor 24 h, 6 h à moins de 7 jours de l'audience (chaque inventaire) | fenêtre 84 h, Licitor 36 h (relecture + 12 h, un inventaire) ; 24 h pour une audience dans les 7 jours (un inventaire manqué) ; muette si `.missed` ouverte |
+| `pipeline.enrichment.stalled`             | ~19 passages par jour du travailleur de la file                                                                      | bail expiré depuis 24 h ; tâches prenables non servies depuis 72 h sans baisse sur un jour (même périmètre) ; une tâche non servie depuis 7 jours           |
+| `pipeline.enrichment.exhausted`           | file de ~1 300 tâches                                                                                                | hausse : greatest(10, 2 % de la file vivante) en 24 h (3 avant) ; reliquat : 50                                                                             |
+| `catalogue.quality.licitor_lot_mismatch`  | passage d'`operational-health` (30 min)                                                                              | 1 vente, la même sur deux évaluations consécutives                                                                                                          |
+
+La politique de relecture est écrite une fois côté SQL (`app_private.listing_review_policy()`), jumelle de
+`detail_reread_hours` (`services/data-pipeline/src/freshness.py`) : changer l'une, c'est changer l'autre. En
+dérivent, sous des noms distincts, la cadence des tâches `source_detail` (une heure avant la fin de la fenêtre :
+71 h, 23 h pour Licitor, 5 h près de l'audience ; `enqueue_due_source_details_unlocked` et sa jumelle
+`source_detail_reuse.py`) et les deux tolérances de la santé : 12 h ajoutées à la fenêtre de relecture (la relecture
+suit l'inventaire de 12 h), 24 h pour une audience proche.
+
+La voie générale de la file d'enrichissement réserve une prise sur quatre à l'ancienneté (famille
+`enrichment_oldest`, `services/data-pipeline/src/general_lane_claims.py`) : voir
+`docs/runbooks/pipeline-enrichment-stalled.md`, « Équité de la file ».
+
 Le pilote automatique de l'agent n'est pas dans `cron.stale` : il ne travaille que dans sa plage d'envoi (lundi au
 vendredi hors jours fériés, 9 h 30-11 h 30 et 14 h-16 h 30, heure de Paris), et un passage arrêté par sa garde (hors
 plage, en pause, hors production) compte comme un succès dans `operational_job_runs`. Sa surveillance est l'alerte
@@ -99,6 +124,12 @@ que « Dernier passage planifié »). Plage fermée, rien n'est écrit : l'alert
 chaque midi et chaque soir. Elle ne se referme qu'après un passage planifié, ou quand le pilote est éteint, arrêté
 automatiquement ou en pause, et deux heures plus tard seulement (comme toute alerte d'exploitation). Conduite à
 tenir : `docs/runbooks/information-agent.md`, « Si aucun passage n'a lieu ».
+
+Les demandes de droits ne sont pas une tâche à part : `operational-health` évalue aussi, à chacun de ses passages,
+les alertes `compliance.privacy_requests.*` (`public.evaluate_privacy_request_health`, migration `20261202100000` :
+échéance proche, dépassée, demande reçue à prendre en charge, ouverte aussi dès le dépôt) et reprend les emails de
+suivi restés en attente (accusé de réception, prévenance de l'exploitation, clôture). Avant la migration, l'évaluation est sautée sans erreur. Conduite
+à tenir : `docs/runbooks/demandes-de-droits.md`.
 
 La complétude des annonces est recalculée par lots de 300 ventes (variable
 `LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ

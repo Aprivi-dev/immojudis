@@ -88,8 +88,11 @@ from src.sources.listing_characteristics import restore_known_detail_blocks
 from src.sources.notaires import scrape_notaires_aquitaine_result
 from src.sources.notaires_extraction import known_listing_contact, redecide_known_contact
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
+from src.sources.robots_policy_copies import COVERAGE_KEY as ROBOTS_COPIES_KEY
+from src.sources.robots_policy_copies import install as install_robots_policy_copies
 from src.sources.vench import scrape_vench_aquitaine_result
 from src.stage_watchdog import arm_from_env, track_stage
+from src.storage.supabase_client import connect as postgres_connect
 from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
@@ -325,7 +328,29 @@ def _open_run(options: PipelineOptions) -> _PipelineRun:
         set_active_blocklist(load_contact_blocklist(settings))
         # Référentiel des tribunaux : contact de secours d'une vente au tribunal sans email (preuve court_email).
         set_active_court_registry(load_court_registry(settings))
+    if options.upsert and autonomous_run_id():
+        _install_stored_robots_policies(settings)
     return _PipelineRun(options=options, settings=settings, run_id=run_id)
+
+
+def _install_stored_robots_policies(settings: dict[str, Any]) -> None:
+    """Last verified robots.txt policies kept by the scheduled runs (``src.sources.robots_policy_copies``).
+
+    Only the scheduler keeps them (``autonomous_runner.finish_source``). An unreadable database installs none:
+    robots.txt must then be read, as before.
+    """
+    db_url = str(settings.get("supabase_db_url") or "")
+    stored: list[object] = []
+    if db_url:
+        try:
+            with postgres_connect(db_url, connect_timeout=5, retry_delays=()) as db:
+                rows = db.execute(
+                    "select coverage->%s from public.auction_source_state", (ROBOTS_COPIES_KEY,)
+                ).fetchall()
+            stored = [row[0] for row in rows]
+        except Exception as exc:  # noqa: BLE001 - no copy: robots.txt is read as before
+            LOGGER.warning("Stored robots.txt policies unreadable (%s); none will be reused", type(exc).__name__)
+    install_robots_policy_copies(stored)
 
 
 def _load_known_sale_details(run: _PipelineRun) -> bool:

@@ -199,7 +199,9 @@ Retour arrière (perte du facteur) : `select app_private.set_admin_mfa_required(
 ## 7. Rétractation refusée (409)
 
 Le bouton « Exécuter la rétractation » (Conformité, demandes RGPD et rétractations) lit tout chez Stripe avant
-d'agir, et refuse sans rien changer (409) dans trois cas :
+d'agir, et refuse sans rien changer (409) quand le compte n'a ni abonnement Stripe ni achat à l'unité visé (la
+demande reste ouverte : la clôturer avec ses motifs ; voir `docs/runbooks/demandes-de-droits.md`, qui décrit aussi
+la rétractation d'un achat à l'unité), et dans trois cas :
 
 - « Plus de 100 paiements pour ce client » : la recherche d'un remboursement déjà émis ne couvrirait pas tous
   ses paiements ;

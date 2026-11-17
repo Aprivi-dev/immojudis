@@ -3,6 +3,7 @@ import { ACCOUNT_EMAIL_TEMPLATES } from "./definitions/account";
 import { AUTH_TEMPLATES } from "./definitions/auth";
 import { BILLING_EMAIL_TEMPLATES } from "./definitions/billing";
 import { OPERATIONS_EMAIL_TEMPLATES } from "./definitions/operations";
+import { PRIVACY_EMAIL_TEMPLATES } from "./definitions/privacy";
 import type { EmailSenderVariable, EmailTemplateDefinition, EmailTemplateLevel } from "./types";
 
 export type { EmailSenderVariable, EmailTemplateDefinition };
@@ -12,6 +13,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplateDefinition[] = [
   ...ACCOUNT_EMAIL_TEMPLATES,
   ...BILLING_EMAIL_TEMPLATES,
   ...OPERATIONS_EMAIL_TEMPLATES,
+  ...PRIVACY_EMAIL_TEMPLATES,
   ...AGENT_EMAIL_TEMPLATES,
   ...AUTH_TEMPLATES,
 ];

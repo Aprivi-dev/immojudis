@@ -41,6 +41,8 @@ from src.source_absence import (
 from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.sources.licitor import SOURCE_BUDGET_ENV as LICITOR_SOURCE_BUDGET_ENV
 from src.sources.petites_affiches import SOURCE_BUDGET_ENV as PETITES_AFFICHES_SOURCE_BUDGET_ENV
+from src.sources.robots_policy_copies import COVERAGE_KEY as ROBOTS_COPIES_KEY
+from src.sources.robots_policy_copies import merge_copies as merge_robots_policy_copies
 from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
 from src.storage.supabase_client import close_open_run, merge_into_run_report
 from src.storage.supabase_client import connect as postgres_connect
@@ -231,18 +233,54 @@ def _schedule_evidence_rows(db: Any, run_id: str, source: str) -> list[dict[str,
     ]
 
 
+_ROBOTS_POLICY_DETAIL_KEYS = ('state', 'error_type', 'transient', 'status_code', 'copy_age_hours', 'error')
+
+
+def _stop_cause(coverage: dict[str, Any]) -> str | None:
+    """La raison précise de l'arrêt. « 0 requête » seul ne dit pas que robots.txt était illisible (EI, 16/11/2026)."""
+    robots = coverage.get('robots_policy')
+    state = robots.get('state') if isinstance(robots, dict) else None
+    if state == 'unavailable':
+        return 'robots_unavailable'
+    if state == 'refused':
+        return 'robots_refused'
+    if isinstance(coverage.get('list_fetch_failures'), list) and coverage['list_fetch_failures']:
+        return 'list_fetch_failed'
+    stop_reason = coverage.get('stop_reason')
+    return stop_reason if isinstance(stop_reason, str) else None
+
+
 def _inventory_blocker_details(coverage: dict[str, Any]) -> dict[str, Any]:
-    """Pourquoi l'inventaire n'est pas déclaré complet : les chiffres de la couverture, sans texte libre."""
+    """Pourquoi l'inventaire n'est pas déclaré complet : les chiffres de la couverture, et la cause de l'arrêt.
+
+    Les seuls textes sont des messages d'erreur techniques bornés à 200 caractères (adresse de la page de
+    liste ou de robots.txt, type d'erreur) : aucun contenu de fiche.
+    """
     details: dict[str, Any] = {
         key: coverage[key]
         for key in ('stop_reason', 'errors', 'pages_fetched', 'advertised_total', 'unique_listings_seen',
                     'total_changed_during_scan')
         if isinstance(coverage.get(key), (str, int, bool)) and coverage.get(key) is not None
     }
+    stop_cause = _stop_cause(coverage)
+    if stop_cause:
+        details['stop_cause'] = stop_cause
+    robots = coverage.get('robots_policy')
+    if isinstance(robots, dict):
+        details['robots_policy'] = {
+            key: str(robots[key])[:200] if key == 'error' else robots[key]
+            for key in _ROBOTS_POLICY_DETAIL_KEYS if robots.get(key) is not None
+        }
     for key in ('list_fetch_failures', 'detail_failures'):
         failures = coverage.get(key)
         if isinstance(failures, list) and failures:
             details[f'{key}_count'] = len(failures)
+    list_failures = coverage.get('list_fetch_failures')
+    if isinstance(list_failures, list) and list_failures:
+        details['list_fetch_failures_sample'] = [
+            {key: str(item[key])[:200] for key in ('url', 'error_type', 'error') if item.get(key)}
+            for item in list_failures[:3] if isinstance(item, dict)
+        ]
     detail_failures = coverage.get('detail_failures')
     if isinstance(detail_failures, list):
         details['detail_failures_sample'] = [
@@ -271,8 +309,15 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
         coverage = (summary.get('scrape_coverage') or {}).get(source) or {}
         coverage = dict(coverage)
         problems = errors.get(source) or []
-        previous = db.execute('select consecutive_failures,last_publication_complete_at from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
+        previous = db.execute('select consecutive_failures,last_publication_complete_at,coverage from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
         last_publication_complete_at = previous[1] if len(previous) > 1 else None
+        previous_coverage = previous[2] if len(previous) > 2 and isinstance(previous[2], dict) else {}
+        # La copie de robots.txt survit à un passage qui ne l'a pas relue (src/sources/robots_policy_copies.py) :
+        # la plus récente des deux, 24 h au plus après sa lecture.
+        robots_copies = merge_robots_policy_copies(previous_coverage.get(ROBOTS_COPIES_KEY), coverage.get(ROBOTS_COPIES_KEY))
+        coverage.pop(ROBOTS_COPIES_KEY, None)
+        if robots_copies:
+            coverage[ROBOTS_COPIES_KEY] = robots_copies
         denied = access_denied(coverage, problems)
         publication_counts = dict(db.execute("""select decision,count(*)
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
@@ -380,7 +425,8 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
             print(f'::warning title=Publication incomplète ({source})::blockers={",".join(blockers)} '
                   f'pending={coverage["publication_pending_decisions"]} '
                   f'last_complete={coverage["publication_blocked_since"]} '
-                  f'stop_reason={coverage.get("stop_reason")}')
+                  f'stop_reason={coverage.get("stop_reason")} '
+                  f'stop_cause={_stop_cause(coverage)}')
         now = datetime.now(UTC)
         if backoff:
             # Retry-After and persistent access refusals retain their existing

@@ -5,11 +5,16 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src.freshness import SOURCE_EXTRACTION_VERSION
+from src.freshness import SOURCE_EXTRACTION_VERSION, detail_reread_hours
 from src.storage import supabase_client as storage
 from src.timestamps import aware_timestamp
 
 LOGGER = logging.getLogger(__name__)
+# A recurring source-detail job falls due one hour before the end of the reread window of
+# ``freshness.detail_reread_hours`` (71 h, 23 h for Licitor, 5 h within 7 days of the hearing). Twin of
+# ``source_detail_lead_hours`` in ``app_private.listing_review_policy()``, which the SQL scheduler
+# ``enqueue_due_source_details_unlocked`` reads (migration 20261201100000): change both together.
+SOURCE_DETAIL_JOB_LEAD = timedelta(hours=1)
 
 
 def verified_detail_satisfies_job(
@@ -27,9 +32,9 @@ def verified_detail_satisfies_job(
     checked, created = aware_timestamp(check.get("checked_at")), aware_timestamp(job.get("created_at"))
     if checked is None or created is None or not created < checked <= now:
         return False
-    date = aware_timestamp(sale_date)
-    cadence = timedelta(hours=5 if date is not None and now <= date <= now + timedelta(days=7) else 23)
-    return now - checked < cadence
+    source = str(job.get("detail_source_name") or "")
+    reread = timedelta(hours=detail_reread_hours(source, aware_timestamp(sale_date), now))
+    return now - checked < reread - SOURCE_DETAIL_JOB_LEAD
 
 
 def complete_already_verified_detail_job(

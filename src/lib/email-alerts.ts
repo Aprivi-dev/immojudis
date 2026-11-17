@@ -106,6 +106,8 @@ export const EMAIL_CATEGORIES = [
   "lawyer",
   "agent",
   "operations",
+  // Suivi d'une demande de droits (accusé de réception, clôture), envoyé au demandeur.
+  "privacy",
 ] as const;
 export type EmailCategory = (typeof EMAIL_CATEGORIES)[number];
 

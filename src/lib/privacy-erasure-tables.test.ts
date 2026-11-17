@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/billing", () => ({ getStripe: () => ({}) }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 
-import { ERASURE_TABLES } from "./privacy-requests";
+import { ERASURE_BLOCKING_REFERENCES, ERASURE_TABLES } from "./privacy-requests";
 
 /**
  * Compare `ERASURE_TABLES` aux tables du schéma public qui ont une clé étrangère vers `auth.users`,
@@ -23,6 +23,39 @@ const CASCADE_ONLY: Readonly<Record<string, string>> = {
 
 /** Tables conservées ou détachées (`on delete set null`) : preuve de traitement, obligations légales. */
 const RETAINED_TABLES = ["data_subject_requests", "commercial_acceptances", "valuation_estimates"];
+
+/**
+ * Colonnes `on delete set null` vers les comptes qui ne sont PAS effacées explicitement : la ligne reste,
+ * détachée du compte. Chacune avec sa justification. Toute autre colonne `set null` doit figurer dans
+ * `ERASURE_TABLES` (comme `sale_workspace_collaborators.collaborator_user_id`, l'invitation reçue).
+ */
+const ADMIN_ACTOR =
+  "auteur d'une action d'administration (un compte administrateur n'est pas effacé depuis cet écran) ; la ligne appartient au registre qu'elle documente, pas au compte";
+const ADMIN_ACTOR_COLUMNS = [
+  "listing_publication_requests.reviewed_by",
+  "referenced_lawyers.created_by",
+  "information_agent_fact_candidates.reviewed_by",
+  "information_agent_email_templates.created_by",
+  "information_agent_email_templates.updated_by",
+  "information_agent_email_templates.published_by",
+  "catalogue_readiness_policy.updated_by",
+  "auction_sale_readiness_history.override_by",
+  "auction_sales.premium_readiness_override_by",
+  "auction_fact_claims.resolution_actor_id",
+  "auction_enrichment_jobs.requested_by",
+  "information_agent_fact_publications.actor_id",
+];
+const RETAINED_SET_NULL: Readonly<Record<string, string>> = {
+  "data_subject_requests.user_id": "preuve du traitement de la demande (5 ans après clôture)",
+  "commercial_acceptances.user_id": "preuve contractuelle (10 ans), détachée du compte",
+  "valuation_estimates.user_id":
+    "trace détachée du compte, déjà retenue avant ce contrôle (commentaire de ERASURE_TABLES)",
+  "auction_fact_claims.created_by":
+    "pièce du registre d'une vente, immuable : la clé est prévue pour être vidée à la suppression du compte (created_by_redacted_at)",
+  "information_agent_contacts.observed_by_user_id":
+    "fiche d'un professionnel du registre des contacts de l'agent ; la colonne dit seulement qui a relevé l'adresse",
+  ...Object.fromEntries(ADMIN_ACTOR_COLUMNS.map((key) => [key, ADMIN_ACTOR])),
+};
 
 type ForeignKey = { table: string; column: string; onDelete: string };
 
@@ -179,5 +212,39 @@ describe("ERASURE_TABLES face au schéma", () => {
         schema.foreignKeys.some((key) => key.table === table && key.onDelete === "set null"),
       ).toBe(true);
     }
+  });
+
+  it("efface ou justifie chaque colonne `on delete set null` vers les comptes (M5)", () => {
+    const listed = new Set(ERASURE_TABLES.map(([table, column]) => `${table}.${column}`));
+    const unjustified = schema.foreignKeys
+      .filter((key) => key.onDelete === "set null")
+      .map((key) => `${key.table}.${key.column}`)
+      .filter((key) => !listed.has(key) && !(key in RETAINED_SET_NULL));
+    expect(unjustified).toEqual([]);
+    expect(listed.has("sale_workspace_collaborators.collaborator_user_id")).toBe(true);
+  });
+
+  it("nomme chaque justification sur une colonne `set null` qui existe et n'est pas effacée", () => {
+    const setNull = new Set(
+      schema.foreignKeys
+        .filter((key) => key.onDelete === "set null")
+        .map((key) => `${key.table}.${key.column}`),
+    );
+    const listed = new Set(ERASURE_TABLES.map(([table, column]) => `${table}.${column}`));
+    for (const key of Object.keys(RETAINED_SET_NULL)) {
+      expect(setNull.has(key), key).toBe(true);
+      expect(listed.has(key), key).toBe(false);
+    }
+  });
+
+  it("contrôle avant l'effacement chaque clé `restrict` ou `no action` vers les comptes (F2)", () => {
+    const blocking = schema.foreignKeys
+      .filter((key) => key.onDelete === "restrict" || key.onDelete === "no action")
+      .map((key) => `${key.table}.${key.column}`)
+      .sort();
+    expect(
+      ERASURE_BLOCKING_REFERENCES.map(([table, column]) => `${table}.${column}`).sort(),
+    ).toEqual(blocking);
+    expect(blocking).toContain("information_agent_cases.created_by");
   });
 });

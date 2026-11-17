@@ -6403,7 +6403,7 @@ export type Database = {
       };
       data_subject_requests: {
         Row: {
-          acknowledged_at: string;
+          acknowledged_at: string | null;
           completed_at: string | null;
           due_at: string;
           id: string;
@@ -6420,7 +6420,7 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
-          acknowledged_at?: string;
+          acknowledged_at?: string | null;
           completed_at?: string | null;
           due_at?: string;
           id?: string;
@@ -6437,7 +6437,7 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
-          acknowledged_at?: string;
+          acknowledged_at?: string | null;
           completed_at?: string | null;
           due_at?: string;
           id?: string;
@@ -15501,6 +15501,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      account_sale_unlock_credits: {
+        Args: { p_user_id: string };
+        Returns: number;
+      };
       addauth: { Args: { "": string }; Returns: boolean };
       addgeometrycolumn:
         | {
@@ -15593,7 +15597,10 @@ export type Database = {
       admin_pepite_independence_sales: { Args: never; Returns: Json };
       admin_pilotage_activation: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
-      admin_pilotage_discovery_unlocks: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_discovery_unlocks: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
       admin_sale_signal_feedback_by_sale: {
         Args: { p_limit?: number; p_now?: string };
@@ -16277,6 +16284,10 @@ export type Database = {
         Returns: Json;
       };
       evaluate_operational_health: { Args: { p_now?: string }; Returns: Json };
+      evaluate_privacy_request_health: {
+        Args: { p_now?: string };
+        Returns: Json;
+      };
       expire_sale_unlock_purchase: {
         Args: { p_checkout_session_id: string };
         Returns: boolean;
