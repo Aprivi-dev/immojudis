@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -352,8 +353,10 @@ def test_document_downloads_check_robots_before_every_hop(politeness_on, monkeyp
         return Redirect() if url.startswith("https://docs.") else Ok()
 
     class Recorder:
-        def wait_turn(self, url: str) -> None:
+        @contextmanager
+        def turn(self, url: str):
             turns.append(url)
+            yield
 
     monkeypatch.setattr(pdf_enrichment, "_send_pinned_document_request", send)
     monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", Recorder())
@@ -370,8 +373,10 @@ def test_robots_disallowed_document_is_a_permanent_failure_without_a_request(pol
     monkeypatch.setattr(pdf_enrichment, "_send_pinned_document_request", lambda url, **kw: sent.append(url))
 
     class Refuse:
-        def wait_turn(self, url: str) -> None:
+        @contextmanager
+        def turn(self, url: str):
             raise DocumentRobotsDisallowed(f"robots.txt does not allow fetching {url}")
+            yield
 
     monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", Refuse())
 

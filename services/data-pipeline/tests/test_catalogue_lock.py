@@ -26,15 +26,29 @@ from src.config import DirectDatabaseMissing
 WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
 
+class LockNotAvailable(Exception):
+    sqlstate = "55P03"
+
+
 class FakeConnection:
-    def __init__(self, results: list[bool]) -> None:
+    """``results``: outcome of the first try, then of each queued wait (a False wait lasts its ``lock_timeout``)."""
+
+    def __init__(self, results: list[bool], clock: Clock | None = None) -> None:
         self.results = list(results)
         self.statements: list[tuple[str, tuple]] = []
         self.autocommit = False
         self.closed = False
+        self.clock = clock
+        self.lock_timeout = 0.0
 
     def execute(self, statement, parameters=()):
         self.statements.append((" ".join(statement.split()), tuple(parameters)))
+        if statement.startswith("set lock_timeout = '"):
+            self.lock_timeout = int(statement.split("'")[1].removesuffix("ms")) / 1000
+        if "pg_advisory_lock" in statement and "try" not in statement and not self.results.pop(0):
+            if self.clock is not None:
+                self.clock.sleep(self.lock_timeout)
+            raise LockNotAvailable("canceling statement due to lock timeout")
         row = (self.results.pop(0),) if "pg_try_advisory_lock" in statement else (True,)
         return type("Cursor", (), {"fetchone": lambda self_, row=row: row})()
 
@@ -56,10 +70,10 @@ class Clock:
 
 
 def _hold(connection: FakeConnection, clock: Clock, **kwargs):
+    connection.clock = clock
     return catalogue_writer_lock(
         "postgresql://example/db",
         connect=lambda url: connection,
-        sleep=clock.sleep,
         clock=clock,
         heartbeat_seconds=0,
         **kwargs,
@@ -84,18 +98,24 @@ def test_lock_is_taken_with_a_stable_key_and_released_on_exit() -> None:
 
 
 def test_the_second_job_waits_for_the_first(capsys) -> None:
-    connection, clock = FakeConnection([False, False, True]), Clock()
+    # Contrat du 17/11/2026 : l'attente se fait dans la file de PostgreSQL (tranches de lock_timeout), plus par
+    # sommeils entre deux essais ; une demande en file passe devant les demandes partagées qui arrivent après elle.
+    connection, clock = FakeConnection([False, False, False, True]), Clock()
 
     with _hold(connection, clock, wait_seconds=600, poll_seconds=15):
         pass
 
     assert clock.sleeps == [15, 15]
+    statements = [sql for sql, _ in connection.statements]
+    assert statements.count("select pg_advisory_lock(hashtextextended(%s, 0))") == 3
+    assert statements[-2:] == ["set lock_timeout = 0", "select pg_advisory_unlock(hashtextextended(%s, 0))"]
     out = capsys.readouterr().out
     assert "waits for the lock" in out and "lock acquired" in out
 
 
 def test_waiting_gives_up_after_the_configured_time_and_closes_the_connection() -> None:
     connection, clock = FakeConnection([False] * 100), Clock()
+    connection.clock = clock
 
     with pytest.raises(CatalogueLockTimeout, match="did not start"):
         with _hold(connection, clock, wait_seconds=40, poll_seconds=15):
@@ -273,7 +293,6 @@ def test_the_lock_connects_through_the_session_port() -> None:
     with catalogue_writer_lock(
         "postgresql://postgres.abcdef:secret@aws-0-eu-west-3.pooler.supabase.com:6543/postgres",
         connect=connect,
-        sleep=clock.sleep,
         clock=clock,
         wait_seconds=1,
         heartbeat_seconds=0,

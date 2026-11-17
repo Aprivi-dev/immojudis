@@ -8,7 +8,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
-from src import collection_priority, enrichment_queue_limits, general_lane_claims
+from src import collection_priority, enrichment_queue_limits, general_lane_claims, host_turn, pdf_ocr
 from src.admission import is_expired
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import (
@@ -29,6 +29,7 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
+from src.enrichment_lane_settings import LaneSettingsError, lane_settings
 from src.enrichment_queue_limits import (
     ENRICHMENT_BUDGET_SECONDS,
     ENRICHMENT_BUDGET_SECONDS_ENV,
@@ -58,7 +59,14 @@ from src.pdf_pass_outcomes import (
     nothing_due_deferral,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
-from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
+from src.pipeline_usage import (
+    PARTIAL_MANIFEST_DEFERRAL,
+    PipelineBudgetExhausted,
+    QueueJobDeferred,
+    defer_budget_jobs,
+    publication_lock_deferral,
+    publication_lock_deferrals,
+)
 from src.sale_finalization import derive_sale_facts
 from src.sale_local_files import sale_storage_id
 from src.source_detail_worker import run_source_detail_jobs
@@ -92,6 +100,8 @@ from src.storage.supabase_client import (
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
+#: Exit code of a worker whose lane settings were refused (src.enrichment_lane_settings).
+LANE_SETTINGS_EXIT_CODE = 3
 SOURCE_DETAIL_FAMILY = "source_detail"
 ENRICHMENT_FAMILY = general_lane_claims.ENRICHMENT_FAMILY
 # Keep a bounded general-enrichment lane even while source-detail is larger.
@@ -135,6 +145,8 @@ _WORKER_LLM_BUDGET_EXHAUSTED: ContextVar[bool | None] = ContextVar(
     "worker_llm_budget_exhausted",
     default=None,
 )
+# Claims of this process by job type, for the worker report (``enrichment_queue_limits.finish_worker_pass``).
+_WORKER_CLAIMED_BY_TYPE: dict[str, int] = {}
 
 
 def _job_transition_outcome(*, requested: dict[str, object], persisted: bool) -> str:
@@ -341,6 +353,8 @@ def _record_worker_claimed_job_ids(jobs: list[dict[str, object]]) -> None:
     for job in jobs:
         if isinstance(job, dict):
             job.setdefault("_worker_started_at_monotonic", started_at)
+            job_type = str(job.get("job_type") or "unknown")
+            _WORKER_CLAIMED_BY_TYPE[job_type] = _WORKER_CLAIMED_BY_TYPE.get(job_type, 0) + 1
     claimed_job_ids = _WORKER_CLAIMED_JOB_IDS.get()
     if claimed_job_ids is None:
         return
@@ -842,7 +856,15 @@ def run_enrichment_queue_batch(
             # Étapes communes avec la fin de collecte qui suit les mêmes lectures (``main._checkpoint_enrichment``) :
             # pièces et faits peuvent changer le type du bien, que relisent surfaces et caractéristiques de la source.
             derive_sale_facts(sale)
-            written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
+            try:
+                written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
+            except Exception as exc:
+                # 15 s of lock_timeout on the publication lock: the other workers of the parallel lane publish.
+                # The transaction rolled back; the pass is retried without spending an attempt.
+                deferral = publication_lock_deferral(exc)
+                if deferral is None:
+                    raise
+                raise deferral from exc
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
             if pdf_jobs and final_write_was_discarded(written, sale):
                 # Écriture écartée (admission, révision déplacée) : la lecture n'est pas enregistrée, la tâche
@@ -1093,8 +1115,15 @@ def run_enrichment_queue_worker(
     *,
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
+    family: str | None = None,
 ) -> int:
-    """Run one worker and emit an optional post-claim status snapshot."""
+    """Run one worker and emit an optional post-claim status snapshot.
+
+    ``family`` (parallel lane): the worker claims only that family, ``source_detail`` or ``enrichment`` (PDF,
+    facts, descriptions, with the oldest-first share). ``None``: the mixed worker, alternating both families.
+    """
+    if family is not None and family not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
+        raise ValueError(f"Unknown enrichment queue family: {family!r}")
     claimed_token = _WORKER_CLAIMED_JOB_IDS.set(set())
     deferred_token = _WORKER_DEFERRED_JOB_IDS.set(set())
     budget_token = _WORKER_LLM_BUDGET_EXHAUSTED.set(False)
@@ -1103,6 +1132,7 @@ def run_enrichment_queue_worker(
         return _run_enrichment_queue_worker(
             max_jobs=max_jobs,
             budget_seconds=budget_seconds,
+            family=family,
         )
     finally:
         try:
@@ -1129,6 +1159,7 @@ def _run_enrichment_queue_worker(
     *,
     max_jobs: int | None = None,
     budget_seconds: int | None = None,
+    family: str | None = None,
 ) -> int:
     """Run one fair, bounded queue worker.
 
@@ -1179,10 +1210,15 @@ def _run_enrichment_queue_worker(
     # being deferred, even though it did no useful work.
     finalization_margin_seconds = pdf_finalization_margin_seconds(budget_seconds)
     claim_deadline = deadline - finalization_margin_seconds
-    due_counts = _read_due_enrichment_family_counts()
-    family_cycle = _enrichment_family_cycle(due_counts)
+    if family is None:
+        due_counts = _read_due_enrichment_family_counts()
+        family_cycle = _enrichment_family_cycle(due_counts)
+    else:
+        # A worker of the parallel lane claims its own family only: no ratio, no alternate.
+        due_counts, family_cycle = {}, (family,)
     LOGGER.info(
-        "Enrichment worker lane cycle: source_detail=%s enrichment=%s due_estimate=%s",
+        "Enrichment worker lane cycle: family=%s source_detail=%s enrichment=%s due_estimate=%s",
+        family or "mixed",
         family_cycle.count(SOURCE_DETAIL_FAMILY),
         family_cycle.count(ENRICHMENT_FAMILY),
         due_counts,
@@ -1194,7 +1230,14 @@ def _run_enrichment_queue_worker(
         if now >= claim_deadline:
             stop_reason = "budget" if now >= deadline else "finalization_margin"
             break
-        if _WORKER_LLM_BUDGET_EXHAUSTED.get():
+        if family is not None:
+            if family == ENRICHMENT_FAMILY and _WORKER_LLM_BUDGET_EXHAUSTED.get():
+                # The general worker of the parallel lane has nothing else to claim: the source-detail worker
+                # runs beside it. Same rule as the mixed worker: no general claim after the first budget refusal.
+                stop_reason = "llm_budget_exhausted"
+                break
+            preferred, alternate = family, None
+        elif _WORKER_LLM_BUDGET_EXHAUSTED.get():
             # A budget exception restores every claimed job's attempt and
             # gives it a future wake-up.  Do not immediately claim another
             # general job that will hit the same guard; use the remaining
@@ -1267,7 +1310,17 @@ def _run_enrichment_queue_worker(
     elapsed_seconds = max(time.monotonic() - started_at, 0.0)
     handled_per_hour = (handled * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
     claimed_job_count = len(_WORKER_CLAIMED_JOB_IDS.get() or ())
-    stop_reason = enrichment_queue_limits.finish_worker_pass(stop_reason, yielded, handled, handled_by_family)
+    stop_reason = enrichment_queue_limits.finish_worker_pass(
+        stop_reason, yielded, handled, handled_by_family,
+        details={
+            "family": family or "mixed",
+            "seconds": round(elapsed_seconds, 1),
+            "claimed_by_job_type": dict(_WORKER_CLAIMED_BY_TYPE),
+            "ocr_seconds": round(pdf_ocr.ocr_seconds(), 1),
+            "host_turns": host_turn.process_stats(),
+            "publication_lock_deferrals": publication_lock_deferrals(),
+        },
+    )
     LOGGER.info(
         "Enrichment worker summary: github_run_id=%s handled=%s handled_source_detail=%s "
         "handled_enrichment=%s claimed_jobs=%s "
@@ -1552,12 +1605,23 @@ def _enrichment_claim_limit(
     return min(_enrichment_claim_batch_size(family), detail_positions, remaining)
 
 
+def _family_argument(argv: list[str]) -> str | None:
+    """``--family source_detail|enrichment`` (parallel lane); ``None`` without it (mixed worker)."""
+    if "--family" not in argv:
+        return None
+    index = argv.index("--family")
+    value = argv[index + 1] if index + 1 < len(argv) else ""
+    if value not in {SOURCE_DETAIL_FAMILY, ENRICHMENT_FAMILY}:
+        raise LaneSettingsError(f"--family must be {SOURCE_DETAIL_FAMILY} or {ENRICHMENT_FAMILY}, got {value!r}")
+    return value
+
+
 def _run_as_script() -> int:
     if "--enrichment-only" in sys.argv:
         # Detail claims are bounded batches, while each job is still processed
         # sequentially so GitHub serializes writers and the queue lease stays
         # visible in the worker summary.
-        claim_outcomes = run_enrichment_queue_worker()
+        claim_outcomes = run_enrichment_queue_worker(family=_family_argument(sys.argv))
         print(
             f'Enrichment worker recorded {claim_outcomes} bounded claim outcomes; '
             'terminal statuses are reported separately'
@@ -1567,9 +1631,25 @@ def _run_as_script() -> int:
 
 
 def run_with_catalogue_lock() -> int:
-    """The queue worker writes sales like the pipeline does: it shares its lock, and fails when the lock is lost."""
+    """The queue worker writes sales like the pipeline does: it shares its lock, and fails when the lock is lost.
+
+    The lock mode is ``PIPELINE_WORKER_LOCK_MODE`` (``src.enrichment_lane_settings``): shared for the workers of the
+    parallel lane, exclusive otherwise. Settings that are invalid or incoherent stop the worker before anything.
+    """
     try:
-        with catalogue_writer_lock(label="enrichment queue worker"):
+        settings = lane_settings()
+        family = _family_argument(sys.argv)
+        if family is not None and not settings.parallel:
+            raise LaneSettingsError(
+                "--family is the parallel lane: it needs PIPELINE_ENRICHMENT_GENERAL_WORKERS from 1 to 3"
+            )
+    except LaneSettingsError as exc:
+        LOGGER.error("Enrichment worker not started: %s", exc)
+        print(f"::error title=Réglages de la voie d'enrichissement refusés::{exc}", flush=True)
+        return LANE_SETTINGS_EXIT_CODE
+    label = f"enrichment queue worker ({family or 'mixed'})"
+    try:
+        with catalogue_writer_lock(label=label, mode=settings.lock_mode):
             code = _run_as_script()
             # A heartbeat that failed during the last batch raises nothing (no claim follows): the job fails all the
             # same, its last writes may have happened without the lock.

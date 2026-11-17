@@ -19,13 +19,14 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from src.config import source_budget_seconds
+from src.host_turn import HostTurnWaitExceeded, host_turn
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
     ensure_source_task_deadline,
     source_task_bounded_timeout,
     source_task_deadline_remaining,
 )
-from src.sources import robots_policy_copies
+from src.sources import robots_policy_copies, robots_policy_store
 from src.sources.cloud_transport import configured_transport
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ MAX_SAFE_REDIRECTS = 5
 # (2 essais pour ses pages) s'arrêtait un passage sur deux en 50 s, sur deux délais dépassés (novembre 2026).
 ROBOTS_MIN_ATTEMPTS = 4
 ROBOTS_RETRY_BASE_SECONDS = 5.0
+# Sonde d'un robots.txt en panne passagère (``robots_policy_copies.PROBE_INTERVAL``) : une seule requête, sans reprise,
+# et une connexion abandonnée vite. Enchères Immobilières (15-17/11/2026) ne répondait plus en TCP : chaque passage
+# perdait environ 2,5 min sur quatre essais.
+ROBOTS_PROBE_CONNECT_TIMEOUT_SECONDS = 10.0
 # Read failures worth another attempt. A server that closes a kept-alive connection answers the next
 # request with "Server disconnected without sending a response" (RemoteProtocolError, not a
 # NetworkError): Licitor did so on 30/10/2026 and one list page left the inventory incomplete.
@@ -61,6 +66,8 @@ class RobotsUnavailableError(httpx.NetworkError, RuntimeError):
     the failure so queue workers can preserve its diagnostic status code.
     ``transient`` marks a passing outage (timeout, network error, HTTP 5xx):
     only then may the last verified policy be reused (``robots_policy_copies``).
+    ``probe_not_before`` is set when no request was sent because the last read failed less than
+    ``robots_policy_copies.PROBE_INTERVAL`` ago: a queued task then waits without spending an attempt.
     """
 
     def __init__(
@@ -70,11 +77,13 @@ class RobotsUnavailableError(httpx.NetworkError, RuntimeError):
         response: httpx.Response | None = None,
         origin: tuple[str, str, int] | None = None,
         transient: bool = False,
+        probe_not_before: datetime | None = None,
     ) -> None:
         super().__init__(message, request=getattr(response, "request", None))
         self.response = response
         self.origin = origin
         self.transient = transient
+        self.probe_not_before = probe_not_before
 
 
 class RobotsAccessRefusedError(RuntimeError):
@@ -297,6 +306,12 @@ def _origin(parsed: Any) -> tuple[str, str, int] | None:
     return parsed.scheme.lower(), parsed.hostname.rstrip(".").lower(), port
 
 
+def robots_origin_key(url: str) -> str | None:
+    """Key of the robots.txt policy that applies to ``url`` (``robots_policy_copies.origin_key``)."""
+    origin = _origin(urlparse(url))
+    return robots_policy_copies.origin_key(origin) if origin is not None else None
+
+
 @dataclass
 class PaginationCoverage:
     pages_fetched: int = 0
@@ -448,14 +463,30 @@ def _looks_like_html_challenge(response: httpx.Response) -> bool:
     return False
 
 
+def robots_failure_class(error: BaseException) -> str:
+    """Classe de l'échec de lecture de robots.txt (``robots_policy_copies.failure_class``)."""
+    status_code = getattr(getattr(error, "response", None), "status_code", None)
+    if isinstance(error, RobotsAccessRefusedError):
+        return robots_policy_copies.ACCESS_REFUSED
+    if isinstance(status_code, int):
+        return robots_policy_copies.failure_class(status_code=status_code)
+    if getattr(error, "transient", False):
+        return robots_policy_copies.failure_class(error=error)
+    return robots_policy_copies.HTTP_ERROR
+
+
 def _robots_failure_status(error: BaseException) -> dict[str, Any]:
     """Why robots.txt could not be verified, for the run summary: no page content, a bounded message."""
     status_code = getattr(getattr(error, "response", None), "status_code", None)
+    probe_not_before = getattr(error, "probe_not_before", None)
     return {
         "state": "refused" if isinstance(error, RobotsAccessRefusedError) else "unavailable",
         "error_type": type(error.__cause__ or error).__name__,
         "transient": bool(getattr(error, "transient", False)),
         "status_code": status_code if isinstance(status_code, int) else None,
+        # Pas de réponse TCP, délai, 5xx, refus 401/403/défi, autre erreur HTTP (robots_policy_copies).
+        "failure_class": robots_failure_class(error),
+        "probe_not_before": probe_not_before.isoformat() if isinstance(probe_not_before, datetime) else None,
         "error": str(error)[:200],
     }
 
@@ -496,6 +527,8 @@ class PoliteHttpClient:
         self._last_robots_origin: tuple[str, str, int] | None = None
         # Politique retenue par origine (lue ou copie réutilisée), publiée dans la couverture pour être gardée.
         self._robots_copies: dict[str, robots_policy_copies.RobotsPolicyCopy] = {}
+        # Copie commune lue pour chaque origine (``robots_policy_store``), gardée pour le repli d'une panne passagère.
+        self._shared_robots: dict[str, robots_policy_copies.RobotsPolicyCopy] = {}
         self._robots_status: dict[str, Any] = {"state": "not_checked"}
         headers = {
             "User-Agent": self.user_agent,
@@ -517,17 +550,15 @@ class PoliteHttpClient:
         self._robots = RobotsRules()
         try:
             ensure_source_task_deadline("admitting initial robots policy request")
-            response = self._fetch_robots(urljoin(self.base_url, "/robots.txt"))
-            ensure_source_task_deadline("parsing initial robots policy response")
-            self._robots = _parse_robots_response(response, self.user_agent)
+            self._robots, reused = self._load_robots(urljoin(self.base_url, "/robots.txt"))
             ensure_source_task_deadline("finishing initial robots policy parsing")
             base_origin = _origin(urlparse(self.base_url))
             if base_origin is not None:
                 self._robots_by_origin[base_origin] = self._robots
-                self._record_verified_robots(base_origin, self._robots)
+                self._record_verified_robots(base_origin, self._robots, reused=reused)
             if self._last_robots_origin is not None:
                 self._robots_by_origin[self._last_robots_origin] = self._robots
-                self._record_verified_robots(self._last_robots_origin, self._robots)
+                self._record_verified_robots(self._last_robots_origin, self._robots, reused=reused)
         except SourceTaskDeadlineExceeded:
             raise
         except Exception as exc:  # pragma: no cover - depends on network state
@@ -541,17 +572,71 @@ class PoliteHttpClient:
                 self._robots_status = _robots_failure_status(error)
                 LOGGER.warning("Could not verify robots.txt for %s: %s", self.base_url, exc)
 
-    def _record_verified_robots(self, origin: tuple[str, str, int], rules: RobotsRules) -> None:
-        """Keep a freshly read policy so that a later passing outage can reuse it (``robots_policy_copies``)."""
-        if len(rules.rules) <= robots_policy_copies.MAX_RULES:
-            self._robots_copies[robots_policy_copies.origin_key(origin)] = robots_policy_copies.RobotsPolicyCopy(
+    def _record_verified_robots(
+        self, origin: tuple[str, str, int], rules: RobotsRules, *, reused: robots_policy_copies.RobotsPolicyCopy | None = None
+    ) -> None:
+        """Keep a freshly read policy so that a later passing outage can reuse it (``robots_policy_copies``).
+
+        A read policy also becomes the shared copy (``robots_policy_store``); a policy taken from the shared copy
+        (``reused``) keeps its reading time, so that it never looks fresher than it is.
+        """
+        key = robots_policy_copies.origin_key(origin)
+        if reused is not None:
+            self._robots_copies[key] = reused
+        elif len(rules.rules) <= robots_policy_copies.MAX_RULES:
+            copy = robots_policy_copies.RobotsPolicyCopy(
                 rules=rules.rules,
                 crawl_delay=rules.crawl_delay,
                 verified_at=datetime.now(UTC),
                 user_agent_digest=robots_policy_copies.user_agent_digest(self.user_agent),
             )
+            self._robots_copies[key] = copy
+            robots_policy_store.save_verified(key, copy)
         if origin == _origin(urlparse(self.base_url)):
             self._robots_status = {"state": "verified"}
+            if reused is not None:
+                self._robots_status["shared_copy_age_hours"] = round(
+                    reused.age(datetime.now(UTC)).total_seconds() / 3600, 2
+                )
+
+    def _load_robots(self, url: str) -> tuple[RobotsRules, robots_policy_copies.RobotsPolicyCopy | None]:
+        """robots.txt of the origin of ``url``: read, or taken from the shared copy (``robots_policy_copies``).
+
+        Returns the rules and, when no request was sent, the shared copy they come from. After a recent failure no
+        request is sent at all (``RobotsUnavailableError`` with ``probe_not_before``, or the recorded refusal);
+        after a passing outage the next read is a probe: one request, no retry.
+        """
+        origin = _origin(urlparse(url))
+        key = robots_policy_copies.origin_key(origin) if origin is not None else None
+        shared = robots_policy_store.load(key) if key is not None else None
+        if key is not None and shared is not None and shared.copy is not None:
+            self._shared_robots[key] = shared.copy
+        decision = robots_policy_copies.before_fetch(shared, self.user_agent)
+        if decision.action == "reuse" and decision.copy is not None:
+            self._last_robots_origin = origin
+            return RobotsRules(decision.copy.rules, decision.copy.crawl_delay), decision.copy
+        if decision.failure is not None and decision.action in {"not_due", "refused"}:
+            failure = decision.failure
+            message = (
+                f"robots.txt could not be verified for {key}: last read failed at {failure.failed_at.isoformat()} "
+                f"({failure.failure_class}); next read after {failure.probe_not_before().isoformat()}"
+            )
+            if decision.action == "refused":
+                raise RobotsAccessRefusedError(message, origin=origin)
+            raise RobotsUnavailableError(
+                message, origin=origin, transient=True, probe_not_before=failure.probe_not_before()
+            )
+        try:
+            response = self._fetch_robots(url, probe=decision.probe)
+            ensure_source_task_deadline("parsing robots policy response")
+            rules = _parse_robots_response(response, self.user_agent)
+        except (RobotsUnavailableError, RobotsAccessRefusedError) as exc:
+            if key is not None and not isinstance(exc.__cause__, HostTurnWaitExceeded):
+                robots_policy_store.save_failure(
+                    key, robots_policy_copies.RobotsFailure(robots_failure_class(exc), datetime.now(UTC))
+                )
+            raise
+        return rules, None
 
     def _reuse_robots_copy(self, origin: tuple[str, str, int] | None, exc: BaseException) -> RobotsRules | None:
         """The last verified policy of ``origin`` when robots.txt is only passingly unreachable (RFC 9309 §2.4).
@@ -563,7 +648,7 @@ class PoliteHttpClient:
             return None
         now = datetime.now(UTC)
         key = robots_policy_copies.origin_key(origin)
-        copy = robots_policy_copies.recall(key, self.user_agent, now)
+        copy = robots_policy_copies.recall(key, self.user_agent, now, shared=self._shared_robots.get(key))
         if copy is None:
             return None
         age_hours = round(copy.age(now).total_seconds() / 3600, 2)
@@ -582,19 +667,46 @@ class PoliteHttpClient:
             }
         return RobotsRules(copy.rules, copy.crawl_delay)
 
-    def _get_robots_with_retries(self, url: str, origin: str | None) -> httpx.Response:
+    @contextmanager
+    def _host_turn(self, url: str, delay_seconds: float):
+        """Hold the cross-process turn of the host of ``url`` around one request and its retries (``src.host_turn``).
+
+        A turn that does not come in time becomes the source-task cutoff (the queued task is released without
+        spending an attempt); outside a source task it stays a failed request.
+        """
+        try:
+            with host_turn(url, delay_seconds=delay_seconds, deadline_remaining=source_task_deadline_remaining):
+                yield
+        except HostTurnWaitExceeded as exc:
+            if source_task_deadline_remaining() is not None:
+                raise SourceTaskDeadlineExceeded(f"waiting for the host turn of {exc.host}") from exc
+            raise
+
+    def _get_robots_with_retries(self, url: str, origin: str | None, *, probe: bool = False) -> httpx.Response:
         # A read that times out or is cut is tried again like a page (Enchères Immobilières, 31/10-02/11/2026:
         # four collections in nine stopped on one robots.txt timeout), at least ROBOTS_MIN_ATTEMPTS times.
-        # A refusal or an HTTP error is not.
-        attempts = max(ROBOTS_MIN_ATTEMPTS, int(getattr(self, "max_attempts", 4)))
+        # A refusal or an HTTP error is not. A probe after a passing outage is one request with a short connection
+        # timeout (robots_policy_copies.PROBE_INTERVAL).
+        try:
+            with self._host_turn(url, self.delay_seconds):
+                return self._get_robots_attempts(url, origin, probe=probe)
+        except HostTurnWaitExceeded as exc:
+            raise RobotsUnavailableError(
+                f"robots.txt could not be verified for {url}: {exc}", origin=origin, transient=True
+            ) from exc
+
+    def _get_robots_attempts(self, url: str, origin: str | None, *, probe: bool) -> httpx.Response:
+        attempts = 1 if probe else max(ROBOTS_MIN_ATTEMPTS, int(getattr(self, "max_attempts", 4)))
         for attempt in range(attempts):
             try:
-                if source_task_deadline_remaining() is None:
+                timeout: float | httpx.Timeout = self.timeout_seconds
+                if source_task_deadline_remaining() is not None:
+                    timeout = source_task_bounded_timeout(self.timeout_seconds, "requesting robots policy")
+                if probe:
+                    timeout = httpx.Timeout(float(timeout), connect=min(float(timeout), ROBOTS_PROBE_CONNECT_TIMEOUT_SECONDS))
+                elif source_task_deadline_remaining() is None:
                     return self._client.get(url)
-                return self._client.get(
-                    url,
-                    timeout=source_task_bounded_timeout(self.timeout_seconds, "requesting robots policy"),
-                )
+                return self._client.get(url, timeout=timeout)
             except TRANSIENT_TRANSPORT_ERRORS as exc:
                 ensure_source_task_deadline("handling failed robots policy request")
                 if attempt == attempts - 1:
@@ -609,7 +721,7 @@ class PoliteHttpClient:
                 )
         raise RuntimeError("Robots retry budget exhausted")
 
-    def _fetch_robots(self, url: str) -> httpx.Response:
+    def _fetch_robots(self, url: str, *, probe: bool = False) -> httpx.Response:
         current_url = url
         self._last_robots_origin = None
         allowed_origins = (self.base_url, *self.allowed_redirect_origins)
@@ -621,7 +733,7 @@ class PoliteHttpClient:
                     origin=_origin(urlparse(current_url)),
                 )
             current_origin = _origin(urlparse(current_url))
-            response = self._get_robots_with_retries(current_url, current_origin)
+            response = self._get_robots_with_retries(current_url, current_origin, probe=probe)
             ensure_source_task_deadline("receiving robots policy response")
             if response.status_code not in REDIRECT_STATUS_CODES:
                 ensure_source_task_deadline("parsing robots policy response")
@@ -726,27 +838,25 @@ class PoliteHttpClient:
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         try:
             ensure_source_task_deadline("admitting redirect-origin robots policy request")
-            response = self._fetch_robots(robots_url)
-            ensure_source_task_deadline("parsing redirect-origin robots policy response")
-            rules = _parse_robots_response(response, self.user_agent)
+            rules, reused = self._load_robots(robots_url)
             ensure_source_task_deadline("finishing redirect-origin robots policy parsing")
         except SourceTaskDeadlineExceeded:
             raise
         except RobotsUnavailableError as exc:
-            reused = self._reuse_robots_copy(origin, exc)
-            if reused is not None:
-                self._robots_by_origin[origin] = reused
-                return reused
+            fallback = self._reuse_robots_copy(origin, exc)
+            if fallback is not None:
+                self._robots_by_origin[origin] = fallback
+                return fallback
             self._remember_robots_unavailable(origin, exc)
             raise
         except Exception as exc:
             error = self._remember_robots_unavailable(origin, exc)
             raise error from exc
         self._robots_by_origin[origin] = rules
-        self._record_verified_robots(origin, rules)
+        self._record_verified_robots(origin, rules, reused=reused)
         if self._last_robots_origin is not None:
             self._robots_by_origin[self._last_robots_origin] = rules
-            self._record_verified_robots(self._last_robots_origin, rules)
+            self._record_verified_robots(self._last_robots_origin, rules, reused=reused)
         return rules
 
     def _request_delay(self, url: str) -> float:
@@ -805,7 +915,9 @@ class PoliteHttpClient:
         try:
             for redirect_count in range(MAX_SAFE_REDIRECTS + 1):
                 self._guard(current_url)
-                response = self._request_with_retries(current_method, current_url, **kwargs)
+                # Le tour de l'hôte est rendu une fois notre délai (ou son Crawl-delay) écoulé (src.host_turn).
+                with self._host_turn(current_url, self._request_delay(current_url)):
+                    response = self._request_with_retries(current_method, current_url, **kwargs)
                 ensure_source_task_deadline("parsing source response status")
                 if response.status_code not in REDIRECT_STATUS_CODES:
                     response.raise_for_status()

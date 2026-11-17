@@ -217,7 +217,35 @@ def deadline_bounded_timeout(
     return max(0.001, min(requested_timeout, remaining)), remaining <= requested_timeout
 
 
+#: Secondes passées dans l'OCR par ce processus (compte rendu du travailleur de la file, voie parallèle).
+_OCR_SECONDS = [0.0]
+
+
+def ocr_seconds() -> float:
+    return _OCR_SECONDS[0]
+
+
 def extract_page_text_with_ocr_result(
+    page: fitz.Page,
+    fallback: str,
+    *,
+    settings: dict[str, object],
+    checkpointed_pages: int = 0,
+    total_pages: int = 0,
+    new_progress_pages: int = 0,
+) -> dict[str, object]:
+    """OCR of one page (``_ocr_page``), timed for the worker report."""
+    started = time.monotonic()
+    try:
+        return _ocr_page(
+            page, fallback, settings=settings, checkpointed_pages=checkpointed_pages, total_pages=total_pages,
+            new_progress_pages=new_progress_pages,
+        )
+    finally:
+        _OCR_SECONDS[0] += time.monotonic() - started
+
+
+def _ocr_page(
     page: fitz.Page,
     fallback: str,
     *,
