@@ -2,7 +2,8 @@
 
 Table privée ``app_private.robots_policies`` : une ligne par origine (``robots_policy_copies.origin_key``), avec
 les règles retenues pour notre agent, le ``Crawl-delay``, l'heure de lecture et l'empreinte de l'agent (la même
-forme que les copies de ``auction_source_state.coverage``), et le dernier échec (classe, heure). Les règles de
+forme que les copies de ``auction_source_state.coverage``), et le dernier échec (classe, heure, échecs consécutifs,
+client qui l'a relevé). Les règles de
 fraîcheur et de repli sont celles de ``robots_policy_copies`` ; ce module ne fait que lire et écrire la ligne.
 
 Tolérant : sans base, sans la migration (table absente) ou base injoignable, il ne rend rien et n'écrit rien, et
@@ -25,7 +26,8 @@ from src.timestamps import aware_timestamp
 LOGGER = logging.getLogger(__name__)
 
 UNDEFINED_TABLE_SQLSTATE = "42P01"
-_SELECT_SQL = """select rules, crawl_delay, verified_at, user_agent_digest, last_failure_class, last_failure_at
+_SELECT_SQL = """select rules, crawl_delay, verified_at, user_agent_digest, last_failure_class, last_failure_at,
+    failure_count, last_failure_by
   from app_private.robots_policies where origin = %s"""
 _SAVE_VERIFIED_SQL = """insert into app_private.robots_policies
     (origin, rules, crawl_delay, verified_at, user_agent_digest, last_failure_class, last_failure_at, updated_at)
@@ -37,12 +39,25 @@ _SAVE_VERIFIED_SQL = """insert into app_private.robots_policies
                               then robots_policies.last_failure_class end,
     last_failure_at = case when robots_policies.last_failure_at > excluded.verified_at
                            then robots_policies.last_failure_at end,
+    last_failure_by = case when robots_policies.last_failure_at > excluded.verified_at
+                           then robots_policies.last_failure_by end,
+    failure_count = case when robots_policies.last_failure_at > excluded.verified_at
+                         then robots_policies.failure_count else 0 end,
     updated_at = now()
   where robots_policies.verified_at is null or robots_policies.verified_at <= excluded.verified_at"""
-_SAVE_FAILURE_SQL = """insert into app_private.robots_policies (origin, last_failure_class, last_failure_at, updated_at)
-  values (%s, %s, %s, now())
+# Échecs consécutifs : un échec qui suit un échec (sans lecture réussie plus récente) prolonge la série.
+_SAVE_FAILURE_SQL = """insert into app_private.robots_policies
+    (origin, last_failure_class, last_failure_at, last_failure_by, failure_count, updated_at)
+  values (%s, %s, %s, %s, 1, now())
   on conflict (origin) do update set
-    last_failure_class = excluded.last_failure_class, last_failure_at = excluded.last_failure_at, updated_at = now()
+    last_failure_class = excluded.last_failure_class, last_failure_at = excluded.last_failure_at,
+    last_failure_by = excluded.last_failure_by,
+    failure_count = case
+      when robots_policies.last_failure_at is not null
+       and (robots_policies.verified_at is null or robots_policies.last_failure_at >= robots_policies.verified_at)
+        then robots_policies.failure_count + 1
+      else 1 end,
+    updated_at = now()
   where robots_policies.last_failure_at is null or robots_policies.last_failure_at <= excluded.last_failure_at"""
 
 _state = {"disabled": False}
@@ -81,7 +96,7 @@ def load(origin_key: str) -> SharedPolicy | None:
     row = _run(_SELECT_SQL, (origin_key,), fetch=True)
     if not row:
         return None
-    rules, crawl_delay, verified_at, digest, failure_class, failed_at = row
+    rules, crawl_delay, verified_at, digest, failure_class, failed_at, failure_count, failure_by = row
     copy = None
     if verified_at is not None:
         copy = RobotsPolicyCopy.from_json({
@@ -90,7 +105,11 @@ def load(origin_key: str) -> SharedPolicy | None:
             "user_agent_digest": digest,
         })
     failed = aware_timestamp(failed_at)
-    failure = RobotsFailure(str(failure_class), failed) if failure_class and failed is not None else None
+    failure = (
+        RobotsFailure(str(failure_class), failed, max(1, int(failure_count or 1)),
+                      str(failure_by) if failure_by else None)
+        if failure_class and failed is not None else None
+    )
     return SharedPolicy(copy=copy, failure=failure)
 
 
@@ -106,4 +125,4 @@ def save_verified(origin_key: str, copy: RobotsPolicyCopy) -> None:
 
 def save_failure(origin_key: str, failure: RobotsFailure) -> None:
     """Un échec de lecture : la copie déjà gardée reste (repli d'une panne passagère, 24 h au plus)."""
-    _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at), fetch=False)
+    _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at, failure.recorded_by), fetch=False)

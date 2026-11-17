@@ -24,10 +24,14 @@ table privée, sert alors à deux choses, avec les mêmes règles de fraîcheur 
   lecture : aucun processus ne relit robots.txt plus souvent qu'un seul ne le faisait ;
 * plus vieille, elle reste la copie de repli d'une panne passagère (24 h au plus, ``MAX_AGE``).
 
-La table garde aussi le dernier échec (``RobotsFailure``), avec sa classe (``failure_class``). Après une panne
-passagère (pas de réponse TCP, délai, 5xx), l'hôte n'est relu qu'après ``PROBE_INTERVAL`` (60 min), par une seule
-requête sans reprise (la sonde) : sans cela, chaque processus et chaque passage refaisaient quatre essais. Un refus
-(401, 403, page de défi) n'est jamais gardé comme une politique : il est rendu tel quel pendant ``PROBE_INTERVAL``,
+La table garde aussi le dernier échec (``RobotsFailure``), avec sa classe (``failure_class``), le nombre d'échecs
+consécutifs et le client qui l'a relevé (``PAGES`` : le client des pages d'une source, ``DOCUMENTS`` : celui des
+pièces). Après une panne passagère (pas de réponse TCP, délai, 5xx), l'hôte n'est relu qu'après ``probe_interval``,
+par une seule requête sans reprise (la sonde) : 60 min après le premier échec, puis 2 h, 4 h, et 6 h au plus. Dans
+les 24 h qui suivent un échec, cela fait cinq sondes, puis quatre par jour, tous processus confondus, contre quatre
+essais à chaque collecte espacée de 30 min à 6 h avant (``autonomous_runner.next_attempt`` : 24 puis 16 requêtes) :
+jamais plus de requêtes qu'avant. Un refus
+(401, 403, page de défi) n'est jamais gardé comme une politique : il est rendu tel quel jusqu'à la sonde suivante,
 puis robots.txt est relu.
 """
 
@@ -51,8 +55,15 @@ COVERAGE_KEY = "robots_policy_copies"
 MAX_RULES = 1000
 #: Copie commune assez récente pour tenir lieu de lecture (un passage du travailleur d'avant).
 REUSE_WITHOUT_FETCH = timedelta(minutes=30)
-#: Après un échec, robots.txt n'est relu (sonde : une requête, sans reprise) qu'après ce délai.
+#: Après un premier échec, robots.txt n'est relu (sonde : une requête, sans reprise) qu'après ce délai ; il double
+#: à chaque échec consécutif, jusqu'à ``PROBE_MAX_INTERVAL`` (``probe_interval``).
 PROBE_INTERVAL = timedelta(minutes=60)
+PROBE_MAX_INTERVAL = timedelta(hours=6)
+#: Qui a relevé un échec : le client des pages d'une source (``common.PoliteHttpClient``), seul compté pour la
+#: suspension d'une source, ou celui des pièces (``document_politeness``).
+PAGES = "pages"
+DOCUMENTS = "documents"
+RECORDERS = frozenset({PAGES, DOCUMENTS})
 #: Classes d'échec : pas de réponse TCP, délai de lecture, erreur 5xx (passagères), refus, autre erreur HTTP.
 NO_TCP_RESPONSE = "no_tcp_response"
 TIMEOUT = "timeout"
@@ -124,46 +135,84 @@ class RobotsPolicyCopy:
         return cls(tuple(rules), delay, verified_at, digest)
 
 
+def probe_interval(failures: int) -> timedelta:
+    """Délai avant la sonde suivante après ``failures`` échecs consécutifs : 60 min, 2 h, 4 h, puis 6 h."""
+    return min(PROBE_INTERVAL * 2 ** min(max(0, int(failures) - 1), 8), PROBE_MAX_INTERVAL)
+
+
 def failure_class(*, status_code: int | None = None, error: BaseException | None = None,
                   refused: bool = False) -> str:
     """Classe d'un échec de lecture de robots.txt (ou d'une requête) : la même pour la copie commune, la couverture
-    d'une source et le détail de son alerte."""
+    d'une source et le détail de son alerte.
+
+    Seule une erreur réseau compte comme panne de connexion : pas de réponse TCP (connexion refusée ou sans
+    réponse, nom introuvable), ou délai et coupure de lecture. Une erreur TLS (le serveur a répondu) et toute autre
+    exception (une valeur invalide, une erreur de code) sont des ``http_error``.
+    """
     if refused or status_code in {401, 403}:
         return ACCESS_REFUSED
     if isinstance(status_code, int) and status_code >= 500:
         return SERVER_ERROR
     if isinstance(status_code, int) and status_code >= 400:
         return HTTP_ERROR
-    cause = error
-    while cause is not None and cause.__cause__ is not None and not _is_connect_error(cause):
-        cause = cause.__cause__
-    if cause is not None and _is_connect_error(cause):
+    chain = _causes(error)
+    if any(_is_tls_error(cause) for cause in chain):
+        return HTTP_ERROR
+    if any(_is_connect_error(cause) for cause in chain):
         return NO_TCP_RESPONSE
-    return TIMEOUT if error is not None else HTTP_ERROR
+    if any(_is_read_failure(cause) for cause in chain):
+        return TIMEOUT
+    return HTTP_ERROR
+
+
+def _causes(error: BaseException | None) -> list[BaseException]:
+    chain: list[BaseException] = []
+    current = error
+    while current is not None and current not in chain and len(chain) < 10:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _is_tls_error(error: BaseException) -> bool:
+    import ssl
+
+    return isinstance(error, ssl.SSLError) or "[SSL" in str(error) or "CERTIFICATE_VERIFY_FAILED" in str(error)
 
 
 def _is_connect_error(error: BaseException) -> bool:
+    import socket
+
     import httpx
 
-    return isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, ConnectionError))
+    return isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, ConnectionError, socket.gaierror))
+
+
+def _is_read_failure(error: BaseException) -> bool:
+    import httpx
+
+    return isinstance(error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, TimeoutError))
 
 
 @dataclass(frozen=True)
 class RobotsFailure:
-    """Dernier échec de lecture d'une origine : sa classe et son heure."""
+    """Dernier échec de lecture d'une origine : sa classe, son heure, les échecs consécutifs et qui l'a relevé."""
 
     failure_class: str
     failed_at: datetime
+    count: int = 1
+    recorded_by: str | None = None
 
     @property
     def transient(self) -> bool:
         return self.failure_class in TRANSIENT_FAILURES
 
     def probe_not_before(self) -> datetime:
-        return self.failed_at + PROBE_INTERVAL
+        return self.failed_at + probe_interval(self.count)
 
     def to_json(self) -> dict[str, Any]:
-        return {"failure_class": self.failure_class, "failed_at": self.failed_at.isoformat()}
+        return {"failure_class": self.failure_class, "failed_at": self.failed_at.isoformat(), "count": self.count,
+                "recorded_by": self.recorded_by}
 
 
 @dataclass(frozen=True)

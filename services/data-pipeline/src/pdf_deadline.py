@@ -39,6 +39,20 @@ class PdfDeadlineExceeded(PdfExtractionDeferred):
     """The worker cutoff was reached; release the claim without spending retry."""
 
 
+class PdfHostTurnBusy(PdfDeadlineExceeded):
+    """The document host stayed busy (another process held its turn, ``src.host_turn``) before the worker cutoff:
+    released like a cutoff, without spending retry, and logged as what it is."""
+
+    def __init__(self, host: str, waited: float) -> None:
+        super().__init__(
+            f"Host turn of {host} not obtained after {waited:.0f} s (busy); retry resumes",
+            checkpointed_pages=0,
+            total_pages=0,
+            new_progress_pages=0,
+        )
+        self.host = host
+
+
 @contextmanager
 def pdf_deadline_scope(deadline: float | None):
     """Set a task-local monotonic cutoff for one queue batch."""

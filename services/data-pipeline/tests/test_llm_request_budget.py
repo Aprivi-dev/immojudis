@@ -609,3 +609,59 @@ def test_request_key_is_stable_for_same_model_and_payload() -> None:
 
     assert first == second
     assert first != different
+
+
+def test_the_replicate_start_turn_covers_the_reservations_and_ends_just_before_the_post(monkeypatch) -> None:
+    """F4 : le tour de Replicate entre processus est pris avant les réservations et rendu juste avant l'envoi."""
+    from contextlib import contextmanager
+
+    events: list[str] = []
+
+    @contextmanager
+    def turn(host, *, delay_seconds, deadline_remaining):
+        events.append(f"take {host} {delay_seconds:g}")
+        yield
+        events.append("release")
+
+    client = ReplicateClient(api_token="token", model="owner/model:v1", max_retries=1, min_interval_seconds=11,
+                             retry_backoff_seconds=0, retry_max_sleep_seconds=0)
+    monkeypatch.setattr(llm_client, "host_turn", turn)
+    monkeypatch.setattr(llm_client, "_LAST_REPLICATE_REQUEST_AT", float("-inf"))
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: events.append("reserve") or "r-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: events.append("reserve run"))
+    monkeypatch.setattr(llm_client, "record_llm_request", lambda reservation_id, **kwargs: None)
+    response = httpx.Response(201, json={"id": "p-1", "status": "starting", "urls": {"get": "https://x/p-1"}},
+                              request=httpx.Request("POST", "https://api.replicate.com/v1/predictions"))
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *args, **kwargs: events.append("post") or response)
+
+    client._post_with_retries("https://api.replicate.com/v1/predictions", headers={}, payload={"input": {}})
+    assert events == ["take api.replicate.com 11", "reserve", "reserve run", "release", "post"]
+
+
+def test_a_rejected_reservation_still_hands_the_replicate_turn_back(monkeypatch) -> None:
+    from contextlib import contextmanager
+
+    events: list[str] = []
+
+    @contextmanager
+    def turn(host, **_kwargs):
+        events.append("take")
+        try:
+            yield
+        finally:
+            events.append("release")
+
+    def refused(model, **_kwargs):
+        raise RuntimeError("autonomous budget exhausted")
+
+    client = ReplicateClient(api_token="token", model="owner/model:v1", max_retries=1, min_interval_seconds=11,
+                             retry_backoff_seconds=0, retry_max_sleep_seconds=0)
+    monkeypatch.setattr(llm_client, "host_turn", turn)
+    monkeypatch.setattr(llm_client, "_LAST_REPLICATE_REQUEST_AT", float("-inf"))
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "r-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", refused)
+    monkeypatch.setattr(llm_client, "release_llm_request", lambda *a, **k: events.append("release reservation"))
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *a, **k: pytest.fail("no POST"))
+    with pytest.raises(RuntimeError, match="budget exhausted"):
+        client._post_with_retries("https://api.replicate.com/v1/predictions", headers={}, payload={"input": {}})
+    assert events == ["take", "release reservation", "release"]

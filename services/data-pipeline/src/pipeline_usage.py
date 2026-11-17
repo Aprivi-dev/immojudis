@@ -1,11 +1,14 @@
 """Meter predictions without retaining prompts, outputs, logs or credentials."""
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import psycopg
@@ -13,6 +16,8 @@ from psycopg.types.json import Jsonb
 
 from src.config import autonomous_run_id, load_settings
 from src.storage.postgrest_helpers import rest_headers
+
+LOGGER = logging.getLogger(__name__)
 
 PINNED_MODEL = 'zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4'
 RATE_SOURCE = 'https://replicate.com/pricing#hardware; L40S 0.000975 USD/s; checked 2026-09-12'
@@ -82,22 +87,45 @@ LOCK_NOT_AVAILABLE_SQLSTATE = "55P03"
 #: A publication that waited ``lock_timeout`` (15 s) for the publication lock (``outcome_catalogue_bridge``) is
 #: retried a little later without spending an attempt: several workers of the parallel lane publish side by side.
 PUBLICATION_LOCK_DEFERRAL = timedelta(minutes=5)
+#: Consecutive deferrals of one task without spending an attempt; the next one spends it (bounded retries).
+PUBLICATION_LOCK_MAX_DEFERRALS = 6
+PUBLICATION_LOCK_DEFERRAL_PREFIX = "Publication lock busy (lock_timeout)"
+_DEFERRAL_COUNT = re.compile(r"^Publication lock busy \(lock_timeout\) \[(\d+)/\d+\]")
 _PUBLICATION_LOCK_DEFERRALS = [0]
 
 
-def publication_lock_deferral(error: BaseException) -> QueueJobDeferred | None:
-    """The deferral of a publication stopped by ``lock_timeout`` (anywhere in its causes), else ``None``."""
+def _previous_deferrals(jobs: Iterable[Mapping[str, Any]]) -> int:
+    counts = [_DEFERRAL_COUNT.match(str(job.get("last_error") or "")) for job in jobs]
+    return max((int(match.group(1)) for match in counts if match), default=0)
+
+
+def publication_lock_deferral(error: BaseException, *, jobs: Iterable[Mapping[str, Any]] = ()) -> QueueJobDeferred | None:
+    """The deferral of a publication stopped by ``lock_timeout`` (the error or its explicit causes), else ``None``.
+
+    Only ``__cause__`` is followed: a lock timeout merely seen while handling another error (``__context__``) is not
+    the outcome of the publication. ``jobs``: the claimed tasks; their last error carries the count of consecutive
+    deferrals, and past ``PUBLICATION_LOCK_MAX_DEFERRALS`` the answer is ``None`` (an ordinary failure, one attempt
+    spent), so that a task never comes back forever.
+    """
     cause: BaseException | None = error
     for _depth in range(10):
         if cause is None:
-            break
+            return None
         if getattr(cause, "sqlstate", None) == LOCK_NOT_AVAILABLE_SQLSTATE:
-            _PUBLICATION_LOCK_DEFERRALS[0] += 1
-            return QueueJobDeferred.after(
-                "Publication lock busy (lock_timeout); retried without spending an attempt", PUBLICATION_LOCK_DEFERRAL
-            )
-        cause = cause.__cause__ or cause.__context__
-    return None
+            break
+        cause = cause.__cause__
+    else:
+        return None
+    count = _previous_deferrals(jobs) + 1
+    if count > PUBLICATION_LOCK_MAX_DEFERRALS:
+        LOGGER.warning("Publication lock busy %s times in a row: this attempt is spent", count)
+        return None
+    _PUBLICATION_LOCK_DEFERRALS[0] += 1
+    return QueueJobDeferred.after(
+        f"{PUBLICATION_LOCK_DEFERRAL_PREFIX} [{count}/{PUBLICATION_LOCK_MAX_DEFERRALS}]; "
+        "retried without spending an attempt",
+        PUBLICATION_LOCK_DEFERRAL,
+    )
 
 
 def publication_lock_deferrals() -> int:

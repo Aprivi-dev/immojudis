@@ -66,7 +66,7 @@ Diagnostic :
 4. `reused_copy` : l'inventaire a tourné sur la copie. Rien à faire tant que la copie a moins de 24 h ; une
    copie qui vieillit d'un passage à l'autre dit que robots.txt ne se lit plus du tout.
 
-### Site injoignable : sonde horaire, puis suspension de 7 jours (`suspended_unreachable`)
+### Site injoignable : sonde espacée, puis suspension de 7 jours (`suspended_unreachable`)
 
 Depuis le 17/11/2026 (Enchères Immobilières muet depuis le 15/11 : `ConnectTimeout` sur robots.txt, 0 requête,
 6 h entre deux essais, et ~2,5 min perdues sur robots.txt à chaque passage de la file pour ses fiches), règles
@@ -76,16 +76,18 @@ de `services/data-pipeline/src/source_suspension.py`, appliquées à la fin de c
   `no_tcp_response` (pas de réponse TCP), `timeout` (délai ou coupure), `server_error` (5xx), `access_refused`
   (401, 403, page de défi), `http_error` (autre code). `coverage->>'unreachable_since'` : début des échecs de
   connexion continus (`no_tcp_response`, `timeout`). Les détails de `.missed` portent `robots_policy`.
-- **Sonde horaire** (migration `20261204100000` appliquée) : après une panne passagère de robots.txt
+- **Sonde espacée** (migration `20261204100000` appliquée) : après une panne passagère de robots.txt
   (`no_tcp_response`, `timeout`, `server_error`) d'une collecte qui n'a demandé aucune page, la collecte suivante
-  part 60 min plus tard au lieu de 30 min à 6 h, et sa lecture de robots.txt est une sonde : une requête, sans
-  reprise, connexion abandonnée après 10 s. Une collecte qui a continué sur la copie de 24 h et demandé ses pages
-  garde l'espacement d'avant.
+  est une sonde : une lecture de robots.txt, sans reprise, connexion abandonnée après 10 s ; 1 h après le premier
+  échec, puis 2 h, 4 h et 6 h au plus (`coverage->>'robots_failures'` compte les collectes en échec d'affilée).
+  Une collecte qui a continué sur la copie de 24 h et demandé ses pages garde l'espacement d'avant.
   Aucun processus (collecte, fiches, pièces) ne relit robots.txt de ce site avant l'heure de la sonde : la copie
-  commune (`app_private.robots_policies`) garde le dernier échec. Les tâches de fiches de la source sont remises
-  en file jusqu'à cette heure sans perdre d'essai. Volume : une requête par heure au plus (avant : quatre par
-  collecte et quatre par passage de la file). Sans la migration, l'espacement d'avant reste.
-- **Suspension** : après 72 h d'échecs de connexion continus, `suspended_until = now() + 7 jours` et
+  commune (`app_private.robots_policies`) garde le dernier échec et le nombre d'échecs d'affilée. Les tâches de
+  fiches de la source sont remises en file jusqu'à cette heure sans perdre d'essai. Volume, tous processus
+  confondus : après la collecte en échec, 5 sondes (une requête chacune) dans les 24 h, puis 4 par jour (avant :
+  quatre essais par collecte, collectes espacées de 30 min à 6 h, soit 24 requêtes de plus dans les 24 h, puis 16
+  par jour). Sans la migration, l'espacement d'avant reste.
+- **Suspension** : après 72 h d'échecs de connexion **continus**, `suspended_until = now() + 7 jours` et
   `suspension_reason` commence par `source_unreachable:`. Le planificateur ne lance plus la source, la file ne
   prend plus ses fiches (`claim_auction_enrichment_jobs_family` filtre `suspended_until`), les tâches de pièces
   hébergées sur son site sont reportées à la reprise sans perdre d'essai. **Rien n'est retiré du catalogue**
@@ -93,6 +95,14 @@ de `services/data-pipeline/src/source_suspension.py`, appliquées à la fin de c
   l'annonce (`details->>'resume_probe_at'` : date de reprise ; `failure_class` ; `unreachable_since`) ;
   `.missed` reste ouverte à côté (aucun inventaire). À l'échéance, la collecte relancée est la sonde : si le site
   répond, tout reprend et l'avertissement se referme deux heures plus tard ; sinon, 7 jours de plus.
+  « Continus » : au moins 6 échecs relevés par le client des pages de la source (collecte ou relecture de ses
+  fiches ; jamais ceux du client des pièces, `app_private.robots_policies.last_failure_by`), sans trou de plus de
+  12 h entre deux (`coverage->>'unreachable_observed_failures'`, `coverage->>'unreachable_last_observed_at'`) :
+  après une pause du pipeline, l'horloge repart du premier échec relevé à la reprise.
+- **Interrupteur, sans commit** : la variable de dépôt `PIPELINE_SOURCE_AUTO_SUSPEND=off` coupe la sonde espacée
+  et la suspension automatique : espacement progressif d'avant, aucune nouvelle suspension (une suspension déjà
+  posée court jusqu'à son échéance ; la lever avec la requête ci-dessous). La copie commune de robots.txt,
+  l'attente sans requête après un échec récent et le report des pièces d'un site déjà suspendu restent.
 - **Jamais le relais** (`SOURCE_FETCH_RELAY_URL`) : contourner un site qui ne nous répond plus pourrait
   contourner un blocage. La liste des hôtes du relais (`src/sources/cloud_transport.py`) ne contient pas
   Enchères Immobilières, un test le vérifie.
@@ -107,7 +117,7 @@ select source_name, suspended_until, suspension_reason, coverage->>'failure_clas
        coverage->>'unreachable_since' as muet_depuis, next_inventory_at, consecutive_failures
   from public.auction_source_state
  where suspension_reason like 'source_unreachable%' or coverage->>'unreachable_since' is not null;
-select origin, last_failure_class, last_failure_at, verified_at
+select origin, last_failure_class, last_failure_at, last_failure_by, failure_count, verified_at
   from app_private.robots_policies order by last_failure_at desc nulls last limit 20;
 ```
 

@@ -2,7 +2,7 @@
 -- avertissement d'une source suspendue parce que son site ne répond plus.
 begin;
 
-select plan(12);
+select plan(13);
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'app_private.robots_policies'::regclass),
@@ -44,6 +44,14 @@ select lives_ok(
   $$insert into app_private.robots_policies (origin, last_failure_class, last_failure_at) values
     ('https://example.test:443', 'no_tcp_response', now())$$,
   'a failure alone is recorded'
+);
+
+select throws_ok(
+  $$insert into app_private.robots_policies (origin, last_failure_class, last_failure_at, last_failure_by) values
+    ('https://other.example.test:443', 'timeout', now(), 'relay')$$,
+  '23514',
+  null,
+  'the recorder of a failure is the pages or the documents client'
 );
 
 select ok(

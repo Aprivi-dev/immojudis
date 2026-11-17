@@ -139,7 +139,10 @@ class DocumentPoliteness:
     @staticmethod
     def _record_failure(key: str | None, failure_class: str) -> None:
         if key:
-            robots_policy_store.save_failure(key, robots_policy_copies.RobotsFailure(failure_class, datetime.now(UTC)))
+            # Relevé par le client des pièces : jamais compté pour la suspension d'une source (src.source_suspension).
+            robots_policy_store.save_failure(key, robots_policy_copies.RobotsFailure(
+                failure_class, datetime.now(UTC), recorded_by=robots_policy_copies.DOCUMENTS
+            ))
 
     def is_disallowed(self, url: str) -> bool | None:
         """Live robots.txt verdict for ``url`` without waiting; None when unknown.

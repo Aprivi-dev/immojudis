@@ -5,9 +5,11 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
@@ -327,13 +329,14 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
         coverage.pop(ROBOTS_COPIES_KEY, None)
         if robots_copies:
             coverage[ROBOTS_COPIES_KEY] = robots_copies
-        # Site injoignable (src/source_suspension.py) : classe de l'échec, sonde horaire, suspension après 72 h. La
-        # sonde horaire suppose la copie commune de robots.txt (migration 20261204100000) : sans elle, la collecte
-        # relancée referait quatre essais, et l'espacement d'avant reste.
+        # Site injoignable (src/source_suspension.py) : classe de l'échec, sonde espacée, suspension après 72 h. La
+        # sonde suppose la copie commune de robots.txt (migration 20261204100000) : sans elle, la collecte relancée
+        # referait quatre essais, et l'espacement d'avant reste. PIPELINE_SOURCE_AUTO_SUSPEND=off coupe les deux.
         probe_row = db.execute("select to_regclass('app_private.robots_policies') is not null").fetchone()
         probe_available = bool(probe_row and probe_row[0])
         unreachable = source_suspension.decide(
-            previous_coverage, coverage, now=datetime.now(UTC), probe_available=probe_available)
+            previous_coverage, coverage, now=datetime.now(UTC), probe_available=probe_available,
+            auto_suspend=source_suspension.auto_suspend_enabled())
         coverage.update(unreachable.coverage())
         denied = access_denied(coverage, problems)
         publication_counts = dict(db.execute("""select decision,count(*)
@@ -451,7 +454,7 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
             deadline = next_attempt(failures=failures, access_denied=denied,
                 retry_not_before=coverage.get('retry_not_before'), now=now)
             if unreachable.probe_at is not None and not denied:
-                # Panne passagère de robots.txt : la collecte suivante est une sonde (une requête), dans 60 min.
+                # Panne passagère de robots.txt : la collecte suivante est une sonde (une requête), dans 1 à 6 h.
                 deadline = max(unreachable.probe_at, aware_timestamp(coverage.get('retry_not_before')) or now)
         else:
             deadline = next_inventory_deadline(
@@ -761,8 +764,12 @@ GENERAL_WORKER_FAMILY = 'enrichment'
 LANE_SETTINGS_EXIT_CODE = 3
 # The standard ubuntu-24.04 runner has 4 vCPUs: the compute threads of the 1+N workers share them.
 RUNNER_CPUS = 4
+# Not OMP_THREAD_LIMIT: Tesseract already runs on one thread (src.pdf_ocr, OCR_THREAD_LIMIT, measured faster);
+# a share of 4/(N+1) would raise it to 2 threads with one general worker.
 THREAD_LIMIT_ENVS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS',
                      'VECLIB_MAXIMUM_THREADS')
+# A worker still running when the unit stops (exception, SIGTERM of a cancelled job) gets this long to end.
+LANE_WORKER_TERMINATE_SECONDS = 10
 # A cycle stops the unit when every worker found nothing left it may claim.
 IDLE_WORKER_STOP_REASONS = frozenset({QUEUES_EMPTY_STOP_REASON, 'llm_budget_exhausted'})
 
@@ -857,59 +864,97 @@ def _lane_thread_env(processes: int) -> dict[str, str]:
     return {name: threads for name in THREAD_LIMIT_ENVS}
 
 
+def _relay_output(stream: Any, prefix: str) -> None:
+    """Copy a worker's output line by line under its family and number; GitHub commands (``::``) stay unprefixed."""
+    for raw in iter(stream.readline, b''):
+        line = raw.decode('utf-8', errors='replace').rstrip('\n')
+        print(line if line.startswith('::') else f'{prefix} {line}', flush=True)
+    stream.close()
+
+
+def _raise_on_sigterm(signum: int, _frame: Any) -> None:
+    raise SystemExit(128 + signum)
+
+
 def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, directory: str) -> list[LaneWorker]:
     """Run one source-detail worker and ``general_workers`` general ones side by side; wait for all of them.
 
     They share the unit's environment, hence its ``AUTONOMOUS_RUN_ID``: the AI cap per execution
     (``reserve_pipeline_prediction``, 90 calls per 30 minutes) stays the unit's. A failed or killed worker does
-    not stop the others; each is bounded by the same budget plus the overrun.
+    not stop the others; each is bounded by the same budget plus the overrun. Their output is prefixed with
+    ``[family#n]``. If the unit itself stops (exception, SIGTERM), the workers still running are terminated.
     """
     families = [SOURCE_DETAIL_WORKER_FAMILY] + [GENERAL_WORKER_FAMILY] * general_workers
     worker_env = {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), **_lane_thread_env(len(families))}
     started = time.monotonic()
     timeout = budget + ENRICHMENT_WORKER_OVERRUN_SECONDS
     running: list[tuple[str, str, subprocess.Popen[bytes] | None, str | None]] = []
-    for index, family in enumerate(families):
-        report_path = os.path.join(directory, f'report-{index}-{family}.json')
-        command = [*ENRICHMENT_WORKER_COMMAND, '--family', family]
-        try:
-            process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path})
-        except Exception as exc:
-            running.append((family, report_path, None, str(exc)[:1000]))
-            continue
-        running.append((family, report_path, process, None))
-    workers: list[LaneWorker] = []
-    for family, report_path, process, start_failure in running:
-        failure = start_failure
-        if process is None:
-            code = 1
-        else:
+    relays: list[threading.Thread] = []
+    previous_sigterm = None
+    if threading.current_thread() is threading.main_thread():
+        previous_sigterm = signal.signal(signal.SIGTERM, _raise_on_sigterm)
+    try:
+        for index, family in enumerate(families):
+            report_path = os.path.join(directory, f'report-{index}-{family}.json')
+            command = [*ENRICHMENT_WORKER_COMMAND, '--family', family]
             try:
-                code = process.wait(timeout=max(0.0, started + timeout - time.monotonic()))
+                process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            except Exception as exc:
+                running.append((family, report_path, None, str(exc)[:1000]))
+                continue
+            running.append((family, report_path, process, None))
+            if process.stdout is not None:
+                relay = threading.Thread(target=_relay_output, args=(process.stdout, f'[{family}#{index}]'),
+                                         name=f'lane-output-{index}', daemon=True)
+                relay.start()
+                relays.append(relay)
+        workers: list[LaneWorker] = []
+        for family, report_path, process, start_failure in running:
+            failure = start_failure
+            if process is None:
+                code = 1
+            else:
+                try:
+                    code = process.wait(timeout=max(0.0, started + timeout - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
+                else:
+                    failure = _worker_failure(code)
+            if code and failure is None:
+                failure = f'Worker ({family}) exited with status {code}'
+            workers.append(LaneWorker(family, code, failure, time.monotonic() - started,
+                                      read_worker_report(report_path) or {}))
+        return workers
+    finally:
+        alive = [process for _, _, process, _ in running if process is not None and process.poll() is None]
+        for process in alive:
+            process.terminate()
+        for process in alive:
+            try:
+                process.wait(timeout=LANE_WORKER_TERMINATE_SECONDS)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-                code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
-            else:
-                failure = _worker_failure(code)
-        if code and failure is None:
-            failure = f'Worker ({family}) exited with status {code}'
-        workers.append(LaneWorker(family, code, failure, time.monotonic() - started,
-                                  read_worker_report(report_path) or {}))
-    return workers
+        for relay in relays:
+            relay.join(timeout=5)
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 def _cycle_stop_reason(workers: list[LaneWorker]) -> str | None:
-    """One stop reason for the cycle: None when a report is missing, ``queues_empty`` when no worker had
-    anything left to claim, a collection when one worker yielded to it, otherwise the source-detail worker's."""
+    """One stop reason for the cycle: None when a report is missing, ``queues_empty`` only when no worker had
+    anything left to claim, a collection when one worker yielded to it, otherwise the first worker's that still had
+    work (an idle source-detail worker never ends the unit while a general one ran to its budget)."""
     reasons = [worker.report.get('stop_reason') for worker in workers]
     if any(not isinstance(reason, str) for reason in reasons):
         return None
     if COLLECTION_PENDING_STOP_REASON in reasons:
         return COLLECTION_PENDING_STOP_REASON
-    if all(reason in IDLE_WORKER_STOP_REASONS for reason in reasons):
-        return QUEUES_EMPTY_STOP_REASON
-    return str(reasons[0])
+    busy = [str(reason) for reason in reasons if reason not in IDLE_WORKER_STOP_REASONS]
+    return busy[0] if busy else QUEUES_EMPTY_STOP_REASON
 
 
 @dataclass

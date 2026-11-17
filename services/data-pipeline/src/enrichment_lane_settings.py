@@ -9,7 +9,9 @@ Trois variables, posées par ``.github/workflows/data-pipeline.yml`` depuis des 
 * ``PIPELINE_HOST_TURNS`` (``on`` | ``off``) : tours par hôte entre processus (``src.host_turn``).
 
 Sans valeur explicite, les deux derniers suivent le nombre de processus : ``shared`` et ``on`` dès qu'il y en a un,
-``exclusive`` et ``off`` sinon (comportement d'avant, à l'identique). Plusieurs processus sans mode partagé
+``exclusive`` et ``off`` sinon (le travailleur mixte d'avant, ses verrous et sa politesse ; mais pas tout l'avant :
+l'attente des verrous dans la file de PostgreSQL, la copie commune de robots.txt et le report sans essai sur
+``lock_timeout`` restent quel que soit N, voir « Voie parallèle » du runbook de la file). Plusieurs processus sans mode partagé
 s'excluraient sur le verrou du catalogue ; sans tours par hôte, deux processus pourraient interroger le même site en
 même temps : ``lane_settings`` refuse ces combinaisons, avec un message qui dit quoi changer.
 
