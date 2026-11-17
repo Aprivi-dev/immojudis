@@ -85,14 +85,19 @@ def yield_to_sources() -> bool:
 
     Cède quand une collecte est demandée, ou quand un autre processus tient ou attend le tour de parole vers les
     sources (``src.source_traffic``) : la copie des photos d'une collecte, une collecte qui attend avant de démarrer.
+    En mode partagé, les autres travailleurs de la voie ne la font pas céder ; une demande exclusive, si.
     Le tour pris ici couvre le lot qui suit ; il est rendu au lot suivant (ou à la fin du processus).
     """
     if collection_pending_now():
         return True
+    from src.enrichment_lane_settings import lane_settings
     from src.source_traffic import SourceTrafficTurns
 
     db_url = str(load_settings().get("supabase_db_url") or "")
-    turns = _WORKER_TURNS.setdefault(db_url, SourceTrafficTurns(db_url))
+    turns = _WORKER_TURNS.get(db_url)
+    if turns is None:
+        # Partagé pour les travailleurs de la voie parallèle (src.enrichment_lane_settings), exclusif sinon.
+        turns = _WORKER_TURNS[db_url] = SourceTrafficTurns(db_url, mode=lane_settings().lock_mode)
     return not turns.try_take()
 
 

@@ -15,6 +15,20 @@ de ``public.auction_source_state`` sous la clé ``COVERAGE_KEY`` (aucune colonne
 sa couverture ; ``autonomous_runner.finish_source`` la conserve d'un passage à l'autre ; ``src.main`` la
 relit (passage planifié seulement) et l'installe ici avant la collecte. Base illisible ou clé absente : aucune
 copie, comportement d'avant (arrêt).
+
+Copie commune à tous les processus (migration 20261204100000, ``src.sources.robots_policy_store``) : la voie
+d'enrichissement fait tourner plusieurs processus, qui liraient chacun robots.txt. La même copie, gardée dans une
+table privée, sert alors à deux choses, avec les mêmes règles de fraîcheur que ci-dessus :
+
+* lue depuis moins de ``REUSE_WITHOUT_FETCH`` (30 min, un passage du travailleur d'avant), elle tient lieu de
+  lecture : aucun processus ne relit robots.txt plus souvent qu'un seul ne le faisait ;
+* plus vieille, elle reste la copie de repli d'une panne passagère (24 h au plus, ``MAX_AGE``).
+
+La table garde aussi le dernier échec (``RobotsFailure``), avec sa classe (``failure_class``). Après une panne
+passagère (pas de réponse TCP, délai, 5xx), l'hôte n'est relu qu'après ``PROBE_INTERVAL`` (60 min), par une seule
+requête sans reprise (la sonde) : sans cela, chaque processus et chaque passage refaisaient quatre essais. Un refus
+(401, 403, page de défi) n'est jamais gardé comme une politique : il est rendu tel quel pendant ``PROBE_INTERVAL``,
+puis robots.txt est relu.
 """
 
 from __future__ import annotations
@@ -35,6 +49,19 @@ MAX_AGE = timedelta(hours=24)
 COVERAGE_KEY = "robots_policy_copies"
 #: Une politique plus longue n'est pas gardée (le JSON de couverture reste petit) : sans copie, arrêt.
 MAX_RULES = 1000
+#: Copie commune assez récente pour tenir lieu de lecture (un passage du travailleur d'avant).
+REUSE_WITHOUT_FETCH = timedelta(minutes=30)
+#: Après un échec, robots.txt n'est relu (sonde : une requête, sans reprise) qu'après ce délai.
+PROBE_INTERVAL = timedelta(minutes=60)
+#: Classes d'échec : pas de réponse TCP, délai de lecture, erreur 5xx (passagères), refus, autre erreur HTTP.
+NO_TCP_RESPONSE = "no_tcp_response"
+TIMEOUT = "timeout"
+SERVER_ERROR = "server_error"
+ACCESS_REFUSED = "access_refused"
+HTTP_ERROR = "http_error"
+TRANSIENT_FAILURES = frozenset({NO_TCP_RESPONSE, TIMEOUT, SERVER_ERROR})
+#: Échecs de connexion (le site ne répond pas) : ceux qui, prolongés, suspendent une source.
+UNREACHABLE_FAILURES = frozenset({NO_TCP_RESPONSE, TIMEOUT})
 
 
 @dataclass(frozen=True)
@@ -97,6 +124,90 @@ class RobotsPolicyCopy:
         return cls(tuple(rules), delay, verified_at, digest)
 
 
+def failure_class(*, status_code: int | None = None, error: BaseException | None = None,
+                  refused: bool = False) -> str:
+    """Classe d'un échec de lecture de robots.txt (ou d'une requête) : la même pour la copie commune, la couverture
+    d'une source et le détail de son alerte."""
+    if refused or status_code in {401, 403}:
+        return ACCESS_REFUSED
+    if isinstance(status_code, int) and status_code >= 500:
+        return SERVER_ERROR
+    if isinstance(status_code, int) and status_code >= 400:
+        return HTTP_ERROR
+    cause = error
+    while cause is not None and cause.__cause__ is not None and not _is_connect_error(cause):
+        cause = cause.__cause__
+    if cause is not None and _is_connect_error(cause):
+        return NO_TCP_RESPONSE
+    return TIMEOUT if error is not None else HTTP_ERROR
+
+
+def _is_connect_error(error: BaseException) -> bool:
+    import httpx
+
+    return isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, ConnectionError))
+
+
+@dataclass(frozen=True)
+class RobotsFailure:
+    """Dernier échec de lecture d'une origine : sa classe et son heure."""
+
+    failure_class: str
+    failed_at: datetime
+
+    @property
+    def transient(self) -> bool:
+        return self.failure_class in TRANSIENT_FAILURES
+
+    def probe_not_before(self) -> datetime:
+        return self.failed_at + PROBE_INTERVAL
+
+    def to_json(self) -> dict[str, Any]:
+        return {"failure_class": self.failure_class, "failed_at": self.failed_at.isoformat()}
+
+
+@dataclass(frozen=True)
+class SharedPolicy:
+    """Ce que la copie commune sait d'une origine."""
+
+    copy: RobotsPolicyCopy | None
+    failure: RobotsFailure | None
+
+
+@dataclass(frozen=True)
+class BeforeFetch:
+    """Que faire avant de lire robots.txt : ``reuse`` (la copie tient lieu de lecture), ``refused`` ou
+    ``not_due`` (l'échec récent est rendu sans requête), ``fetch`` (``probe`` : une seule requête, sans reprise)."""
+
+    action: str
+    copy: RobotsPolicyCopy | None = None
+    failure: RobotsFailure | None = None
+    probe: bool = False
+
+
+def before_fetch(shared: SharedPolicy | None, user_agent: str, now: datetime | None = None) -> BeforeFetch:
+    """La règle commune de fraîcheur, avant toute lecture de robots.txt (client des pages et client des pièces)."""
+    current = now or datetime.now(UTC)
+    if shared is None:
+        return BeforeFetch("fetch")
+    copy, failure = shared.copy, shared.failure
+    recent_failure = failure is not None and (copy is None or failure.failed_at >= copy.verified_at)
+    if recent_failure and failure is not None and current < failure.probe_not_before():
+        if failure.transient:
+            return BeforeFetch("not_due", failure=failure)
+        if failure.failure_class == ACCESS_REFUSED:
+            return BeforeFetch("refused", failure=failure)
+    if (
+        not recent_failure
+        and copy is not None
+        and copy.usable(user_agent, current)
+        and copy.age(current) <= REUSE_WITHOUT_FETCH
+    ):
+        return BeforeFetch("reuse", copy=copy)
+    return BeforeFetch("fetch", failure=failure if recent_failure else None,
+                       probe=bool(recent_failure and failure is not None and failure.transient))
+
+
 def user_agent_digest(user_agent: str) -> str:
     return hashlib.sha256(user_agent.encode("utf-8")).hexdigest()[:16]
 
@@ -151,10 +262,12 @@ def installed_json() -> dict[str, dict[str, Any]]:
         return {key: copy.to_json() for key, copy in _installed.items()}
 
 
-def recall(key: str, user_agent: str, now: datetime | None = None) -> RobotsPolicyCopy | None:
-    """Copie persistée de cette origine encore valable pour notre agent, sinon ``None``."""
+def recall(key: str, user_agent: str, now: datetime | None = None,
+           shared: RobotsPolicyCopy | None = None) -> RobotsPolicyCopy | None:
+    """Copie persistée de cette origine encore valable pour notre agent (installée ou commune, la plus récente),
+    sinon ``None``."""
+    current = now or datetime.now(UTC)
     with _lock:
-        copy = _installed.get(key)
-    if copy is None or not copy.usable(user_agent, now or datetime.now(UTC)):
-        return None
-    return copy
+        installed = _installed.get(key)
+    usable = [copy for copy in (installed, shared) if copy is not None and copy.usable(user_agent, current)]
+    return max(usable, key=lambda copy: copy.verified_at) if usable else None

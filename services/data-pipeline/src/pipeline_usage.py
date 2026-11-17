@@ -77,6 +77,34 @@ class QueueJobDeferred(RuntimeError):
         return cls(message, retry_after=datetime.now(UTC) + delay)
 
 
+#: SQLSTATE of a ``lock_timeout`` (lock_not_available).
+LOCK_NOT_AVAILABLE_SQLSTATE = "55P03"
+#: A publication that waited ``lock_timeout`` (15 s) for the publication lock (``outcome_catalogue_bridge``) is
+#: retried a little later without spending an attempt: several workers of the parallel lane publish side by side.
+PUBLICATION_LOCK_DEFERRAL = timedelta(minutes=5)
+_PUBLICATION_LOCK_DEFERRALS = [0]
+
+
+def publication_lock_deferral(error: BaseException) -> QueueJobDeferred | None:
+    """The deferral of a publication stopped by ``lock_timeout`` (anywhere in its causes), else ``None``."""
+    cause: BaseException | None = error
+    for _depth in range(10):
+        if cause is None:
+            break
+        if getattr(cause, "sqlstate", None) == LOCK_NOT_AVAILABLE_SQLSTATE:
+            _PUBLICATION_LOCK_DEFERRALS[0] += 1
+            return QueueJobDeferred.after(
+                "Publication lock busy (lock_timeout); retried without spending an attempt", PUBLICATION_LOCK_DEFERRAL
+            )
+        cause = cause.__cause__ or cause.__context__
+    return None
+
+
+def publication_lock_deferrals() -> int:
+    """Publications deferred by ``lock_timeout`` in this process (worker report)."""
+    return _PUBLICATION_LOCK_DEFERRALS[0]
+
+
 #: Description or fact pass whose sale has a partial PDF manifest and no PDF job that can still advance: the
 #: document backlog re-queues that PDF job (pending documents), and the claim then holds the pass behind it. With
 #: the default 30 min wake-up it came back at every tick and was deferred again (40 of 84 general claims on

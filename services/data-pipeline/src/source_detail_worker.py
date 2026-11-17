@@ -16,6 +16,7 @@ from typing import Any, Literal
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
+from src.pipeline_usage import publication_lock_deferral
 from src.source_detail import (
     fetch_public_detail,
     prepare_source_revision,
@@ -300,6 +301,15 @@ def process_source_detail_job(
         _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
+        probe_not_before = getattr(exc, "probe_not_before", None)
+        if isinstance(probe_not_before, datetime):
+            # robots.txt of this site failed less than an hour ago (robots_policy_copies.PROBE_INTERVAL): no request
+            # was sent, so no attempt is spent; the task comes back after the next probe of the site.
+            release_source_detail_job_without_attempt(
+                job, reason=f"robots.txt probe not due: {exc}"[:1000], settings=active_settings,
+                retry_not_before=probe_not_before,
+            )
+            return False
         metrics = _client_metrics(_client_for_job(source_name, detail_url, provider_clients))
         status_code = _http_status_code(exc)
         failure_kind = _classify_detail_failure(exc, status_code)
@@ -340,6 +350,14 @@ def process_source_detail_job(
         _release_deadline_claim(job, settings=active_settings, exc=exc, on_deferred=on_deferred)
         return False
     except Exception as exc:
+        deferral = publication_lock_deferral(exc)
+        if deferral is not None:
+            # The transaction rolled back: the claim is intact. Waiting for the publication lock is coordination
+            # between the workers of the parallel lane, not a failed read.
+            release_source_detail_job_without_attempt(
+                job, reason=str(deferral), settings=active_settings, retry_not_before=deferral.next_attempt_at
+            )
+            return False
         LOGGER.exception("Source-detail publication failed for %s", canonical_url)
         _finish_job(job, succeeded=False, error_message=str(exc))
         return False

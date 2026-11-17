@@ -113,9 +113,11 @@ def test_the_worker_yields_to_a_pending_collection_or_a_busy_source_turn(monkeyp
     answers = {"pending": True, "turn": True}
     monkeypatch.setattr(priority, "collection_pending_now", lambda: answers["pending"])
 
+    modes: list[str] = []
+
     class Turns:
-        def __init__(self, _url):
-            pass
+        def __init__(self, _url, *, mode):
+            modes.append(mode)
 
         def try_take(self):
             return answers["turn"]
@@ -127,3 +129,5 @@ def test_the_worker_yields_to_a_pending_collection_or_a_busy_source_turn(monkeyp
     assert REAL_YIELD_TO_SOURCES() is False
     answers["turn"] = False
     assert REAL_YIELD_TO_SOURCES() is True
+    # Sans réglage de la voie parallèle, le travailleur unique prend le tour en exclusif, comme avant.
+    assert modes == ["exclusive"]

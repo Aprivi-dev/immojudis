@@ -51,6 +51,7 @@ from src.pdf_fact_extraction import enrich_sale_from_pdf_text, write_pdf_text_ca
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, ensure_pdf_deadline
+from src.host_turn import HostTurnWaitExceeded
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
@@ -616,17 +617,26 @@ def _download_document_response(
         require_ep_url(current_url, load_settings())
         ensure_pdf_deadline(operation="following document redirect")
         try:
-            # robots.txt and the per-host delay apply to every hop, including
-            # redirects to another origin.
-            _DOCUMENT_POLITENESS.wait_turn(current_url)
+            # robots.txt, the per-host delay and the cross-process host turn apply to
+            # every hop, including redirects to another origin.
+            with _DOCUMENT_POLITENESS.turn(current_url):
+                ensure_pdf_deadline(operation="starting document HTTP request")
+                response = _send_pinned_document_request(
+                    current_url,
+                    headers=headers,
+                    timeout_seconds=timeout_seconds,
+                )
         except DocumentRobotsDisallowed as exc:
             raise PermanentDocumentFailure("robots_disallowed", str(exc)) from exc
-        ensure_pdf_deadline(operation="starting document HTTP request")
-        response = _send_pinned_document_request(
-            current_url,
-            headers=headers,
-            timeout_seconds=timeout_seconds,
-        )
+        except HostTurnWaitExceeded as exc:
+            # Another process kept the host busy until the worker cutoff (or the bounded wait): coordination, not a
+            # failed download. The claim is released without spending its attempt (src.queued_runner).
+            raise PdfDeadlineExceeded(
+                f"PDF worker deadline reached while waiting for the turn of {exc.host}; retry resumes",
+                checkpointed_pages=0,
+                total_pages=0,
+                new_progress_pages=0,
+            ) from exc
         status_code = int(getattr(response, "status_code", 200))
         if status_code not in DOCUMENT_REDIRECT_STATUS_CODES:
             return response
