@@ -7,6 +7,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import {
   dispatchDuePipeline,
+  dispatchDueRun,
   retryAfterAt,
   retryableDispatchStatus,
 } from "@/lib/pipeline-dispatch";
@@ -40,7 +41,7 @@ describe("autonomous GitHub dispatch retries", () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchImpl);
 
-    await expect(dispatchDuePipeline()).resolves.toMatchObject({
+    await expect(dispatchDueRun()).resolves.toMatchObject({
       dispatched: true,
       runId: run.id,
       attempt: 1,
@@ -60,14 +61,32 @@ describe("autonomous GitHub dispatch retries", () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchImpl);
 
-    await expect(dispatchDuePipeline()).resolves.toMatchObject({
+    await expect(dispatchDueRun()).resolves.toMatchObject({
       dispatched: true,
       runId: enrichmentRun.id,
       mode: "enrichment",
     });
     expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
-      inputs: { run_id: enrichmentRun.id, source: "all", automatic: "true" },
+      inputs: {
+        run_id: enrichmentRun.id,
+        source: "all",
+        automatic: "true",
+        enrichment_only: "true",
+      },
     });
+  });
+
+  it("keeps a collection out of the enrichment lane's concurrency group", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await dispatchDueRun();
+    const inputs = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)).inputs;
+    expect(inputs).toMatchObject({ run_id: run.id, source: "licitor", automatic: "true" });
+    expect(inputs).not.toHaveProperty("enrichment_only");
   });
 
   it("stores Retry-After while retaining the 15-minute minimum", async () => {
@@ -83,9 +102,7 @@ describe("autonomous GitHub dispatch retries", () => {
         .mockResolvedValue(new Response(null, { status: 500, headers: { "Retry-After": "3600" } })),
     );
 
-    await expect(dispatchDuePipeline()).rejects.toThrow(
-      "retry scheduled for 2026-09-13T10:00:00.000Z",
-    );
+    await expect(dispatchDueRun()).rejects.toThrow("retry scheduled for 2026-09-13T10:00:00.000Z");
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "record_autonomous_pipeline_dispatch",
       expect.objectContaining({
@@ -111,9 +128,7 @@ describe("autonomous GitHub dispatch retries", () => {
         .mockResolvedValue(new Response(null, { status: 500, headers: { "Retry-After": "7200" } })),
     );
 
-    await expect(dispatchDuePipeline()).rejects.toThrow(
-      "retry scheduled for 2026-09-13T11:00:00.000Z",
-    );
+    await expect(dispatchDueRun()).rejects.toThrow("retry scheduled for 2026-09-13T11:00:00.000Z");
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
     expect(mocks.rpc).toHaveBeenNthCalledWith(
       3,
@@ -138,7 +153,7 @@ describe("autonomous GitHub dispatch retries", () => {
       vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 403 })),
     );
 
-    await expect(dispatchDuePipeline()).rejects.toThrow("operator action required");
+    await expect(dispatchDueRun()).rejects.toThrow("operator action required");
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "record_autonomous_pipeline_dispatch",
       expect.objectContaining({ p_status: 403, p_retryable: false }),
@@ -153,7 +168,7 @@ describe("autonomous GitHub dispatch retries", () => {
       .mockResolvedValueOnce({ data: { updated: true, state: "retry_wait" }, error: null });
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("request timed out")));
 
-    await expect(dispatchDuePipeline()).rejects.toThrow("request timed out");
+    await expect(dispatchDueRun()).rejects.toThrow("request timed out");
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "record_autonomous_pipeline_dispatch",
       expect.objectContaining({
@@ -170,7 +185,7 @@ describe("autonomous GitHub dispatch retries", () => {
     const fetchImpl = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchImpl);
 
-    await expect(dispatchDuePipeline()).rejects.toThrow("Pipeline dispatch token missing");
+    await expect(dispatchDueRun()).rejects.toThrow("Pipeline dispatch token missing");
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -187,7 +202,7 @@ describe("autonomous GitHub dispatch retries", () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchImpl);
 
-    await expect(dispatchDuePipeline()).resolves.toMatchObject({ dispatched: true });
+    await expect(dispatchDueRun()).resolves.toMatchObject({ dispatched: true });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.github.com/repos/Aprivi-dev/immojudis/actions/workflows/custom-pipeline.yml/dispatches",
       expect.objectContaining({
@@ -213,5 +228,103 @@ describe("dispatch retry helpers", () => {
     expect(retryableDispatchStatus(403)).toBe(false);
     expect(retryableDispatchStatus(429)).toBe(true);
     expect(retryableDispatchStatus(500)).toBe(true);
+  });
+});
+
+describe("one claim per scheduling lane", () => {
+  beforeEach(() => {
+    vi.stubEnv("GITHUB_SCROLL_TOKEN", "dispatch-token");
+    vi.stubEnv("GITHUB_SCROLL_REPOSITORY", "Aprivi-dev/immojudis");
+    vi.stubEnv("GITHUB_SCROLL_REF", "main");
+    mocks.rpc.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  const enrichmentRun = {
+    ...run,
+    id: "22222222-2222-4222-8222-222222222222",
+    source: "enrichment-queue",
+    mode: "enrichment" as const,
+  };
+
+  it("dispatches a collection and the enrichment queue in the same tick", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null })
+      .mockResolvedValueOnce({ data: enrichmentRun, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(dispatchDuePipeline()).resolves.toEqual({
+      dispatched: true,
+      runs: [
+        expect.objectContaining({ runId: run.id, mode: "collect" }),
+        expect.objectContaining({ runId: enrichmentRun.id, mode: "enrichment" }),
+      ],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === "claim_autonomous_pipeline_run"),
+    ).toHaveLength(2);
+  });
+
+  it("stops after an empty claim (busy, disabled, nothing due, or scheduler before the lanes)", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(dispatchDuePipeline()).resolves.toEqual({
+      dispatched: true,
+      runs: [expect.objectContaining({ runId: run.id })],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims at most one unit per lane in a tick", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null })
+      .mockResolvedValueOnce({ data: enrichmentRun, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "accepted" }, error: null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 })),
+    );
+
+    await dispatchDuePipeline();
+    expect(mocks.rpc).toHaveBeenCalledTimes(4);
+  });
+
+  it("reports nothing dispatched when no lane has a due unit", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const fetchImpl = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(dispatchDuePipeline()).resolves.toEqual({
+      dispatched: false,
+      reason: "disabled_busy_or_not_due",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("stops the tick on a failed dispatch, as before the lanes", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: run, error: null })
+      .mockResolvedValueOnce({ data: { updated: true, state: "terminal" }, error: null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 403 })),
+    );
+
+    await expect(dispatchDuePipeline()).rejects.toThrow("operator action required");
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 });

@@ -39,7 +39,7 @@ on:
         default: false
         type: boolean
       enrichment_only:
-        description: "Process pending document and extraction jobs only"
+        description: "Process pending document and extraction jobs only (with automatic: the scheduled enrichment lane)"
         required: false
         default: false
         type: boolean
@@ -67,7 +67,13 @@ concurrency:
   # document backlog has its own group so that scheduled collections are not
   # queued (and superseded) behind a long drain; both serialise their writes on
   # the catalogue writer lock, which the drain takes and releases per sale.
-  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')) }}
+  # The enrichment queue (enrichment_only, scheduled or manual) has its own group
+  # too, so that collections keep their schedule while it works (17/11/2026). The
+  # scheduler keeps at most one enrichment run active; the worker holds the
+  # catalogue writer lock for each pass, stops claiming as soon as a collection
+  # is pending, and the collection waits for that lock before it starts
+  # (services/data-pipeline/src/collection_priority.py).
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || (inputs.enrichment_only && 'immojudis-enrichment-queue' || 'immojudis-data-pipeline'))) }}
   cancel-in-progress: false
 
 jobs:
@@ -297,6 +303,9 @@ jobs:
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
+          # Retour arrière de la voie d'enrichissement sans commit : la variable de dépôt ENRICHMENT_LANE=off ramène
+          # chaque unité de la file à un seul passage (environ 30 min), comme avant le 17/11/2026.
+          ENRICHMENT_LANE: ${{ vars.ENRICHMENT_LANE || 'on' }}
           # Garde contre un appel bloqué (src/stage_watchdog.py) : manuel, src.main se termine avec le
           # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
           # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).
@@ -308,7 +317,11 @@ jobs:
           # Exit code 2 means "published, but an enabled source was empty or
           # failed": a warning that must not stop the steps that follow.
           if [ "$REQUESTED_AUTOMATIC" = "true" ]; then
-            bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID"
+            # enrichment_only marks the scheduled enrichment lane (own concurrency group above): the unit then
+            # chains worker passes until the run lease that the scheduler wrote.
+            lane=()
+            if [[ "$REQUESTED_ENRICHMENT_ONLY" == "true" && "$ENRICHMENT_LANE" != "off" ]]; then lane=(--enrichment-lane); fi
+            bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID" "${lane[@]}"
             exit 0
           fi
 
@@ -413,9 +426,11 @@ jobs:
       # tourne à chaque collecte planifiée, même quand la variable de dépôt PHOTO_MIRROR_ENABLED n'est
       # pas « true » : dans ce cas rien n'est téléchargé, mais les retraits (source retirée, copie
       # « withdrawn ») s'appliquent, car un retrait n'attend pas la réactivation. Le rattrapage du
-      # stock est un workflow à part (photo-mirror-backfill.yml).
+      # stock est un workflow à part (photo-mirror-backfill.yml). Pas après une unité de la voie d'enrichissement
+      # (enrichment_only) : les photos viennent des collectes, et l'unité suivante de la file attendrait derrière
+      # cette étape dans son groupe de concurrence.
       - name: Copie des photos principales
-        if: always() && steps.python-deps.outcome == 'success' && inputs.automatic == true
+        if: always() && steps.python-deps.outcome == 'success' && inputs.automatic == true && inputs.enrichment_only != true
         timeout-minutes: 25
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -423,7 +438,9 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PHOTO_MIRROR_BUDGET_MINUTES: ${{ vars.PHOTO_MIRROR_BUDGET_MINUTES || '15' }}
           PHOTO_MIRROR_MAX_PHOTOS: ${{ vars.PHOTO_MIRROR_MAX_PHOTOS || '400' }}
-        run: python -m src.photo_mirror --automatic
+        # Un seul processus à la fois vers les sources (src/source_traffic.py) : la copie attend au plus 4 min que le
+        # travailleur de la file finisse son lot, sinon elle passe au tour suivant (4 + 20 min sous le délai de 25).
+        run: python -m src.source_traffic --wait-seconds 240 -- python -m src.photo_mirror --automatic
 
       - name: Flag partial collection
         if: always() && steps.pipeline.outputs.source_warning == 'true'

@@ -322,10 +322,11 @@ def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> N
     steps = {step.name: step for step in parse_jobs(text)[0].steps}
     step = steps["Copie des photos principales"]
 
-    # Même après une collecte en échec, mais seulement pour une exécution planifiée.
-    # Sautée quand les dépendances Python ne sont pas installées (échec avant démarrage).
+    # Même après une collecte en échec, mais seulement pour une collecte planifiée (pas pour une unité de la voie
+    # d'enrichissement, 17/11/2026). Sautée quand les dépendances Python ne sont pas installées (échec avant démarrage).
     assert re.search(
-        r"^        if: always\(\) && steps\.python-deps\.outcome == 'success' && inputs\.automatic == true$",
+        r"^        if: always\(\) && steps\.python-deps\.outcome == 'success' && inputs\.automatic == true"
+        r" && inputs\.enrichment_only != true$",
         step.text,
         re.M,
     )

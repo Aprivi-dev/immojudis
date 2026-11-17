@@ -8,7 +8,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
-from src import general_lane_claims
+from src import collection_priority, enrichment_queue_limits, general_lane_claims
 from src.admission import is_expired
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_lock import (
@@ -1187,8 +1187,9 @@ def _run_enrichment_queue_worker(
         family_cycle.count(ENRICHMENT_FAMILY),
         due_counts,
     )
-    slot = 0
-    while handled < max_jobs:
+    slot, yielded = 0, False
+    # A pending collection (or source traffic turn) stops the claims; ending releases the catalogue writer lock.
+    while handled < max_jobs and not (yielded := collection_priority.yield_to_sources()):
         now = time.monotonic()
         if now >= claim_deadline:
             stop_reason = "budget" if now >= deadline else "finalization_margin"
@@ -1266,6 +1267,7 @@ def _run_enrichment_queue_worker(
     elapsed_seconds = max(time.monotonic() - started_at, 0.0)
     handled_per_hour = (handled * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
     claimed_job_count = len(_WORKER_CLAIMED_JOB_IDS.get() or ())
+    stop_reason = enrichment_queue_limits.finish_worker_pass(stop_reason, yielded, handled, handled_by_family)
     LOGGER.info(
         "Enrichment worker summary: github_run_id=%s handled=%s handled_source_detail=%s "
         "handled_enrichment=%s claimed_jobs=%s "

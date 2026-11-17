@@ -137,15 +137,16 @@ select ok(
     )
   ) > 0
   and position(
-    'active_id' in pg_get_functiondef(
+    'enrichment_busy' in pg_get_functiondef(
       'public.claim_autonomous_pipeline_run()'::regprocedure
     )
   ) > 0,
-  'drain mode keeps the active-run single-writer guard'
+  'drain mode keeps the one-active-run guard of the queue lane (20261203100000)'
 );
 
 -- A queue claim is allowed even when the ordinary 30-minute cadence is still
--- in the future. The source is recent enough to be fairly preempted.
+-- in the future. Since the two lanes (20261203100000) the recent source is
+-- collected by the first claim of the tick and the queue takes the second.
 update public.auction_pipeline_control
    set enabled = true,
        source_details_enabled = false,
@@ -207,6 +208,8 @@ create temporary table pgtap_drain_claims (
 ) on commit drop;
 
 insert into pgtap_drain_claims (case_name, payload)
+values ('recent-source-collection', public.claim_autonomous_pipeline_run());
+insert into pgtap_drain_claims (case_name, payload)
 values ('recent-source', public.claim_autonomous_pipeline_run());
 
 select is(
@@ -226,14 +229,14 @@ select ok(
 );
 
 delete from public.auction_runs
- where id = (
+ where id in (
    select (payload->>'id')::uuid
      from pgtap_drain_claims
-    where case_name = 'recent-source'
+    where case_name in ('recent-source', 'recent-source-collection')
  );
 
--- An overdue source gets its collection turn while the streak is empty, even
--- though drain mode is active and the queue is due.
+-- An overdue source is claimed by the collection lane, even though drain mode
+-- is active and the queue is due (two lanes since 20261203100000).
 update public.auction_pipeline_control
    set source_dispatch_streak = 0,
        next_enrichment_at = statement_timestamp() + interval '1 hour'
@@ -248,13 +251,13 @@ values ('overdue-source', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'overdue-source'),
   'collect',
-  'drain mode preserves a fair collection turn for a source overdue by more than one hour'
+  'drain mode leaves an overdue source to the collection lane'
 );
 
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   1,
-  'the fair source turn advances the persisted collection streak'
+  'a collection claim still advances the persisted streak (kept for a rollback)'
 );
 
 delete from public.auction_runs
@@ -264,8 +267,9 @@ delete from public.auction_runs
     where case_name = 'overdue-source'
  );
 
--- After one overdue source claim, the queue receives its bounded turn and the
--- trigger resets the streak. The queue remains available after collection.
+-- With an overdue source and a due queue, one tick claims both lanes: the
+-- source first, then the queue, whose insert resets the streak. The queue
+-- remains available after collection.
 update public.auction_pipeline_control
    set source_dispatch_streak = 1,
        next_enrichment_at = statement_timestamp() + interval '1 hour'
@@ -275,18 +279,20 @@ update public.auction_source_state
  where source_name = 'pgtap-drain-recent';
 
 insert into pgtap_drain_claims (case_name, payload)
+values ('fair-queue-collection', public.claim_autonomous_pipeline_run());
+insert into pgtap_drain_claims (case_name, payload)
 values ('fair-queue', public.claim_autonomous_pipeline_run());
 
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'fair-queue'),
   'enrichment',
-  'the queue receives a fair turn after one source claim'
+  'the queue receives its own turn in the tick of the source claim'
 );
 
 select is(
   (select source_dispatch_streak from public.auction_pipeline_control where id),
   0,
-  'the fair queue turn resets the source streak'
+  'the queue claim still resets the persisted streak'
 );
 
 select ok(
@@ -299,14 +305,14 @@ select ok(
        and attempt_count < max_attempts
        and next_attempt_at <= statement_timestamp()
   ),
-  'a scheduler collection turn leaves the due queue available'
+  'a collection claim leaves the due queue available'
 );
 
 delete from public.auction_runs
- where id = (
+ where id in (
    select (payload->>'id')::uuid
      from pgtap_drain_claims
-    where case_name = 'fair-queue'
+    where case_name in ('fair-queue', 'fair-queue-collection')
  );
 
 -- An expired window immediately returns to the normal next_enrichment_at
@@ -335,7 +341,7 @@ values ('expired-window', public.claim_autonomous_pipeline_run());
 select is(
   (select payload->>'mode' from pgtap_drain_claims where case_name = 'expired-window'),
   'collect',
-  'an expired drain window restores the normal source-first cadence'
+  'an expired drain window restores the normal queue cadence'
 );
 
 select app_private.set_enrichment_drain_until(null);
