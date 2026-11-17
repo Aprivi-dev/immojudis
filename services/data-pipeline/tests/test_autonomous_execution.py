@@ -614,3 +614,40 @@ def test_the_collection_prewait_takes_and_releases_the_catalogue_writer_lock(mon
     monkeypatch.setattr(autonomous_runner, "catalogue_writer_lock", lock)
     assert ORIGINAL_CATALOGUE_WRITER_FREE("postgresql://test", wait_seconds=12.0) is acquired
     assert seen[0]["wait_seconds"] == 12.0 and seen[0]["heartbeat_seconds"] == 0
+
+
+def test_passes_that_contact_a_site_keep_their_daily_volume(monkeypatch) -> None:
+    """Pas une requête de plus par site : au plus une fois par unité, et 24 h / 17 après la précédente."""
+    updates, statements = [], []
+    calls = _lane_setup(monkeypatch, ["budget", "budget", "queues_empty"])
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    modules = [command[2] for command, _ in calls]
+    # Three cycles: the LLM-only reading every cycle, the passes that contact a host once.
+    assert modules.count("src.document_reading") == 3
+    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+                   "src.sources.licitor_history_refresh"):
+        assert modules.count(module) == 1, module
+    skipped = updates[0][2].obj["enrichment_unit"]["cycles"][1]["passes_skipped"]
+    assert set(skipped) == autonomous_runner.EXTERNAL_PASS_KEYS
+    assert set(skipped.values()) == {"site_cadence"}
+
+
+@pytest.mark.parametrize("minutes_ago,due", [(None, True), (90, True), (80, False)])
+def test_a_site_pass_waits_for_its_interval_after_the_last_unit_that_ran_it(minutes_ago, due) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    seen = []
+    finished = None if minutes_ago is None else datetime.now(UTC) - timedelta(minutes=minutes_ago)
+
+    class FakeDb:
+        def execute(self, statement, params):
+            seen.append(params)
+            return SimpleNamespace(fetchone=lambda: (finished,))
+
+    assert autonomous_runner._external_pass_due(
+        "postgresql://test", "run-1", "licitor_history_exit_code", connect=lambda _url: nullcontext(FakeDb())
+    ) is due
+    assert seen == [("run-1", "licitor_history_exit_code")]
+    assert autonomous_runner.EXTERNAL_PASS_MIN_INTERVAL == timedelta(hours=24) / 17

@@ -113,6 +113,12 @@ Depuis le 17/11/2026 (migration `20261203100000`), la file d'enrichissement a sa
 son propre groupe de concurrence ; elle cède toujours la place aux collectes (fonctionnement, retour arrière et
 requêtes de mesure : `docs/runbooks/pipeline-enrichment-stalled.md`, « Voie séparée des collectes »).
 
+| Passe de l'unité de la file                                             | Cadence                                                                                     |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Travailleur (fiches, pièces, faits)                                     | en continu, hors collectes, passages de 1 200 s au plus                                     |
+| Lecture des pièces (IA seulement)                                       | après chaque passage du travailleur                                                         |
+| Vidage des pièces, positions BAN, photos des pièces, historique Licitor | une fois par unité au plus, 85 min au moins après la précédente (~17 par jour, comme avant) |
+
 La voie générale de la file d'enrichissement réserve une prise sur quatre à l'ancienneté (famille
 `enrichment_oldest`, `services/data-pipeline/src/general_lane_claims.py`) : voir
 `docs/runbooks/pipeline-enrichment-stalled.md`, « Équité de la file ».
