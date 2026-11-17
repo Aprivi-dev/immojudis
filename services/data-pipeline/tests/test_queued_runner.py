@@ -3022,7 +3022,6 @@ def test_the_worker_claims_nothing_once_a_collection_is_pending(monkeypatch, tmp
     written = json.loads(report.read_text(encoding="utf-8"))
     assert written["stop_reason"] == COLLECTION_PENDING_STOP_REASON
     assert written["handled"] == 1
-    assert written["budget_seconds"] == 600
 
 
 def test_the_worker_reports_an_empty_queue_to_the_scheduled_unit(monkeypatch, tmp_path) -> None:

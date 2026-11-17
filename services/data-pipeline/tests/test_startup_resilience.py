@@ -863,8 +863,10 @@ def test_steps_that_need_python_dependencies_are_skipped_when_they_are_not_insta
     assert _condition(steps["Report source coverage and enrichment backlog"]) == (
         "always() && steps.python-deps.outcome == 'success'"
     )
+    # Pas après une unité de la voie d'enrichissement (17/11/2026) : les photos viennent des collectes.
     assert _condition(steps["Copie des photos principales"]) == (
-        "always() && steps.python-deps.outcome == 'success' && inputs.automatic == true"
+        "always() && steps.python-deps.outcome == 'success' && inputs.automatic == true && "
+        "inputs.enrichment_only != true"
     )
     # Every other `always()` step that runs `python -m src.…` is guarded as well.
     for name, step in steps.items():
@@ -877,6 +879,10 @@ def test_steps_that_need_python_dependencies_are_skipped_when_they_are_not_insta
 def test_the_fix_changes_neither_the_concurrency_group_nor_the_job_timeout() -> None:
     text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
 
-    assert "(inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')" in text
+    # 17/11/2026 : la file d'enrichissement a son propre groupe ; les collectes gardent le leur.
+    assert (
+        "(inputs.documents_backlog && 'immojudis-document-backlog' || "
+        "(inputs.enrichment_only && 'immojudis-enrichment-queue' || 'immojudis-data-pipeline'))"
+    ) in text
     assert re.search(r"^  cancel-in-progress: false$", text, re.M)
     assert re.search(r"^    timeout-minutes: 180$", text, re.M)

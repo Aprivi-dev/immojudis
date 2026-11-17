@@ -72,3 +72,47 @@ def test_missed_alert_threshold_leaves_room_for_a_healthy_cycle() -> None:
         f"la cadence {cadence} + {DISPATCH_AND_RUN_MARGIN} + 2 x {SCHEDULER_TICK} = {minimum}, "
         "sinon l'alerte critique s'ouvre à chaque cycle"
     )
+
+
+_ENRICHMENT_LEASE = re.compile(r"'running_lease_seconds'\s*,\s*(\d+)")
+# Passage d'operational-health, qui appelle le planificateur (docs/operations/planification.md).
+HEALTH_TICK = timedelta(minutes=30)
+# Démarrage du workflow (paquets, dépendances, caches) avant que le lanceur ne prenne l'exécution.
+WORKFLOW_STARTUP = timedelta(minutes=5)
+
+
+def _enrichment_lease() -> tuple[timedelta, str]:
+    found: tuple[timedelta, str] | None = None
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        matches = _ENRICHMENT_LEASE.findall(path.read_text(encoding="utf-8"))
+        if matches:
+            assert len(matches) == 1, f"{path.name}: {len(matches)} baux d'exécution de la file"
+            found = (timedelta(seconds=int(matches[0])), path.name)
+    assert found is not None, "aucune migration n'écrit running_lease_seconds"
+    return found
+
+
+def test_an_enrichment_unit_ends_inside_its_lease_and_before_the_tick_that_follows() -> None:
+    from src import autonomous_runner as runner
+
+    lease, migration = _enrichment_lease()
+    unit = lease - timedelta(seconds=runner.ENRICHMENT_LEASE_MARGIN_SECONDS)
+    one_cycle = timedelta(seconds=runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS + runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
+                          + runner.DOCUMENT_READING_BUDGET_SECONDS + runner.ADDRESS_POSITIONS_BUDGET_SECONDS
+                          + runner.PDF_PHOTOS_BUDGET_SECONDS + runner.LICITOR_HISTORY_BUDGET_SECONDS
+                          + runner.LICITOR_SNAPSHOT_ONLY_SECONDS)
+    assert unit >= one_cycle, f"{migration}: une unité de {unit} ne tient pas un passage complet ({one_cycle})"
+    # Le bail est un multiple du passage d'operational-health : l'unité suivante part au passage qui suit la fin.
+    assert lease % HEALTH_TICK == timedelta(0), f"{migration}: bail {lease} hors cadence {HEALTH_TICK}"
+    assert unit + WORKFLOW_STARTUP < lease
+    # Alerte pipeline.import.unhealthy : une exécution running depuis plus de 3 h.
+    assert lease < timedelta(hours=3)
+
+
+def test_a_collection_prewait_fits_in_its_dispatch_lease() -> None:
+    from src import autonomous_runner as runner
+
+    # Bail d'une exécution en file : 60 minutes après le lancement (claim_autonomous_pipeline_run).
+    queued_lease = timedelta(minutes=60)
+    prewait = timedelta(seconds=runner.COLLECTION_CATALOGUE_PREWAIT_SECONDS)
+    assert prewait + WORKFLOW_STARTUP + HEALTH_TICK <= queued_lease

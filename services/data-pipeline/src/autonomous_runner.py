@@ -37,6 +37,7 @@ from src.enrichment_queue_limits import (
     ENRICHMENT_MAX_JOBS_ENV,
     ENRICHMENT_WORKER_REPORT_ENV,
     QUEUES_EMPTY_STOP_REASON,
+    read_worker_report,
 )
 from src.run_finalizer import register_run
 from src.source_absence import (
@@ -752,15 +753,6 @@ def _enrichment_lane_lease_seconds(db_url: str, run_id: str, *, connect: Callabl
     return int(value) if isinstance(value, str) and value.isdigit() and int(value) > 0 else None
 
 
-def _read_worker_report(path: str) -> dict[str, Any] | None:
-    try:
-        with open(path, encoding='utf-8') as handle:
-            report = json.load(handle)
-    except (OSError, ValueError):
-        return None
-    return report if isinstance(report, dict) else None
-
-
 @dataclass
 class EnrichmentUnit:
     """What one scheduled enrichment unit did: one worker pass and its optional passes per cycle."""
@@ -785,7 +777,7 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, budget: 
             {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
             budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
         )
-        report = _read_worker_report(report_path) or {}
+        report = read_worker_report(report_path) or {}
     if code:
         unit.worker_code, unit.failure = code, failure
     worker_stop = report.get('stop_reason') if isinstance(report.get('stop_reason'), str) else None
