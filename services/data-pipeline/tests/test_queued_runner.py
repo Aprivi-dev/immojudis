@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import pdf_deadline
+from src import enrichment_claim_schedule, pdf_deadline
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.enrichment_queue_limits import (
@@ -1017,9 +1017,10 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
             raise TimeoutError("statement timeout")
         return None
 
-    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
+    # The due-count read moved to src.enrichment_claim_schedule with the parallel lane (17/11/2026).
+    monkeypatch.setattr(enrichment_claim_schedule, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
     monkeypatch.setattr(
-        queued_runner,
+        enrichment_claim_schedule,
         "connect",
         lambda db_url, **kwargs: nullcontext(SimpleNamespace(execute=execute)),
     )
@@ -1031,7 +1032,7 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
         "set local statement_timeout = '3000ms'",
     ]
     assert commands[3].startswith("select case when job_type")
-    assert queued_runner._enrichment_family_cycle({}) == queued_runner.GENERAL_BACKLOG_RELIEF_CYCLE
+    assert queued_runner._enrichment_family_cycle({}) == enrichment_claim_schedule.GENERAL_BACKLOG_RELIEF_CYCLE
 
 
 def test_worker_claim_status_snapshot_reads_unique_ids_without_retries(monkeypatch) -> None:
@@ -1224,7 +1225,7 @@ def test_enrichment_family_cycle_reserves_general_lane_when_details_are_larger()
         }
     )
 
-    assert cycle == queued_runner.ENRICHMENT_FAMILY_CYCLE
+    assert cycle == enrichment_claim_schedule.ENRICHMENT_FAMILY_CYCLE
     assert cycle.count(queued_runner.SOURCE_DETAIL_FAMILY) == 3
     assert cycle.count(queued_runner.ENRICHMENT_FAMILY) == 1
 
@@ -2952,17 +2953,33 @@ def test_a_lock_lost_during_the_last_batch_still_fails_the_job(monkeypatch, caps
     assert "Verrou du catalogue perdu" in capsys.readouterr().out
 
 
-def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("lane", "argv", "mode"),
+    [
+        ({}, ["src.queued_runner", "--enrichment-only"], "exclusive"),
+        (
+            {"PIPELINE_ENRICHMENT_GENERAL_WORKERS": "2"},
+            ["src.queued_runner", "--enrichment-only", "--family", "enrichment"],
+            "shared",
+        ),
+    ],
+    ids=["single-worker-exclusive", "parallel-lane-shared"],
+)
+def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkeypatch, lane, argv, mode) -> None:
     """17/11/2026 : la file tourne à côté des collectes ; chaque écriture du travailleur doit tenir le verrou.
 
     Le chemin réel de ``python -m src.queued_runner --enrichment-only`` : ``run_with_catalogue_lock``, puis le
     travailleur et un lot réclamé. Chaque écriture en base de ce chemin (réclamation, rejeu des faits d'une vente,
     fin des tâches) doit voir le verrou des écritures du catalogue tenu ; le test échoue si l'une d'elles passe hors
-    du bloc qui le tient. Hermétique : aucune base, quelle que soit ``SUPABASE_DB_URL``.
+    du bloc qui le tient. Hermétique : aucune base, quelle que soit ``SUPABASE_DB_URL``. Vrai dans les deux modes :
+    travailleur unique (verrou exclusif) et travailleur général de la voie parallèle (verrou partagé).
     """
     from src import catalogue_lock
     from src.catalogue_lock import catalogue_writer_lock
 
+    for name, value in lane.items():
+        monkeypatch.setenv(name, value)
+    modes: list[str] = []
     writes: list[tuple[str, bool]] = []
 
     def lock_held() -> bool:
@@ -2998,14 +3015,15 @@ def test_the_queue_worker_writes_the_catalogue_only_under_its_writer_lock(monkey
     monkeypatch.setattr(
         queued_runner,
         "catalogue_writer_lock",
-        lambda **kwargs: catalogue_writer_lock(
+        lambda **kwargs: modes.append(kwargs["mode"]) or catalogue_writer_lock(
             "postgresql://example/db", connect=lambda url: _LockSession(), heartbeat_seconds=0, **kwargs
         ),
     )
-    monkeypatch.setattr(sys, "argv", ["src.queued_runner", "--enrichment-only"])
+    monkeypatch.setattr(sys, "argv", argv)
 
     assert queued_runner.run_with_catalogue_lock() == 0
 
+    assert modes == [mode]
     assert [name for name, _held in writes if name != "claim"] == ["finish", "fact_claims", "finish"]
     assert all(held for _name, held in writes), writes
     assert not lock_held()

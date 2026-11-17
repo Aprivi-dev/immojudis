@@ -306,6 +306,16 @@ jobs:
           # Retour arrière de la voie d'enrichissement sans commit : la variable de dépôt ENRICHMENT_LANE=off ramène
           # chaque unité de la file à un seul passage (environ 30 min), comme avant le 17/11/2026.
           ENRICHMENT_LANE: ${{ vars.ENRICHMENT_LANE || 'on' }}
+          # Voie parallèle (décision du 17/11/2026) : un processus pour les fiches et N pour les pièces et les faits,
+          # côte à côte dans chaque unité (services/data-pipeline/src/enrichment_lane_settings.py). Variable de dépôt
+          # PIPELINE_ENRICHMENT_GENERAL_WORKERS, de 0 à 3 ; « 0 » ramène le travailleur unique d'avant sans commit (une
+          # chaîne non vide n'est jamais remplacée par le défaut). Défaut 2 et non 3 : chaque processus garde trois
+          # connexions de session (verrou du catalogue, tour des sources, tours par hôte) ; voir
+          # docs/runbooks/pipeline-enrichment-stalled.md, « Voie parallèle ». Vides, les deux réglages suivants suivent N
+          # (shared et on dès que N ≥ 1, exclusive et off sinon) ; une combinaison incohérente est refusée au démarrage.
+          PIPELINE_ENRICHMENT_GENERAL_WORKERS: ${{ vars.PIPELINE_ENRICHMENT_GENERAL_WORKERS || '2' }}
+          PIPELINE_WORKER_LOCK_MODE: ${{ vars.PIPELINE_WORKER_LOCK_MODE }}
+          PIPELINE_HOST_TURNS: ${{ vars.PIPELINE_HOST_TURNS }}
           # Garde contre un appel bloqué (src/stage_watchdog.py) : manuel, src.main se termine avec le
           # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
           # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).

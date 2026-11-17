@@ -76,6 +76,8 @@ from src.pdf_page_analysis import (
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.pipeline_usage import QueueJobDeferred
+from src.source_suspension import suspended_host_until
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
@@ -353,6 +355,13 @@ def download_documents(
             # Rien n'est consigné comme « bloqué » : lever le retrait la remet dans la file.
             LOGGER.info("Skipping document hosted by a withdrawn source %s", url)
             continue
+        resume_at = suspended_host_until(url, str(settings.get("supabase_db_url") or ""))
+        if resume_at is not None:
+            # Site d'une source suspendue parce qu'il ne répond plus (src/source_suspension.py) : aucune requête ;
+            # la tâche attend la reprise sans consommer d'essai.
+            raise QueueJobDeferred(
+                f"Document host suspended (source unreachable) until {resume_at.isoformat()}", retry_after=resume_at
+            )
         if _is_robots_disallowed_licitor_document(url):
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
             if stats is not None:

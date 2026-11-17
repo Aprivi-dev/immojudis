@@ -767,3 +767,158 @@ def test_a_site_pass_waits_for_its_interval_after_the_last_unit_that_ran_it(minu
     ) is due
     assert seen == [("run-1", "licitor_history_exit_code")]
     assert autonomous_runner.EXTERNAL_PASS_MIN_INTERVAL == timedelta(hours=24) / 17
+
+
+# --- Voie parallèle : 1 processus de fiches + N processus de pièces et de faits (17/11/2026) ------------------
+
+
+def _parallel_setup(monkeypatch, reports: dict[str, list[dict]], *, codes: dict[str, int] | None = None):
+    """Les travailleurs lancés côte à côte (``subprocess.Popen``) écrivent leur compte rendu, par famille."""
+    import json as json_module
+
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV
+
+    calls = _lane_setup(monkeypatch, [])
+    launched: list[tuple[list[str], dict]] = []
+    remaining = {family: list(items) for family, items in reports.items()}
+
+    class FakeProcess:
+        def __init__(self, command, env):
+            launched.append((command, env))
+            self.family = command[command.index("--family") + 1]
+            report = remaining[self.family].pop(0)
+            if report is not None:
+                with open(env[ENRICHMENT_WORKER_REPORT_ENV], "w", encoding="utf-8") as handle:
+                    json_module.dump(report, handle)
+
+        def wait(self, timeout=None):
+            return (codes or {}).get(self.family, 0)
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "Popen", FakeProcess)
+    return calls, launched
+
+
+def test_the_parallel_lane_runs_one_source_detail_worker_and_n_general_workers(monkeypatch) -> None:
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "2")
+    monkeypatch.setenv(config.AUTONOMOUS_RUN_ID_ENV, "inherited-value-is-replaced")
+    detail = {"stop_reason": "budget", "handled": 6, "handled_by_family": {"source_detail": 6},
+              "claimed_by_job_type": {"source_detail": 6}, "host_turns": {"waits": 1}}
+    general = {"stop_reason": "budget", "handled": 2, "handled_by_family": {"enrichment": 2},
+               "claimed_by_job_type": {"pdf": 2}, "ocr_seconds": 12.5, "publication_lock_deferrals": 1}
+    empty = {"stop_reason": "queues_empty", "handled": 0, "handled_by_family": {}}
+    calls, launched = _parallel_setup(
+        monkeypatch, {"source_detail": [detail, empty], "enrichment": [general, general, empty, empty]}
+    )
+    updates, statements = [], []
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    families = [command[command.index("--family") + 1] for command, _ in launched]
+    assert families == ["source_detail", "enrichment", "enrichment"] * 2
+    assert all(command[:4] == list(autonomous_runner.ENRICHMENT_WORKER_COMMAND) for command, _ in launched)
+    # One execution, one AI cap: every worker carries the unit's run id (reserve_pipeline_prediction counts per run).
+    assert {env[config.AUTONOMOUS_RUN_ID_ENV] for _, env in launched} == {LANE_RUN_ID}
+    from src.enrichment_queue_limits import ENRICHMENT_WORKER_REPORT_ENV
+
+    assert len({env[ENRICHMENT_WORKER_REPORT_ENV] for _, env in launched[:3]}) == 3
+    # 4 vCPUs shared by 3 workers: one compute thread each.
+    assert all(env["OMP_NUM_THREADS"] == "1" and env["OPENBLAS_NUM_THREADS"] == "1" for _, env in launched)
+    assert not _workers(calls), "no mixed worker in the parallel lane"
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["general_workers"] == 2
+    assert unit["stop_reason"] == "queues_empty"
+    first = unit["cycles"][0]
+    assert first["worker_handled"] == 10
+    assert first["worker_handled_by_family"] == {"source_detail": 6, "enrichment": 4}
+    assert [worker["family"] for worker in first["workers"]] == ["source_detail", "enrichment", "enrichment"]
+    assert first["workers"][1]["claimed_by_job_type"] == {"pdf": 2}
+    assert first["workers"][1]["ocr_seconds"] == 12.5
+    assert first["workers"][1]["publication_lock_deferrals"] == 1
+    assert first["workers"][0]["host_turns"] == {"waits": 1}
+    # The optional passes run once all the workers have ended, as after the single worker.
+    assert [command[2] for command, _ in calls].count("src.document_reading") == 2
+
+
+def test_a_failed_worker_does_not_stop_the_others_and_stops_the_unit(monkeypatch) -> None:
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "1")
+    report = {"stop_reason": "budget", "handled": 3, "handled_by_family": {"source_detail": 3}}
+    calls, launched = _parallel_setup(
+        monkeypatch, {"source_detail": [report], "enrichment": [None]}, codes={"enrichment": 1}
+    )
+    updates, statements = [], []
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 1
+
+    assert len(launched) == 2
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert unit["stop_reason"] == "worker_failed"
+    workers = unit["cycles"][0]["workers"]
+    assert [(worker["family"], worker["exit_code"], worker["handled"]) for worker in workers] == [
+        ("source_detail", 0, 3), ("enrichment", 1, None)
+    ]
+    assert updates[0][1].obj["runner"] == ["Worker (enrichment) exited with status 1"]
+
+
+@pytest.mark.parametrize(
+    "reasons,expected",
+    [
+        (["queues_empty", "queues_empty"], "queues_empty"),
+        (["queues_empty", "llm_budget_exhausted"], "queues_empty"),
+        (["budget", "queues_empty"], "budget"),
+        (["budget", "collection_pending"], "collection_pending"),
+        (["budget", None], None),
+    ],
+)
+def test_one_stop_reason_per_cycle(reasons, expected) -> None:
+    workers = [
+        autonomous_runner.LaneWorker("x", 0, None, 1.0, {} if reason is None else {"stop_reason": reason})
+        for reason in reasons
+    ]
+    assert autonomous_runner._cycle_stop_reason(workers) == expected
+
+
+def test_zero_general_workers_keeps_the_single_mixed_worker_unchanged(monkeypatch) -> None:
+    """Le retour arrière : PIPELINE_ENRICHMENT_GENERAL_WORKERS=0 lance le travailleur mixte d'avant, à l'identique."""
+    monkeypatch.setenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", "0")
+    monkeypatch.setattr(autonomous_runner.subprocess, "Popen", lambda *a, **k: pytest.fail("no parallel worker"))
+    updates, statements = [], []
+    calls = _lane_setup(monkeypatch, ["queues_empty"])
+
+    assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
+
+    workers = [(command, kwargs) for command, kwargs in calls if command[2] == "src.queued_runner"]
+    assert [command for command, _ in workers] == [list(autonomous_runner.ENRICHMENT_WORKER_COMMAND)]
+    assert not any(name in workers[0][1]["env"] and workers[0][1]["env"][name] != os.environ.get(name)
+                   for name in autonomous_runner.THREAD_LIMIT_ENVS)
+    unit = updates[0][2].obj["enrichment_unit"]
+    assert "general_workers" not in unit
+    assert set(unit["cycles"][0]) == {
+        "worker_exit_code", "worker_seconds", "worker_stop_reason", "worker_handled", "worker_handled_by_family",
+        "seconds",
+    }
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"PIPELINE_ENRICHMENT_GENERAL_WORKERS": "2", "PIPELINE_WORKER_LOCK_MODE": "exclusive"},
+        {"PIPELINE_ENRICHMENT_GENERAL_WORKERS": "2", "PIPELINE_HOST_TURNS": "off"},
+        {"PIPELINE_ENRICHMENT_GENERAL_WORKERS": "4"},
+    ],
+)
+def test_incoherent_lane_settings_are_refused_before_any_worker(monkeypatch, capsys, settings) -> None:
+    for name, value in settings.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(autonomous_runner, "_run_enrichment_unit", lambda *a, **k: pytest.fail("no worker"))
+    updates, statements = [], []
+    _lane_setup(monkeypatch, [])
+
+    code = autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements))
+
+    assert code == autonomous_runner.LANE_SETTINGS_EXIT_CODE
+    assert updates[0][0] == "failed"
+    assert updates[0][1].obj["runner"][0].startswith("Enrichment lane settings refused: PIPELINE_")
+    assert "Réglages de la voie d'enrichissement refusés" in capsys.readouterr().out

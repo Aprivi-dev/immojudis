@@ -40,6 +40,12 @@ describe("describeOperationalAlert", () => {
     expect(describeOperationalAlert("pipeline.source.licitor.missed").label).toBe(
       "Source Licitor : inventaire complet en retard",
     );
+    expect(
+      describeOperationalAlert("pipeline.source.encheres_immobilieres.suspended_unreachable"),
+    ).toEqual({
+      label: "Source Enchères Immobilières : site injoignable, collectes suspendues 7 jours",
+      place: { href: "/admin/operations", label: "Opérations" },
+    });
     expect(describeOperationalAlert("pipeline.source.agrasc.nouveau_controle").label).toBe(
       "Source AGRASC : anomalie de collecte",
     );
