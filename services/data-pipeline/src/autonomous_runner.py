@@ -18,7 +18,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
-from src import collection_priority, source_traffic, source_withdrawal
+from src import collection_priority, source_suspension, source_traffic, source_withdrawal
 from src.catalogue_lock import LOCK_WAIT_ENV, CatalogueLockTimeout, catalogue_writer_lock
 from src.config import (
     AUTONOMOUS_RUN_ID_ENV,
@@ -30,6 +30,7 @@ from src.config import (
     load_settings,
 )
 from src.document_reading import READING_ENABLED_ENV
+from src.enrichment_lane_settings import LaneSettingsError, lane_settings
 from src.enrichment_queue_limits import (
     COLLECTION_PENDING_STOP_REASON,
     ENRICHMENT_BUDGET_SECONDS,
@@ -326,6 +327,14 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
         coverage.pop(ROBOTS_COPIES_KEY, None)
         if robots_copies:
             coverage[ROBOTS_COPIES_KEY] = robots_copies
+        # Site injoignable (src/source_suspension.py) : classe de l'échec, sonde horaire, suspension après 72 h. La
+        # sonde horaire suppose la copie commune de robots.txt (migration 20261204100000) : sans elle, la collecte
+        # relancée referait quatre essais, et l'espacement d'avant reste.
+        probe_row = db.execute("select to_regclass('app_private.robots_policies') is not null").fetchone()
+        probe_available = bool(probe_row and probe_row[0])
+        unreachable = source_suspension.decide(
+            previous_coverage, coverage, now=datetime.now(UTC), probe_available=probe_available)
+        coverage.update(unreachable.coverage())
         denied = access_denied(coverage, problems)
         publication_counts = dict(db.execute("""select decision,count(*)
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
@@ -441,6 +450,9 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
             # bounded policy and must not be shortened by freshness cadence.
             deadline = next_attempt(failures=failures, access_denied=denied,
                 retry_not_before=coverage.get('retry_not_before'), now=now)
+            if unreachable.probe_at is not None and not denied:
+                # Panne passagère de robots.txt : la collecte suivante est une sonde (une requête), dans 60 min.
+                deadline = max(unreachable.probe_at, aware_timestamp(coverage.get('retry_not_before')) or now)
         else:
             deadline = next_inventory_deadline(
                 now=now,
@@ -462,15 +474,24 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
         # (last_inventory_complete_at) sans compter pour l'absence ni pour le retrait de ventes (ci-dessus et
         # ci-dessous, inventory_complete seul).
         inventory_fresh = inventory_complete or (scoped_complete and status == 'succeeded')
+        suspended_until = deadline if denied or coverage.get('retry_not_before') else None
+        if unreachable.suspend_until is not None:
+            # 72 h sans réponse : 7 jours sans collecte ni fiche ; rien n'est retiré du catalogue.
+            deadline = suspended_until = max(unreachable.suspend_until, suspended_until or unreachable.suspend_until)
+            print(f'::warning title=Source suspendue ({source})::{unreachable.suspension_reason}')
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
             next_inventory_at=%s,suspended_until=%s,
+            suspension_reason=case when %s::text is not null then %s::text
+                when suspension_reason like %s then null else suspension_reason end,
             last_inventory_complete_at=case when %s then now() else last_inventory_complete_at end,
             last_publication_complete_at=case when %s then now() else last_publication_complete_at end,
             updated_at=now() where source_name=%s and last_run_id=%s""",
             (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if problems or failures else None,
-             failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
+             failures,deadline,suspended_until,
+             unreachable.suspension_reason,unreachable.suspension_reason,source_suspension.SUSPENSION_REASON + '%',
              inventory_fresh,publication_complete,source,run_id))
+        _sync_source_suspension_alerts(db)
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
             where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
     # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
@@ -484,6 +505,21 @@ def finish_source(db_url: str, run_id: str, *, connect: Callable[[str], Any] = p
     # ne tournent pas : la fin de chaque passage d'une autre source les traite.
     _record_source_absence(db_url, run_id, 'unseen_undated_disabled_sources',
                            mark_unseen_undated_sales_of_disabled_sources(db_url, connect=connect), connect=connect)
+
+
+def _sync_source_suspension_alerts(db: Any) -> None:
+    """Open or close ``pipeline.source.<nom>.suspended_unreachable`` (migration 20261204100000), in a savepoint.
+
+    Before the migration the function is absent and nothing happens; a failure never undoes the source state.
+    """
+    row = db.execute("select to_regprocedure('app_private.sync_source_suspension_alerts(timestamptz)')").fetchone()
+    if not (row and row[0]):
+        return
+    try:
+        with db.transaction():
+            db.execute("select app_private.sync_source_suspension_alerts(now())")
+    except Exception as exc:  # noqa: BLE001 - l'alerte est secondaire : l'état de la source reste écrit
+        print(f'Source suspension alerts not synchronised: {type(exc).__name__}')
 
 
 def _withdraw_missing_sales(db_url: str, run_id: str, source: str, *, connect: Callable[[str], Any]) -> None:
@@ -718,6 +754,17 @@ def _external_pass_due(db_url: str, run_id: str, key: str, *, connect: Callable[
     last = aware_timestamp(row[0]) if row and isinstance(row[0], datetime) else None
     return last is None or last <= datetime.now(UTC) - EXTERNAL_PASS_MIN_INTERVAL
 ENRICHMENT_WORKER_COMMAND = (sys.executable, '-m', 'src.queued_runner', '--enrichment-only')
+# Parallel lane (owner, 17/11/2026): one source-detail worker and PIPELINE_ENRICHMENT_GENERAL_WORKERS general ones.
+SOURCE_DETAIL_WORKER_FAMILY = 'source_detail'
+GENERAL_WORKER_FAMILY = 'enrichment'
+# Exit code of a unit whose lane settings were refused (same as the worker's, src.queued_runner).
+LANE_SETTINGS_EXIT_CODE = 3
+# The standard ubuntu-24.04 runner has 4 vCPUs: the compute threads of the 1+N workers share them.
+RUNNER_CPUS = 4
+THREAD_LIMIT_ENVS = ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS',
+                     'VECLIB_MAXIMUM_THREADS')
+# A cycle stops the unit when every worker found nothing left it may claim.
+IDLE_WORKER_STOP_REASONS = frozenset({QUEUES_EMPTY_STOP_REASON, 'llm_budget_exhausted'})
 
 
 def _worker_failure(code: int) -> str | None:
@@ -780,6 +827,92 @@ def _enrichment_lane_lease_seconds(db_url: str, run_id: str, *, connect: Callabl
 
 
 @dataclass
+class LaneWorker:
+    """One worker process of a cycle: its family, how it ended, and its report (``finish_worker_pass``)."""
+
+    family: str
+    code: int
+    failure: str | None
+    seconds: float
+    report: dict[str, Any]
+
+    def to_json(self) -> dict[str, Any]:
+        report = self.report
+        return {
+            'family': self.family,
+            'exit_code': self.code,
+            'seconds': round(self.seconds, 1),
+            'stop_reason': report.get('stop_reason'),
+            'handled': report.get('handled'),
+            'claimed_by_job_type': report.get('claimed_by_job_type'),
+            'ocr_seconds': report.get('ocr_seconds'),
+            'host_turns': report.get('host_turns'),
+            'publication_lock_deferrals': report.get('publication_lock_deferrals'),
+        }
+
+
+def _lane_thread_env(processes: int) -> dict[str, str]:
+    """Compute threads per worker (OpenMP, BLAS) so that the 1+N workers share the runner's cores: 4/(N+1)."""
+    threads = str(max(1, RUNNER_CPUS // max(1, processes)))
+    return {name: threads for name in THREAD_LIMIT_ENVS}
+
+
+def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, directory: str) -> list[LaneWorker]:
+    """Run one source-detail worker and ``general_workers`` general ones side by side; wait for all of them.
+
+    They share the unit's environment, hence its ``AUTONOMOUS_RUN_ID``: the AI cap per execution
+    (``reserve_pipeline_prediction``, 90 calls per 30 minutes) stays the unit's. A failed or killed worker does
+    not stop the others; each is bounded by the same budget plus the overrun.
+    """
+    families = [SOURCE_DETAIL_WORKER_FAMILY] + [GENERAL_WORKER_FAMILY] * general_workers
+    worker_env = {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), **_lane_thread_env(len(families))}
+    started = time.monotonic()
+    timeout = budget + ENRICHMENT_WORKER_OVERRUN_SECONDS
+    running: list[tuple[str, str, subprocess.Popen[bytes] | None, str | None]] = []
+    for index, family in enumerate(families):
+        report_path = os.path.join(directory, f'report-{index}-{family}.json')
+        command = [*ENRICHMENT_WORKER_COMMAND, '--family', family]
+        try:
+            process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path})
+        except Exception as exc:
+            running.append((family, report_path, None, str(exc)[:1000]))
+            continue
+        running.append((family, report_path, process, None))
+    workers: list[LaneWorker] = []
+    for family, report_path, process, start_failure in running:
+        failure = start_failure
+        if process is None:
+            code = 1
+        else:
+            try:
+                code = process.wait(timeout=max(0.0, started + timeout - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                code, failure = 1, 'Execution budget exceeded; committed checkpoints preserved'
+            else:
+                failure = _worker_failure(code)
+        if code and failure is None:
+            failure = f'Worker ({family}) exited with status {code}'
+        workers.append(LaneWorker(family, code, failure, time.monotonic() - started,
+                                  read_worker_report(report_path) or {}))
+    return workers
+
+
+def _cycle_stop_reason(workers: list[LaneWorker]) -> str | None:
+    """One stop reason for the cycle: None when a report is missing, ``queues_empty`` when no worker had
+    anything left to claim, a collection when one worker yielded to it, otherwise the source-detail worker's."""
+    reasons = [worker.report.get('stop_reason') for worker in workers]
+    if any(not isinstance(reason, str) for reason in reasons):
+        return None
+    if COLLECTION_PENDING_STOP_REASON in reasons:
+        return COLLECTION_PENDING_STOP_REASON
+    if all(reason in IDLE_WORKER_STOP_REASONS for reason in reasons):
+        return QUEUES_EMPTY_STOP_REASON
+    return str(reasons[0])
+
+
+@dataclass
 class EnrichmentUnit:
     """What one scheduled enrichment unit did: one worker pass and its optional passes per cycle."""
 
@@ -794,20 +927,38 @@ class EnrichmentUnit:
 
 def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: str, budget: int,
                           deadline: float | None, licitor_withdrawn: bool,
-                          external_pass_due: Callable[[str], bool]) -> str | None:
-    """One worker pass, then the optional passes; returns the worker's stop reason (None: no report)."""
+                          external_pass_due: Callable[[str], bool], general_workers: int = 0) -> str | None:
+    """One worker pass, then the optional passes; returns the worker's stop reason (None: no report).
+
+    ``general_workers`` (parallel lane): the pass is one source-detail worker and that many general workers side by
+    side, and the optional passes start once all of them have ended. 0: the mixed worker alone, as before.
+    """
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix='enrichment-worker-') as directory:
-        report_path = os.path.join(directory, 'report.json')
-        code, failure = _run_worker(
-            list(ENRICHMENT_WORKER_COMMAND),
-            {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
-            budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
-        )
-        report = read_worker_report(report_path) or {}
+        if general_workers:
+            workers = _run_lane_workers(general_workers, env, budget, directory)
+        else:
+            report_path = os.path.join(directory, 'report.json')
+            code, failure = _run_worker(
+                list(ENRICHMENT_WORKER_COMMAND),
+                {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
+            )
+            report = read_worker_report(report_path) or {}
+    if general_workers:
+        failed = next((worker for worker in workers if worker.code), None)
+        code, failure = (failed.code, failed.failure) if failed else (0, None)
+        worker_stop = _cycle_stop_reason(workers)
+        handled_by_family: dict[str, int] = {}
+        for worker in workers:
+            for family, count in (worker.report.get('handled_by_family') or {}).items():
+                handled_by_family[family] = handled_by_family.get(family, 0) + int(count or 0)
+        report = {'handled': sum(int(worker.report.get('handled') or 0) for worker in workers),
+                  'handled_by_family': handled_by_family}
+    else:
+        worker_stop = report.get('stop_reason') if isinstance(report.get('stop_reason'), str) else None
     if code:
         unit.worker_code, unit.failure = code, failure
-    worker_stop = report.get('stop_reason') if isinstance(report.get('stop_reason'), str) else None
     cycle: dict[str, Any] = {
         'worker_exit_code': code,
         'worker_seconds': round(time.monotonic() - started, 1),
@@ -815,6 +966,8 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: 
         'worker_handled': report.get('handled'),
         'worker_handled_by_family': report.get('handled_by_family'),
     }
+    if general_workers:
+        cycle['workers'] = [worker.to_json() for worker in workers]
     # A failed worker leaves the catalogue in an unknown state: the passes that read or write it wait for the next
     # cycle. The Licitor history tick does not depend on the queue and keeps running, as before.
     passes: list[tuple[str, Callable[[dict[str, str]], int], float]] = []
@@ -856,7 +1009,7 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: 
 
 
 def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int | None, licitor_withdrawn: bool,
-                         external_pass_due: Callable[[str], bool]) -> EnrichmentUnit:
+                         external_pass_due: Callable[[str], bool], general_workers: int = 0) -> EnrichmentUnit:
     """Run the enrichment queue for one scheduled unit.
 
     Without ``unit_seconds`` (a run dispatched before the separate lane existed): one cycle, as before. With it, the
@@ -883,7 +1036,7 @@ def _run_enrichment_unit(env: dict[str, str], *, db_url: str, unit_seconds: int 
                 break
         worker_stop = _run_enrichment_cycle(
             env, unit, db_url=db_url, budget=budget, deadline=deadline, licitor_withdrawn=licitor_withdrawn,
-            external_pass_due=external_pass_due,
+            external_pass_due=external_pass_due, general_workers=general_workers,
         )
         if deadline is None:
             break
@@ -967,17 +1120,26 @@ def _execute_claimed(run_id: str, db_url: str, *, enrichment_lane: bool, prewait
     failure = None
     execution_started = datetime.now(UTC)
     unit: EnrichmentUnit | None = None
+    general_workers = 0
     if source == 'enrichment-queue':
         # The separate lane (own GitHub concurrency group, lease written by the scheduler) chains cycles until its
         # lease; otherwise one cycle, as before the lane existed (old scheduler or old dispatcher still deployed).
         lease = _enrichment_lane_lease_seconds(db_url, run_id, connect=connect) if enrichment_lane else None
         unit_seconds = lease - ENRICHMENT_LEASE_MARGIN_SECONDS if lease else None
         budget = unit_seconds or ENRICHMENT_WORKER_TIMEOUT_SECONDS
-        unit = _run_enrichment_unit(
-            env, db_url=db_url, unit_seconds=unit_seconds, licitor_withdrawn=LICITOR_SOURCE in withdrawn,
-            external_pass_due=lambda key: _external_pass_due(db_url, run_id, key, connect=connect),
-        )
-        code, failure = unit.worker_code, unit.failure
+        try:
+            # Parallel lane settings (src.enrichment_lane_settings): checked before any worker starts.
+            general_workers = lane_settings().general_workers
+        except LaneSettingsError as exc:
+            print(f"::error title=Réglages de la voie d'enrichissement refusés::{exc}", flush=True)
+            code, failure = LANE_SETTINGS_EXIT_CODE, f'Enrichment lane settings refused: {exc}'
+        else:
+            unit = _run_enrichment_unit(
+                env, db_url=db_url, unit_seconds=unit_seconds, licitor_withdrawn=LICITOR_SOURCE in withdrawn,
+                external_pass_due=lambda key: _external_pass_due(db_url, run_id, key, connect=connect),
+                general_workers=general_workers,
+            )
+            code, failure = unit.worker_code, unit.failure
     else:
         if source not in SOURCE_NAMES:
             raise ValueError('Unknown scheduled source')
@@ -1027,6 +1189,9 @@ def _execute_claimed(run_id: str, db_url: str, *, enrichment_lane: bool, prewait
                     "collection_wait_seconds": round(unit.collection_wait_seconds, 1),
                     "cycles": unit.cycles,
                 }
+                if general_workers:
+                    # 1 source-detail worker + N general workers per cycle (each cycle lists them under "workers").
+                    summary["enrichment_unit"]["general_workers"] = general_workers
             if source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:
                 summary["licitor_history_skipped"] = "source_withdrawn"
             run_errors: dict[str, list[str]] = {}

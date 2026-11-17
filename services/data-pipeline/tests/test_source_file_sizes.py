@@ -32,7 +32,8 @@ TEMPORARY_EXCEPTIONS: dict[str, tuple[int, date]] = {
     "src/main.py": (2254, date(2027, 3, 31)),
     "src/normalize.py": (2120, date(2027, 3, 31)),
     "src/extraction_profiles.py": (1768, date(2027, 3, 31)),
-    "src/queued_runner.py": (1586, date(2027, 3, 31)),
+    # 17/11/2026 : 1586 -> 1546, la répartition des prises entre familles est passée dans src/enrichment_claim_schedule.py.
+    "src/queued_runner.py": (1546, date(2027, 3, 31)),
 }
 
 

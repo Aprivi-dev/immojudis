@@ -465,6 +465,10 @@ def _looks_like_html_challenge(response: httpx.Response) -> bool:
 
 def robots_failure_class(error: BaseException) -> str:
     """Classe de l'échec de lecture de robots.txt (``robots_policy_copies.failure_class``)."""
+    recorded = getattr(error, "recorded_failure_class", None)
+    if isinstance(recorded, str):
+        # No request was sent: the class is that of the recorded failure (robots_policy_copies.before_fetch).
+        return recorded
     status_code = getattr(getattr(error, "response", None), "status_code", None)
     if isinstance(error, RobotsAccessRefusedError):
         return robots_policy_copies.ACCESS_REFUSED
@@ -556,7 +560,7 @@ class PoliteHttpClient:
             if base_origin is not None:
                 self._robots_by_origin[base_origin] = self._robots
                 self._record_verified_robots(base_origin, self._robots, reused=reused)
-            if self._last_robots_origin is not None:
+            if self._last_robots_origin is not None and self._last_robots_origin != base_origin:
                 self._robots_by_origin[self._last_robots_origin] = self._robots
                 self._record_verified_robots(self._last_robots_origin, self._robots, reused=reused)
         except SourceTaskDeadlineExceeded:
@@ -623,9 +627,11 @@ class PoliteHttpClient:
             )
             if decision.action == "refused":
                 raise RobotsAccessRefusedError(message, origin=origin)
-            raise RobotsUnavailableError(
+            error = RobotsUnavailableError(
                 message, origin=origin, transient=True, probe_not_before=failure.probe_not_before()
             )
+            error.recorded_failure_class = failure.failure_class
+            raise error
         try:
             response = self._fetch_robots(url, probe=decision.probe)
             ensure_source_task_deadline("parsing robots policy response")
@@ -854,7 +860,7 @@ class PoliteHttpClient:
             raise error from exc
         self._robots_by_origin[origin] = rules
         self._record_verified_robots(origin, rules, reused=reused)
-        if self._last_robots_origin is not None:
+        if self._last_robots_origin is not None and self._last_robots_origin != origin:
             self._robots_by_origin[self._last_robots_origin] = rules
             self._record_verified_robots(self._last_robots_origin, rules, reused=reused)
         return rules

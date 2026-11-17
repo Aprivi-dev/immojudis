@@ -29,6 +29,14 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
+from src.enrichment_claim_schedule import (
+    ENRICHMENT_FAMILY,
+    SOURCE_DETAIL_FAMILY,
+    _enrichment_claim_batch_size,
+    _enrichment_claim_limit,
+    _enrichment_family_cycle,
+    _read_due_enrichment_family_counts,
+)
 from src.enrichment_lane_settings import LaneSettingsError, lane_settings
 from src.enrichment_queue_limits import (
     ENRICHMENT_BUDGET_SECONDS,
@@ -102,20 +110,7 @@ LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
 #: Exit code of a worker whose lane settings were refused (src.enrichment_lane_settings).
 LANE_SETTINGS_EXIT_CODE = 3
-SOURCE_DETAIL_FAMILY = "source_detail"
-ENRICHMENT_FAMILY = general_lane_claims.ENRICHMENT_FAMILY
-# Keep a bounded general-enrichment lane even while source-detail is larger.
-# Four slots preserve source-detail priority while reserving 25% of worker
-# claims for display/fact/PDF jobs instead of allowing a persistent detail
-# backlog to reduce the general lane to one claim in six.
-ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 3 + (ENRICHMENT_FAMILY,)
 PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
-ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
-ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
-GENERAL_BACKLOG_RELIEF_CYCLE = (
-    SOURCE_DETAIL_FAMILY,
-    ENRICHMENT_FAMILY,
-)
 WORKER_OBSERVED_STATUS_KEYS = (
     "completed",
     "failed",
@@ -1487,124 +1482,6 @@ def _log_worker_outcome_summary(
     )
 
 
-def _read_due_enrichment_family_counts() -> dict[str, int]:
-    """Read a cheap due-backlog estimate without changing queue state.
-
-    The worker is already required to have a transactional database connection
-    for autonomous execution.  Keeping this small read-only query here avoids
-    adding another RPC or making the SQL claim function decide the worker's
-    lane ratio.  This estimate intentionally does not duplicate every claim
-    eligibility join (retention, source state, and superseded revisions).  It
-    is only a lane-ratio hint: every claim still applies the authoritative SQL
-    eligibility checks, and an empty preferred lane immediately falls back to
-    the other family.  An unavailable read is handled by the caller with a
-    neutral cycle so a transient telemetry failure cannot starve one family.
-    """
-    settings = load_settings()
-    db_url = str(settings.get("supabase_db_url") or "")
-    if not db_url:
-        return {}
-    try:
-        # This count only changes the lane ratio. Never spend the worker budget
-        # on the regular write-connection retry sequence for optional telemetry.
-        with connect(db_url, connect_timeout=3, retry_delays=()) as connection:
-            connection.execute("set transaction read only")
-            connection.execute("set local lock_timeout = '1000ms'")
-            connection.execute("set local statement_timeout = '3000ms'")
-            rows = connection.execute(
-                """
-                select case when job_type = 'source_detail'
-                            then 'source_detail' else 'enrichment' end as family,
-                       count(*)
-                  from public.auction_enrichment_jobs
-                 where (
-                         status in ('queued', 'failed')
-                         or (
-                              status = 'running'
-                              and coalesce(locked_at, updated_at)
-                                  < statement_timestamp() - interval '30 minutes'
-                            )
-                       )
-                   and next_attempt_at <= statement_timestamp()
-                   and attempt_count < max_attempts
-                 group by 1
-                """
-            ).fetchall()
-    except Exception as exc:
-        LOGGER.warning("Could not read enrichment queue lane counts: %s", exc)
-        return {}
-    return {str(family): int(count or 0) for family, count in rows}
-
-
-def _enrichment_family_cycle(due_counts: dict[str, int]) -> tuple[str, ...]:
-    """Choose a bounded lane ratio from one due-backlog estimate.
-
-    The two lanes alternate when the estimated due general backlog is larger.
-    If the optional read is unavailable, use the neutral 1:1 cycle instead of
-    silently falling back to source-detail priority.  A degraded database
-    connection must not turn a transient telemetry failure into starvation of
-    display, fact, or PDF jobs.  The estimate is advisory and cannot make a
-    family unclaimable: every preferred-lane miss immediately tries the
-    alternate family.  When the estimate is available and source-detail is
-    larger, source-detail remains guaranteed at least every fourth slot.
-    The SQL claim still applies its per-source round-robin ordering inside the
-    detail lane.
-    """
-    if not due_counts:
-        return GENERAL_BACKLOG_RELIEF_CYCLE
-    source_detail = max(0, int(due_counts.get(SOURCE_DETAIL_FAMILY, 0)))
-    enrichment = max(0, int(due_counts.get(ENRICHMENT_FAMILY, 0)))
-    if enrichment > source_detail:
-        return GENERAL_BACKLOG_RELIEF_CYCLE
-    return ENRICHMENT_FAMILY_CYCLE
-
-
-def _enrichment_claim_batch_size(family: str) -> int:
-    """Return a bounded claim size for one queue family.
-
-    Only source-detail jobs are grouped. General jobs stay one per claim so a
-    long PDF/LLM task cannot reserve an unnecessarily large batch. Invalid or
-    out-of-range environment values fall back to the conservative default.
-    """
-    if family != SOURCE_DETAIL_FAMILY:
-        return 1
-    raw_value = os.getenv(
-        "PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE",
-        str(ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE),
-    )
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        value = ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE
-    return max(1, min(ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX, value))
-
-
-def _enrichment_claim_limit(
-    family: str,
-    *,
-    slot: int,
-    remaining: int,
-    family_cycle: tuple[str, ...] = ENRICHMENT_FAMILY_CYCLE,
-) -> int:
-    """Bound one claim by both its batch size and its fair-cycle positions."""
-    if family != SOURCE_DETAIL_FAMILY:
-        return min(1, remaining)
-    cycle_position = slot % len(family_cycle)
-    detail_positions = 0
-    while (
-        detail_positions < len(family_cycle)
-        and family_cycle[(cycle_position + detail_positions) % len(family_cycle)]
-        == SOURCE_DETAIL_FAMILY
-    ):
-        detail_positions += 1
-    # A preferred general claim can be empty.  The alternate detail lane still
-    # needs one legal claim position even when the schedule points at general
-    # enrichment for this slot.
-    if detail_positions == 0:
-        detail_positions = 1
-    return min(_enrichment_claim_batch_size(family), detail_positions, remaining)
-
-
 def _family_argument(argv: list[str]) -> str | None:
     """``--family source_detail|enrichment`` (parallel lane); ``None`` without it (mixed worker)."""
     if "--family" not in argv:
@@ -1648,6 +1525,9 @@ def run_with_catalogue_lock() -> int:
         print(f"::error title=Réglages de la voie d'enrichissement refusés::{exc}", flush=True)
         return LANE_SETTINGS_EXIT_CODE
     label = f"enrichment queue worker ({family or 'mixed'})"
+    if settings.host_turns:
+        # Côte à côte, les travailleurs de la voie prennent le tour de chaque hôte qu'ils interrogent (src.host_turn).
+        host_turn.activate()
     try:
         with catalogue_writer_lock(label=label, mode=settings.lock_mode):
             code = _run_as_script()

@@ -23,8 +23,10 @@ les ``POLL_SECONDS``). Un processus qui attend se signale en prenant en partage 
 d'abord que personne n'attend (prise exclusive d'essai de cette clé), sinon il le rend à son échéance et se remet
 dans l'attente, derrière.
 
-Réglage ``PIPELINE_HOST_TURNS`` (``src.enrichment_lane_settings``) ; éteint, ou sans base, le tour est toujours
-accordé et rien ne change.
+Réglage ``PIPELINE_HOST_TURNS`` (``src.enrichment_lane_settings``). Seuls les travailleurs de la voie les prennent
+(``activate``, appelé par ``src.queued_runner``) : tout autre processus qui parle aux sources (collecte, copie des
+photos, passes de l'unité) tient le tour des sources en exclusif (``src.source_traffic``), donc seul. Éteint, non
+activé ou sans base, le tour est toujours accordé et rien ne change.
 """
 
 from __future__ import annotations
@@ -235,25 +237,23 @@ class HostTurns:
                 self._releaser.start()
 
     def release_due_now(self) -> None:
-        """Rend les tours dont le délai est écoulé (fil d'arrière-plan, et tests)."""
-        while True:
-            with self._state:
-                now = self._clock()
-                due = [host for host, held in self._held.items() if held.users == 0 and held.release_at <= now]
-            if not due:
-                return
+        """Rend les tours dont le délai est écoulé (fil d'arrière-plan, et tests).
+
+        Un tour à rendre quitte d'abord la table : un autre fil du processus ne peut plus le croire tenu. S'il le
+        redemande aussitôt, la même session le reprend (verrou réentrant) avant ou après ce rendu : il reste tenu.
+        """
+        with self._state:
+            now = self._clock()
+            due = [host for host, held in self._held.items() if held.users == 0 and held.release_at <= now]
             for host in due:
-                try:
-                    self._execute(_UNLOCK_SQL, TURN_KEY_PREFIX + host)
-                except Exception:  # noqa: BLE001 - session perdue : le tour est rendu par le serveur
-                    LOGGER.warning("Host turn for %s could not be released explicitly", host)
-                with self._state:
-                    held = self._held.get(host)
-                    if held is not None and held.users == 0:
-                        del self._held[host]
-                        if held.yielding:
-                            self._backoff_until[host] = self._clock() + YIELD_BACKOFF_SECONDS
-                    self._state.notify_all()
+                if self._held.pop(host).yielding:
+                    self._backoff_until[host] = now + YIELD_BACKOFF_SECONDS
+            self._state.notify_all()
+        for host in due:
+            try:
+                self._execute(_UNLOCK_SQL, TURN_KEY_PREFIX + host)
+            except Exception:  # noqa: BLE001 - session perdue : le tour est rendu par le serveur
+                LOGGER.warning("Host turn for %s could not be released explicitly", host)
 
     def _release_due(self) -> None:
         while True:
@@ -273,10 +273,18 @@ class HostTurns:
 
 _TURNS: dict[str, HostTurns] = {}
 _TURNS_LOCK = threading.Lock()
+_ACTIVE = threading.Event()
+
+
+def activate() -> bool:
+    """Les tours de ce processus, quand ``PIPELINE_HOST_TURNS`` est allumé (travailleur de la voie) ; rend leur état."""
+    if host_turns_enabled():
+        _ACTIVE.set()
+    return _ACTIVE.is_set()
 
 
 def _process_turns() -> HostTurns | None:
-    if not host_turns_enabled():
+    if not _ACTIVE.is_set() or not host_turns_enabled():
         return None
     from src.config import load_settings
 

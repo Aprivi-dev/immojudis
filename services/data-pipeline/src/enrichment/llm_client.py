@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from src.config import load_settings
+from src.host_turn import HostTurnWaitExceeded, host_turn
 from src.llm_requests import (
     RESERVATION_KEY,
     LLMRequestTransportAmbiguous,
@@ -36,6 +37,7 @@ LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 VISION_IMAGE_TOKEN_CEILING = 16_384
 _LAST_REPLICATE_REQUEST_AT = 0.0
+REPLICATE_HOST = "api.replicate.com"
 _REPLICATE_REQUEST_LOCK = threading.Lock()
 _REQUEST_METADATA: ContextVar[dict[str, Any] | None] = ContextVar("replicate_request_metadata", default=None)
 _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY: ContextVar[bool] = ContextVar(
@@ -697,6 +699,15 @@ class ReplicateClient:
                 time.sleep(min(wait_for, remaining) if remaining is not None else wait_for)
                 now = time.monotonic()
                 ensure_llm_task_deadline("starting Replicate request after cadence")
+            # Parallel lane: the starts of every process are spaced too (src.host_turn, the same rule as the sites).
+            # The turn only covers the start: it is handed back min_interval later, never held during the answer.
+            try:
+                with host_turn(REPLICATE_HOST, delay_seconds=min_interval,
+                               deadline_remaining=llm_task_deadline_remaining):
+                    pass
+            except HostTurnWaitExceeded as exc:
+                raise LLMTaskDeadlineExceeded("waiting for the Replicate start turn of the other workers") from exc
+            now = time.monotonic()
             _LAST_REPLICATE_REQUEST_AT = now
 
     def _mark_request_finished(self) -> None:

@@ -293,6 +293,105 @@ select source, count(*), max((summary #>> '{catalogue_prewait,seconds}')::numeri
  group by 1 order by 1;
 ```
 
+### Voie parallèle : 1 processus de fiches + N de pièces et de faits (17/11/2026)
+
+Décision du propriétaire du 17/11/2026 : dans chaque unité de la voie séparée, un processus ne prend que les
+relectures de fiches (`source_detail`) et N processus ne prennent que la famille générale (`pdf`,
+`fact_extraction`, `enrichment_oldest`), côte à côte (`src/autonomous_runner.py`, `_run_lane_workers` ;
+`python -m src.queued_runner --enrichment-only --family source_detail|enrichment`). L'unité attend la fin de
+tous les processus, puis fait ses passes facultatives comme avant ; l'échec d'un processus n'arrête pas les autres
+(il arrête l'unité après le passage, comme l'échec du travailleur unique).
+
+- **Réglages** (variables de dépôt GitHub, `src/enrichment_lane_settings.py`) :
+  `PIPELINE_ENRICHMENT_GENERAL_WORKERS` (0 à 3, **2 par défaut**), `PIPELINE_WORKER_LOCK_MODE`
+  (`exclusive`/`shared`) et `PIPELINE_HOST_TURNS` (`on`/`off`). Vides, les deux derniers suivent N (`shared` et
+  `on` dès que N ≥ 1). N ≥ 1 avec `exclusive` ou avec `off` est refusé au démarrage de l'unité (run `failed`,
+  erreur « Enrichment lane settings refused: … ») et du travailleur (code 3).
+- **Retour arrière, sans commit** : `PIPELINE_ENRICHMENT_GENERAL_WORKERS=0` ramène le travailleur mixte unique,
+  verrous exclusifs, sans tours par hôte, à l'identique. Puis, si besoin, `ENRICHMENT_LANE=off`.
+- **Jamais deux écrivains sur une vente** : la revendication refuse une tâche dont la vente a une tâche `running`
+  de moins de 30 min et verrouille la tâche et la vente (`for update of j, s skip locked`) ; toutes les
+  revendications passent par `claim_auction_enrichment_jobs_request`, sérialisées par le verrou de transaction
+  `immojudis:queue-claim-backoff` (test `supabase/tests/907_parallel_enrichment_claims.sql`). Chaque publication
+  prend le verrou `immojudis:outcome_catalogue_bridge:v1` et compare `updated_at` (garde de version).
+- **Verrous en mode partagé** : les processus de la voie prennent le verrou des écritures du catalogue et le tour
+  des sources **en partagé** ; tout le reste les prend en exclusif (collectes, recalcul, vidage des pièces,
+  anonymisation, positions, copie des photos, passes externes de l'unité). Une demande exclusive attend dans la
+  file de PostgreSQL et fait échouer toute nouvelle demande partagée : une collecte n'est jamais affamée.
+- **Tours par hôte** (`src/host_turn.py`) : jamais deux processus sur le même site en même temps. Le tour d'un
+  hôte (clé `immojudis:host-turn:v1:<hôte sans www>`) est tenu pendant la requête et ses reprises, puis rendu une
+  fois écoulé le délai du site (le nôtre ou le `Crawl-delay`). Attente bornée (180 s ou l'échéance du passage) :
+  au-delà, la tâche est remise en file sans perdre d'essai. Les démarrages Replicate passent par la même règle
+  (`api.replicate.com`, 11 s entre deux démarrages, tous processus confondus). Seuls les processus de la voie
+  prennent ces tours : tout autre processus qui parle aux sources tient le tour des sources en exclusif, donc seul.
+- **robots.txt commun** (`app_private.robots_policies`, migration `20261204100000`) : une lecture de moins de
+  30 min tient lieu de lecture pour tous les processus ; au-delà, elle reste le repli d'une panne passagère
+  (24 h). Lectures par hôte et par jour : 48 au plus (avant : une par passage, ~72, et une par processus).
+- **`lock_timeout` de publication** (15 s sur le verrou de publication) : la publication est annulée et la tâche
+  remise en file 5 min plus tard **sans perdre d'essai** (`pipeline_usage.publication_lock_deferral`), pour les
+  fiches comme pour les pièces.
+- **Plafond IA** : tous les processus portent le `AUTONOMOUS_RUN_ID` de l'unité ; `max_ai_predictions_per_run`
+  (90 par 30 min) reste celui de l'unité entière, le budget quotidien et le plafond horaire ne changent pas.
+- **Calcul** : `OMP_NUM_THREADS` (et BLAS) = 4 / (N + 1), Tesseract à un fil (`OMP_THREAD_LIMIT=1`) : N OCR à la
+  fois sur 4 vCPU, sans surcharge (Docling coupé : aucun modèle chargé N fois). Délais d'OCR inchangés (60 s par
+  page pour ~1 s mesurée).
+- **Connexions de session** (pooler en mode session) : trois par processus de la voie (verrou du catalogue, tour
+  des sources, tours par hôte), soit 3 × (N + 1) : 9 avec N = 2, 12 avec N = 3, plus 2 pour une collecte qui
+  attend. Le défaut est 2 tant que la taille du pool de sessions (« Pool size » du pooler Supabase) n'a pas été
+  vérifiée à 20 ou plus ; à 15 (petites instances), N = 3 laisserait trop peu de marge.
+- **Surveillance inchangée** : une seule ligne `auction_runs` par unité, comme avant ; `stalled`, `exhausted`,
+  `pipeline.import.unhealthy`, `cron.stale` et l'observation `enrichment-queue` lisent la file et les runs, pas
+  le nombre de processus.
+
+**Mesure** (lecture seule ; chaque cycle porte `workers`, un objet par processus) :
+
+```sql
+-- Tâches prises par type et par processus, secondes d'OCR, attentes de tour par hôte, reports pour lock_timeout.
+select date_trunc('day', r.started_at) as jour, w->>'family' as famille, count(*) as passages,
+       sum(coalesce((w->>'handled')::integer, 0)) as traitees,
+       sum(coalesce((w->'claimed_by_job_type'->>'pdf')::integer, 0)) as pdf_prises,
+       sum(coalesce((w->'claimed_by_job_type'->>'fact_extraction')::integer, 0)) as faits_pris,
+       sum(coalesce((w->'claimed_by_job_type'->>'source_detail')::integer, 0)) as fiches_prises,
+       round(sum(coalesce((w->>'ocr_seconds')::numeric, 0))) as secondes_ocr,
+       round(sum(coalesce((w->'host_turns'->>'wait_seconds')::numeric, 0))) as attente_tours_s,
+       sum(coalesce((w->'host_turns'->>'timeouts')::integer, 0)) as tours_depasses,
+       sum(coalesce((w->>'publication_lock_deferrals')::integer, 0)) as reports_lock_timeout,
+       count(*) filter (where (w->>'exit_code')::integer <> 0) as processus_en_echec
+  from public.auction_runs r
+  cross join lateral jsonb_array_elements(coalesce(r.summary #> '{enrichment_unit,cycles}', '[]'::jsonb)) c
+  cross join lateral jsonb_array_elements(coalesce(c->'workers', '[]'::jsonb)) w
+ where r.source = 'enrichment-queue' and r.started_at >= now() - interval '3 days'
+ group by 1, 2 order by 1, 2;
+
+-- Pièces lues par jour (tâches pdf terminées) et fiches en attente.
+select date_trunc('day', completed_at) as jour, count(*) as pieces_lues
+  from public.auction_enrichment_jobs
+ where job_type = 'pdf' and status = 'completed' and completed_at >= now() - interval '3 days'
+ group by 1 order by 1;
+select count(*) as fiches_en_attente
+  from public.auction_enrichment_jobs
+ where job_type = 'source_detail' and status in ('queued', 'failed') and attempt_count < max_attempts
+   and next_attempt_at <= now();
+
+-- Publications reportées pour lock_timeout et jamais reprises (doit rester vide).
+select id, job_type, status, attempt_count, next_attempt_at, updated_at
+  from public.auction_enrichment_jobs
+ where last_error like 'Publication lock busy (lock_timeout)%'
+   and updated_at < now() - interval '2 hours' and status in ('queued', 'failed');
+
+-- Appels IA par unité et par tranche de 30 min (plafond 90) et dépense du jour.
+select run_id, date_trunc('hour', created_at) + interval '30 min' * floor(extract(minute from created_at) / 30)
+         as tranche, count(*) as appels
+  from public.auction_pipeline_usage
+ where created_at >= now() - interval '1 day'
+ group by 1, 2 having count(*) > 60 order by 3 desc;
+```
+
+**Critères de réussite**, deux jours après la mise en production : pièces lues ≥ 130 par jour ; fiches en attente
+< 100 ; aucun report `lock_timeout` non repris (troisième requête vide) ; attente des collectes avant démarrage
+inchangée (dernière requête de la section précédente) ; appels IA sous leurs plafonds (aucune tranche à 90, aucun
+« Daily AI budget exhausted » avant l'heure habituelle). Sinon : `PIPELINE_ENRICHMENT_GENERAL_WORKERS=1`, ou `0`.
+
 ## `exhausted`
 
 Une tâche `failed` dont `attempt_count >= max_attempts` n'est plus jamais prise (lettre morte). L'alerte s'ouvre

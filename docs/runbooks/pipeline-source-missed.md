@@ -19,7 +19,7 @@ auction_runs where id = <run_id>;` puis le workflow `data-pipeline.yml` correspo
 4. `availability = access_denied` ou `unavailable` : la source bloque ou est tombée. Contrôler à la main
    l'adresse de la source ; ne pas contourner un blocage (robots.txt, conditions d'utilisation).
 5. Cause précise de l'arrêt : `select coverage->'publication_blocker_details'->'inventory_incomplete',
-   coverage->'robots_policy' from auction_source_state where source_name = '<source>';`. La clé `stop_cause`
+coverage->'robots_policy' from auction_source_state where source_name = '<source>';`. La clé `stop_cause`
    vaut `robots_unavailable`, `robots_refused`, `list_fetch_failed` ou, à défaut, la raison d'arrêt de la
    couverture (`stop_reason`). Avec `robots_unavailable` ou `robots_refused`, voir « 0 requête : robots.txt
    illisible » ci-dessous.
@@ -65,6 +65,51 @@ Diagnostic :
    source (`BASE_URL`, origines de redirection admises) et, si le refus dure, suspendre la source.
 4. `reused_copy` : l'inventaire a tourné sur la copie. Rien à faire tant que la copie a moins de 24 h ; une
    copie qui vieillit d'un passage à l'autre dit que robots.txt ne se lit plus du tout.
+
+### Site injoignable : sonde horaire, puis suspension de 7 jours (`suspended_unreachable`)
+
+Depuis le 17/11/2026 (Enchères Immobilières muet depuis le 15/11 : `ConnectTimeout` sur robots.txt, 0 requête,
+6 h entre deux essais, et ~2,5 min perdues sur robots.txt à chaque passage de la file pour ses fiches), règles
+de `services/data-pipeline/src/source_suspension.py`, appliquées à la fin de chaque collecte :
+
+- **Classe de l'échec** (`coverage->'robots_policy'->>'failure_class'` et `coverage->>'failure_class'`) :
+  `no_tcp_response` (pas de réponse TCP), `timeout` (délai ou coupure), `server_error` (5xx), `access_refused`
+  (401, 403, page de défi), `http_error` (autre code). `coverage->>'unreachable_since'` : début des échecs de
+  connexion continus (`no_tcp_response`, `timeout`). Les détails de `.missed` portent `robots_policy`.
+- **Sonde horaire** (migration `20261204100000` appliquée) : après une panne passagère de robots.txt
+  (`no_tcp_response`, `timeout`, `server_error`) d'une collecte qui n'a demandé aucune page, la collecte suivante
+  part 60 min plus tard au lieu de 30 min à 6 h, et sa lecture de robots.txt est une sonde : une requête, sans
+  reprise, connexion abandonnée après 10 s. Une collecte qui a continué sur la copie de 24 h et demandé ses pages
+  garde l'espacement d'avant.
+  Aucun processus (collecte, fiches, pièces) ne relit robots.txt de ce site avant l'heure de la sonde : la copie
+  commune (`app_private.robots_policies`) garde le dernier échec. Les tâches de fiches de la source sont remises
+  en file jusqu'à cette heure sans perdre d'essai. Volume : une requête par heure au plus (avant : quatre par
+  collecte et quatre par passage de la file). Sans la migration, l'espacement d'avant reste.
+- **Suspension** : après 72 h d'échecs de connexion continus, `suspended_until = now() + 7 jours` et
+  `suspension_reason` commence par `source_unreachable:`. Le planificateur ne lance plus la source, la file ne
+  prend plus ses fiches (`claim_auction_enrichment_jobs_family` filtre `suspended_until`), les tâches de pièces
+  hébergées sur son site sont reportées à la reprise sans perdre d'essai. **Rien n'est retiré du catalogue**
+  (pas de retrait de source ni de vente). L'avertissement `pipeline.source.<source>.suspended_unreachable`
+  l'annonce (`details->>'resume_probe_at'` : date de reprise ; `failure_class` ; `unreachable_since`) ;
+  `.missed` reste ouverte à côté (aucun inventaire). À l'échéance, la collecte relancée est la sonde : si le site
+  répond, tout reprend et l'avertissement se referme deux heures plus tard ; sinon, 7 jours de plus.
+- **Jamais le relais** (`SOURCE_FETCH_RELAY_URL`) : contourner un site qui ne nous répond plus pourrait
+  contourner un blocage. La liste des hôtes du relais (`src/sources/cloud_transport.py`) ne contient pas
+  Enchères Immobilières, un test le vérifie.
+
+Lever une suspension avant son échéance (le site répond de nouveau, vérifié à la main) :
+`update public.auction_source_state set suspended_until = null, next_inventory_at = now() where source_name =
+'<source>' and suspension_reason like 'source_unreachable%';` (geste d'exploitation, en production seulement
+par le propriétaire). Requête de suivi, en lecture seule :
+
+```sql
+select source_name, suspended_until, suspension_reason, coverage->>'failure_class' as classe,
+       coverage->>'unreachable_since' as muet_depuis, next_inventory_at, consecutive_failures
+  from public.auction_source_state
+ where suspension_reason like 'source_unreachable%' or coverage->>'unreachable_since' is not null;
+select origin, last_failure_class, last_failure_at, verified_at
+  from app_private.robots_policies order by last_failure_at desc nulls last limit 20;
+```
 
 ### Échec avant démarrage (`failed_before_start`)
 
