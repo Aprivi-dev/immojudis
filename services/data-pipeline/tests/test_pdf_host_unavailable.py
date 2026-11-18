@@ -5,9 +5,9 @@ toutes ses pièces, consommait un essai et finissait en « checkpoint was not pe
 nommer la cause. Rejoué sur le banc de la file (``tests/pdf_queue_bench.py``) : vrai code, faux réseau, fausse base.
 
 * robots.txt de l'hôte en panne passagère ou refusé : report sans essai jusqu'à la sonde suivante, tant que la panne
-  dure depuis moins de sept jours ;
-* erreur réseau de la pièce alors que robots.txt se lit, robots.txt en ``http_error``, panne de plus de sept jours :
-  échec visible, essai consommé, nouvel essai espacé.
+  dure depuis moins de sept jours et que la tâche elle-même attend depuis moins de sept jours ;
+* erreur réseau de la pièce alors que robots.txt se lit, robots.txt en ``http_error``, panne ou tâche de plus de sept
+  jours : échec visible, essai consommé, nouvel essai espacé.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ from src.pdf_pass_outcomes import (
     DOCUMENT_NETWORK_FAILURE,
     HOST_OUTAGE_DEFERRAL_LIMIT,
     HOST_UNAVAILABLE_DEFERRAL,
+    network_failure_ending,
+    pdf_jobs_waiting_since,
 )
 from src.sources import robots_policy_store
 from src.sources.robots_policy_copies import (
@@ -38,17 +40,22 @@ from src.sources.robots_policy_copies import (
     SERVER_ERROR,
     TIMEOUT,
     RobotsFailure,
+    RobotsPolicyCopy,
     SharedPolicy,
+    user_agent_digest,
 )
 from src.storage import supabase_client
 from src.storage.pdf_checkpoint_rules import _refused
 from tests.pdf_queue_bench import QueueBench, pdf_enrichment
+
+NetworkFailure = pdf_enrichment.NetworkFailure
 
 REAL_DOWNLOAD_RESPONSE = pdf_enrichment._download_document_response
 
 HOST = "pieces.etude.example"
 DOCUMENTS = [f"https://{HOST}/vente/piece-{index}.pdf" for index in range(3)]
 NO_CHECKPOINT = "(no checkpoint: no_progress_entries)"
+USER_AGENT = "immojudis-banc"
 
 
 @pytest.fixture
@@ -80,13 +87,16 @@ def _site_fails(bench: QueueBench, monkeypatch, failure: object) -> None:
 
 class SharedRobots:
     """Copie commune de robots.txt en mémoire, par origine, avec le compte des échecs consécutifs de
-    ``_SAVE_FAILURE_SQL`` ; ``failure`` : celui de ``HOST``."""
+    ``_SAVE_FAILURE_SQL`` (rendu par ``save_failure``, comme ``returning``) ; ``failure`` : celui de ``HOST``,
+    ``copies`` : les lectures réussies."""
 
     def __init__(self, monkeypatch) -> None:
         self.failures: dict[str, RobotsFailure] = {}
+        self.copies: dict[str, RobotsPolicyCopy] = {}
         monkeypatch.setattr(
             robots_policy_store, "load",
-            lambda key: SharedPolicy(None, self.failures[key]) if key in self.failures else None,
+            lambda key: SharedPolicy(self.copies.get(key), self.failures.get(key))
+            if key in self.failures or key in self.copies else None,
         )
         monkeypatch.setattr(robots_policy_store, "save_verified", lambda _key, _copy: None)
         monkeypatch.setattr(robots_policy_store, "save_failure", self._save_failure)
@@ -103,13 +113,21 @@ class SharedRobots:
     def failure(self, value: RobotsFailure) -> None:
         self.failures[self.key(HOST)] = value
 
-    def _save_failure(self, key: str, failure: RobotsFailure) -> None:
+    def _save_failure(self, key: str, failure: RobotsFailure) -> RobotsFailure:
         count = self.failures[key].count + 1 if key in self.failures else 1
         self.failures[key] = RobotsFailure(failure.failure_class, failure.failed_at, count, failure.recorded_by)
+        return self.failures[key]
+
+    def read_by_another_process(self) -> None:
+        """Un autre processus vient de lire robots.txt de ``HOST`` : la copie est fraîche, l'échec effacé."""
+        key = self.key(HOST)
+        self.failures.pop(key, None)
+        self.copies[key] = RobotsPolicyCopy((), None, datetime.now(UTC), user_agent_digest(USER_AGENT))
 
 
 class RobotsSite:
-    """Le vrai contrôle robots.txt des pièces devant un site dont robots.txt échoue ; un worker neuf par visite."""
+    """Le vrai contrôle robots.txt des pièces devant un site dont robots.txt échoue. ``new_worker`` : un processus
+    neuf ; sans lui, toutes les visites passent par le même processus, comme pendant un vidage (150 min au plus)."""
 
     def __init__(self, bench: QueueBench, monkeypatch, robots_answer: object) -> None:
         self.bench, self.monkeypatch, self.robots_answer = bench, monkeypatch, robots_answer
@@ -131,7 +149,7 @@ class RobotsSite:
 
     def new_worker(self) -> None:
         politeness = DocumentPoliteness(
-            user_agent=lambda: "immojudis-banc", fetch_robots=self._fetch_robots, sleep=lambda _s: None,
+            user_agent=lambda: USER_AGENT, fetch_robots=self._fetch_robots, sleep=lambda _s: None,
             min_delay_seconds=0.0,
         )
         self.monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", politeness)
@@ -208,6 +226,112 @@ def test_timeouts_of_robots_txt_defer_the_job_until_each_next_probe(bench: Queue
     assert waits == sorted(waits)
     assert len(site.robots_requests) == 3  # une lecture de robots.txt par sonde, aucune entre deux
     assert bench.requests == []  # aucune pièce demandée au site
+
+
+def test_the_same_process_probes_again_once_the_probe_is_due(bench: QueueBench, monkeypatch) -> None:
+    # Un processus de vidage vit jusqu'à 150 min et la tâche reportée revient à l'heure de la sonde : le même
+    # processus la reprend. Son échec de robots.txt gardé ne vaut que jusqu'à la sonde. Il consommait l'essai
+    # (« outage start unknown », +6 h) sans avoir sondé le site.
+    SharedRobots(monkeypatch)
+    site = RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
+    bench.publish(DOCUMENTS)
+    bench.drain()
+    assert _close_to(_wait(bench.jobs[-1]), timedelta(hours=1))
+
+    bench.age(1.02)
+    bench.drain()
+
+    job = bench.jobs[-1]
+    assert (job["status"], job["attempt_count"]) == ("queued", 0)
+    assert job["last_error"].startswith(f"{HOST_UNAVAILABLE_DEFERRAL}: {HOST} (robots.txt timeout)")
+    assert _close_to(_wait(job), timedelta(hours=2))
+    assert len(site.robots_requests) == 2  # une lecture par sonde
+    assert bench.requests == []
+
+
+def test_the_same_process_follows_three_successive_probes(bench: QueueBench, monkeypatch) -> None:
+    SharedRobots(monkeypatch)
+    site = RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
+    bench.publish(DOCUMENTS)
+
+    for probe, hours in enumerate((1, 2, 4), start=1):
+        bench.drain()
+        job = bench.jobs[-1]
+        assert (job["status"], job["attempt_count"]) == ("queued", 0)
+        assert job["last_error"].startswith(f"{HOST_UNAVAILABLE_DEFERRAL}: {HOST} (robots.txt timeout)")
+        assert _close_to(_wait(job), timedelta(hours=hours))
+        assert len(site.robots_requests) == probe
+        bench.age(hours / 2)  # avant la sonde : aucune requête, même échéance
+        bench.drain()
+        assert len(site.robots_requests) == probe
+        assert _close_to(_wait(job), timedelta(hours=hours / 2))
+        bench.age(hours / 2 + 0.02)
+
+    assert bench.requests == []
+
+
+def test_the_same_process_reads_the_documents_once_another_process_read_robots_txt(
+    bench: QueueBench, monkeypatch
+) -> None:
+    # Entre deux sondes, un autre processus lit robots.txt : à l'heure de la sonde, ce processus suit la copie
+    # commune (relue sans requête) et lit les pièces, comme pour un hôte disponible.
+    shared = SharedRobots(monkeypatch)
+    site = RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
+    bench.publish(DOCUMENTS)
+    bench.drain()
+    assert bench.jobs[-1]["status"] == "queued"
+
+    bench.age(1.02)
+    shared.read_by_another_process()
+    bench.drain()
+
+    job = bench.jobs[-1]
+    assert job["status"] == "completed" and not job["last_error"]
+    assert len(site.robots_requests) == 1
+    assert sorted(bench.requests) == DOCUMENTS
+
+
+def test_a_job_waiting_for_seven_days_spends_its_attempt_even_when_the_outage_looks_new(
+    bench: QueueBench, monkeypatch
+) -> None:
+    # robots.txt se lit de temps en temps : la série d'échecs repart de 1 et la panne paraît toujours récente. La
+    # tâche elle-même attend depuis plus de sept jours (``created_at``) : l'essai est consommé.
+    SharedRobots(monkeypatch)
+    RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
+    bench.publish(DOCUMENTS)
+    bench.drain()
+    job = bench.jobs[-1]
+    assert job["status"] == "queued"
+    created = datetime.now(UTC) - HOST_OUTAGE_DEFERRAL_LIMIT
+    job["created_at"] = created
+
+    bench.age(1.02)
+    bench.drain()
+
+    assert (job["status"], job["attempt_count"]) == ("failed", 1)
+    assert job["last_error"].startswith(
+        f"{DOCUMENT_NETWORK_FAILURE}: {HOST} (robots.txt timeout); job queued since "
+        f"{created.isoformat(timespec='minutes')}, no document read"
+    )
+    assert _close_to(_wait(job), timedelta(hours=2))  # toujours la sonde suivante
+
+
+@pytest.mark.parametrize(
+    ("waiting", "deferred"),
+    [(timedelta(days=6, hours=23), True), (HOST_OUTAGE_DEFERRAL_LIMIT, False), (None, False)],
+)
+def test_the_deferral_is_bounded_by_the_wait_of_the_job_itself(waiting: timedelta | None, deferred: bool) -> None:
+    now = datetime.now(UTC)
+    failure = RobotsFailure(TIMEOUT, now, 1, "documents")
+    stats = pdf_enrichment.PdfEnrichmentStats(errors=1)
+    stats.network_failures.append(NetworkFailure(f"https://{HOST}", "robots.txt timeout", True, failure))
+    jobs = [{"job_type": "pdf", "created_at": (now - waiting).isoformat() if waiting is not None else None}]
+
+    ending = network_failure_ending(stats, pdf_jobs_waiting_since(jobs))
+
+    assert type(ending).__name__ == ("QueueJobDeferred" if deferred else "SpacedPdfFailure")
+    if waiting is None:
+        assert "job queued since an unknown time" in str(ending)
 
 
 def test_a_site_that_refuses_robots_txt_defers_the_job_until_the_next_probe(bench: QueueBench, monkeypatch) -> None:
@@ -340,7 +464,10 @@ def test_without_a_trace_of_the_outage_the_attempt_is_spent(bench: QueueBench, m
 
     job = bench.jobs[-1]
     assert (job["status"], job["attempt_count"]) == ("failed", 1)
-    assert job["last_error"].startswith(f"{DOCUMENT_NETWORK_FAILURE}: {HOST} (robots.txt timeout, outage start unknown)")
+    assert job["last_error"].startswith(
+        f"{DOCUMENT_NETWORK_FAILURE}: {HOST} (robots.txt timeout, outage start unknown: shared robots.txt record "
+        "unavailable)"
+    )
     assert _close_to(_wait(job), timedelta(hours=6))
 
 

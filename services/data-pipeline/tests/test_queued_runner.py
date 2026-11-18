@@ -2774,7 +2774,7 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
                 "text": "private PDF text",
             }],
         }
-        return SimpleNamespace(errors=1, unavailable_hosts=[])  # une erreur de lecture, pas du site
+        return SimpleNamespace(errors=1, network_failures=[])  # une erreur de lecture, pas du site
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", fail_pdf_extract)
     monkeypatch.setattr(

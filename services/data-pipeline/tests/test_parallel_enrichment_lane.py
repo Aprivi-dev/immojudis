@@ -1021,9 +1021,13 @@ def test_the_shared_failure_counts_consecutive_failures_and_keeps_its_recorder(d
         row = db.execute("""select failure_count, last_failure_by, last_failure_class
             from app_private.robots_policies where origin = %s""", (key,)).fetchone()
         assert row == (0, None, None)
-        db.execute(robots_policy_store._SAVE_FAILURE_SQL, (key, "timeout", start + timedelta(hours=5), "documents"))
+        returned = db.execute(robots_policy_store._SAVE_FAILURE_SQL,
+                              (key, "timeout", start + timedelta(hours=5), "documents")).fetchone()
         assert db.execute("select failure_count from app_private.robots_policies where origin = %s",
                           (key,)).fetchone() == (1,)
+        # ``save_failure`` rend l'échec tel que la table le garde (``returning``).
+        assert robots_policy_store._failure(*returned) == RobotsFailure(
+            "timeout", start + timedelta(hours=5), 1, "documents")
         db.rollback()
 
 

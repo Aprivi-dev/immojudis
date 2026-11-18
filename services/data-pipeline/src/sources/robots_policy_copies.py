@@ -214,7 +214,12 @@ class RobotsFailure:
         """Début estimé de la série d'échecs consécutifs, que la table ne garde pas : le dernier échec moins les
         espacements des sondes qui l'ont précédé (60 min, 2 h, 4 h, puis 6 h). Des échecs plus rapprochés (deux
         processus à la même sonde, ``http_error`` relus sans attente) avancent l'estimation, jamais l'inverse tant
-        que chaque sonde a lieu à son heure."""
+        que chaque sonde a lieu à son heure.
+
+        La durée est estimée à partir du nombre d'échecs, pas mesurée : des sondes plus espacées que prévu (aucun
+        processus ne demande l'hôte à l'heure de la sonde, la sonde suivante n'a lieu qu'à la visite d'après) la
+        sous-estiment : la panne peut avoir commencé bien avant l'heure rendue. D'où la seconde borne, propre à la
+        tâche, de ``pdf_pass_outcomes.HOST_OUTAGE_DEFERRAL_LIMIT``."""
         return self.failed_at - sum((probe_interval(count) for count in range(1, self.count)), timedelta(0))
 
     def to_json(self) -> dict[str, Any]:

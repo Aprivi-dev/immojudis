@@ -59,13 +59,31 @@ class DocumentRobotsUnavailable(Exception):
     """robots.txt could not be verified; the download is retried later.
 
     ``failure_class`` : classe de l'échec (``robots_policy_copies.failure_class``), quand elle est connue ;
-    ``origin`` : l'origine dont robots.txt a échoué (celle d'une redirection, pas forcément celle de la pièce).
+    ``origin`` : l'origine dont robots.txt a échoué (celle d'une redirection, pas forcément celle de la pièce) ;
+    ``robots_failure`` : l'échec tel que la copie commune le garde au moment où l'exception est levée (nombre d'échecs
+    consécutifs, heure de la sonde suivante), ``None`` sans copie commune. ``pdf_pass_outcomes`` décide du report sur
+    lui, sans relire la copie commune ;
+    ``valid_until`` : heure de la sonde suivante ; jusque-là, ce processus rend l'échec sans rien relire. Sans copie
+    commune, ``PROBE_INTERVAL`` après l'échec.
     """
 
-    def __init__(self, message: str, *, failure_class: str | None = None, origin: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_class: str | None = None,
+        origin: str | None = None,
+        robots_failure: robots_policy_copies.RobotsFailure | None = None,
+    ) -> None:
         super().__init__(message)
         self.failure_class = failure_class
         self.origin = origin
+        self.robots_failure = robots_failure
+        self.valid_until = (
+            robots_failure.probe_not_before()
+            if robots_failure is not None
+            else datetime.now(UTC) + robots_policy_copies.PROBE_INTERVAL
+        )
 
 
 #: Classes d'échec de robots.txt qui prouvent que l'hôte entier est indisponible : panne passagère (pas de réponse
@@ -135,7 +153,10 @@ class DocumentPoliteness:
     def _rules_for(self, origin: str) -> RobotsRules:
         with self._lock:
             known = self._rules.get(origin)
-        if known is None:
+        # Un échec ne vaut que jusqu'à la sonde suivante : un processus de vidage vit jusqu'à 150 min, et les tâches
+        # reportées reviennent justement à cette heure. Passé elle, la copie commune décide (sonde, ou échec plus
+        # récent d'un autre processus, ou lecture réussie), comme pour un processus neuf.
+        if known is None or (isinstance(known, DocumentRobotsUnavailable) and datetime.now(UTC) >= known.valid_until):
             known = self._load_rules(origin)
             with self._lock:
                 self._rules[origin] = known
@@ -154,7 +175,7 @@ class DocumentPoliteness:
             return DocumentRobotsUnavailable(
                 f"robots.txt could not be verified for {origin}: last read failed "
                 f"({failure.failure_class}); next read after {failure.probe_not_before().isoformat()}",
-                failure_class=failure.failure_class, origin=origin,
+                failure_class=failure.failure_class, origin=origin, robots_failure=failure,
             )
         try:
             # The robots request is a request to the host like any other: same turn, same delay.
@@ -162,9 +183,9 @@ class DocumentPoliteness:
                 response = self._fetch_robots(robots_url)
         except (httpx.HTTPError, OSError, ValueError) as exc:
             failure_class = robots_policy_copies.failure_class(error=exc)
-            self._record_failure(key, failure_class)
             return DocumentRobotsUnavailable(
-                f"robots.txt could not be verified for {origin}: {exc}", failure_class=failure_class, origin=origin
+                f"robots.txt could not be verified for {origin}: {exc}", failure_class=failure_class, origin=origin,
+                robots_failure=self._record_failure(key, failure_class),
             )
         finally:
             with self._lock:
@@ -174,16 +195,15 @@ class DocumentPoliteness:
             rules = RobotsRules()
         elif status >= 400:
             failure_class = robots_policy_copies.failure_class(status_code=status)
-            self._record_failure(key, failure_class)
             return DocumentRobotsUnavailable(
                 f"robots.txt could not be verified for {origin}: HTTP {status}", failure_class=failure_class,
-                origin=origin,
+                origin=origin, robots_failure=self._record_failure(key, failure_class),
             )
         elif _looks_like_html_challenge(response):
-            self._record_failure(key, robots_policy_copies.ACCESS_REFUSED)
             return DocumentRobotsUnavailable(
                 f"robots.txt for {origin} returned an HTML challenge",
                 failure_class=robots_policy_copies.ACCESS_REFUSED, origin=origin,
+                robots_failure=self._record_failure(key, robots_policy_copies.ACCESS_REFUSED),
             )
         else:
             rules = RobotsRules.parse(response.text, user_agent)
@@ -195,21 +215,14 @@ class DocumentPoliteness:
         return rules
 
     @staticmethod
-    def _record_failure(key: str | None, failure_class: str) -> None:
-        if key:
-            # Relevé par le client des pièces : jamais compté pour la suspension d'une source (src.source_suspension).
-            robots_policy_store.save_failure(key, robots_policy_copies.RobotsFailure(
-                failure_class, datetime.now(UTC), recorded_by=robots_policy_copies.DOCUMENTS
-            ))
-
-    def robots_failure(self, origin: str) -> robots_policy_copies.RobotsFailure | None:
-        """Échec récent de robots.txt de ``origin`` qui fait attendre la sonde suivante (60 min, 2 h, 4 h, puis 6 h :
-        ``robots_policy_copies.probe_interval``), lu dans la copie commune ; ``None`` sans échec récent connu. Avant
-        ``probe_not_before()``, aucun processus ne relit robots.txt, donc aucune pièce n'y est demandée."""
-        key = robots_origin_key(f"{origin}/robots.txt")
-        if key is None:
+    def _record_failure(key: str | None, failure_class: str) -> robots_policy_copies.RobotsFailure | None:
+        """L'échec tel que la copie commune le garde (``robots_policy_store.save_failure``), ``None`` sans elle."""
+        if not key:
             return None
-        return _waiting_failure(robots_policy_copies.before_fetch(robots_policy_store.load(key), self._user_agent()))
+        # Relevé par le client des pièces : jamais compté pour la suspension d'une source (src.source_suspension).
+        return robots_policy_store.save_failure(key, robots_policy_copies.RobotsFailure(
+            failure_class, datetime.now(UTC), recorded_by=robots_policy_copies.DOCUMENTS
+        ))
 
     def is_disallowed(self, url: str) -> bool | None:
         """Live robots.txt verdict for ``url`` without waiting; None when unknown.

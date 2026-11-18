@@ -99,7 +99,7 @@ PDF_FINALIZATION_MARGIN_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
-class UnavailableHost:
+class NetworkFailure:
     """Téléchargement d'une pièce en erreur réseau (``pdf_pass_outcomes``).
 
     ``host_level`` : robots.txt de l'hôte en panne passagère ou refusé (``document_politeness.host_unavailability``),
@@ -110,15 +110,16 @@ class UnavailableHost:
     origin: str  # l'origine en cause : celle dont robots.txt a échoué (redirection comprise), sinon celle de la pièce
     nature: str
     host_level: bool
-    robots_failure: RobotsFailure | None = None  # ``DocumentPoliteness.robots_failure`` (hôte seulement)
+    # L'échec que porte l'exception (``DocumentRobotsUnavailable.robots_failure``, hôte seulement) ; ``None`` sans
+    # copie commune.
+    robots_failure: RobotsFailure | None = None
 
 
-def _unavailable_host(url: str, error: BaseException) -> UnavailableHost | None:
-    if (nature := host_unavailability(error)) is not None:
-        origin = (error.origin if isinstance(error, DocumentRobotsUnavailable) else None) or url
-        return UnavailableHost(origin, nature, True, _DOCUMENT_POLITENESS.robots_failure(origin))
+def _network_failure(url: str, error: BaseException) -> NetworkFailure | None:
+    if (nature := host_unavailability(error)) is not None and isinstance(error, DocumentRobotsUnavailable):
+        return NetworkFailure(error.origin or url, nature, True, error.robots_failure)
     if (nature := document_network_failure(error)) is not None:
-        return UnavailableHost(url, nature, False)
+        return NetworkFailure(url, nature, False)
     return None
 
 
@@ -133,7 +134,7 @@ class PdfEnrichmentStats:
     blocked_document_urls: list[str] = field(default_factory=list)
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
     # Erreurs réseau de téléchargement, de l'hôte ou de la pièce (comptées aussi dans ``errors``).
-    unavailable_hosts: list[UnavailableHost] = field(default_factory=list)
+    network_failures: list[NetworkFailure] = field(default_factory=list)
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -536,8 +537,8 @@ def download_documents(
                     LOGGER.warning("PDF download failed for %s: %s", url, download_error)
                     if stats:
                         stats.errors += 1
-                        if (unavailable := _unavailable_host(url, download_error)) is not None:
-                            stats.unavailable_hosts.append(unavailable)
+                        if (network_failure := _network_failure(url, download_error)) is not None:
+                            stats.network_failures.append(network_failure)
                 continue
         ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)

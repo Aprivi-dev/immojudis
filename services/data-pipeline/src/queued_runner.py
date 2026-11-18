@@ -71,6 +71,7 @@ from src.pdf_pass_outcomes import (
     network_failure_ending,
     nothing_due_deferral,
     pdf_failure_ending,
+    pdf_jobs_waiting_since,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import (
@@ -727,7 +728,8 @@ def run_enrichment_queue_batch(
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
                     # Erreurs réseau seulement, rien de lu : report sans essai ou échec espacé (src/pdf_pass_outcomes.py).
-                    if (network_ending := network_failure_ending(pdf_stats)) is not None:
+                    waiting_since = pdf_jobs_waiting_since(sale_jobs)
+                    if (network_ending := network_failure_ending(pdf_stats, waiting_since)) is not None:
                         raise network_ending
                     failed_urls = analysis.get("failed_document_urls") or []
                     failed_paths = [
