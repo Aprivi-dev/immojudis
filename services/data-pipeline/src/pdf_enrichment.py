@@ -27,6 +27,7 @@ from src.document_politeness import (
     DocumentPoliteness,
     DocumentRobotsDisallowed,
     fetch_robots_document,
+    host_unavailability,
     pause_within_deadline,
 )
 from src.encheres_publiques_guard import (
@@ -94,6 +95,15 @@ MAX_DOCUMENT_REDIRECTS = 5
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
 
 
+@dataclass(frozen=True)
+class UnavailableHost:
+    """Téléchargement d'une pièce en erreur parce que son site ne répond pas ou refuse l'accès (``pdf_pass_outcomes``)."""
+
+    url: str
+    nature: str  # ``document_politeness.host_unavailability``
+    next_robots_read_at: datetime | None  # ``DocumentPoliteness.next_robots_read_at``
+
+
 @dataclass
 class PdfEnrichmentStats:
     downloaded: int = 0
@@ -104,6 +114,8 @@ class PdfEnrichmentStats:
     documents_processed: int = 0
     blocked_document_urls: list[str] = field(default_factory=list)
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
+    # Erreurs de téléchargement dues au site (comptées aussi dans ``errors``).
+    unavailable_hosts: list[UnavailableHost] = field(default_factory=list)
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -506,6 +518,10 @@ def download_documents(
                     LOGGER.warning("PDF download failed for %s: %s", url, download_error)
                     if stats:
                         stats.errors += 1
+                        if (nature := host_unavailability(download_error)) is not None:
+                            stats.unavailable_hosts.append(
+                                UnavailableHost(url, nature, _DOCUMENT_POLITENESS.next_robots_read_at(url))
+                            )
                 continue
         ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)

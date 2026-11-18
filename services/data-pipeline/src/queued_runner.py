@@ -67,6 +67,7 @@ from src.pdf_pass_outcomes import (
     complete_manifest_with_excluded_url,
     discarded_write_ending,
     final_write_was_discarded,
+    host_unavailable_deferral,
     nothing_due_deferral,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
@@ -83,7 +84,11 @@ from src.sale_local_files import sale_storage_id
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
-from src.storage.pdf_checkpoint_rules import last_checkpoint_refusal, reset_checkpoint_refusal
+from src.storage.pdf_checkpoint_rules import (
+    failure_message_after_refusal,
+    reset_checkpoint_refusal,
+)
+from src.storage.pdf_checkpoint_rules import refused_checkpoint_message as _pdf_checkpoint_failure_message
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
@@ -462,15 +467,6 @@ def _checkpoint_pdf_progress(sale: object, **kwargs: object) -> bool:
     return _persist_pdf_checkpoint_for_sale(sale, **kwargs)
 
 
-def _pdf_checkpoint_failure_message(error: object | None = None) -> str:
-    """Préfixe lu par ``is_refused_checkpoint``, motif mémorisé du refus, erreur. À n'appeler qu'après ``_checkpoint_pdf_progress``."""
-    text = "" if error is None else str(error)
-    prefix = "PDF document checkpoint was not persisted; retry required"
-    if text.startswith(prefix):
-        return text
-    return ": ".join(part for part in (prefix, last_checkpoint_refusal(), text) if part)
-
-
 def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
     """Return whether the current PDF pass has no extractable fact evidence.
     ``documents_are_current`` deliberately treats an all-terminal result as fresh so the worker does not redownload the same blocked/empty/skipped
@@ -728,6 +724,9 @@ def run_enrichment_queue_batch(
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
+                    # Site des pièces injoignable ou fermé, rien de lu : report sans essai (src/pdf_pass_outcomes.py).
+                    if (unavailable := host_unavailable_deferral(pdf_stats)) is not None:
+                        raise unavailable
                     failed_urls = analysis.get("failed_document_urls") or []
                     failed_paths = [
                         f"{urlsplit(str(url)).hostname}{urlsplit(str(url)).path}"[:180]
@@ -1051,7 +1050,7 @@ def run_enrichment_queue_batch(
                         source_url,
                     )
             if pdf_failure and dependent_jobs:
-                pdf_error_message = _pdf_checkpoint_failure_message(exc) if not checkpoint_persisted else str(exc)
+                pdf_error_message = failure_message_after_refusal(exc) if not checkpoint_persisted else str(exc)
                 for job in pdf_jobs:
                     _finish_job(
                         job,
@@ -1072,7 +1071,7 @@ def run_enrichment_queue_batch(
                 continue
             for job in sale_jobs:
                 error_message = (
-                    _pdf_checkpoint_failure_message(exc)
+                    failure_message_after_refusal(exc)
                     if not checkpoint_persisted and str(job.get("job_type") or "") == "pdf"
                     else str(exc)
                 )

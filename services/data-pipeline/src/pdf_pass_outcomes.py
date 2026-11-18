@@ -13,7 +13,13 @@ Décidées par ``queued_runner`` :
   essai consommé : quatre essais au plus, puis le réarmement quotidien du vidage. Un refus d'admission
   (vente expirée, ni prix ni surface) est un état de la vente : ses essais sont espacés d'un jour et le dernier
   annule la tâche en ``review_required``, que le vidage ne réveille pas tout de suite (``REVIEW_HOLD_DAYS``,
-  un jour à l'approche de l'audience, et jamais au-delà d'un changement des règles de lecture).
+  un jour à l'approche de l'audience, et jamais au-delà d'un changement des règles de lecture) ;
+* **site indisponible** (report, sans essai consommé ; 18/11/2026) : toutes les erreurs de la passe viennent du
+  site qui héberge les pièces (``document_politeness.host_unavailability``) et aucune pièce n'a été lue. La tâche
+  échouait quatre fois en « checkpoint was not persisted » sans dire que le site ne répondait plus (32 tâches,
+  deux sites, du 15 au 18/11/2026). Elle revient à la sonde suivante de robots.txt du site, que la copie commune
+  espace déjà de 60 min à 6 h (``robots_policy_copies.probe_interval``) ; sans échec de robots.txt connu (seule
+  la pièce a échoué), au plus long de cet espacement. Le site ne reçoit donc pas plus de requêtes qu'avant.
 
 ``document_backlog`` lit le premier message : il n'enchaîne pas une passe identique sur une tâche qui attend.
 """
@@ -22,14 +28,21 @@ from __future__ import annotations
 
 import copy
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.host_turn import host_of
 from src.models import AuctionSale
 from src.pdf_progress import document_url, manifest_is_complete, persisted_revalidation_due_at
 from src.pipeline_usage import QueueJobDeferred
+from src.sources.robots_policy_copies import PROBE_MAX_INTERVAL
+
+if TYPE_CHECKING:
+    from src.pdf_enrichment import PdfEnrichmentStats
 
 NOTHING_DUE_DEFERRAL = "PDF pass deferred: the persisted manifest is complete and no document is due for revalidation"
+HOST_UNAVAILABLE_DEFERRAL = "PDF pass deferred: document host unavailable"
 WRITE_DISCARDED_ERROR = "PDF pass not recorded: the final catalogue write was discarded"
 # Dernier essai d'une écriture refusée à l'admission : la tâche est annulée avec ce message et le code du refus.
 WRITE_REFUSED_REVIEW = "review_required: final catalogue write refused"
@@ -94,6 +107,43 @@ def nothing_due_deferral(
     return QueueJobDeferred(NOTHING_DUE_DEFERRAL, retry_after=due_at)
 
 
+def host_unavailable_deferral(stats: PdfEnrichmentStats) -> QueueJobDeferred | None:
+    """Report d'une passe arrêtée par le site des pièces et non par les pièces, sinon ``None`` (échec ordinaire).
+
+    Seulement si chaque erreur de la passe est un téléchargement refusé ou resté sans réponse du site
+    (``stats.unavailable_hosts``) et que la passe n'a rien établi d'autre : aucune pièce lue, même depuis le cache,
+    aucun constat robots ou définitif. Une pièce lue ou une erreur de lecture (PDF abîmé, OCR) garde l'échec
+    ordinaire et son essai consommé. Échéance : la plus tardive des sondes de robots.txt des sites en cause
+    (``DocumentPoliteness.next_robots_read_at``), ou ``PROBE_MAX_INTERVAL`` pour un site sans échec de robots.txt
+    connu, pour qu'aucun site ne soit redemandé avant son tour.
+    """
+    unavailable = stats.unavailable_hosts
+    if (
+        not unavailable
+        or stats.errors != len(unavailable)
+        or stats.documents_processed
+        or stats.document_cache_hits
+        or stats.blocked_document_urls
+        or stats.permanent_document_failures
+    ):
+        return None
+    now = datetime.now(UTC)
+    retry_at = max(
+        item.next_robots_read_at if item.next_robots_read_at and item.next_robots_read_at > now
+        else now + PROBE_MAX_INTERVAL
+        for item in unavailable
+    )
+    natures: dict[str, set[str]] = {}
+    for item in unavailable:
+        natures.setdefault(host_of(item.url) or item.url, set()).add(item.nature)
+    hosts = "; ".join(f"{host} ({', '.join(sorted(kinds))})" for host, kinds in sorted(natures.items()))
+    return QueueJobDeferred(
+        f"{HOST_UNAVAILABLE_DEFERRAL}: {hosts}; no document read, next try at {retry_at.isoformat()} "
+        "without spending an attempt",
+        retry_after=retry_at,
+    )
+
+
 def final_write_was_discarded(written: object, sale: AuctionSale) -> bool:
     """``upsert_sales_to_supabase`` a rendu 0 sans rien écrire.
 
@@ -135,4 +185,4 @@ def discarded_write_ending(sale: AuctionSale, job: dict[str, object]) -> dict[st
 
 def waits_for_its_deadline(last_error: str) -> bool:
     """La tâche attend une échéance : une nouvelle passe tout de suite donnerait le même résultat."""
-    return NOTHING_DUE_DEFERRAL in last_error
+    return NOTHING_DUE_DEFERRAL in last_error or last_error.startswith(HOST_UNAVAILABLE_DEFERRAL)
