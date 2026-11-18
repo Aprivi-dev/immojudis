@@ -25,6 +25,7 @@ import {
   UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
+  unlockNextSaleText,
   unlockQuotaReachedText,
   type SaleUnlockResult,
   type SaleUnlockStatus,
@@ -434,6 +435,7 @@ export function SaleUnlockPanel({
             <p className="text-sm leading-relaxed text-brand-navy">
               {withCredit ? UNLOCK_CREDIT_CONFIRMATION_TEXT : UNLOCK_CONFIRMATION_TEXT}
             </p>
+            {withCredit ? null : <NextSaleHint />}
             {gap ? (
               <p
                 data-testid="unlock-ceiling-gap"
@@ -483,6 +485,20 @@ export function SaleUnlockPanel({
         ) : null}
       </Card>
     </>
+  );
+}
+
+/**
+ * Under the confirmation of the free unlock: it is not the last sale the account can open. Shown
+ * only once the purchase of a single sale is really open (price read from the offer).
+ */
+function NextSaleHint() {
+  const offer = useSaleUnlockPurchaseOffer();
+  if (offer.status !== "ready" || !offer.purchase) return null;
+  return (
+    <p data-testid="unlock-next-sale" className="mt-2 text-sm leading-relaxed text-brand-navy">
+      {unlockNextSaleText(offer.purchase.label)}
+    </p>
   );
 }
 

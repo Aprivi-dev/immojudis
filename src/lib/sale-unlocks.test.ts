@@ -12,6 +12,7 @@ import {
   UNLOCK_CALL_TO_ACTION_LABEL,
   UNLOCK_CHOICE_TEXT,
   UNLOCK_CONFIRMATION_TEXT,
+  unlockNextSaleText,
   UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
@@ -40,7 +41,7 @@ describe("single source of the free unlock", () => {
   });
 
   it("writes « une vente » in full words only while the free account unlocks one sale", () => {
-    // The visible texts say « une vente », « n’en comprend qu’un » : a new number needs new texts.
+    // The visible texts say « une vente », « le déblocage compris » : a new number needs new texts.
     expect(FREE_SALE_UNLOCKS).toBe(1);
     expect(FREE_UNLOCK_TEXT).toBe("une vente à débloquer");
     expect(FREE_UNLOCK_LABEL).toBe("Une vente à débloquer");
@@ -231,18 +232,21 @@ describe("texts of the unlock", () => {
     );
   });
 
-  it("states the single unlock of the free account, and asks to choose the sale", () => {
+  it("states the unlock of the free account, and invites to use it on this sale", () => {
     expect(UNLOCK_CALL_TO_ACTION_LABEL).toBe("Débloquer cette vente avec mon compte gratuit");
     expect(UNLOCK_CHOICE_TEXT).toBe(
-      "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.",
+      "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.",
     );
   });
 
-  it("says before the click that the unlock is final, and when it is given back", () => {
+  it("says before the click that the unlock of the free account is used, and when it is given back", () => {
     expect(UNLOCK_CONFIRMATION_TEXT).toBe(
-      "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
+      "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
     );
     expect(UNLOCK_CONFIRMATION_TEXT).not.toMatch(/mois|compteur|remis/);
+    expect(unlockNextSaleText("19 €")).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse.",
+    );
   });
 
   it("cites each highlight of the free account in the full list of what an unlock opens", () => {

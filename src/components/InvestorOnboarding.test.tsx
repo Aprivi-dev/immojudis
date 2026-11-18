@@ -110,7 +110,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Votre compte gratuit vous permet de débloquer une vente (l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente). L’offre Analyse les ouvre toutes.",
+      "Votre compte gratuit comprend le déblocage d’une vente (l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente) : utilisez-le dès la première fiche qui vous intéresse. L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
@@ -181,7 +181,7 @@ describe("investor welcome flow", () => {
       alerts.plan = plan;
       const text = lastStepText();
       expect(text).not.toContain("votre compte ouvre les outils");
-      expect(text).toContain("Votre compte gratuit vous permet de débloquer une vente");
+      expect(text).toContain("Votre compte gratuit comprend le déblocage d’une vente");
       cleanup();
     }
   });
@@ -225,7 +225,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Votre compte gratuit vous permet de débloquer une vente (l’analyse complète de la vente : enchère plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente).",
+      "Votre compte gratuit comprend le déblocage d’une vente (l’analyse complète de la vente : enchère plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente) : utilisez-le dès la première fiche qui vous intéresse.",
     );
     expect(text).not.toContain("offre plafond");
   });

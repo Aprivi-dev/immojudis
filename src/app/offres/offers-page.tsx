@@ -196,8 +196,8 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
     question: "Comment fonctionne le déblocage du compte gratuit ?",
     answer: ({ launchActive, ceilingWithArticle }) => (
       <>
-        Votre compte Découverte comprend le déblocage d’une vente : choisissez celle qui vous
-        intéresse le plus. Pour cette vente, vous avez l’analyse complète, c’est-à-dire tout ce que
+        Votre compte Découverte comprend le déblocage d’une vente : utilisez-le sur une vente qui
+        vous intéresse. Pour cette vente, vous avez l’analyse complète, c’est-à-dire tout ce que
         l’offre Analyse donne sur une vente, lorsqu’elle les comporte : {ceilingWithArticle},
         l’estimation détaillée et les ventes comparables, le budget travaux détaillé, la lecture des
         pièces, l’historique de la vente, les statistiques du tribunal de cette vente, l’urbanisme

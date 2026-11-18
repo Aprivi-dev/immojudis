@@ -1542,7 +1542,9 @@ describe("the free unlock on the sale page", () => {
 
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(
-      screen.getByText("Votre compte gratuit comprend le déblocage d’une vente : choisissez-la."),
+      screen.getByText(
+        "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.",
+      ),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Débloquer cette vente avec mon compte gratuit" }),

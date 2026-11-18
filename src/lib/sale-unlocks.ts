@@ -175,13 +175,27 @@ export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloqu�
 /** Le bouton de la fiche et le lien principal des aperçus payants. */
 export const UNLOCK_CALL_TO_ACTION_LABEL = "Débloquer cette vente avec mon compte gratuit";
 
-/** Sous le bouton, avant la confirmation. */
+/**
+ * Au-dessus du bouton, avant la confirmation. Le texte invite à se servir du déblocage (18/11/2026) :
+ * « choisissez-la » poussait à le garder en réserve.
+ */
 export const UNLOCK_CHOICE_TEXT =
-  "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.";
+  "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.";
 
-/** Dit avant le clic que le déblocage est définitif, et quand il est rendu. */
+/**
+ * Dit avant le clic que ce déblocage est celui du compte gratuit (il n'y en a qu'un), et quand il est
+ * rendu. Les offres et les conditions générales (article 2) disent qu'il est définitif.
+ */
 export const UNLOCK_CONFIRMATION_TEXT =
-  "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
+  "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
+
+/**
+ * Sous la confirmation, quand l'achat à l'unité est ouvert : ce déblocage n'est pas la dernière vente
+ * que le compte pourra ouvrir. `priceLabel` : le prix lu dans l'offre (« 19 € »), jamais écrit ici.
+ */
+export function unlockNextSaleText(priceLabel: string): string {
+  return `Ensuite, chaque autre vente s’ouvre à l’unité pour ${priceLabel}, ou toutes avec l’offre Analyse.`;
+}
 
 /** Le titre de la fiche quand le déblocage du compte a servi pour une autre vente. */
 export const UNLOCK_QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
