@@ -34,7 +34,12 @@ from src.pdf_progress import (
     stale_complete_document_urls,
 )
 from src.storage import supabase_client
-from src.storage.pdf_checkpoint_rules import _refused, last_checkpoint_refusal, reset_checkpoint_refusal
+from src.storage.pdf_checkpoint_rules import (
+    _refused,
+    last_checkpoint_refusal,
+    refused_checkpoint_message,
+    reset_checkpoint_refusal,
+)
 
 SALE_URL = "https://example.test/fin-de-passe"
 READ_URL = f"{SALE_URL}/cahier.pdf"
@@ -252,17 +257,17 @@ def test_the_persisted_manifest_is_a_copy_taken_before_the_pass() -> None:
 
 def test_the_refusal_reason_follows_the_prefix_the_backlog_reads() -> None:
     reset_checkpoint_refusal()
-    assert queued_runner._pdf_checkpoint_failure_message() == PREFIX
-    assert queued_runner._pdf_checkpoint_failure_message("OCR budget reached") == f"{PREFIX}: OCR budget reached"
+    assert refused_checkpoint_message() == PREFIX
+    assert refused_checkpoint_message("OCR budget reached") == f"{PREFIX}: OCR budget reached"
 
     _refused(SALE_URL, "no_progress_entries", READ_URL)
 
     assert last_checkpoint_refusal() == "no_progress_entries"  # le motif seul, sans l'URL de la pièce
-    nude = queued_runner._pdf_checkpoint_failure_message()
-    with_error = queued_runner._pdf_checkpoint_failure_message("Document extraction incomplete; retry required: 2")
+    nude = refused_checkpoint_message()
+    with_error = refused_checkpoint_message("Document extraction incomplete; retry required: 2")
     assert nude == f"{PREFIX}: no_progress_entries"
     assert with_error == f"{PREFIX}: no_progress_entries: Document extraction incomplete; retry required: 2"
-    assert queued_runner._pdf_checkpoint_failure_message(nude) == nude  # déjà préfixé : inchangé
+    assert refused_checkpoint_message(nude) == nude  # déjà préfixé : inchangé
     assert all(is_refused_checkpoint(message) for message in (PREFIX, nude, with_error))
 
 
@@ -275,7 +280,7 @@ def test_an_older_refusal_is_not_attributed_to_the_next_checkpoint(monkeypatch) 
     assert queued_runner._checkpoint_pdf_progress(_sale()) is False
 
     assert last_checkpoint_refusal() is None
-    assert queued_runner._pdf_checkpoint_failure_message() == PREFIX
+    assert refused_checkpoint_message() == PREFIX
 
 
 def test_a_checkpoint_refused_at_write_time_says_so() -> None:

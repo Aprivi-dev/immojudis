@@ -17,6 +17,10 @@ from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION, document_url, is_moder
 
 LOGGER = logging.getLogger(__name__)
 _LAST_REFUSAL_REASON: ContextVar[str | None] = ContextVar("pdf_checkpoint_last_refusal_reason", default=None)
+#: Refus d'un point d'étape sans aucune pièce lue : rien à enregistrer, ce n'est pas la cause d'un échec.
+NO_PROGRESS_ENTRIES = "no_progress_entries"
+#: Début du message d'une tâche pdf dont le point d'étape a été refusé (lu par ``document_backlog.is_refused_checkpoint``).
+CHECKPOINT_NOT_PERSISTED = "PDF document checkpoint was not persisted; retry required"
 
 
 def _manifest_urls(value: object) -> set[str] | None:
@@ -192,7 +196,7 @@ def _validate_pdf_document_checkpoint_payload(
         return _refused(source_url, "analysis_schema_or_fingerprint")
     progress = modern_progress_entries(analysis, sale.documents)
     if not progress:
-        return _refused(source_url, "no_progress_entries")
+        return _refused(source_url, NO_PROGRESS_ENTRIES)
     if not isinstance(payload, list) or not payload:
         return _refused(source_url, "no_local_text_cache")
     document_urls = {document_url(document) for document in sale.documents if document_url(document)}
@@ -266,3 +270,26 @@ def reset_checkpoint_refusal() -> None:
 def last_checkpoint_refusal() -> str | None:
     """Motif du dernier refus depuis ``reset_checkpoint_refusal``, ou ``None`` si rien n'a été refusé."""
     return _LAST_REFUSAL_REASON.get()
+
+
+def refused_checkpoint_message(error: object | None = None) -> str:
+    """Préfixe lu par ``is_refused_checkpoint``, motif mémorisé du refus, erreur. À n'appeler qu'après un essai de point
+    d'étape (``queued_runner._checkpoint_pdf_progress``)."""
+    text = "" if error is None else str(error)
+    if text.startswith(CHECKPOINT_NOT_PERSISTED):
+        return text
+    return ": ".join(part for part in (CHECKPOINT_NOT_PERSISTED, last_checkpoint_refusal(), text) if part)
+
+
+def failure_message_after_refusal(error: BaseException) -> str:
+    """Message d'une passe pdf en échec dont le point d'étape vient d'être refusé.
+
+    Refus ``no_progress_entries`` : la passe n'avait rien à enregistrer, le refus n'est pas la cause de l'échec. La
+    cause d'origine vient donc d'abord, sans le préfixe qui la cachait (« checkpoint was not persisted » pour un site
+    injoignable, 15-18/11/2026) ; le préfixe reste pour les autres motifs de refus (révision déplacée, analyse
+    périmée…) et pour une erreur qui est elle-même ce refus.
+    """
+    text = str(error)
+    if text and not text.startswith(CHECKPOINT_NOT_PERSISTED) and last_checkpoint_refusal() == NO_PROGRESS_ENTRIES:
+        return f"{text} (no checkpoint: {NO_PROGRESS_ENTRIES})"
+    return refused_checkpoint_message(error)

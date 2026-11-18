@@ -4,7 +4,9 @@
    dans 20261201100000 puis dans 20261205100000) ne prend pas la tâche.
 2. L'observateur de la file (``waits_for_pdf`` de sa dernière définition, 20261201100000) ne la compte pas comme
    immobile.
-3. Le worker (``storage.supabase_client.has_eligible_pdf_job_for_sale``) reporte une passe de faits.
+3. Le worker (``storage.supabase_client.eligible_pdf_job_due_at``) reporte une passe de faits jusqu'à l'échéance de
+   la tâche pdf. Ce test lit sa règle par ``has_eligible_pdf_job_for_sale``, qui n'est plus appelée que par les tests
+   et rend seulement « une telle tâche existe » d'après ``eligible_pdf_job_due_at``.
 
 Aucune fonction SQL ne les partage (seconde relecture du lot D, 14/11/2026) : ce test les fait changer ensemble.
 """
