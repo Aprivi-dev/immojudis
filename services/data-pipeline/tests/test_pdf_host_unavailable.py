@@ -5,9 +5,9 @@ toutes ses pièces, consommait un essai et finissait en « checkpoint was not pe
 nommer la cause. Rejoué sur le banc de la file (``tests/pdf_queue_bench.py``) : vrai code, faux réseau, fausse base.
 
 * robots.txt de l'hôte en panne passagère ou refusé : report sans essai jusqu'à la sonde suivante, tant que la panne
-  dure depuis moins de sept jours et que la tâche elle-même attend depuis moins de sept jours ;
-* erreur réseau de la pièce alors que robots.txt se lit, robots.txt en ``http_error``, panne ou tâche de plus de sept
-  jours : échec visible, essai consommé, nouvel essai espacé.
+  dure depuis moins de sept jours ;
+* erreur réseau de la pièce alors que robots.txt se lit, robots.txt en ``http_error``, panne de plus de sept jours :
+  échec visible, essai consommé, nouvel essai espacé.
 """
 
 from __future__ import annotations
@@ -30,8 +30,6 @@ from src.pdf_pass_outcomes import (
     DOCUMENT_NETWORK_FAILURE,
     HOST_OUTAGE_DEFERRAL_LIMIT,
     HOST_UNAVAILABLE_DEFERRAL,
-    network_failure_ending,
-    pdf_jobs_waiting_since,
 )
 from src.sources import robots_policy_store
 from src.sources.robots_policy_copies import (
@@ -47,8 +45,6 @@ from src.sources.robots_policy_copies import (
 from src.storage import supabase_client
 from src.storage.pdf_checkpoint_rules import _refused
 from tests.pdf_queue_bench import QueueBench, pdf_enrichment
-
-NetworkFailure = pdf_enrichment.NetworkFailure
 
 REAL_DOWNLOAD_RESPONSE = pdf_enrichment._download_document_response
 
@@ -291,47 +287,26 @@ def test_the_same_process_reads_the_documents_once_another_process_read_robots_t
     assert sorted(bench.requests) == DOCUMENTS
 
 
-def test_a_job_waiting_for_seven_days_spends_its_attempt_even_when_the_outage_looks_new(
+def test_an_old_job_is_deferred_without_spending_an_attempt_during_a_recent_outage(
     bench: QueueBench, monkeypatch
 ) -> None:
-    # robots.txt se lit de temps en temps : la série d'échecs repart de 1 et la panne paraît toujours récente. La
-    # tâche elle-même attend depuis plus de sept jours (``created_at``) : l'essai est consommé.
+    # ``created_at`` ne mesure pas depuis quand la tâche est reportée : une tâche réarmée chaque jour le garde. Une
+    # panne d'un jour du site ne doit pas consommer ses essais.
     SharedRobots(monkeypatch)
     RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
     bench.publish(DOCUMENTS)
     bench.drain()
     job = bench.jobs[-1]
     assert job["status"] == "queued"
-    created = datetime.now(UTC) - HOST_OUTAGE_DEFERRAL_LIMIT
-    job["created_at"] = created
+    job["created_at"] = datetime.now(UTC) - timedelta(days=30)
 
     bench.age(1.02)
     bench.drain()
 
-    assert (job["status"], job["attempt_count"]) == ("failed", 1)
-    assert job["last_error"].startswith(
-        f"{DOCUMENT_NETWORK_FAILURE}: {HOST} (robots.txt timeout); job queued since "
-        f"{created.isoformat(timespec='minutes')}, no document read"
-    )
-    assert _close_to(_wait(job), timedelta(hours=2))  # toujours la sonde suivante
-
-
-@pytest.mark.parametrize(
-    ("waiting", "deferred"),
-    [(timedelta(days=6, hours=23), True), (HOST_OUTAGE_DEFERRAL_LIMIT, False), (None, False)],
-)
-def test_the_deferral_is_bounded_by_the_wait_of_the_job_itself(waiting: timedelta | None, deferred: bool) -> None:
-    now = datetime.now(UTC)
-    failure = RobotsFailure(TIMEOUT, now, 1, "documents")
-    stats = pdf_enrichment.PdfEnrichmentStats(errors=1)
-    stats.network_failures.append(NetworkFailure(f"https://{HOST}", "robots.txt timeout", True, failure))
-    jobs = [{"job_type": "pdf", "created_at": (now - waiting).isoformat() if waiting is not None else None}]
-
-    ending = network_failure_ending(stats, pdf_jobs_waiting_since(jobs))
-
-    assert type(ending).__name__ == ("QueueJobDeferred" if deferred else "SpacedPdfFailure")
-    if waiting is None:
-        assert "job queued since an unknown time" in str(ending)
+    assert (job["status"], job["attempt_count"]) == ("queued", 0)
+    assert job["last_error"].startswith(f"{HOST_UNAVAILABLE_DEFERRAL}: {HOST} (robots.txt timeout)")
+    assert _close_to(_wait(job), timedelta(hours=2))
+    assert bench.requests == []
 
 
 def test_a_site_that_refuses_robots_txt_defers_the_job_until_the_next_probe(bench: QueueBench, monkeypatch) -> None:

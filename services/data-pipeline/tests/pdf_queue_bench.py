@@ -235,7 +235,6 @@ class QueueBench:
             "locked_at": None,
             "completed_at": None,
             "last_error": "",
-            "created_at": datetime.now(UTC),
         }
         self.jobs.append(job)
         return job
@@ -251,8 +250,6 @@ class QueueBench:
             return None
         if job["status"] in {"completed", "cancelled"} or job["attempt_count"] >= job["max_attempts"]:
             job["attempt_count"] = 0
-        if job["status"] in {"completed", "cancelled"}:
-            job["created_at"] = datetime.now(UTC)
         job.update(status="queued", next_attempt_at=datetime.now(UTC), completed_at=None, last_error="")
         return job["id"]
 
