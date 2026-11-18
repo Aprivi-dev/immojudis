@@ -95,7 +95,9 @@ describe("SaleUnlockPanel", () => {
 
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(
-      screen.getByText("Votre compte gratuit comprend le déblocage d’une vente : choisissez-la."),
+      screen.getByText(
+        "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.",
+      ),
     ).toBeTruthy();
     expect(screen.getByText(/Déblocage du compte gratuit/)).toBeTruthy();
     expect(
@@ -187,15 +189,34 @@ describe("SaleUnlockPanel", () => {
 
     expect(
       screen.getByText(
-        "Ce déblocage est définitif : votre compte gratuit n’en comprend qu’un. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
+        "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).",
       ),
     ).toBeTruthy();
     expect(mocks.unlock).not.toHaveBeenCalled();
     expect(mocks.track).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
-    expect(screen.queryByText(/définitif/)).toBeNull();
+    expect(screen.queryByText(/Vous utilisez le déblocage/)).toBeNull();
     expect(mocks.unlock).not.toHaveBeenCalled();
+  });
+
+  it("says under the confirmation that other sales can be bought, only once that purchase is open", () => {
+    const label = "Débloquer cette vente avec mon compte gratuit";
+    const { unmount } = render(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(screen.queryByTestId("unlock-next-sale")).toBeNull();
+    unmount();
+
+    mocks.purchase = { label: "19 €", amountCents: 1900 };
+    render(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(screen.getByTestId("unlock-next-sale").textContent).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse.",
+    );
   });
 
   it("unlocks once confirmed and reports the result", async () => {

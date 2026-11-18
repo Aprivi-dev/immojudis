@@ -222,7 +222,8 @@ async function setup(
 // Textes de `src/lib/sale-unlocks.ts` (UNLOCK_CALL_TO_ACTION_LABEL, UNLOCK_CHOICE_TEXT,
 // UNLOCK_QUOTA_REACHED_TITLE, unlockQuotaReachedText).
 const UNLOCK_LABEL = "Débloquer cette vente avec mon compte gratuit";
-const CHOICE_TEXT = "Votre compte gratuit comprend le déblocage d’une vente : choisissez-la.";
+const CHOICE_TEXT =
+  "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.";
 const QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
 
 const unlockButton = (page: Page) => page.getByRole("button", { name: UNLOCK_LABEL, exact: true });

@@ -49,7 +49,7 @@ function accessSentence(
   if (plan.hasAnalysisAccess) {
     return "Votre compte a l’offre Analyse : elle ouvre toutes les ventes (contenu selon la vente).";
   }
-  const unlocks = `Votre compte gratuit vous permet de débloquer une vente (${unlockHighlights}). L’offre Analyse les ouvre toutes.`;
+  const unlocks = `Votre compte gratuit comprend le déblocage d’une vente (${unlockHighlights}) : utilisez-le dès la première fiche qui vous intéresse. L’offre Analyse les ouvre toutes.`;
   if (plan.trialEndedAt) {
     return `Votre essai gratuit s’est terminé le ${signupTrialDateLabel(plan.trialEndedAt)} : votre compte est revenu à l’offre Découverte. ${unlocks}`;
   }
