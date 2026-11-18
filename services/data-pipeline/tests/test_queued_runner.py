@@ -520,7 +520,7 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
     monkeypatch.setattr(queued_runner, "needs_fact_extraction", lambda current: True)
     monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda current: True)
     monkeypatch.setattr(queued_runner, "documents_are_current", lambda current: False)
-    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda source_url: False)
+    monkeypatch.setattr(queued_runner, "eligible_pdf_job_due_at", lambda source_url: None)
     monkeypatch.setattr(
         queued_runner,
         "create_llm_client",
@@ -1901,7 +1901,7 @@ def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> 
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
-    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
+    monkeypatch.setattr(queued_runner, "eligible_pdf_job_due_at", lambda _: datetime.now(UTC))
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(
         queued_runner,
@@ -1962,7 +1962,7 @@ def test_fact_job_stops_waiting_when_pdf_prerequisite_is_terminal(monkeypatch) -
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
-    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
+    monkeypatch.setattr(queued_runner, "eligible_pdf_job_due_at", lambda _: None)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(
         queued_runner,
@@ -2022,7 +2022,7 @@ def test_fact_job_with_partial_pdf_manifest_is_deferred_without_llm(monkeypatch)
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
-    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
+    monkeypatch.setattr(queued_runner, "eligible_pdf_job_due_at", lambda _: datetime.now(UTC))
     monkeypatch.setattr(
         queued_runner,
         "create_llm_client",
@@ -2105,7 +2105,7 @@ def test_fact_job_with_current_exhausted_pdf_failure_is_reviewed_without_llm(mon
     )
     monkeypatch.setattr(
         queued_runner,
-        "has_eligible_pdf_job_for_sale",
+        "eligible_pdf_job_due_at",
         lambda _: (_ for _ in ()).throw(AssertionError("exhausted PDF state must not recheck eligibility")),
     )
     monkeypatch.setattr(
@@ -2863,7 +2863,7 @@ def test_partial_manifest_without_an_advancing_pdf_job_waits_six_hours(monkeypat
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
-    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
+    monkeypatch.setattr(queued_runner, "eligible_pdf_job_due_at", lambda _: None)
     monkeypatch.setattr(queued_runner, "_pdf_failure_reached_retry_cap", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: pytest.fail("partial PDF evidence must not invoke the LLM"))
     monkeypatch.setattr(queued_runner, "defer_budget_jobs", lambda jobs, error: deferred.append((jobs, error)))

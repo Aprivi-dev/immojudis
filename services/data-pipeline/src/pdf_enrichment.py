@@ -26,6 +26,8 @@ from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR,
 from src.document_politeness import (
     DocumentPoliteness,
     DocumentRobotsDisallowed,
+    DocumentRobotsUnavailable,
+    document_network_failure,
     fetch_robots_document,
     host_unavailability,
     pause_within_deadline,
@@ -82,6 +84,7 @@ from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
+from src.sources.robots_policy_copies import RobotsFailure
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_restore_value_before_document, pdf_source_reader
 
@@ -97,11 +100,26 @@ PDF_FINALIZATION_MARGIN_SECONDS = 60.0
 
 @dataclass(frozen=True)
 class UnavailableHost:
-    """Téléchargement d'une pièce en erreur parce que son site ne répond pas ou refuse l'accès (``pdf_pass_outcomes``)."""
+    """Téléchargement d'une pièce en erreur réseau (``pdf_pass_outcomes``).
 
-    url: str
-    nature: str  # ``document_politeness.host_unavailability``
-    next_robots_read_at: datetime | None  # ``DocumentPoliteness.next_robots_read_at``
+    ``host_level`` : robots.txt de l'hôte en panne passagère ou refusé (``document_politeness.host_unavailability``),
+    preuve que tout l'hôte est indisponible ; sinon, la pièce elle-même a répondu 429 ou 5xx, ou n'a pas répondu
+    (``document_politeness.document_network_failure``).
+    """
+
+    origin: str  # l'origine en cause : celle dont robots.txt a échoué (redirection comprise), sinon celle de la pièce
+    nature: str
+    host_level: bool
+    robots_failure: RobotsFailure | None = None  # ``DocumentPoliteness.robots_failure`` (hôte seulement)
+
+
+def _unavailable_host(url: str, error: BaseException) -> UnavailableHost | None:
+    if (nature := host_unavailability(error)) is not None:
+        origin = (error.origin if isinstance(error, DocumentRobotsUnavailable) else None) or url
+        return UnavailableHost(origin, nature, True, _DOCUMENT_POLITENESS.robots_failure(origin))
+    if (nature := document_network_failure(error)) is not None:
+        return UnavailableHost(url, nature, False)
+    return None
 
 
 @dataclass
@@ -114,7 +132,7 @@ class PdfEnrichmentStats:
     documents_processed: int = 0
     blocked_document_urls: list[str] = field(default_factory=list)
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
-    # Erreurs de téléchargement dues au site (comptées aussi dans ``errors``).
+    # Erreurs réseau de téléchargement, de l'hôte ou de la pièce (comptées aussi dans ``errors``).
     unavailable_hosts: list[UnavailableHost] = field(default_factory=list)
 
 
@@ -518,10 +536,8 @@ def download_documents(
                     LOGGER.warning("PDF download failed for %s: %s", url, download_error)
                     if stats:
                         stats.errors += 1
-                        if (nature := host_unavailability(download_error)) is not None:
-                            stats.unavailable_hosts.append(
-                                UnavailableHost(url, nature, _DOCUMENT_POLITENESS.next_robots_read_at(url))
-                            )
+                        if (unavailable := _unavailable_host(url, download_error)) is not None:
+                            stats.unavailable_hosts.append(unavailable)
                 continue
         ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)

@@ -66,9 +66,11 @@ from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_pass_outcomes import (
     complete_manifest_with_excluded_url,
     discarded_write_ending,
+    facts_wait_for_pdf,
     final_write_was_discarded,
-    host_unavailable_deferral,
+    network_failure_ending,
     nothing_due_deferral,
+    pdf_failure_ending,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import (
@@ -86,14 +88,15 @@ from src.source_task_deadline import source_task_deadline_scope
 from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
 from src.storage.pdf_checkpoint_rules import (
     failure_message_after_refusal,
+    refused_checkpoint_message,
     reset_checkpoint_refusal,
 )
-from src.storage.pdf_checkpoint_rules import refused_checkpoint_message as _pdf_checkpoint_failure_message
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
     close_open_run_in_supabase,
     connect,
+    eligible_pdf_job_due_at,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
     fetch_next_queued_run_from_supabase,
@@ -101,7 +104,6 @@ from src.storage.supabase_client import (
     finish_auction_enrichment_job_in_supabase,
     finish_data_refresh_request_in_supabase,
     has_active_running_run_in_supabase,
-    has_eligible_pdf_job_for_sale,
     mark_past_sales_in_supabase,
     pdf_enrichment_input_hash_for_sale,
     persist_pdf_document_checkpoint_to_supabase,
@@ -452,7 +454,7 @@ def _consume_pdf_retry_after_checkpoint_failure(
     dependent_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "pdf"]
     checkpoint_error = getattr(error, "partial_cache_error", None)
     detail = checkpoint_error or error
-    message = _pdf_checkpoint_failure_message(detail)
+    message = refused_checkpoint_message(detail)
     for job in pdf_jobs:
         _finish_job(job, succeeded=False, error_message=message)
     if dependent_jobs:
@@ -724,9 +726,9 @@ def run_enrichment_queue_batch(
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
-                    # Site des pièces injoignable ou fermé, rien de lu : report sans essai (src/pdf_pass_outcomes.py).
-                    if (unavailable := host_unavailable_deferral(pdf_stats)) is not None:
-                        raise unavailable
+                    # Erreurs réseau seulement, rien de lu : report sans essai ou échec espacé (src/pdf_pass_outcomes.py).
+                    if (network_ending := network_failure_ending(pdf_stats)) is not None:
+                        raise network_ending
                     failed_urls = analysis.get("failed_document_urls") or []
                     failed_paths = [
                         f"{urlsplit(str(url)).hostname}{urlsplit(str(url)).path}"[:180]
@@ -760,7 +762,7 @@ def run_enrichment_queue_batch(
                     )
                     checkpointed = _checkpoint_pdf_progress(sale, pdf_job=pdf_job)
                     if not checkpointed:
-                        raise RuntimeError(_pdf_checkpoint_failure_message())
+                        raise RuntimeError(refused_checkpoint_message())
                     raise QueueJobDeferred(
                         "PDF document manifest is partial; continue the next bounded pass"
                     )
@@ -797,10 +799,8 @@ def run_enrichment_queue_batch(
                     and _pdf_failure_reached_retry_cap(sale, source_url, settings=settings)
                 )
                 if terminal_pdf_evidence or missing_pdf_prerequisite:
-                    if missing_pdf_prerequisite and not pdf_retry_exhausted and has_eligible_pdf_job_for_sale(source_url):
-                        raise QueueJobDeferred(
-                            "Fact extraction deferred: PDF text cache is missing or incomplete"
-                        )
+                    if missing_pdf_prerequisite and not pdf_retry_exhausted and (pdf_due := eligible_pdf_job_due_at(source_url)):
+                        raise facts_wait_for_pdf(pdf_due)
                     if missing_pdf_prerequisite and not pdf_retry_exhausted and not manifest_is_complete(
                         sale.raw_payload.get("document_analysis"), sale.documents
                     ):
@@ -943,7 +943,7 @@ def run_enrichment_queue_batch(
                 # their attempts because they still have no usable evidence.
                 checkpointed = _persist_pdf_progress_before_defer(sale, sale_jobs, exc)
                 message = (
-                    _pdf_checkpoint_failure_message(exc)
+                    refused_checkpoint_message(exc)
                     if not checkpointed
                     else f"{exc}; no new page progress, retry budget consumed"
                 )
@@ -1052,11 +1052,7 @@ def run_enrichment_queue_batch(
             if pdf_failure and dependent_jobs:
                 pdf_error_message = failure_message_after_refusal(exc) if not checkpoint_persisted else str(exc)
                 for job in pdf_jobs:
-                    _finish_job(
-                        job,
-                        succeeded=False,
-                        error_message=pdf_error_message,
-                    )
+                    _finish_job(job, **pdf_failure_ending(exc, pdf_error_message))
                 deferred = QueueJobDeferred(
                     "Dependent enrichment deferred until the PDF retry state is resolved"
                 )
@@ -1075,10 +1071,7 @@ def run_enrichment_queue_batch(
                     if not checkpoint_persisted and str(job.get("job_type") or "") == "pdf"
                     else str(exc)
                 )
-                _finish_job(job,
-                    succeeded=False,
-                    error_message=error_message,
-                )
+                _finish_job(job, **pdf_failure_ending(exc, error_message))
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
         for job in sale_jobs:

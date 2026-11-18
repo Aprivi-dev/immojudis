@@ -210,6 +210,13 @@ class RobotsFailure:
     def probe_not_before(self) -> datetime:
         return self.failed_at + probe_interval(self.count)
 
+    def series_started_at(self) -> datetime:
+        """Début estimé de la série d'échecs consécutifs, que la table ne garde pas : le dernier échec moins les
+        espacements des sondes qui l'ont précédé (60 min, 2 h, 4 h, puis 6 h). Des échecs plus rapprochés (deux
+        processus à la même sonde, ``http_error`` relus sans attente) avancent l'estimation, jamais l'inverse tant
+        que chaque sonde a lieu à son heure."""
+        return self.failed_at - sum((probe_interval(count) for count in range(1, self.count)), timedelta(0))
+
     def to_json(self) -> dict[str, Any]:
         return {"failure_class": self.failure_class, "failed_at": self.failed_at.isoformat(), "count": self.count,
                 "recorded_by": self.recorded_by}
