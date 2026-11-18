@@ -47,6 +47,7 @@ from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_pass_outcomes import waits_for_its_deadline
+from src.storage.pdf_checkpoint_rules import CHECKPOINT_NOT_PERSISTED
 
 if TYPE_CHECKING:
     from src.catalogue_lock import CatalogueLockHandle
@@ -313,7 +314,6 @@ JOB_STATE_SQL = "select status, last_error from public.auction_enrichment_jobs w
 # laisse sa tâche en file avec PARTIAL_MANIFEST_ERROR, ou la voit remplacée après son point d'étape durable.
 PARTIAL_MANIFEST_ERROR = "pdf document manifest is partial"
 DURABLE_CHECKPOINT_SUPERSEDED = "superseded after durable pdf checkpoint"
-REFUSED_CHECKPOINT_ERROR = "pdf document checkpoint was not persisted"
 
 
 def is_partial_pass(status: str, last_error: str) -> bool:
@@ -324,7 +324,7 @@ def is_partial_pass(status: str, last_error: str) -> bool:
 
 
 def is_refused_checkpoint(last_error: str) -> bool:
-    return REFUSED_CHECKPOINT_ERROR in last_error.lower()
+    return CHECKPOINT_NOT_PERSISTED.lower() in last_error.lower()
 
 DOCUMENT_COUNTS_SQL = """
 select coalesce(extraction_status, 'pending'), count(*)

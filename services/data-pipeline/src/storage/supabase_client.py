@@ -897,10 +897,22 @@ def claim_auction_enrichment_jobs_from_supabase(
 def has_eligible_pdf_job_for_sale(source_url: str) -> bool:
     """Check whether a PDF prerequisite can still advance for this sale."""
 
-    return any(
-        row.get("status") == "running"
-        or int(row.get("attempt_count") or 0) < int(row.get("max_attempts") or 0)
-        for row in read_pdf_job_states_for_sale(source_url)
+    return eligible_pdf_job_due_at(source_url) is not None
+
+
+def eligible_pdf_job_due_at(source_url: str) -> datetime | None:
+    """Heure à laquelle la première tâche pdf de la vente qui peut encore avancer sera due (maintenant si elle tourne
+    ou si son échéance est inconnue) ; ``None`` sans telle tâche (même règle que ``has_eligible_pdf_job_for_sale``)."""
+
+    now = datetime.now(UTC)
+    return min(
+        (
+            now if row.get("status") == "running" else aware_timestamp(row.get("next_attempt_at")) or now
+            for row in read_pdf_job_states_for_sale(source_url)
+            if row.get("status") == "running"
+            or int(row.get("attempt_count") or 0) < int(row.get("max_attempts") or 0)
+        ),
+        default=None,
     )
 
 
@@ -922,7 +934,7 @@ def read_pdf_job_states_for_sale(
     if not url or not key:
         raise RuntimeError("Supabase credentials are required to inspect PDF prerequisites")
     params = {
-        "select": "id,status,attempt_count,max_attempts,input_hash,created_at,updated_at",
+        "select": "id,status,attempt_count,max_attempts,input_hash,next_attempt_at,created_at,updated_at",
         "source_url": f"eq.{source_url}",
         "job_type": "eq.pdf",
         "order": "created_at.desc",

@@ -26,7 +26,10 @@ from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR,
 from src.document_politeness import (
     DocumentPoliteness,
     DocumentRobotsDisallowed,
+    DocumentRobotsUnavailable,
+    document_network_failure,
     fetch_robots_document,
+    host_unavailability,
     pause_within_deadline,
 )
 from src.encheres_publiques_guard import (
@@ -81,6 +84,7 @@ from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
+from src.sources.robots_policy_copies import RobotsFailure
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_restore_value_before_document, pdf_source_reader
 
@@ -94,6 +98,31 @@ MAX_DOCUMENT_REDIRECTS = 5
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
 
 
+@dataclass(frozen=True)
+class NetworkFailure:
+    """Téléchargement d'une pièce en erreur réseau (``pdf_pass_outcomes``).
+
+    ``host_level`` : robots.txt de l'hôte en panne passagère ou refusé (``document_politeness.host_unavailability``),
+    preuve que tout l'hôte est indisponible ; sinon, la pièce elle-même a répondu 429 ou 5xx, ou n'a pas répondu
+    (``document_politeness.document_network_failure``).
+    """
+
+    origin: str  # l'origine en cause : celle dont robots.txt a échoué (redirection comprise), sinon celle de la pièce
+    nature: str
+    host_level: bool
+    # L'échec que porte l'exception (``DocumentRobotsUnavailable.robots_failure``, hôte seulement) ; ``None`` sans
+    # copie commune.
+    robots_failure: RobotsFailure | None = None
+
+
+def _network_failure(url: str, error: BaseException) -> NetworkFailure | None:
+    if (nature := host_unavailability(error)) is not None and isinstance(error, DocumentRobotsUnavailable):
+        return NetworkFailure(error.origin or url, nature, True, error.robots_failure)
+    if (nature := document_network_failure(error)) is not None:
+        return NetworkFailure(url, nature, False)
+    return None
+
+
 @dataclass
 class PdfEnrichmentStats:
     downloaded: int = 0
@@ -104,6 +133,8 @@ class PdfEnrichmentStats:
     documents_processed: int = 0
     blocked_document_urls: list[str] = field(default_factory=list)
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
+    # Erreurs réseau de téléchargement, de l'hôte ou de la pièce (comptées aussi dans ``errors``).
+    network_failures: list[NetworkFailure] = field(default_factory=list)
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -506,6 +537,8 @@ def download_documents(
                     LOGGER.warning("PDF download failed for %s: %s", url, download_error)
                     if stats:
                         stats.errors += 1
+                        if (network_failure := _network_failure(url, download_error)) is not None:
+                            stats.network_failures.append(network_failure)
                 continue
         ensure_pdf_deadline(operation="finalizing downloaded document")
         enriched_document = dict(document)

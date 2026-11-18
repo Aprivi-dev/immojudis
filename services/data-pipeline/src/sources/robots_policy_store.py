@@ -58,7 +58,8 @@ _SAVE_FAILURE_SQL = """insert into app_private.robots_policies
         then robots_policies.failure_count + 1
       else 1 end,
     updated_at = now()
-  where robots_policies.last_failure_at is null or robots_policies.last_failure_at <= excluded.last_failure_at"""
+  where robots_policies.last_failure_at is null or robots_policies.last_failure_at <= excluded.last_failure_at
+  returning last_failure_class, last_failure_at, failure_count, last_failure_by"""
 
 _state = {"disabled": False}
 _state_lock = threading.Lock()
@@ -80,7 +81,7 @@ def _run(sql: str, parameters: tuple[Any, ...], *, fetch: bool) -> Any:
     try:
         with shared_postgres_connection(db_url) as db:
             cursor = db.execute(sql, parameters)
-            return cursor.fetchone() if fetch else True
+            return cursor.fetchall() if fetch else True
     except Exception as exc:  # noqa: BLE001 - copie facultative : sans elle, robots.txt est lu comme avant
         if getattr(exc, "sqlstate", None) == UNDEFINED_TABLE_SQLSTATE:
             with _state_lock:
@@ -93,10 +94,10 @@ def _run(sql: str, parameters: tuple[Any, ...], *, fetch: bool) -> Any:
 
 def load(origin_key: str) -> SharedPolicy | None:
     """La copie commune de cette origine (``None`` : rien de connu, ou pas de copie commune)."""
-    row = _run(_SELECT_SQL, (origin_key,), fetch=True)
-    if not row:
+    rows = _run(_SELECT_SQL, (origin_key,), fetch=True)
+    if not rows:
         return None
-    rules, crawl_delay, verified_at, digest, failure_class, failed_at, failure_count, failure_by = row
+    rules, crawl_delay, verified_at, digest, failure_class, failed_at, failure_count, failure_by = rows[0]
     copy = None
     if verified_at is not None:
         copy = RobotsPolicyCopy.from_json({
@@ -104,13 +105,15 @@ def load(origin_key: str) -> SharedPolicy | None:
             "verified_at": verified_at.isoformat() if isinstance(verified_at, datetime) else verified_at,
             "user_agent_digest": digest,
         })
+    return SharedPolicy(copy=copy, failure=_failure(failure_class, failed_at, failure_count, failure_by))
+
+
+def _failure(failure_class: Any, failed_at: Any, failure_count: Any, failure_by: Any) -> RobotsFailure | None:
     failed = aware_timestamp(failed_at)
-    failure = (
-        RobotsFailure(str(failure_class), failed, max(1, int(failure_count or 1)),
-                      str(failure_by) if failure_by else None)
-        if failure_class and failed is not None else None
-    )
-    return SharedPolicy(copy=copy, failure=failure)
+    if not failure_class or failed is None:
+        return None
+    return RobotsFailure(str(failure_class), failed, max(1, int(failure_count or 1)),
+                         str(failure_by) if failure_by else None)
 
 
 def save_verified(origin_key: str, copy: RobotsPolicyCopy) -> None:
@@ -123,6 +126,20 @@ def save_verified(origin_key: str, copy: RobotsPolicyCopy) -> None:
     )
 
 
-def save_failure(origin_key: str, failure: RobotsFailure) -> None:
-    """Un échec de lecture : la copie déjà gardée reste (repli d'une panne passagère, 24 h au plus)."""
-    _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at, failure.recorded_by), fetch=False)
+def save_failure(origin_key: str, failure: RobotsFailure) -> RobotsFailure | None:
+    """Un échec de lecture : la copie déjà gardée reste (repli d'une panne passagère, 24 h au plus).
+
+    Rend l'échec tel que la copie commune le garde, avec le nombre d'échecs consécutifs : celui-ci, ou un échec plus
+    récent relevé par un autre processus. ``None`` sans copie commune (pas de base, table absente, base injoignable).
+    """
+    rows = _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at, failure.recorded_by),
+                fetch=True)
+    if rows is None:  # pas de copie commune : rien à relire
+        return None
+    if rows:
+        return _failure(*rows[0])
+    shared = load(origin_key)  # un échec plus récent l'a emporté (``where`` de ``_SAVE_FAILURE_SQL``)
+    if shared is None:
+        return None
+    # Une lecture réussie depuis a effacé la série : cet échec en ouvre une nouvelle, au lieu de « copie absente ».
+    return shared.failure or failure
