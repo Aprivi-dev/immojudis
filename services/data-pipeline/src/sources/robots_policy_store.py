@@ -81,7 +81,7 @@ def _run(sql: str, parameters: tuple[Any, ...], *, fetch: bool) -> Any:
     try:
         with shared_postgres_connection(db_url) as db:
             cursor = db.execute(sql, parameters)
-            return cursor.fetchone() if fetch else True
+            return cursor.fetchall() if fetch else True
     except Exception as exc:  # noqa: BLE001 - copie facultative : sans elle, robots.txt est lu comme avant
         if getattr(exc, "sqlstate", None) == UNDEFINED_TABLE_SQLSTATE:
             with _state_lock:
@@ -94,10 +94,10 @@ def _run(sql: str, parameters: tuple[Any, ...], *, fetch: bool) -> Any:
 
 def load(origin_key: str) -> SharedPolicy | None:
     """La copie commune de cette origine (``None`` : rien de connu, ou pas de copie commune)."""
-    row = _run(_SELECT_SQL, (origin_key,), fetch=True)
-    if not row:
+    rows = _run(_SELECT_SQL, (origin_key,), fetch=True)
+    if not rows:
         return None
-    rules, crawl_delay, verified_at, digest, failure_class, failed_at, failure_count, failure_by = row
+    rules, crawl_delay, verified_at, digest, failure_class, failed_at, failure_count, failure_by = rows[0]
     copy = None
     if verified_at is not None:
         copy = RobotsPolicyCopy.from_json({
@@ -132,9 +132,14 @@ def save_failure(origin_key: str, failure: RobotsFailure) -> RobotsFailure | Non
     Rend l'échec tel que la copie commune le garde, avec le nombre d'échecs consécutifs : celui-ci, ou un échec plus
     récent relevé par un autre processus. ``None`` sans copie commune (pas de base, table absente, base injoignable).
     """
-    row = _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at, failure.recorded_by),
-               fetch=True)
-    if row:
-        return _failure(*row)
+    rows = _run(_SAVE_FAILURE_SQL, (origin_key, failure.failure_class, failure.failed_at, failure.recorded_by),
+                fetch=True)
+    if rows is None:  # pas de copie commune : rien à relire
+        return None
+    if rows:
+        return _failure(*rows[0])
     shared = load(origin_key)  # un échec plus récent l'a emporté (``where`` de ``_SAVE_FAILURE_SQL``)
-    return shared.failure if shared is not None else None
+    if shared is None:
+        return None
+    # Une lecture réussie depuis a effacé la série : cet échec en ouvre une nouvelle, au lieu de « copie absente ».
+    return shared.failure or failure

@@ -63,8 +63,8 @@ class DocumentRobotsUnavailable(Exception):
     ``robots_failure`` : l'échec tel que la copie commune le garde au moment où l'exception est levée (nombre d'échecs
     consécutifs, heure de la sonde suivante), ``None`` sans copie commune. ``pdf_pass_outcomes`` décide du report sur
     lui, sans relire la copie commune ;
-    ``valid_until`` : heure de la sonde suivante ; jusque-là, ce processus rend l'échec sans rien relire. Sans copie
-    commune, ``PROBE_INTERVAL`` après l'échec.
+    ``valid_until`` : heure de la sonde suivante ; jusque-là, ce processus rend l'échec sans rien relire. ``None`` :
+    l'échec vaut pour la vie du processus.
     """
 
     def __init__(
@@ -79,10 +79,12 @@ class DocumentRobotsUnavailable(Exception):
         self.failure_class = failure_class
         self.origin = origin
         self.robots_failure = robots_failure
+        # Seule la sonde commune (``before_fetch``, échec de niveau hôte) borne la relecture ; sans elle, relire
+        # ferait une requête de plus par site qu'avant : l'échec vaut alors pour la vie du processus.
         self.valid_until = (
             robots_failure.probe_not_before()
-            if robots_failure is not None
-            else datetime.now(UTC) + robots_policy_copies.PROBE_INTERVAL
+            if robots_failure is not None and robots_failure.failure_class in HOST_LEVEL_FAILURES
+            else None
         )
 
 
@@ -153,10 +155,14 @@ class DocumentPoliteness:
     def _rules_for(self, origin: str) -> RobotsRules:
         with self._lock:
             known = self._rules.get(origin)
-        # Un échec ne vaut que jusqu'à la sonde suivante : un processus de vidage vit jusqu'à 150 min, et les tâches
-        # reportées reviennent justement à cette heure. Passé elle, la copie commune décide (sonde, ou échec plus
-        # récent d'un autre processus, ou lecture réussie), comme pour un processus neuf.
-        if known is None or (isinstance(known, DocumentRobotsUnavailable) and datetime.now(UTC) >= known.valid_until):
+        # Un échec ne vaut que jusqu'à la sonde suivante (``valid_until``) : un processus de vidage vit jusqu'à
+        # 150 min, et les tâches reportées reviennent justement à cette heure. Passé elle, la copie commune décide
+        # (sonde, ou échec plus récent d'un autre processus, ou lecture réussie), comme pour un processus neuf.
+        if known is None or (
+            isinstance(known, DocumentRobotsUnavailable)
+            and known.valid_until is not None
+            and datetime.now(UTC) >= known.valid_until
+        ):
             known = self._load_rules(origin)
             with self._lock:
                 self._rules[origin] = known

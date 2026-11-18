@@ -399,6 +399,28 @@ def test_an_anomaly_of_robots_txt_stays_a_visible_failure(bench: QueueBench, mon
     assert bench.requests == []
 
 
+def _visits_of_a_long_process(bench: QueueBench) -> None:
+    """Le même processus revient sur la vente à t+61 min puis t+121 min (vidage de 150 min au plus)."""
+    bench.drain()
+    for _ in range(2):
+        bench.age(1.02)
+        bench.publish(DOCUMENTS)
+        bench.drain()
+
+
+def test_a_long_process_does_not_read_robots_txt_again_after_an_anomaly(bench: QueueBench, monkeypatch) -> None:
+    # La copie commune n'impose aucune attente après une ``http_error`` : seul l'échec gardé par le processus
+    # empêche de relire robots.txt, pour toute sa vie, comme avant la sonde commune.
+    SharedRobots(monkeypatch)
+    site = RobotsSite(bench, monkeypatch, 400)
+    bench.publish(DOCUMENTS)
+
+    _visits_of_a_long_process(bench)
+
+    assert len(site.robots_requests) == 1
+    assert bench.requests == []
+
+
 @pytest.mark.parametrize(("failures", "deferred"), [(29, True), (31, False)])
 def test_the_deferral_stops_after_seven_days_of_continuous_outage(
     bench: QueueBench, monkeypatch, failures: int, deferred: bool
@@ -444,6 +466,39 @@ def test_without_a_trace_of_the_outage_the_attempt_is_spent(bench: QueueBench, m
         "unavailable)"
     )
     assert _close_to(_wait(job), timedelta(hours=6))
+
+
+def test_without_a_shared_record_a_long_process_does_not_read_robots_txt_again(
+    bench: QueueBench, monkeypatch
+) -> None:
+    # Sans copie commune, pas de sonde commune : l'échec vaut pour la vie du processus, sans relecture à t+60 et t+120.
+    monkeypatch.setattr(robots_policy_store, "load", lambda _key: None)
+    monkeypatch.setattr(robots_policy_store, "save_failure", lambda _key, _failure: None)
+    site = RobotsSite(bench, monkeypatch, httpx.ReadTimeout("timed out"))
+    bench.publish(DOCUMENTS)
+
+    _visits_of_a_long_process(bench)
+
+    assert len(site.robots_requests) == 1
+    assert bench.requests == []
+
+
+def test_an_unreachable_shared_record_is_not_read_again_after_the_failed_write(monkeypatch) -> None:
+    monkeypatch.setattr(robots_policy_store, "_run", lambda _sql, _parameters, *, fetch: None)
+    monkeypatch.setattr(robots_policy_store, "load", lambda _key: pytest.fail("no second connection"))
+
+    assert robots_policy_store.save_failure(SharedRobots.key(HOST), RobotsFailure(TIMEOUT, datetime.now(UTC))) is None
+
+
+def test_a_failure_overtaken_by_a_successful_read_opens_a_new_series(monkeypatch) -> None:
+    # L'écriture n'a rien mis à jour (échec plus récent ailleurs), puis un autre processus a lu robots.txt : la ligne
+    # relue n'a plus d'échec. Cet échec ouvre une série d'un seul, la copie commune n'est pas « absente ».
+    copy = RobotsPolicyCopy((), None, datetime.now(UTC), user_agent_digest(USER_AGENT))
+    failure = RobotsFailure(TIMEOUT, datetime.now(UTC) - timedelta(minutes=1), recorded_by="documents")
+    monkeypatch.setattr(robots_policy_store, "_run", lambda _sql, _parameters, *, fetch: [])
+    monkeypatch.setattr(robots_policy_store, "load", lambda _key: SharedPolicy(copy, None))
+
+    assert robots_policy_store.save_failure(SharedRobots.key(HOST), failure) == failure
 
 
 # --- Tâche de faits pendant que la tâche pdf de la vente attend
