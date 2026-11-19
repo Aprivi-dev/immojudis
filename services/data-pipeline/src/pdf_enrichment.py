@@ -82,7 +82,6 @@ from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
-from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.sources.robots_policy_copies import RobotsFailure
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
@@ -382,11 +381,7 @@ def download_documents(
         if not url or document_type == "other" or url in seen_urls:
             continue
         seen_urls.add(url)
-        if is_withdrawn_source_url(url, str(settings.get("supabase_db_url") or "")):
-            # Pièce hébergée par une source retirée du catalogue (vente fusionnée) : on ne la télécharge pas.
-            # Rien n'est consigné comme « bloqué » : lever le retrait la remet dans la file.
-            LOGGER.info("Skipping document hosted by a withdrawn source %s", url)
-            continue
+        # Une pièce hébergée par une source retirée n'arrive pas ici : la sélection l'écarte (motif withdrawn_source).
         resume_at = suspended_host_until(url, str(settings.get("supabase_db_url") or ""))
         if resume_at is not None:
             # Site d'une source suspendue parce qu'il ne répond plus (src/source_suspension.py) : aucune requête ;

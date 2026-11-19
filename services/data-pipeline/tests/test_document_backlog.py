@@ -10,6 +10,8 @@ import pytest
 from src import document_backlog as backlog
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
+from src.pdf_progress import HTTP_REVALIDATION_WINDOW
+from src.source_withdrawal import WITHDRAWN_DOCUMENT_REASON
 
 
 def _sale(url: str, **fields: object) -> AuctionSale:
@@ -76,7 +78,7 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     # ses paramètres.
     assert "c.priority >= %s" in sql and "r.last_error like 'review_required:%%'" in sql
     assert "strpos(r.last_error, %s) > 0" in sql and "and n.status <> 'cancelled'" in sql
-    assert sql.count("%s") == len(backlog.candidate_parameters(7)) == 9
+    assert sql.count("%s") == len(backlog.candidate_parameters(7)) == 11
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
@@ -324,7 +326,9 @@ def test_selection_passes_the_current_facts_version(monkeypatch) -> None:
 
     monkeypatch.setattr(backlog, "_connect", lambda _db: _Connection())
     assert backlog.select_backlog_candidates("db", 7) == []
-    assert seen[0][2:] == (
+    # Après les types utiles, le motif d'une pièce de source retirée et la durée de validité d'une vérification HTTP.
+    assert seen[0][1:3] == (WITHDRAWN_DOCUMENT_REASON, HTTP_REVALIDATION_WINDOW)
+    assert seen[0][4:] == (
         DOCUMENT_FACTS_VERSION,
         DOCUMENT_FACTS_VERSION,
         backlog.BACKLOG_PDF_PRIORITY,

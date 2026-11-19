@@ -15,6 +15,7 @@ et les deux fonctions de retrait viennent des vraies migrations.
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -56,7 +57,7 @@ def _setup(db) -> None:
         observations jsonb not null default '[]', raw_payload jsonb not null default '{}')"""
     )
     db.execute(
-        """create table auction_documents(source_url text not null, url text not null, document_type text,
+        """create table auction_documents(source_url text not null, document_url text not null, document_type text,
         label text, extraction_status text)"""
     )
     db.execute(
@@ -88,7 +89,8 @@ def _sale(db, *, pending_document: bool = True, facts_version: str = DOCUMENT_FA
         (URL, Jsonb([{"url": f"{URL}/pv.pdf"}]), Jsonb({"document_facts_version": facts_version})),
     )
     db.execute(
-        "insert into auction_documents(source_url, url, document_type, extraction_status) values (%s, %s, 'pv_huissier', %s)",
+        "insert into auction_documents(source_url, document_url, document_type, extraction_status)"
+        " values (%s, %s, 'pv_huissier', %s)",
         (URL, f"{URL}/pv.pdf", None if pending_document else "extracted"),
     )
 
@@ -404,6 +406,139 @@ def test_a_fully_withdrawn_sale_is_not_selected_until_the_withdrawal_is_lifted()
             db.execute("insert into auction_source_state(source_name, catalogue_withdrawn) values ('avoventes', true)")
             assert _selected(db) == []
 
+            db.execute("update auction_source_state set catalogue_withdrawn = false")
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()
+
+
+# --- Pièces réellement à lire : liste actuelle, pièces réglées sans texte
+
+
+PV = f"{URL}/pv.pdf"
+DEAD = f"{URL}/lien-mort.pdf"
+
+
+def _checked(hours_ago: float) -> str:
+    """Date de vérification HTTP telle que le pipeline l'écrit (``datetime.isoformat``)."""
+    return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
+
+
+def _listed_sale(db, listed: list[str], rows: dict[str, str | None], analysis: dict | None) -> None:
+    """Une vente à venir, lue avec les règles actuelles, qui liste ``listed`` ; ``rows`` : URL -> statut de sa ligne."""
+    payload: dict = {"document_facts_version": DOCUMENT_FACTS_VERSION}
+    if analysis is not None:
+        payload["document_analysis"] = analysis
+    db.execute(
+        """insert into auction_sales(source_url, source_name, sale_date, documents, raw_payload)
+           values (%s, 'avoventes', now() + interval '20 days', %s, %s)""",
+        (URL, Jsonb([{"url": url, "label": "Pièce"} for url in listed]), Jsonb(payload)),
+    )
+    for url, status in rows.items():
+        db.execute(
+            "insert into auction_documents(source_url, document_url, document_type, extraction_status)"
+            " values (%s, %s, 'pv_huissier', %s)",
+            (URL, url, status),
+        )
+
+
+@pytest.mark.parametrize("kind", ["terminal_document_urls", "blocked_document_urls"])
+def test_a_complete_manifest_with_a_terminal_document_is_not_selected_until_its_check_is_due(kind: str) -> None:
+    # Avoventes : quatre pièces, trois lues, une terminale ; Agorastore : pièces bloquées par robots.txt. La ligne
+    # de la pièce réglée reste « pending » : la vente était reproposée chaque jour et sa tâche échouait 4 fois.
+    with _connect() as db:
+        try:
+            _setup(db)
+            for hours_ago, http_pending, selected in ((1, [], []), (25, [], [URL]), (1, [DEAD], [URL])):
+                db.execute("savepoint cas")
+                analysis = {
+                    kind: [DEAD],
+                    "http_checked_at_by_url": {PV: _checked(1), DEAD: _checked(hours_ago)},
+                    "http_revalidation_pending_urls": http_pending,
+                }
+                _listed_sale(db, [PV, DEAD], {PV: "extracted", DEAD: "pending"}, analysis)
+                # Vérification fraîche : rien à lire. Périmée, ou déclarée à revalider : la revalidation est due.
+                assert _selected(db) == selected, (hours_ago, http_pending)
+                db.execute("rollback to savepoint cas")
+        finally:
+            db.rollback()
+
+
+def test_a_check_date_in_another_form_counts_as_missing() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: "hier"}}
+            _listed_sale(db, [PV, DEAD], {PV: "extracted", DEAD: "pending"}, analysis)
+
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()
+
+
+def test_orphan_rows_of_documents_no_longer_listed_are_ignored() -> None:
+    # Petites Affiches : l'analyse portait sur 9 pièces, la vente n'en liste plus que 3 ; les lignes des 6 autres
+    # restent en base (upsert_documents_to_supabase, prune_stale=False).
+    with _connect() as db:
+        try:
+            _setup(db)
+            orphans = {f"{URL}/ancienne-{index}.pdf": "pending" for index in range(6)}
+            _listed_sale(db, [PV], {PV: "extracted", **orphans}, {"http_checked_at_by_url": {PV: _checked(1)}})
+
+            assert _selected(db) == []
+        finally:
+            db.rollback()
+
+
+def test_a_new_document_not_read_yet_is_selected() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            new = f"{URL}/avenant.pdf"
+            analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: _checked(1)}}
+            # Avec sa ligne « pending », ou listée avant que sa ligne soit écrite.
+            for rows in ({PV: "extracted", DEAD: "pending", new: "pending"}, {PV: "extracted", DEAD: "pending"}):
+                db.execute("savepoint cas")
+                _listed_sale(db, [PV, DEAD, new], rows, analysis)
+                assert _selected(db) == [URL], rows
+                db.execute("rollback to savepoint cas")
+        finally:
+            db.rollback()
+
+
+def test_a_sale_never_analysed_is_selected() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            for rows in ({PV: "pending", DEAD: "pending"}, {}):
+                db.execute("savepoint cas")
+                _listed_sale(db, [PV, DEAD], rows, None)
+                assert _selected(db) == [URL], rows
+                db.execute("rollback to savepoint cas")
+        finally:
+            db.rollback()
+
+
+def test_skipped_documents_are_settled_and_a_withdrawn_source_only_while_withdrawn() -> None:
+    social = "https://social.example/annonce"
+    withdrawn = "https://documents.vench.example/docs/1.pdf"
+    with _connect() as db:
+        try:
+            _setup(db)
+            analysis = {
+                "skipped_document_reasons": [
+                    {"url": social, "reason": "social_url"},
+                    {"url": withdrawn, "reason": "withdrawn_source", "source": "vench"},
+                ],
+                "http_checked_at_by_url": {PV: _checked(1)},
+            }
+            _listed_sale(
+                db, [PV, social, withdrawn], {PV: "extracted", social: "pending", withdrawn: "pending"}, analysis
+            )
+            db.execute("insert into auction_source_state(source_name, catalogue_withdrawn) values ('vench', true)")
+            assert _selected(db) == []
+
+            # Retrait levé : la pièce de la source réintégrée est de nouveau à lire.
             db.execute("update auction_source_state set catalogue_withdrawn = false")
             assert _selected(db) == [URL]
         finally:

@@ -36,6 +36,10 @@ SOURCE_HOSTS: dict[str, tuple[str, ...]] = {
     "petites_affiches": ("petitesaffiches.fr",),
 }
 
+#: Motif d'une pièce écartée parce que son hôte est une source retirée (``skipped_document_reasons`` du manifeste,
+#: avec le nom de la source) : posé par ``pdf_document_selection``, relu par ``document_backlog.CANDIDATES_SQL``.
+WITHDRAWN_DOCUMENT_REASON = "withdrawn_source"
+
 CACHE_SECONDS = 60.0
 QUERY = "select lower(source_name) from public.auction_source_state where catalogue_withdrawn"
 

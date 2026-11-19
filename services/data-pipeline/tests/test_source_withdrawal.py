@@ -249,11 +249,7 @@ def test_documents_hosted_by_a_withdrawn_source_are_not_downloaded(monkeypatch, 
     requested: list[str] = []
     monkeypatch.setattr(pdf_enrichment, "ensure_pdf_deadline", lambda **_k: None)
     monkeypatch.setattr(pdf_enrichment, "require_ep_documents", lambda *_a: None)
-    monkeypatch.setattr(
-        pdf_enrichment,
-        "select_documents_for_extraction",
-        lambda documents, **_k: documents,
-    )
+    # La vraie sélection : c'est elle qui écarte la pièce (motif withdrawn_source), avant toute requête.
     monkeypatch.setattr(pdf_enrichment.httpx, "Client", lambda *a, **k: pytest.fail("no HTTP client expected"))
 
     sale = AuctionSale(

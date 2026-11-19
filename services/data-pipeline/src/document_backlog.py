@@ -47,6 +47,8 @@ from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_pass_outcomes import waits_for_its_deadline
+from src.pdf_progress import HTTP_REVALIDATION_WINDOW
+from src.source_withdrawal import WITHDRAWN_DOCUMENT_REASON
 from src.storage.pdf_checkpoint_rules import CHECKPOINT_NOT_PERSISTED
 
 if TYPE_CHECKING:
@@ -113,17 +115,68 @@ FACT_PAYLOAD_KEYS = (
 )
 
 CANDIDATES_SQL = """
+-- Pièces encore à lire de la liste actuelle de la vente (s.documents). Une ligne de auction_documents d'une
+-- pièce que l'annonce ne liste plus (orpheline) ne compte pas, et une pièce listée sans ligne compte. Une pièce
+-- que l'analyse enregistrée a réglée sans texte ne compte pas non plus : sa ligne reste « pending »
+-- (supabase_client._document_rows_for_sale), et la vente était reproposée chaque jour sans rien à lire, la tâche
+-- échouant quatre fois. Réglée veut dire : écartée (lien non documentaire, ou source retirée tant que le retrait
+-- dure : source_withdrawal.WITHDRAWN_DOCUMENT_REASON), ou terminale ou bloquée tant que sa vérification HTTP a
+-- moins de pdf_progress.HTTP_REVALIDATION_WINDOW et n'est pas déclarée à revalider. Passé ce délai, la pièce
+-- redevient à lire : la revalidation périodique est due.
 with pending as (
-    select d.source_url,
+    select sale.source_url,
            count(*) as pending_documents,
            count(*) filter (
                where d.document_type = any(%s)
                   or coalesce(d.label, '') ilike '%%urbanisme%%'
            ) as useful_pending,
            count(*) filter (where coalesce(d.extraction_status, 'pending') = 'pending') as untried_documents
-      from public.auction_documents d
+      from public.auction_sales sale
+      cross join lateral (
+            select distinct listed.value ->> 'url' as url
+              from jsonb_array_elements(
+                     case when jsonb_typeof(sale.documents) = 'array' then sale.documents else '[]'::jsonb end
+                   ) as listed
+             where nullif(btrim(listed.value ->> 'url'), '') is not null
+          ) as current_document
+      left join public.auction_documents d
+        on d.source_url = sale.source_url and d.document_url = current_document.url
+      cross join lateral (
+            select sale.raw_payload -> 'document_analysis' as analysis,
+                   sale.raw_payload #>> array['document_analysis', 'http_checked_at_by_url', current_document.url]
+                     as checked_at
+          ) as a
      where coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty', 'partial')
-     group by d.source_url
+       -- Écartée : lien non documentaire, ou source retirée tant que le retrait dure.
+       and not coalesce(
+             jsonb_path_exists(
+               a.analysis,
+               'lax $.skipped_document_reasons[*] ? (@.url == $url && (@.reason != $reason || @.source == $withdrawn[*]))',
+               jsonb_build_object(
+                 'url', current_document.url,
+                 'reason', %s::text,
+                 'withdrawn', to_jsonb((select app_private.catalogue_withdrawn_sources()))
+               )
+             ),
+             false
+           )
+       -- Terminale ou bloquée, tant que sa vérification HTTP est fraîche et qu'elle n'est pas déclarée à revalider.
+       -- La date est celle qu'écrit le pipeline (isoformat) ; une valeur d'une autre forme vaut vérification absente,
+       -- et le case garantit que la conversion ne s'applique qu'à une date de cette forme.
+       and not (
+             (
+               coalesce(a.analysis -> 'terminal_document_urls' ? current_document.url, false)
+               or coalesce(a.analysis -> 'blocked_document_urls' ? current_document.url, false)
+             )
+             and not coalesce(a.analysis -> 'http_revalidation_pending_urls' ? current_document.url, false)
+             and case
+                   when a.checked_at
+                        ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                   then a.checked_at::timestamptz between now() - %s and now()
+                   else false
+                 end
+           )
+     group by sale.source_url
 )
 select s.source_url, s.source_name, s.sale_date,
        coalesce(p.pending_documents, jsonb_array_length(s.documents)) as pending_documents,
@@ -447,6 +500,8 @@ def candidate_parameters(limit: int) -> tuple[object, ...]:
     """Paramètres de ``CANDIDATES_SQL``, dans l'ordre de ses jokers."""
     return (
         list(USEFUL_DOCUMENT_TYPES),
+        WITHDRAWN_DOCUMENT_REASON,
+        HTTP_REVALIDATION_WINDOW,
         list(ACTIONABLE_STATUSES),
         DOCUMENT_FACTS_VERSION,
         DOCUMENT_FACTS_VERSION,

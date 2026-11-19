@@ -33,6 +33,7 @@ from src.pdf_progress import (
     document_url,
     progress_entry,
 )
+from src.source_withdrawal import WITHDRAWN_DOCUMENT_REASON, is_source_withdrawn, source_of_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -119,8 +120,12 @@ def select_documents_for_extraction(
         max(configured_max_documents, _available_document_group_count(documents, required_groups)),
     )
     if sale is not None:
-        completed_urls = complete_or_terminal_urls(sale.raw_payload.get("document_analysis"), sale.documents)
+        analysis = sale.raw_payload.get("document_analysis")
+        completed_urls = complete_or_terminal_urls(analysis, sale.documents)
         completed_urls -= revalidate_urls or set()
+        # Une pièce écartée pour sa source retirée n'est pas réglée : le filtre ci-dessus rejuge le retrait à
+        # chaque passe, et la pièce est lue à la première passe qui suit la levée du retrait.
+        completed_urls -= _withdrawn_source_skips(analysis)
         if completed_urls:
             documents = [document for document in documents if document_url(document) not in completed_urls]
     priority = {
@@ -187,12 +192,14 @@ def select_documents_for_extraction(
 
 
 def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None:
-    """Return a deterministic reason for excluding a known non-document URL.
+    """Return a reason for excluding a candidate before any network request.
 
     This is intentionally a conservative, URL-only prefilter. A signed or
     extensionless download endpoint is retained for the network/content
     checks in ``pdf_enrichment``; only evidence that the candidate is a media
-    asset, social page, or unsupported file is rejected here.
+    asset, social page, or unsupported file is rejected here. The one reason
+    that is not deterministic is a host owned by a source withdrawn from the
+    catalogue (``source_withdrawal``): it is judged again at each pass.
     """
 
     raw_url = clean_text(document.get("url"))
@@ -209,6 +216,10 @@ def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None
         return "invalid_url"
     if parsed.scheme not in {"http", "https"} or not hostname:
         return "invalid_url"
+    if _hosted_by_withdrawn_source(raw_url):
+        # Pièce hébergée par une source retirée (vente fusionnée) : aucune requête vers elle, la pièce est
+        # écartée comme un lien non documentaire au lieu de rester « à lire » et de faire échouer la passe.
+        return WITHDRAWN_DOCUMENT_REASON
 
     hostname = hostname.rstrip(".").lower()
     if any(hostname == host or hostname.endswith(f".{host}") for host in SOCIAL_DOCUMENT_HOSTS):
@@ -242,8 +253,30 @@ def _document_candidate_rejections(documents: list[dict[str, str]]) -> list[dict
         if identity in seen:
             continue
         seen.add(identity)
-        rejections.append({"url": url, "reason": reason})
+        rejection = {"url": url, "reason": reason}
+        if reason == WITHDRAWN_DOCUMENT_REASON:
+            # La source nommée permet au vidage (document_backlog.CANDIDATES_SQL) de voir la levée du retrait.
+            rejection["source"] = str(source_of_url(url))
+        rejections.append(rejection)
     return rejections
+
+
+def _hosted_by_withdrawn_source(url: str) -> bool:
+    """``url`` est hébergée par une source retirée du catalogue (réglages lus pour un hôte de source seulement)."""
+    source = source_of_url(url)
+    return source is not None and is_source_withdrawn(source, str(load_settings().get("supabase_db_url") or ""))
+
+
+def _withdrawn_source_skips(analysis: object) -> set[str]:
+    """URL que le manifeste enregistré a écartées parce que leur source était retirée."""
+    reasons = analysis.get("skipped_document_reasons") if isinstance(analysis, dict) else None
+    if not isinstance(reasons, list):
+        return set()
+    return {
+        document_url(item)
+        for item in reasons
+        if isinstance(item, dict) and item.get("reason") == WITHDRAWN_DOCUMENT_REASON and document_url(item)
+    }
 
 
 def _required_document_groups_for_sale(sale: AuctionSale | None) -> tuple[frozenset[str], ...]:
