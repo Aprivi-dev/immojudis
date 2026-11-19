@@ -216,7 +216,7 @@ def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None
         return "invalid_url"
     if parsed.scheme not in {"http", "https"} or not hostname:
         return "invalid_url"
-    if _hosted_by_withdrawn_source(raw_url):
+    if _withdrawn_source(document):
         # Pièce hébergée par une source retirée (vente fusionnée) : aucune requête vers elle, la pièce est
         # écartée comme un lien non documentaire au lieu de rester « à lire » et de faire échouer la passe.
         return WITHDRAWN_DOCUMENT_REASON
@@ -256,15 +256,24 @@ def _document_candidate_rejections(documents: list[dict[str, str]]) -> list[dict
         rejection = {"url": url, "reason": reason}
         if reason == WITHDRAWN_DOCUMENT_REASON:
             # La source nommée permet au vidage (document_backlog.CANDIDATES_SQL) de voir la levée du retrait.
-            rejection["source"] = str(source_of_url(url))
+            rejection["source"] = _withdrawn_source(document) or ""
         rejections.append(rejection)
     return rejections
 
 
-def _hosted_by_withdrawn_source(url: str) -> bool:
-    """``url`` est hébergée par une source retirée du catalogue (réglages lus pour un hôte de source seulement)."""
-    source = source_of_url(url)
-    return source is not None and is_source_withdrawn(source, str(load_settings().get("supabase_db_url") or ""))
+def _withdrawn_source(document: dict[str, str]) -> str | None:
+    """Source retirée du catalogue qui héberge la pièce, sinon ``None`` (réglages lus pour un hôte de source seulement).
+
+    Jugée sur l'URL listée, celle que ``pdf_enrichment.download_documents`` demande, et sur sa forme nettoyée : le
+    nettoyage change un retour à la ligne ou une tabulation en espace, quand ``urlsplit`` les supprime. Sur la seule
+    forme nettoyée, ``https://www.lici\\ntor.com/x.pdf`` échappait au retrait et l'hôte retiré était contacté.
+    """
+    raw = document.get("url")
+    for url in (raw, clean_text(raw)):
+        source = source_of_url(url)
+        if source is not None and is_source_withdrawn(source, str(load_settings().get("supabase_db_url") or "")):
+            return source
+    return None
 
 
 def _withdrawn_source_skips(analysis: object) -> set[str]:
@@ -478,7 +487,14 @@ def store_document_analysis_status(
         group for group, aliases in required_groups.items() if not (aliases & extracted_types)
     ]
 
-    candidate_rejections = _document_candidate_rejections(sale_documents)
+    # Une pièce d'une source retirée dont un texte est déjà là (lue avant le retrait) n'est pas écartée : son texte et
+    # ses faits restent utilisés comme avant le motif withdrawn_source, qui ne devait qu'empêcher la requête (la
+    # sélection l'écarte toujours). Les retirer pendant le retrait est une décision à part.
+    candidate_rejections = [
+        item
+        for item in _document_candidate_rejections(sale_documents)
+        if not (item["reason"] == WITHDRAWN_DOCUMENT_REASON and item["url"] in evidence_by_url)
+    ]
     selected_documents = select_documents_for_extraction(sale_documents, sale=sale)
     selected_urls = {
         str(document.get("url"))
@@ -634,8 +650,14 @@ def store_document_analysis_status(
     elif not text_profiles and not tolerated_partials:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
-        if candidate_rejections:
+        rejection_reasons = {item["reason"] for item in candidate_rejections}
+        if rejection_reasons - {WITHDRAWN_DOCUMENT_REASON}:
             warning += " Certaines URL sociales ou de médias ont été écartées automatiquement."
+        if WITHDRAWN_DOCUMENT_REASON in rejection_reasons:
+            warning += (
+                " Les pièces hébergées par une source retirée du catalogue n'ont pas été téléchargées ; "
+                "elles le seront si cette source est rétablie."
+            )
     elif missing_core_documents:
         coverage_status = "partial"
         warning = "Certaines pièces clés manquent ou n'ont pas été extraites."

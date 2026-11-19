@@ -586,3 +586,140 @@ def test_skipped_documents_are_settled_and_a_withdrawn_source_only_while_withdra
             assert _selected(db) == [URL]
         finally:
             db.rollback()
+
+
+# --- Robustesse : une valeur inattendue dans une vente ne fait pas échouer le vidage et ne règle rien
+
+
+def _odd_sale(db, documents: list, rows: dict[str, str | None], analysis: object, *, sale_url: str = URL) -> None:
+    """Une vente à venir, lue avec les règles actuelles, dont ``documents`` et l'analyse sont pris tels quels."""
+    payload = {"document_facts_version": DOCUMENT_FACTS_VERSION, "document_analysis": analysis}
+    db.execute(
+        """insert into auction_sales(source_url, source_name, sale_date, documents, raw_payload)
+           values (%s, 'avoventes', now() + interval '20 days', %s, %s)""",
+        (sale_url, Jsonb(documents), Jsonb(payload)),
+    )
+    for url, status in rows.items():
+        db.execute(
+            "insert into auction_documents(source_url, document_url, document_type, extraction_status)"
+            " values (%s, %s, 'pv_huissier', %s)",
+            (sale_url, url, status),
+        )
+
+
+SETTLED = f"{URL}-reglee"
+
+
+def _settled_sale(db) -> None:
+    """Témoin : une vente dont la pièce terminale a un contrôle frais, donc rien à lire."""
+    analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: _checked(1)}}
+    _listed_sale(db, [PV, DEAD], {PV: "extracted", DEAD: "pending"}, analysis, sale_url=SETTLED)
+
+
+def test_listed_items_that_are_not_documents_are_ignored() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            documents = [{"url": PV, "label": "Pièce"}, "x", None, 1, {"url": "  "}]
+            _odd_sale(db, documents, {PV: "extracted"}, {"http_checked_at_by_url": {PV: _checked(1)}})
+
+            # Ni un élément qui n'est pas un objet, ni une URL que le nettoyage vide ne sont des pièces à lire.
+            assert _selected(db) == []
+        finally:
+            db.rollback()
+
+
+def test_a_numeric_url_is_a_document_like_any_other() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            documents = [{"url": PV, "label": "Pièce"}, {"url": 7, "label": "Pièce"}]
+            # Jamais lue : à lire. Écartée par la passe (lien invalide, URL nettoyée en texte) : réglée.
+            for analysis, selected in (
+                ({"http_checked_at_by_url": {PV: _checked(1)}}, [URL]),
+                ({"skipped_document_reasons": [{"url": "7", "reason": "invalid_url"}]}, []),
+            ):
+                db.execute("savepoint cas")
+                _odd_sale(db, documents, {PV: "extracted"}, analysis)
+                assert _selected(db) == selected, analysis
+                db.execute("rollback to savepoint cas")
+        finally:
+            db.rollback()
+
+
+@pytest.mark.parametrize(
+    "analysis",
+    [
+        "analyse",
+        [{"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: "2099-01-01T00:00:00+00:00"}}],
+        [{"skipped_document_reasons": [{"url": DEAD, "reason": "social_url"}]}],
+        {"terminal_document_urls": DEAD, "http_checked_at_by_url": {DEAD: "now"}},
+        {"terminal_document_urls": {DEAD: True}, "http_checked_at_by_url": {DEAD: "now"}},
+        {"terminal_document_urls": [DEAD], "http_checked_at_by_url": [DEAD]},
+        {"terminal_document_urls": [DEAD], "http_checked_at_by_url": DEAD},
+        {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: 1}},
+        {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: {"at": "now"}}},
+    ],
+)
+def test_an_analysis_of_an_unexpected_shape_settles_nothing(analysis: object) -> None:
+    # Côté Python, une analyse qui n'est pas un objet ou une liste d'URL qui n'est pas un tableau ne compte pas :
+    # la pièce terminale n'y est pas réglée, elle reste à lire. Les autres ventes sont jugées comme d'habitude.
+    def fresh(value: object) -> object:
+        if value == "now":
+            return _checked(1)
+        if isinstance(value, dict):
+            return {key: fresh(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [fresh(item) for item in value]
+        return value
+
+    with _connect() as db:
+        try:
+            _setup(db)
+            _odd_sale(db, [{"url": PV}, {"url": DEAD}], {PV: "extracted", DEAD: "pending"}, fresh(analysis))
+            _settled_sale(db)
+
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()
+
+
+@pytest.mark.parametrize(
+    "checked_at",
+    [
+        "0000-01-01T00:00:00+00:00",  # hors limites
+        (datetime.now(UTC) - timedelta(hours=1)).replace(tzinfo=None).isoformat(),  # sans fuseau
+        (datetime.now(UTC) + timedelta(hours=2)).isoformat(),  # dans le futur
+    ],
+)
+def test_a_check_date_out_of_range_without_offset_or_in_the_future_counts_as_missing(checked_at: str) -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: checked_at}}
+            _listed_sale(db, [PV, DEAD], {PV: "extracted", DEAD: "pending"}, analysis)
+            _settled_sale(db)
+
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()
+
+
+def test_a_withdrawn_source_skip_without_its_source_settles_nothing() -> None:
+    # Sans le nom de la source, la levée du retrait ne se verrait pas : la pièce reste à lire, et la passe la juge
+    # de nouveau (pdf_document_selection écrit la source à chaque écart).
+    withdrawn = "https://documents.vench.example/docs/1.pdf"
+    with _connect() as db:
+        try:
+            _setup(db)
+            analysis = {
+                "skipped_document_reasons": [{"url": withdrawn, "reason": "withdrawn_source"}],
+                "http_checked_at_by_url": {PV: _checked(1)},
+            }
+            _listed_sale(db, [PV, withdrawn], {PV: "extracted", withdrawn: "pending"}, analysis)
+            db.execute("insert into auction_source_state(source_name, catalogue_withdrawn) values ('vench', true)")
+            _settled_sale(db)
+
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()

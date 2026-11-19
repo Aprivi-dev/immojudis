@@ -125,7 +125,12 @@ CANDIDATES_SQL = """
 -- redevient à lire : la revalidation périodique est due.
 -- Deux formes de l'URL : telle que listée, qui est celle de auction_documents.document_url (écrite sans retouche
 -- par _document_rows_for_sale), et nettoyée comme les clés de l'analysis (pdf_progress.document_url, clean_text :
--- espaces insécables en espaces, blancs regroupés, bords retirés).
+-- espaces insécables en espaces, blancs regroupés, bords retirés). Une URL que le nettoyage vide n'est pas une pièce.
+-- Coût (raw_payload : 167 000 caractères en moyenne, sous statement_timeout de 30 s) : les filtres peu coûteux de la
+-- requête extérieure sont repris ici à l'identique, pour ne déplier que les ventes qui peuvent être candidates, et
+-- l'analyse est extraite une fois par vente (« offset 0 » empêche le planificateur de recopier l'expression, donc
+-- de décompresser raw_payload, à chacune de ses références). Une analyse qui n'est pas un objet vaut analyse
+-- absente, et une liste d'URL d'un autre type que tableau ne règle rien (« @> » d'un tableau), comme côté Python.
 with pending as (
     select sale.source_url,
            count(*) as pending_documents,
@@ -136,22 +141,30 @@ with pending as (
            count(*) filter (where coalesce(d.extraction_status, 'pending') = 'pending') as untried_documents
       from public.auction_sales sale
       cross join lateral (
+            select case when jsonb_typeof(raw.analysis) = 'object' then raw.analysis end as analysis
+              from (select sale.raw_payload -> 'document_analysis' as analysis offset 0) as raw
+          ) as a
+      cross join lateral (
             select distinct listed.value ->> 'url' as url,
                    btrim(regexp_replace(replace(listed.value ->> 'url', chr(160), ' '), '[[:space:]]+', ' ', 'g'))
                      as analysis_url
               from jsonb_array_elements(
                      case when jsonb_typeof(sale.documents) = 'array' then sale.documents else '[]'::jsonb end
                    ) as listed
-             where nullif(btrim(listed.value ->> 'url'), '') is not null
           ) as current_document
       left join public.auction_documents d
         on d.source_url = sale.source_url and d.document_url = current_document.url
       cross join lateral (
-            select sale.raw_payload -> 'document_analysis' as analysis,
-                   sale.raw_payload #>> array['document_analysis', 'http_checked_at_by_url', current_document.analysis_url]
-                     as checked_at
-          ) as a
-     where coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty', 'partial')
+            select a.analysis -> 'http_checked_at_by_url' ->> current_document.analysis_url as checked_at
+          ) as checked
+     where sale.status = any(%s)
+       and jsonb_typeof(sale.documents) = 'array'
+       and jsonb_array_length(sale.documents) > 0
+       and sale.retention_deadline_materialized
+       and (sale.retention_deadline is null or sale.retention_deadline > now())
+       and (sale.sale_date is null or sale.sale_date >= now())
+       and current_document.analysis_url <> ''
+       and coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty', 'partial')
        -- Écartée : lien non documentaire, ou source retirée tant que le retrait dure.
        and not coalesce(
              jsonb_path_exists(
@@ -171,15 +184,18 @@ with pending as (
        -- conversion ne s'applique qu'à une date valide : une seule date illisible faisait échouer tout le vidage.
        and not (
              (
-               coalesce(a.analysis -> 'terminal_document_urls' ? current_document.analysis_url, false)
-               or coalesce(a.analysis -> 'blocked_document_urls' ? current_document.analysis_url, false)
+               coalesce(a.analysis -> 'terminal_document_urls' @> jsonb_build_array(current_document.analysis_url), false)
+               or coalesce(a.analysis -> 'blocked_document_urls' @> jsonb_build_array(current_document.analysis_url), false)
              )
-             and not coalesce(a.analysis -> 'http_revalidation_pending_urls' ? current_document.analysis_url, false)
+             and not coalesce(
+                   a.analysis -> 'http_revalidation_pending_urls' @> jsonb_build_array(current_document.analysis_url),
+                   false
+                 )
              and case
-                   when a.checked_at
+                   when checked.checked_at
                         ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
-                        and pg_catalog.pg_input_is_valid(a.checked_at, 'timestamptz')
-                   then a.checked_at::timestamptz between now() - %s and now()
+                        and pg_catalog.pg_input_is_valid(checked.checked_at, 'timestamptz')
+                   then checked.checked_at::timestamptz between now() - %s and now()
                    else false
                  end
            )
@@ -507,6 +523,7 @@ def candidate_parameters(limit: int) -> tuple[object, ...]:
     """Paramètres de ``CANDIDATES_SQL``, dans l'ordre de ses jokers."""
     return (
         list(USEFUL_DOCUMENT_TYPES),
+        list(ACTIONABLE_STATUSES),
         WITHDRAWN_DOCUMENT_REASON,
         HTTP_REVALIDATION_WINDOW,
         list(ACTIONABLE_STATUSES),

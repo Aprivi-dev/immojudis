@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import pytest
 
-from src import source_withdrawal
+from src import pdf_enrichment, source_withdrawal
+from src.enrichment import extract_structured
+from src.freshness import documents_are_current
+from src.normalize import clean_text
 from src.pdf_progress import manifest_is_complete
 from tests.pdf_queue_bench import SALE_URL, QueueBench
 
@@ -67,6 +70,9 @@ def test_a_sale_whose_documents_are_all_on_a_withdrawn_source_never_fails(bench:
     assert bench.requests == []
     assert bench.manifest["failed_documents"] == 0
     assert {item["reason"] for item in bench.manifest["skipped_document_reasons"]} == {"withdrawn_source"}
+    # L'avertissement nomme ce motif, pas celui des liens sociaux ou de médias.
+    warning = bench.manifest["warning"]
+    assert "source retirée du catalogue n'ont pas été téléchargées" in warning and "sociales" not in warning
 
 
 def test_documents_are_read_once_the_withdrawal_is_lifted(bench: QueueBench, monkeypatch) -> None:
@@ -85,3 +91,63 @@ def test_documents_are_read_once_the_withdrawal_is_lifted(bench: QueueBench, mon
     assert "Surface habitable : 81 m2" in _texts(bench) and "Surface habitable : 82 m2" in _texts(bench)
     assert bench.manifest["skipped_document_urls"] == []
     assert manifest_is_complete(bench.manifest, bench.stored_sale().documents)
+
+
+@pytest.mark.parametrize("control", ["\n", "\t"])
+def test_a_control_character_in_the_host_does_not_hide_a_withdrawn_source(
+    bench: QueueBench, monkeypatch, control: str
+) -> None:
+    # L'URL demandée est l'URL listée : ``urlsplit`` y supprime le caractère et lit l'hôte de la source retirée, quand
+    # le nettoyage (``clean_text``) le change en espace. Jugée sur la seule forme nettoyée, la pièce était demandée.
+    listed = f"https://documents.ven{control}ch.example/docs/1.pdf"
+    reached_download: list[str] = []
+    real_suspended_host_until = pdf_enrichment.suspended_host_until
+
+    def _suspended_host_until(url: str, db_url: str):
+        reached_download.append(url)  # première étape de chaque pièce dans la boucle de téléchargement
+        return real_suspended_host_until(url, db_url)
+
+    monkeypatch.setattr(pdf_enrichment, "suspended_host_until", _suspended_host_until)
+    bench.publish([READABLE, listed])
+
+    outcome = bench.drain()
+
+    assert outcome.error is None and bench.jobs[-1]["status"] == "completed"
+    # Aucune requête vers l'hôte retiré, ni robots.txt ni pièce : la pièce n'atteint pas le téléchargement.
+    assert bench.requests == [READABLE] and reached_download == [READABLE]
+    skipped = clean_text(listed)
+    assert bench.manifest["skipped_document_urls"] == [skipped]
+    assert bench.manifest["skipped_document_reasons"] == [
+        {"url": skipped, "reason": "withdrawn_source", "source": "vench"}
+    ]
+
+
+@pytest.mark.parametrize("cold_runner", [False, True])
+def test_documents_read_before_the_withdrawal_keep_their_text_and_facts(
+    bench: QueueBench, monkeypatch, cold_runner: bool
+) -> None:
+    # Vente fusionnée dont une pièce Vench a été lue avant le retrait, relue depuis le cache (règles de lecture
+    # nouvelles). Avant le motif withdrawn_source, son texte restait dans le manifeste et dans les faits ; garder ou
+    # retirer ces faits pendant le retrait est une décision à part. Seule une nouvelle requête est empêchée.
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset())
+    bench.publish([READABLE, WITHDRAWN[0]])
+    assert bench.drain().error is None
+    assert sorted(bench.requests) == sorted([READABLE, WITHDRAWN[0]])
+
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"vench"}))
+    if cold_runner:
+        bench.cold_runner()  # le texte vient de la base (restauration), plus du disque du runner
+    bench.row["raw_payload"]["document_facts_version"] = "document_facts_v0"
+    outcome = bench.drain()
+
+    assert outcome.error is None and bench.jobs[-1]["status"] == "completed"
+    assert len(bench.requests) == 2
+    manifest = bench.manifest
+    assert manifest["skipped_document_urls"] == [] and manifest["skipped_document_reasons"] == []
+    extracted = {profile["url"] for profile in manifest["profiles"] if profile.get("extraction_status") == "extracted"}
+    assert extracted == {READABLE, WITHDRAWN[0]}
+    facts = extract_structured._fact_context_manifest(bench.stored_sale())
+    assert {document["url"] for document in facts["documents"]} == {READABLE, WITHDRAWN[0]}
+    # Pièces à jour : la vente n'est pas reprise à chaque vidage.
+    assert documents_are_current(bench.stored_sale())

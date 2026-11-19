@@ -36,6 +36,7 @@ Décidées par ``queued_runner`` :
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -58,6 +59,8 @@ from src.storage.pdf_checkpoint_rules import NO_PROGRESS_ENTRIES, last_checkpoin
 
 if TYPE_CHECKING:
     from src.pdf_enrichment import NetworkFailure, PdfEnrichmentStats
+
+LOGGER = logging.getLogger(__name__)
 
 NOTHING_DUE_DEFERRAL = "PDF pass deferred: the persisted manifest is complete and no document is due for revalidation"
 HOST_UNAVAILABLE_DEFERRAL = "PDF pass deferred: document host unavailable"
@@ -197,7 +200,12 @@ def nothing_read_message(start: PassStart, sale: AuctionSale) -> str:
     message = refused_checkpoint_message()
     if last_checkpoint_refusal() != NO_PROGRESS_ENTRIES:
         return message
-    return f"{message} (cause: {nothing_read_cause(start, sale)})"
+    try:
+        cause = nothing_read_cause(start, sale)
+    except Exception as exc:  # seul attrapé large du lot : un diagnostic ne doit jamais masquer l'échec qu'il nomme
+        LOGGER.warning("Cause of a pdf pass that read nothing not established (%s); reported as unknown", type(exc).__name__)
+        cause = "unknown"
+    return f"{message} (cause: {cause})"
 
 
 class SpacedPdfFailure(RuntimeError):
