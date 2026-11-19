@@ -64,6 +64,10 @@ LOGGER = logging.getLogger(__name__)
 
 NOTHING_DUE_DEFERRAL = "PDF pass deferred: the persisted manifest is complete and no document is due for revalidation"
 HOST_UNAVAILABLE_DEFERRAL = "PDF pass deferred: document host unavailable"
+#: Report sans essai d'une passe dont une pièce est sur l'hôte d'une source alors que l'état du retrait est inconnu
+#: (``pdf_enrichment.DocumentWithdrawalUnknown``) ; au-delà de la borne, l'échec espacé ``WITHDRAWAL_STATE_UNREADABLE``.
+WITHDRAWAL_STATE_UNKNOWN_DEFERRAL = "PDF pass deferred: catalogue withdrawal state unknown"
+WITHDRAWAL_STATE_UNREADABLE = "PDF pass failed: catalogue withdrawal state unreadable"
 DOCUMENT_NETWORK_FAILURE = "Document download failed on its host; retry required"
 #: Panne continue de robots.txt d'un hôte (estimée par la copie commune, ``RobotsFailure.series_started_at``) au-delà
 #: de laquelle ses pièces ne sont plus reportées sans essai : chaque report rafraîchit ``updated_at`` et
@@ -347,4 +351,6 @@ def discarded_write_ending(sale: AuctionSale, job: dict[str, object]) -> dict[st
 
 def waits_for_its_deadline(last_error: str) -> bool:
     """La tâche attend une échéance : une nouvelle passe tout de suite donnerait le même résultat."""
-    return NOTHING_DUE_DEFERRAL in last_error or last_error.startswith(HOST_UNAVAILABLE_DEFERRAL)
+    return NOTHING_DUE_DEFERRAL in last_error or last_error.startswith(
+        (HOST_UNAVAILABLE_DEFERRAL, WITHDRAWAL_STATE_UNKNOWN_DEFERRAL)
+    )

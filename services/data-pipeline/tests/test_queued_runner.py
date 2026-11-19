@@ -2440,7 +2440,7 @@ def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeyp
         "PDF document checkpoint was not persisted; retry required: "
         "Document extraction incomplete; retry required"
     )
-    assert checkpoint_calls == [(sale, {"pdf_job": jobs[0]})]
+    assert checkpoint_calls == [(sale, {"pdf_job": jobs[0], "recorded_analysis": None})]
 
 
 def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> None:

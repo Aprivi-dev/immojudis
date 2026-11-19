@@ -236,7 +236,7 @@ def documents_are_current(sale: Any) -> bool:
     if not documents:
         return True
     # Un retrait de source posé ou levé depuis la passe : la pièce est à écarter (texte et faits retirés) ou à relire.
-    # Import local : pdf_document_selection importe ce module.
+    # Import local : pdf_document_selection importe freshness (cycle), et la règle du retrait doit rester la sienne.
     from src.pdf_document_selection import withdrawals_are_recorded
 
     if not withdrawals_are_recorded(analysis, documents):

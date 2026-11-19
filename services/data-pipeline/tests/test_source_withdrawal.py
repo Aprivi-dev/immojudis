@@ -111,6 +111,72 @@ def test_a_failed_read_never_lifts_a_withdrawal_for_documents(monkeypatch) -> No
     source_withdrawal.reset_cache()
 
 
+def test_a_successful_read_is_trusted_for_a_bounded_time_only(monkeypatch) -> None:
+    # Gardée toute la vie du processus (jusqu'à 150 min), la dernière lecture réussie donnait une vue périmée après une
+    # pose ou une levée de retrait : passé ``LAST_READ_VALIDITY`` sans lecture réussie, l'état redevient inconnu.
+    import time_machine
+
+    switch: list[frozenset[str] | None] = [LICITOR]
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", REAL_WITHDRAWN_SOURCES)
+    monkeypatch.setattr(
+        source_withdrawal,
+        "read_withdrawn_sources",
+        lambda _db_url, *, unreadable=frozenset(), **_: unreadable if switch[0] is None else switch[0],
+    )
+    monkeypatch.setattr(source_withdrawal, "CACHE_SECONDS", 0.0)
+    source_withdrawal.reset_cache()
+    url = "https://www.licitor.com/data/pub/media/annonce/1.pdf"
+    start = datetime.now(UTC)
+
+    with time_machine.travel(start, tick=False) as clock:
+        assert source_withdrawal.known_withdrawn_sources("postgresql://a") == LICITOR
+        assert source_withdrawal.withdrawal_unreadable_since("postgresql://a") is None
+        clock.shift(timedelta(minutes=1))
+        switch[0] = None  # la base ne répond plus
+        assert source_withdrawal.known_withdrawn_sources("postgresql://a") == LICITOR
+        failed_at = source_withdrawal.withdrawal_unreadable_since("postgresql://a")
+        assert failed_at == start + timedelta(minutes=1)
+        clock.shift(source_withdrawal.LAST_READ_VALIDITY - timedelta(minutes=2))
+        assert source_withdrawal.known_withdrawn_sources("postgresql://a") == LICITOR
+        assert not source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+        clock.shift(timedelta(minutes=2))  # la dernière lecture réussie a plus de 15 min
+        assert source_withdrawal.known_withdrawn_sources("postgresql://a") is None
+        assert source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+        assert source_withdrawal.withdrawn_source_of_url(url, "postgresql://a") is None
+        # La panne est datée de sa première lecture ratée, pas de la dernière.
+        assert source_withdrawal.withdrawal_unreadable_since("postgresql://a") == failed_at
+
+        switch[0] = frozenset()  # une lecture réussie efface la panne
+        assert source_withdrawal.known_withdrawn_sources("postgresql://a") == frozenset()
+        assert source_withdrawal.withdrawal_unreadable_since("postgresql://a") is None
+    source_withdrawal.reset_cache()
+
+
+def test_a_failed_read_is_cached_for_a_minute_too(monkeypatch) -> None:
+    reads: list[str] = []
+
+    def failing(db_url, *, unreadable=frozenset(), **_):
+        reads.append(db_url)
+        return unreadable
+
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", REAL_WITHDRAWN_SOURCES)
+    monkeypatch.setattr(source_withdrawal, "read_withdrawn_sources", failing)
+    clock = [1000.0]
+    monkeypatch.setattr(source_withdrawal.time, "monotonic", lambda: clock[0])
+    source_withdrawal.reset_cache()
+    url = "https://www.licitor.com/data/pub/media/annonce/1.pdf"
+
+    assert source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+    clock[0] += source_withdrawal.CACHE_SECONDS - 1
+    assert source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+    assert source_withdrawal.withdrawn_sources("postgresql://a") == source_withdrawal.DEFAULT_WITHDRAWN
+    assert reads == ["postgresql://a"]  # une base en panne n'est pas relue à chaque pièce
+    clock[0] += 2
+    assert source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+    assert reads == ["postgresql://a", "postgresql://a"]
+    source_withdrawal.reset_cache()
+
+
 def test_require_source_active_refuses_a_withdrawn_source_only(monkeypatch) -> None:
     withdraw_licitor(monkeypatch)
     with pytest.raises(source_withdrawal.SourceWithdrawn):

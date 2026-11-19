@@ -10,6 +10,9 @@ Banc de la file (``tests/pdf_queue_bench.py``) : vrai code, faux réseau. L'hôt
 
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pymupdf
 import pytest
@@ -20,7 +23,13 @@ from src.enrichment import extract_structured
 from src.freshness import documents_are_current
 from src.normalize import clean_text
 from src.pdf_document_transport import PublicDocumentTarget
+from src.pdf_pass_outcomes import (
+    WITHDRAWAL_STATE_UNKNOWN_DEFERRAL,
+    WITHDRAWAL_STATE_UNREADABLE,
+    waits_for_its_deadline,
+)
 from src.pdf_progress import manifest_is_complete, stale_complete_document_urls
+from src.storage import supabase_client
 from tests.pdf_queue_bench import SALE_URL, QueueBench
 
 READABLE = f"{SALE_URL}/cahier.pdf"
@@ -402,15 +411,27 @@ def test_an_unreadable_switch_never_lifts_a_withdrawal(bench: QueueBench, monkey
     requests_before = len(bench.requests)
 
     switch.sources = None  # la base ne répond plus
-    for hours in (1, 1, 24):  # visites répétées, puis la revalidation de 24 h (passe due à elle seule)
-        bench.age(hours)
-        assert documents_are_current(bench.stored_sale()) is (hours == 1)
+    for _ in range(2):  # visites répétées : la vente reste à jour, aucune passe
+        bench.age(1)
+        assert documents_are_current(bench.stored_sale())
         outcome = _drain_without_failure(bench)
-        assert outcome.error is None and outcome.passes == (hours == 24), (hours, outcome)
+        assert outcome.error is None and outcome.passes == 0, outcome
         _assert_dropped(bench)
-    switch.sources = frozenset({"vench"})  # la base répond de nouveau : rien ne change
+    # La revalidation de 24 h est due, l'interrupteur illisible depuis plus de 30 min : la passe finit en échec espacé
+    # (essai consommé, visible), sans requête vers l'hôte retiré et sans rien changer à la vente.
+    bench.age(24)
+    assert not documents_are_current(bench.stored_sale())
+    assert bench.drain().passes == 1
+    job = bench.jobs[-1]
+    assert job["status"] == "failed" and job["attempt_count"] == 1
+    assert job["last_error"].startswith(WITHDRAWAL_STATE_UNREADABLE)
+    assert bench.manifest["skipped_document_reasons"] == [
+        {"url": WITHDRAWN[0], "reason": "withdrawn_source", "source": "vench"}
+    ]
+    assert "81 m2" not in str(bench.row["raw_text"])
+    switch.sources = frozenset({"vench"})  # la base répond de nouveau : la revalidation passe, rien ne change
     bench.age(1)
-    assert _drain_without_failure(bench).passes == 0
+    assert _drain_without_failure(bench).passes == 1
     _assert_dropped(bench)
 
     assert WITHDRAWN[0] not in bench.requests[requests_before:]
@@ -432,6 +453,9 @@ def test_a_fresh_process_whose_first_switch_read_fails_sends_no_request_to_a_sou
     assert outcome.passes == 1 and all(job["attempt_count"] == 0 for job in bench.jobs)
     assert {job["status"] for job in bench.jobs} == {"queued"}
     assert "withdrawal switch unreadable" in bench.jobs[-1]["last_error"]
+    # Motif dédié, que le vidage lit comme une attente d'échéance (pas de passe identique enchaînée).
+    assert bench.jobs[-1]["last_error"].startswith(WITHDRAWAL_STATE_UNKNOWN_DEFERRAL)
+    assert waits_for_its_deadline(bench.jobs[-1]["last_error"])
 
     switch.sources = frozenset({"vench"})
     bench.age(1)  # échéance du report
@@ -440,6 +464,37 @@ def test_a_fresh_process_whose_first_switch_read_fails_sends_no_request_to_a_sou
     assert bench.manifest["skipped_document_reasons"] == [
         {"url": WITHDRAWN[0], "reason": "withdrawn_source", "source": "vench"}
     ]
+
+
+def test_an_unreadable_switch_beyond_the_bound_ends_in_a_spaced_failure(bench: QueueBench, monkeypatch) -> None:
+    # Droits manquants, colonne absente, délai dépassé alors que la file répond : reportées sans essai toutes les
+    # 10 minutes, les pièces d'un hôte de source attendaient sans fin et sans rien de visible. Le report sans essai
+    # ne vaut que pour une panne courte ; au-delà de 30 min, la tâche échoue (essai consommé, nouvel essai espacé).
+    _Switch(monkeypatch, None)
+    bench.publish([READABLE, WITHDRAWN[0]])
+    _drain_without_failure(bench)  # première lecture ratée : la panne commence
+    assert bench.jobs[-1]["attempt_count"] == 0
+
+    bench.age(0.25)  # 15 min de panne : toujours un report sans essai
+    bench.jobs[-1]["next_attempt_at"] = datetime.now(UTC)
+    outcome = _drain_without_failure(bench)
+    assert outcome.passes == 1 and bench.jobs[-1]["attempt_count"] == 0
+    assert bench.jobs[-1]["last_error"].startswith(WITHDRAWAL_STATE_UNKNOWN_DEFERRAL)
+
+    bench.age(0.3)  # 33 min de panne
+    bench.jobs[-1]["next_attempt_at"] = datetime.now(UTC)
+    outcome = bench.drain()
+
+    job = bench.jobs[-1]
+    assert outcome.passes == 1 and job["status"] == "failed" and job["attempt_count"] == 1
+    assert re.fullmatch(
+        re.escape(WITHDRAWAL_STATE_UNREADABLE)
+        + r" \(since \S+\); documents of a catalogue source not requested, next try not before \S+",
+        job["last_error"],
+    ), job["last_error"]
+    assert "http" not in job["last_error"] and not waits_for_its_deadline(job["last_error"])
+    assert job["next_attempt_at"] >= datetime.now(UTC) + timedelta(minutes=59)
+    assert bench.requests == [] and bench.manifest == {}
 
 
 def test_an_unknown_withdrawal_state_does_not_touch_documents_of_other_hosts(bench: QueueBench, monkeypatch) -> None:
@@ -544,6 +599,102 @@ def test_a_withdrawal_seen_in_a_deferred_pass_still_invalidates_the_analysis_onc
         assert _drain_without_failure(bench).error is None
     assert invalidations == []
     assert bench.row["raw_payload"]["llm_display_description"] == "Synthèse sans la pièce Vench."
+
+
+def test_a_deferred_pass_keeps_the_proof_until_the_revocation_is_recorded(bench: QueueBench, monkeypatch) -> None:
+    # Ligne ancienne : des faits du modèle sans contexte enregistré, aucune trace de fait liée à la pièce Vench. Seule
+    # la preuve du manifeste la désigne. Le point d'étape (qui n'enregistre que le manifeste) l'effaçait sans que la
+    # révocation soit enregistrée : la passe suivante ne révoquait plus rien, et les faits tirés de la pièce restaient.
+    switch = _Switch(monkeypatch, frozenset())
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish([READABLE, WITHDRAWN[0]])
+    bench.drain()
+    payload = bench.row["raw_payload"]
+    assert "llm_fact_context_manifest" not in payload
+    traces = payload.get("pdf_fact_provenance") or {}
+    payload["pdf_fact_provenance"] = {
+        field: trace for field, trace in traces.items() if trace.get("document_url") != WITHDRAWN[0]
+    }
+    payload["llm_fact_extraction"] = {"summary": "Surface 81 m2 (pièce Vench)."}
+    payload["llm_display_description"] = "Synthèse avec la pièce Vench."
+    assert pdf_enrichment._document_text_urls(payload) == {READABLE, WITHDRAWN[0]}
+
+    switch.sources = frozenset({"vench"})
+    late = f"{SALE_URL}/long-scan.pdf"
+    bench.serve(late, "Pièce nouvelle. Texte long.")
+    bench.row["documents"].append({"label": "Cahier des conditions de vente 9", "url": late, "document_type": "pdf"})
+    real_extract = pdf_enrichment.extract_attached_document
+    checkpoints: list[set[str]] = []
+
+    def defer_once(file_path: object, document: dict | None = None) -> dict:
+        if document and document.get("url") == late and not checkpoints:
+            checkpoints.append(set())
+            raise pdf_enrichment.PdfExtractionDeferred(
+                "OCR budget", checkpointed_pages=0, total_pages=9, new_progress_pages=0
+            )
+        return real_extract(file_path, document=document)
+
+    real_checkpoint = bench._checkpoint
+
+    def recording_checkpoint(sale, analysis: dict, result: list, **kwargs) -> bool:
+        checkpoints[-1].update(item["url"] for item in analysis["cache_proof"]["documents"])
+        return real_checkpoint(sale, analysis, result, **kwargs)
+
+    monkeypatch.setattr(pdf_enrichment, "extract_attached_document", defer_once)
+    monkeypatch.setattr(supabase_client, "_persist_pdf_document_checkpoint_payload_to_supabase", recording_checkpoint)
+    invalidations = _record_invalidations(monkeypatch)
+    bench.age(1)
+    outcome = bench.drain()
+
+    assert outcome.passes >= 2  # le point d'étape, puis la passe qui lit la pièce nouvelle
+    assert WITHDRAWN[0] in checkpoints[0]  # le point d'étape a gardé la preuve de la pièce retirée
+    payload = bench.row["raw_payload"]
+    assert payload.get("source_content_change_reason") == "document_access_changed"
+    assert "llm_fact_extraction" not in payload and "llm_display_description" not in payload
+    assert "81 m2" not in str(bench.row["raw_text"])
+    # Enregistrée avec la vente, la révocation ne laisse plus rien qui désigne la pièce : elle n'est pas refaite.
+    assert WITHDRAWN[0] not in pdf_enrichment._document_text_urls(payload)
+    revocations = len(invalidations)
+    for hours in (1, 24):
+        bench.age(hours)
+        assert _drain_without_failure(bench).error is None
+    assert len(invalidations) == revocations
+
+
+@pytest.mark.parametrize("kept_by", ["corrected", "relayed"])
+def test_a_trace_kept_by_the_revocation_does_not_revoke_again(bench: QueueBench, monkeypatch, kept_by: str) -> None:
+    # Relecture du 19/11/2026 : ``_clear_pdf_fact_projections`` garde la trace d'un champ corrigé depuis la pièce, ou
+    # dont la valeur d'avant la pièce est inconnue (champ relayé par l'instantané). Elle désignait encore la pièce
+    # retirée : la révocation, l'analyse invalidée et les faits et la synthèse repayés recommençaient à chaque passe.
+    switch = _Switch(monkeypatch, frozenset())
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish([READABLE, WITHDRAWN[0]])
+    bench.drain()
+    payload = bench.row["raw_payload"]
+    trace = {"value": "4", "source": "pdf", "document_url": WITHDRAWN[0], "payload_keys": []}
+    payload.setdefault("pdf_fact_provenance", {})["rooms_count"] = trace
+    if kept_by == "corrected":
+        bench.row["rooms_count"] = 5  # corrigé après la lecture de la pièce
+    else:
+        # La page ne donne pas ce champ : la collecte reprend la valeur de la ligne, celle lue dans la pièce.
+        bench.row["rooms_count"] = 4
+        payload["source_factual_snapshot"] = {"fields_from_stored_row": ["rooms_count"]}
+    assert WITHDRAWN[0] in pdf_enrichment._document_text_urls(payload)
+    invalidations = _record_invalidations(monkeypatch)
+
+    switch.sources = frozenset({"vench"})
+    for hours in (1, 25):  # la passe du retrait, puis celle de la revalidation de 24 h
+        bench.age(hours)
+        outcome = _drain_without_failure(bench)
+        assert outcome.error is None and outcome.passes == 1, (hours, outcome)
+        _assert_dropped(bench)
+        payload = bench.row["raw_payload"]
+        assert WITHDRAWN[0] not in pdf_enrichment._document_text_urls(payload)
+        # La valeur affichée reste : corrigée, elle ne vient pas de la pièce ; relayée, c'est celle que la pièce avait
+        # donnée (comportement hérité du chemin « pièce terminale », règle métier non tranchée ici).
+        assert bench.row["rooms_count"] == (5 if kept_by == "corrected" else 4)
+        assert payload["pdf_fact_provenance"]["rooms_count"]["value"] == "4"
+    assert invalidations == ["document_access_changed"]
 
 
 # --- La purge des textes reçus ne vise que les pièces écartées pour retrait

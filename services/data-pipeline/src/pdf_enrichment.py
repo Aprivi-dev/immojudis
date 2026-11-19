@@ -82,13 +82,15 @@ from src.pdf_page_analysis import (
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
-from src.pdf_pass_outcomes import HOST_UNAVAILABLE_DEFERRAL
+from src.pdf_pass_outcomes import WITHDRAWAL_STATE_UNKNOWN_DEFERRAL, WITHDRAWAL_STATE_UNREADABLE, SpacedPdfFailure
 from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
 from src.source_withdrawal import (
     WITHDRAWN_DOCUMENT_REASON,
     SourceWithdrawn,
+    recorded_withdrawn_skips,
     withdrawal_state_unknown,
+    withdrawal_unreadable_since,
     withdrawn_source_of_url,
 )
 from src.sources.cloud_transport import configured_transport
@@ -155,24 +157,60 @@ class DocumentSourceWithdrawn(SourceWithdrawn):
         self.source = source
 
 
-#: Attente d'une passe dont une pièce est hébergée par une source alors que l'interrupteur de retrait n'a jamais été
-#: lu avec succès dans ce processus (``source_withdrawal.withdrawal_state_unknown``).
+#: Attente d'une passe dont une pièce est hébergée par une source alors que l'état du retrait est inconnu
+#: (``source_withdrawal.withdrawal_state_unknown``).
 WITHDRAWAL_UNKNOWN_DEFERRAL = timedelta(minutes=10)
+#: Durée de panne de l'interrupteur (depuis sa première lecture ratée, ``source_withdrawal.withdrawal_unreadable_since``)
+#: pendant laquelle ces passes sont reportées sans essai. Un report rend l'essai et rafraîchit l'échéance : sans borne,
+#: des droits manquants ou une colonne absente reportaient les pièces toutes les 10 minutes, sans fin et sans rien de
+#: visible (aucun compteur possible dans ``last_error``, que la prise remet à vide). Au-delà, échec espacé.
+WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT = timedelta(minutes=30)
+#: Attente avant un nouvel essai au-delà de la borne : les essais d'une tâche s'étalent sur quelques heures, puis
+#: l'alerte « essais épuisés » la compte.
+WITHDRAWAL_UNREADABLE_RETRY_DELAY = timedelta(hours=1)
 
 
 class DocumentWithdrawalUnknown(QueueJobDeferred):
-    """Pièce (ou saut de redirection) sur l'hôte d'une source, retrait inconnu : la passe attend sans requête, sans rien
-    écrire au manifeste et sans consommer d'essai."""
+    """Pièce (ou saut de redirection) sur l'hôte d'une source, retrait inconnu depuis moins de
+    ``WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT`` : la passe attend sans requête, sans rien écrire au manifeste et sans
+    consommer d'essai."""
 
     def __init__(self) -> None:
         retry_at = datetime.now(UTC) + WITHDRAWAL_UNKNOWN_DEFERRAL
         # Motif d'une tâche qui attend son échéance (``pdf_pass_outcomes.waits_for_its_deadline``) : le vidage ne
         # relance pas aussitôt une passe qui attendrait de nouveau.
         super().__init__(
-            f"{HOST_UNAVAILABLE_DEFERRAL}: withdrawal switch unreadable and never read in this process, documents of a "
-            f"catalogue source wait; no request, next try at {retry_at.isoformat()} without spending an attempt",
+            f"{WITHDRAWAL_STATE_UNKNOWN_DEFERRAL}: withdrawal switch unreadable, documents of a catalogue source wait; "
+            f"no request, next try at {retry_at.isoformat()} without spending an attempt",
             retry_after=retry_at,
         )
+
+
+class DocumentWithdrawalUnreadable(SpacedPdfFailure):
+    """Même cas, l'interrupteur illisible depuis au moins ``WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT`` (ou sans date de
+    panne) : échec espacé, essai consommé, donc visible et compté ; toujours sans requête ni écriture."""
+
+    def __init__(self, since: datetime | None) -> None:
+        retry_at = datetime.now(UTC) + WITHDRAWAL_UNREADABLE_RETRY_DELAY
+        started = f"since {since.isoformat(timespec='minutes')}" if since is not None else "outage start unknown"
+        super().__init__(
+            f"{WITHDRAWAL_STATE_UNREADABLE} ({started}); documents of a catalogue source not requested, "
+            f"next try not before {retry_at.isoformat()}",
+            retry_not_before=retry_at,
+        )
+
+
+#: Les deux fins d'un retrait inconnu, que les filets des requêtes laissent passer telles quelles.
+WITHDRAWAL_STATE_ERRORS = (DocumentWithdrawalUnknown, DocumentWithdrawalUnreadable)
+
+
+def _withdrawal_state_error(db_url: str) -> DocumentWithdrawalUnknown | DocumentWithdrawalUnreadable:
+    """Fin d'une passe qui rencontre une pièce sur l'hôte d'une source, état du retrait inconnu : report sans essai
+    pendant une panne courte de l'interrupteur, échec espacé au-delà."""
+    since = withdrawal_unreadable_since(db_url)
+    if since is not None and datetime.now(UTC) - since < WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT:
+        return DocumentWithdrawalUnknown()
+    return DocumentWithdrawalUnreadable(since)
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -180,9 +218,8 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     ensure_pdf_deadline(operation="starting document download")
     downloaded_documents = download_documents(sale, stats=stats)
     # Pièces d'une source retirée : leur texte, même lu avant le retrait, ne sert plus (ni cache, ni point d'étape, ni
-    # faits). Celles dont le texte nourrit encore la vente sont révoquées ici, avant toute écriture du manifeste : un
-    # point d'étape (qui n'enregistre que le manifeste) ne peut plus effacer la preuve sans que la révocation suive,
-    # et les traces que garde la vente (contexte des faits, provenance) la refont à la passe suivante.
+    # faits). Celles dont le texte nourrit encore la vente (``_document_text_urls``) sont révoquées ici, avant toute
+    # écriture du manifeste ; tant que la vente n'est pas enregistrée, la passe suivante les révoque encore.
     withdrawn_urls = withdrawn_document_urls(sale.documents, stats.withdrawn_documents)
     revoked_withdrawn_urls = withdrawn_urls & _document_text_urls(sale.raw_payload)
     if revoked_withdrawn_urls:
@@ -336,6 +373,13 @@ def _revoke_document_texts(sale: AuctionSale, terminal_urls: set[str]) -> None:
             affected.update({"app_surface_m2", "app_surface_kind"})
         _clear_pdf_fact_projections(sale, fields=affected)
         _clear_pdf_derived_source_description(sale, None)
+    # Une trace que ``_clear_pdf_fact_projections`` garde (valeur corrigée depuis, ou valeur d'avant la pièce inconnue)
+    # ne désigne plus la pièce révoquée : sinon ``_document_text_urls`` la retrouvait à chaque passe et la révocation
+    # (analyse invalidée, faits et synthèse repayés) recommençait sans fin.
+    kept = sale.raw_payload.get("pdf_fact_provenance")
+    for trace in kept.values() if isinstance(kept, dict) else []:
+        if isinstance(trace, dict) and clean_text(trace.get("document_url")) in terminal_urls:
+            trace.pop("document_url")
     invalidate_analysis(sale.raw_payload, "document_access_changed")
 
 
@@ -344,10 +388,11 @@ def _document_text_urls(raw_payload: dict) -> set[str]:
     contexte des faits du modèle (``llm_fact_context_manifest``), traces des faits tirés des pièces
     (``pdf_fact_provenance``).
 
-    Les deux dernières ne s'écrivent qu'avec la vente entière, jamais par un point d'étape, et la révocation les
-    efface (``invalidate_analysis``, ``_clear_pdf_fact_projections``) : une preuve effacée par un point d'étape sans
-    que la vente soit enregistrée laisse ces traces, et la passe suivante révoque encore ; une révocation enregistrée
-    n'en laisse aucune, et rien n'est révoqué deux fois.
+    Une révocation enregistrée n'en laisse aucune, par construction, et rien n'est révoqué deux fois : le manifeste
+    enregistré avec la vente n'a plus de preuve de la pièce, ``invalidate_analysis`` efface le contexte des faits, et
+    ``_revoke_document_texts`` efface les traces de la pièce ou, pour celles qu'il garde, leur lien vers elle. Avant
+    qu'elle soit enregistrée, au moins une reste : le contexte et les traces ne s'écrivent qu'avec la vente entière,
+    et un point d'étape garde la preuve d'une pièce écartée pour retrait (``keep_unrecorded_revocation_proof``).
     """
     analysis = raw_payload.get("document_analysis")
     proof = analysis.get("cache_proof") if isinstance(analysis, dict) else None
@@ -368,6 +413,31 @@ def _document_text_urls(raw_payload: dict) -> set[str]:
 
 def _dict_items(value: object) -> list[dict]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def keep_unrecorded_revocation_proof(analysis: object, recorded_analysis: object) -> object:
+    """Manifeste d'un point d'étape (``analysis``) qui garde, pour chaque pièce qu'il écarte pour retrait de sa source,
+    la preuve du manifeste enregistré avant la passe (``recorded_analysis``).
+
+    Un point d'étape n'enregistre que le manifeste, pas la révocation faite en mémoire (texte joint, faits, analyse).
+    Il effaçait la preuve de la pièce : quand la vente n'en gardait pas d'autre trace (faits anciens sans contexte,
+    texte joint seul), la passe suivante ne révoquait plus rien et la révocation n'était jamais enregistrée. Seule
+    l'écriture de la vente entière, qui enregistre la révocation, efface désormais cette preuve. Rend ``analysis``
+    tel quel s'il n'y a rien à garder, sinon une copie.
+    """
+    if not isinstance(analysis, dict):
+        return analysis
+    skipped = set(recorded_withdrawn_skips(analysis))
+    recorded = recorded_analysis.get("cache_proof") if isinstance(recorded_analysis, dict) else None
+    proof = analysis.get("cache_proof")
+    if not skipped or not isinstance(recorded, dict) or not isinstance(proof, dict):
+        return analysis
+    documents = proof.get("documents") if isinstance(proof.get("documents"), list) else []
+    skipped -= {document_url(item) for item in _dict_items(documents)}
+    kept = [item for item in _dict_items(recorded.get("documents")) if document_url(item) in skipped]
+    if not kept:
+        return analysis
+    return {**analysis, "cache_proof": {**proof, "documents": [*documents, *kept]}}
 
 
 def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]) -> None:
@@ -457,11 +527,11 @@ def download_documents(
         "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6",
         "Referer": sale.source_url,
     }
-    # Retrait inconnu (interrupteur jamais lu avec succès dans ce processus) et une pièce sur l'hôte d'une source : la
-    # passe attend, avant toute requête et toute écriture ; on ne peut ni la lire, ni l'écarter, ni la révoquer.
+    # Retrait inconnu (aucune lecture réussie récente de l'interrupteur) et une pièce sur l'hôte d'une source : la passe
+    # s'arrête, avant toute requête et toute écriture ; on ne peut ni la lire, ni l'écarter, ni la révoquer.
     db_url = str(settings.get("supabase_db_url") or "")
     if any(withdrawal_state_unknown(item.get("url"), db_url) for item in sale.documents if isinstance(item, dict)):
-        raise DocumentWithdrawalUnknown()
+        raise _withdrawal_state_error(db_url)
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
     for document in select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
@@ -578,7 +648,7 @@ def download_documents(
                         PdfDeadlineExceeded,
                         EncheresPubliquesAccessNotAuthorized,
                         DocumentSourceWithdrawn,
-                        DocumentWithdrawalUnknown,
+                        *WITHDRAWAL_STATE_ERRORS,
                     ):
                         raise
                     except PermanentDocumentFailure as exc:
@@ -613,7 +683,7 @@ def download_documents(
                         stats.downloaded += 1
                     download_error = None
                     break
-            except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized, DocumentWithdrawalUnknown):
+            except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized, *WITHDRAWAL_STATE_ERRORS):
                 raise
             except DocumentSourceWithdrawn as exc:
                 _record_withdrawn_document(stats, url, exc)
@@ -861,7 +931,7 @@ def _refuse_withdrawn_document_host(url: str) -> None:
     """
     db_url = str(load_settings().get("supabase_db_url") or "")
     if withdrawal_state_unknown(url, db_url):
-        raise DocumentWithdrawalUnknown()
+        raise _withdrawal_state_error(db_url)
     if (source := withdrawn_source_of_url(url, db_url)) is not None:
         raise DocumentSourceWithdrawn(source)
 
