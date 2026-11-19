@@ -13,7 +13,8 @@ import tempfile
 import time
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 
@@ -48,6 +49,7 @@ from src.pdf_document_selection import (
     adaptive_docling_timeout,
     select_documents_for_extraction,
     store_document_analysis_status,
+    withdrawn_document_urls,
 )
 from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
 from src.pdf_document_types import canonical_document_type, refined_document_type, with_content_document_types
@@ -80,12 +82,20 @@ from src.pdf_page_analysis import (
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.sale_local_files import document_filename, sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.pdf_pass_outcomes import WITHDRAWAL_STATE_UNKNOWN_DEFERRAL, WITHDRAWAL_STATE_UNREADABLE, SpacedPdfFailure
 from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
-from src.source_withdrawal import is_withdrawn_source_url
+from src.source_withdrawal import (
+    WITHDRAWN_DOCUMENT_REASON,
+    SourceWithdrawn,
+    recorded_withdrawn_skips,
+    withdrawal_state_unknown,
+    withdrawal_unreadable_since,
+    withdrawn_source_of_url,
+)
 from src.sources.cloud_transport import configured_transport
 from src.sources.robots_policy_copies import RobotsFailure
-from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, document_url, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_restore_value_before_document, pdf_source_reader
 
 LOGGER = logging.getLogger(__name__)
@@ -135,12 +145,89 @@ class PdfEnrichmentStats:
     permanent_document_failures: list[dict[str, str]] = field(default_factory=list)
     # Erreurs réseau de téléchargement, de l'hôte ou de la pièce (comptées aussi dans ``errors``).
     network_failures: list[NetworkFailure] = field(default_factory=list)
+    # Pièces dont une requête (redirection comprise) visait une source retirée : écartées, jamais en échec.
+    withdrawn_documents: list[dict[str, str]] = field(default_factory=list)
+
+
+class DocumentSourceWithdrawn(SourceWithdrawn):
+    """Requête de pièce (robots.txt, pièce ou saut de redirection) vers l'hôte d'une source retirée : refusée."""
+
+    def __init__(self, source: str) -> None:
+        super().__init__(f"Document host belongs to the withdrawn source {source}; no request sent")
+        self.source = source
+
+
+#: Attente d'une passe dont une pièce est hébergée par une source alors que l'état du retrait est inconnu
+#: (``source_withdrawal.withdrawal_state_unknown``).
+WITHDRAWAL_UNKNOWN_DEFERRAL = timedelta(minutes=10)
+#: Durée de panne de l'interrupteur (depuis sa première lecture ratée, ``source_withdrawal.withdrawal_unreadable_since``)
+#: pendant laquelle ces passes sont reportées sans essai. Un report rend l'essai et rafraîchit l'échéance : sans borne,
+#: des droits manquants ou une colonne absente reportaient les pièces toutes les 10 minutes, sans fin et sans rien de
+#: visible (aucun compteur possible dans ``last_error``, que la prise remet à vide). Au-delà, échec espacé.
+WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT = timedelta(minutes=30)
+#: Attente avant un nouvel essai au-delà de la borne : les essais d'une tâche s'étalent sur quelques heures, puis
+#: l'alerte « essais épuisés » la compte.
+WITHDRAWAL_UNREADABLE_RETRY_DELAY = timedelta(hours=1)
+
+
+class DocumentWithdrawalUnknown(QueueJobDeferred):
+    """Pièce (ou saut de redirection) sur l'hôte d'une source, retrait inconnu depuis moins de
+    ``WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT`` : la passe attend sans requête, sans rien écrire au manifeste et sans
+    consommer d'essai."""
+
+    def __init__(self) -> None:
+        retry_at = datetime.now(UTC) + WITHDRAWAL_UNKNOWN_DEFERRAL
+        # Motif d'une tâche qui attend son échéance (``pdf_pass_outcomes.waits_for_its_deadline``) : le vidage ne
+        # relance pas aussitôt une passe qui attendrait de nouveau.
+        super().__init__(
+            f"{WITHDRAWAL_STATE_UNKNOWN_DEFERRAL}: withdrawal switch unreadable, documents of a catalogue source wait; "
+            f"no request, next try at {retry_at.isoformat()} without spending an attempt",
+            retry_after=retry_at,
+        )
+
+
+class DocumentWithdrawalUnreadable(SpacedPdfFailure):
+    """Même cas, l'interrupteur illisible depuis au moins ``WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT`` (ou sans date de
+    panne) : échec espacé, essai consommé, donc visible et compté ; toujours sans requête ni écriture."""
+
+    def __init__(self, since: datetime | None) -> None:
+        retry_at = datetime.now(UTC) + WITHDRAWAL_UNREADABLE_RETRY_DELAY
+        started = f"since {since.isoformat(timespec='minutes')}" if since is not None else "outage start unknown"
+        super().__init__(
+            f"{WITHDRAWAL_STATE_UNREADABLE} ({started}); documents of a catalogue source not requested, "
+            f"next try not before {retry_at.isoformat()}",
+            retry_not_before=retry_at,
+        )
+
+
+#: Les deux fins d'un retrait inconnu, que les filets des requêtes laissent passer telles quelles.
+WITHDRAWAL_STATE_ERRORS = (DocumentWithdrawalUnknown, DocumentWithdrawalUnreadable)
+
+
+def _withdrawal_state_error(db_url: str) -> DocumentWithdrawalUnknown | DocumentWithdrawalUnreadable:
+    """Fin d'une passe qui rencontre une pièce sur l'hôte d'une source, état du retrait inconnu : report sans essai
+    pendant une panne courte de l'interrupteur, échec espacé au-delà."""
+    since = withdrawal_unreadable_since(db_url)
+    if since is not None and datetime.now(UTC) - since < WITHDRAWAL_UNKNOWN_DEFERRAL_LIMIT:
+        return DocumentWithdrawalUnknown()
+    return DocumentWithdrawalUnreadable(since)
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     stats = PdfEnrichmentStats()
     ensure_pdf_deadline(operation="starting document download")
     downloaded_documents = download_documents(sale, stats=stats)
+    # Pièces d'une source retirée : leur texte, même lu avant le retrait, ne sert plus (ni cache, ni point d'étape, ni
+    # faits). Celles dont le texte nourrit encore la vente (``_document_text_urls``) sont révoquées ici, avant toute
+    # écriture du manifeste ; tant que la vente n'est pas enregistrée, la passe suivante les révoque encore.
+    withdrawn_urls = withdrawn_document_urls(sale.documents, stats.withdrawn_documents)
+    revoked_withdrawn_urls = withdrawn_urls & _document_text_urls(sale.raw_payload)
+    if revoked_withdrawn_urls:
+        _revoke_document_texts(sale, revoked_withdrawn_urls)
+
+    def merge_without_withdrawn(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        return [payload for payload in merge_pdf_cache(*args, **kwargs) if document_url(payload) not in withdrawn_urls]
+
     restore_pdf_page_caches_from_manifest(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", downloaded_documents, cache_root=PDF_DOCUMENT_TEXTS_DIR, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]))
     _invalidate_replaced_document_facts(sale, downloaded_documents)
     pdf_texts: list[dict[str, object]] = []
@@ -180,7 +267,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 pages=exc.checkpointed_pages,
                 error_type=type(exc).__name__,
             )
-            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_pdf_cache, write_cache=write_pdf_text_cache, store_status=store_document_analysis_status)
+            checkpoint_partial_pdf_progress(file_path, document, error=exc, total_pages=exc.total_pages, cache_root=PDF_DOCUMENT_TEXTS_DIR, manifest_path=PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", current_texts=pdf_texts, sale=sale, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]), ocr_language=str(load_settings()["pdf_ocr_language"]), merge_cache=merge_without_withdrawn, write_cache=write_pdf_text_cache, store_status=partial(store_document_analysis_status, withdrawn_documents=stats.withdrawn_documents))
             raise
         except PermanentDocumentFailure as exc:
             # Unreadable for good (pages, weight, password, corruption): settled like a 404, the job succeeds.
@@ -235,34 +322,14 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             started_at=document_started_at,
             pages=int(payload.get("page_count") or 0),
         )
-    merged_pdf_texts = with_content_document_types(merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures))
-    if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
+    merged_pdf_texts = with_content_document_types(merge_without_withdrawn(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures))
+    if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures or revoked_withdrawn_urls:
         write_pdf_text_cache(sale, merged_pdf_texts)
         terminal_urls = set(stats.blocked_document_urls) | {
             item.get("url") for item in stats.permanent_document_failures if item.get("url")
         }
         if terminal_urls:
-            # Revoke a terminal piece even when another PDF remains readable.
-            # Unbound projections may depend on the revoked text; rebuild them
-            # from the retained texts. Explicit proofs from other URLs survive.
-            sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
-            declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
-            if declared_urls and declared_urls.issubset(terminal_urls):
-                _clear_pdf_fact_projections(sale)
-            else:
-                traces = sale.raw_payload.get("pdf_fact_provenance") or {}
-                if not isinstance(traces, dict):
-                    traces = {}
-                affected = {
-                    key for key, trace in traces.items()
-                    if isinstance(trace, dict)
-                    and (not trace.get("document_url") or trace.get("document_url") in terminal_urls)
-                }
-                if "surface_m2" in affected:
-                    affected.update({"app_surface_m2", "app_surface_kind"})
-                _clear_pdf_fact_projections(sale, fields=affected)
-                _clear_pdf_derived_source_description(sale, None)
-            invalidate_analysis(sale.raw_payload, "document_access_changed")
+            _revoke_document_texts(sale, terminal_urls)
         before = sale.raw_text or ""
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
@@ -275,11 +342,102 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         blocked_document_urls=stats.blocked_document_urls,
         permanent_document_failures=stats.permanent_document_failures,
         failed_document_diagnostics=failed_document_diagnostics,
+        withdrawn_documents=stats.withdrawn_documents,
     )
     if sale.documents and manifest_is_complete(sale.raw_payload.get("document_analysis"), sale.documents):
         # Plus rien à relire avec ces règles, même sans texte (pièces toutes écartées ou vides) : sans version, la vente restait à relire à chaque vidage. Une vente sans pièce n'a rien lu : pas de version.
         sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return stats
+
+
+def _revoke_document_texts(sale: AuctionSale, terminal_urls: set[str]) -> None:
+    """Révoque le texte des pièces ``terminal_urls`` (bloquées, durablement illisibles, source retirée).
+
+    Revoke a terminal piece even when another PDF remains readable. Unbound projections may depend on the revoked
+    text; rebuild them from the retained texts. Explicit proofs from other URLs survive.
+    """
+    sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
+    declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
+    if declared_urls and declared_urls.issubset(terminal_urls):
+        _clear_pdf_fact_projections(sale)
+    else:
+        traces = sale.raw_payload.get("pdf_fact_provenance") or {}
+        if not isinstance(traces, dict):
+            traces = {}
+        affected = {
+            key for key, trace in traces.items()
+            if isinstance(trace, dict)
+            and (not trace.get("document_url") or trace.get("document_url") in terminal_urls)
+        }
+        if "surface_m2" in affected:
+            affected.update({"app_surface_m2", "app_surface_kind"})
+        _clear_pdf_fact_projections(sale, fields=affected)
+        _clear_pdf_derived_source_description(sale, None)
+    # Une trace que ``_clear_pdf_fact_projections`` garde (valeur corrigée depuis, ou valeur d'avant la pièce inconnue)
+    # ne désigne plus la pièce révoquée : sinon ``_document_text_urls`` la retrouvait à chaque passe et la révocation
+    # (analyse invalidée, faits et synthèse repayés) recommençait sans fin.
+    kept = sale.raw_payload.get("pdf_fact_provenance")
+    for trace in kept.values() if isinstance(kept, dict) else []:
+        if isinstance(trace, dict) and clean_text(trace.get("document_url")) in terminal_urls:
+            trace.pop("document_url")
+    invalidate_analysis(sale.raw_payload, "document_access_changed")
+
+
+def _document_text_urls(raw_payload: dict) -> set[str]:
+    """URL des pièces dont le texte nourrit encore la vente : preuve du manifeste enregistré (``cache_proof``),
+    contexte des faits du modèle (``llm_fact_context_manifest``), traces des faits tirés des pièces
+    (``pdf_fact_provenance``).
+
+    Une révocation enregistrée n'en laisse aucune, par construction, et rien n'est révoqué deux fois : le manifeste
+    enregistré avec la vente n'a plus de preuve de la pièce, ``invalidate_analysis`` efface le contexte des faits, et
+    ``_revoke_document_texts`` efface les traces de la pièce ou, pour celles qu'il garde, leur lien vers elle. Avant
+    qu'elle soit enregistrée, au moins une reste : le contexte et les traces ne s'écrivent qu'avec la vente entière,
+    et un point d'étape garde la preuve d'une pièce écartée pour retrait (``keep_unrecorded_revocation_proof``).
+    """
+    analysis = raw_payload.get("document_analysis")
+    proof = analysis.get("cache_proof") if isinstance(analysis, dict) else None
+    context = raw_payload.get("llm_fact_context_manifest")
+    traces = raw_payload.get("pdf_fact_provenance")
+    items = [
+        *_dict_items(proof.get("documents") if isinstance(proof, dict) else None),
+        *_dict_items(context.get("documents") if isinstance(context, dict) else None),
+    ]
+    urls = {document_url(item) for item in items}
+    urls.update(
+        clean_text(trace.get("document_url"))
+        for trace in (traces.values() if isinstance(traces, dict) else [])
+        if isinstance(trace, dict)
+    )
+    return {url for url in urls if url}
+
+
+def _dict_items(value: object) -> list[dict]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def keep_unrecorded_revocation_proof(analysis: object, recorded_analysis: object) -> object:
+    """Manifeste d'un point d'étape (``analysis``) qui garde, pour chaque pièce qu'il écarte pour retrait de sa source,
+    la preuve du manifeste enregistré avant la passe (``recorded_analysis``).
+
+    Un point d'étape n'enregistre que le manifeste, pas la révocation faite en mémoire (texte joint, faits, analyse).
+    Il effaçait la preuve de la pièce : quand la vente n'en gardait pas d'autre trace (faits anciens sans contexte,
+    texte joint seul), la passe suivante ne révoquait plus rien et la révocation n'était jamais enregistrée. Seule
+    l'écriture de la vente entière, qui enregistre la révocation, efface désormais cette preuve. Rend ``analysis``
+    tel quel s'il n'y a rien à garder, sinon une copie.
+    """
+    if not isinstance(analysis, dict):
+        return analysis
+    skipped = set(recorded_withdrawn_skips(analysis))
+    recorded = recorded_analysis.get("cache_proof") if isinstance(recorded_analysis, dict) else None
+    proof = analysis.get("cache_proof")
+    if not skipped or not isinstance(recorded, dict) or not isinstance(proof, dict):
+        return analysis
+    documents = proof.get("documents") if isinstance(proof.get("documents"), list) else []
+    skipped -= {document_url(item) for item in _dict_items(documents)}
+    kept = [item for item in _dict_items(recorded.get("documents")) if document_url(item) in skipped]
+    if not kept:
+        return analysis
+    return {**analysis, "cache_proof": {**proof, "documents": [*documents, *kept]}}
 
 
 def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]) -> None:
@@ -369,6 +527,11 @@ def download_documents(
         "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6",
         "Referer": sale.source_url,
     }
+    # Retrait inconnu (aucune lecture réussie récente de l'interrupteur) et une pièce sur l'hôte d'une source : la passe
+    # s'arrête, avant toute requête et toute écriture ; on ne peut ni la lire, ni l'écarter, ni la révoquer.
+    db_url = str(settings.get("supabase_db_url") or "")
+    if any(withdrawal_state_unknown(item.get("url"), db_url) for item in sale.documents if isinstance(item, dict)):
+        raise _withdrawal_state_error(db_url)
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
     for document in select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
@@ -382,11 +545,8 @@ def download_documents(
         if not url or document_type == "other" or url in seen_urls:
             continue
         seen_urls.add(url)
-        if is_withdrawn_source_url(url, str(settings.get("supabase_db_url") or "")):
-            # Pièce hébergée par une source retirée du catalogue (vente fusionnée) : on ne la télécharge pas.
-            # Rien n'est consigné comme « bloqué » : lever le retrait la remet dans la file.
-            LOGGER.info("Skipping document hosted by a withdrawn source %s", url)
-            continue
+        # Une pièce hébergée par une source retirée n'arrive pas ici : la sélection l'écarte (motif withdrawn_source).
+        # Une redirection vers une telle source est refusée à la requête (``_refuse_withdrawn_document_host``).
         resume_at = suspended_host_until(url, str(settings.get("supabase_db_url") or ""))
         if resume_at is not None:
             # Site d'une source suspendue parce qu'il ne répond plus (src/source_suspension.py) : aucune requête ;
@@ -394,7 +554,12 @@ def download_documents(
             raise QueueJobDeferred(
                 f"Document host suspended (source unreachable) until {resume_at.isoformat()}", retry_after=resume_at
             )
-        if _is_robots_disallowed_licitor_document(url):
+        try:
+            robots_disallowed = _is_robots_disallowed_licitor_document(url)
+        except DocumentSourceWithdrawn as exc:
+            _record_withdrawn_document(stats, url, exc)
+            continue
+        if robots_disallowed:
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
             if stats is not None:
                 stats.blocked_document_urls.append(url)
@@ -479,7 +644,12 @@ def download_documents(
                                 "response is not a supported document "
                                 f"(content-type={content_type or 'unknown'})",
                             )
-                    except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized):
+                    except (
+                        PdfDeadlineExceeded,
+                        EncheresPubliquesAccessNotAuthorized,
+                        DocumentSourceWithdrawn,
+                        *WITHDRAWAL_STATE_ERRORS,
+                    ):
                         raise
                     except PermanentDocumentFailure as exc:
                         permanent_failures.append(exc)
@@ -513,8 +683,11 @@ def download_documents(
                         stats.downloaded += 1
                     download_error = None
                     break
-            except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized):
+            except (PdfDeadlineExceeded, EncheresPubliquesAccessNotAuthorized, *WITHDRAWAL_STATE_ERRORS):
                 raise
+            except DocumentSourceWithdrawn as exc:
+                _record_withdrawn_document(stats, url, exc)
+                continue
             except Exception as exc:
                 download_error = exc
             if download_error is not None:
@@ -559,6 +732,12 @@ def download_documents(
         document["sha256"] = enriched_document["sha256"]
         downloaded.append(enriched_document)
     return downloaded
+
+
+def _record_withdrawn_document(stats: PdfEnrichmentStats | None, url: str, error: DocumentSourceWithdrawn) -> None:
+    LOGGER.info("Skipping document %s: a request led to the withdrawn source %s", url, error.source)
+    if stats is not None:
+        stats.withdrawn_documents.append({"url": url, "reason": WITHDRAWN_DOCUMENT_REASON, "source": error.source})
 
 
 def _looks_like_pdf_bytes(content: bytes) -> bool:
@@ -659,6 +838,8 @@ def _download_document_response(
     ensure_pdf_deadline(operation="starting document redirect chain")
     current_url = url
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
+        # Avant le tour de l'hôte (copie robots en base, attente) : un saut vers une source retirée n'y entre pas.
+        _refuse_withdrawn_document_host(current_url)
         require_ep_url(current_url, load_settings())
         ensure_pdf_deadline(operation="following document redirect")
         try:
@@ -704,6 +885,7 @@ def _send_pinned_document_request(
 ) -> httpx.Response:
     requested_timeout = float(timeout_seconds)
     ensure_pdf_deadline(operation="starting document HTTP request")
+    _refuse_withdrawn_document_host(url)
     require_ep_url(url, load_settings())
     target = _resolve_public_document_target(url)
     timeout_seconds, deadline_bounded = deadline_bounded_timeout(
@@ -737,6 +919,21 @@ def _send_pinned_document_request(
                 new_progress_pages=0,
             ) from exc
         raise
+
+
+def _refuse_withdrawn_document_host(url: str) -> None:
+    """Refuse une requête de pièce vers l'hôte d'une source retirée, ou d'une source dont le retrait est inconnu.
+
+    Point de passage de toute requête de pièce : robots.txt, pièce, chaque saut de redirection (avant son tour
+    d'hôte). Avant la résolution DNS, sur l'hôte tel que le client le résout (``source_withdrawal.source_of_url``) ;
+    la sélection écarte déjà les pièces d'une source retirée, ce contrôle est le filet (redirection, retrait posé
+    pendant la passe).
+    """
+    db_url = str(load_settings().get("supabase_db_url") or "")
+    if withdrawal_state_unknown(url, db_url):
+        raise _withdrawal_state_error(db_url)
+    if (source := withdrawn_source_of_url(url, db_url)) is not None:
+        raise DocumentSourceWithdrawn(source)
 
 
 def _fetch_document_robots(robots_url: str) -> httpx.Response:

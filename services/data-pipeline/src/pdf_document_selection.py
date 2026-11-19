@@ -33,6 +33,12 @@ from src.pdf_progress import (
     document_url,
     progress_entry,
 )
+from src.source_withdrawal import (
+    WITHDRAWN_DOCUMENT_REASON,
+    known_withdrawn_sources,
+    recorded_withdrawn_skips,
+    withdrawn_source_of_url,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -119,8 +125,12 @@ def select_documents_for_extraction(
         max(configured_max_documents, _available_document_group_count(documents, required_groups)),
     )
     if sale is not None:
-        completed_urls = complete_or_terminal_urls(sale.raw_payload.get("document_analysis"), sale.documents)
+        analysis = sale.raw_payload.get("document_analysis")
+        completed_urls = complete_or_terminal_urls(analysis, sale.documents)
         completed_urls -= revalidate_urls or set()
+        # Une pièce écartée pour sa source retirée n'est pas réglée : le filtre ci-dessus rejuge le retrait à
+        # chaque passe, et la pièce est lue à la première passe qui suit la levée du retrait.
+        completed_urls -= set(recorded_withdrawn_skips(analysis))
         if completed_urls:
             documents = [document for document in documents if document_url(document) not in completed_urls]
     priority = {
@@ -187,12 +197,19 @@ def select_documents_for_extraction(
 
 
 def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None:
-    """Return a deterministic reason for excluding a known non-document URL.
+    rejection = _document_candidate_rejection(document)
+    return rejection["reason"] if rejection is not None else None
+
+
+def _document_candidate_rejection(document: dict[str, str]) -> dict[str, str] | None:
+    """Return the reason (and, for a withdrawn source, its name) for excluding a candidate before any request.
 
     This is intentionally a conservative, URL-only prefilter. A signed or
     extensionless download endpoint is retained for the network/content
     checks in ``pdf_enrichment``; only evidence that the candidate is a media
-    asset, social page, or unsupported file is rejected here.
+    asset, social page, or unsupported file is rejected here. The one reason
+    that is not deterministic is a host owned by a source withdrawn from the
+    catalogue (``source_withdrawal``): it is judged again at each pass.
     """
 
     raw_url = clean_text(document.get("url"))
@@ -206,13 +223,20 @@ def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None
         parsed = urlsplit(raw_url)
         hostname = parsed.hostname
     except ValueError:
-        return "invalid_url"
+        return {"reason": "invalid_url"}
     if parsed.scheme not in {"http", "https"} or not hostname:
-        return "invalid_url"
+        return {"reason": "invalid_url"}
+    # Source lue une seule fois : le motif et la source enregistrée ne peuvent pas diverger si le retrait change.
+    if (source := withdrawn_source_of_url(document.get("url"), str(load_settings().get("supabase_db_url") or ""))):
+        # Pièce hébergée par une source retirée (vente fusionnée) : aucune requête vers elle, la pièce est
+        # écartée comme un lien non documentaire, même lue avant le retrait (son texte et ses faits ne servent plus
+        # tant que dure le retrait). La source nommée permet au vidage (document_backlog.CANDIDATES_SQL) et à
+        # ``freshness.documents_are_current`` de voir la levée du retrait.
+        return {"reason": WITHDRAWN_DOCUMENT_REASON, "source": source}
 
     hostname = hostname.rstrip(".").lower()
     if any(hostname == host or hostname.endswith(f".{host}") for host in SOCIAL_DOCUMENT_HOSTS):
-        return "social_url"
+        return {"reason": "social_url"}
 
     path = unquote(parsed.path or "").lower()
     suffix = Path(path).suffix
@@ -222,28 +246,83 @@ def _document_candidate_rejection_reason(document: dict[str, str]) -> str | None
     if suffix in DOCUMENT_SUFFIXES:
         return None
     if suffix in NON_DOCUMENT_SUFFIXES:
-        return "non_document_asset"
+        return {"reason": "non_document_asset"}
     if any(marker in path for marker in NON_DOCUMENT_PATH_MARKERS):
-        return "non_document_asset"
+        return {"reason": "non_document_asset"}
     if NON_DOCUMENT_LABEL_RE.search(label):
-        return "non_document_label"
+        return {"reason": "non_document_label"}
     return None
 
 
-def _document_candidate_rejections(documents: list[dict[str, str]]) -> list[dict[str, str]]:
+def _document_candidate_rejections(
+    documents: list[dict[str, str]],
+    withdrawn_documents: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """Pièces écartées : par leur URL, puis celles dont une redirection menait à une source retirée
+    (``withdrawn_documents`` de ``PdfEnrichmentStats``, déjà sous la forme ``{"url", "reason", "source"}``)."""
     rejections: list[dict[str, str]] = []
     seen: set[str] = set()
     for document in documents:
-        reason = _document_candidate_rejection_reason(document)
-        if reason is None:
+        rejection = _document_candidate_rejection(document)
+        if rejection is None:
             continue
         url = clean_text(document.get("url")) or ""
         identity = url or str(document.get("label") or "")
         if identity in seen:
             continue
         seen.add(identity)
-        rejections.append({"url": url, "reason": reason})
+        rejections.append({"url": url, **rejection})
+    listed = {document_url(document) for document in documents}
+    for item in withdrawn_documents or []:
+        url = document_url(item)
+        if url and url in listed and url not in seen:
+            seen.add(url)
+            rejections.append({"url": url, "reason": WITHDRAWN_DOCUMENT_REASON, "source": str(item.get("source") or "")})
     return rejections
+
+
+def withdrawn_document_urls(
+    documents: list[dict[str, str]],
+    withdrawn_documents: list[dict[str, str]] | None = None,
+) -> set[str]:
+    """URL (nettoyées) des pièces écartées parce que leur source est retirée."""
+    return {
+        item["url"]
+        for item in _document_candidate_rejections(documents, withdrawn_documents)
+        if item["reason"] == WITHDRAWN_DOCUMENT_REASON and item["url"]
+    }
+
+
+def withdrawals_are_recorded(analysis: object, documents: list[dict[str, str]]) -> bool:
+    """Le manifeste ``analysis`` a écarté toute pièce que la sélection écarte aujourd'hui pour retrait, et ne garde
+    écartée pour retrait aucune pièce dont la source a été réintégrée.
+
+    Faux dès qu'un retrait est posé ou levé après la dernière passe : la vente n'est plus à jour et la passe suivante
+    écarte la pièce (son texte et ses faits ne servent plus) ou la relit, sans attendre la revalidation de 24 h.
+    Chaque pièce est jugée par ``_document_candidate_rejection``, la règle de la sélection, et une pièce déjà écartée
+    pour un autre motif est réglée : ``ftp://`` ou ``//`` sur l'hôte retiré, écartés ``invalid_url``, ne rendaient
+    plus jamais la vente à jour. État du retrait inconnu (``known_withdrawn_sources``) : rien n'a changé (aucune pièce
+    n'est alors jugée écartée pour retrait, et un écart enregistré n'est pas tenu pour levé).
+    """
+    recorded = recorded_withdrawn_skips(analysis)
+    if recorded:
+        withdrawn = known_withdrawn_sources(str(load_settings().get("supabase_db_url") or ""))
+        if withdrawn is None:
+            return True
+        if any(source not in withdrawn for source in set(recorded.values())):
+            return False
+    reasons = analysis.get("skipped_document_reasons") if isinstance(analysis, dict) else None
+    settled = {
+        url
+        for item in (reasons if isinstance(reasons, list) else [])
+        if isinstance(item, dict) and (url := clean_text(item.get("url")))
+    }
+    return all(
+        clean_text(document.get("url")) in settled
+        for document in documents
+        if (rejection := _document_candidate_rejection(document)) is not None
+        and rejection["reason"] == WITHDRAWN_DOCUMENT_REASON
+    )
 
 
 def _required_document_groups_for_sale(sale: AuctionSale | None) -> tuple[frozenset[str], ...]:
@@ -350,6 +429,7 @@ def store_document_analysis_status(
     blocked_document_urls: list[str] | None = None,
     permanent_document_failures: list[dict[str, str]] | None = None,
     failed_document_diagnostics: list[dict[str, object]] | None = None,
+    withdrawn_documents: list[dict[str, str]] | None = None,
 ) -> None:
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     if not isinstance(sale.raw_payload, dict):
@@ -404,7 +484,21 @@ def store_document_analysis_status(
 
     if not isinstance(raw_payload.get("document_analysis"), dict):
         raw_payload["document_analysis"] = {}
-    evidence_texts = merged_pdf_texts if merged_pdf_texts is not None else pdf_texts
+    candidate_rejections = _document_candidate_rejections(sale_documents, withdrawn_documents)
+    skipped_urls = {item["url"] for item in candidate_rejections if item.get("url")}
+    withdrawn_urls = {
+        item["url"] for item in candidate_rejections if item["reason"] == WITHDRAWN_DOCUMENT_REASON and item["url"]
+    }
+    # Une pièce écartée pour retrait de sa source n'a ni texte, ni preuve, ni progression dans le manifeste, même lue
+    # avant le retrait : son texte ne sert plus, et aucune entrée restante ne la fait passer pour lue ou à revalider
+    # (``freshness.documents_are_current`` refusait une preuve d'URL écartée). Les autres motifs d'écart gardent leur
+    # comportement d'avant le retrait.
+    pdf_texts = [payload for payload in pdf_texts if document_url(payload) not in withdrawn_urls]
+    evidence_texts = [
+        payload
+        for payload in (merged_pdf_texts if merged_pdf_texts is not None else pdf_texts)
+        if document_url(payload) not in withdrawn_urls
+    ]
     profile_documents = sale_documents if sale_documents else documents
     current_manifest_fingerprint = document_fingerprint(sale_documents)
     typed_documents = [_document_profile(document) for document in profile_documents]
@@ -445,7 +539,6 @@ def store_document_analysis_status(
         group for group, aliases in required_groups.items() if not (aliases & extracted_types)
     ]
 
-    candidate_rejections = _document_candidate_rejections(sale_documents)
     selected_documents = select_documents_for_extraction(sale_documents, sale=sale)
     selected_urls = {
         str(document.get("url"))
@@ -517,6 +610,7 @@ def store_document_analysis_status(
         ]
         if str(url) not in current_attempt_urls or str(url) in {str(item) for item in (blocked_document_urls or [])}
         if str(url) in {document_url(document) for document in profile_documents}
+        if str(url) not in withdrawn_urls
     ))
     blocked_url_set = set(blocked_urls)
     previous_permanent = previous_analysis.get("permanent_document_failures", []) if isinstance(previous_analysis, dict) else []
@@ -539,6 +633,7 @@ def store_document_analysis_status(
             )
         )
         and str(item.get("url")) in selected_urls
+        and str(item.get("url")) not in withdrawn_urls
     ]
     permanent_failures = list({item["url"]: item for item in permanent_failures}.values())
     permanent_url_set = {item["url"] for item in permanent_failures}
@@ -572,6 +667,7 @@ def store_document_analysis_status(
                 for url in previous_terminal
                 if str(url) in {document_url(document) for document in profile_documents}
                 and str(url) not in current_attempt_urls
+                and str(url) not in withdrawn_urls
             ),
             *empty_document_urls,
             *(item["url"] for item in permanent_failures),
@@ -601,8 +697,14 @@ def store_document_analysis_status(
     elif not text_profiles and not tolerated_partials:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
-        if candidate_rejections:
+        rejection_reasons = {item["reason"] for item in candidate_rejections}
+        if rejection_reasons - {WITHDRAWN_DOCUMENT_REASON}:
             warning += " Certaines URL sociales ou de médias ont été écartées automatiquement."
+        if WITHDRAWN_DOCUMENT_REASON in rejection_reasons:
+            warning += (
+                " Les pièces hébergées par une source retirée du catalogue n'ont pas été téléchargées ; "
+                "elles le seront si cette source est rétablie."
+            )
     elif missing_core_documents:
         coverage_status = "partial"
         warning = "Certaines pièces clés manquent ou n'ont pas été extraites."
@@ -655,6 +757,7 @@ def store_document_analysis_status(
         and str(document["url"]) not in permanent_url_set
         and str(document["url"]) not in set(empty_document_urls)
         and str(document["url"]) not in set(tolerated_partial_urls)
+        and document_url(document) not in withdrawn_urls
         and (
             str(document["url"]) in current_failed_urls
             or str(document["url"]) in diagnostics_urls
@@ -745,7 +848,7 @@ def store_document_analysis_status(
     http_checked_at_by_url = {
         url: value
         for url, value in http_checked_at_by_url.items()
-        if url in document_urls
+        if url in document_urls - withdrawn_urls
     }
     modern_progress_by_url = {
         str(entry.get("url")): entry
@@ -758,11 +861,6 @@ def store_document_analysis_status(
         if entry.get("complete") is True and entry.get("extraction_status") in {"extracted", "empty"}
     }
     excluded_urls = set(blocked_urls) | set(terminal_document_urls)
-    skipped_urls = {
-        item["url"]
-        for item in candidate_rejections
-        if item.get("url")
-    }
     pending_urls = document_urls - complete_progress_urls - excluded_urls - skipped_urls
     proof_http_checked_at = {
         document_url(item): item.get("http_checked_at")
