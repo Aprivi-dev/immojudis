@@ -33,7 +33,12 @@ from src.pdf_progress import (
     document_url,
     progress_entry,
 )
-from src.source_withdrawal import WITHDRAWN_DOCUMENT_REASON, recorded_withdrawn_skips, withdrawn_source_of_url
+from src.source_withdrawal import (
+    WITHDRAWN_DOCUMENT_REASON,
+    known_withdrawn_sources,
+    recorded_withdrawn_skips,
+    withdrawn_source_of_url,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -288,6 +293,38 @@ def withdrawn_document_urls(
     }
 
 
+def withdrawals_are_recorded(analysis: object, documents: list[dict[str, str]]) -> bool:
+    """Le manifeste ``analysis`` a écarté toute pièce que la sélection écarte aujourd'hui pour retrait, et ne garde
+    écartée pour retrait aucune pièce dont la source a été réintégrée.
+
+    Faux dès qu'un retrait est posé ou levé après la dernière passe : la vente n'est plus à jour et la passe suivante
+    écarte la pièce (son texte et ses faits ne servent plus) ou la relit, sans attendre la revalidation de 24 h.
+    Chaque pièce est jugée par ``_document_candidate_rejection``, la règle de la sélection, et une pièce déjà écartée
+    pour un autre motif est réglée : ``ftp://`` ou ``//`` sur l'hôte retiré, écartés ``invalid_url``, ne rendaient
+    plus jamais la vente à jour. État du retrait inconnu (``known_withdrawn_sources``) : rien n'a changé (aucune pièce
+    n'est alors jugée écartée pour retrait, et un écart enregistré n'est pas tenu pour levé).
+    """
+    recorded = recorded_withdrawn_skips(analysis)
+    if recorded:
+        withdrawn = known_withdrawn_sources(str(load_settings().get("supabase_db_url") or ""))
+        if withdrawn is None:
+            return True
+        if any(source not in withdrawn for source in set(recorded.values())):
+            return False
+    reasons = analysis.get("skipped_document_reasons") if isinstance(analysis, dict) else None
+    settled = {
+        url
+        for item in (reasons if isinstance(reasons, list) else [])
+        if isinstance(item, dict) and (url := clean_text(item.get("url")))
+    }
+    return all(
+        clean_text(document.get("url")) in settled
+        for document in documents
+        if (rejection := _document_candidate_rejection(document)) is not None
+        and rejection["reason"] == WITHDRAWN_DOCUMENT_REASON
+    )
+
+
 def _required_document_groups_for_sale(sale: AuctionSale | None) -> tuple[frozenset[str], ...]:
     if sale is None:
         return ()
@@ -449,14 +486,18 @@ def store_document_analysis_status(
         raw_payload["document_analysis"] = {}
     candidate_rejections = _document_candidate_rejections(sale_documents, withdrawn_documents)
     skipped_urls = {item["url"] for item in candidate_rejections if item.get("url")}
-    # Une pièce écartée n'a ni texte, ni preuve, ni progression dans le manifeste, même lue auparavant (pièce d'une
-    # source retirée depuis) : son texte ne sert plus, et aucune entrée restante ne la fait passer pour lue ou à
-    # revalider (``freshness.documents_are_current`` refusait une preuve d'URL écartée).
-    pdf_texts = [payload for payload in pdf_texts if document_url(payload) not in skipped_urls]
+    withdrawn_urls = {
+        item["url"] for item in candidate_rejections if item["reason"] == WITHDRAWN_DOCUMENT_REASON and item["url"]
+    }
+    # Une pièce écartée pour retrait de sa source n'a ni texte, ni preuve, ni progression dans le manifeste, même lue
+    # avant le retrait : son texte ne sert plus, et aucune entrée restante ne la fait passer pour lue ou à revalider
+    # (``freshness.documents_are_current`` refusait une preuve d'URL écartée). Les autres motifs d'écart gardent leur
+    # comportement d'avant le retrait.
+    pdf_texts = [payload for payload in pdf_texts if document_url(payload) not in withdrawn_urls]
     evidence_texts = [
         payload
         for payload in (merged_pdf_texts if merged_pdf_texts is not None else pdf_texts)
-        if document_url(payload) not in skipped_urls
+        if document_url(payload) not in withdrawn_urls
     ]
     profile_documents = sale_documents if sale_documents else documents
     current_manifest_fingerprint = document_fingerprint(sale_documents)
@@ -569,7 +610,7 @@ def store_document_analysis_status(
         ]
         if str(url) not in current_attempt_urls or str(url) in {str(item) for item in (blocked_document_urls or [])}
         if str(url) in {document_url(document) for document in profile_documents}
-        if str(url) not in skipped_urls
+        if str(url) not in withdrawn_urls
     ))
     blocked_url_set = set(blocked_urls)
     previous_permanent = previous_analysis.get("permanent_document_failures", []) if isinstance(previous_analysis, dict) else []
@@ -592,7 +633,7 @@ def store_document_analysis_status(
             )
         )
         and str(item.get("url")) in selected_urls
-        and str(item.get("url")) not in skipped_urls
+        and str(item.get("url")) not in withdrawn_urls
     ]
     permanent_failures = list({item["url"]: item for item in permanent_failures}.values())
     permanent_url_set = {item["url"] for item in permanent_failures}
@@ -626,7 +667,7 @@ def store_document_analysis_status(
                 for url in previous_terminal
                 if str(url) in {document_url(document) for document in profile_documents}
                 and str(url) not in current_attempt_urls
-                and str(url) not in skipped_urls
+                and str(url) not in withdrawn_urls
             ),
             *empty_document_urls,
             *(item["url"] for item in permanent_failures),
@@ -716,7 +757,7 @@ def store_document_analysis_status(
         and str(document["url"]) not in permanent_url_set
         and str(document["url"]) not in set(empty_document_urls)
         and str(document["url"]) not in set(tolerated_partial_urls)
-        and document_url(document) not in skipped_urls
+        and document_url(document) not in withdrawn_urls
         and (
             str(document["url"]) in current_failed_urls
             or str(document["url"]) in diagnostics_urls
@@ -807,7 +848,7 @@ def store_document_analysis_status(
     http_checked_at_by_url = {
         url: value
         for url, value in http_checked_at_by_url.items()
-        if url in document_urls - skipped_urls
+        if url in document_urls - withdrawn_urls
     }
     modern_progress_by_url = {
         str(entry.get("url")): entry

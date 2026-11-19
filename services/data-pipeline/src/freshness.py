@@ -6,7 +6,6 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src import config
 from src.base_reads import SOURCE_SNAPSHOT_KEY, relayed_fields, was_reread
 from src.display_invalidation import (
     OPERATIONAL_CHANGE,
@@ -17,7 +16,6 @@ from src.display_invalidation import (
 )
 from src.normalize import clean_text
 from src.sale_local_files import sale_storage_id
-from src.source_withdrawal import withdrawals_are_recorded
 from src.timestamps import aware_timestamp
 
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
@@ -238,9 +236,10 @@ def documents_are_current(sale: Any) -> bool:
     if not documents:
         return True
     # Un retrait de source posé ou levé depuis la passe : la pièce est à écarter (texte et faits retirés) ou à relire.
-    if not withdrawals_are_recorded(
-        analysis, [document.get("url") for document in documents], str(config.load_settings().get("supabase_db_url") or "")
-    ):
+    # Import local : pdf_document_selection importe ce module.
+    from src.pdf_document_selection import withdrawals_are_recorded
+
+    if not withdrawals_are_recorded(analysis, documents):
         return False
 
     def _document_url_set(value: object) -> set[str] | None:

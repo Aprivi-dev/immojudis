@@ -79,6 +79,38 @@ def test_switch_is_cached_for_a_minute(monkeypatch) -> None:
     source_withdrawal.reset_cache()
 
 
+def test_a_failed_read_never_lifts_a_withdrawal_for_documents(monkeypatch) -> None:
+    # Pièces : une lecture ratée garde la dernière lecture réussie du processus, ou l'état inconnu (``None``) s'il n'y
+    # en a aucune. Collecte et miroir de photos (``withdrawn_sources``) gardent ``DEFAULT_WITHDRAWN``.
+    switch: list[frozenset[str] | None] = [None]
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", REAL_WITHDRAWN_SOURCES)
+    monkeypatch.setattr(
+        source_withdrawal,
+        "read_withdrawn_sources",
+        lambda _db_url, *, unreadable=frozenset(), **_: unreadable if switch[0] is None else switch[0],
+    )
+    monkeypatch.setattr(source_withdrawal, "CACHE_SECONDS", 0.0)
+    source_withdrawal.reset_cache()
+    url = "https://www.licitor.com/data/pub/media/annonce/1.pdf"
+
+    assert source_withdrawal.known_withdrawn_sources("postgresql://a") is None
+    assert source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+    assert not source_withdrawal.withdrawal_state_unknown("https://avoventes.fr/doc.pdf", "postgresql://a")
+    assert source_withdrawal.withdrawn_sources("postgresql://a") == source_withdrawal.DEFAULT_WITHDRAWN
+
+    switch[0] = LICITOR
+    assert source_withdrawal.known_withdrawn_sources("postgresql://a") == LICITOR
+    switch[0] = None
+    assert source_withdrawal.known_withdrawn_sources("postgresql://a") == LICITOR
+    assert source_withdrawal.withdrawn_source_of_url(url, "postgresql://a") == "licitor"
+    assert not source_withdrawal.withdrawal_state_unknown(url, "postgresql://a")
+    assert source_withdrawal.withdrawn_sources("postgresql://a") == source_withdrawal.DEFAULT_WITHDRAWN
+
+    switch[0] = frozenset()  # une lecture réussie lève le retrait
+    assert source_withdrawal.known_withdrawn_sources("postgresql://a") == frozenset()
+    source_withdrawal.reset_cache()
+
+
 def test_require_source_active_refuses_a_withdrawn_source_only(monkeypatch) -> None:
     withdraw_licitor(monkeypatch)
     with pytest.raises(source_withdrawal.SourceWithdrawn):

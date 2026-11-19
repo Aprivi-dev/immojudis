@@ -348,3 +348,289 @@ def test_a_redirect_to_a_withdrawn_source_is_not_followed_and_the_document_is_sk
         assert manifest_is_complete(manifest, bench.stored_sale().documents)
         assert documents_are_current(bench.stored_sale())
     assert network.requests.count(third_party) == 2
+
+
+# --- Interrupteur illisible : une lecture ratée ne lève jamais un retrait
+
+
+REAL_WITHDRAWN_SOURCES = source_withdrawal.withdrawn_sources
+
+
+class _Switch:
+    """L'interrupteur lu par le vrai cache (``withdrawn_sources``, ``known_withdrawn_sources``), relu à chaque appel.
+
+    ``sources`` : les sources retirées en base, ou ``None`` quand la lecture rate (base injoignable).
+    """
+
+    def __init__(self, monkeypatch, sources: frozenset[str] | None) -> None:
+        self.sources = sources
+        monkeypatch.setattr(source_withdrawal, "withdrawn_sources", REAL_WITHDRAWN_SOURCES)
+        monkeypatch.setattr(source_withdrawal, "read_withdrawn_sources", self._read)
+        monkeypatch.setattr(source_withdrawal, "CACHE_SECONDS", 0.0)
+        source_withdrawal.reset_cache()  # un processus neuf : aucune lecture réussie
+
+    def _read(self, _db_url, *, unreadable=source_withdrawal.DEFAULT_WITHDRAWN, **_):
+        return unreadable if self.sources is None else self.sources
+
+
+def _record_invalidations(monkeypatch) -> list[str]:
+    reasons: list[str] = []
+    real = pdf_enrichment.invalidate_analysis
+
+    def recording(payload: dict, reason: str, **kwargs) -> None:
+        reasons.append(reason)
+        real(payload, reason, **kwargs)
+
+    monkeypatch.setattr(pdf_enrichment, "invalidate_analysis", recording)
+    return reasons
+
+
+def test_an_unreadable_switch_never_lifts_a_withdrawal(bench: QueueBench, monkeypatch) -> None:
+    # Relecture du 19/11/2026 : une lecture ratée mettait DEFAULT_WITHDRAWN (vide) en cache, la vente cessait d'être à
+    # jour, la pièce écartée était demandée à l'hôte retiré, puis révoquée au retour de l'interrupteur (analyse payée
+    # deux fois).
+    switch = _Switch(monkeypatch, frozenset())
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish([READABLE, WITHDRAWN[0]])
+    bench.drain()
+    switch.sources = frozenset({"vench"})
+    bench.age(1)
+    bench.drain()
+    _assert_dropped(bench)
+    bench.row["raw_payload"]["llm_display_description"] = "Synthèse sans la pièce Vench."
+    invalidations = _record_invalidations(monkeypatch)
+    requests_before = len(bench.requests)
+
+    switch.sources = None  # la base ne répond plus
+    for hours in (1, 1, 24):  # visites répétées, puis la revalidation de 24 h (passe due à elle seule)
+        bench.age(hours)
+        assert documents_are_current(bench.stored_sale()) is (hours == 1)
+        outcome = _drain_without_failure(bench)
+        assert outcome.error is None and outcome.passes == (hours == 24), (hours, outcome)
+        _assert_dropped(bench)
+    switch.sources = frozenset({"vench"})  # la base répond de nouveau : rien ne change
+    bench.age(1)
+    assert _drain_without_failure(bench).passes == 0
+    _assert_dropped(bench)
+
+    assert WITHDRAWN[0] not in bench.requests[requests_before:]
+    assert invalidations == []
+    assert bench.row["raw_payload"]["llm_display_description"] == "Synthèse sans la pièce Vench."
+
+
+def test_a_fresh_process_whose_first_switch_read_fails_sends_no_request_to_a_source_host(
+    bench: QueueBench, monkeypatch
+) -> None:
+    # Aucune lecture réussie dans ce processus : on ne sait pas si Vench est retirée. La passe attend, sans requête,
+    # sans rien écrire au manifeste et sans consommer d'essai ; elle reprend dès que l'interrupteur est lu.
+    switch = _Switch(monkeypatch, None)
+    bench.publish([READABLE, WITHDRAWN[0]])
+
+    outcome = _drain_without_failure(bench)
+
+    assert bench.requests == [] and bench.manifest == {}
+    assert outcome.passes == 1 and all(job["attempt_count"] == 0 for job in bench.jobs)
+    assert {job["status"] for job in bench.jobs} == {"queued"}
+    assert "withdrawal switch unreadable" in bench.jobs[-1]["last_error"]
+
+    switch.sources = frozenset({"vench"})
+    bench.age(1)  # échéance du report
+    outcome = _drain_without_failure(bench)
+    assert outcome.error is None and bench.requests == [READABLE]
+    assert bench.manifest["skipped_document_reasons"] == [
+        {"url": WITHDRAWN[0], "reason": "withdrawn_source", "source": "vench"}
+    ]
+
+
+def test_an_unknown_withdrawal_state_does_not_touch_documents_of_other_hosts(bench: QueueBench, monkeypatch) -> None:
+    _Switch(monkeypatch, None)
+    bench.publish([READABLE])
+
+    outcome = bench.drain()
+
+    assert outcome.error is None and bench.jobs[-1]["status"] == "completed"
+    assert bench.requests == [READABLE] and "80 m2" in str(bench.row["raw_text"])
+
+
+def test_the_request_point_refuses_a_source_host_while_the_withdrawal_state_is_unknown(monkeypatch) -> None:
+    monkeypatch.setitem(source_withdrawal.SOURCE_HOSTS, "vench", ("vench.example",))
+    _Switch(monkeypatch, None)
+    network = _Network(monkeypatch, {"https://pieces.etude.example/cahier.pdf": WITHDRAWN[0]}, {})
+
+    with pytest.raises(pdf_enrichment.DocumentWithdrawalUnknown):
+        pdf_enrichment._download_document_response(WITHDRAWN[0], headers={}, timeout_seconds=5)
+    assert network.requests == [] and network.resolved == []
+    # Une redirection vers l'hôte d'une source, retrait inconnu : le saut n'est pas suivi.
+    with pytest.raises(pdf_enrichment.DocumentWithdrawalUnknown):
+        pdf_enrichment._download_document_response(
+            "https://pieces.etude.example/cahier.pdf", headers={}, timeout_seconds=5
+        )
+    assert WITHDRAWN_HOST not in network.hosts()
+
+
+# --- Une URL écartée pour un autre motif sur l'hôte retiré
+
+
+@pytest.mark.parametrize(
+    "listed", [f"//{WITHDRAWN_HOST}/docs/1.pdf", "ftp://vench.example/docs/1.pdf"], ids=["sans-schema", "ftp"]
+)
+def test_a_document_of_a_withdrawn_host_skipped_for_another_reason_is_settled(bench: QueueBench, listed: str) -> None:
+    # Écartée « invalid_url » (motif jugé avant le retrait), elle laissait la vente « pas à jour » pour toujours :
+    # une passe à chaque visite. La règle de la sélection juge aussi le retrait enregistré.
+    bench.publish([READABLE, listed])
+    bench.drain()
+    assert bench.manifest["skipped_document_reasons"] == [{"url": listed, "reason": "invalid_url"}]
+
+    assert documents_are_current(bench.stored_sale())
+    bench.age(1)
+    assert bench.drain().passes == 0
+    assert bench.requests == [READABLE]
+
+
+# --- Révocation indépendante du point d'étape
+
+
+def test_a_withdrawal_seen_in_a_deferred_pass_still_invalidates_the_analysis_once(
+    bench: QueueBench, monkeypatch
+) -> None:
+    # Le point d'étape n'enregistre que le manifeste : il effaçait la preuve de la pièce retirée sans que la
+    # révocation soit enregistrée, et la passe suivante, sans preuve, ne révoquait plus rien. Les faits du modèle et
+    # la synthèse restaient tirés de la pièce retirée.
+    switch = _Switch(monkeypatch, frozenset())
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish([READABLE, WITHDRAWN[0]])
+    bench.drain()
+    payload = bench.row["raw_payload"]
+    # Les faits du modèle lus sur les deux pièces (le contexte que ``extract_structured`` enregistre avec eux).
+    payload["llm_fact_context_manifest"] = extract_structured._fact_context_manifest(bench.stored_sale())
+    assert WITHDRAWN[0] in {document["url"] for document in payload["llm_fact_context_manifest"]["documents"]}
+    payload["llm_fact_extraction"] = {"summary": "Surface 81 m2 (pièce Vench)."}
+    payload["llm_display_description"] = "Synthèse avec la pièce Vench."
+
+    switch.sources = frozenset({"vench"})
+    late = f"{SALE_URL}/long-scan.pdf"  # une collecte liste une pièce nouvelle, à la lecture reportée une fois
+    bench.serve(late, "Pièce nouvelle. Texte long.")
+    bench.row["documents"].append({"label": "Cahier des conditions de vente 9", "url": late, "document_type": "pdf"})
+    real_extract = pdf_enrichment.extract_attached_document
+    deferred: list[str] = []
+
+    def defer_once(file_path: object, document: dict | None = None) -> dict:
+        if document and document.get("url") == late and not deferred:
+            deferred.append(late)
+            raise pdf_enrichment.PdfExtractionDeferred(
+                "OCR budget", checkpointed_pages=0, total_pages=9, new_progress_pages=0
+            )
+        return real_extract(file_path, document=document)
+
+    monkeypatch.setattr(pdf_enrichment, "extract_attached_document", defer_once)
+    bench.age(1)
+    outcome = bench.drain()
+
+    assert deferred == [late] and outcome.passes >= 2  # le point d'étape, puis la passe qui lit la pièce nouvelle
+    payload = bench.row["raw_payload"]
+    assert payload.get("source_content_change_reason") == "document_access_changed"
+    for key in ("llm_fact_extraction", "llm_fact_context_manifest", "llm_display_description"):
+        assert key not in payload, key
+    assert "81 m2" not in str(bench.row["raw_text"])
+    assert WITHDRAWN[0] not in str(bench.extraction_rows[-1]["result"])
+
+    # Une seule fois : la nouvelle synthèse, faite sans la pièce, n'est plus invalidée.
+    payload.update(llm_display_description="Synthèse sans la pièce Vench.")
+    payload.pop("source_content_changed", None)
+    payload.pop("source_content_change_reason", None)
+    invalidations = _record_invalidations(monkeypatch)
+    for hours in (1, 24):
+        bench.age(hours)
+        assert _drain_without_failure(bench).error is None
+    assert invalidations == []
+    assert bench.row["raw_payload"]["llm_display_description"] == "Synthèse sans la pièce Vench."
+
+
+# --- La purge des textes reçus ne vise que les pièces écartées pour retrait
+
+
+def test_a_document_skipped_for_another_reason_keeps_its_received_text() -> None:
+    from src.models import AuctionSale
+    from src.pdf_document_selection import store_document_analysis_status
+
+    social = "https://www.facebook.com/etude/cahier.pdf"
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=SALE_URL,
+        documents=[{"label": "Cahier", "url": social, "document_type": "pdf"}],
+        raw_payload={},
+    )
+    received = {
+        "url": social,
+        "label": "Cahier",
+        "text": "Cahier. Surface habitable : 70 m2.",
+        "complete": True,
+        "extraction_status": "extracted",
+        "sha256": "a" * 64,
+        "page_count": 1,
+    }
+
+    store_document_analysis_status(sale, [], [received], merged_pdf_texts=[received])
+
+    manifest = sale.raw_payload["document_analysis"]
+    assert manifest["skipped_document_reasons"] == [{"url": social, "reason": "social_url"}]
+    # Comportement d'avant le retrait des sources : le texte reçu reste dans la preuve et les profils.
+    assert [item["url"] for item in manifest["cache_proof"]["documents"]] == [social]
+    assert manifest["documents_extracted"] == 1
+
+
+# --- Ordre des contrôles sur une redirection
+
+
+def test_a_redirect_hop_to_a_withdrawn_source_never_enters_the_host_turn(monkeypatch) -> None:
+    monkeypatch.setitem(source_withdrawal.SOURCE_HOSTS, "vench", ("vench.example",))
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"vench"}))
+    third_party = "https://pieces.etude.example/vente/cahier-2.pdf"
+    _Network(monkeypatch, {third_party: WITHDRAWN[0]}, {})
+    turns: list[str] = []
+    real_turn = pdf_enrichment._DOCUMENT_POLITENESS.turn
+
+    def recording_turn(url: str):
+        turns.append(url)  # copie robots en base, attente et tour d'hôte : rien de cela pour l'hôte retiré
+        return real_turn(url)
+
+    monkeypatch.setattr(pdf_enrichment._DOCUMENT_POLITENESS, "turn", recording_turn)
+
+    with pytest.raises(pdf_enrichment.DocumentSourceWithdrawn):
+        pdf_enrichment._download_document_response(third_party, headers={}, timeout_seconds=5)
+
+    assert turns == [third_party]
+
+
+# --- Séquence complète : lue, retirée, réintégrée
+
+
+def test_a_document_dropped_by_a_withdrawal_is_read_again_as_soon_as_it_is_lifted(
+    bench: QueueBench, monkeypatch
+) -> None:
+    switch = _Switch(monkeypatch, frozenset())
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish([READABLE, WITHDRAWN[0]])
+    bench.drain()
+    assert "81 m2" in str(bench.row["raw_text"])
+    bench.row["raw_payload"]["llm_display_description"] = "Synthèse avec la pièce Vench."
+
+    switch.sources = frozenset({"vench"})
+    bench.age(1)
+    bench.drain()
+    _assert_dropped(bench)
+    assert bench.row["raw_payload"].get("source_content_change_reason") == "document_access_changed"
+    assert "llm_display_description" not in bench.row["raw_payload"]
+
+    switch.sources = frozenset()  # retrait levé, une heure plus tard : sans attendre la revalidation de 24 h
+    bench.age(1)
+    assert not documents_are_current(bench.stored_sale())
+    outcome = bench.drain()
+
+    assert outcome.error is None and outcome.passes == 1
+    manifest, sale = bench.manifest, bench.stored_sale()
+    assert manifest["skipped_document_urls"] == []
+    assert {item["url"] for item in manifest["cache_proof"]["documents"]} == {READABLE, WITHDRAWN[0]}
+    assert "81 m2" in str(sale.raw_text)
+    assert WITHDRAWN[0] in {document["url"] for document in extract_structured._fact_context_manifest(sale)["documents"]}
+    assert documents_are_current(sale)

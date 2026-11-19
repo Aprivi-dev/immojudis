@@ -13,6 +13,10 @@ téléchargement des pièces hébergées par la source.
 (migration non appliquée) ou si aucune URL de base n'est configurée, ``DEFAULT_WITHDRAWN`` (vide) s'applique :
 une panne ou une migration en retard ne coupe jamais une collecte. Retirer une source est donc un geste
 explicite en base ; en contrepartie, tant que l'interrupteur est illisible, un retrait posé n'est pas vu.
+
+**Pièces hébergées par une source : une lecture ratée ne lève jamais un retrait.** ``known_withdrawn_sources``
+garde la dernière lecture réussie du processus ; sans aucune lecture réussie, l'état est inconnu (``None``) et les
+pièces d'un hôte de source attendent (``withdrawal_state_unknown``) : ni requête, ni écart levé, ni révocation.
 """
 
 from __future__ import annotations
@@ -45,7 +49,10 @@ WITHDRAWN_DOCUMENT_REASON = "withdrawn_source"
 CACHE_SECONDS = 60.0
 QUERY = "select lower(source_name) from public.auction_source_state where catalogue_withdrawn"
 
-_cache: tuple[str, float, frozenset[str]] | None = None
+#: Dernière lecture de l'interrupteur (URL de base, instant, sources) ; ``None`` à la place des sources : ratée.
+_cache: tuple[str, float, frozenset[str] | None] | None = None
+#: Dernière lecture réussie de l'interrupteur dans ce processus, par URL de base.
+_last_read: dict[str, frozenset[str]] = {}
 
 
 class SourceWithdrawn(RuntimeError):
@@ -68,8 +75,10 @@ def read_withdrawn_sources(
     db_url: str | None,
     *,
     connect: Callable[..., object] | None = None,
-) -> frozenset[str]:
-    """Lit l'interrupteur en base ; ``DEFAULT_WITHDRAWN`` (aucune source retirée) au moindre doute."""
+    unreadable: frozenset[str] | None = DEFAULT_WITHDRAWN,
+) -> frozenset[str] | None:
+    """Lit l'interrupteur en base ; ``unreadable`` (par défaut ``DEFAULT_WITHDRAWN``, aucune source retirée) au
+    moindre doute. Sans URL de base, rien n'est configuré : ``DEFAULT_WITHDRAWN``, ce n'est pas une lecture ratée."""
     if not db_url:
         return DEFAULT_WITHDRAWN
     try:
@@ -82,24 +91,42 @@ def read_withdrawn_sources(
         return frozenset(str(row[0]).lower() for row in rows)
     except Exception as exc:  # colonne absente, base injoignable, droits : aucune source retirée
         LOGGER.warning("Withdrawal switch unreadable (%s); no source treated as withdrawn", type(exc).__name__)
-        return DEFAULT_WITHDRAWN
+        return unreadable
 
 
 def withdrawn_sources(db_url: str | None = None) -> frozenset[str]:
-    """Sources retirées, lues en base au plus une fois par minute et par processus."""
+    """Sources retirées, lues en base au plus une fois par minute et par processus (``DEFAULT_WITHDRAWN`` si la
+    dernière lecture a raté)."""
     global _cache
     key = db_url or ""
     now = time.monotonic()
-    if _cache is not None and _cache[0] == key and now - _cache[1] < CACHE_SECONDS:
-        return _cache[2]
-    value = read_withdrawn_sources(db_url)
-    _cache = (key, now, value)
-    return value
+    if _cache is None or _cache[0] != key or now - _cache[1] >= CACHE_SECONDS:
+        value = read_withdrawn_sources(db_url, unreadable=None)
+        _cache = (key, now, value)
+        if value is not None:
+            _last_read[key] = value
+    return DEFAULT_WITHDRAWN if _cache[2] is None else _cache[2]
+
+
+def known_withdrawn_sources(db_url: str | None = None) -> frozenset[str] | None:
+    """Sources retirées vues des pièces : la lecture de ``withdrawn_sources``, ou, si elle a raté, la dernière lecture
+    réussie du processus ; ``None`` (état inconnu) quand aucune n'a réussi.
+
+    Une lecture ratée ne permet jamais de conclure qu'un retrait est levé : avec ``DEFAULT_WITHDRAWN``, une minute de
+    panne rendait une pièce écartée « à relire », la requête partait vers l'hôte retiré, puis la pièce était révoquée
+    à la lecture suivante et l'analyse recalculée deux fois.
+    """
+    sources = withdrawn_sources(db_url)
+    key = db_url or ""
+    if _cache is not None and _cache[0] == key and _cache[2] is None:
+        return _last_read.get(key)
+    return sources
 
 
 def reset_cache() -> None:
     global _cache
     _cache = None
+    _last_read.clear()
 
 
 def is_source_withdrawn(source: str, db_url: str | None = None) -> bool:
@@ -139,12 +166,25 @@ def withdrawn_source_of_url(url: object, db_url: str | None = None) -> str | Non
     Jugée sur l'URL telle quelle, celle que le client demande, et sur sa forme nettoyée (``clean_text``) : le
     nettoyage change un retour à la ligne ou une tabulation en espace, quand ``urlsplit`` les supprime. Sur la seule
     forme nettoyée, ``https://www.lici\\ntor.com/x.pdf`` échappait au retrait et l'hôte retiré était contacté.
+
+    État inconnu (``known_withdrawn_sources`` vaut ``None``) : ``None`` ; ``withdrawal_state_unknown`` le distingue.
     """
-    for candidate in (url, clean_text(url)):
-        source = source_of_url(candidate)
-        if source is not None and is_source_withdrawn(source, db_url):
-            return source
-    return None
+    sources = _url_sources(url)
+    if not sources:
+        return None
+    withdrawn = known_withdrawn_sources(db_url) or frozenset()
+    return next((source for source in sources if source in withdrawn), None)
+
+
+def withdrawal_state_unknown(url: object, db_url: str | None = None) -> bool:
+    """``True`` pour une URL d'hôte de source quand l'interrupteur n'a jamais été lu avec succès dans ce processus :
+    on ne sait pas si sa source est retirée, aucune requête ne part vers elle et rien n'est écrit à son sujet."""
+    return bool(_url_sources(url)) and known_withdrawn_sources(db_url) is None
+
+
+def _url_sources(url: object) -> list[str]:
+    """Sources dont ``url`` (telle quelle, puis nettoyée) est un hôte propre."""
+    return [source for candidate in (url, clean_text(url)) if (source := source_of_url(candidate)) is not None]
 
 
 def recorded_withdrawn_skips(analysis: object) -> dict[str, str]:
@@ -157,21 +197,6 @@ def recorded_withdrawn_skips(analysis: object) -> dict[str, str]:
         and item.get("reason") == WITHDRAWN_DOCUMENT_REASON
         and (url := clean_text(item.get("url")))
     }
-
-
-def withdrawals_are_recorded(analysis: object, urls: list[object], db_url: str | None = None) -> bool:
-    """Le manifeste écarte pour retrait les pièces ``urls`` des sources retirées aujourd'hui, et ne garde écartée
-    aucune pièce dont la source a été réintégrée.
-
-    Faux dès qu'un retrait est posé ou levé après la dernière passe : la vente n'est plus à jour et la passe suivante
-    écarte la pièce (son texte et ses faits ne servent plus) ou la relit, sans attendre la revalidation de 24 h.
-    """
-    recorded = recorded_withdrawn_skips(analysis)
-    if any(not is_source_withdrawn(source, db_url) for source in set(recorded.values())):
-        return False
-    return all(
-        clean_text(url) in recorded for url in urls if withdrawn_source_of_url(url, db_url) is not None
-    )
 
 
 def is_withdrawn_source_url(url: object, db_url: str | None = None) -> bool:
