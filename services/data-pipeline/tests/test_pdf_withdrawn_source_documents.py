@@ -10,13 +10,14 @@ Banc de la file (``tests/pdf_queue_bench.py``) : vrai code, faux réseau. L'hôt
 
 from __future__ import annotations
 
+import pymupdf
 import pytest
 
 from src import pdf_enrichment, source_withdrawal
 from src.enrichment import extract_structured
 from src.freshness import documents_are_current
 from src.normalize import clean_text
-from src.pdf_progress import manifest_is_complete
+from src.pdf_progress import manifest_is_complete, stale_complete_document_urls
 from tests.pdf_queue_bench import SALE_URL, QueueBench
 
 READABLE = f"{SALE_URL}/cahier.pdf"
@@ -122,32 +123,105 @@ def test_a_control_character_in_the_host_does_not_hide_a_withdrawn_source(
     ]
 
 
-@pytest.mark.parametrize("cold_runner", [False, True])
-def test_documents_read_before_the_withdrawal_keep_their_text_and_facts(
-    bench: QueueBench, monkeypatch, cold_runner: bool
-) -> None:
-    # Vente fusionnée dont une pièce Vench a été lue avant le retrait, relue depuis le cache (règles de lecture
-    # nouvelles). Avant le motif withdrawn_source, son texte restait dans le manifeste et dans les faits ; garder ou
-    # retirer ces faits pendant le retrait est une décision à part. Seule une nouvelle requête est empêchée.
+def _read_before_the_withdrawal(bench: QueueBench, monkeypatch, *, half_read: bool) -> None:
+    """La vente est lue source ouverte, puis Vench est retirée. ``half_read`` : la pièce Vench n'est lue qu'à moitié
+    (sa page 2 reste illisible), son texte partiel est dans le manifeste."""
     monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
     monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset())
     bench.publish([READABLE, WITHDRAWN[0]])
-    assert bench.drain().error is None
+    if half_read:
+        bench.served[WITHDRAWN[0]] = _two_page_pdf(bench)
+        real_extract = pdf_enrichment.extract_attached_document
+
+        def second_page_unreadable(file_path: object, document: dict | None = None) -> dict:
+            payload = real_extract(file_path, document=document)
+            if document and document.get("url") == WITHDRAWN[0]:
+                first = payload["pages"][0]
+                payload["pages"] = [first, {"page": 2, "text": "", "chars": 0, "status": "failed", "retryable": True}]
+                payload.update(
+                    text=first["text"], text_chars=len(first["text"]), failed_pages=[2], complete=False,
+                    extraction_status="incomplete",
+                )
+            return payload
+
+        monkeypatch.setattr(pdf_enrichment, "extract_attached_document", second_page_unreadable)
+    bench.drain()
     assert sorted(bench.requests) == sorted([READABLE, WITHDRAWN[0]])
-
+    proof = {item["url"]: item for item in bench.manifest["cache_proof"]["documents"]}
+    assert proof[WITHDRAWN[0]]["text_present"] and proof[WITHDRAWN[0]]["complete"] is not half_read
+    # Lue en entier, la pièce a nourri le texte et les faits de la vente ; lue à moitié, son texte partiel est
+    # enregistré (point d'étape) et la tâche reste en échec, à reprendre.
+    assert ("81 m2" in str(bench.row["raw_text"])) is not half_read
     monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"vench"}))
-    if cold_runner:
-        bench.cold_runner()  # le texte vient de la base (restauration), plus du disque du runner
-    bench.row["raw_payload"]["document_facts_version"] = "document_facts_v0"
-    outcome = bench.drain()
 
-    assert outcome.error is None and bench.jobs[-1]["status"] == "completed"
-    assert len(bench.requests) == 2
-    manifest = bench.manifest
-    assert manifest["skipped_document_urls"] == [] and manifest["skipped_document_reasons"] == []
+
+def _two_page_pdf(bench: QueueBench) -> bytes:
+    path = bench.tmp_path / "deux-pages.pdf"
+    with pymupdf.open() as document:
+        for text in ("Pièce 1. Surface habitable : 81 m2.", "Pièce 1, page 2. Texte du cahier."):
+            document.new_page().insert_text((72, 72), text)
+        document.save(path)
+    return path.read_bytes()
+
+
+def _assert_dropped(bench: QueueBench) -> None:
+    """La pièce Vench est écartée, et rien de son texte ne reste : ni profil lu, ni preuve, ni progression, ni
+    contrôle HTTP, ni cache local, ni faits ; la vente est à jour."""
+    manifest, sale = bench.manifest, bench.stored_sale()
+    assert manifest["skipped_document_urls"] == [WITHDRAWN[0]]
+    assert manifest["skipped_document_reasons"] == [
+        {"url": WITHDRAWN[0], "reason": "withdrawn_source", "source": "vench"}
+    ]
+    assert manifest["failed_documents"] == 0 and manifest["pending_document_urls"] == []
+    assert manifest["http_revalidation_pending_urls"] == []
     extracted = {profile["url"] for profile in manifest["profiles"] if profile.get("extraction_status") == "extracted"}
-    assert extracted == {READABLE, WITHDRAWN[0]}
-    facts = extract_structured._fact_context_manifest(bench.stored_sale())
-    assert {document["url"] for document in facts["documents"]} == {READABLE, WITHDRAWN[0]}
-    # Pièces à jour : la vente n'est pas reprise à chaque vidage.
-    assert documents_are_current(bench.stored_sale())
+    assert extracted == {READABLE} and manifest["documents_extracted"] == 1
+    assert [item["url"] for item in manifest["cache_proof"]["documents"]] == [READABLE]
+    assert [item["url"] for item in manifest["document_progress"]] == [READABLE]
+    assert set(manifest["http_checked_at_by_url"]) == {READABLE}
+    assert stale_complete_document_urls(manifest, sale.documents) == set()
+    facts = extract_structured._fact_context_manifest(sale)
+    assert [document["url"] for document in facts["documents"]] == [READABLE]
+    assert "81 m2" not in str(sale.raw_text) and "80 m2" in str(sale.raw_text)
+    provenance = sale.raw_payload.get("pdf_fact_provenance") or {}
+    assert all(trace.get("document_url") != WITHDRAWN[0] for trace in provenance.values() if isinstance(trace, dict))
+    assert manifest["manifest_complete"] is True and manifest_is_complete(manifest, sale.documents)
+    assert documents_are_current(sale)
+
+
+@pytest.mark.parametrize("half_read", [False, True])
+@pytest.mark.parametrize("cold_runner", [False, True])
+def test_a_document_read_before_the_withdrawal_is_dropped_with_its_facts(
+    bench: QueueBench, monkeypatch, cold_runner: bool, half_read: bool
+) -> None:
+    # Décision du 19/11/2026 : dès qu'une source est retirée, ses pièces sont écartées, même déjà lues ; leur texte
+    # et les faits qui en sont tirés ne servent plus tant que dure le retrait. Le même état, à chaque visite, que le
+    # cache du runner soit chaud ou neuf (texte restauré depuis la base, ou relu chez l'hôte resté ouvert).
+    _read_before_the_withdrawal(bench, monkeypatch, half_read=half_read)
+    requests_before = len(bench.requests)
+
+    for hours in (1, 24, 24):  # +1 h (pièces encore fraîches), +25 h et +49 h (revalidation due)
+        bench.age(hours)
+        if cold_runner:
+            bench.cold_runner()
+        outcome = _drain_without_failure(bench)
+
+        assert outcome.error is None and outcome.passes == 1, (hours, outcome)
+        assert bench.jobs[-1]["status"] == "completed"
+        _assert_dropped(bench)
+        if not cold_runner:
+            # À jour : la visite suivante ne refait pas de passe.
+            assert _drain_without_failure(bench).passes == 0
+            _assert_dropped(bench)
+
+    assert _withdrawn_requests(bench) == [WITHDRAWN[0]]  # la seule, avant le retrait
+    assert WITHDRAWN[0] not in bench.requests[requests_before:]
+
+
+def _drain_without_failure(bench: QueueBench):
+    """Une visite, dont aucune tâche ne sort en échec."""
+    before = {job["id"]: dict(job) for job in bench.jobs}
+    outcome = bench.drain()
+    touched = [job for job in bench.jobs if before.get(job["id"]) != job]
+    assert all(job["status"] != "failed" for job in touched), touched
+    return outcome

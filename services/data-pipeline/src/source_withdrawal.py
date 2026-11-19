@@ -23,6 +23,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
+from src.null_text import clean_text
+
 LOGGER = logging.getLogger(__name__)
 
 #: Sources retirées quand la base ne dit rien : aucune (Licitor reste collecté et affiché).
@@ -111,17 +113,65 @@ def require_source_active(source: str, db_url: str | None = None) -> None:
 
 
 def source_of_url(url: object) -> str | None:
-    """Nom de la source dont ``url`` est un hôte propre (image, pièce, fiche), sinon ``None``."""
+    """Nom de la source dont ``url`` est un hôte propre (image, pièce, fiche), sinon ``None``.
+
+    L'hôte est lu comme le client le résout : encodage IDNA (celui de ``socket.getaddrinfo``), qui ramène un point
+    idéographique (U+3002, U+FF0E), des caractères pleine chasse, U+200B ou U+00AD à l'hôte réel. Lu tel quel,
+    ``licitor。com`` n'était pas reconnu alors que la résolution et la requête atteignaient ``licitor.com``. Un
+    hôte que l'encodage refuse n'appartient à aucune source : aucun client ne peut le joindre.
+    """
     if not isinstance(url, str) or not url.strip():
         return None
     try:
-        host = (urlsplit(url.strip()).hostname or "").rstrip(".").lower()
-    except ValueError:
+        host = (urlsplit(url.strip()).hostname or "").encode("idna").decode("ascii").rstrip(".").lower()
+    except (UnicodeError, ValueError):
         return None
     for source, hosts in SOURCE_HOSTS.items():
         if any(host == suffix or host.endswith(f".{suffix}") for suffix in hosts):
             return source
     return None
+
+
+def withdrawn_source_of_url(url: object, db_url: str | None = None) -> str | None:
+    """Source retirée du catalogue qui héberge ``url``, sinon ``None`` (l'interrupteur n'est lu que pour un hôte de
+    source).
+
+    Jugée sur l'URL telle quelle, celle que le client demande, et sur sa forme nettoyée (``clean_text``) : le
+    nettoyage change un retour à la ligne ou une tabulation en espace, quand ``urlsplit`` les supprime. Sur la seule
+    forme nettoyée, ``https://www.lici\\ntor.com/x.pdf`` échappait au retrait et l'hôte retiré était contacté.
+    """
+    for candidate in (url, clean_text(url)):
+        source = source_of_url(candidate)
+        if source is not None and is_source_withdrawn(source, db_url):
+            return source
+    return None
+
+
+def recorded_withdrawn_skips(analysis: object) -> dict[str, str]:
+    """Pièces que le manifeste ``analysis`` écarte pour ``WITHDRAWN_DOCUMENT_REASON`` : URL nettoyée -> source."""
+    reasons = analysis.get("skipped_document_reasons") if isinstance(analysis, dict) else None
+    return {
+        url: str(item.get("source") or "").lower()
+        for item in (reasons if isinstance(reasons, list) else [])
+        if isinstance(item, dict)
+        and item.get("reason") == WITHDRAWN_DOCUMENT_REASON
+        and (url := clean_text(item.get("url")))
+    }
+
+
+def withdrawals_are_recorded(analysis: object, urls: list[object], db_url: str | None = None) -> bool:
+    """Le manifeste écarte pour retrait les pièces ``urls`` des sources retirées aujourd'hui, et ne garde écartée
+    aucune pièce dont la source a été réintégrée.
+
+    Faux dès qu'un retrait est posé ou levé après la dernière passe : la vente n'est plus à jour et la passe suivante
+    écarte la pièce (son texte et ses faits ne servent plus) ou la relit, sans attendre la revalidation de 24 h.
+    """
+    recorded = recorded_withdrawn_skips(analysis)
+    if any(not is_source_withdrawn(source, db_url) for source in set(recorded.values())):
+        return False
+    return all(
+        clean_text(url) in recorded for url in urls if withdrawn_source_of_url(url, db_url) is not None
+    )
 
 
 def is_withdrawn_source_url(url: object, db_url: str | None = None) -> bool:
