@@ -26,22 +26,35 @@ Décidées par ``queued_runner`` :
   est en cause : la tâche échoue en nommant l'hôte et la nature de l'erreur, quatre essais au plus comme tout
   échec, mais le suivant attend ``DOCUMENT_NETWORK_RETRY_DELAY`` (ou la sonde de robots.txt) au lieu de 30 min.
 
+* **rien lu, point d'étape refusé** (échec, essai consommé ; 19/11/2026) : le refus ``no_progress_entries`` disait
+  seulement que rien n'avait été enregistré. Le message garde son début (``is_refused_checkpoint``) et nomme la
+  cause que la file peut établir, comparée à l'analyse enregistrée avant la passe (``nothing_read_message``).
+
 ``document_backlog`` lit le premier message : il n'enchaîne pas une passe identique sur une tâche qui attend.
 """
 
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.freshness import document_fingerprint
 from src.host_turn import host_of
 from src.models import AuctionSale
-from src.pdf_progress import document_url, manifest_is_complete, persisted_revalidation_due_at
+from src.pdf_progress import (
+    document_url,
+    manifest_is_complete,
+    modern_progress_entries,
+    persisted_revalidation_due_at,
+    stale_complete_document_urls,
+)
 from src.pipeline_usage import QueueJobDeferred
 from src.sources.robots_policy_copies import PROBE_MAX_INTERVAL
+from src.storage.pdf_checkpoint_rules import NO_PROGRESS_ENTRIES, last_checkpoint_refusal, refused_checkpoint_message
 
 if TYPE_CHECKING:
     from src.pdf_enrichment import NetworkFailure, PdfEnrichmentStats
@@ -122,6 +135,69 @@ def nothing_due_deferral(
     if due_at is None or due_at <= datetime.now(UTC):
         return None
     return QueueJobDeferred(NOTHING_DUE_DEFERRAL, retry_after=due_at)
+
+
+@dataclass(frozen=True)
+class PassStart:
+    """Ce que la passe pdf trouvait en commençant : l'analyse enregistrée et le texte restauré depuis la base."""
+
+    analysis: dict[str, object] | None
+    restored_text: bool
+
+    @classmethod
+    def of(cls, sale: AuctionSale, restored: object) -> PassStart:
+        """``restored`` : le retour de ``restore_persisted_pdf_progress_for_sale`` (liste vide : rien restauré)."""
+        analysis = sale.raw_payload.get("document_analysis") if isinstance(sale.raw_payload, dict) else None
+        return cls(copy.deepcopy(analysis) if isinstance(analysis, dict) else None, bool(restored))
+
+
+#: Causes d'une passe qui n'a rien lu, dans l'ordre où elles sont retenues : de la plus durable à la plus passagère
+#: (la liste a changé ; aucune de ses pièces n'a de texte à lire ; ses contrôles ont expiré ; son texte manque).
+NOTHING_READ_CAUSES = (
+    "documents_changed",
+    "all_documents_excluded",
+    "http_checks_stale",
+    "persisted_text_not_restored",
+    "unknown",
+)
+
+
+def nothing_read_cause(start: PassStart, sale: AuctionSale) -> str:
+    """Première cause de ``NOTHING_READ_CAUSES`` établie par l'analyse enregistrée avant la passe.
+
+    * ``documents_changed`` : son empreinte n'est pas celle de la liste actuelle des pièces ;
+    * ``all_documents_excluded`` : toutes les pièces listées sont terminales, bloquées ou écartées ;
+    * ``http_checks_stale`` : une vérification HTTP qu'elle garde est périmée, absente ou déclarée à revalider ;
+    * ``persisted_text_not_restored`` : elle porte au moins une pièce lue avec du texte, et rien n'a été restauré ;
+    * ``unknown`` : aucune de ces causes (y compris sans analyse enregistrée).
+    """
+    analysis, documents = start.analysis, sale.documents
+    if analysis is None:
+        return "unknown"
+    if analysis.get("input_fingerprint") != document_fingerprint(documents):
+        return "documents_changed"
+    listed = {document_url(document) for document in documents if document_url(document)}
+    excluded = {document_url(url) for key in _EXCLUDED_URL_KEYS for url in analysis.get(key) or []}
+    if listed and listed <= excluded:
+        return "all_documents_excluded"
+    if stale_complete_document_urls(copy.deepcopy(analysis), documents):
+        return "http_checks_stale"
+    entries = modern_progress_entries(analysis, documents)
+    if not start.restored_text and any(entry.get("extraction_status") == "extracted" for entry in entries.values()):
+        return "persisted_text_not_restored"
+    return "unknown"
+
+
+def nothing_read_message(start: PassStart, sale: AuctionSale) -> str:
+    """Message d'une passe dont le point d'étape vient d'être refusé : sa cause si le refus dit que rien n'a été lu.
+
+    Un autre motif de refus (révision déplacée, analyse périmée…) est déjà la cause : le message reste celui du refus.
+    Ni URL de pièce ni donnée de la vente dans le message, seulement un code.
+    """
+    message = refused_checkpoint_message()
+    if last_checkpoint_refusal() != NO_PROGRESS_ENTRIES:
+        return message
+    return f"{message} (cause: {nothing_read_cause(start, sale)})"
 
 
 class SpacedPdfFailure(RuntimeError):

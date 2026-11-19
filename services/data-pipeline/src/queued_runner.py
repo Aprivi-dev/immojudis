@@ -64,12 +64,14 @@ from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, PdfHost
 from src.pdf_enrichment import PDF_FINALIZATION_MARGIN_SECONDS, enrich_sale_from_pdfs
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_pass_outcomes import (
+    PassStart,
     complete_manifest_with_excluded_url,
     discarded_write_ending,
     facts_wait_for_pdf,
     final_write_was_discarded,
     network_failure_ending,
     nothing_due_deferral,
+    nothing_read_message,
     pdf_failure_ending,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
@@ -717,12 +719,11 @@ def run_enrichment_queue_batch(
             continue
         pdf_stage_error = False
         try:
-            if sale.documents:
-                restore_persisted_pdf_progress_for_sale(sale)
+            restored = restore_persisted_pdf_progress_for_sale(sale) if sale.documents else []
             # Facts read under older rules are read again, as a collection does (``_needs_structured_heavy_enrichment``).
             if "pdf" in job_types and sale.documents and (not documents_are_current(sale) or sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION):
                 pdf_stage_error = True
-                persisted_manifest = complete_manifest_with_excluded_url(sale)
+                persisted_manifest, pass_start = complete_manifest_with_excluded_url(sale), PassStart.of(sale, restored)
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
@@ -762,7 +763,7 @@ def run_enrichment_queue_batch(
                     )
                     checkpointed = _checkpoint_pdf_progress(sale, pdf_job=pdf_job)
                     if not checkpointed:
-                        raise RuntimeError(refused_checkpoint_message())
+                        raise RuntimeError(nothing_read_message(pass_start, sale))
                     raise QueueJobDeferred(
                         "PDF document manifest is partial; continue the next bounded pass"
                     )

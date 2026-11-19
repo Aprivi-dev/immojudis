@@ -424,7 +424,9 @@ def _checked(hours_ago: float) -> str:
     return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
 
 
-def _listed_sale(db, listed: list[str], rows: dict[str, str | None], analysis: dict | None) -> None:
+def _listed_sale(
+    db, listed: list[str], rows: dict[str, str | None], analysis: dict | None, *, sale_url: str = URL
+) -> None:
     """Une vente à venir, lue avec les règles actuelles, qui liste ``listed`` ; ``rows`` : URL -> statut de sa ligne."""
     payload: dict = {"document_facts_version": DOCUMENT_FACTS_VERSION}
     if analysis is not None:
@@ -432,13 +434,13 @@ def _listed_sale(db, listed: list[str], rows: dict[str, str | None], analysis: d
     db.execute(
         """insert into auction_sales(source_url, source_name, sale_date, documents, raw_payload)
            values (%s, 'avoventes', now() + interval '20 days', %s, %s)""",
-        (URL, Jsonb([{"url": url, "label": "Pièce"} for url in listed]), Jsonb(payload)),
+        (sale_url, Jsonb([{"url": url, "label": "Pièce"} for url in listed]), Jsonb(payload)),
     )
     for url, status in rows.items():
         db.execute(
             "insert into auction_documents(source_url, document_url, document_type, extraction_status)"
             " values (%s, %s, 'pv_huissier', %s)",
-            (URL, url, status),
+            (sale_url, url, status),
         )
 
 
@@ -471,6 +473,47 @@ def test_a_check_date_in_another_form_counts_as_missing() -> None:
             analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: "hier"}}
             _listed_sale(db, [PV, DEAD], {PV: "extracted", DEAD: "pending"}, analysis)
 
+            assert _selected(db) == [URL]
+        finally:
+            db.rollback()
+
+
+@pytest.mark.parametrize("impossible", ["2026-13-01T10:00:00+00:00", "2026-02-31T10:00:00+00:00"])
+def test_an_impossible_check_date_counts_as_missing_without_failing_the_whole_selection(impossible: str) -> None:
+    # Forme isoformat, valeur impossible : la conversion en date échouait et toute la requête du vidage avec elle.
+    settled, unread = f"{URL}-reglee", f"{URL}-a-lire"
+    with _connect() as db:
+        try:
+            _setup(db)
+            terminal = {"terminal_document_urls": [DEAD]}
+            _listed_sale(
+                db, [PV, DEAD], {PV: "extracted", DEAD: "pending"},
+                {**terminal, "http_checked_at_by_url": {DEAD: impossible}},
+            )
+            # Les autres ventes sont jugées comme d'habitude : contrôle frais, réglée ; pièce jamais lue, à lire.
+            _listed_sale(
+                db, [PV, DEAD], {PV: "extracted", DEAD: "pending"},
+                {**terminal, "http_checked_at_by_url": {DEAD: _checked(1)}}, sale_url=settled,
+            )
+            _listed_sale(db, [PV], {PV: "pending"}, None, sale_url=unread)
+
+            assert sorted(_selected(db)) == sorted([URL, unread])
+        finally:
+            db.rollback()
+
+
+def test_the_analysis_is_matched_on_the_cleaned_url_and_the_row_on_the_listed_one() -> None:
+    # Les clés de l'analyse sont nettoyées (pdf_progress.document_url) ; la ligne de auction_documents garde l'URL
+    # telle que listée (_document_rows_for_sale). Une pièce terminale listée avec des blancs reste réglée.
+    listed_dead = f" {DEAD}\u00a0"
+    with _connect() as db:
+        try:
+            _setup(db)
+            analysis = {"terminal_document_urls": [DEAD], "http_checked_at_by_url": {DEAD: _checked(1)}}
+            _listed_sale(db, [PV, listed_dead], {PV: "extracted", listed_dead: "pending"}, analysis)
+            assert _selected(db) == []
+
+            db.execute("update auction_documents set extraction_status = 'pending' where document_url = %s", (PV,))
             assert _selected(db) == [URL]
         finally:
             db.rollback()

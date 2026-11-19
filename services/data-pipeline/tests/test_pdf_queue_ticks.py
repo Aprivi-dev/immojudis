@@ -17,9 +17,10 @@ from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
 from src.pdf_progress import manifest_is_complete
-from tests.pdf_queue_bench import SALE_URL, QueueBench, pdf_enrichment
+from tests.pdf_queue_bench import SALE_URL, QueueBench, pdf_document_selection, pdf_enrichment
 
 READABLE = [f"{SALE_URL}/piece-{index}.pdf" for index in range(3)]
+NOTHING_READ = "PDF document checkpoint was not persisted; retry required"
 
 
 @pytest.fixture
@@ -291,8 +292,8 @@ def test_a_lost_text_stays_a_visible_failure_with_its_reason(bench: QueueBench) 
     outcome = bench.drain()
 
     job = bench.jobs[-1]
-    assert job["status"] == "failed"
-    assert job["last_error"] == "PDF document checkpoint was not persisted; retry required: no_progress_entries"
+    assert (job["status"], job["attempt_count"]) == ("failed", 1)
+    assert job["last_error"] == f"{NOTHING_READ}: no_progress_entries (cause: persisted_text_not_restored)"
     assert is_refused_checkpoint(job["last_error"]) and outcome.refused_checkpoints == 1
     assert bench.manifest == manifest_before
 
@@ -309,8 +310,8 @@ def test_a_complete_manifest_whose_proof_was_altered_stays_a_visible_failure(ben
     outcome = bench.drain()
 
     job = bench.jobs[-1]
-    assert job["status"] == "failed"
-    assert job["last_error"] == "PDF document checkpoint was not persisted; retry required: no_progress_entries"
+    assert (job["status"], job["attempt_count"]) == ("failed", 1)
+    assert job["last_error"] == f"{NOTHING_READ}: no_progress_entries (cause: persisted_text_not_restored)"
     assert outcome.waiting_passes == 0 and outcome.refused_checkpoints == 1
 
 
@@ -347,3 +348,60 @@ def test_a_sale_whose_reading_was_invalidated_is_read_again_at_once(bench: Queue
     assert bench.jobs[-1]["status"] == "completed"
     assert sorted(bench.requests[requests_before:]) == sorted(READABLE)
     assert _read_with_current_rules(bench.stored_sale())
+
+
+# --- La cause d'une passe qui n'a rien lu est nommée (point d'étape refusé ``no_progress_entries``)
+
+
+def _select_nothing(bench: QueueBench, monkeypatch) -> None:
+    """La passe ne choisit aucune pièce : le cas des 62 tâches en échec sans motif du 11/11/2026."""
+    for module in (pdf_enrichment, pdf_document_selection):
+        monkeypatch.setattr(module, "select_documents_for_extraction", lambda *_args, **_kwargs: [])
+
+
+def _nothing_read_failure(bench: QueueBench, cause: str) -> None:
+    outcome = bench.drain()
+    job = bench.jobs[-1]
+    assert (job["status"], job["attempt_count"]) == ("failed", 1)  # échec visible, essai consommé
+    assert job["last_error"] == f"{NOTHING_READ}: no_progress_entries (cause: {cause})"
+    assert is_refused_checkpoint(job["last_error"]) and outcome.refused_checkpoints == 1
+    assert SALE_URL not in job["last_error"]  # un code, jamais l'URL d'une pièce
+
+
+def test_nothing_read_after_the_list_of_documents_changed(bench: QueueBench, monkeypatch) -> None:
+    _first_read(bench, READABLE)
+    new_url = f"{SALE_URL}/avenant.pdf"
+    bench.serve(new_url, "Avenant au cahier.")
+    bench.row["documents"].append({"label": "Avenant", "url": new_url, "document_type": "pdf"})
+    _select_nothing(bench, monkeypatch)
+
+    _nothing_read_failure(bench, "documents_changed")
+
+
+def test_nothing_read_while_the_http_checks_are_stale(bench: QueueBench, monkeypatch) -> None:
+    _first_read(bench, READABLE)
+    bench.age(25)
+    bench.cold_runner()
+    _select_nothing(bench, monkeypatch)
+
+    _nothing_read_failure(bench, "http_checks_stale")
+
+
+def test_nothing_read_when_every_document_is_settled_without_text(bench: QueueBench, monkeypatch) -> None:
+    # Toutes les pièces répondent 404. Leurs contrôles ont expiré (sinon la tâche attend : « rien à lire »), mais
+    # la cause retenue est qu'aucune pièce de la liste n'a de texte à lire (ordre de NOTHING_READ_CAUSES).
+    bench.publish(READABLE[:2])
+    bench.gone.update(READABLE[:2])
+    assert bench.drain().error is None
+    bench.age(25)
+    bench.cold_runner()
+    _select_nothing(bench, monkeypatch)
+
+    _nothing_read_failure(bench, "all_documents_excluded")
+
+
+def test_nothing_read_without_any_persisted_analysis(bench: QueueBench, monkeypatch) -> None:
+    bench.publish(READABLE)
+    _select_nothing(bench, monkeypatch)
+
+    _nothing_read_failure(bench, "unknown")

@@ -123,6 +123,9 @@ CANDIDATES_SQL = """
 -- dure : source_withdrawal.WITHDRAWN_DOCUMENT_REASON), ou terminale ou bloquée tant que sa vérification HTTP a
 -- moins de pdf_progress.HTTP_REVALIDATION_WINDOW et n'est pas déclarée à revalider. Passé ce délai, la pièce
 -- redevient à lire : la revalidation périodique est due.
+-- Deux formes de l'URL : telle que listée, qui est celle de auction_documents.document_url (écrite sans retouche
+-- par _document_rows_for_sale), et nettoyée comme les clés de l'analysis (pdf_progress.document_url, clean_text :
+-- espaces insécables en espaces, blancs regroupés, bords retirés).
 with pending as (
     select sale.source_url,
            count(*) as pending_documents,
@@ -133,7 +136,9 @@ with pending as (
            count(*) filter (where coalesce(d.extraction_status, 'pending') = 'pending') as untried_documents
       from public.auction_sales sale
       cross join lateral (
-            select distinct listed.value ->> 'url' as url
+            select distinct listed.value ->> 'url' as url,
+                   btrim(regexp_replace(replace(listed.value ->> 'url', chr(160), ' '), '[[:space:]]+', ' ', 'g'))
+                     as analysis_url
               from jsonb_array_elements(
                      case when jsonb_typeof(sale.documents) = 'array' then sale.documents else '[]'::jsonb end
                    ) as listed
@@ -143,7 +148,7 @@ with pending as (
         on d.source_url = sale.source_url and d.document_url = current_document.url
       cross join lateral (
             select sale.raw_payload -> 'document_analysis' as analysis,
-                   sale.raw_payload #>> array['document_analysis', 'http_checked_at_by_url', current_document.url]
+                   sale.raw_payload #>> array['document_analysis', 'http_checked_at_by_url', current_document.analysis_url]
                      as checked_at
           ) as a
      where coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty', 'partial')
@@ -153,7 +158,7 @@ with pending as (
                a.analysis,
                'lax $.skipped_document_reasons[*] ? (@.url == $url && (@.reason != $reason || @.source == $withdrawn[*]))',
                jsonb_build_object(
-                 'url', current_document.url,
+                 'url', current_document.analysis_url,
                  'reason', %s::text,
                  'withdrawn', to_jsonb((select app_private.catalogue_withdrawn_sources()))
                )
@@ -161,17 +166,19 @@ with pending as (
              false
            )
        -- Terminale ou bloquée, tant que sa vérification HTTP est fraîche et qu'elle n'est pas déclarée à revalider.
-       -- La date est celle qu'écrit le pipeline (isoformat) ; une valeur d'une autre forme vaut vérification absente,
-       -- et le case garantit que la conversion ne s'applique qu'à une date de cette forme.
+       -- La date est celle qu'écrit le pipeline (isoformat) ; une valeur d'une autre forme, ou de cette forme mais
+       -- impossible (mois 13, 31 février), vaut vérification absente : la pièce est à lire. Le case garantit que la
+       -- conversion ne s'applique qu'à une date valide : une seule date illisible faisait échouer tout le vidage.
        and not (
              (
-               coalesce(a.analysis -> 'terminal_document_urls' ? current_document.url, false)
-               or coalesce(a.analysis -> 'blocked_document_urls' ? current_document.url, false)
+               coalesce(a.analysis -> 'terminal_document_urls' ? current_document.analysis_url, false)
+               or coalesce(a.analysis -> 'blocked_document_urls' ? current_document.analysis_url, false)
              )
-             and not coalesce(a.analysis -> 'http_revalidation_pending_urls' ? current_document.url, false)
+             and not coalesce(a.analysis -> 'http_revalidation_pending_urls' ? current_document.analysis_url, false)
              and case
                    when a.checked_at
                         ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+                        and pg_catalog.pg_input_is_valid(a.checked_at, 'timestamptz')
                    then a.checked_at::timestamptz between now() - %s and now()
                    else false
                  end

@@ -20,10 +20,12 @@ from src.pdf_pass_outcomes import (
     NOTHING_DUE_DEFERRAL,
     WRITE_DISCARDED_ERROR,
     WRITE_REFUSED_REVIEW,
+    PassStart,
     complete_manifest_with_excluded_url,
     discarded_write_ending,
     final_write_was_discarded,
     nothing_due_deferral,
+    nothing_read_message,
     waits_for_its_deadline,
 )
 from src.pdf_progress import (
@@ -269,6 +271,21 @@ def test_the_refusal_reason_follows_the_prefix_the_backlog_reads() -> None:
     assert with_error == f"{PREFIX}: no_progress_entries: Document extraction incomplete; retry required: 2"
     assert refused_checkpoint_message(nude) == nude  # déjà préfixé : inchangé
     assert all(is_refused_checkpoint(message) for message in (PREFIX, nude, with_error))
+
+
+def test_the_cause_is_only_added_when_the_refusal_says_nothing_was_read() -> None:
+    # Un autre motif de refus est déjà la cause ; sans motif, le message reste le préfixe seul.
+    sale = _sale()
+    start = PassStart.of(sale, restored=[])
+    for reason in (None, "revision_moved"):
+        reset_checkpoint_refusal()
+        if reason:
+            _refused(SALE_URL, reason, READ_URL)
+        assert nothing_read_message(start, sale) == refused_checkpoint_message()
+
+    _refused(SALE_URL, "no_progress_entries", READ_URL)
+    message = nothing_read_message(start, sale)
+    assert message.startswith(f"{PREFIX}: no_progress_entries (cause: ") and is_refused_checkpoint(message)
 
 
 def test_an_older_refusal_is_not_attributed_to_the_next_checkpoint(monkeypatch) -> None:
