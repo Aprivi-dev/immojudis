@@ -10,19 +10,23 @@ Banc de la file (``tests/pdf_queue_bench.py``) : vrai code, faux réseau. L'hôt
 
 from __future__ import annotations
 
+import httpx
 import pymupdf
 import pytest
 
-from src import pdf_enrichment, source_withdrawal
+from src import document_politeness, pdf_enrichment, source_withdrawal
+from src.document_politeness import DocumentPoliteness
 from src.enrichment import extract_structured
 from src.freshness import documents_are_current
 from src.normalize import clean_text
+from src.pdf_document_transport import PublicDocumentTarget
 from src.pdf_progress import manifest_is_complete, stale_complete_document_urls
 from tests.pdf_queue_bench import SALE_URL, QueueBench
 
 READABLE = f"{SALE_URL}/cahier.pdf"
 WITHDRAWN_HOST = "documents.vench.example"
 WITHDRAWN = [f"https://{WITHDRAWN_HOST}/docs/{index}.pdf" for index in (1, 2)]
+REAL_DOWNLOAD_RESPONSE = pdf_enrichment._download_document_response
 
 
 @pytest.fixture
@@ -209,6 +213,11 @@ def test_a_document_read_before_the_withdrawal_is_dropped_with_its_facts(
         assert outcome.error is None and outcome.passes == 1, (hours, outcome)
         assert bench.jobs[-1]["status"] == "completed"
         _assert_dropped(bench)
+        # Les faits tirés de son texte sont recalculés une fois, à la première passe : l'analyse qui en dépendait
+        # (faits du modèle, synthèse) est invalidée comme pour une pièce devenue terminale.
+        payload = bench.row["raw_payload"]
+        assert (payload.pop("source_content_change_reason", None) == "document_access_changed") is (hours == 1)
+        payload.pop("source_content_changed", None)
         if not cold_runner:
             # À jour : la visite suivante ne refait pas de passe.
             assert _drain_without_failure(bench).passes == 0
@@ -225,3 +234,117 @@ def _drain_without_failure(bench: QueueBench):
     touched = [job for job in bench.jobs if before.get(job["id"]) != job]
     assert all(job["status"] != "failed" for job in touched), touched
     return outcome
+
+
+# --- Le retrait jugé au point de requête : hôte tel que le client le résout, redirections
+
+
+DISGUISED_HOSTS = {
+    "point idéographique": "documents.vench。example",
+    "point pleine chasse": "documents.vench．example",
+    "pleine chasse": "documents.ｖｅｎｃｈ.example",
+    "espace sans chasse": "documents.ven​ch.example",
+    "trait d'union conditionnel": "documents.ven­ch.example",
+}
+
+
+@pytest.mark.parametrize("host", DISGUISED_HOSTS.values(), ids=DISGUISED_HOSTS.keys())
+def test_a_disguised_host_of_a_withdrawn_source_is_skipped_at_selection(
+    bench: QueueBench, monkeypatch, host: str
+) -> None:
+    # La résolution (``getaddrinfo``) ramène ces hôtes à documents.vench.example : lus tels quels, ils n'étaient pas
+    # reconnus, et robots.txt puis la pièce étaient demandés à l'hôte retiré.
+    listed = f"https://{host}/docs/1.pdf"
+    reached_download: list[str] = []
+    real_suspended_host_until = pdf_enrichment.suspended_host_until
+
+    def _suspended_host_until(url: str, db_url: str):
+        reached_download.append(url)
+        return real_suspended_host_until(url, db_url)
+
+    monkeypatch.setattr(pdf_enrichment, "suspended_host_until", _suspended_host_until)
+    bench.publish([READABLE, listed])
+
+    outcome = bench.drain()
+
+    assert outcome.error is None and bench.jobs[-1]["status"] == "completed"
+    assert bench.requests == [READABLE] and reached_download == [READABLE]
+    assert bench.manifest["skipped_document_reasons"] == [
+        {"url": listed, "reason": "withdrawn_source", "source": "vench"}
+    ]
+
+
+class _Network:
+    """Le vrai chemin des requêtes de pièce (``_download_document_response``, ``_send_pinned_document_request``,
+    robots.txt) devant un faux réseau : résolutions DNS et requêtes notées, redirections servies."""
+
+    def __init__(self, monkeypatch, redirects: dict[str, str], served: dict[str, bytes]) -> None:
+        self.resolved: list[str] = []
+        self.requests: list[str] = []
+        self.redirects, self.served = redirects, served
+        monkeypatch.setattr(pdf_enrichment, "_download_document_response", REAL_DOWNLOAD_RESPONSE)
+        monkeypatch.setattr(pdf_enrichment, "_resolve_public_document_target", self._resolve)
+        monkeypatch.setattr(pdf_enrichment, "configured_transport", lambda _url: None)
+        monkeypatch.setattr(pdf_enrichment, "_PinnedHTTPTransport", lambda _target: httpx.MockTransport(self._send))
+        monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", True)
+        monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", DocumentPoliteness(
+            user_agent=lambda: "immojudis-banc", fetch_robots=pdf_enrichment._fetch_document_robots,
+            sleep=lambda _s: None, min_delay_seconds=0.0,
+        ))
+
+    def _resolve(self, url: str) -> PublicDocumentTarget:
+        host = str(httpx.URL(url).host)
+        self.resolved.append(host)
+        return PublicDocumentTarget(url=url, hostname=host, port=443, addresses=("203.0.113.10",))
+
+    def _send(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        self.requests.append(url)
+        if url.endswith("/robots.txt"):
+            return httpx.Response(404)
+        if url in self.redirects:
+            return httpx.Response(302, headers={"location": self.redirects[url]})
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=self.served[url])
+
+    def hosts(self) -> set[str]:
+        return {str(httpx.URL(url).host) for url in self.requests} | set(self.resolved)
+
+
+@pytest.mark.parametrize("host", ["documents.vench.example", *DISGUISED_HOSTS.values()])
+def test_no_document_request_nor_resolution_reaches_a_withdrawn_source(monkeypatch, host: str) -> None:
+    # Le filet derrière la sélection : toute requête de pièce passe par ``_send_pinned_document_request``.
+    monkeypatch.setitem(source_withdrawal.SOURCE_HOSTS, "vench", ("vench.example",))
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"vench"}))
+    network = _Network(monkeypatch, {}, {})
+
+    with pytest.raises(pdf_enrichment.DocumentSourceWithdrawn) as refused:
+        pdf_enrichment._download_document_response(f"https://{host}/docs/1.pdf", headers={}, timeout_seconds=5)
+
+    assert refused.value.source == "vench"
+    assert network.requests == [] and network.resolved == []
+
+
+def test_a_redirect_to_a_withdrawn_source_is_not_followed_and_the_document_is_skipped(
+    bench: QueueBench, monkeypatch
+) -> None:
+    third_party = "https://pieces.etude.example/vente/cahier-2.pdf"
+    network = _Network(monkeypatch, {third_party: WITHDRAWN[0]}, bench.served)
+    bench.publish([READABLE, third_party])
+
+    for visit in range(2):  # puis à la revalidation : la pièce est redemandée à son hôte, et toujours écartée
+        if visit:
+            bench.age(25)
+        outcome = bench.drain()
+
+        assert outcome.error is None and outcome.passes == 1
+        assert bench.jobs[-1]["status"] == "completed"
+        assert WITHDRAWN_HOST not in network.hosts()
+        assert third_party in network.requests  # la pièce est demandée à son hôte, la redirection n'est pas suivie
+        manifest = bench.manifest
+        assert manifest["failed_documents"] == 0
+        assert manifest["skipped_document_reasons"] == [
+            {"url": third_party, "reason": "withdrawn_source", "source": "vench"}
+        ]
+        assert manifest_is_complete(manifest, bench.stored_sale().documents)
+        assert documents_are_current(bench.stored_sale())
+    assert network.requests.count(third_party) == 2

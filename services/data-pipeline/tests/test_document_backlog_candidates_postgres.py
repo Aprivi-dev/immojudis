@@ -629,6 +629,21 @@ def test_listed_items_that_are_not_documents_are_ignored() -> None:
             db.rollback()
 
 
+@pytest.mark.parametrize("blank", ["\t", "\n", "\xa0", " \t\n\xa0 "], ids=["tabulation", "retour", "insecable", "melange"])
+def test_a_url_made_only_of_blanks_is_not_a_document(blank: str) -> None:
+    # Le nettoyage (clean_text côté Python, btrim/regexp_replace ici) vide l'URL : ce n'est pas une pièce, et la
+    # vente dont c'est la seule pièce restant à lire n'est pas proposée.
+    with _connect() as db:
+        try:
+            _setup(db)
+            documents = [{"url": PV, "label": "Pièce"}, {"url": blank, "label": "Pièce"}]
+            _odd_sale(db, documents, {PV: "extracted", blank: "pending"}, {"http_checked_at_by_url": {PV: _checked(1)}})
+
+            assert _selected(db) == []
+        finally:
+            db.rollback()
+
+
 def test_a_numeric_url_is_a_document_like_any_other() -> None:
     with _connect() as db:
         try:
