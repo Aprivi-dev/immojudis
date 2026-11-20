@@ -305,13 +305,15 @@ def documents_are_current(sale: Any) -> bool:
         return False
     if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles_payload):
         return False
-    analysis_profiles = {clean_text(item.get("url")): item for item in profiles_payload}
+    # Les profils suivent la liste des pièces : une URL listée deux fois (vente fusionnée entre sources, étiquettes
+    # différentes) a deux profils. Comparer les longueurs déclarait la vente jamais à jour, d'où une tâche pdf par
+    # passe (2 579 tâches en 24 heures pour une vente, 11/2026). Chaque profil d'une URL attendue est vérifié ci-dessous : deux profils contradictoires
+    # pour une même URL ne peuvent pas tous deux concorder avec sa preuve.
+    analysis_profiles: dict[str, list[dict[str, Any]]] = {}
+    for item in profiles_payload:
+        analysis_profiles.setdefault(clean_text(item.get("url")), []).append(item)
     profile_urls = set(analysis_profiles)
-    if (
-        len(analysis_profiles) != len(profiles_payload)
-        or not expected_urls.issubset(profile_urls)
-        or not (profile_urls - expected_urls).issubset(excluded_urls)
-    ):
+    if not expected_urls.issubset(profile_urls) or not (profile_urls - expected_urls).issubset(excluded_urls):
         return False
     for url in expected_urls:
         item = proof_by_url[url]
@@ -319,13 +321,6 @@ def documents_are_current(sale: Any) -> bool:
             text_chars = int(item.get("text_chars") or 0)
         except (OverflowError, TypeError, ValueError):
             return False
-        profile = analysis_profiles.get(url)
-        profile_sha = clean_text(profile.get("sha256")) if isinstance(profile, dict) else ""
-        profile_status = (
-            (clean_text(profile.get("extraction_status")) or "").casefold()
-            if isinstance(profile, dict)
-            else ""
-        )
         if not (
             item.get("extraction_status") == "extracted"
             and item.get("complete") is True
@@ -334,13 +329,19 @@ def documents_are_current(sale: Any) -> bool:
             and bool(clean_text(item.get("text_sha256")))
             and item.get("text_present") is True
             and text_chars > 0
-            and bool(profile_sha)
-            and profile_sha == clean_text(item.get("sha256"))
-            and profile_status == "extracted"
-            and profile.get("complete") is True
-            and not profile.get("failed_pages")
         ):
             return False
+        for profile in analysis_profiles[url]:
+            profile_sha = clean_text(profile.get("sha256"))
+            profile_status = (clean_text(profile.get("extraction_status")) or "").casefold()
+            if not (
+                bool(profile_sha)
+                and profile_sha == clean_text(item.get("sha256"))
+                and profile_status == "extracted"
+                and profile.get("complete") is True
+                and not profile.get("failed_pages")
+            ):
+                return False
         if modern_manifest and not timestamp_is_fresh(item.get("http_checked_at")):
             return False
     # The manifest fingerprint remains stable while a partial pass fills the
