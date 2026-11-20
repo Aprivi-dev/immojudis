@@ -14,6 +14,7 @@ import pytest
 
 from src.document_backlog import _read_with_current_rules, is_refused_checkpoint
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
 from src.pdf_progress import manifest_is_complete
@@ -240,6 +241,48 @@ def test_a_final_write_refused_at_admission_ends_in_review_after_four_daily_atte
         (1, "cancelled", 4, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface, {DOCUMENT_FACTS_VERSION})"),
     ]
     assert bench.manifest == {}
+
+
+# --- Une URL listée deux fois (vente fusionnée entre sources) : la vente est à jour après sa passe
+
+
+def _visits(bench: QueueBench, *, duplicated: bool) -> list[tuple[int, int, int, bool]]:
+    """Trois visites rapprochées, puis trois autres une fois les contrôles périmés (+25 h).
+
+    Pour chaque visite : passes jouées, tâches pdf créées, requêtes de pièces, vente à jour après la visite.
+    """
+    bench.publish(READABLE)
+    if duplicated:  # mêmes URL, étiquettes différentes : un profil par pièce listée, une preuve par URL
+        documents = bench.row["documents"]
+        documents.extend({**document, "label": document["label"] + " (autre source)"} for document in documents[:])
+    visits = []
+    for delay in (0, 0.01, 0.01, 25, 0.01, 0.01):
+        bench.age(delay)
+        outcome = bench.drain()
+        assert outcome.error is None
+        visits.append((outcome.passes, len(bench.jobs), len(bench.requests), documents_are_current(bench.stored_sale())))
+    return visits
+
+
+@pytest.mark.parametrize("duplicated", [False, True])
+def test_a_sale_listing_the_same_urls_twice_is_read_like_one_without_duplicates(
+    bench: QueueBench, duplicated: bool
+) -> None:
+    # Six pièces listées pour trois URL : comparer le nombre de profils (un par pièce) à celui des URL déclarait la
+    # vente jamais à jour. Chaque écriture de fin de passe recréait une tâche pdf, reprise au tick suivant. Les deux
+    # cas, avec et sans doublons, doivent donner exactement les mêmes visites.
+    visits = _visits(bench, duplicated=duplicated)
+
+    assert len(bench.manifest["profiles"]) == (6 if duplicated else 3)
+    assert len(bench.manifest["cache_proof"]["documents"]) == 3
+    assert visits == [
+        (1, 1, 3, True),  # première lecture : une passe, une tâche, une requête par URL
+        (0, 1, 3, True),  # visites suivantes : ni passe, ni tâche, ni requête
+        (0, 1, 3, True),
+        (1, 2, 6, True),  # +25 h : la revalidation quotidienne, une fois
+        (0, 2, 6, True),
+        (0, 2, 6, True),
+    ]
 
 
 # --- Garde-fou : une pièce nouvelle ou modifiée est toujours lue
