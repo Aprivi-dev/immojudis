@@ -355,6 +355,23 @@ def test_contradictory_profiles_of_one_url_refuse_the_fact_cache_and_the_facts(
     assert extract_structured.needs_fact_extraction(sale)
 
 
+def test_a_status_written_in_capitals_keeps_its_fact_manifest_current(bench: QueueBench, monkeypatch, tmp_path) -> None:
+    # Le manifeste gardait le statut tel quel, la comparaison le met en minuscules : « Extracted » ne concordait jamais
+    # et les faits de la vente étaient extraits de nouveau à chaque passage.
+    sale = _read_sale(bench, monkeypatch, duplicated=False)
+    extract_structured.enrich_sale_with_llm(sale, client=_EmptyFactsClient(), output_dir=tmp_path / "faits")
+    manifest = sale.raw_payload["llm_fact_context_manifest"]
+    for profile in sale.raw_payload["document_analysis"]["profiles"]:
+        profile["extraction_status"] = "Extracted"
+
+    rebuilt = extract_structured._fact_context_manifest(
+        sale, model=manifest["model"], fact_prompt_version=manifest["fact_prompt_version"]
+    )
+
+    assert rebuilt["document_profiles"] == manifest["document_profiles"]  # même manifeste qu'en minuscules
+    assert extract_structured._manifest_matches_current(sale, rebuilt)
+
+
 # --- Garde-fou : une pièce nouvelle ou modifiée est toujours lue
 
 

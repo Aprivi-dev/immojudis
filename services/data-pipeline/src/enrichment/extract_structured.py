@@ -1522,11 +1522,13 @@ def _fact_context_manifest(
         for profile in profiles_payload if isinstance(profiles_payload, list) else []:
             if not isinstance(profile, dict) or clean_text(profile.get("url")) in excluded_urls:
                 continue
+            # Casse ignorée comme dans ``_manifest_matches_current`` ; un statut absent reste absent.
+            status = clean_text(profile.get("extraction_status"))
             profiles.append(
                 {
                     "url": clean_text(profile.get("url")),
                     "sha256": clean_text(profile.get("sha256")),
-                    "extraction_status": clean_text(profile.get("extraction_status")),
+                    "extraction_status": status.casefold() if status else status,
                     "complete": profile.get("complete") is True,
                 }
             )
