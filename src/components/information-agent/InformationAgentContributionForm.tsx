@@ -559,10 +559,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   </p>
                   {opposed ? null : (
                     <p className="mt-2 text-sm leading-relaxed">
-                      Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
-                      sans cette relecture. Pour corriger ou retirer un envoi, répondez simplement à
-                      l’email reçu (référence {session.caseReference}). Vous pouvez fermer cette
-                      page.
+                      Les informations sont vérifiées avant toute mise à jour de la fiche, par notre
+                      équipe ou, pour certaines informations simples, par un contrôle automatisé.
+                      Pour corriger ou retirer un envoi, répondez simplement à l’email reçu
+                      (référence {session.caseReference}). Vous pouvez fermer cette page.
                     </p>
                   )}
                 </div>
@@ -614,8 +614,9 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     className="rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
                   >
                     Votre réponse et vos pièces sont lues par l’équipe Immojudis, avec l’aide d’un
-                    outil d’IA, puis relues avant toute utilisation sur une fiche. Rien n’est publié
-                    sans cette relecture.
+                    outil d’IA. Les informations sont vérifiées avant toute publication, par notre
+                    équipe ou, pour certaines informations simples, par un contrôle automatisé.
+                    Elles sont corrigées ou retirées sur simple demande.
                   </p>
                   {error ? (
                     <p
@@ -848,12 +849,14 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     Immojudis ({legalValue(publisher.entityName)}) utilise ces informations pour
                     répondre à votre demande et vérifier les informations d’une vente, sur la base
                     de son intérêt légitime. Elles sont lues par l’équipe, avec l’aide d’un outil
-                    d’IA (prestataire établi aux États-Unis), puis relues avant toute utilisation
-                    sur une fiche ; celles qui sont retenues peuvent être affichées sur la fiche
-                    publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant,
-                    certaines portent la mention de source décrite dans notre message, qui vous rend
-                    identifiable. Conservation : 12 à 24 mois. Vous pouvez vous opposer, demander
-                    l’accès, la rectification ou l’effacement et saisir la CNIL :{" "}
+                    d’IA (prestataire établi aux États-Unis), et vérifiées avant toute publication,
+                    par l’équipe ou, pour certaines informations simples, par un contrôle automatisé
+                    ; celles qui sont retenues peuvent être affichées sur la fiche publique de la
+                    vente, sans votre nom, et sont corrigées ou retirées sur simple demande ; si
+                    vous êtes l’avocat poursuivant, certaines portent la mention de source décrite
+                    dans notre message, qui vous rend identifiable. Conservation : 12 à 24 mois.
+                    Vous pouvez vous opposer, demander l’accès, la rectification ou l’effacement et
+                    saisir la CNIL :{" "}
                     <Link
                       href="/privacy"
                       target="_blank"

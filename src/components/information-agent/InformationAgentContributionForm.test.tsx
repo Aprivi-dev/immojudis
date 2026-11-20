@@ -149,8 +149,13 @@ describe("InformationAgentContributionForm", () => {
     });
     expect(mocks.storageFrom).not.toHaveBeenCalled();
     // Après une réponse volontaire : ce qui va se passer, puis l'invitation au dépôt direct.
-    // C12 : « relecture », ce que l'équipe fait réellement.
-    expect(screen.getByText(/rien n’est publié sans cette relecture/)).toBeTruthy();
+    // Ce qui se passe réellement : vérification par l'équipe ou, pour les informations simples,
+    // par un contrôle automatisé.
+    expect(
+      screen.getByText(
+        /Les informations sont vérifiées avant toute mise à jour de la fiche, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé\./,
+      ),
+    ).toBeTruthy();
     const invitation = screen.getByRole("link", { name: "Créer un accès professionnel" });
     expect(invitation.getAttribute("href")).toBe("/login?mode=professional&redirect=%2Fpublish");
   });
@@ -620,6 +625,13 @@ describe("InformationAgentContributionForm", () => {
       expect(notice?.textContent).toContain("Immojudis (Immojudis SAS) utilise ces informations");
       expect(notice?.textContent).toContain("intérêt légitime");
       expect(notice?.textContent).toContain("prestataire établi aux États-Unis");
+      expect(notice?.textContent?.replace(/\s+/g, " ")).toContain(
+        "et vérifiées avant toute publication, par l’équipe ou, pour certaines informations simples, par un contrôle automatisé ;",
+      );
+      expect(notice?.textContent?.replace(/\s+/g, " ")).toContain(
+        "sans votre nom, et sont corrigées ou retirées sur simple demande ;",
+      );
+      expect(notice?.textContent).not.toContain("relues avant toute utilisation");
       expect(notice?.textContent).toContain("Conservation : 12 à 24 mois");
       expect(notice?.textContent).toContain("saisir la CNIL");
       expect(notice?.className).not.toContain("text-xs");
@@ -763,8 +775,10 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
 
       const reminder = screen.getByText(/lues par l’équipe Immojudis, avec l’aide d’un outil d’IA/);
-      expect(reminder.textContent).toContain("puis relues avant toute utilisation");
-      expect(reminder.textContent).toContain("Rien n’est publié sans cette relecture");
+      expect(reminder.textContent).toContain(
+        "Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.",
+      );
+      expect(reminder.textContent).not.toContain("Rien n’est publié sans cette relecture");
       expect(
         reminder.compareDocumentPosition(screen.getByLabelText(/Nom ou cabinet/)) &
           Node.DOCUMENT_POSITION_FOLLOWING,
@@ -793,7 +807,7 @@ describe("InformationAgentContributionForm", () => {
       expect(
         screen.getByText(/celles qui sont retenues peuvent être affichées/).textContent,
       ).toContain(
-        "sur la fiche publique de la vente, sans votre nom ; si vous êtes l’avocat poursuivant, certaines portent la mention de source décrite dans notre message, qui vous rend identifiable.",
+        "sur la fiche publique de la vente, sans votre nom, et sont corrigées ou retirées sur simple demande ; si vous êtes l’avocat poursuivant, certaines portent la mention de source décrite dans notre message, qui vous rend identifiable.",
       );
     });
 

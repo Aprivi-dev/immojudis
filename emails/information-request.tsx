@@ -25,7 +25,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v14";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v15";
 
 /** Aperçu de la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 export const INFORMATION_REQUEST_PREHEADER =
@@ -106,7 +106,7 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
 
 /** Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. */
 const NOTICE_LINES = [
-  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire, classer et contrôler les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
   "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
 ] as const;
 
@@ -200,7 +200,7 @@ function depositHost(contributionUrl: string): string {
 
 const DEPOSIT_LINK_TEXT = "l’espace privé de ce dossier";
 const DEPOSIT_NOTE =
-  "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.";
+  "Ce lien est propre à ce dossier. Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.";
 
 /** « Vous pouvez aussi répondre dans <lien>, sur immojudis.com », lien et hôte déjà mis en forme. */
 function depositSentence(link: string, host: string): string {

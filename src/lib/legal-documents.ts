@@ -201,6 +201,20 @@ export const FULL_SALE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
  */
 export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-20.1 (textes de l'agent d'information validés par le propriétaire le
+ * 20/11/2026) : chaque demande d'information reste validée par une personne de l'équipe avant son envoi, et
+ * seul l'accusé de réception d'une réponse est automatique ; l'intégration d'une information sur une fiche est
+ * vérifiée par une personne de l'équipe ou, pour certaines informations simples tirées du texte du message
+ * (surface, surface du terrain, nombre de pièces), par un contrôle automatisé, signalé sur la fiche. Ce lot ne
+ * change que les textes : l'accusé de réception automatique et la publication par contrôle automatisé viennent
+ * dans des lots suivants. La version 2026-11-15.1 est archivée. Aucun consentement n'est redemandé. En vigueur à
+ * la mise en ligne, sans préavis. Date à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre
+ * pas dans l'empreinte du texte). Elle reste inférieure à `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` : le mode réel
+ * du pilote reste verrouillé.
+ */
+export const PRIVACY_INFORMATION_AGENT_AUTOMATION_EFFECTIVE_DATE = "20 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -215,9 +229,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-15.1",
-    sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
-    effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+    version: "2026-11-20.1",
+    sha256: "9efcc8cae5440c308119bda940ae7ea58ee294eeaefc5b8c46db6ddc6a03b915",
+    effectiveDate: PRIVACY_INFORMATION_AGENT_AUTOMATION_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

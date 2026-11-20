@@ -174,7 +174,7 @@ describe("pied de message art. 14 : version complète", () => {
     );
     expect(text).toContain("Ce message ne contient aucune offre commerciale.");
     expect(text).toContain(
-      "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.",
+      "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, vous recevrez au plus un accusé de réception automatique.",
     );
     expect(text).toContain(
       "Responsable de traitement : Immojudis SAS, 1 rue de la Paix, 75002 Paris — contact@immojudis.test.",

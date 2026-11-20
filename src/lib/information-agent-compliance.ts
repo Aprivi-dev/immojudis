@@ -416,7 +416,7 @@ const INFORMATION_AGENT_NO_OFFER_STATEMENT = "Ce message ne contient aucune offr
  * et aucune relance.
  */
 const INFORMATION_AGENT_PURPOSE_STATEMENT =
-  "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.";
+  "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, vous recevrez au plus un accusé de réception automatique.";
 
 /**
  * Finalité et fréquence d'un message à un greffe (greffe de secours) : une fois par vente et, pour un même
@@ -541,5 +541,5 @@ function informationAgentRecipientsStatement(
   aiProvider: InformationAgentAiProvider,
   contactEmail: string,
 ): string {
-  return `l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi et réception des courriels), GitHub (exécution des traitements automatisés) et ${aiProvider.name} (${aiProvider.country}), outil d’IA qui aide à lire et classer les réponses. Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à ${contactEmail} ; aucun compte n’est nécessaire.`;
+  return `l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi et réception des courriels), GitHub (exécution des traitements automatisés) et ${aiProvider.name} (${aiProvider.country}), outil d’IA qui aide à lire, classer et contrôler les réponses. Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à ${contactEmail} ; aucun compte n’est nécessaire.`;
 }
