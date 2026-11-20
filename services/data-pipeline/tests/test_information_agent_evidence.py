@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -2125,11 +2126,23 @@ def test_pdf_children_receive_no_key_from_the_worker_environment(monkeypatch) ->
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "sentinel-service-key")
     monkeypatch.setenv("REPLICATE_API_TOKEN", "sentinel-model-key")
     launched: list[tuple[str, dict[str, str] | None]] = []
+    children: dict[str, tuple[subprocess.Popen, list[str]]] = {}
     real_popen = subprocess.Popen
 
     def spy(command, **kwargs):
         launched.append((command[3], kwargs.get("env")))
-        return real_popen(command, **kwargs)
+        process = real_popen(command, **kwargs)
+        outputs: list[str] = []
+        real_communicate = process.communicate
+
+        def communicate(*args, **kwargs):
+            stdout, stderr = real_communicate(*args, **kwargs)
+            outputs.append(stdout or "")
+            return stdout, stderr
+
+        process.communicate = communicate
+        children[command[3]] = (process, outputs)
+        return process
 
     monkeypatch.setattr(evidence.subprocess, "Popen", spy)
     document = pymupdf.open()
@@ -2148,7 +2161,46 @@ def test_pdf_children_receive_no_key_from_the_worker_environment(monkeypatch) ->
         assert "sentinel" not in json.dumps(env)
     # Les deux enfants ont travaillé avec cet environnement réduit.
     assert analysis.pages[0]["method"] == "pymupdf_text"
-    assert analysis.pages[1]["method"] not in {"text_failed", "ocr_failed"}
+    # L'enfant OCR a démarré (import du module, limite mémoire), ouvert la page et rendu sa réponse, puis s'est terminé
+    # de lui-même : ni tué (code négatif), ni arrêté au démarrage (code 1, sortie vide). Vrai avec ou sans Tesseract ;
+    # le texte lu n'est exigé que s'il est installé (sans lui, l'enfant rend une erreur d'OCR, la page « ocr_failed »).
+    ocr_child, ocr_outputs = children["--ocr-pdf-page"]
+    assert ocr_child.returncode == 0
+    assert len(ocr_outputs) == 1
+    payload = parse_ocr_child_output(ocr_outputs[0])
+    assert isinstance(payload.get("text"), str) or isinstance(payload.get("error"), str)
+    if shutil.which("tesseract"):
+        assert isinstance(payload.get("text"), str)
+        assert analysis.pages[1]["method"] not in {"text_failed", "ocr_failed"}
+
+
+def test_image_ocr_and_heif_conversion_receive_no_key_from_the_worker_environment(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "sentinel-service-key")
+    monkeypatch.setenv("REPLICATE_API_TOKEN", "sentinel-model-key")
+    monkeypatch.setattr(evidence.shutil, "which", lambda name: f"/opt/fake/{name}")
+    launched: list[tuple[str, dict[str, str] | None]] = []
+
+    class _FinishedProcess:
+        returncode = 1
+
+        def __init__(self, command, **kwargs) -> None:
+            launched.append((Path(command[0]).name, kwargs.get("env")))
+
+        def communicate(self, timeout=None):
+            return None, None
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(evidence.subprocess, "Popen", _FinishedProcess)
+
+    assert evidence._ocr_image_bytes(b"image", "image/png") == ""
+    assert evidence._prepare_heif_for_processing(b"not a heif image", "image/heic") is None
+
+    assert [name for name, _env in launched] == ["tesseract", "heif-convert"]
+    for _name, env in launched:
+        assert env is not None and set(env) <= set(evidence_child.CHILD_ENVIRONMENT_KEYS)
+        assert "sentinel" not in json.dumps(env)
 
 
 def test_a_page_containing_a_line_separator_is_read(monkeypatch, capsys, tmp_path) -> None:
@@ -2251,5 +2303,5 @@ def test_a_worker_error_at_the_last_attempt_leaves_an_exact_summary(monkeypatch)
 
     assert (row["status"], row["attempts"], row["error_code"]) == ("failed", 3, "WORKER_ERROR")
     assert row["completed_at"] is not None
-    assert row["summary"].startswith("Analyse interrompue : erreur du traitement à chacun des 3 essais.")
+    assert row["summary"].startswith("Analyse interrompue : 3 erreurs de traitement pendant la lecture.")
     assert "seront proposées" not in row["summary"]

@@ -18,9 +18,11 @@ from pathlib import Path
 # runner aux autres bibliothèques ou à plus de fils d'exécution.
 CHILD_ADDRESS_SPACE_BYTES = 1024 * 1024 * 1024
 # Seules variables transmises à un processus enfant : il ouvre un fichier reçu d'un tiers et ne reçoit aucune clé
-# (base, fournisseur de modèles). Chemin des exécutables, langue, et réglages de Tesseract.
+# (base, fournisseur de modèles). Chemin des exécutables et des bibliothèques partagées (sans lui, un Python installé
+# hors des dossiers système ne démarre pas), langue, et réglages de Tesseract.
 CHILD_ENVIRONMENT_KEYS = (
     "PATH",
+    "LD_LIBRARY_PATH",
     "LANG",
     "LANGUAGE",
     "LC_ALL",

@@ -152,7 +152,7 @@ def fail_job(
     if attempts >= MAX_ATTEMPTS:
         # Échec définitif : le résumé d'une lecture en cours (« … seront proposées ») ne doit pas rester.
         payload["summary"] = (
-            f"Analyse interrompue : erreur du traitement à chacun des {MAX_ATTEMPTS} essais. "
+            f"Analyse interrompue : {MAX_ATTEMPTS} erreurs de traitement pendant la lecture. "
             "Aucune information proposée : vérification manuelle nécessaire."
         )
     response = client.patch(

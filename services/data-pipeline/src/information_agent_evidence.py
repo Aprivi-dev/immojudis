@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -94,8 +93,10 @@ PDF_TEXT_READ_SECONDS = 120
 # IA, écritures ; l'installation du workflow prend quelques minutes sur les 25). Les pièces non prises restent en
 # file sans perdre d'essai.
 EVIDENCE_BATCH_SECONDS = 14 * 60
-# Au-delà, la lecture s'arrête en partielle déclarée : 10 passages couvrent 300 pages jusqu'à 7 s d'OCR par page. Le
-# dernier essai (``MAX_ATTEMPTS``) est aussi le dernier passage (``_is_last_pass``).
+# À partir de ce passage, chaque passage est un dernier passage (``_is_last_pass``) : 10 passages couvrent 300 pages
+# jusqu'à 7 s d'OCR par page. Une pièce dont une page a été lue s'arrête là en partielle déclarée ; une pièce dont rien
+# n'a jamais été lu passe en échec et réessaie, jusqu'à 12 passages (les 2 essais restants de ``MAX_ATTEMPTS``). Le
+# dernier essai est aussi le dernier passage.
 MAX_READING_PASSES = 10
 PDF_OCR_LANGUAGE = "fra+eng"
 IMAGE_OCR_TIMEOUT_SECONDS = 20
@@ -631,15 +632,11 @@ def _prepare_heif_for_processing(
             source_path = Path(temp_dir) / f"evidence{suffix}"
             output_path = Path(temp_dir) / "evidence.png"
             source_path.write_bytes(content)
-            popen_kwargs: dict[str, object] = {
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
-            }
-            if os.name == "posix":
-                popen_kwargs["start_new_session"] = True
+            # Environnement réduit, sans aucune clé (``child_popen_kwargs``) : le convertisseur ouvre un fichier reçu
+            # d'un tiers.
             process = subprocess.Popen(
                 [executable, str(source_path), str(output_path)],
-                **popen_kwargs,
+                **{**child_popen_kwargs(), "stdout": subprocess.DEVNULL},
             )
             try:
                 process.communicate(timeout=HEIF_CONVERT_TIMEOUT_SECONDS)
@@ -1069,16 +1066,10 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
         with tempfile.TemporaryDirectory(prefix="immojudis-evidence-") as temp_dir:
             path = Path(temp_dir) / f"evidence{suffix}"
             path.write_bytes(content)
-            popen_kwargs: dict[str, object] = {
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.DEVNULL,
-                "text": True,
-            }
-            if os.name == "posix":
-                popen_kwargs["start_new_session"] = True
+            # Environnement réduit, sans aucune clé (``child_popen_kwargs``) : Tesseract ouvre un fichier reçu d'un tiers.
             process = subprocess.Popen(
                 [executable, str(path), "stdout", "-l", "fra+eng"],
-                **popen_kwargs,
+                **child_popen_kwargs(),
             )
             try:
                 stdout, _stderr = process.communicate(timeout=IMAGE_OCR_TIMEOUT_SECONDS)
