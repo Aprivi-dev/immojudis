@@ -44,7 +44,12 @@ from src.pdf_ocr_child_output import parse_ocr_child_output
 from src.storage.postgrest_helpers import rest_headers
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-MAX_PAGES = 100
+# Pages lues d'un PDF ; au-delà, les premières pages sont lues et la lecture est déclarée partielle. 300 comme la
+# valeur par défaut des annonces (``pdf_max_total_pages``), sans en dépendre : ce plafond tient au délai du workflow
+# (25 minutes pour un lot de 5) et aux bornes de la table (``page_count`` et ``source_page`` au plus 1 000).
+MAX_PAGES = 300
+# ``extracted_text`` est borné à 250 000 caractères en base : le texte lu au-delà sert aux faits et au détecteur de
+# consignes, mais n'est pas conservé (``stored_text_truncated`` dans ``metadata.reading``).
 MAX_EXTRACTED_TEXT_CHARS = 240_000
 MAX_PAGE_TEXT_CHARS = 30_000
 # Image decoders expand compressed input before OCR. Keep both the dimensions
@@ -61,6 +66,10 @@ PDF_OCR_TOTAL_TIMEOUT_SECONDS = 30
 PDF_OCR_LANGUAGE = "fra+eng"
 IMAGE_OCR_TIMEOUT_SECONDS = 20
 HEIF_CONVERT_TIMEOUT_SECONDS = 20
+# Pages examinées dont le texte n'a pas été lu : OCR hors budget, en échec ou refusé pour la taille de la page.
+UNREAD_PAGE_METHODS = frozenset(
+    {"ocr_total_timeout", "ocr_timeout", "ocr_failed", "ocr_unavailable", "ocr_skipped_dimensions"}
+)
 _SEMANTIC_PAGE_RE = re.compile(
     r"^--- page (?P<page>\d+) ---\n(?P<text>.*?)(?=\n\n--- page \d+ ---\n|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -121,6 +130,11 @@ class EvidenceAnalysis:
     facts: list[EvidenceFact]
     error_code: str | None = None
     error_message: str | None = None
+    # Tout le texte lu, en mémoire seulement : ``extracted_text`` n'en conserve que le début. Le détecteur de
+    # consignes et la lecture sémantique le lisent, pour qu'une consigne au-delà du texte conservé soit vue.
+    read_text: str | None = None
+    # Pages lues sur pages du document (``metadata.reading``) ; nul quand rien n'a été lu.
+    reading: dict[str, object] | None = None
 
 
 def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
@@ -144,7 +158,9 @@ def analyze_evidence_bytes(
     filename: str,
     declared_mime_type: str,
     ocr_enabled: bool = True,
+    email_body: bool = False,
 ) -> EvidenceAnalysis:
+    """``email_body`` : le corps du message (``metadata.evidence_kind``), un texte qui n'est pas une pièce de la vente."""
     if not content or len(content) > MAX_ATTACHMENT_BYTES:
         return _unsupported("FILE_SIZE_INVALID", "La taille du fichier est invalide.")
 
@@ -161,7 +177,7 @@ def analyze_evidence_bytes(
     if detected == "application/pdf":
         return _analyze_pdf(content, filename=filename, detected_mime_type=detected, ocr_enabled=ocr_enabled)
     if detected == "text/plain":
-        return _analyze_text(content, filename=filename, detected_mime_type=detected)
+        return _analyze_text(content, filename=filename, detected_mime_type=detected, email_body=email_body)
     dimensions = _read_image_dimensions(content, detected)
     image_limit = _image_limit_error(dimensions, len(content))
     if image_limit is not None:
@@ -262,15 +278,11 @@ def _analyze_pdf(
                 error_code="PDF_PASSWORD_REQUIRED",
                 error_message="Le document est chiffré. Aucun contournement ou essai de mot de passe n’a été effectué.",
             )
-        if document.page_count > MAX_PAGES:
-            return _unsupported(
-                "PAGE_LIMIT_EXCEEDED",
-                f"Le PDF dépasse la limite de {MAX_PAGES} pages.",
-                detected_mime_type,
-            )
+        total_pages = document.page_count
         pages: list[dict[str, object]] = []
         ocr_candidates: list[tuple[int, fitz.Page, str]] = []
-        for index, page in enumerate(document, start=1):
+        for index in range(1, min(total_pages, MAX_PAGES) + 1):
+            page = document.load_page(index - 1)
             raw_text = page.get_text("text") or ""
             page_data: dict[str, object] = {
                 "page": index,
@@ -300,10 +312,11 @@ def _analyze_pdf(
         detected_mime_type=detected_mime_type,
         pages=pages,
         is_encrypted=False,
+        total_pages=total_pages,
     )
 
 
-def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str) -> EvidenceAnalysis:
+def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str, email_body: bool) -> EvidenceAnalysis:
     text = content.decode("utf-8", errors="replace")[:MAX_EXTRACTED_TEXT_CHARS]
     cleaned = clean_text(text) or ""
     pages = [{"page": 1, "text": cleaned, "chars": len(cleaned), "method": "plain_text", "confidence": 0.98}]
@@ -312,6 +325,7 @@ def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str) -> 
         detected_mime_type=detected_mime_type,
         pages=pages,
         is_encrypted=False,
+        email_body=email_body,
     )
 
 
@@ -561,20 +575,42 @@ def _completed_analysis(
     detected_mime_type: str,
     pages: list[dict[str, object]],
     is_encrypted: bool,
+    total_pages: int | None = None,
+    email_body: bool = False,
 ) -> EvidenceAnalysis:
+    """``total_pages`` : pages du document quand seules les ``MAX_PAGES`` premières sont dans ``pages``."""
     facts = extract_evidence_facts(pages)
     combined_parts = [
         f"--- page {page['page']} ---\n{page.get('text') or ''}"
         for page in pages
         if page.get("text")
     ]
-    combined = "\n\n".join(combined_parts)[:MAX_EXTRACTED_TEXT_CHARS]
-    kind = classify_document_type(filename, combined[:4000])
+    read_text = "\n\n".join(combined_parts)
+    combined = read_text[:MAX_EXTRACTED_TEXT_CHARS]
+    # Le corps du message n'est pas une pièce de la vente : aucun type de document tiré des mots de son texte.
+    kind = None if email_body else classify_document_type(filename, combined[:4000])
+    label = "Corps du message" if email_body else _document_kind_label(kind)
     text_chars = sum(int(page.get("chars") or 0) for page in pages)
+    pages_total = len(pages) if total_pages is None else total_pages
+    unread_pages = [page["page"] for page in pages if page.get("method") in UNREAD_PAGE_METHODS]
+    pages_read = len(pages) - len(unread_pages)
+    reading: dict[str, object] = {
+        "pages_total": pages_total,
+        "pages_read": pages_read,
+        "complete": pages_read == pages_total,
+        "unread_pages": unread_pages,
+        "pages_beyond_limit": pages_total - len(pages),
+        "stored_text_truncated": len(read_text) > len(combined),
+    }
     summary = (
-        f"{_document_kind_label(kind)} · {len(pages)} page(s) · "
+        f"{label} · {len(pages)} page(s) · "
         f"{text_chars} caractère(s) extrait(s) · {len(facts)} information(s) candidate(s)."
     )
+    if not reading["complete"]:
+        summary = (
+            f"Lecture partielle : {pages_read} page(s) lue(s) sur {pages_total}, "
+            f"les autres sont à vérifier manuellement. {summary}"
+        )
     safe_pages = [{key: value for key, value in page.items() if key != "text"} for page in pages]
     return EvidenceAnalysis(
         status="completed",
@@ -586,21 +622,24 @@ def _completed_analysis(
         extracted_text=combined or None,
         pages=safe_pages,
         facts=facts,
+        read_text=read_text or None,
+        reading=reading,
     )
 
 
 def _semantic_pages_from_analysis(analysis: EvidenceAnalysis) -> list[dict[str, object]]:
-    """Recover bounded page text without persisting raw text in ``pages``.
+    """Recover page text without persisting raw text in ``pages``.
 
     The extraction row stores page metadata separately from the combined text.
     Keeping this adapter local means the optional semantic pass receives the
-    same text that was extracted and can cite the page delimiters exactly,
-    while the semantic module still applies its own page and character caps.
+    same text that was read and can cite the page delimiters exactly,
+    while the semantic module still applies its own page and character caps
+    (and its prompt-injection check, on every page read).
     """
-    if analysis.status != "completed" or not analysis.extracted_text:
+    if analysis.status != "completed" or not analysis.read_text:
         return []
     pages: list[dict[str, object]] = []
-    for match in _SEMANTIC_PAGE_RE.finditer(analysis.extracted_text):
+    for match in _SEMANTIC_PAGE_RE.finditer(analysis.read_text):
         text = match.group("text")
         if not text:
             continue
@@ -722,7 +761,7 @@ def _ocr_pdf_page(
         if source_path is None:
             parent = page.parent
             if parent is None:
-                return _ocr_fallback(fallback, "fallback_text")
+                return _ocr_fallback(fallback, "ocr_failed")
             temporary_source = tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-")
             source_path = Path(temporary_source.name) / "evidence.pdf"
             source_path.write_bytes(parent.tobytes())
@@ -749,18 +788,23 @@ def _ocr_pdf_page(
             _terminate_process_group(process)
             return _ocr_fallback(fallback, "ocr_timeout")
         if process.returncode != 0:
-            return _ocr_fallback(fallback, "fallback_text")
-        text = parse_ocr_child_output(stdout).get("text")
+            return _ocr_fallback(fallback, "ocr_failed")
+        payload = parse_ocr_child_output(stdout)
+        text = payload.get("text")
         if isinstance(text, str) and clean_text(text):
             return text, "ocr_pymupdf", 0.74
+        if not isinstance(text, str):  # the child reported an error (no OCR engine, unreadable page)
+            return _ocr_fallback(fallback, "ocr_failed")
+        # OCR ran and found no text: the page is read (« fallback_text » keeps its native text).
+        return _ocr_fallback(fallback, "fallback_text")
     except Exception:
-        # The page keeps its native text (« fallback_text »); no OCR child is left running.
+        # The page keeps its native text, unread by OCR; no OCR child is left running.
         if process is not None:
             _terminate_process_group(process)
     finally:
         if temporary_source is not None:
             temporary_source.cleanup()
-    return _ocr_fallback(fallback, "fallback_text")
+    return _ocr_fallback(fallback, "ocr_failed")
 
 
 def _ocr_pdf_page_in_process(source_path: str, page_number: int) -> dict[str, str]:
@@ -1114,14 +1158,17 @@ def _process_job(
             raise RuntimeError("Evidence asset association mismatch")
         content = _download_asset(client, base_url, key, asset)
         settings = load_settings()
+        asset_metadata = asset.get("metadata")
+        email_body = isinstance(asset_metadata, dict) and asset_metadata.get("evidence_kind") == "email_body"
         analysis = analyze_evidence_bytes(
             content,
             filename=str(asset.get("original_filename") or "piece-jointe"),
             declared_mime_type=str(asset.get("mime_type") or ""),
             ocr_enabled=bool(settings.get("information_agent_evidence_ocr_enabled", True)),
+            email_body=email_body,
         )
         # Consigne adressée à un modèle dans le texte de la pièce : aucun fait (ni règle ni IA), relecture.
-        prompt_injection = contains_prompt_injection(analysis.extracted_text)
+        prompt_injection = contains_prompt_injection(analysis.read_text)
         if prompt_injection:
             analysis = _withhold_facts_for_prompt_injection(analysis)
         sale_id = str(job.get("sale_id") or "")
@@ -1163,11 +1210,7 @@ def _process_job(
             if case_status in FACT_CANDIDATE_CASE_STATUSES:
                 sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
                 existing_body_values: dict[tuple[str, str], dict[str, Any]] = {}
-                asset_metadata = asset.get("metadata")
-                if (
-                    isinstance(asset_metadata, dict)
-                    and asset_metadata.get("evidence_kind") == "email_body"
-                ):
+                if email_body:
                     existing_body_values = fetch_existing_message_fact_values(
                         client,
                         base_url,
@@ -1327,6 +1370,7 @@ def _finish_job(
             "prompt_instructions_ignored": True,
             "semantic": semantic_metadata or {"status": "not_run", "review_required": True},
             "photo_semantic": photo_metadata or {"status": "not_run", "review_required": True},
+            **({"reading": analysis.reading} if analysis.reading is not None else {}),
         },
         "locked_at": None,
         "completed_at": now,

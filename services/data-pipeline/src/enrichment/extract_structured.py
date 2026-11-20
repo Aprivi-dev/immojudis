@@ -44,6 +44,7 @@ from src.enrichment.surface_reasoning import (
     extract_surface_facts_from_text,
     merge_extracted_assets,
 )
+from src.freshness import profiles_by_url, profiles_confirm_extraction
 from src.llm_cache import load_cached_result, save_cached_result
 from src.llm_requests import llm_request_context
 from src.llm_task_deadline import LLMTaskDeadlineExceeded
@@ -1466,6 +1467,21 @@ def _pdf_fact_manifest_documents(pdf_items: list[dict[str, Any]]) -> list[dict[s
     )
 
 
+def _unique_sorted_profiles(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fact-manifest profiles, one per distinct entry: a URL listed twice by merged sources is one document.
+
+    Two entries left for one URL disagree (other bytes or status); ``_manifest_matches_current`` refuses them.
+    """
+    unique = {
+        (item.get("url"), item.get("sha256"), item.get("extraction_status"), item.get("complete")): item
+        for item in profiles
+    }
+    return sorted(
+        unique.values(),
+        key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")),
+    )
+
+
 def _fact_context_manifest(
     sale: AuctionSale,
     *,
@@ -1514,10 +1530,7 @@ def _fact_context_manifest(
                     "complete": profile.get("complete") is True,
                 }
             )
-        manifest["document_profiles"] = sorted(
-            profiles,
-            key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")),
-        )
+        manifest["document_profiles"] = _unique_sorted_profiles(profiles)
     source_checks = sale.raw_payload.get("source_checks") if isinstance(sale.raw_payload, dict) else None
     if isinstance(source_checks, dict):
         manifest["source_checks"] = sorted(
@@ -1618,40 +1631,20 @@ def _has_pdf_fact_cache(sale: AuctionSale) -> bool:
         or not (cache_urls - expected).issubset(terminal)
     ):
         return False
-    profiles_payload = analysis.get("profiles")
-    if not isinstance(profiles_payload, list):
+    profiles = profiles_by_url(analysis.get("profiles"))
+    if profiles is None:
         return False
-    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles_payload):
-        return False
-    profiles = {clean_text(item.get("url")): item for item in profiles_payload}
     profile_urls = set(profiles)
-    if (
-        len(profiles) != len(profiles_payload)
-        or not expected.issubset(profile_urls)
-        or not (profile_urls - expected).issubset(blocked | skipped | terminal)
-    ):
+    if not expected.issubset(profile_urls) or not (profile_urls - expected).issubset(blocked | skipped | terminal):
         return False
     for url in expected:
         item = by_url[url]
-        profile = profiles.get(url)
-        profile_sha = clean_text(profile.get("sha256")) if isinstance(profile, dict) else ""
-        profile_status = (
-            (clean_text(profile.get("extraction_status")) or "").casefold()
-            if isinstance(profile, dict)
-            else ""
-        )
-        cache_sha = clean_text(item.get("sha256"))
         if not (
             bool(clean_text(item.get("text")))
-            and bool(cache_sha)
             and item.get("complete") is True
             and not item.get("failed_pages")
             and str(item.get("extraction_status") or "").strip().lower() == "extracted"
-            and bool(profile_sha)
-            and profile_sha == cache_sha
-            and profile_status == "extracted"
-            and profile.get("complete") is True
-            and not profile.get("failed_pages")
+            and profiles_confirm_extraction(profiles[url], clean_text(item.get("sha256")))
         ):
             return False
     return True
@@ -1769,9 +1762,10 @@ def _manifest_matches_current(
                     "complete": True,
                 }
             )
+        current_profiles = _unique_sorted_profiles(current_profiles)
+        # Après dédoublonnage, une URL restée en double a des profils contradictoires (octets différents).
         if len({item["url"] for item in current_profiles}) != len(current_profiles):
             return False
-        current_profiles.sort(key=lambda item: (str(item.get("url") or ""), str(item.get("sha256") or "")))
         manifest_profiles = manifest.get("document_profiles")
         if not isinstance(manifest_profiles, list):
             return False
