@@ -14,6 +14,7 @@ import pytest
 
 from src.document_backlog import _read_with_current_rules, is_refused_checkpoint
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.enrichment import extract_structured
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
@@ -283,6 +284,92 @@ def test_a_sale_listing_the_same_urls_twice_is_read_like_one_without_duplicates(
         (0, 2, 6, True),
         (0, 2, 6, True),
     ]
+
+
+class _EmptyFactsClient:
+    """Le modèle des faits, sans réseau : une réponse vide est une analyse valide (voir ``test_llm_cost_cache``)."""
+
+    model = "modele-du-banc"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+        del system_prompt, user_prompt
+        self.calls += 1
+        return {}
+
+
+def _read_sale(bench: QueueBench, monkeypatch, *, duplicated: bool) -> AuctionSale:
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    monkeypatch.setenv("REPLICATE_MODEL", _EmptyFactsClient.model)
+    monkeypatch.setattr(extract_structured, "PDF_TEXTS_DIR", bench.dirs["pdf-texts"])
+    bench.publish(READABLE)
+    if duplicated:
+        documents = bench.row["documents"]
+        documents.extend({**document, "label": document["label"] + " (autre source)"} for document in documents[:])
+    assert bench.drain().error is None
+    sale = bench.stored_sale()
+    assert documents_are_current(sale)
+    return sale
+
+
+@pytest.mark.parametrize("duplicated", [False, True])
+def test_the_facts_of_a_sale_listing_the_same_urls_twice_are_extracted_once(
+    bench: QueueBench, monkeypatch, tmp_path, duplicated: bool
+) -> None:
+    # Même défaut que ``documents_are_current``, côté faits : un profil par pièce listée comparé au nombre d'URL
+    # refusait le cache de texte. La tâche des faits échouait (« PDF text cache is missing or incomplete ») à chaque
+    # essai et les faits documentaires de la vente n'étaient jamais extraits.
+    sale = _read_sale(bench, monkeypatch, duplicated=duplicated)
+    assert len(sale.raw_payload["document_analysis"]["profiles"]) == (6 if duplicated else 3)
+    assert extract_structured._has_pdf_fact_cache(sale)
+    assert extract_structured.needs_fact_extraction(sale)
+    client = _EmptyFactsClient()
+
+    stats = extract_structured.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path / "faits")
+
+    assert stats.errors == 0 and client.calls >= 1
+    assert len(sale.raw_payload["llm_fact_context_manifest"]["document_profiles"]) == 3  # une entrée par URL
+    assert not extract_structured.needs_fact_extraction(sale)
+
+
+@pytest.mark.parametrize("occurrence", [0, 1])  # la contradiction sur le premier ou le second profil de l'URL
+def test_contradictory_profiles_of_one_url_refuse_the_fact_cache_and_the_facts(
+    bench: QueueBench, monkeypatch, tmp_path, occurrence: int
+) -> None:
+    sale = _read_sale(bench, monkeypatch, duplicated=True)
+    extract_structured.enrich_sale_with_llm(sale, client=_EmptyFactsClient(), output_dir=tmp_path / "faits")
+    assert not extract_structured.needs_fact_extraction(sale)
+    profiles = sale.raw_payload["document_analysis"]["profiles"]
+    index = [i for i, item in enumerate(profiles) if item["url"] == READABLE[0]][occurrence]
+
+    profiles[index] = {**profiles[index], "sha256": "autre-version"}
+
+    assert not extract_structured._has_pdf_fact_cache(sale)
+    assert not extract_structured.has_current_fact_analysis(sale)
+    assert extract_structured.needs_fact_extraction(sale)
+
+
+def test_a_status_written_in_capitals_keeps_its_fact_manifest_current(bench: QueueBench, monkeypatch, tmp_path) -> None:
+    # Le manifeste gardait le statut tel quel, la comparaison le met en minuscules : « Extracted » ne concordait jamais
+    # et les faits de la vente étaient extraits de nouveau à chaque passage.
+    sale = _read_sale(bench, monkeypatch, duplicated=False)
+    extract_structured.enrich_sale_with_llm(sale, client=_EmptyFactsClient(), output_dir=tmp_path / "faits")
+    manifest = sale.raw_payload["llm_fact_context_manifest"]
+    for profile in sale.raw_payload["document_analysis"]["profiles"]:
+        profile["extraction_status"] = "Extracted"
+
+    rebuilt = extract_structured._fact_context_manifest(
+        sale, model=manifest["model"], fact_prompt_version=manifest["fact_prompt_version"]
+    )
+
+    assert rebuilt["document_profiles"] == manifest["document_profiles"]  # même manifeste qu'en minuscules
+    assert extract_structured._manifest_matches_current(sale, rebuilt)
 
 
 # --- Garde-fou : une pièce nouvelle ou modifiée est toujours lue

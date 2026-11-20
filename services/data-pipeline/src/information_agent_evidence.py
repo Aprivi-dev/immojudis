@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
-import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -15,28 +12,47 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 import pymupdf as fitz
 
 from src.config import load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
+from src.information_agent_evidence_child import (
+    child_popen_kwargs,
+    kill_and_collect,
+    limit_child_memory,
+    terminate_process_group,
+)
+from src.information_agent_evidence_facts import EvidenceFact, deduplicate_facts, extract_evidence_facts
+from src.information_agent_evidence_rows import (
+    MAX_ATTEMPTS,
+    claim_jobs,
+    download_asset,
+    fail_job,
+    fetch_asset,
+    fetch_case_status,
+    fetch_sale,
+    fetch_sale_lot_context,
+    mark_case_for_review,
+    processing_lease_params,
+    retry_schedule,
+)
 from src.information_agent_fact_candidates import (
     PROCESSOR_VERSION,
     fetch_existing_message_fact_values,
     insert_fact_candidates,
 )
 from src.information_agent_semantic import (
+    MAX_SEMANTIC_INPUT_CHARS,
     MAX_VISION_IMAGE_BYTES,
     PhotoSemanticAnalysis,
     SemanticAnalysis,
     SemanticFact,
-    SemanticLotContext,
-    contains_prompt_injection,
+    pages_contain_prompt_injection,
+    prompt_injection_skip,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
-    semantic_lot_context,
 )
 from src.normalize import clean_text
 from src.pdf_document_types import classify_document_type
@@ -44,7 +60,13 @@ from src.pdf_ocr_child_output import parse_ocr_child_output
 from src.storage.postgrest_helpers import rest_headers
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-MAX_PAGES = 100
+# Pages lues d'un PDF ; au-delà, les premières pages sont lues et la lecture est déclarée partielle. 300 comme la
+# valeur par défaut des annonces (``pdf_max_total_pages``), sans en dépendre, sous les bornes de la table
+# (``page_count`` et ``source_page`` au plus 1 000). La durée de lecture ne dépend pas de ce plafond : elle est bornée
+# par passage (``PDF_READ_PASS_SECONDS``, ``PDF_TEXT_READ_SECONDS``) et par nombre de passages (``MAX_READING_PASSES``).
+MAX_PAGES = 300
+# ``extracted_text`` est borné à 250 000 caractères en base : le texte lu au-delà sert aux faits et au détecteur de
+# consignes, mais n'est pas conservé (``stored_text_truncated`` dans ``metadata.reading``).
 MAX_EXTRACTED_TEXT_CHARS = 240_000
 MAX_PAGE_TEXT_CHARS = 30_000
 # Image decoders expand compressed input before OCR. Keep both the dimensions
@@ -57,10 +79,46 @@ PDF_OCR_DPI = 300
 PDF_OCR_MAX_PIXELS = 16_000_000
 PDF_OCR_MAX_DIMENSION = 5_000
 PDF_OCR_PAGE_TIMEOUT_SECONDS = 10
-PDF_OCR_TOTAL_TIMEOUT_SECONDS = 30
+# Lecture d'un long PDF en plusieurs passages du workflow (``information-agent-evidence.yml`` : 25 minutes, runner
+# éphémère, d'où la progression rangée dans la ligne d'extraction). Un passage d'une pièce lit jusqu'à
+# PDF_READ_PASS_SECONDS après sa prise en charge : une page n'est passée à l'OCR que si son délai entier
+# (PDF_OCR_PAGE_TIMEOUT_SECONDS) y tient encore, sinon la lecture reprend à cette page au passage suivant. OCR mesuré
+# à 2,7 s par page à 300 dpi : environ 85 pages par passage, un scan de 300 pages en 4 passages.
+PDF_READ_PASS_SECONDS = 240
+# Texte natif des pages d'un passage, lu dans un processus enfant tué au-delà : un PDF hostile (flux partagé et très
+# compressé) coûte plusieurs secondes par page. La lecture reprend à la première page non atteinte au passage suivant ;
+# au dernier passage, les pages non atteintes sont « text_timeout », non lues.
+PDF_TEXT_READ_SECONDS = 120
+# Un lot ne prend une pièce que si un passage entier tient avant cette durée (14 min, plus la fin du dernier passage :
+# IA, écritures ; l'installation du workflow prend quelques minutes sur les 25). Les pièces non prises restent en
+# file sans perdre d'essai.
+EVIDENCE_BATCH_SECONDS = 14 * 60
+# À partir de ce passage, chaque passage est un dernier passage (``_is_last_pass``) : 10 passages couvrent 300 pages
+# jusqu'à 7 s d'OCR par page. Une pièce dont une page a été lue s'arrête là en partielle déclarée ; une pièce dont rien
+# n'a jamais été lu passe en échec et réessaie, jusqu'à 12 passages (les 2 essais restants de ``MAX_ATTEMPTS``). Le
+# dernier essai est aussi le dernier passage.
+MAX_READING_PASSES = 10
 PDF_OCR_LANGUAGE = "fra+eng"
 IMAGE_OCR_TIMEOUT_SECONDS = 20
 HEIF_CONVERT_TIMEOUT_SECONDS = 20
+# Pages examinées dont le texte n'a pas été lu : texte natif hors délai ou illisible, OCR hors budget, en échec,
+# refusé pour la taille de la page, ou désactivé pour une page sans texte natif suffisant.
+UNREAD_PAGE_METHODS = frozenset(
+    {
+        "text_timeout",
+        "text_failed",
+        "ocr_total_timeout",
+        "ocr_timeout",
+        "ocr_failed",
+        "ocr_skipped_dimensions",
+        "ocr_not_run",
+    }
+)
+# Texte natif d'une page, au plus, renvoyé par le processus enfant (le texte gardé est borné à MAX_PAGE_TEXT_CHARS
+# après nettoyage) : une page hostile ne remplit pas la mémoire du worker.
+MAX_NATIVE_PAGE_TEXT_CHARS = 4 * MAX_PAGE_TEXT_CHARS
+# Statut d'une analyse dont la lecture continue au passage suivant (jamais écrit : la ligne repart ``queued``).
+READING_IN_PROGRESS = "reading"
 _SEMANTIC_PAGE_RE = re.compile(
     r"^--- page (?P<page>\d+) ---\n(?P<text>.*?)(?=\n\n--- page \d+ ---\n|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -78,34 +136,22 @@ SUPPORTED_MIME_TYPES = {
 
 
 @dataclass(frozen=True)
-class EvidenceFact:
-    fact_key: str
-    value: str | int | float
-    display_value: str
-    evidence_excerpt: str
-    confidence: float
-    source_page: int
-    unit: str | None = None
-    extraction_method: str = "document_ocr_v1"
-    # Motifs de relecture posés par la lecture sémantique (`SEMANTIC_REVIEW_REASONS`).
-    review_reasons: tuple[str, ...] = ()
+class ReadingProgress:
+    """Lecture d'un PDF commencée à un passage précédent, relue de la ligne d'extraction (runner éphémère).
 
-    def as_json(self) -> dict[str, object]:
-        proposed_value: dict[str, object] = {"value": self.value}
-        if self.unit:
-            proposed_value["unit"] = self.unit
-        payload: dict[str, object] = {
-            "fact_key": self.fact_key,
-            "proposed_value": proposed_value,
-            "display_value": self.display_value,
-            "evidence_excerpt": self.evidence_excerpt,
-            "confidence": self.confidence,
-            "source_page": self.source_page,
-            "extraction_method": self.extraction_method,
-        }
-        if self.review_reasons:
-            payload["review_reasons"] = list(self.review_reasons)
-        return payload
+    Les pages déjà examinées sont dans ``pages`` (sans texte), leurs faits par règles dans ``extracted_facts``, le
+    début de leur texte dans ``extracted_text`` (borné à 240 000 caractères : la suite n'est pas conservée), le reste
+    dans ``metadata.reading`` : page suivante, passages faits, consigne adressée à une IA déjà vue dans le texte lu.
+    """
+
+    next_page: int
+    passes: int
+    pages_total: int
+    pages: list[dict[str, object]]
+    stored_text: str
+    stored_text_truncated: bool
+    facts: list[EvidenceFact]
+    prompt_injection: bool
 
 
 @dataclass(frozen=True)
@@ -121,6 +167,12 @@ class EvidenceAnalysis:
     facts: list[EvidenceFact]
     error_code: str | None = None
     error_message: str | None = None
+    # Le texte lu à ce passage, précédé du texte conservé des passages précédents ; en mémoire seulement :
+    # ``extracted_text`` n'en conserve que le début. La lecture sémantique le lit.
+    read_text: str | None = None
+    # Pages lues sur pages du document, coupures, progression de la lecture et consigne adressée à une IA vue dans
+    # tout le texte lu, passages précédents compris (``metadata.reading``) ; nul quand rien n'a été lu.
+    reading: dict[str, object] | None = None
 
 
 def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
@@ -131,11 +183,28 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
         return 0
 
     bounded_limit = max(1, min(10, int(limit)))
+    batch_deadline = _monotonic() + EVIDENCE_BATCH_SECONDS
+    # Aucune pièce remise en file pendant le lot n'est reprise avant sa fin : un passage par pièce et par lot. La RPC
+    # sert la plus ancienne pièce d'abord ; sans cela, une lecture en reprise repasserait aussitôt devant les pièces
+    # arrivées après elle.
+    batch_end = datetime.now(UTC) + timedelta(seconds=EVIDENCE_BATCH_SECONDS)
+    processed = 0
     with httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0), trust_env=False) as client:
-        jobs = _claim_jobs(client, supabase_url, service_key, bounded_limit)
-        for job in jobs:
-            _process_job(client, supabase_url, service_key, job)
-    return len(jobs)
+        # Une pièce à la fois, prise seulement si un passage entier de lecture tient avant la fin du lot : le lot tient
+        # dans le délai du workflow même si toutes ses pièces sont de longs scans, et une pièce non prise ne perd pas
+        # d'essai.
+        while processed < bounded_limit:
+            read_deadline = _monotonic() + PDF_READ_PASS_SECONDS
+            if read_deadline > batch_deadline:
+                break
+            jobs = claim_jobs(client, supabase_url, service_key, 1)
+            if not jobs:
+                break
+            _process_job(
+                client, supabase_url, service_key, jobs[0], read_deadline=read_deadline, requeue_not_before=batch_end
+            )
+            processed += 1
+    return processed
 
 
 def analyze_evidence_bytes(
@@ -144,7 +213,20 @@ def analyze_evidence_bytes(
     filename: str,
     declared_mime_type: str,
     ocr_enabled: bool = True,
+    email_body: bool = False,
+    resume: ReadingProgress | None = None,
+    read_deadline: float | None = None,
+    final_attempt: bool = False,
 ) -> EvidenceAnalysis:
+    """``email_body`` : le corps du message (``metadata.evidence_kind``), un texte qui n'est pas une pièce de la vente.
+
+    Un PDF est lu par passages : ``resume`` reprend la lecture d'un passage précédent, ``read_deadline`` (horloge
+    ``_monotonic``) borne l'OCR de ce passage, ``PDF_READ_PASS_SECONDS`` après l'appel par défaut. Une lecture à
+    poursuivre rend le statut ``READING_IN_PROGRESS``. ``final_attempt`` : dernier essai de la pièce, donc son dernier
+    passage (``_is_last_pass``).
+    """
+    if read_deadline is None:
+        read_deadline = _monotonic() + PDF_READ_PASS_SECONDS
     if not content or len(content) > MAX_ATTACHMENT_BYTES:
         return _unsupported("FILE_SIZE_INVALID", "La taille du fichier est invalide.")
 
@@ -158,10 +240,20 @@ def analyze_evidence_bytes(
             detected,
         )
 
+    if resume is not None and detected != "application/pdf":
+        raise ValueError("Only a PDF reading can be resumed")
     if detected == "application/pdf":
-        return _analyze_pdf(content, filename=filename, detected_mime_type=detected, ocr_enabled=ocr_enabled)
+        return _analyze_pdf(
+            content,
+            filename=filename,
+            detected_mime_type=detected,
+            ocr_enabled=ocr_enabled,
+            resume=resume,
+            read_deadline=read_deadline,
+            final_attempt=final_attempt,
+        )
     if detected == "text/plain":
-        return _analyze_text(content, filename=filename, detected_mime_type=detected)
+        return _analyze_text(content, filename=filename, detected_mime_type=detected, email_body=email_body)
     dimensions = _read_image_dimensions(content, detected)
     image_limit = _image_limit_error(dimensions, len(content))
     if image_limit is not None:
@@ -216,32 +308,26 @@ def _looks_like_text(sample: bytes) -> bool:
     )
 
 
-def extract_evidence_facts(pages: list[dict[str, object]]) -> list[EvidenceFact]:
-    facts: list[EvidenceFact] = []
-    for page in pages:
-        page_number = int(page.get("page") or 1)
-        text = clean_text(page.get("text")) or ""
-        if not text:
-            continue
-        facts.extend(_surface_facts(text, page_number))
-        facts.extend(_sale_date_facts(text, page_number))
-        facts.extend(_property_type_facts(text, page_number))
-        facts.extend(_address_facts(text, page_number))
-        facts.extend(_rooms_facts(text, page_number))
-        facts.extend(_occupancy_facts(text, page_number))
-        facts.extend(_starting_price_facts(text, page_number))
-        facts.extend(_diagnostic_facts(text, page_number))
-        facts.extend(_visit_facts(text, page_number))
-    return _deduplicate_facts(facts)
-
-
 def _analyze_pdf(
     content: bytes,
     *,
     filename: str,
     detected_mime_type: str,
     ocr_enabled: bool,
+    resume: ReadingProgress | None,
+    read_deadline: float,
+    final_attempt: bool,
 ) -> EvidenceAnalysis:
+    """Un passage de lecture : les pages depuis ``resume.next_page`` (ou la première), dans l'ordre.
+
+    Le texte natif est lu dans un processus enfant borné (``PDF_TEXT_READ_SECONDS``). Une page de moins de 80
+    caractères passe à l'OCR si son délai entier tient avant ``read_deadline``. Une page que le passage n'a plus le temps
+    de lire (OCR, ou texte natif non atteint) arrête la lecture, qui reprend à cette page au passage suivant. Au dernier
+    passage (``_is_last_pass``), dès qu'une page a été lue, les pages restantes sont déclarées non lues
+    (« ocr_total_timeout », « text_timeout ») et la lecture se termine, partielle ; une lecture dont aucune page n'a été
+    lue reste à poursuivre et passe en échec (``_continue_reading_later``). La lecture s'arrête aussi dès qu'une
+    consigne adressée à une IA est lue : aucun fait ne sera proposé, la suite est du temps perdu.
+    """
     try:
         document = fitz.open(stream=content, filetype="pdf")
     except Exception as exc:
@@ -262,56 +348,196 @@ def _analyze_pdf(
                 error_code="PDF_PASSWORD_REQUIRED",
                 error_message="Le document est chiffré. Aucun contournement ou essai de mot de passe n’a été effectué.",
             )
-        if document.page_count > MAX_PAGES:
-            return _unsupported(
-                "PAGE_LIMIT_EXCEEDED",
-                f"Le PDF dépasse la limite de {MAX_PAGES} pages.",
-                detected_mime_type,
-            )
+        total_pages = document.page_count
+        if resume is not None and resume.pages_total != total_pages:
+            raise RuntimeError("Evidence reading progress does not match the document")
+        first_page = resume.next_page if resume is not None else 1
+        last_page = min(total_pages, MAX_PAGES)
+        passes = (resume.passes if resume is not None else 0) + 1
+        last_pass = _is_last_pass(passes, final_attempt=final_attempt)
+        pages_read = _pages_read(resume.pages) if resume is not None else 0
         pages: list[dict[str, object]] = []
-        ocr_candidates: list[tuple[int, fitz.Page, str]] = []
-        for index, page in enumerate(document, start=1):
-            raw_text = page.get_text("text") or ""
-            page_data: dict[str, object] = {
-                "page": index,
-                "text": raw_text,
-                "chars": 0,
-                "method": "pymupdf_text",
-                "confidence": 0.92 if raw_text else 0.0,
-            }
-            if ocr_enabled and len(clean_text(raw_text) or "") < 80:
-                if _pdf_page_ocr_allowed(page):
-                    ocr_candidates.append((index - 1, page, raw_text))
-                else:
-                    page_data["method"] = "ocr_skipped_dimensions"
-                    page_data["confidence"] = 0.2 if raw_text else 0.0
-            cleaned = (clean_text(str(page_data["text"]) or "") or "")[:MAX_PAGE_TEXT_CHARS]
-            page_data["text"] = cleaned
-            page_data["chars"] = len(cleaned)
-            if not cleaned:
-                page_data["confidence"] = 0.0
-            pages.append(page_data)
-
-        if ocr_candidates:
-            _apply_pdf_ocr_candidates(content, pages, ocr_candidates)
+        next_page: int | None = None
+        previous_text_page: dict[str, object] | None = None
+        with tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-") as temp_dir:
+            source_path = Path(temp_dir) / "evidence.pdf"
+            source_path.write_bytes(content)
+            native_pages, native_timed_out, native_failed = _read_pdf_native_text(
+                source_path, first_page, last_page, timeout_seconds=PDF_TEXT_READ_SECONDS
+            )
+            if native_failed and not (last_pass and pages_read):
+                # Enfant mort sans délai dépassé (mémoire, import, encodage) : un nouvel essai, pas des pages
+                # déclarées non lues pour de bon. Au dernier passage, ce qui a été lu avant est gardé.
+                raise RuntimeError("PDF native text process failed")
+            for index in range(first_page, last_page + 1):
+                native = native_pages.get(index)
+                if native is None and native_timed_out and not (last_pass and pages_read):
+                    next_page = index  # page non atteinte avant le délai du texte natif : lue au passage suivant
+                    break
+                if native is None or native.get("error") is not None:
+                    # Page non atteinte au dernier passage, illisible, ou laissée par un enfant mort : non lue.
+                    unread = "text_timeout" if native is None and native_timed_out else "text_failed"
+                    pages.append({"page": index, "text": "", "chars": 0, "method": unread, "confidence": 0.0})
+                    continue
+                raw_text = str(native.get("text") or "")
+                text, method, confidence = raw_text, "pymupdf_text", 0.92 if raw_text else 0.0
+                if len(clean_text(raw_text) or "") < 80:
+                    if not ocr_enabled:
+                        text, method, confidence = _ocr_fallback(raw_text, "ocr_not_run")
+                    else:
+                        page = document.load_page(index - 1)
+                        if not _pdf_page_ocr_allowed(page):
+                            text, method, confidence = raw_text, "ocr_skipped_dimensions", 0.2 if raw_text else 0.0
+                        elif read_deadline - _monotonic() >= PDF_OCR_PAGE_TIMEOUT_SECONDS:
+                            text, method, confidence = _ocr_pdf_page(
+                                page,
+                                raw_text,
+                                source_path=source_path,
+                                timeout_seconds=PDF_OCR_PAGE_TIMEOUT_SECONDS,
+                            )
+                        elif last_pass and pages_read:
+                            text, method, confidence = _ocr_fallback(raw_text, "ocr_total_timeout")
+                        else:
+                            next_page = index
+                            break
+                examined = _page_reading(index, text, method, confidence, clipped=native.get("clipped") is True)
+                pages.append(examined)
+                if method not in UNREAD_PAGE_METHODS:
+                    pages_read += 1
+                if not examined["text"]:
+                    continue
+                # Avec la page précédente : une consigne coupée par la limite de page est lue d'un seul tenant.
+                if pages_contain_prompt_injection([item for item in (previous_text_page, examined) if item]):
+                    break
+                previous_text_page = examined
 
     return _completed_analysis(
         filename=filename,
         detected_mime_type=detected_mime_type,
         pages=pages,
         is_encrypted=False,
+        total_pages=total_pages,
+        previous=resume,
+        next_page=next_page,
+        passes=passes,
     )
 
 
-def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str) -> EvidenceAnalysis:
-    text = content.decode("utf-8", errors="replace")[:MAX_EXTRACTED_TEXT_CHARS]
+def _is_last_pass(passes: int, *, final_attempt: bool) -> bool:
+    """Le passage ``passes`` (compté dès 1) termine la lecture : nombre de passages atteint, ou dernier essai."""
+    return passes >= MAX_READING_PASSES or final_attempt
+
+
+def _page_reading(
+    page_number: int, text: str, method: str, confidence: float, *, clipped: bool = False
+) -> dict[str, object]:
+    """Une page examinée : texte nettoyé et borné, ``text_truncated`` quand sa fin n'a pas été gardée."""
     cleaned = clean_text(text) or ""
-    pages = [{"page": 1, "text": cleaned, "chars": len(cleaned), "method": "plain_text", "confidence": 0.98}]
+    kept = cleaned[:MAX_PAGE_TEXT_CHARS]
+    page: dict[str, object] = {
+        "page": page_number,
+        "text": kept,
+        "chars": len(kept),
+        "method": method,
+        "confidence": confidence if kept else 0.0,
+    }
+    if clipped or len(kept) < len(cleaned):
+        page["text_truncated"] = True
+    return page
+
+
+def _read_pdf_native_text(
+    source_path: Path,
+    first_page: int,
+    last_page: int,
+    *,
+    timeout_seconds: float,
+) -> tuple[dict[int, dict[str, object]], bool, bool]:
+    """Texte natif des pages ``first_page`` à ``last_page`` (numérotées dès 1), lu dans un processus enfant tué au délai.
+
+    Rend les pages lues avant le délai (``text`` et ``clipped``, ou ``error`` pour une page illisible), si le délai a
+    coupé la lecture, et si l'enfant s'est terminé en erreur sans délai dépassé. L'enfant écrit une ligne JSON par page
+    dès qu'elle est lue : une page interminable n'arrête que la lecture, jamais le worker.
+    """
+    if first_page > last_page:
+        return {}, False, False
+    command = [
+        sys.executable,
+        "-m",
+        "src.information_agent_evidence",
+        "--read-pdf-text",
+        str(source_path),
+        str(first_page),
+        str(last_page),
+    ]
+    process = subprocess.Popen(command, **child_popen_kwargs())
+    timed_out = False
+    try:
+        stdout, _stderr = process.communicate(timeout=max(float(timeout_seconds), 0.01))
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        # Les lignes écrites avant le délai : communicate() les a gardées et rend la sortie entière.
+        stdout = kill_and_collect(process)
+    except BaseException:
+        terminate_process_group(process)
+        raise
+    return _parse_native_text_output(stdout, first_page, last_page), timed_out, (
+        not timed_out and process.returncode != 0
+    )
+
+
+def _parse_native_text_output(stdout: str, first_page: int, last_page: int) -> dict[int, dict[str, object]]:
+    """Pages lues par l'enfant, une ligne JSON chacune (ASCII : seul ``\\n`` sépare deux lignes)."""
+    pages: dict[int, dict[str, object]] = {}
+    for line in stdout.split("\n"):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            # Avertissement de MuPDF, ou dernière ligne coupée par l'arrêt de l'enfant : pas une page lue.
+            continue
+        if not isinstance(payload, dict):
+            continue
+        number = payload.get("page")
+        if isinstance(number, int) and first_page <= number <= last_page:
+            pages[number] = payload
+    return pages
+
+
+def _read_pdf_native_text_in_process(source_path: str, first_page: int, last_page: int) -> None:
+    with fitz.open(source_path) as document:
+        for number in range(first_page, last_page + 1):
+            try:
+                raw_text = document.load_page(number - 1).get_text("text") or ""
+                payload: dict[str, object] = {
+                    "page": number,
+                    "text": raw_text[:MAX_NATIVE_PAGE_TEXT_CHARS],
+                    "clipped": len(raw_text) > MAX_NATIVE_PAGE_TEXT_CHARS,
+                }
+            except Exception as exc:  # page illisible : notée pour le parent, les suivantes sont lues
+                payload = {"page": number, "error": str(exc)[:300]}
+            # ASCII : un U+2028 ou U+0085 du texte reste échappé et ne coupe pas la ligne.
+            print(json.dumps(payload, ensure_ascii=True), flush=True)
+
+
+def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str, email_body: bool) -> EvidenceAnalysis:
+    decoded = content.decode("utf-8", errors="replace")
+    cleaned = clean_text(decoded[:MAX_EXTRACTED_TEXT_CHARS]) or ""
+    page: dict[str, object] = {
+        "page": 1,
+        "text": cleaned,
+        "chars": len(cleaned),
+        "method": "plain_text",
+        "confidence": 0.98,
+    }
+    if len(decoded) > MAX_EXTRACTED_TEXT_CHARS:
+        page["text_truncated"] = True
+    pages = [page]
     return _completed_analysis(
         filename=filename,
         detected_mime_type=detected_mime_type,
         pages=pages,
         is_encrypted=False,
+        email_body=email_body,
     )
 
 
@@ -358,18 +584,9 @@ def _analyze_image(
         if text:
             method = "ocr_tesseract"
             confidence = 0.7
-    cleaned = (clean_text(text) or "")[:MAX_PAGE_TEXT_CHARS]
-    pages = [
-        {
-            "page": 1,
-            "text": cleaned,
-            "chars": len(cleaned),
-            "method": method,
-            "confidence": confidence,
-            "processing_mime_type": processing_mime_type,
-            **metadata,
-        }
-    ]
+    page = _page_reading(1, text, method, confidence)
+    cleaned = str(page["text"])
+    pages = [{**page, "confidence": confidence, "processing_mime_type": processing_mime_type, **metadata}]
     analysis = _completed_analysis(
         filename=filename,
         detected_mime_type=detected_mime_type,
@@ -415,20 +632,16 @@ def _prepare_heif_for_processing(
             source_path = Path(temp_dir) / f"evidence{suffix}"
             output_path = Path(temp_dir) / "evidence.png"
             source_path.write_bytes(content)
-            popen_kwargs: dict[str, object] = {
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
-            }
-            if os.name == "posix":
-                popen_kwargs["start_new_session"] = True
+            # Environnement réduit, sans aucune clé (``child_popen_kwargs``) : le convertisseur ouvre un fichier reçu
+            # d'un tiers.
             process = subprocess.Popen(
                 [executable, str(source_path), str(output_path)],
-                **popen_kwargs,
+                **{**child_popen_kwargs(), "stdout": subprocess.DEVNULL},
             )
             try:
                 process.communicate(timeout=HEIF_CONVERT_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
+                terminate_process_group(process)
                 return None
             if process.returncode != 0 or not output_path.is_file():
                 return None
@@ -440,7 +653,7 @@ def _prepare_heif_for_processing(
     except Exception:
         # Untrusted attachment that cannot be converted: the caller reports the format as unsupported.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
         return None
 
 
@@ -561,46 +774,145 @@ def _completed_analysis(
     detected_mime_type: str,
     pages: list[dict[str, object]],
     is_encrypted: bool,
+    total_pages: int | None = None,
+    email_body: bool = False,
+    previous: ReadingProgress | None = None,
+    next_page: int | None = None,
+    passes: int = 1,
 ) -> EvidenceAnalysis:
-    facts = extract_evidence_facts(pages)
-    combined_parts = [
-        f"--- page {page['page']} ---\n{page.get('text') or ''}"
-        for page in pages
-        if page.get("text")
-    ]
-    combined = "\n\n".join(combined_parts)[:MAX_EXTRACTED_TEXT_CHARS]
-    kind = classify_document_type(filename, combined[:4000])
-    text_chars = sum(int(page.get("chars") or 0) for page in pages)
-    summary = (
-        f"{_document_kind_label(kind)} · {len(pages)} page(s) · "
-        f"{text_chars} caractère(s) extrait(s) · {len(facts)} information(s) candidate(s)."
+    """Analyse des pages examinées à ce passage (avec leur texte), après celles des passages précédents (``previous``).
+
+    ``total_pages`` : pages du document quand seules les ``MAX_PAGES`` premières sont lisibles ; ``next_page`` : page
+    où la lecture reprendra au passage suivant (nul : lecture terminée).
+    """
+    facts = deduplicate_facts([*(previous.facts if previous else []), *extract_evidence_facts(pages)])
+    pass_text = "\n\n".join(
+        f"--- page {page['page']} ---\n{page.get('text') or ''}" for page in pages if page.get("text")
     )
-    safe_pages = [{key: value for key, value in page.items() if key != "text"} for page in pages]
+    read_text = "\n\n".join(part for part in (previous.stored_text if previous else "", pass_text) if part)
+    combined = read_text[:MAX_EXTRACTED_TEXT_CHARS]
+    stored_text_truncated = (previous is not None and previous.stored_text_truncated) or len(read_text) > len(
+        combined
+    )
+    # Le texte des passages précédents au-delà du texte conservé n'est plus là : leur verdict est gardé. Le texte lu est
+    # celui que la lecture sémantique peut envoyer au modèle (``_text_pages``).
+    prompt_injection = (previous is not None and previous.prompt_injection) or pages_contain_prompt_injection(
+        _text_pages(read_text)
+    )
+    if prompt_injection:
+        next_page = None  # aucun fait ne sera proposé : la suite du document ne sera pas lue
+    # Le corps du message n'est pas une pièce de la vente : aucun type de document tiré des mots de son texte.
+    kind = None if email_body else classify_document_type(filename, combined[:4000])
+    label = "Corps du message" if email_body else _document_kind_label(kind)
+    examined = [
+        *(previous.pages if previous else []),
+        *({key: value for key, value in page.items() if key != "text"} for page in pages),
+    ]
+    text_chars = sum(int(page.get("chars") or 0) for page in examined)
+    pages_total = len(examined) if total_pages is None else total_pages
+    unread_pages = [page["page"] for page in examined if page.get("method") in UNREAD_PAGE_METHODS]
+    truncated_pages = [page["page"] for page in examined if page.get("text_truncated") is True]
+    pages_read = len(examined) - len(unread_pages)
+    reading: dict[str, object] = {
+        "pages_total": pages_total,
+        "pages_read": pages_read,
+        # Complète : toutes les pages lues, aucun texte coupé (lecture IA : voir ``_declare_model_reading``).
+        "complete": pages_read == pages_total and not truncated_pages and not stored_text_truncated,
+        "unread_pages": unread_pages,
+        "truncated_pages": truncated_pages,
+        "pages_beyond_limit": max(0, pages_total - MAX_PAGES),
+        "stored_text_truncated": stored_text_truncated,
+        "passes": passes,
+        "next_page": next_page,
+        "prompt_injection_seen": prompt_injection,
+    }
+    if next_page is not None:
+        status = READING_IN_PROGRESS
+        summary = (
+            f"Lecture en cours : {pages_read} page(s) lue(s) sur {pages_total}, la suite au prochain passage. "
+            "Les informations seront proposées à la fin de la lecture."
+        )
+    else:
+        status = "completed"
+        notes: list[str] = []
+        if pages_read < pages_total:
+            notes.append(
+                f"Lecture partielle : {pages_read} page(s) lue(s) sur {pages_total}, "
+                "les autres sont à vérifier manuellement."
+            )
+        if truncated_pages:
+            notes.append(f"Texte trop long coupé, fin non lue : {_pages_label(truncated_pages)}.")
+        if stored_text_truncated:
+            notes.append(
+                f"Seuls les {_number(MAX_EXTRACTED_TEXT_CHARS)} premiers caractères du texte sont conservés ; "
+                "tout le texte lu a servi à l’analyse."
+            )
+        notes.append(
+            f"{label} · {len(examined)} page(s) · "
+            f"{text_chars} caractère(s) extrait(s) · {len(facts)} information(s) candidate(s)."
+        )
+        summary = " ".join(notes)
     return EvidenceAnalysis(
-        status="completed",
+        status=status,
         detected_mime_type=detected_mime_type,
         document_kind=kind,
-        page_count=len(pages),
+        page_count=len(examined),
         is_encrypted=is_encrypted,
         summary=summary,
         extracted_text=combined or None,
-        pages=safe_pages,
+        pages=examined,
         facts=facts,
+        read_text=read_text or None,
+        reading=reading,
     )
 
 
+def _number(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
+def _pages_label(pages: list[object]) -> str:
+    """« page 3 », « pages 3, 7 » ; au-delà de dix pages, les dix premières et le nombre total."""
+    shown = ", ".join(str(page) for page in pages[:10])
+    more = f"… ({len(pages)} au total)" if len(pages) > 10 else ""
+    return f"page {shown}" if len(pages) == 1 else f"pages {shown}{more}"
+
+
+def _declare_model_reading(analysis: EvidenceAnalysis, semantic_analysis: SemanticAnalysis) -> EvidenceAnalysis:
+    """Pages lues par l'IA dans ``metadata.reading`` ; une lecture IA bornée (12 pages, 12 000 caractères) qui n'a
+    pas vu tout le texte lu rend la lecture non complète et le dit dans le résumé."""
+    if analysis.reading is None or not semantic_analysis.input_pages:
+        return analysis
+    reading = {**analysis.reading, "model_pages": list(semantic_analysis.input_pages)}
+    if not semantic_analysis.input_truncated:
+        return replace(analysis, reading=reading)
+    reading["complete"] = False
+    suffix = (
+        f" Lecture par l’IA limitée aux {len(semantic_analysis.input_pages)} premières pages lisibles "
+        f"(jusqu’à la page {max(semantic_analysis.input_pages)}, {_number(MAX_SEMANTIC_INPUT_CHARS)} caractères au "
+        "plus) : la suite n’a été lue que par les règles."
+    )
+    return replace(analysis, reading=reading, summary=((analysis.summary or "") + suffix)[:4_000])
+
+
 def _semantic_pages_from_analysis(analysis: EvidenceAnalysis) -> list[dict[str, object]]:
-    """Recover bounded page text without persisting raw text in ``pages``.
+    """Recover page text without persisting raw text in ``pages``.
 
     The extraction row stores page metadata separately from the combined text.
     Keeping this adapter local means the optional semantic pass receives the
-    same text that was extracted and can cite the page delimiters exactly,
-    while the semantic module still applies its own page and character caps.
+    same text that was read and can cite the page delimiters exactly,
+    while the semantic module still applies its own page and character caps
+    (and its prompt-injection check, on every page read).
     """
-    if analysis.status != "completed" or not analysis.extracted_text:
+    if analysis.status != "completed" or not analysis.read_text:
         return []
+    return _text_pages(analysis.read_text)
+
+
+def _text_pages(read_text: str) -> list[dict[str, object]]:
+    """Pages du texte lu (``--- page N ---``), dans l'ordre ; le texte d'une page, nettoyé, n'a aucun saut de ligne."""
     pages: list[dict[str, object]] = []
-    for match in _SEMANTIC_PAGE_RE.finditer(analysis.extracted_text):
+    for match in _SEMANTIC_PAGE_RE.finditer(read_text):
         text = match.group("text")
         if not text:
             continue
@@ -627,7 +939,7 @@ def _merge_semantic_facts(
         )
         for fact in semantic_facts
     ]
-    return replace(analysis, facts=_deduplicate_facts([*analysis.facts, *facts]))
+    return replace(analysis, facts=deduplicate_facts([*analysis.facts, *facts]))
 
 
 def _append_photo_summary(
@@ -668,46 +980,6 @@ def _append_semantic_failure_summary(
     return replace(analysis, summary=(base + suffix)[:4_000])
 
 
-def _apply_pdf_ocr_candidates(
-    content: bytes,
-    pages: list[dict[str, object]],
-    candidates: list[tuple[int, fitz.Page, str]],
-) -> None:
-    """Run OCR in bounded subprocesses while keeping ordinary text extraction."""
-    try:
-        with tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-") as temp_dir:
-            source_path = Path(temp_dir) / "evidence.pdf"
-            source_path.write_bytes(content)
-            deadline = _monotonic() + PDF_OCR_TOTAL_TIMEOUT_SECONDS
-            for page_index, page, fallback in candidates:
-                remaining = deadline - _monotonic()
-                if remaining <= 0:
-                    text, method, confidence = _ocr_fallback(fallback, "ocr_total_timeout")
-                else:
-                    text, method, confidence = _ocr_pdf_page(
-                        page,
-                        fallback,
-                        source_path=source_path,
-                        timeout_seconds=min(PDF_OCR_PAGE_TIMEOUT_SECONDS, remaining),
-                    )
-                cleaned = (clean_text(text) or "")[:MAX_PAGE_TEXT_CHARS]
-                pages[page_index].update(
-                    {
-                        "text": cleaned,
-                        "chars": len(cleaned),
-                        "method": method,
-                        "confidence": confidence if cleaned else 0.0,
-                    }
-                )
-    except Exception:
-        # Text extraction has already succeeded. If staging or the isolated OCR
-        # worker fails, retain that text and make the skipped OCR visible.
-        for page_index, _page, fallback in candidates:
-            if pages[page_index].get("method") == "pymupdf_text":
-                pages[page_index]["method"] = "ocr_unavailable"
-                pages[page_index]["confidence"] = 0.45 if fallback else 0.0
-
-
 def _ocr_pdf_page(
     page: fitz.Page,
     fallback: str,
@@ -722,7 +994,7 @@ def _ocr_pdf_page(
         if source_path is None:
             parent = page.parent
             if parent is None:
-                return _ocr_fallback(fallback, "fallback_text")
+                return _ocr_fallback(fallback, "ocr_failed")
             temporary_source = tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-")
             source_path = Path(temporary_source.name) / "evidence.pdf"
             source_path.write_bytes(parent.tobytes())
@@ -734,33 +1006,30 @@ def _ocr_pdf_page(
             str(source_path),
             str(page.number),
         ]
-        popen_kwargs: dict[str, object] = {
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.DEVNULL,
-            "text": True,
-            "cwd": str(Path(__file__).resolve().parents[1]),
-        }
-        if os.name == "posix":
-            popen_kwargs["start_new_session"] = True
-        process = subprocess.Popen(command, **popen_kwargs)
+        process = subprocess.Popen(command, **child_popen_kwargs())
         try:
             stdout, _stderr = process.communicate(timeout=max(float(timeout_seconds), 0.01))
         except subprocess.TimeoutExpired:
-            _terminate_process_group(process)
+            terminate_process_group(process)
             return _ocr_fallback(fallback, "ocr_timeout")
         if process.returncode != 0:
-            return _ocr_fallback(fallback, "fallback_text")
-        text = parse_ocr_child_output(stdout).get("text")
+            return _ocr_fallback(fallback, "ocr_failed")
+        payload = parse_ocr_child_output(stdout)
+        text = payload.get("text")
         if isinstance(text, str) and clean_text(text):
             return text, "ocr_pymupdf", 0.74
+        if not isinstance(text, str):  # the child reported an error (no OCR engine, unreadable page)
+            return _ocr_fallback(fallback, "ocr_failed")
+        # OCR ran and found no text: the page is read (« fallback_text » keeps its native text).
+        return _ocr_fallback(fallback, "fallback_text")
     except Exception:
-        # The page keeps its native text (« fallback_text »); no OCR child is left running.
+        # The page keeps its native text, unread by OCR; no OCR child is left running.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
     finally:
         if temporary_source is not None:
             temporary_source.cleanup()
-    return _ocr_fallback(fallback, "fallback_text")
+    return _ocr_fallback(fallback, "ocr_failed")
 
 
 def _ocr_pdf_page_in_process(source_path: str, page_number: int) -> dict[str, str]:
@@ -768,22 +1037,6 @@ def _ocr_pdf_page_in_process(source_path: str, page_number: int) -> dict[str, st
         page = document.load_page(page_number)
         text_page = page.get_textpage_ocr(language=PDF_OCR_LANGUAGE, full=True)
         return {"text": page.get_text("text", textpage=text_page) or ""}
-
-
-def _terminate_process_group(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    else:
-        process.kill()
-    try:
-        process.communicate(timeout=1)
-    except Exception:  # whatever stopped the wait, the child must not outlive us
-        process.kill()
 
 
 def _ocr_fallback(fallback: str, method: str) -> tuple[str, str, float]:
@@ -813,235 +1066,22 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
         with tempfile.TemporaryDirectory(prefix="immojudis-evidence-") as temp_dir:
             path = Path(temp_dir) / f"evidence{suffix}"
             path.write_bytes(content)
-            popen_kwargs: dict[str, object] = {
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.DEVNULL,
-                "text": True,
-            }
-            if os.name == "posix":
-                popen_kwargs["start_new_session"] = True
+            # Environnement réduit, sans aucune clé (``child_popen_kwargs``) : Tesseract ouvre un fichier reçu d'un tiers.
             process = subprocess.Popen(
                 [executable, str(path), "stdout", "-l", "fra+eng"],
-                **popen_kwargs,
+                **child_popen_kwargs(),
             )
             try:
                 stdout, _stderr = process.communicate(timeout=IMAGE_OCR_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
+                terminate_process_group(process)
                 return ""
             return stdout if process.returncode == 0 else ""
     except Exception:
         # No OCR text for this image: the analysis goes on without it; no child is left running.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
         return ""
-
-
-def _surface_facts(text: str, page: int) -> list[EvidenceFact]:
-    facts: list[EvidenceFact] = []
-    patterns = (
-        ("land_surface_m2", r"(?:terrain|parcelle|contenance)[^\d]{0,45}(\d{1,8}(?:[.,]\d{1,2})?)\s*m(?:²|2)\b", 0.88),
-        ("surface_m2", r"(?:surface(?:\s+(?:habitable|carrez|privative|utile))?)[^\d]{0,45}(\d{1,6}(?:[.,]\d{1,2})?)\s*m(?:²|2)\b", 0.9),
-    )
-    for fact_key, pattern, confidence in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            value = float(match.group(1).replace(",", "."))
-            if value <= 0:
-                continue
-            facts.append(
-                EvidenceFact(
-                    fact_key=fact_key,
-                    value=value,
-                    display_value=f"{value:g} m²",
-                    evidence_excerpt=_excerpt(text, match.start()),
-                    confidence=confidence,
-                    source_page=page,
-                    unit="m2",
-                )
-            )
-    return facts
-
-
-def _sale_date_facts(text: str, page: int) -> list[EvidenceFact]:
-    pattern = (
-        r"(?:date\s+(?:de\s+)?(?:la\s+)?vente|audience\s+d['’]adjudication|date\s+d['’]adjudication)"
-        r"[^\d]{0,35}(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b"
-    )
-    facts: list[EvidenceFact] = []
-    for match in re.finditer(pattern, text, re.IGNORECASE):
-        day, month, year = (int(value) for value in match.groups())
-        try:
-            sale_date = datetime(year, month, day).date().isoformat()
-        except ValueError:
-            continue
-        facts.append(
-            EvidenceFact(
-                "sale_date",
-                sale_date,
-                sale_date,
-                _excerpt(text, match.start()),
-                0.9,
-                page,
-            )
-        )
-    return facts
-
-
-def _property_type_facts(text: str, page: int) -> list[EvidenceFact]:
-    patterns = (
-        ("commercial", r"\b(?:local|fonds? de commerce|commerce|boutique)\b"),
-        ("apartment", r"\b(?:appartement|studio|duplex|triplex|T[1-5])\b"),
-        ("house", r"\b(?:maison|villa|pavillon)\b"),
-        ("building", r"\b(?:immeuble|bâtiment|batiment)\b"),
-        ("land", r"\b(?:terrain|parcelle)\b"),
-        ("parking", r"\b(?:parking|stationnement|garage)\b"),
-    )
-    facts: list[EvidenceFact] = []
-    for value, pattern in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            facts.append(
-                EvidenceFact(
-                    "property_type",
-                    value,
-                    value,
-                    _excerpt(text, match.start()),
-                    0.78,
-                    page,
-                )
-            )
-    return facts
-
-
-def _address_facts(text: str, page: int) -> list[EvidenceFact]:
-    pattern = (
-        r"(?:adresse|situé(?:e)?|sis(?:e)?)\s*[:\-]?\s*"
-        r"(\d{1,5}(?:\s*(?:bis|ter|quater))?\s+(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|impasse|allée|allee|place|quai|cours|faubourg|passage|square|voie)\b[^\n;|]{2,160}?)"
-        r"(?=\.\s+(?:date|surface|mise|diagnostic|dpe|visite)\b|$)"
-    )
-    facts: list[EvidenceFact] = []
-    for match in re.finditer(pattern, text, re.IGNORECASE):
-        value = clean_text(match.group(1))
-        if value:
-            facts.append(EvidenceFact("address", value, value, _excerpt(text, match.start()), 0.72, page))
-    return facts
-
-
-def _rooms_facts(text: str, page: int) -> list[EvidenceFact]:
-    facts: list[EvidenceFact] = []
-    for match in re.finditer(r"(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b", text, re.IGNORECASE):
-        value = int(match.group(1))
-        if 1 <= value <= 100:
-            facts.append(EvidenceFact("rooms_count", value, f"{value} pièce(s)", _excerpt(text, match.start()), 0.86, page))
-    return facts
-
-
-def _occupancy_facts(text: str, page: int) -> list[EvidenceFact]:
-    # Qui occupe et pourquoi ne s'affichent jamais (la fiche dit libre, occupé ou loué) : « occupé par le
-    # propriétaire » et « squatté » se lisent « occupé ».
-    owner_pattern = r"\boccup[eé]\s+par\s+(?:le|la|les)\s+propri[eé]taire"
-    plain_occupied_pattern = r"\boccup[eé]\b"
-    patterns = (
-        ("vacant", r"\b(?:libre de toute occupation|libre|vacant|inoccup[eé])\b"),
-        ("rented", r"\b(?:lou[eé]|location|bail en cours|locataire)\b"),
-        ("occupied", owner_pattern),
-        ("occupied", r"\b(?:squat|occupant sans droit ni titre)\b"),
-        ("occupied", plain_occupied_pattern),
-    )
-    labels = {
-        "vacant": "Libre / vacant",
-        "rented": "Loué",
-        "occupied": "Occupé",
-    }
-    owner_spans = [match.span() for match in re.finditer(owner_pattern, text, re.IGNORECASE)]
-    facts: list[EvidenceFact] = []
-    for value, pattern in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            if pattern == plain_occupied_pattern and any(
-                start <= match.start() < end or start < match.end() <= end
-                for start, end in owner_spans
-            ):
-                continue
-            facts.append(
-                EvidenceFact(
-                    "occupancy_status",
-                    value,
-                    labels[value],
-                    _excerpt(text, match.start()),
-                    0.82,
-                    page,
-                )
-            )
-    return facts
-
-
-def _starting_price_facts(text: str, page: int) -> list[EvidenceFact]:
-    pattern = r"mise\s+[àa]\s+prix[^\d]{0,30}(\d{1,3}(?:[ .\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)"
-    facts: list[EvidenceFact] = []
-    for match in re.finditer(pattern, text, re.IGNORECASE):
-        raw = re.sub(r"[ .\u202f]", "", match.group(1)).replace(",", ".")
-        value = float(raw)
-        if value <= 0 or value > 1_000_000_000:
-            continue
-        facts.append(
-            EvidenceFact(
-                "starting_price_eur",
-                value,
-                f"{value:,.0f} €".replace(",", " "),
-                _excerpt(text, match.start()),
-                0.94,
-                page,
-                "EUR",
-            )
-        )
-    return facts
-
-
-def _diagnostic_facts(text: str, page: int) -> list[EvidenceFact]:
-    facts: list[EvidenceFact] = []
-    pattern = r"(?:DPE|diagnostic de performance [ée]nerg[ée]tique)[^A-G]{0,30}([A-G])\b"
-    for match in re.finditer(pattern, text, re.IGNORECASE):
-        value = match.group(1).upper()
-        facts.append(EvidenceFact("energy_diagnostics", value, f"DPE {value}", _excerpt(text, match.start()), 0.88, page))
-    return facts
-
-
-def _visit_facts(text: str, page: int) -> list[EvidenceFact]:
-    facts: list[EvidenceFact] = []
-    for match in re.finditer(r"\bvisite(?:s)?\b.{0,180}", text, re.IGNORECASE):
-        excerpt = _excerpt(text, match.start(), radius=220)
-        facts.append(EvidenceFact("visit_information", excerpt, excerpt[:500], excerpt, 0.72, page))
-    return facts
-
-
-def _deduplicate_facts(facts: list[EvidenceFact]) -> list[EvidenceFact]:
-    unique: dict[tuple[str, str], EvidenceFact] = {}
-    for fact in facts:
-        key = (fact.fact_key, str(fact.value).strip().lower())
-        current = unique.get(key)
-        # La lecture par l'IA l'emporte sur les règles pour la même valeur (elle porte le contrôle de la
-        # phrase) ; sinon, la confiance la plus haute.
-        if current is None or (
-            fact.extraction_method.startswith("semantic") != current.extraction_method.startswith("semantic")
-            and fact.extraction_method.startswith("semantic")
-        ):
-            kept = fact
-        elif current.extraction_method.startswith("semantic") and not fact.extraction_method.startswith("semantic"):
-            kept = current
-        elif fact.confidence > current.confidence:
-            kept = fact
-        else:
-            kept = current
-        # Un motif de relecture posé sur l'une des occurrences reste sur le fait gardé : la même valeur
-        # trouvée ailleurs ne la rend pas nette.
-        reasons = tuple(dict.fromkeys([*(current.review_reasons if current else ()), *fact.review_reasons]))
-        unique[key] = replace(kept, review_reasons=reasons) if reasons != kept.review_reasons else kept
-    return list(unique.values())[:30]
-
-
-def _excerpt(text: str, position: int, *, radius: int = 160) -> str:
-    start = max(0, position - radius)
-    end = min(len(text), position + radius)
-    return (clean_text(text[start:end]) or "")[:1000]
 
 
 def _document_kind_label(kind: str | None) -> str:
@@ -1080,23 +1120,22 @@ def _unsupported(code: str, message: str, detected: str | None = None) -> Eviden
     )
 
 
-def _claim_jobs(client: httpx.Client, base_url: str, key: str, limit: int) -> list[dict[str, Any]]:
-    response = client.post(
-        f"{base_url}/rest/v1/rpc/claim_information_agent_evidence_extractions",
-        headers=rest_headers(key),
-        json={"p_limit": limit},
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload if isinstance(payload, list) else []
-
-
 def _process_job(
     client: httpx.Client,
     base_url: str,
     key: str,
     job: dict[str, Any],
+    *,
+    read_deadline: float | None = None,
+    requeue_not_before: datetime | None = None,
 ) -> None:
+    """Un passage de la pièce prise par la RPC (``job`` : la ligne d'extraction entière).
+
+    ``read_deadline`` borne la lecture de ce passage (``analyze_evidence_bytes``). Une lecture à poursuivre est rangée
+    dans la ligne, qui revient en file (``_continue_reading_later``) : ni fait proposé, ni dossier remis en relecture,
+    tant que la lecture n'est pas terminée. ``requeue_not_before`` : fin du lot, avant laquelle une pièce remise en
+    file (lecture à poursuivre ou échec) n'est pas reprise ; nul hors d'un lot.
+    """
     extraction_id = str(job.get("id") or "")
     asset_id = str(job.get("asset_id") or "")
     attempts = int(job.get("attempts") or 1)
@@ -1104,7 +1143,7 @@ def _process_job(
     if not extraction_id or not asset_id:
         return
     try:
-        asset = _fetch_asset(client, base_url, key, asset_id)
+        asset = fetch_asset(client, base_url, key, asset_id)
         if any(
             not job.get(field)
             or not asset.get(field)
@@ -1112,26 +1151,50 @@ def _process_job(
             for field in ("case_id", "message_id", "sale_id")
         ):
             raise RuntimeError("Evidence asset association mismatch")
-        content = _download_asset(client, base_url, key, asset)
+        content = download_asset(client, base_url, key, asset)
         settings = load_settings()
+        asset_metadata = asset.get("metadata")
+        email_body = isinstance(asset_metadata, dict) and asset_metadata.get("evidence_kind") == "email_body"
+        resume = _reading_progress(job)
         analysis = analyze_evidence_bytes(
             content,
             filename=str(asset.get("original_filename") or "piece-jointe"),
             declared_mime_type=str(asset.get("mime_type") or ""),
             ocr_enabled=bool(settings.get("information_agent_evidence_ocr_enabled", True)),
+            email_body=email_body,
+            resume=resume,
+            read_deadline=read_deadline,
+            final_attempt=attempts >= MAX_ATTEMPTS,
         )
-        # Consigne adressée à un modèle dans le texte de la pièce : aucun fait (ni règle ni IA), relecture.
-        prompt_injection = contains_prompt_injection(analysis.extracted_text)
+        if analysis.status == READING_IN_PROGRESS:
+            _continue_reading_later(
+                client,
+                base_url,
+                key,
+                extraction_id,
+                analysis,
+                attempts=attempts,
+                locked_at=locked_at,
+                pages_examined_before=len(resume.pages) if resume is not None else 0,
+                not_before=requeue_not_before,
+            )
+            return
+        # Consigne adressée à un modèle dans le texte lu, tous passages confondus : aucun fait (ni règle ni IA),
+        # aucun texte de la pièce envoyé au modèle, relecture.
+        prompt_injection = analysis.reading is not None and analysis.reading["prompt_injection_seen"] is True
         if prompt_injection:
             analysis = _withhold_facts_for_prompt_injection(analysis)
-        sale_id = str(job.get("sale_id") or "")
-        semantic_analysis = run_configured_semantic_analysis(
-            _semantic_pages_from_analysis(analysis),
-            settings,
-            lot_context_loader=lambda: _fetch_sale_lot_context(client, base_url, key, sale_id),
-        )
+            semantic_analysis = prompt_injection_skip()
+        else:
+            sale_id = str(job.get("sale_id") or "")
+            semantic_analysis = run_configured_semantic_analysis(
+                _semantic_pages_from_analysis(analysis),
+                settings,
+                lot_context_loader=lambda: fetch_sale_lot_context(client, base_url, key, sale_id),
+            )
         analysis = _merge_semantic_facts(analysis, semantic_analysis.facts)
         analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
+        analysis = _declare_model_reading(analysis, semantic_analysis)
         photo_analysis = PhotoSemanticAnalysis("not_run", error_code="EVIDENCE_NOT_IMAGE")
         if analysis.status == "completed" and analysis.detected_mime_type in {
             "image/jpeg",
@@ -1140,7 +1203,10 @@ def _process_job(
             "image/heic",
             "image/heif",
         }:
-            if settings.get("information_agent_evidence_vision_enabled"):
+            if prompt_injection:
+                # Le texte lu sur la photo s'adresse à un modèle : il n'est pas envoyé au modèle de vision.
+                photo_analysis = PhotoSemanticAnalysis("skipped", error_code="PROMPT_INJECTION_SUSPECTED")
+            elif settings.get("information_agent_evidence_vision_enabled"):
                 prepared = _prepare_image_for_vision(content, analysis.detected_mime_type)
                 if prepared is None:
                     photo_analysis = PhotoSemanticAnalysis(
@@ -1159,15 +1225,11 @@ def _process_job(
                 photo_analysis = PhotoSemanticAnalysis("disabled")
             analysis = _append_photo_summary(analysis, photo_analysis)
         if analysis.status == "completed" and analysis.facts:
-            case_status = _fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
+            case_status = fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
             if case_status in FACT_CANDIDATE_CASE_STATUSES:
-                sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
+                sale = fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
                 existing_body_values: dict[tuple[str, str], dict[str, Any]] = {}
-                asset_metadata = asset.get("metadata")
-                if (
-                    isinstance(asset_metadata, dict)
-                    and asset_metadata.get("evidence_kind") == "email_body"
-                ):
+                if email_body:
                     existing_body_values = fetch_existing_message_fact_values(
                         client,
                         base_url,
@@ -1194,9 +1256,9 @@ def _process_job(
             semantic_metadata=semantic_analysis.metadata(),
             photo_metadata=photo_analysis.metadata(),
         )
-        _mark_case_for_review(client, base_url, key, str(job.get("case_id") or ""))
+        mark_case_for_review(client, base_url, key, str(job.get("case_id") or ""))
     except Exception as exc:
-        _fail_job(
+        fail_job(
             client,
             base_url,
             key,
@@ -1204,108 +1266,13 @@ def _process_job(
             attempts,
             str(exc),
             locked_at=locked_at,
+            not_before=requeue_not_before,
         )
 
 
-def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -> dict[str, Any]:
-    response = client.get(
-        f"{base_url}/rest/v1/information_agent_evidence_assets",
-        headers=rest_headers(key),
-        params={
-            "select": "id,case_id,message_id,sale_id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256,metadata",
-            "id": f"eq.{asset_id}",
-            "limit": "1",
-        },
-    )
-    response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list) or not rows:
-        raise RuntimeError("Evidence asset not found")
-    return rows[0]
-
-
-def _download_asset(client: httpx.Client, base_url: str, key: str, asset: dict[str, Any]) -> bytes:
-    bucket = quote(str(asset.get("storage_bucket") or ""), safe="")
-    path = quote(str(asset.get("storage_path") or ""), safe="/")
-    response = client.get(f"{base_url}/storage/v1/object/{bucket}/{path}", headers=rest_headers(key))
-    response.raise_for_status()
-    content = response.content
-    if len(content) != int(asset.get("size_bytes") or 0):
-        raise RuntimeError("Evidence download size mismatch")
-    expected_sha256 = str(asset.get("sha256") or "")
-    if not expected_sha256 or hashlib.sha256(content).hexdigest() != expected_sha256:
-        raise RuntimeError("Evidence download checksum mismatch")
-    return content
-
-
-def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> dict[str, Any]:
-    response = client.get(
-        f"{base_url}/rest/v1/auction_sales",
-        headers=rest_headers(key),
-        params={
-            "select": "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address",
-            "id": f"eq.{sale_id}",
-            "limit": "1",
-        },
-    )
-    response.raise_for_status()
-    rows = response.json()
-    return rows[0] if isinstance(rows, list) and rows else {}
-
-
-def _fetch_sale_lot_context(
-    client: httpx.Client,
-    base_url: str,
-    key: str,
-    sale_id: str,
-) -> SemanticLotContext:
-    """Lots de la vente, pour que la lecture sémantique contrôle le lot dont parle chaque phrase."""
-    response = client.get(
-        f"{base_url}/rest/v1/auction_sales",
-        headers=rest_headers(key),
-        params={
-            "select": "quality_flags,source_lot_selection:raw_payload->source_lot_selection",
-            "id": f"eq.{sale_id}",
-            "limit": "1",
-        },
-    )
-    response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
-        raise RuntimeError("Information-agent sale not found")
-    return semantic_lot_context(rows[0].get("quality_flags"), rows[0].get("source_lot_selection"))
-
-
-def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: str) -> str:
-    if not case_id:
-        return ""
-    response = client.get(
-        f"{base_url}/rest/v1/information_agent_cases",
-        headers=rest_headers(key),
-        params={"select": "status", "id": f"eq.{case_id}", "limit": "1"},
-    )
-    response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list) or not rows:
-        raise RuntimeError("Information-agent case not found")
-    return str(rows[0].get("status") or "")
-
-
-def _finish_job(
-    client: httpx.Client,
-    base_url: str,
-    key: str,
-    extraction_id: str,
-    analysis: EvidenceAnalysis,
-    *,
-    attempts: int | None = None,
-    locked_at: str | None = None,
-    semantic_metadata: dict[str, object] | None = None,
-    photo_metadata: dict[str, object] | None = None,
-) -> None:
-    now = datetime.now(UTC).isoformat()
-    payload = {
-        "status": analysis.status,
+def _analysis_columns(analysis: EvidenceAnalysis, **metadata: object) -> dict[str, object]:
+    """Colonnes de la ligne d'extraction tirées de l'analyse, à la fin de la lecture comme entre deux passages."""
+    return {
         "processor_version": PROCESSOR_VERSION,
         "detected_mime_type": analysis.detected_mime_type,
         "document_kind": analysis.document_kind,
@@ -1325,73 +1292,146 @@ def _finish_job(
             "processor_version": PROCESSOR_VERSION,
             "content_trust": "untrusted_external_evidence",
             "prompt_instructions_ignored": True,
-            "semantic": semantic_metadata or {"status": "not_run", "review_required": True},
-            "photo_semantic": photo_metadata or {"status": "not_run", "review_required": True},
+            **metadata,
+            **({"reading": analysis.reading} if analysis.reading is not None else {}),
         },
+    }
+
+
+def _finish_job(
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    extraction_id: str,
+    analysis: EvidenceAnalysis,
+    *,
+    attempts: int | None = None,
+    locked_at: str | None = None,
+    semantic_metadata: dict[str, object] | None = None,
+    photo_metadata: dict[str, object] | None = None,
+) -> None:
+    now = datetime.now(UTC).isoformat()
+    payload = {
+        **_analysis_columns(
+            analysis,
+            semantic=semantic_metadata or {"status": "not_run", "review_required": True},
+            photo_semantic=photo_metadata or {"status": "not_run", "review_required": True},
+        ),
+        "status": analysis.status,
         "locked_at": None,
         "completed_at": now,
     }
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
         headers=rest_headers(key, prefer="return=minimal"),
-        params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
+        params=processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
         json=payload,
     )
     response.raise_for_status()
 
 
-def _fail_job(
+def _reading_progress(job: dict[str, Any]) -> ReadingProgress | None:
+    """Lecture d'un PDF commencée à un passage précédent (``metadata.reading.next_page``), relue de la ligne prise.
+
+    Une progression mal formée lève : la pièce passe en échec visible au lieu d'être relue de zéro en silence.
+    """
+    metadata = job.get("metadata")
+    reading = metadata.get("reading") if isinstance(metadata, dict) else None
+    if not isinstance(reading, dict) or reading.get("next_page") is None:
+        return None
+    next_page = reading.get("next_page")
+    passes = reading.get("passes")
+    pages_total = reading.get("pages_total")
+    pages = job.get("pages")
+    facts = job.get("extracted_facts")
+    stored_text = job.get("extracted_text")
+    if (
+        not all(isinstance(value, int) and not isinstance(value, bool) for value in (next_page, passes, pages_total))
+        or not isinstance(pages, list)
+        or not all(isinstance(page, dict) for page in pages)
+        or [page.get("page") for page in pages] != list(range(1, int(next_page)))
+        or not isinstance(facts, list)
+        or not (stored_text is None or isinstance(stored_text, str))
+        or not isinstance(reading.get("stored_text_truncated"), bool)
+        or not isinstance(reading.get("prompt_injection_seen"), bool)
+    ):
+        raise RuntimeError("Invalid evidence reading progress")
+    return ReadingProgress(
+        next_page=int(next_page),
+        passes=int(passes),
+        pages_total=int(pages_total),
+        pages=pages,
+        stored_text=stored_text or "",
+        stored_text_truncated=reading["stored_text_truncated"],
+        facts=[EvidenceFact.from_json(fact) for fact in facts],
+        prompt_injection=reading["prompt_injection_seen"],
+    )
+
+
+def _pages_read(pages: list[dict[str, object]]) -> int:
+    return sum(1 for page in pages if page.get("method") not in UNREAD_PAGE_METHODS)
+
+
+def _continue_reading_later(
     client: httpx.Client,
     base_url: str,
     key: str,
     extraction_id: str,
-    attempts: int,
-    message: str,
+    analysis: EvidenceAnalysis,
     *,
-    locked_at: str | None = None,
+    attempts: int,
+    locked_at: str | None,
+    pages_examined_before: int,
+    not_before: datetime | None,
 ) -> None:
+    """Range la progression d'une lecture à poursuivre dans la ligne, qui revient en file pour le passage suivant.
+
+    Écrit sous le bail du passage (``_processing_lease_params``), comme la fin d'une analyse. Le progrès se compte en
+    pages examinées, lues ou déclarées non lues : un passage qui en a examiné au moins une rend l'essai compté par la
+    RPC à la prise (``attempts`` redescend de un) et revient en file ; ``MAX_READING_PASSES`` borne les passages. Un
+    passage sans page examinée (vrai blocage) garde son essai et passe en échec avec le délai d'une erreur du worker.
+    Au dernier passage (``_is_last_pass``), une lecture n'est encore à poursuivre que si aucune page n'a jamais été lue
+    (``_analyze_pdf``) : c'est aussi un échec, définitif au dernier essai.
+    """
+    if analysis.reading is None:
+        raise RuntimeError("Evidence reading progress is missing")
+    pages_read = int(analysis.reading["pages_read"])
+    pages_total = int(analysis.reading["pages_total"])
+    last_pass = _is_last_pass(int(analysis.reading["passes"]), final_attempt=attempts >= MAX_ATTEMPTS)
     now = datetime.now(UTC)
+    payload: dict[str, object] = {**_analysis_columns(analysis), "locked_at": None}
+    if len(analysis.pages) > pages_examined_before and not last_pass:
+        payload.update(
+            {
+                "status": "queued",
+                "attempts": attempts - 1,
+                "available_at": max(now, not_before or now).isoformat(),
+                "completed_at": None,
+            }
+        )
+    else:
+        payload.update(
+            {
+                "status": "failed",
+                "error_code": "OCR_NO_PROGRESS",
+                "error_message": (
+                    f"Aucune page lue au dernier passage permis : {pages_read} page(s) lue(s) sur {pages_total}."
+                    if last_pass
+                    else f"Aucune page examinée à ce passage : {pages_read} page(s) lue(s) sur {pages_total}."
+                ),
+                **retry_schedule(attempts, now, not_before),
+            }
+        )
+        if attempts >= MAX_ATTEMPTS:
+            payload["summary"] = (
+                f"Lecture interrompue : {pages_read} page(s) lue(s) sur {pages_total} en {MAX_ATTEMPTS} essais. "
+                "Aucune information proposée : vérification manuelle nécessaire."
+            )
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
         headers=rest_headers(key, prefer="return=minimal"),
-        params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
-        json={
-            "status": "failed",
-            "error_code": "WORKER_ERROR",
-            "error_message": message[:2000],
-            "locked_at": None,
-            "available_at": (now + timedelta(minutes=min(30, 2**attempts))).isoformat(),
-            "completed_at": now.isoformat() if attempts >= 3 else None,
-        },
-    )
-    response.raise_for_status()
-
-
-def _processing_lease_params(
-    extraction_id: str,
-    *,
-    attempts: int | None,
-    locked_at: str | None,
-) -> dict[str, str]:
-    params = {
-        "id": f"eq.{extraction_id}",
-        "status": "eq.processing",
-    }
-    if attempts is not None:
-        params["attempts"] = f"eq.{attempts}"
-    if locked_at:
-        params["locked_at"] = f"eq.{locked_at}"
-    return params
-
-
-def _mark_case_for_review(client: httpx.Client, base_url: str, key: str, case_id: str) -> None:
-    if not case_id:
-        return
-    response = client.patch(
-        f"{base_url}/rest/v1/information_agent_cases",
-        headers=rest_headers(key, prefer="return=minimal"),
-        params={"id": f"eq.{case_id}", "status": "in.(replied,review)"},
-        json={"status": "review"},
+        params=processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
+        json=payload,
     )
     response.raise_for_status()
 
@@ -1399,16 +1439,27 @@ def _mark_case_for_review(client: httpx.Client, base_url: str, key: str, case_id
 def _run_pdf_ocr_child(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] != "--ocr-pdf-page":
         return 2
+    limit_child_memory()
     try:
         payload = _ocr_pdf_page_in_process(argv[1], int(argv[2]))
     except Exception as exc:
         payload = {"error": str(exc)[:300]}
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    print(json.dumps(payload, ensure_ascii=True), flush=True)
+    return 0
+
+
+def _run_pdf_text_child(argv: list[str]) -> int:
+    if len(argv) != 4 or argv[0] != "--read-pdf-text":
+        return 2
+    limit_child_memory()
+    _read_pdf_native_text_in_process(argv[1], int(argv[2]), int(argv[3]))
     return 0
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--ocr-pdf-page":
         raise SystemExit(_run_pdf_ocr_child(sys.argv[1:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "--read-pdf-text":
+        raise SystemExit(_run_pdf_text_child(sys.argv[1:]))
     batch_limit = int(load_settings()["information_agent_evidence_batch_size"])
     print(json.dumps({"processed": run_information_agent_evidence_batch(limit=batch_limit)}))

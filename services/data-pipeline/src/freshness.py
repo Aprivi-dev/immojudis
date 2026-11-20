@@ -206,6 +206,35 @@ def is_new_source_change(incoming: Any, existing: Any) -> bool:
     )
 
 
+def profiles_by_url(profiles: object) -> dict[str, list[dict[str, Any]]] | None:
+    """``document_analysis.profiles`` grouped by URL; ``None`` when the list is malformed.
+
+    Les profils suivent la liste des pièces : une URL listée deux fois (vente fusionnée entre sources, étiquettes
+    différentes) a deux profils. Comparer leur nombre à celui des URL déclarait la vente jamais à jour (2 579 tâches
+    pdf en 24 heures pour une vente, 11/2026) et ses faits jamais extraits. Chaque profil d'une URL se vérifie avec
+    ``profiles_confirm_extraction`` : deux profils contradictoires ne peuvent pas tous deux concorder.
+    """
+    if not isinstance(profiles, list):
+        return None
+    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles):
+        return None
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in profiles:
+        grouped.setdefault(clean_text(item.get("url")), []).append(item)
+    return grouped
+
+
+def profiles_confirm_extraction(profiles: list[dict[str, Any]], sha256: str | None) -> bool:
+    """Whether every profile of one URL records a complete text extraction of the bytes ``sha256``."""
+    return bool(sha256) and all(
+        clean_text(profile.get("sha256")) == sha256
+        and (clean_text(profile.get("extraction_status")) or "").casefold() == "extracted"
+        and profile.get("complete") is True
+        and not profile.get("failed_pages")
+        for profile in profiles
+    )
+
+
 def documents_are_current(sale: Any) -> bool:
     raw_payload = getattr(sale, "raw_payload", None)
     documents = getattr(sale, "documents", None)
@@ -300,18 +329,9 @@ def documents_are_current(sale: Any) -> bool:
         or not (proof_urls - expected_urls).issubset(terminal_urls)
     ):
         return False
-    profiles_payload = analysis.get("profiles")
-    if not isinstance(profiles_payload, list):
+    analysis_profiles = profiles_by_url(analysis.get("profiles"))
+    if analysis_profiles is None:
         return False
-    if any(not isinstance(item, dict) or not clean_text(item.get("url")) for item in profiles_payload):
-        return False
-    # Les profils suivent la liste des pièces : une URL listée deux fois (vente fusionnée entre sources, étiquettes
-    # différentes) a deux profils. Comparer les longueurs déclarait la vente jamais à jour, d'où une tâche pdf par
-    # passe (2 579 tâches en 24 heures pour une vente, 11/2026). Chaque profil d'une URL attendue est vérifié ci-dessous : deux profils contradictoires
-    # pour une même URL ne peuvent pas tous deux concorder avec sa preuve.
-    analysis_profiles: dict[str, list[dict[str, Any]]] = {}
-    for item in profiles_payload:
-        analysis_profiles.setdefault(clean_text(item.get("url")), []).append(item)
     profile_urls = set(analysis_profiles)
     if not expected_urls.issubset(profile_urls) or not (profile_urls - expected_urls).issubset(excluded_urls):
         return False
@@ -331,17 +351,8 @@ def documents_are_current(sale: Any) -> bool:
             and text_chars > 0
         ):
             return False
-        for profile in analysis_profiles[url]:
-            profile_sha = clean_text(profile.get("sha256"))
-            profile_status = (clean_text(profile.get("extraction_status")) or "").casefold()
-            if not (
-                bool(profile_sha)
-                and profile_sha == clean_text(item.get("sha256"))
-                and profile_status == "extracted"
-                and profile.get("complete") is True
-                and not profile.get("failed_pages")
-            ):
-                return False
+        if not profiles_confirm_extraction(analysis_profiles[url], clean_text(item.get("sha256"))):
+            return False
         if modern_manifest and not timestamp_is_fresh(item.get("http_checked_at")):
             return False
     # The manifest fingerprint remains stable while a partial pass fills the

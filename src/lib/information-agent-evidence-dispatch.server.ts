@@ -29,7 +29,12 @@ export const INFORMATION_AGENT_EVIDENCE_DISPATCH_DAILY_LIMIT = {
   limit: 24,
   windowSeconds: 24 * 60 * 60,
 } as const;
-/** Au-delà, la plus ancienne analyse prenable est « figée » : plus de déclenchement, l'horaire GitHub reste. */
+/**
+ * Au-delà, la plus ancienne analyse prenable est « figée » : plus de déclenchement, l'horaire GitHub reste. L'attente se
+ * compte depuis `available_at`, l'instant où la ligne est devenue prenable : une lecture reprise au passage suivant ou
+ * une pièce remise en file est prenable depuis peu, quelle que soit sa date de création ; une ligne que le workflow ne
+ * prend jamais garde son `available_at` et devient figée.
+ */
 const INFORMATION_AGENT_EVIDENCE_STALLED_AFTER_MS = 2 * 60 * 60 * 1000;
 const DISPATCH_BUCKET_KEY = "information-agent.evidence-dispatch";
 const DAILY_BUCKET_KEY = "information-agent.evidence-dispatch.daily";
@@ -50,24 +55,24 @@ export type InformationAgentEvidenceDispatchOutcome =
 class EvidenceDispatchStageError extends Error {}
 
 /**
- * Date de création de la plus ancienne analyse que le worker prendrait maintenant (null : aucune). Mêmes
- * conditions que la RPC de prise en charge : moins de 3 essais, échéance passée, en file ou en échec, ou en
- * cours mais abandonnée depuis 45 minutes.
+ * Depuis quand la plus ancienne analyse que le worker prendrait maintenant est prenable (`available_at` ; null :
+ * aucune). Mêmes conditions que la RPC de prise en charge : moins de 3 essais, échéance passée, en file ou en
+ * échec, ou en cours mais abandonnée depuis 45 minutes.
  */
 async function oldestClaimableEvidenceExtraction(now: Date): Promise<Date | null> {
   const staleBefore = new Date(now.getTime() - STALE_PROCESSING_MS).toISOString();
   const { data, error } = await supabaseAdmin
     .from("information_agent_evidence_extractions")
-    .select("created_at")
+    .select("available_at")
     .lt("attempts", 3)
     .lte("available_at", now.toISOString())
     .or(`status.in.(queued,failed),and(status.eq.processing,locked_at.lt.${staleBefore})`)
-    .order("created_at", { ascending: true })
+    .order("available_at", { ascending: true })
     .limit(1);
   if (error) throw new EvidenceDispatchStageError("pending_check_failed");
-  const createdAt = data?.[0]?.created_at;
-  if (!createdAt) return null;
-  const parsed = new Date(createdAt);
+  const availableAt = data?.[0]?.available_at;
+  if (!availableAt) return null;
+  const parsed = new Date(availableAt);
   return Number.isNaN(parsed.getTime()) ? now : parsed;
 }
 

@@ -20,7 +20,7 @@ from src.normalize import clean_text
 from src.storage.postgrest_helpers import rest_headers
 
 if TYPE_CHECKING:
-    from src.information_agent_evidence import EvidenceFact
+    from src.information_agent_evidence_facts import EvidenceFact
 
 PROCESSOR_VERSION = "evidence_v1"
 MIN_FACT_CANDIDATE_CONFIDENCE = 0.5
