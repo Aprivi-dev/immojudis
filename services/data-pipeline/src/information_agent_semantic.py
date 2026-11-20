@@ -412,8 +412,15 @@ def contains_prompt_injection(text: object) -> bool:
     return _has_injection(normalized) or (joined != normalized and _has_injection(joined))
 
 
-def _pages_contain_prompt_injection(pages: Sequence[Mapping[str, object]]) -> bool:
-    return any(contains_prompt_injection(page.get("text")) for page in pages if isinstance(page, Mapping))
+def pages_contain_prompt_injection(pages: Sequence[Mapping[str, object]]) -> bool:
+    """Une consigne adressée à un modèle dans une page, ou à cheval sur deux pages : le modèle les lit à la suite.
+
+    Les pages sont aussi lues jointes par une espace, sans séparateur, dans l'ordre reçu.
+    """
+    texts = [page.get("text") for page in pages if isinstance(page, Mapping)]
+    if any(contains_prompt_injection(text) for text in texts):
+        return True
+    return contains_prompt_injection(" ".join(text for text in texts if isinstance(text, str) and text))
 
 
 def redact_text_for_model(text: object) -> str:
@@ -525,7 +532,7 @@ def analyze_semantic_evidence(
     """
     if not enabled:
         return SemanticAnalysis("disabled", [], model=model)
-    if _pages_contain_prompt_injection(pages):
+    if pages_contain_prompt_injection(pages):
         # Aucun appel du modèle : le texte part en relecture humaine sans proposition.
         return prompt_injection_skip(model)
     user_prompt, input_truncated, input_pages = _semantic_user_prompt(pages)
@@ -583,7 +590,7 @@ def validate_semantic_facts(
     if not isinstance(raw_facts, list):
         return []
     # Un texte qui donne des consignes à un modèle ne donne aucun fait, quels qu'ils soient.
-    if _pages_contain_prompt_injection(pages):
+    if pages_contain_prompt_injection(pages):
         return []
     page_texts: dict[int, str] = {}
     for page in pages:
@@ -1328,6 +1335,7 @@ __all__ = [
     "build_semantic_user_prompt",
     "contains_prompt_injection",
     "image_bytes_to_data_url",
+    "pages_contain_prompt_injection",
     "prompt_injection_skip",
     "run_configured_photo_analysis",
     "run_configured_semantic_analysis",

@@ -8,6 +8,8 @@ const db = vi.hoisted(() => ({
   pendingCount: 0,
   /** Création de la plus ancienne analyse prenable (par défaut : l'instant de la passe). */
   oldestCreatedAt: null as string | null,
+  /** Depuis quand elle est prenable, `available_at` (par défaut : l'instant de la passe). */
+  oldestAvailableAt: null as string | null,
   countError: null as { message: string } | null,
   rpcError: null as { message: string } | null,
   clockMs: 0,
@@ -24,9 +26,13 @@ vi.mock("@/integrations/supabase/client.server", () => {
     order: (...args: unknown[]) => (db.filters.push(["order", ...args]), query),
     limit: (...args: unknown[]) => {
       db.filters.push(["limit", ...args]);
-      const createdAt = db.oldestCreatedAt ?? new Date(db.clockMs).toISOString();
+      const passAt = new Date(db.clockMs).toISOString();
+      const row = {
+        created_at: db.oldestCreatedAt ?? passAt,
+        available_at: db.oldestAvailableAt ?? passAt,
+      };
       return Promise.resolve({
-        data: db.pendingCount > 0 ? [{ created_at: createdAt }] : [],
+        data: db.pendingCount > 0 ? [row] : [],
         error: db.countError,
       });
     },
@@ -72,6 +78,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   db.pendingCount = 0;
   db.oldestCreatedAt = null;
+  db.oldestAvailableAt = null;
   db.countError = null;
   db.rpcError = null;
   setClock("2026-11-10T10:00:30Z");
@@ -121,14 +128,14 @@ describe("déclenchement de l'analyse des réponses de l'agent", () => {
 
     expect(db.filters).toEqual([
       ["from", "information_agent_evidence_extractions"],
-      ["select", "created_at"],
+      ["select", "available_at"],
       ["lt", "attempts", 3],
       ["lte", "available_at", "2026-11-10T10:00:30.000Z"],
       [
         "or",
         "status.in.(queued,failed),and(status.eq.processing,locked_at.lt.2026-11-10T09:15:30.000Z)",
       ],
-      ["order", "created_at", { ascending: true }],
+      ["order", "available_at", { ascending: true }],
       ["limit", 1],
     ]);
   });
@@ -227,7 +234,9 @@ describe("déclenchement de l'analyse des réponses de l'agent", () => {
 
   it("une analyse figée : déclenchements pendant 2 heures, puis « stalled » (30 passes sur 5 heures)", async () => {
     db.pendingCount = 1;
+    // Prenable depuis 10:00 et jamais prise : elle garde son `available_at`.
     db.oldestCreatedAt = "2026-11-10T10:00:00Z";
+    db.oldestAvailableAt = "2026-11-10T10:00:00Z";
     const fetcher = accepted();
     const statuses: string[] = [];
     for (let pass = 0; pass < 30; pass++) {
@@ -240,6 +249,35 @@ describe("déclenchement de l'analyse des réponses de l'agent", () => {
     expect(fetcher).toHaveBeenCalledTimes(12);
     const last = await dispatchPendingInformationAgentEvidence({ fetcher });
     expect(last).toEqual({ status: "stalled", oldestWaitingMinutes: 290 });
+  });
+
+  it("une lecture en reprise, créée il y a longtemps mais prenable depuis peu, déclenche le workflow", async () => {
+    db.pendingCount = 1;
+    // Long scan reçu à 05:00, lu par passages ; le dernier passage l'a remise en file à 09:55.
+    db.oldestCreatedAt = "2026-11-10T05:00:00Z";
+    db.oldestAvailableAt = "2026-11-10T09:55:00Z";
+    const fetcher = accepted();
+
+    await expect(dispatchPendingInformationAgentEvidence({ fetcher })).resolves.toEqual({
+      status: "dispatched",
+      workflow: "information-agent-evidence.yml",
+      ref: "main",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("une ligne prenable depuis plus de 2 heures reste figée, comme avant", async () => {
+    db.pendingCount = 1;
+    db.oldestCreatedAt = "2026-11-10T07:30:00Z";
+    db.oldestAvailableAt = "2026-11-10T07:30:00Z";
+    const fetcher = accepted();
+
+    await expect(dispatchPendingInformationAgentEvidence({ fetcher })).resolves.toEqual({
+      status: "stalled",
+      oldestWaitingMinutes: 150,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(db.buckets.size).toBe(0);
   });
 
   it("au plus 24 déclenchements par jour, même si de nouvelles analyses arrivent sans cesse", async () => {

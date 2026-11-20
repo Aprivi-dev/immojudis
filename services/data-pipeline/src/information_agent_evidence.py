@@ -5,13 +5,12 @@ import math
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import unicodedata
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,12 @@ import pymupdf as fitz
 
 from src.config import load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
+from src.information_agent_evidence_child import (
+    child_popen_kwargs,
+    kill_and_collect,
+    limit_child_memory,
+    terminate_process_group,
+)
 from src.information_agent_evidence_facts import EvidenceFact, deduplicate_facts, extract_evidence_facts
 from src.information_agent_evidence_rows import (
     MAX_ATTEMPTS,
@@ -45,7 +50,7 @@ from src.information_agent_semantic import (
     PhotoSemanticAnalysis,
     SemanticAnalysis,
     SemanticFact,
-    contains_prompt_injection,
+    pages_contain_prompt_injection,
     prompt_injection_skip,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
@@ -82,13 +87,15 @@ PDF_OCR_PAGE_TIMEOUT_SECONDS = 10
 # à 2,7 s par page à 300 dpi : environ 85 pages par passage, un scan de 300 pages en 4 passages.
 PDF_READ_PASS_SECONDS = 240
 # Texte natif des pages d'un passage, lu dans un processus enfant tué au-delà : un PDF hostile (flux partagé et très
-# compressé) coûte plusieurs secondes par page. Les pages non atteintes sont « text_timeout », non lues.
+# compressé) coûte plusieurs secondes par page. La lecture reprend à la première page non atteinte au passage suivant ;
+# au dernier passage, les pages non atteintes sont « text_timeout », non lues.
 PDF_TEXT_READ_SECONDS = 120
 # Un lot ne prend une pièce que si un passage entier tient avant cette durée (14 min, plus la fin du dernier passage :
 # IA, écritures ; l'installation du workflow prend quelques minutes sur les 25). Les pièces non prises restent en
 # file sans perdre d'essai.
 EVIDENCE_BATCH_SECONDS = 14 * 60
-# Au-delà, la lecture s'arrête en partielle déclarée : 10 passages couvrent 300 pages jusqu'à 7 s d'OCR par page.
+# Au-delà, la lecture s'arrête en partielle déclarée : 10 passages couvrent 300 pages jusqu'à 7 s d'OCR par page. Le
+# dernier essai (``MAX_ATTEMPTS``) est aussi le dernier passage (``_is_last_pass``).
 MAX_READING_PASSES = 10
 PDF_OCR_LANGUAGE = "fra+eng"
 IMAGE_OCR_TIMEOUT_SECONDS = 20
@@ -176,11 +183,15 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
 
     bounded_limit = max(1, min(10, int(limit)))
     batch_deadline = _monotonic() + EVIDENCE_BATCH_SECONDS
+    # Aucune pièce remise en file pendant le lot n'est reprise avant sa fin : un passage par pièce et par lot. La RPC
+    # sert la plus ancienne pièce d'abord ; sans cela, une lecture en reprise repasserait aussitôt devant les pièces
+    # arrivées après elle.
+    batch_end = datetime.now(UTC) + timedelta(seconds=EVIDENCE_BATCH_SECONDS)
     processed = 0
     with httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0), trust_env=False) as client:
         # Une pièce à la fois, prise seulement si un passage entier de lecture tient avant la fin du lot : le lot tient
         # dans le délai du workflow même si toutes ses pièces sont de longs scans, et une pièce non prise ne perd pas
-        # d'essai. Une lecture reprise au passage suivant peut être reprise dans le même lot.
+        # d'essai.
         while processed < bounded_limit:
             read_deadline = _monotonic() + PDF_READ_PASS_SECONDS
             if read_deadline > batch_deadline:
@@ -188,7 +199,9 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
             jobs = claim_jobs(client, supabase_url, service_key, 1)
             if not jobs:
                 break
-            _process_job(client, supabase_url, service_key, jobs[0], read_deadline=read_deadline)
+            _process_job(
+                client, supabase_url, service_key, jobs[0], read_deadline=read_deadline, requeue_not_before=batch_end
+            )
             processed += 1
     return processed
 
@@ -202,12 +215,14 @@ def analyze_evidence_bytes(
     email_body: bool = False,
     resume: ReadingProgress | None = None,
     read_deadline: float | None = None,
+    final_attempt: bool = False,
 ) -> EvidenceAnalysis:
     """``email_body`` : le corps du message (``metadata.evidence_kind``), un texte qui n'est pas une pièce de la vente.
 
     Un PDF est lu par passages : ``resume`` reprend la lecture d'un passage précédent, ``read_deadline`` (horloge
     ``_monotonic``) borne l'OCR de ce passage, ``PDF_READ_PASS_SECONDS`` après l'appel par défaut. Une lecture à
-    poursuivre rend le statut ``READING_IN_PROGRESS``.
+    poursuivre rend le statut ``READING_IN_PROGRESS``. ``final_attempt`` : dernier essai de la pièce, donc son dernier
+    passage (``_is_last_pass``).
     """
     if read_deadline is None:
         read_deadline = _monotonic() + PDF_READ_PASS_SECONDS
@@ -234,6 +249,7 @@ def analyze_evidence_bytes(
             ocr_enabled=ocr_enabled,
             resume=resume,
             read_deadline=read_deadline,
+            final_attempt=final_attempt,
         )
     if detected == "text/plain":
         return _analyze_text(content, filename=filename, detected_mime_type=detected, email_body=email_body)
@@ -299,13 +315,17 @@ def _analyze_pdf(
     ocr_enabled: bool,
     resume: ReadingProgress | None,
     read_deadline: float,
+    final_attempt: bool,
 ) -> EvidenceAnalysis:
     """Un passage de lecture : les pages depuis ``resume.next_page`` (ou la première), dans l'ordre.
 
     Le texte natif est lu dans un processus enfant borné (``PDF_TEXT_READ_SECONDS``). Une page de moins de 80
-    caractères passe à l'OCR si son délai entier tient avant ``read_deadline`` ; sinon la lecture s'arrête à cette page
-    et reprend au passage suivant, sauf au dernier passage permis (``MAX_READING_PASSES``) où les pages restantes sont
-    « ocr_total_timeout », non lues, et la lecture se termine, partielle.
+    caractères passe à l'OCR si son délai entier tient avant ``read_deadline``. Une page que le passage n'a plus le temps
+    de lire (OCR, ou texte natif non atteint) arrête la lecture, qui reprend à cette page au passage suivant. Au dernier
+    passage (``_is_last_pass``), dès qu'une page a été lue, les pages restantes sont déclarées non lues
+    (« ocr_total_timeout », « text_timeout ») et la lecture se termine, partielle ; une lecture dont aucune page n'a été
+    lue reste à poursuivre et passe en échec (``_continue_reading_later``). La lecture s'arrête aussi dès qu'une
+    consigne adressée à une IA est lue : aucun fait ne sera proposé, la suite est du temps perdu.
     """
     try:
         document = fitz.open(stream=content, filetype="pdf")
@@ -333,19 +353,28 @@ def _analyze_pdf(
         first_page = resume.next_page if resume is not None else 1
         last_page = min(total_pages, MAX_PAGES)
         passes = (resume.passes if resume is not None else 0) + 1
-        last_pass = passes >= MAX_READING_PASSES
+        last_pass = _is_last_pass(passes, final_attempt=final_attempt)
+        pages_read = _pages_read(resume.pages) if resume is not None else 0
         pages: list[dict[str, object]] = []
         next_page: int | None = None
+        previous_text_page: dict[str, object] | None = None
         with tempfile.TemporaryDirectory(prefix="immojudis-evidence-pdf-") as temp_dir:
             source_path = Path(temp_dir) / "evidence.pdf"
             source_path.write_bytes(content)
-            native_pages, native_timed_out = _read_pdf_native_text(
+            native_pages, native_timed_out, native_failed = _read_pdf_native_text(
                 source_path, first_page, last_page, timeout_seconds=PDF_TEXT_READ_SECONDS
             )
+            if native_failed and not (last_pass and pages_read):
+                # Enfant mort sans délai dépassé (mémoire, import, encodage) : un nouvel essai, pas des pages
+                # déclarées non lues pour de bon. Au dernier passage, ce qui a été lu avant est gardé.
+                raise RuntimeError("PDF native text process failed")
             for index in range(first_page, last_page + 1):
                 native = native_pages.get(index)
+                if native is None and native_timed_out and not (last_pass and pages_read):
+                    next_page = index  # page non atteinte avant le délai du texte natif : lue au passage suivant
+                    break
                 if native is None or native.get("error") is not None:
-                    # Page non atteinte avant le délai du texte natif, ou illisible : non lue.
+                    # Page non atteinte au dernier passage, illisible, ou laissée par un enfant mort : non lue.
                     unread = "text_timeout" if native is None and native_timed_out else "text_failed"
                     pages.append({"page": index, "text": "", "chars": 0, "method": unread, "confidence": 0.0})
                     continue
@@ -365,14 +394,21 @@ def _analyze_pdf(
                                 source_path=source_path,
                                 timeout_seconds=PDF_OCR_PAGE_TIMEOUT_SECONDS,
                             )
-                        elif last_pass:
+                        elif last_pass and pages_read:
                             text, method, confidence = _ocr_fallback(raw_text, "ocr_total_timeout")
                         else:
                             next_page = index
                             break
-                pages.append(
-                    _page_reading(index, text, method, confidence, clipped=native.get("clipped") is True)
-                )
+                examined = _page_reading(index, text, method, confidence, clipped=native.get("clipped") is True)
+                pages.append(examined)
+                if method not in UNREAD_PAGE_METHODS:
+                    pages_read += 1
+                if not examined["text"]:
+                    continue
+                # Avec la page précédente : une consigne coupée par la limite de page est lue d'un seul tenant.
+                if pages_contain_prompt_injection([item for item in (previous_text_page, examined) if item]):
+                    break
+                previous_text_page = examined
 
     return _completed_analysis(
         filename=filename,
@@ -384,6 +420,11 @@ def _analyze_pdf(
         next_page=next_page,
         passes=passes,
     )
+
+
+def _is_last_pass(passes: int, *, final_attempt: bool) -> bool:
+    """Le passage ``passes`` (compté dès 1) termine la lecture : nombre de passages atteint, ou dernier essai."""
+    return passes >= MAX_READING_PASSES or final_attempt
 
 
 def _page_reading(
@@ -410,15 +451,15 @@ def _read_pdf_native_text(
     last_page: int,
     *,
     timeout_seconds: float,
-) -> tuple[dict[int, dict[str, object]], bool]:
+) -> tuple[dict[int, dict[str, object]], bool, bool]:
     """Texte natif des pages ``first_page`` à ``last_page`` (numérotées dès 1), lu dans un processus enfant tué au délai.
 
-    Rend les pages lues avant le délai (``text`` et ``clipped``, ou ``error`` pour une page illisible) et dit si le délai
-    a coupé la lecture. L'enfant écrit une ligne JSON par page dès qu'elle est lue : une page interminable n'arrête que
-    la lecture, jamais le worker. Un enfant qui meurt sans délai dépassé laisse ses pages manquantes « text_failed ».
+    Rend les pages lues avant le délai (``text`` et ``clipped``, ou ``error`` pour une page illisible), si le délai a
+    coupé la lecture, et si l'enfant s'est terminé en erreur sans délai dépassé. L'enfant écrit une ligne JSON par page
+    dès qu'elle est lue : une page interminable n'arrête que la lecture, jamais le worker.
     """
     if first_page > last_page:
-        return {}, False
+        return {}, False, False
     command = [
         sys.executable,
         "-m",
@@ -428,28 +469,26 @@ def _read_pdf_native_text(
         str(first_page),
         str(last_page),
     ]
-    popen_kwargs: dict[str, object] = {
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.DEVNULL,
-        "text": True,
-        "cwd": str(Path(__file__).resolve().parents[1]),
-    }
-    if os.name == "posix":
-        popen_kwargs["start_new_session"] = True
-    process = subprocess.Popen(command, **popen_kwargs)
+    process = subprocess.Popen(command, **child_popen_kwargs())
     timed_out = False
     try:
         stdout, _stderr = process.communicate(timeout=max(float(timeout_seconds), 0.01))
     except subprocess.TimeoutExpired:
         timed_out = True
-        _kill_process_group(process)
         # Les lignes écrites avant le délai : communicate() les a gardées et rend la sortie entière.
-        stdout, _stderr = process.communicate(timeout=5)
+        stdout = kill_and_collect(process)
     except BaseException:
-        _terminate_process_group(process)
+        terminate_process_group(process)
         raise
+    return _parse_native_text_output(stdout, first_page, last_page), timed_out, (
+        not timed_out and process.returncode != 0
+    )
+
+
+def _parse_native_text_output(stdout: str, first_page: int, last_page: int) -> dict[int, dict[str, object]]:
+    """Pages lues par l'enfant, une ligne JSON chacune (ASCII : seul ``\\n`` sépare deux lignes)."""
     pages: dict[int, dict[str, object]] = {}
-    for line in stdout.splitlines():
+    for line in stdout.split("\n"):
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
@@ -460,7 +499,7 @@ def _read_pdf_native_text(
         number = payload.get("page")
         if isinstance(number, int) and first_page <= number <= last_page:
             pages[number] = payload
-    return pages, timed_out
+    return pages
 
 
 def _read_pdf_native_text_in_process(source_path: str, first_page: int, last_page: int) -> None:
@@ -475,7 +514,8 @@ def _read_pdf_native_text_in_process(source_path: str, first_page: int, last_pag
                 }
             except Exception as exc:  # page illisible : notée pour le parent, les suivantes sont lues
                 payload = {"page": number, "error": str(exc)[:300]}
-            print(json.dumps(payload, ensure_ascii=False), flush=True)
+            # ASCII : un U+2028 ou U+0085 du texte reste échappé et ne coupe pas la ligne.
+            print(json.dumps(payload, ensure_ascii=True), flush=True)
 
 
 def _analyze_text(content: bytes, *, filename: str, detected_mime_type: str, email_body: bool) -> EvidenceAnalysis:
@@ -604,7 +644,7 @@ def _prepare_heif_for_processing(
             try:
                 process.communicate(timeout=HEIF_CONVERT_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
+                terminate_process_group(process)
                 return None
             if process.returncode != 0 or not output_path.is_file():
                 return None
@@ -616,7 +656,7 @@ def _prepare_heif_for_processing(
     except Exception:
         # Untrusted attachment that cannot be converted: the caller reports the format as unsupported.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
         return None
 
 
@@ -757,8 +797,13 @@ def _completed_analysis(
     stored_text_truncated = (previous is not None and previous.stored_text_truncated) or len(read_text) > len(
         combined
     )
-    # Le texte des passages précédents au-delà du texte conservé n'est plus là : leur verdict est gardé.
-    prompt_injection = (previous is not None and previous.prompt_injection) or contains_prompt_injection(read_text)
+    # Le texte des passages précédents au-delà du texte conservé n'est plus là : leur verdict est gardé. Le texte lu est
+    # celui que la lecture sémantique peut envoyer au modèle (``_text_pages``).
+    prompt_injection = (previous is not None and previous.prompt_injection) or pages_contain_prompt_injection(
+        _text_pages(read_text)
+    )
+    if prompt_injection:
+        next_page = None  # aucun fait ne sera proposé : la suite du document ne sera pas lue
     # Le corps du message n'est pas une pièce de la vente : aucun type de document tiré des mots de son texte.
     kind = None if email_body else classify_document_type(filename, combined[:4000])
     label = "Corps du message" if email_body else _document_kind_label(kind)
@@ -864,8 +909,13 @@ def _semantic_pages_from_analysis(analysis: EvidenceAnalysis) -> list[dict[str, 
     """
     if analysis.status != "completed" or not analysis.read_text:
         return []
+    return _text_pages(analysis.read_text)
+
+
+def _text_pages(read_text: str) -> list[dict[str, object]]:
+    """Pages du texte lu (``--- page N ---``), dans l'ordre ; le texte d'une page, nettoyé, n'a aucun saut de ligne."""
     pages: list[dict[str, object]] = []
-    for match in _SEMANTIC_PAGE_RE.finditer(analysis.read_text):
+    for match in _SEMANTIC_PAGE_RE.finditer(read_text):
         text = match.group("text")
         if not text:
             continue
@@ -959,19 +1009,11 @@ def _ocr_pdf_page(
             str(source_path),
             str(page.number),
         ]
-        popen_kwargs: dict[str, object] = {
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.DEVNULL,
-            "text": True,
-            "cwd": str(Path(__file__).resolve().parents[1]),
-        }
-        if os.name == "posix":
-            popen_kwargs["start_new_session"] = True
-        process = subprocess.Popen(command, **popen_kwargs)
+        process = subprocess.Popen(command, **child_popen_kwargs())
         try:
             stdout, _stderr = process.communicate(timeout=max(float(timeout_seconds), 0.01))
         except subprocess.TimeoutExpired:
-            _terminate_process_group(process)
+            terminate_process_group(process)
             return _ocr_fallback(fallback, "ocr_timeout")
         if process.returncode != 0:
             return _ocr_fallback(fallback, "ocr_failed")
@@ -986,7 +1028,7 @@ def _ocr_pdf_page(
     except Exception:
         # The page keeps its native text, unread by OCR; no OCR child is left running.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
     finally:
         if temporary_source is not None:
             temporary_source.cleanup()
@@ -998,26 +1040,6 @@ def _ocr_pdf_page_in_process(source_path: str, page_number: int) -> dict[str, st
         page = document.load_page(page_number)
         text_page = page.get_textpage_ocr(language=PDF_OCR_LANGUAGE, full=True)
         return {"text": page.get_text("text", textpage=text_page) or ""}
-
-
-def _terminate_process_group(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    _kill_process_group(process)
-    try:
-        process.communicate(timeout=1)
-    except Exception:  # whatever stopped the wait, the child must not outlive us
-        process.kill()
-
-
-def _kill_process_group(process: subprocess.Popen) -> None:
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    else:
-        process.kill()
 
 
 def _ocr_fallback(fallback: str, method: str) -> tuple[str, str, float]:
@@ -1061,13 +1083,13 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
             try:
                 stdout, _stderr = process.communicate(timeout=IMAGE_OCR_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
+                terminate_process_group(process)
                 return ""
             return stdout if process.returncode == 0 else ""
     except Exception:
         # No OCR text for this image: the analysis goes on without it; no child is left running.
         if process is not None:
-            _terminate_process_group(process)
+            terminate_process_group(process)
         return ""
 
 
@@ -1114,12 +1136,14 @@ def _process_job(
     job: dict[str, Any],
     *,
     read_deadline: float | None = None,
+    requeue_not_before: datetime | None = None,
 ) -> None:
     """Un passage de la pièce prise par la RPC (``job`` : la ligne d'extraction entière).
 
     ``read_deadline`` borne la lecture de ce passage (``analyze_evidence_bytes``). Une lecture à poursuivre est rangée
     dans la ligne, qui revient en file (``_continue_reading_later``) : ni fait proposé, ni dossier remis en relecture,
-    tant que la lecture n'est pas terminée.
+    tant que la lecture n'est pas terminée. ``requeue_not_before`` : fin du lot, avant laquelle une pièce remise en
+    file (lecture à poursuivre ou échec) n'est pas reprise ; nul hors d'un lot.
     """
     extraction_id = str(job.get("id") or "")
     asset_id = str(job.get("asset_id") or "")
@@ -1149,6 +1173,7 @@ def _process_job(
             email_body=email_body,
             resume=resume,
             read_deadline=read_deadline,
+            final_attempt=attempts >= MAX_ATTEMPTS,
         )
         if analysis.status == READING_IN_PROGRESS:
             _continue_reading_later(
@@ -1159,7 +1184,8 @@ def _process_job(
                 analysis,
                 attempts=attempts,
                 locked_at=locked_at,
-                pages_read_before=_pages_read(resume.pages) if resume is not None else 0,
+                pages_examined_before=len(resume.pages) if resume is not None else 0,
+                not_before=requeue_not_before,
             )
             return
         # Consigne adressée à un modèle dans le texte lu, tous passages confondus : aucun fait (ni règle ni IA),
@@ -1249,6 +1275,7 @@ def _process_job(
             attempts,
             str(exc),
             locked_at=locked_at,
+            not_before=requeue_not_before,
         )
 
 
@@ -1363,28 +1390,31 @@ def _continue_reading_later(
     *,
     attempts: int,
     locked_at: str | None,
-    pages_read_before: int,
+    pages_examined_before: int,
+    not_before: datetime | None,
 ) -> None:
     """Range la progression d'une lecture à poursuivre dans la ligne, qui revient en file pour le passage suivant.
 
-    Écrit sous le bail du passage (``_processing_lease_params``), comme la fin d'une analyse. Un passage qui a lu au
-    moins une page de plus rend l'essai compté par la RPC à la prise (``attempts`` redescend de un) et revient
-    aussitôt en file : un long scan ne s'épuise pas en essais. Un passage sans page lue de plus garde son essai et
-    passe en échec avec le délai d'une erreur du worker : au bout de ``MAX_ATTEMPTS``, la lecture s'arrête en échec
-    visible au lieu de tourner en boucle. ``MAX_READING_PASSES`` borne de toute façon le nombre de passages.
+    Écrit sous le bail du passage (``_processing_lease_params``), comme la fin d'une analyse. Le progrès se compte en
+    pages examinées, lues ou déclarées non lues : un passage qui en a examiné au moins une rend l'essai compté par la
+    RPC à la prise (``attempts`` redescend de un) et revient en file ; ``MAX_READING_PASSES`` borne les passages. Un
+    passage sans page examinée (vrai blocage) garde son essai et passe en échec avec le délai d'une erreur du worker.
+    Au dernier passage (``_is_last_pass``), une lecture n'est encore à poursuivre que si aucune page n'a jamais été lue
+    (``_analyze_pdf``) : c'est aussi un échec, définitif au dernier essai.
     """
     if analysis.reading is None:
         raise RuntimeError("Evidence reading progress is missing")
     pages_read = int(analysis.reading["pages_read"])
     pages_total = int(analysis.reading["pages_total"])
+    last_pass = _is_last_pass(int(analysis.reading["passes"]), final_attempt=attempts >= MAX_ATTEMPTS)
     now = datetime.now(UTC)
     payload: dict[str, object] = {**_analysis_columns(analysis), "locked_at": None}
-    if pages_read > pages_read_before:
+    if len(analysis.pages) > pages_examined_before and not last_pass:
         payload.update(
             {
                 "status": "queued",
                 "attempts": attempts - 1,
-                "available_at": now.isoformat(),
+                "available_at": max(now, not_before or now).isoformat(),
                 "completed_at": None,
             }
         )
@@ -1394,15 +1424,17 @@ def _continue_reading_later(
                 "status": "failed",
                 "error_code": "OCR_NO_PROGRESS",
                 "error_message": (
-                    f"Aucune page lue de plus à ce passage : {pages_read} page(s) lue(s) sur {pages_total}."
+                    f"Aucune page lue au dernier passage permis : {pages_read} page(s) lue(s) sur {pages_total}."
+                    if last_pass
+                    else f"Aucune page examinée à ce passage : {pages_read} page(s) lue(s) sur {pages_total}."
                 ),
-                **retry_schedule(attempts, now),
+                **retry_schedule(attempts, now, not_before),
             }
         )
         if attempts >= MAX_ATTEMPTS:
             payload["summary"] = (
-                f"Lecture interrompue : {pages_read} page(s) lue(s) sur {pages_total}, aucune page de plus lue en "
-                f"{MAX_ATTEMPTS} essais. Aucune information proposée : vérification manuelle nécessaire."
+                f"Lecture interrompue : {pages_read} page(s) lue(s) sur {pages_total} en {MAX_ATTEMPTS} essais. "
+                "Aucune information proposée : vérification manuelle nécessaire."
             )
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
@@ -1416,17 +1448,19 @@ def _continue_reading_later(
 def _run_pdf_ocr_child(argv: list[str]) -> int:
     if len(argv) != 3 or argv[0] != "--ocr-pdf-page":
         return 2
+    limit_child_memory()
     try:
         payload = _ocr_pdf_page_in_process(argv[1], int(argv[2]))
     except Exception as exc:
         payload = {"error": str(exc)[:300]}
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    print(json.dumps(payload, ensure_ascii=True), flush=True)
     return 0
 
 
 def _run_pdf_text_child(argv: list[str]) -> int:
     if len(argv) != 4 or argv[0] != "--read-pdf-text":
         return 2
+    limit_child_memory()
     _read_pdf_native_text_in_process(argv[1], int(argv[2]), int(argv[3]))
     return 0
 

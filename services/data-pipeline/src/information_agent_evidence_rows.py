@@ -116,10 +116,16 @@ def fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: st
     return str(rows[0].get("status") or "")
 
 
-def retry_schedule(attempts: int, now: datetime) -> dict[str, object]:
-    """Échéance du prochain essai d'un passage en échec ; terminé (``completed_at``) au dernier essai."""
+def retry_schedule(attempts: int, now: datetime, not_before: datetime | None = None) -> dict[str, object]:
+    """Échéance du prochain essai d'un passage en échec ; terminé (``completed_at``) au dernier essai.
+
+    ``not_before`` : fin du lot en cours, avant laquelle la pièce n'est pas reprise (un passage par pièce et par lot).
+    """
+    available_at = now + timedelta(minutes=min(30, 2**attempts))
+    if not_before is not None:
+        available_at = max(available_at, not_before)
     return {
-        "available_at": (now + timedelta(minutes=min(30, 2**attempts))).isoformat(),
+        "available_at": available_at.isoformat(),
         "completed_at": now.isoformat() if attempts >= MAX_ATTEMPTS else None,
     }
 
@@ -133,19 +139,27 @@ def fail_job(
     message: str,
     *,
     locked_at: str | None = None,
+    not_before: datetime | None = None,
 ) -> None:
     now = datetime.now(UTC)
+    payload: dict[str, object] = {
+        "status": "failed",
+        "error_code": "WORKER_ERROR",
+        "error_message": message[:2000],
+        "locked_at": None,
+        **retry_schedule(attempts, now, not_before),
+    }
+    if attempts >= MAX_ATTEMPTS:
+        # Échec définitif : le résumé d'une lecture en cours (« … seront proposées ») ne doit pas rester.
+        payload["summary"] = (
+            f"Analyse interrompue : erreur du traitement à chacun des {MAX_ATTEMPTS} essais. "
+            "Aucune information proposée : vérification manuelle nécessaire."
+        )
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
         headers=rest_headers(key, prefer="return=minimal"),
         params=processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
-        json={
-            "status": "failed",
-            "error_code": "WORKER_ERROR",
-            "error_message": message[:2000],
-            "locked_at": None,
-            **retry_schedule(attempts, now),
-        },
+        json=payload,
     )
     response.raise_for_status()
 
