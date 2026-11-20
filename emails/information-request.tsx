@@ -25,7 +25,7 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v14";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v15";
 
 /** Aperçu de la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 export const INFORMATION_REQUEST_PREHEADER =
@@ -200,7 +200,7 @@ function depositHost(contributionUrl: string): string {
 
 const DEPOSIT_LINK_TEXT = "l’espace privé de ce dossier";
 const DEPOSIT_NOTE =
-  "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.";
+  "Ce lien est propre à ce dossier. Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.";
 
 /** « Vous pouvez aussi répondre dans <lien>, sur immojudis.com », lien et hôte déjà mis en forme. */
 function depositSentence(link: string, host: string): string {

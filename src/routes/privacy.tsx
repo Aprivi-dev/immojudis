@@ -299,13 +299,13 @@ export function PrivacyPage({
               de certains barreaux, annuaire des commissaires de justice) ou sur le site de son
               cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque
               message. Base juridique : intérêt légitime à publier des informations exactes sur les
-              ventes. Les messages ne contiennent aucune offre commerciale. À ce jour, chaque
-              message est relu et validé par un membre de l’équipe avant son envoi : un outil peut
-              préparer à l’avance des projets de messages, mais aucun ne part sans cette validation.
-              Si nous décidions d’envoyer certains messages automatiquement, cette page serait
-              modifiée avant, et ces messages le diraient. Ces adresses et nos échanges ne servent
-              jamais à proposer ou vendre la mise en avant payante d’Immojudis, ni au classement des
-              avocats, ni à la mise en relation.
+              ventes. Les messages ne contiennent aucune offre commerciale. Chaque demande
+              d’information est relue et validée par une personne de l’équipe avant son envoi ; un
+              outil peut préparer à l’avance des projets de messages. Lorsqu’un professionnel nous
+              répond, un accusé de réception unique lui est envoyé automatiquement : il ne contient
+              ni question ni offre et indique qu’il est automatique. Ces adresses et nos échanges ne
+              servent jamais à proposer ou vendre la mise en avant payante d’Immojudis, ni au
+              classement des avocats, ni à la mise en relation.
             </p>
             <p className="mt-3">
               Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont
@@ -321,24 +321,29 @@ export function PrivacyPage({
             <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
               de pièces, l’occupation, la mise à prix ou la date de la vente) peuvent compléter ou
-              corriger la fiche publique de la vente, après relecture. Ces valeurs sont affichées
-              sans votre nom. Pour une information venue de l’avocat poursuivant, la fiche indique
-              cette qualité et la date de son message, et rappelle de la vérifier dans le cahier des
-              conditions de vente : comme la fiche nomme par ailleurs l’organisateur de la vente,
-              l’avocat reste identifiable. Une photo ou une pièce transmise peut aussi être ajoutée
-              à la fiche, après la même relecture : une pièce transmise est publiée sous un libellé
-              neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à
-              part) ; son contenu est publié tel qu’il a été transmis. Vous pouvez à tout moment,
-              sans motif, demander le retrait de ce que vous nous avez transmis, en répondant à
-              notre message ou en écrivant à {legalValue(publisher.contactEmail)} : nous le retirons
-              alors de la fiche, au plus tard un mois après réception de votre demande. Ce qui est
-              affiché disparaît aussi avec la fiche, en principe 24 heures après la vente. Nos
-              journaux internes gardent la trace de la valeur publiée, de sa date de réception et de
-              la qualité de l’expéditeur (avocat poursuivant ou autre contact), sans votre nom ni
-              votre adresse, pour pouvoir répondre de son origine. Le journal des publications est
-              supprimé avec la fiche ; l’historique des modifications de la fiche est conservé 12
-              mois après chaque modification ; le journal des décisions et la file de relecture
-              n’ont pas encore de durée fixée : nous l’indiquerons ici dès qu’elle le sera.
+              corriger la fiche publique de la vente, après vérification. Cette vérification est
+              faite par une personne de l’équipe ou, pour certaines informations simples tirées du
+              texte de votre message (surface, surface du terrain, nombre de pièces), par un
+              contrôle automatisé utilisant l’IA, sans relecture humaine préalable. Une information
+              publiée ainsi le signale sur la fiche, et elle est corrigée ou retirée sur simple
+              demande. Ces valeurs sont affichées sans votre nom. Pour une information venue de
+              l’avocat poursuivant, la fiche indique cette qualité et la date de son message, et
+              rappelle de la vérifier dans le cahier des conditions de vente : comme la fiche nomme
+              par ailleurs l’organisateur de la vente, l’avocat reste identifiable. Une photo ou une
+              pièce transmise peut aussi être ajoutée à la fiche, après la même relecture : une
+              pièce transmise est publiée sous un libellé neutre (qualité de l’expéditeur et date de
+              réception ; le type de pièce est indiqué à part) ; son contenu est publié tel qu’il a
+              été transmis. Vous pouvez à tout moment, sans motif, demander le retrait de ce que
+              vous nous avez transmis, en répondant à notre message ou en écrivant à{" "}
+              {legalValue(publisher.contactEmail)} : nous le retirons alors de la fiche, au plus
+              tard un mois après réception de votre demande. Ce qui est affiché disparaît aussi avec
+              la fiche, en principe 24 heures après la vente. Nos journaux internes gardent la trace
+              de la valeur publiée, de sa date de réception et de la qualité de l’expéditeur (avocat
+              poursuivant ou autre contact), sans votre nom ni votre adresse, pour pouvoir répondre
+              de son origine. Le journal des publications est supprimé avec la fiche ; l’historique
+              des modifications de la fiche est conservé 12 mois après chaque modification ; le
+              journal des décisions et la file de relecture n’ont pas encore de durée fixée : nous
+              l’indiquerons ici dès qu’elle le sera.
             </p>
             <p className="mt-3">
               Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être
@@ -548,11 +553,14 @@ export function PrivacyPage({
               pas l’accès à une vente. Ils doivent être vérifiés à partir des sources affichées et
               des pièces officielles. Des outils automatiques, dont certains utilisent l’IA, peuvent
               détecter des informations manquantes et préparer un projet d’email, relu par un membre
-              de l’équipe. Tout envoi à un professionnel et toute intégration d’information sur une
-              fiche sont validés par un membre de l’équipe ; aucune demande n’est lancée directement
-              par un utilisateur Analyse. Le message précise qu’une IA aide à lire et classer les
-              réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche
-              ; il reste purement informatif et ne contient aucune sollicitation commerciale.
+              de l’équipe. Toute demande envoyée à un professionnel est validée par une personne de
+              l’équipe ; seul l’accusé de réception d’une réponse est automatique. L’intégration
+              d’une information sur une fiche est validée par une personne de l’équipe, sauf pour
+              les informations simples citées plus haut, vérifiées par un contrôle automatisé.
+              Aucune demande n’est lancée directement par un utilisateur Analyse. Le message précise
+              qu’une IA aide à lire et classer les réponses et que l’équipe vérifie les informations
+              avant toute mise à jour de la fiche ; il reste purement informatif et ne contient
+              aucune sollicitation commerciale.
             </p>
           </PrivacySection>
 

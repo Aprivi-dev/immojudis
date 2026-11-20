@@ -416,7 +416,7 @@ const INFORMATION_AGENT_NO_OFFER_STATEMENT = "Ce message ne contient aucune offr
  * et aucune relance.
  */
 const INFORMATION_AGENT_PURPOSE_STATEMENT =
-  "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.";
+  "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, un seul accusé de réception automatique vous est envoyé.";
 
 /**
  * Finalité et fréquence d'un message à un greffe (greffe de secours) : une fois par vente et, pour un même

@@ -276,7 +276,7 @@ describe("renderInformationRequestEmail", () => {
     expect(deposit).toBeGreaterThan(message.text.indexOf("Répondre est facultatif."));
     expect(deposit).toBeLessThan(message.text.indexOf("Bien cordialement"));
     expect(message.text).toContain(
-      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.com : https://immojudis.com/contribuer/mission#secret-token\nCe lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.com : https://immojudis.com/contribuer/mission#secret-token\nCe lien est propre à ce dossier. Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.",
     );
   });
 
@@ -290,7 +290,7 @@ describe("renderInformationRequestEmail", () => {
     });
     const flatHtml = message.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(flatHtml).toContain(
-      "Vous pouvez aussi répondre dans l’espace privé de ce dossier , sur immojudis.com. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier , sur immojudis.com. Ce lien est propre à ce dossier. Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.",
     );
     // Un lien de texte, pas un bouton (classe `ej-btn-a`) dans un encadré.
     expect(message.html).toMatch(
@@ -371,7 +371,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Pourquoi ce message ?",
     "Immojudis vous écrit à titre professionnel pour vérifier des informations sur la vente Maison — 33000 Bordeaux.",
     "Ce message ne contient aucune offre commerciale.",
-    "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.",
+    "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, un seul accusé de réception automatique vous est envoyé.",
     "Responsable de traitement : Immojudis SAS, 1 rue de la Paix, 33000 Bordeaux — dpo@immojudis.test.",
     "Vos données :",
     "votre nom, votre fonction, votre adresse professionnelle et nos échanges. Origine : Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/10/99/72/109972.html), consultée le 14/10/2026.",
@@ -402,7 +402,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.",
     // Le lien du HTML coupe la phrase (« dossier , sur ») une fois les balises retirées.
     "Vous pouvez aussi répondre dans l’espace privé de ce dossier",
-    "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    "Ce lien est propre à ce dossier. Les informations sont vérifiées avant toute publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé. Elles sont corrigées ou retirées sur simple demande.",
     "Ne communiquez que des informations déjà destinées à tout candidat acquéreur (celles du cahier des conditions de vente : mise à prix, garantie exigée pour enchérir, dates de visite, audience) : votre secret professionnel prime sur notre demande. Inutile de joindre des pièces. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
     "Merci par avance.",
     "Bien cordialement, L’équipe Immojudis",

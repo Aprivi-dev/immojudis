@@ -73,6 +73,16 @@ import { EMAIL_TEMPLATES } from "./registry";
  * de `LAUNCH_OFFER_END_NEEDS_ANALYSIS` diffèrent : l'estimation détaillée et les ventes comparables
  * reçoivent « sur toutes les ventes (compte gratuit : une vente débloquée) », et le rapport PDF
  * « (compte gratuit : le rapport de la vente débloquée) ». Gabarit toujours dormant.
+ *
+ * Mise à jour explicite du 20/11/2026 (textes de l'agent d'information validés par le propriétaire,
+ * gabarit `information_request_v15`) : les empreintes de agent_request et agent_court_registry ont
+ * changé, et SEULEMENT celles-là. Dans les deux rendus, la phrase « Rien n’est publié sans relecture
+ * par notre équipe. » de la ligne de dépôt devient « Les informations sont vérifiées avant toute
+ * publication, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé.
+ * Elles sont corrigées ou retirées sur simple demande. » (HTML et texte) ; agent_request reçoit en plus,
+ * à la fin de la base du pied (« … et sans relance. »), la phrase « Si vous répondez, un seul accusé de
+ * réception automatique vous est envoyé. » (HTML et texte). Aucune autre différence (comparaison des
+ * rendus avant et après). Textes gardés mot pour mot par emails/information-request.test.tsx.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -87,8 +97,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "e6a88a766ccfe06536ba0ec59c813269c29242793ec72b0eaadade6ca8ccf2c0",
-  agent_court_registry: "47a885986cee939c9a26a948b021a3cc5f5301a01d7f466a0ec21bcdc9dfc498",
+  agent_request: "96c66716c492b6505834989b2918b4643baf14523aa8a6a4079de71b5c95cfce",
+  agent_court_registry: "38889efe1db99509e6c5c9251df3c5c483a68fbaa8bb23a32d5496362077ed30",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

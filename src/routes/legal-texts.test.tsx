@@ -8,6 +8,7 @@ import {
   FREE_UNLOCK_EFFECTIVE_DATE,
   FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
+  PRIVACY_INFORMATION_AGENT_AUTOMATION_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
@@ -224,16 +225,21 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-15.1 (déblocage de vente, fin de l'essai) ; les 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne prévue, la même
-    // que celle des CGU 2026-11-15.1.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
+  it("la politique de confidentialité est en version 2026-11-20.1 (agent d'information : accusé de réception automatique, contrôle automatisé des informations simples) ; les 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-20.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(
+      PRIVACY_INFORMATION_AGENT_AUTOMATION_EFFECTIVE_DATE,
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0].applicableUntil).toBe(
+      FREE_UNLOCK_EFFECTIVE_DATE,
+    );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-14.1",
       "2026-11-01.3",
       "2026-11-01.2",
       "2026-11-01.1",
@@ -874,10 +880,17 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
-    // Le mode réel du pilote reste verrouillé : aucun message ne part sans validation, et la page
-    // annonce qu'elle changerait avant tout envoi automatique.
+    // Textes validés par le propriétaire le 20/11/2026 : chaque demande reste validée avant son
+    // envoi ; seul l'accusé de réception d'une réponse est automatique.
     expect(text).toContain(
-      "À ce jour, chaque message est relu et validé par un membre de l’équipe avant son envoi : un outil peut préparer à l’avance des projets de messages, mais aucun ne part sans cette validation. Si nous décidions d’envoyer certains messages automatiquement, cette page serait modifiée avant, et ces messages le diraient.",
+      "Chaque demande d’information est relue et validée par une personne de l’équipe avant son envoi ; un outil peut préparer à l’avance des projets de messages. Lorsqu’un professionnel nous répond, un accusé de réception unique lui est envoyé automatiquement : il ne contient ni question ni offre et indique qu’il est automatique.",
+    );
+    expect(text).not.toContain("Si nous décidions d’envoyer certains messages automatiquement");
+    expect(text).toContain(
+      "peuvent compléter ou corriger la fiche publique de la vente, après vérification. Cette vérification est faite par une personne de l’équipe ou, pour certaines informations simples tirées du texte de votre message (surface, surface du terrain, nombre de pièces), par un contrôle automatisé utilisant l’IA, sans relecture humaine préalable. Une information publiée ainsi le signale sur la fiche, et elle est corrigée ou retirée sur simple demande.",
+    );
+    expect(text).toContain(
+      "Toute demande envoyée à un professionnel est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique. L’intégration d’une information sur une fiche est validée par une personne de l’équipe, sauf pour les informations simples citées plus haut, vérifiées par un contrôle automatisé.",
     );
     expect(text).not.toContain("déclenchés puis validés");
     expect(text).not.toContain("administrateur");
