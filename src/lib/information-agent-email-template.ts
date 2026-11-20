@@ -333,7 +333,7 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Transparence sur l’IA",
     description:
-      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
   },
   {
     title: "Confidentialité et droits",

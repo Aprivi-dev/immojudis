@@ -878,7 +878,7 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque demande envoyée est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
     // Textes validés par le propriétaire le 20/11/2026 : chaque demande reste validée avant son
     // envoi ; seul l'accusé de réception d'une réponse est automatique.
@@ -1035,7 +1035,7 @@ describe("politique de confidentialité", () => {
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Le message précise qu’une IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche",
+      "Le message précise qu’une IA aide à lire et classer les réponses et que les informations sont vérifiées avant toute mise à jour de la fiche",
     );
   });
 

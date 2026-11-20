@@ -390,7 +390,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.",
     "Politique de confidentialité et vos droits",
     "Réclamation auprès de la CNIL",
-    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
     "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
   ];
 
