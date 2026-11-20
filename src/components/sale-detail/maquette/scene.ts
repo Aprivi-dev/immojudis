@@ -7,12 +7,11 @@ import {
   Color,
   CylinderGeometry,
   DirectionalLight,
-  EdgesGeometry,
+  DoubleSide,
   Fog,
   Group,
   HemisphereLight,
-  LineBasicMaterial,
-  LineSegments,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -33,10 +32,12 @@ import { box, createMaquetteMaterials, maquetteModel, trees } from "./models";
 /** Colonne de prix : sa hauteur est la part du montant dans le plus élevé des montants affichés. */
 export type MaquetteColumn =
   | { kind: "amount"; color: string; share: number }
-  /** Montant réservé : un volume voilé, sans hauteur parlante. */
+  /** Montant réservé : un voile qui s'efface vers le haut, sans hauteur à comparer. */
   | { kind: "locked" };
 
 export type MaquetteScene = {
+  /** Pose les colonnes de prix (aucune à la création), sans toucher au point de vue. */
+  setColumns(columns: readonly MaquetteColumn[]): void;
   setHour(hour: number): void;
   /** Tourne autour de la maquette, en radians (positif : vers la droite). */
   rotate(angle: number): void;
@@ -49,7 +50,8 @@ const FIELD_OF_VIEW = 32;
 /** Demi-largeur à garder visible à hauteur de la cible : le socle et un peu d'air. */
 const VISIBLE_HALF_WIDTH = 17.5;
 const DISTANCE = 50;
-const POLAR = { initial: 1.36, min: 0.7, max: 1.47 };
+/** Angle de la caméra avec la verticale : assez bas pour voir l'horizon et le ciel. */
+const POLAR = 1.36;
 const ZOOM = { min: 0.6, max: 1.35 };
 const SKY_RADIUS = 320;
 const COLUMN_MAX_HEIGHT = 9;
@@ -79,23 +81,28 @@ function priceColumns(columns: readonly MaquetteColumn[]): Group {
       );
       return;
     }
+    // Plus haut que toute colonne et transparent au sommet : aucune hauteur ne se lit, donc aucun
+    // montant ne se devine par comparaison.
+    const height = COLUMN_MAX_HEIGHT * 1.15;
+    const geometry = new BoxGeometry(size, height, size);
+    const positions = geometry.attributes.position;
+    const fade = new BufferAttribute(new Float32Array(positions.count * 4), 4);
+    for (let vertex = 0; vertex < positions.count; vertex += 1) {
+      fade.setXYZW(vertex, 1, 1, 1, positions.getY(vertex) < 0 ? 0.5 : 0);
+    }
+    geometry.setAttribute("color", fade);
     const veil = new Mesh(
-      new BoxGeometry(size, COLUMN_MAX_HEIGHT * 0.62, size),
+      geometry,
       new MeshStandardMaterial({
         color: 0x9aa6b8,
         roughness: 0.9,
+        vertexColors: true,
         transparent: true,
-        opacity: 0.3,
         depthWrite: false,
+        side: DoubleSide,
       }),
     );
-    veil.position.set(x, 0.1 + veil.geometry.parameters.height / 2, 0);
-    veil.add(
-      new LineSegments(
-        new EdgesGeometry(veil.geometry),
-        new LineBasicMaterial({ color: 0x6f7c90 }),
-      ),
-    );
+    veil.position.set(x, 0.1 + height / 2, 0);
     group.add(veil);
   });
   if (columns.length) {
@@ -106,18 +113,31 @@ function priceColumns(columns: readonly MaquetteColumn[]): Group {
   return group;
 }
 
+/** Libère les ressources graphiques de `root` et de ses descendants. */
+function release(root: Object3D) {
+  const used = new Set<{ dispose(): void }>();
+  root.traverse((object) => {
+    const { geometry, material } = object as Partial<Mesh>;
+    if (geometry) used.add(geometry);
+    for (const item of ([] as Material[]).concat(material ?? [])) used.add(item);
+    // Un maillage répété garde en plus le tampon des positions de ses exemplaires.
+    if (object instanceof InstancedMesh) used.add(object);
+  });
+  used.forEach((resource) => resource.dispose());
+}
+
 /**
  * Scène de la maquette : un volume schématique du type de bien sur un socle, des colonnes de prix à
  * sa droite, un ciel et un soleil qui suivent l'heure. Rendu à la demande : une image n'est calculée
  * que lorsqu'un geste, un bouton, l'heure ou la taille du cadre change quelque chose.
  *
- * Lève une erreur si le navigateur ne fournit pas de contexte WebGL.
+ * Lève une erreur si le navigateur ne fournit pas de contexte WebGL. `dispose` rend ce contexte au
+ * navigateur (qui n'en garde qu'une poignée par page) : le canevas ne sert qu'à une scène.
  */
 export function createMaquetteScene({
   canvas,
   kind,
   accent,
-  columns,
   hour,
   animated,
   onContextLost,
@@ -126,17 +146,12 @@ export function createMaquetteScene({
   kind: MaquetteKind;
   /** Couleur de ce qui est vendu (lot, immeuble, parcelle), en notation CSS. */
   accent: string;
-  columns: readonly MaquetteColumn[];
   hour: number;
   /** `false` : aucun mouvement de caméra animé (mouvement réduit demandé). */
   animated: boolean;
   onContextLost: () => void;
 }): MaquetteScene {
-  const renderer = new WebGLRenderer({
-    canvas,
-    antialias: true,
-    powerPreference: "high-performance",
-  });
+  const renderer = new WebGLRenderer({ canvas, antialias: true });
   renderer.toneMapping = NeutralToneMapping;
   renderer.toneMappingExposure = 1.1;
   renderer.shadowMap.enabled = true;
@@ -198,8 +213,7 @@ export function createMaquetteScene({
   // La caméra vise plus bas pour une maison ou un terrain que pour un immeuble.
   const modelHeight = new Box3().setFromObject(model).max.y;
   const target = new Vector3(0.5, clamp(modelHeight * 0.38, 2.4, 5.2), 0);
-  const prices = priceColumns(columns);
-  prices.position.set(7.6, 0, 2.4);
+  let prices = new Group();
 
   // Décor : des arbres de maquette semés autour du socle, toujours aux mêmes places.
   const random = seeded(20261120);
@@ -214,7 +228,7 @@ export function createMaquetteScene({
   scene.add(sky, ground, plinth, model, prices, grove);
 
   // Point de vue : la valeur affichée rejoint la valeur visée, sans à-coup.
-  const goal = { azimuth: 0.62, polar: POLAR.initial, zoom: 1 };
+  const goal = { azimuth: 0.62, zoom: 1 };
   const view = { ...goal, azimuth: animated ? goal.azimuth - 0.9 : goal.azimuth };
   let fitDistance = DISTANCE;
   let frame = 0;
@@ -227,7 +241,7 @@ export function createMaquetteScene({
     const ease = animated ? 1 - Math.exp(-elapsed * 6) : 1;
     lastFrame = now;
     let moving = false;
-    for (const key of ["azimuth", "polar", "zoom"] as const) {
+    for (const key of ["azimuth", "zoom"] as const) {
       const gap = goal[key] - view[key];
       if (Math.abs(gap) < 0.0005) view[key] = goal[key];
       else {
@@ -236,10 +250,10 @@ export function createMaquetteScene({
       }
     }
     const distance = fitDistance * view.zoom;
-    const flat = distance * Math.sin(view.polar);
+    const flat = distance * Math.sin(POLAR);
     camera.position.set(
       target.x + flat * Math.sin(view.azimuth),
-      target.y + distance * Math.cos(view.polar),
+      target.y + distance * Math.cos(POLAR),
       target.z + flat * Math.cos(view.azimuth),
     );
     camera.lookAt(target);
@@ -277,6 +291,16 @@ export function createMaquetteScene({
     invalidate();
   };
 
+  const setColumns = (columns: readonly MaquetteColumn[]) => {
+    scene.remove(prices);
+    release(prices);
+    prices = priceColumns(columns);
+    prices.position.set(7.6, 0, 2.4);
+    scene.add(prices);
+    renderer.shadowMap.needsUpdate = true;
+    invalidate();
+  };
+
   const resize = () => {
     const { clientWidth: width, clientHeight: height } = canvas;
     if (!width || !height) return;
@@ -294,7 +318,7 @@ export function createMaquetteScene({
   observer.observe(canvas);
 
   // Geste : glisser à l'horizontale fait tourner (le défilement vertical de la page reste libre au
-  // doigt) ; à la souris, glisser à la verticale incline ; deux doigts qui s'écartent rapprochent.
+  // doigt) ; deux doigts qui s'écartent rapprochent. Les boutons du composant font la même chose.
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch = 0;
   const onPointerDown = (event: PointerEvent) => {
@@ -309,13 +333,6 @@ export function createMaquetteScene({
     pointers.set(event.pointerId, next);
     if (pointers.size === 1) {
       goal.azimuth = view.azimuth -= (next.x - previous.x) * 0.008;
-      if (event.pointerType !== "touch") {
-        goal.polar = view.polar = clamp(
-          view.polar - (next.y - previous.y) * 0.005,
-          POLAR.min,
-          POLAR.max,
-        );
-      }
     } else if (pointers.size === 2) {
       const [first, second] = [...pointers.values()];
       const spread = Math.hypot(first.x - second.x, first.y - second.y);
@@ -344,6 +361,7 @@ export function createMaquetteScene({
   resize();
 
   return {
+    setColumns,
     setHour,
     rotate(angle) {
       goal.azimuth += angle;
@@ -362,16 +380,9 @@ export function createMaquetteScene({
       canvas.removeEventListener("pointerup", onPointerEnd);
       canvas.removeEventListener("pointercancel", onPointerEnd);
       canvas.removeEventListener("webglcontextlost", onLost);
-      const used = new Set<{ dispose(): void }>();
-      scene.traverse((object: Object3D) => {
-        const { geometry, material } = object as Partial<Mesh>;
-        if (geometry) used.add(geometry);
-        for (const item of ([] as Material[]).concat(material ?? [])) used.add(item);
-      });
-      used.forEach((resource) => resource.dispose());
-      // Le contexte WebGL n'est pas détruit de force : il appartient au canevas, qu'une nouvelle
-      // scène peut reprendre (changement de montants, double montage de React en développement).
+      release(scene);
       renderer.dispose();
+      renderer.forceContextLoss();
     },
   };
 }

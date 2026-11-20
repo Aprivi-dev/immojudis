@@ -462,11 +462,16 @@ describe("fiche : maquette 3D dans la galerie", () => {
 
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
   afterEach(() => {
     cleanup();
     vi.unstubAllEnvs();
     window.history.replaceState(null, "", "/");
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   });
 
   it("s'ajoute aux photos, sans jamais passer devant", () => {
@@ -484,6 +489,27 @@ describe("fiche : maquette 3D dans la galerie", () => {
     renderWithClient(<PropertyIdentity sale={sale(located)} maquettePrices={PRICES} />);
 
     expect(choices()).toEqual(["Photos", "Vue 360°", "Maquette 3D"]);
+  });
+
+  it("garde la vue 360° déjà chargée montée sous la maquette, sans la remonter au retour", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test");
+    const { container } = renderWithClient(
+      <PropertyIdentity sale={sale(located)} maquettePrices={PRICES} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Vue 360°" }));
+    const hero = container.querySelector("[data-orbit-status]");
+    expect(hero).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Maquette 3D" }));
+    await screen.findByTestId("sale-maquette");
+    // Démonter puis remonter la vue relancerait un chargement Mapbox facturé.
+    expect(container.querySelector("[data-orbit-status]")).toBe(hero);
+    expect(hero?.closest("[hidden]")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Vue 360°" }));
+    expect(screen.queryByTestId("sale-maquette")).toBeNull();
+    expect(container.querySelector("[data-orbit-status]")).toBe(hero);
+    expect(hero?.closest("[hidden]")).toBeNull();
   });
 
   it("le bouton « Maquette 3D » charge la maquette du type de bien et retire photos et crédit", async () => {

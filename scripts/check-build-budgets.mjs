@@ -18,7 +18,7 @@ const MAX_MAPBOX_CHUNK_BYTES = 1_895_000;
 // Le chunk de three.js (« Maquette 3D » de la galerie de la fiche) a son budget propre, comme celui de
 // mapbox-gl. Décision du propriétaire (20/11/2026) : exception accordée, à condition que la bibliothèque
 // ne soit téléchargée qu'au choix « Maquette 3D » (aucune page ne la charge d'office : les plafonds par
-// page, inchangés, le garantissent). Mesuré le 20/11/2026 : 588 752 octets pour three 0.187.0 et la scène
+// page, inchangés, le garantissent). Mesuré le 20/11/2026 : 589 225 octets pour three 0.187.0 et la scène
 // de la maquette, en un seul chunk ; plafond à 600 000. Le chunk est reconnu au crochet des outils de
 // développement que la bibliothèque déclare (voir `dedicatedBudget`) ; sans ce repère, il retombe sous le
 // budget des autres chunks et fait échouer le contrôle.
@@ -164,7 +164,7 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // 6 882 377 pour 6 808 188 après le lot 4, les plafonds par page tenus (+3 ko au plus par page) ;
 // Turbopack recopie le module de formatage dans environ 25 chunks. Décision du propriétaire
 // (13/11/2026) : relèvement à 6 890 000.
-// Maquette 3D du 20/11/2026 : total mesuré 7 465 375, dont 588 752 pour le chunk de three.js (chargé à la
+// Maquette 3D du 20/11/2026 : total mesuré 7 465 848, dont 589 225 pour le chunk de three.js (chargé à la
 // demande) ; le reste, 6 876 623, tient sous l'ancien plafond. Décision du propriétaire (20/11/2026) :
 // relèvement de 590 000, à 7 480 000.
 const MAX_TOTAL_CLIENT_JS_BYTES = 7_480_000;

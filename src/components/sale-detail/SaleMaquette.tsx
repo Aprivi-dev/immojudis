@@ -28,7 +28,7 @@ export type SaleMaquettePrices = {
 const KIND_TEXT: Record<MaquetteKind, { scene: string; sold: string }> = {
   apartment: {
     scene: "un immeuble de ville, dont un lot est cerné d’or",
-    sold: "L’appartement vendu (étage et position non représentés)",
+    sold: "L’appartement vendu (étage et emplacement fictifs)",
   },
   building: { scene: "un immeuble de ville, cerné d’or", sold: "L’immeuble vendu" },
   house: {
@@ -75,6 +75,10 @@ function priceRows(prices: SaleMaquettePrices): PriceRow[] {
   return rows;
 }
 
+/** Valeur d'un jeton de couleur du site (`--gold`…), lue là où la maquette s'affiche. */
+const tokenColor = (element: Element, token: string) =>
+  getComputedStyle(element).getPropertyValue(token).trim();
+
 const CONTROL_CLASS =
   "grid h-10 w-10 place-items-center rounded-md border border-white/70 bg-white/95 text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
@@ -94,7 +98,7 @@ export function SaleMaquette({
   /** Cadre du visuel : mêmes hauteurs que la photo principale et la vue 360°. */
   frameClassName?: string;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<MaquetteScene | null>(null);
   const hourRef = useRef<number>(MAQUETTE_HOURS.initial);
   const [hour, setHour] = useState<number>(MAQUETTE_HOURS.initial);
@@ -105,33 +109,34 @@ export function SaleMaquette({
 
   const rows = priceRows(prices);
   const highest = Math.max(...rows.map((row) => row.amount ?? 0));
-  // En texte : la scène n'est reconstruite que si le contenu des colonnes change vraiment.
+  // En texte : les colonnes ne sont redessinées que si leur contenu change vraiment.
   const columnsKey = JSON.stringify(
     rows.map((row) => ({ key: row.key, share: row.amount == null ? null : row.amount / highest })),
   );
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (failed || !canvas) return;
-    const style = getComputedStyle(canvas);
-    const color = (token: string) => style.getPropertyValue(token).trim();
-    const columns = JSON.parse(columnsKey) as Array<{ key: PriceRow["key"]; share: number | null }>;
+    const host = hostRef.current;
+    if (failed || !host) return;
+    // Un canevas par scène : son contexte WebGL est rendu au navigateur avec elle.
+    const canvas = document.createElement("canvas");
+    canvas.className = "block h-full w-full cursor-grab touch-pan-y active:cursor-grabbing";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", `Maquette 3D schématique : ${KIND_TEXT[kind].scene}.`);
+    host.append(canvas);
     let scene: MaquetteScene;
     try {
       scene = createMaquetteScene({
         canvas,
         kind,
-        accent: color(SOLD_COLOR.token),
-        columns: columns.map(({ key, share }) =>
-          share == null
-            ? { kind: "locked" }
-            : { kind: "amount", color: color(COLUMN_COLORS[key].token), share },
-        ),
+        accent: tokenColor(host, SOLD_COLOR.token),
         hour: hourRef.current,
         animated: !reducedMotion,
         onContextLost: () => setFailed(true),
       });
-    } catch {
+    } catch (error) {
+      // Le plus souvent : pas de WebGL. L'erreur reste lisible dans la console si c'est autre chose.
+      console.error("[maquette] scène 3D impossible à créer", error);
+      canvas.remove();
       setFailed(true);
       return;
     }
@@ -139,7 +144,22 @@ export function SaleMaquette({
     return () => {
       sceneRef.current = null;
       scene.dispose();
+      canvas.remove();
     };
+  }, [failed, kind, reducedMotion]);
+
+  // Après la création de la scène, et à chaque montant qui arrive : le point de vue est conservé.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const columns = JSON.parse(columnsKey) as Array<{ key: PriceRow["key"]; share: number | null }>;
+    sceneRef.current?.setColumns(
+      columns.map(({ key, share }) =>
+        share == null
+          ? { kind: "locked" }
+          : { kind: "amount", color: tokenColor(host, COLUMN_COLORS[key].token), share },
+      ),
+    );
   }, [columnsKey, failed, kind, reducedMotion]);
 
   const changeHour = (value: number) => {
@@ -163,12 +183,7 @@ export function SaleMaquette({
           </p>
         ) : (
           <>
-            <canvas
-              ref={canvasRef}
-              role="img"
-              aria-label={`Maquette 3D schématique : ${KIND_TEXT[kind].scene}.`}
-              className="block h-full w-full cursor-grab touch-pan-y active:cursor-grabbing"
-            />
+            <div ref={hostRef} className="h-full w-full" />
             <div className="absolute bottom-3 right-3 flex gap-1.5 md:bottom-4 md:right-4">
               <button
                 type="button"
@@ -258,10 +273,11 @@ export function SaleMaquette({
 
       <p className="mt-2 text-xs leading-relaxed text-ink-soft">
         Maquette schématique : elle illustre le type de bien, pas le bien lui-même. Formes,
-        dimensions, environnement et lumière sont indicatifs
+        dimensions, orientation et environnement sont génériques ; la lumière ne dit rien de
+        l’exposition réelle du bien.
         {rows.some((row) => row.amount != null)
-          ? " ; la hauteur des colonnes suit les montants."
-          : "."}
+          ? " La hauteur des colonnes suit les montants."
+          : null}
       </p>
     </div>
   );
