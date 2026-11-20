@@ -330,20 +330,20 @@ export function PrivacyPage({
               l’avocat poursuivant, la fiche indique cette qualité et la date de son message, et
               rappelle de la vérifier dans le cahier des conditions de vente : comme la fiche nomme
               par ailleurs l’organisateur de la vente, l’avocat reste identifiable. Une photo ou une
-              pièce transmise peut aussi être ajoutée à la fiche, après la même relecture : une
-              pièce transmise est publiée sous un libellé neutre (qualité de l’expéditeur et date de
-              réception ; le type de pièce est indiqué à part) ; son contenu est publié tel qu’il a
-              été transmis. Vous pouvez à tout moment, sans motif, demander le retrait de ce que
-              vous nous avez transmis, en répondant à notre message ou en écrivant à{" "}
-              {legalValue(publisher.contactEmail)} : nous le retirons alors de la fiche, au plus
-              tard un mois après réception de votre demande. Ce qui est affiché disparaît aussi avec
-              la fiche, en principe 24 heures après la vente. Nos journaux internes gardent la trace
-              de la valeur publiée, de sa date de réception et de la qualité de l’expéditeur (avocat
-              poursuivant ou autre contact), sans votre nom ni votre adresse, pour pouvoir répondre
-              de son origine. Le journal des publications est supprimé avec la fiche ; l’historique
-              des modifications de la fiche est conservé 12 mois après chaque modification ; le
-              journal des décisions et la file de relecture n’ont pas encore de durée fixée : nous
-              l’indiquerons ici dès qu’elle le sera.
+              pièce transmise peut aussi être ajoutée à la fiche, après relecture par une personne
+              de l’équipe : une pièce transmise est publiée sous un libellé neutre (qualité de
+              l’expéditeur et date de réception ; le type de pièce est indiqué à part) ; son contenu
+              est publié tel qu’il a été transmis. Vous pouvez à tout moment, sans motif, demander
+              le retrait de ce que vous nous avez transmis, en répondant à notre message ou en
+              écrivant à {legalValue(publisher.contactEmail)} : nous le retirons alors de la fiche,
+              au plus tard un mois après réception de votre demande. Ce qui est affiché disparaît
+              aussi avec la fiche, en principe 24 heures après la vente. Nos journaux internes
+              gardent la trace de la valeur publiée, de sa date de réception et de la qualité de
+              l’expéditeur (avocat poursuivant ou autre contact), sans votre nom ni votre adresse,
+              pour pouvoir répondre de son origine. Le journal des publications est supprimé avec la
+              fiche ; l’historique des modifications de la fiche est conservé 12 mois après chaque
+              modification ; le journal des décisions et la file de relecture n’ont pas encore de
+              durée fixée : nous l’indiquerons ici dès qu’elle le sera.
             </p>
             <p className="mt-3">
               Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être
@@ -558,7 +558,7 @@ export function PrivacyPage({
               d’une information sur une fiche est validée par une personne de l’équipe, sauf pour
               les informations simples citées plus haut, vérifiées par un contrôle automatisé.
               Aucune demande n’est lancée directement par un utilisateur Analyse. Le message précise
-              qu’une IA aide à lire et classer les réponses et que l’équipe vérifie les informations
+              qu’une IA aide à lire et classer les réponses et que les informations sont vérifiées
               avant toute mise à jour de la fiche ; il reste purement informatif et ne contient
               aucune sollicitation commerciale.
             </p>

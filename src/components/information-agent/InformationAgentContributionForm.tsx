@@ -559,10 +559,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   </p>
                   {opposed ? null : (
                     <p className="mt-2 text-sm leading-relaxed">
-                      Notre équipe la relit avant toute mise à jour de la fiche : rien n’est publié
-                      sans cette relecture. Pour corriger ou retirer un envoi, répondez simplement à
-                      l’email reçu (référence {session.caseReference}). Vous pouvez fermer cette
-                      page.
+                      Les informations sont vérifiées avant toute mise à jour de la fiche, par notre
+                      équipe ou, pour certaines informations simples, par un contrôle automatisé.
+                      Pour corriger ou retirer un envoi, répondez simplement à l’email reçu
+                      (référence {session.caseReference}). Vous pouvez fermer cette page.
                     </p>
                   )}
                 </div>

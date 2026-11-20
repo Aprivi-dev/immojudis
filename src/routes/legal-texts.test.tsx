@@ -963,6 +963,10 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Ces valeurs sont affichées sans votre nom.");
     // La promesse « sans nom » ne couvre plus les pièces, dont seul le libellé est neutre.
     expect(text).not.toContain("sans le nom de la personne qui les a transmises");
+    // Photos et pièces : toujours relues par une personne, jamais par le contrôle automatisé.
+    expect(text).toContain(
+      "Une photo ou une pièce transmise peut aussi être ajoutée à la fiche, après relecture par une personne de l’équipe :",
+    );
     expect(text).toContain(
       "une pièce transmise est publiée sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part) ; son contenu est publié tel qu’il a été transmis.",
     );

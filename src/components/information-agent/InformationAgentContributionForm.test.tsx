@@ -149,8 +149,13 @@ describe("InformationAgentContributionForm", () => {
     });
     expect(mocks.storageFrom).not.toHaveBeenCalled();
     // Après une réponse volontaire : ce qui va se passer, puis l'invitation au dépôt direct.
-    // C12 : « relecture », ce que l'équipe fait réellement.
-    expect(screen.getByText(/rien n’est publié sans cette relecture/)).toBeTruthy();
+    // Ce qui se passe réellement : vérification par l'équipe ou, pour les informations simples,
+    // par un contrôle automatisé.
+    expect(
+      screen.getByText(
+        /Les informations sont vérifiées avant toute mise à jour de la fiche, par notre équipe ou, pour certaines informations simples, par un contrôle automatisé\./,
+      ),
+    ).toBeTruthy();
     const invitation = screen.getByRole("link", { name: "Créer un accès professionnel" });
     expect(invitation.getAttribute("href")).toBe("/login?mode=professional&redirect=%2Fpublish");
   });
