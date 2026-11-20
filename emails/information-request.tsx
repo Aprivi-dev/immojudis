@@ -106,7 +106,7 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
 
 /** Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. */
 const NOTICE_LINES = [
-  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
+  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire, classer et contrôler les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
   "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
 ] as const;
 

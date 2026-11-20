@@ -878,7 +878,7 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque demande envoyée est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque demande envoyée est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique ; certaines informations simples d’une réponse peuvent être publiées après un contrôle automatisé (voir plus bas). Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
     // Textes validés par le propriétaire le 20/11/2026 : chaque demande reste validée avant son
     // envoi ; seul l'accusé de réception d'une réponse est automatique.
@@ -887,8 +887,12 @@ describe("politique de confidentialité", () => {
     );
     expect(text).not.toContain("Si nous décidions d’envoyer certains messages automatiquement");
     expect(text).toContain(
-      "peuvent compléter ou corriger la fiche publique de la vente, après vérification. Cette vérification est faite par une personne de l’équipe ou, pour certaines informations simples tirées du texte de votre message (surface, surface du terrain, nombre de pièces), par un contrôle automatisé utilisant l’IA, sans relecture humaine préalable. Une information publiée ainsi le signale sur la fiche, et elle est corrigée ou retirée sur simple demande.",
+      "peuvent compléter ou corriger la fiche publique de la vente, après vérification. Cette vérification est faite par une personne de l’équipe ou, pour certaines informations simples tirées du texte de votre message (surface, surface du terrain, nombre de pièces), par un contrôle automatisé utilisant l’IA, sans relecture humaine préalable. Une information publiée ainsi le signale sur la fiche, et elle est corrigée ou retirée sur simple demande. Ce contrôle automatisé n’est pas encore en service à la date de cette version ; il ne s’appliquera qu’aux réponses à des demandes dont le message l’annonce. Les réponses aux autres demandes restent vérifiées par une personne de l’équipe.",
     );
+    expect(text).toContain(
+      "et à l’intermédiaire professionnel contacté par Immojudis (demande validée par un membre de l’équipe ; accusé de réception automatique de sa réponse). Dans ce dernier cas,",
+    );
+    expect(text).not.toContain("après validation par un membre de l’équipe");
     expect(text).toContain(
       "Toute demande envoyée à un professionnel est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique. L’intégration d’une information sur une fiche est validée par une personne de l’équipe, sauf pour les informations simples citées plus haut, vérifiées par un contrôle automatisé.",
     );
@@ -1039,7 +1043,7 @@ describe("politique de confidentialité", () => {
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Le message précise qu’une IA aide à lire et classer les réponses et que les informations sont vérifiées avant toute mise à jour de la fiche",
+      "Le message précise qu’une IA aide à lire, classer et contrôler les réponses et que les informations sont vérifiées avant toute mise à jour de la fiche",
     );
   });
 

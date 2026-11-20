@@ -69,7 +69,7 @@ describe("renderInformationRequestEmail", () => {
     expect(
       message.text.match(/https:\/\/immojudis\.com\/contribuer\/mission#secret-token/g),
     ).toHaveLength(1);
-    expect(message.text).toContain("Une IA aide à lire et classer les réponses");
+    expect(message.text).toContain("Une IA aide à lire, classer et contrôler les réponses");
     expect(message.html).not.toContain("DEMANDE DOCUMENTAIRE SÉCURISÉE");
     expect(message.html).not.toContain("?subject=Re");
   });
@@ -371,14 +371,14 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Pourquoi ce message ?",
     "Immojudis vous écrit à titre professionnel pour vérifier des informations sur la vente Maison — 33000 Bordeaux.",
     "Ce message ne contient aucune offre commerciale.",
-    "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, un seul accusé de réception automatique vous est envoyé.",
+    "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance. Si vous répondez, vous recevrez au plus un accusé de réception automatique.",
     "Responsable de traitement : Immojudis SAS, 1 rue de la Paix, 33000 Bordeaux — dpo@immojudis.test.",
     "Vos données :",
     "votre nom, votre fonction, votre adresse professionnelle et nos échanges. Origine : Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/10/99/72/109972.html), consultée le 14/10/2026.",
     "Recherche de l’adresse :",
     "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
     "Destinataires :",
-    "l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi et réception des courriels), GitHub (exécution des traitements automatisés) et Replicate (États-Unis), outil d’IA qui aide à lire et classer les réponses. Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à dpo@immojudis.test ; aucun compte n’est nécessaire.",
+    "l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi et réception des courriels), GitHub (exécution des traitements automatisés) et Replicate (États-Unis), outil d’IA qui aide à lire, classer et contrôler les réponses. Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à dpo@immojudis.test ; aucun compte n’est nécessaire.",
     "Conservation :",
     "12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.",
     "Vos droits :",
@@ -390,7 +390,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.",
     "Politique de confidentialité et vos droits",
     "Réclamation auprès de la CNIL",
-    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
+    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire, classer et contrôler les réponses ; les informations reçues sont vérifiées avant toute mise à jour de la fiche.",
     "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
   ];
 

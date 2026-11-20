@@ -152,7 +152,7 @@ const processingRows = [
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
     data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis",
     basis:
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque demande envoyée est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais chaque demande envoyée est validée par une personne de l’équipe ; seul l’accusé de réception d’une réponse est automatique ; certaines informations simples d’une réponse peuvent être publiées après un contrôle automatisé (voir plus bas). Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
       "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
   },
@@ -326,12 +326,15 @@ export function PrivacyPage({
               texte de votre message (surface, surface du terrain, nombre de pièces), par un
               contrôle automatisé utilisant l’IA, sans relecture humaine préalable. Une information
               publiée ainsi le signale sur la fiche, et elle est corrigée ou retirée sur simple
-              demande. Ces valeurs sont affichées sans votre nom. Pour une information venue de
-              l’avocat poursuivant, la fiche indique cette qualité et la date de son message, et
-              rappelle de la vérifier dans le cahier des conditions de vente : comme la fiche nomme
-              par ailleurs l’organisateur de la vente, l’avocat reste identifiable. Une photo ou une
-              pièce transmise peut aussi être ajoutée à la fiche, après relecture par une personne
-              de l’équipe : une pièce transmise est publiée sous un libellé neutre (qualité de
+              demande. Ce contrôle automatisé n’est pas encore en service à la date de cette version
+              ; il ne s’appliquera qu’aux réponses à des demandes dont le message l’annonce. Les
+              réponses aux autres demandes restent vérifiées par une personne de l’équipe. Ces
+              valeurs sont affichées sans votre nom. Pour une information venue de l’avocat
+              poursuivant, la fiche indique cette qualité et la date de son message, et rappelle de
+              la vérifier dans le cahier des conditions de vente : comme la fiche nomme par ailleurs
+              l’organisateur de la vente, l’avocat reste identifiable. Une photo ou une pièce
+              transmise peut aussi être ajoutée à la fiche, après relecture par une personne de
+              l’équipe : une pièce transmise est publiée sous un libellé neutre (qualité de
               l’expéditeur et date de réception ; le type de pièce est indiqué à part) ; son contenu
               est publié tel qu’il a été transmis. Vous pouvez à tout moment, sans motif, demander
               le retrait de ce que vous nous avez transmis, en répondant à notre message ou en
@@ -439,12 +442,12 @@ export function PrivacyPage({
               des professionnels contactés (Replicate, États-Unis), le service de rapport d’erreurs
               lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse ni contenu de
               requête), aux avocats référencés uniquement lorsqu’une mise en relation est demandée
-              et à l’intermédiaire professionnel contacté par Immojudis après validation par un
-              membre de l’équipe. Dans ce dernier cas, seules les informations nécessaires à
-              l’enrichissement du dossier et au suivi de la réponse sont transmises. Nos
-              sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les
-              exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données
-              d’usage).
+              et à l’intermédiaire professionnel contacté par Immojudis (demande validée par un
+              membre de l’équipe ; accusé de réception automatique de sa réponse). Dans ce dernier
+              cas, seules les informations nécessaires à l’enrichissement du dossier et au suivi de
+              la réponse sont transmises. Nos sous-traitants agissent sur nos instructions, dans le
+              cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Replicate, et Resend
+              pour ses propres données d’usage).
             </p>
             <p className="mt-3">
               Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les
@@ -558,9 +561,9 @@ export function PrivacyPage({
               d’une information sur une fiche est validée par une personne de l’équipe, sauf pour
               les informations simples citées plus haut, vérifiées par un contrôle automatisé.
               Aucune demande n’est lancée directement par un utilisateur Analyse. Le message précise
-              qu’une IA aide à lire et classer les réponses et que les informations sont vérifiées
-              avant toute mise à jour de la fiche ; il reste purement informatif et ne contient
-              aucune sollicitation commerciale.
+              qu’une IA aide à lire, classer et contrôler les réponses et que les informations sont
+              vérifiées avant toute mise à jour de la fiche ; il reste purement informatif et ne
+              contient aucune sollicitation commerciale.
             </p>
           </PrivacySection>
 
