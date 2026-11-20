@@ -930,6 +930,13 @@ function SaleDetailWorkspace({
                 aiReviewProjections={resolvedAiReviewProjections}
                 aiReviewStatus={aiReviewStatus}
                 publicDemo={publicDemo}
+                maquettePrices={{
+                  startLabel: startLabelText,
+                  startingPrice,
+                  ceilingLabel: ceilingSummaryLabel,
+                  ceiling: priceSummaryCeiling,
+                  value: comparedValue,
+                }}
               />
             </div>
             <div className={layoutStyles.side}>

@@ -13,11 +13,13 @@ import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { PhotoCredit, PhotoCredits } from "@/components/PhotoCredit";
 import { SaleVisual } from "@/components/SaleVisual";
 import { AerialOrbitHero } from "@/components/sale-detail/AerialOrbitHero";
+import type { SaleMaquettePrices } from "@/components/sale-detail/SaleMaquette";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { propertyTypeLabel } from "@/lib/format";
 import { getMapboxAccessToken } from "@/lib/mapbox";
 import { hasReliableBuildingPosition } from "@/lib/building-position";
 import { aerialOrbitTarget } from "@/lib/sale-aerial-orbit";
+import { maquetteKind } from "@/lib/sale-maquette";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForCard, photoMirrorForDetail } from "@/lib/photo-mirror";
@@ -35,17 +37,41 @@ const PhotoCarouselDialog = dynamic(
   { ssr: false },
 );
 
+// Three.js ne fait partie d'aucune page : il n'est téléchargé qu'au choix « Maquette 3D ».
+const SaleMaquette = dynamic(
+  () => import("@/components/sale-detail/SaleMaquette").then((module) => module.SaleMaquette),
+  {
+    ssr: false,
+    loading: () => (
+      <p
+        role="status"
+        className={`${listingStyles.photo} ${listingStyles.orbitMain} grid place-items-center text-sm text-ink-soft`}
+      >
+        Chargement de la maquette…
+      </p>
+    ),
+  },
+);
+
+const VIEW_LABELS = { photos: "Photos", vue: "Vue 360°", maquette: "Maquette 3D" } as const;
+type View = keyof typeof VIEW_LABELS;
+const isView = (value: string | null): value is View =>
+  value != null && Object.hasOwn(VIEW_LABELS, value);
+
 export function PropertyIdentity({
   sale,
   aiReviewProjections = null,
   aiReviewStatus = "ready",
   publicDemo = false,
+  maquettePrices,
 }: {
   sale: AuctionSale;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
   /** Page d'exemple : la vue aérienne reste une image fixe, la carte animée n'est jamais chargée. */
   publicDemo?: boolean;
+  /** Montants de la tête de fiche, pour la « Maquette 3D ». Absents : la maquette n'est pas proposée. */
+  maquettePrices?: SaleMaquettePrices;
 }) {
   const images = propertyImages(sale.media);
   // La source d'une photo est l'hôte de son URL d'ORIGINE (jamais celui de notre copie).
@@ -60,13 +86,14 @@ export function PropertyIdentity({
     thumbnailIndexes.length > 0 && thumbnailIndexes.every((index) => failedThumbnails.has(index));
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
-  // Visuel choisi par le visiteur ou imposé par `?visuel=photos|vue` (lu après l'affichage : la page
-  // reste statique) ; `clicked` : le choix vient d'un geste, qui vaut demande de chargement de la carte.
-  const [chosen, setChosen] = useState<"photos" | "vue" | null>(null);
+  // Visuel choisi par le visiteur ou imposé par `?visuel=photos|vue|maquette` (lu après l'affichage :
+  // la page reste statique) ; `clicked` : le choix vient d'un geste, qui vaut demande de chargement de
+  // la carte.
+  const [chosen, setChosen] = useState<View | null>(null);
   const [clicked, setClicked] = useState(false);
   useEffect(() => {
     const forced = new URLSearchParams(window.location.search).get("visuel");
-    if (forced === "photos" || forced === "vue") setChosen(forced);
+    if (isView(forced)) setChosen(forced);
   }, []);
   const propertyTypeReview = getAiReviewFieldResult(
     aiReviewProjections,
@@ -85,14 +112,23 @@ export function PropertyIdentity({
   const eligibleOrbit = mapLocation && getMapboxAccessToken() ? aerialOrbitTarget(sale) : null;
   // Avec deux photos ou plus, les photos viennent d'abord ; avec une seule photo (ou aucune), la vue
   // aérienne passe devant quand la position est sûre, et la photo devient une vignette sous le visuel.
-  // Le sélecteur « Photos / Vue 360° » laisse le choix quand les deux existent.
-  const selectable = Boolean(eligibleOrbit && images[0]);
-  const view = !eligibleOrbit
-    ? "photos"
-    : !images[0]
-      ? "vue"
-      : (chosen ?? (images.length > 1 ? "photos" : "vue"));
+  // La maquette 3D illustre le type de bien : jamais proposée seule ni affichée d'office, elle
+  // s'ajoute aux visuels de l'annonce quand le type est lisible.
+  const maquette =
+    maquettePrices && !propertyTypeReview.blocked && (eligibleOrbit || images[0])
+      ? maquetteKind(sale.property_type)
+      : null;
+  const available: Record<View, boolean> = {
+    photos: Boolean(images[0]),
+    vue: Boolean(eligibleOrbit),
+    maquette: Boolean(maquette),
+  };
+  // Le sélecteur « Photos / Vue 360° / Maquette 3D » laisse le choix dès que deux visuels existent.
+  const choices = (Object.keys(VIEW_LABELS) as View[]).filter((choice) => available[choice]);
+  const view: View =
+    chosen && available[chosen] ? chosen : !eligibleOrbit || images.length > 1 ? "photos" : "vue";
   const orbitTarget = view === "vue" ? eligibleOrbit : null;
+  const maquetteShown = view === "maquette";
   // Une fois la vue 360° affichée, elle reste montée (masquée quand « Photos » est choisi) : la
   // démonter puis la remonter relancerait un chargement Mapbox facturé à chaque bascule. Tant
   // qu'elle n'a jamais été affichée, elle n'est pas montée et rien n'est chargé.
@@ -136,13 +172,13 @@ export function PropertyIdentity({
 
   return (
     <div className={listingStyles.heroGallery}>
-      {selectable ? (
+      {choices.length > 1 ? (
         <div
           role="group"
           aria-label="Visuel du bien"
           className="mb-2 inline-flex rounded-lg border border-brand-navy/15 bg-white p-0.5"
         >
-          {(["photos", "vue"] as const).map((choice) => (
+          {choices.map((choice) => (
             <button
               key={choice}
               type="button"
@@ -155,12 +191,20 @@ export function PropertyIdentity({
                 view === choice ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-surface"
               }`}
             >
-              {choice === "photos" ? "Photos" : "Vue 360°"}
+              {VIEW_LABELS[choice]}
             </button>
           ))}
         </div>
       ) : null}
-      <div className={listingStyles.photo}>
+      {maquette && maquettePrices && maquetteShown ? (
+        <SaleMaquette
+          kind={maquette}
+          prices={maquettePrices}
+          frameClassName={`${listingStyles.photo} ${listingStyles.orbitMain}`}
+        />
+      ) : null}
+      {/* Masqué sous la maquette, jamais démonté : la vue 360° déjà chargée y reste en place. */}
+      <div className={listingStyles.photo} hidden={maquetteShown}>
         {eligibleOrbit && mapLocation && (orbitTarget || orbitSeen) ? (
           // `contents` ne s'applique qu'affichée : la classe l'emporterait sur l'attribut `hidden`.
           <div hidden={!orbitTarget} className={orbitTarget ? "contents" : undefined}>
@@ -342,7 +386,7 @@ export function PropertyIdentity({
             linkClassName="hover:text-foreground"
           />
         </div>
-      ) : images[0] && !orbitTarget ? (
+      ) : images[0] && !orbitTarget && !maquetteShown ? (
         // Sur grand écran la photo affichée est la principale ; sur mobile, celle du carrousel.
         <PhotoCredit
           credit={creditOf(mobilePhotoIndex)}
@@ -351,7 +395,7 @@ export function PropertyIdentity({
         />
       ) : null}
 
-      {!orbitTarget && images.length > 1 ? (
+      {!orbitTarget && !maquetteShown && images.length > 1 ? (
         <div className="mt-2 hidden grid-cols-3 gap-2 md:grid">
           {images.slice(1, 4).map((image, index) => (
             <button

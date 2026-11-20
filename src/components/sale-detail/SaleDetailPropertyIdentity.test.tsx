@@ -4,7 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
+import type { SaleMaquettePrices } from "./SaleMaquette";
 import { PropertyIdentity } from "./SaleDetailPropertyIdentity";
+
+// Le moteur 3D n'existe pas dans jsdom : la maquette est remplacée par un repère de son type.
+vi.mock("@/components/sale-detail/SaleMaquette", () => ({
+  SaleMaquette: ({ kind }: { kind: string }) => (
+    <div data-testid="sale-maquette" data-kind={kind} />
+  ),
+}));
 
 const BASE = "https://ci.supabase.co/storage/v1/object/public/sale-photos/";
 const LICITOR_PHOTO = "https://www.licitor.com/photos/maison-1.jpg";
@@ -428,5 +436,111 @@ describe("fiche : vue aérienne 360° et photos", () => {
 
     expect(aerial()).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Lancer la vue 360°/ })).toBeNull();
+  });
+});
+
+describe("fiche : maquette 3D dans la galerie", () => {
+  const PRICES: SaleMaquettePrices = {
+    startLabel: "Mise à prix",
+    startingPrice: 95_000,
+    ceilingLabel: "Enchère plafond (simulation)",
+    ceiling: null,
+    value: null,
+  };
+  const located = {
+    latitude: 44.8378,
+    longitude: -0.5792,
+    address: "12 rue Sainte-Catherine",
+    postal_code: "33000",
+    quality_flags: [],
+    location_precision: "address",
+  } as Partial<AuctionSale>;
+  const choices = () =>
+    within(screen.getByRole("group", { name: "Visuel du bien" }))
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("s'ajoute aux photos, sans jamais passer devant", () => {
+    render(<PropertyIdentity sale={sale()} maquettePrices={PRICES} />);
+
+    expect(choices()).toEqual(["Photos", "Maquette 3D"]);
+    expect(screen.getByRole("button", { name: "Photos" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.queryByTestId("sale-maquette")).toBeNull();
+  });
+
+  it("s'ajoute aux photos et à la vue 360° quand les deux existent", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test");
+    renderWithClient(<PropertyIdentity sale={sale(located)} maquettePrices={PRICES} />);
+
+    expect(choices()).toEqual(["Photos", "Vue 360°", "Maquette 3D"]);
+  });
+
+  it("le bouton « Maquette 3D » charge la maquette du type de bien et retire photos et crédit", async () => {
+    render(<PropertyIdentity sale={sale()} maquettePrices={PRICES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Maquette 3D" }));
+
+    const maquette = await screen.findByTestId("sale-maquette");
+    expect(maquette.getAttribute("data-kind")).toBe("house");
+    expect(screen.getByRole("button", { name: "Maquette 3D" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: "Ouvrir la galerie photos" })).toBeNull();
+    expect(screen.queryByTestId("photo-credit")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Photos" }));
+    expect(screen.queryByTestId("sale-maquette")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ouvrir la galerie photos" })).toBeTruthy();
+    expect(screen.getByTestId("photo-credit")).toBeTruthy();
+  });
+
+  it("`?visuel=maquette` ouvre la fiche sur la maquette", async () => {
+    window.history.replaceState(null, "", "/?visuel=maquette");
+    render(<PropertyIdentity sale={sale()} maquettePrices={PRICES} />);
+
+    expect((await screen.findByTestId("sale-maquette")).getAttribute("data-kind")).toBe("house");
+  });
+
+  it("n'est pas proposée sans les montants de la fiche, ni pour un type sans volume", () => {
+    const { unmount } = render(<PropertyIdentity sale={sale()} />);
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    unmount();
+
+    render(<PropertyIdentity sale={sale({ property_type: "parking" })} maquettePrices={PRICES} />);
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+  });
+
+  it("n'est proposée ni seule (aucun visuel de l'annonce) ni quand le type de bien est à confirmer", () => {
+    const { unmount } = render(
+      <PropertyIdentity sale={sale({ media: [] })} maquettePrices={PRICES} />,
+    );
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    unmount();
+
+    window.history.replaceState(null, "", "/?visuel=maquette");
+    render(
+      <PropertyIdentity
+        sale={sale()}
+        maquettePrices={PRICES}
+        aiReviewStatus="loading"
+        aiReviewProjections={[
+          { field_key: "property.property_type", is_publishable: false } as never,
+        ]}
+      />,
+    );
+    expect(screen.getAllByRole("img", { name: /Type de bien à confirmer/ })).not.toEqual([]);
+    expect(screen.queryByRole("group", { name: "Visuel du bien" })).toBeNull();
+    expect(screen.queryByTestId("sale-maquette")).toBeNull();
   });
 });

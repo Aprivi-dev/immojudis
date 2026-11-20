@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Visuel de tête de la fiche (photos, vue aérienne 360°) : sur ordinateur il garde une hauteur
- * bornée (490 à 560 px) au lieu de suivre la colonne de droite, et la carte Mapbox suit son
- * conteneur après un changement d'onglet ou un redimensionnement de la fenêtre.
+ * Visuel de tête de la fiche (photos, vue aérienne 360°, maquette 3D) : sur ordinateur il garde une
+ * hauteur bornée (490 à 560 px) au lieu de suivre la colonne de droite, la carte Mapbox suit son
+ * conteneur après un changement d'onglet ou un redimensionnement de la fenêtre, et la maquette 3D
+ * n'est téléchargée qu'à la demande.
  *
  * Page d'exemple : elle ne dépend d'aucun compte ni d'aucun appel Supabase. Elle est en
  * démonstration publique : la vue aérienne y reste une image fixe, sans canevas Mapbox ; les
@@ -142,14 +143,15 @@ test.describe("visuel de tête de la fiche", () => {
   }) => {
     await openExample(page, 1280);
     const tabs = page.getByRole("group", { name: "Visuel du bien" });
+    const photosTab = tabs.getByRole("button", { name: "Photos" });
+    const orbitTab = tabs.getByRole("button", { name: "Vue 360°" });
     // Sans jeton Mapbox (build de test par défaut), la fiche n'a pas d'onglet « Vue 360° ».
+    await expect(photosTab).toBeVisible();
     test.skip(
-      (await tabs.count()) === 0,
+      (await orbitTab.count()) === 0,
       "Pas de vue aérienne : aucun jeton Mapbox dans ce build.",
     );
 
-    const photosTab = tabs.getByRole("button", { name: "Photos" });
-    const orbitTab = tabs.getByRole("button", { name: "Vue 360°" });
     const orbit = mainVisual(page, "vue");
 
     await orbitTab.click();
@@ -177,5 +179,39 @@ test.describe("visuel de tête de la fiche", () => {
       await expect(orbit).toBeVisible();
       await expect.poll(() => orbitFollowsFrame(page)).toBe(true);
     }
+  });
+
+  test("la maquette 3D ne se charge qu'au clic, à la hauteur de la photo, et rend la main aux photos", async ({
+    page,
+  }) => {
+    // Three.js signale sa présence sur `window` dès qu'il est chargé.
+    const threeLoaded = () => page.evaluate(() => "__THREE__" in window);
+    const blocked: string[] = [];
+    page.on("console", (message) => {
+      if (/Content Security Policy/i.test(message.text())) blocked.push(message.text());
+    });
+    await openExample(page, 1280);
+    const tabs = page.getByRole("group", { name: "Visuel du bien" });
+    const before = await heightOf(page, "photos");
+    await expect(page.getByTestId("sale-maquette")).toHaveCount(0);
+    expect(await threeLoaded()).toBe(false);
+
+    await tabs.getByRole("button", { name: "Maquette 3D" }).click();
+
+    const frame = page.getByTestId("sale-maquette-frame");
+    // Le canevas, ou le message de repli quand le navigateur de test n'a pas de WebGL.
+    await expect(frame.locator("canvas").or(frame.getByRole("status"))).toBeVisible();
+    // La bibliothèque 3D arrive avec ce clic, pas avec la page.
+    expect(await threeLoaded()).toBe(true);
+    expect(Math.round((await frame.boundingBox())?.height ?? 0)).toBe(before);
+    await expect(page.getByRole("slider", { name: "Lumière" })).toBeVisible();
+    await expect(
+      page.getByText(/elle illustre le type de bien, pas le bien lui-même/),
+    ).toBeVisible();
+    expect(blocked).toEqual([]);
+
+    await tabs.getByRole("button", { name: "Photos" }).click();
+    await expect(page.getByTestId("sale-maquette")).toHaveCount(0);
+    expect(await heightOf(page, "photos")).toBe(before);
   });
 });
