@@ -276,7 +276,7 @@ def test_pdf_ocr_timeout_kills_the_isolated_process(monkeypatch, tmp_path) -> No
     process = HangingProcess()
     killed_groups: list[tuple[int, int]] = []
     monkeypatch.setattr(evidence.subprocess, "Popen", lambda *args, **kwargs: process)
-    monkeypatch.setattr(evidence.os, "killpg", lambda pid, signum: killed_groups.append((pid, signum)))
+    monkeypatch.setattr(evidence_child.os, "killpg", lambda pid, signum: killed_groups.append((pid, signum)))
 
     text, method, confidence = evidence._ocr_pdf_page(
         SimpleNamespace(number=0),
@@ -286,7 +286,7 @@ def test_pdf_ocr_timeout_kills_the_isolated_process(monkeypatch, tmp_path) -> No
     )
 
     assert (text, method, confidence) == ("Fallback text", "ocr_timeout", 0.45)
-    assert killed_groups == [(1234, evidence.signal.SIGKILL)]
+    assert killed_groups == [(1234, evidence_child.signal.SIGKILL)]
 
 
 def test_image_ocr_timeout_kills_the_isolated_process(monkeypatch) -> None:
@@ -312,10 +312,10 @@ def test_image_ocr_timeout_kills_the_isolated_process(monkeypatch) -> None:
     killed_groups: list[tuple[int, int]] = []
     monkeypatch.setattr(evidence.shutil, "which", lambda name: "/usr/bin/tesseract")
     monkeypatch.setattr(evidence.subprocess, "Popen", lambda *args, **kwargs: process)
-    monkeypatch.setattr(evidence.os, "killpg", lambda pid, signum: killed_groups.append((pid, signum)))
+    monkeypatch.setattr(evidence_child.os, "killpg", lambda pid, signum: killed_groups.append((pid, signum)))
 
     assert evidence._ocr_image_bytes(b"fixture", "image/jpeg") == ""
-    assert killed_groups == [(5678, evidence.signal.SIGKILL)]
+    assert killed_groups == [(5678, evidence_child.signal.SIGKILL)]
 
 
 def test_attachment_ocr_is_independent_from_catalogue_pdf_ocr_setting(monkeypatch) -> None:
