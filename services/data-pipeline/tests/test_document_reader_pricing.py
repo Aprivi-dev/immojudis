@@ -56,7 +56,7 @@ def test_python_and_sql_price_grids_agree() -> None:
             output_price,
             source,
         )
-    for model, limit in pipeline_usage.TOKEN_PRICE_INPUT_LIMITS.items():
+    for model, (limit, _high_input, _high_output) in pipeline_usage.TOKEN_PRICE_INPUT_LIMITS.items():
         assert grid[model]["input_limit"] == limit
 
 
@@ -80,3 +80,30 @@ def test_haiku_is_never_reserved_above_its_lower_price_tier(monkeypatch: pytest.
     )
     with pytest.raises(pipeline_usage.LLMModelNotPriced, match="100000"):
         pipeline_usage.reserve_prediction("claude-haiku-5-5", input_token_ceiling=100_001, output_token_ceiling=1)
+
+
+def test_a_haiku_request_over_100000_input_tokens_costs_the_higher_tier_on_the_whole_request() -> None:
+    cost, _ = pipeline_usage._prediction_cost(
+        "claude-haiku-5-5", {}, {"input_token_count": 100_001, "output_token_count": 1_000}
+    )
+    # 100 001 × 0.50 + 1 000 × 2.50 par million.
+    assert cost == Decimal("0.0525005")
+    assert pipeline_usage.ledger_token_counts("claude-haiku-5-5", 100_001, 1_000) == (500_005, 5_000)
+    assert pipeline_usage.ledger_token_counts("claude-haiku-5-5", 100_000, 1_000) == (100_000, 1_000)
+    assert pipeline_usage.ledger_token_counts("claude-sonnet-5-5", 200_000, 1_000) == (200_000, 1_000)
+
+
+def test_a_ceiling_already_in_the_ledger_is_not_counted_twice(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pipeline_usage, "load_settings", lambda: {"supabase_db_url": "postgresql://local.invalid/db"})
+    monkeypatch.setenv("LLM_DAILY_BUDGET_EUR", "1")
+    # Le registre porte déjà 0,90 € de Sonnet, plafond de cette requête (0,21 €) compris.
+    monkeypatch.setattr(
+        pipeline_usage,
+        "_spend_groups_via_postgres",
+        lambda db_url, since: [("claude-sonnet-5-5", 1, 0, 250_000, 40_000)],
+    )
+    pipeline_usage.enforce_daily_budget(
+        "claude-sonnet-5-5", input_token_ceiling=25_000, output_token_ceiling=16_000, ceiling_in_ledger=True
+    )
+    with pytest.raises(pipeline_usage.PipelineBudgetExhausted):
+        pipeline_usage.enforce_daily_budget("claude-sonnet-5-5", input_token_ceiling=25_000, output_token_ceiling=16_000)

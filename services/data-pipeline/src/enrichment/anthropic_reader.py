@@ -4,14 +4,20 @@ Un appel = un document PDF (bloc ``document`` en base64, placé avant le texte) 
 schéma (``output_config.format``). Règles d'appel des modèles Claude 5.5 : réflexion adaptative, ``effort``
 explicite ; ni ``temperature``, ``top_p``, ``top_k``, ``budget_tokens`` ni préremplissage (erreur 400).
 
-Budget : le même que les appels Replicate. Le nombre exact de jetons d'entrée est compté avant l'envoi
-(``count_tokens``, gratuit) ; l'appel est réservé dans ``llm_usage_events`` (plafond horaire par fournisseur, clé de
-requête) puis dans le budget quotidien (``reserve_prediction`` : grille TOKEN_PRICES, plafond d'entrée du palier de
-prix), avec ``max_tokens`` comme plafond de sortie : la réflexion, facturée en sortie, y tient. Après la réponse, le
-registre note les jetons facturés.
+Budget, le même que celui des appels Replicate, réservé avant l'envoi et dans cet ordre :
 
-Aucune nouvelle tentative : le client du SDK est créé avec ``max_retries=0`` et un appel à l'issue incertaine est noté
-« ambiguous », comme pour Replicate, pour ne jamais payer deux fois la même lecture.
+1. plafond d'entrée calculé, sans appel (:func:`input_token_ceiling` : pages × ``TOKENS_PER_PAGE`` plus le texte) ;
+   le PDF n'est envoyé qu'une fois ;
+2. réservation de l'appel dans ``llm_usage_events`` (plafond horaire par fournisseur, clé de requête) ;
+3. écriture des plafonds d'entrée et de sortie sur cette réservation (``record_llm_request_ceiling``) : l'appel en
+   vol compte pour son coût maximal dans le budget quotidien partagé, y compris hors exécution autonome ;
+4. contrôle du budget quotidien et du palier de prix (``reserve_prediction``), qui voit les plafonds de tous les
+   appels en vol : des appels concurrents ne peuvent pas passer ensemble au-dessus du budget ;
+5. après la réponse, les jetons facturés remplacent les plafonds (la réflexion est facturée en sortie et tient dans
+   ``max_tokens``, le plafond de sortie réservé).
+
+Aucune nouvelle tentative : le client du SDK est créé avec ``max_retries=0`` et un appel à l'issue incertaine reste
+noté « ambiguous » avec ses plafonds, comme pour Replicate, pour ne jamais payer deux fois la même lecture.
 """
 
 from __future__ import annotations
@@ -31,10 +37,18 @@ from src.enrichment.llm_client import _response_request_status, parse_json_respo
 from src.llm_requests import (
     LLMRequestTransportAmbiguous,
     record_llm_request,
+    record_llm_request_ceiling,
     release_llm_request,
     reserve_llm_request,
 )
-from src.pipeline_usage import _prediction_cost, record_prediction, reserve_prediction
+from src.pipeline_usage import (
+    _prediction_cost,
+    _request_cost_eur,
+    ledger_token_counts,
+    record_prediction,
+    require_lower_price_tier,
+    reserve_prediction,
+)
 
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
@@ -46,6 +60,10 @@ EFFORT = "medium"
 DEFAULT_MAX_TOKENS = 16_000
 DEFAULT_MAX_CALLS_PER_HOUR = 60
 DEFAULT_TIMEOUT_SECONDS = 300.0
+# Jetons d'entrée d'une page de PDF : texte (1 500 à 3 000 selon la documentation) et image (1 568 au plus).
+TOKENS_PER_PAGE = 4_600
+# Ce que l'API ajoute au prompt (consigne du schéma de sortie, gabarit de message).
+REQUEST_OVERHEAD_TOKENS = 2_048
 
 
 class DocumentReaderRefused(RuntimeError):
@@ -53,6 +71,19 @@ class DocumentReaderRefused(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("Anthropic model refused to read the document")
+
+
+class ReaderOutputCut(ValueError):
+    """La réponse s'est arrêtée avant sa fin (``max_tokens``…) : jamais lue en partie."""
+
+
+class ReaderInvalidJSON(ValueError):
+    """La réponse n'est pas l'objet JSON attendu."""
+
+
+# Reconnu par le blocage de 24 heures d'une même clé de requête (migration 20260920144219) : une lecture qui a
+# rendu un JSON invalide n'est pas repayée à l'identique.
+INVALID_JSON_MESSAGE = "Invalid JSON from LLM (Anthropic document reader)"
 
 
 @dataclass(frozen=True)
@@ -63,6 +94,26 @@ class ReaderCall:
     input_tokens: int | None
     output_tokens: int | None
     cost_usd: Decimal | None
+
+
+def pdf_page_count(pdf: bytes) -> int:
+    import pymupdf
+
+    with pymupdf.open(stream=pdf, filetype="pdf") as document:
+        return int(document.page_count)
+
+
+def input_token_ceiling(pdf_pages: int, system_prompt: str, user_prompt: str, schema: Mapping[str, Any]) -> int:
+    """Plafond prudent des jetons d'entrée d'un appel (un octet UTF-8 compte au plus un jeton)."""
+    text_bytes = sum(
+        len(part.encode("utf-8")) for part in (system_prompt, user_prompt, json.dumps(schema, ensure_ascii=False))
+    )
+    return pdf_pages * TOKENS_PER_PAGE + text_bytes + REQUEST_OVERHEAD_TOKENS
+
+
+def call_ceiling_cost(model: str, input_tokens: int, max_tokens: int) -> Decimal:
+    """Coût maximal d'un appel, en euros (un dollar compté pour un euro)."""
+    return _request_cost_eur(model, input_tokens, max_tokens)
 
 
 def _usage_counts(message: Any) -> tuple[int, int] | None:
@@ -96,6 +147,7 @@ class AnthropicDocumentReader:
         }
         return {
             "model": self.model,
+            "max_tokens": self.max_tokens,
             "system": system_prompt,
             "messages": [{"role": "user", "content": [document, {"type": "text", "text": user_prompt}]}],
             "thinking": {"type": "adaptive"},
@@ -126,10 +178,12 @@ class AnthropicDocumentReader:
         output_chars: int = 0,
         error: str | None = None,
     ) -> None:
+        """Une réponse reçue : ses jetons facturés remplacent les plafonds de la réservation."""
         counts = _usage_counts(message)
         metrics = {"input_token_count": counts[0], "output_token_count": counts[1]} if counts else {}
         cost, _ = _prediction_cost(self.model, {}, dict(metrics)) if counts else (None, None)
         self.usage.append(ReaderCall(status == "succeeded", *(counts or (None, None)), cost))
+        ledger = ledger_token_counts(self.model, *counts) if counts else (None, None)
         message_id = getattr(message, "id", None)
         record_llm_request(
             reservation_id,
@@ -139,8 +193,8 @@ class AnthropicDocumentReader:
             prompt_chars=prompt_chars,
             system_prompt_chars=system_chars,
             output_chars=output_chars,
-            input_tokens_estimate=counts[0] if counts else None,
-            output_tokens_estimate=counts[1] if counts else None,
+            input_tokens_estimate=ledger[0],
+            output_tokens_estimate=ledger[1],
             error_message=error,
         )
         if message_id:
@@ -150,16 +204,32 @@ class AnthropicDocumentReader:
                 model=self.model,
             )
 
+    def _record_unanswered(self, reservation_id: str | None, status: str, error: str, prompt_chars: int, system_chars: int) -> None:
+        """Aucune réponse lue. « ambiguous » garde les plafonds (l'appel a pu être facturé) ; un refus net de l'API
+        (429, erreur 4xx) n'est pas facturé : ses jetons passent à zéro."""
+        tokens = None if status == "ambiguous" else 0
+        self.usage.append(ReaderCall(False, None, None, None))
+        record_llm_request(
+            reservation_id,
+            status=status,
+            prompt_chars=prompt_chars,
+            system_prompt_chars=system_chars,
+            input_tokens_estimate=tokens,
+            output_tokens_estimate=tokens,
+            error_message=error,
+        )
+
     def generate_json_with_pdf(
         self, system_prompt: str, user_prompt: str, pdf: bytes, schema: Mapping[str, Any]
     ) -> dict[str, Any]:
         """Un appel : le PDF, le message et le schéma de réponse. Rend l'objet JSON de la réponse."""
         if not pdf or len(pdf) > MAX_PDF_BYTES:
             raise ValueError("The PDF sent to the reader must be between 1 byte and 32 MB")
+        input_ceiling = input_token_ceiling(pdf_page_count(pdf), system_prompt, user_prompt, schema)
+        # Au-delà du palier bas, rien n'est réservé ni envoyé.
+        require_lower_price_tier(self.model, input_ceiling)
         request = self._request(system_prompt, user_prompt, pdf, schema)
         prompt_chars, system_chars = len(user_prompt), len(system_prompt)
-        # Nombre exact de jetons d'entrée (PDF compris) : c'est le plafond d'entrée réservé.
-        input_tokens = int(self.client.messages.count_tokens(**request).input_tokens)
         reservation_id = reserve_llm_request(
             provider=PROVIDER,
             model=self.model,
@@ -169,32 +239,32 @@ class AnthropicDocumentReader:
             request_key=self._request_key(request, pdf),
         )
         try:
+            record_llm_request_ceiling(reservation_id, input_tokens=input_ceiling, output_tokens=self.max_tokens)
             reservation = reserve_prediction(
-                self.model, input_token_ceiling=input_tokens, output_token_ceiling=self.max_tokens
+                self.model,
+                input_token_ceiling=input_ceiling,
+                output_token_ceiling=self.max_tokens,
+                ceiling_in_ledger=True,
             )
         except Exception as exc:
-            release_llm_request(reservation_id, reason=f"autonomous reservation rejected: {exc}")
+            release_llm_request(reservation_id, reason=f"budget reservation rejected: {type(exc).__name__}")
             raise
         try:
-            message = self.client.messages.create(max_tokens=self.max_tokens, **request)
+            message = self.client.messages.create(**request)
         except anthropic.APIConnectionError as exc:
             # Délai ou connexion coupée : la requête a pu être reçue et facturée.
-            record_llm_request(reservation_id, status="ambiguous", prompt_chars=prompt_chars,
-                               system_prompt_chars=system_chars, error_message=type(exc).__name__)
-            self.usage.append(ReaderCall(False, None, None, None))
+            self._record_unanswered(reservation_id, "ambiguous", type(exc).__name__, prompt_chars, system_chars)
             raise LLMRequestTransportAmbiguous(
                 "Anthropic request outcome is ambiguous; provider reconciliation is required"
             ) from exc
         except anthropic.RateLimitError as exc:
-            record_llm_request(reservation_id, status="rate_limited", prompt_chars=prompt_chars,
-                               system_prompt_chars=system_chars, error_message=type(exc).__name__)
-            self.usage.append(ReaderCall(False, None, None, None))
+            self._record_unanswered(reservation_id, "rate_limited", type(exc).__name__, prompt_chars, system_chars)
             raise
         except anthropic.APIStatusError as exc:
-            record_llm_request(reservation_id, status=_response_request_status(exc.status_code),
-                               prompt_chars=prompt_chars, system_prompt_chars=system_chars,
-                               error_message=f"{type(exc).__name__} {exc.status_code}")
-            self.usage.append(ReaderCall(False, None, None, None))
+            status = _response_request_status(exc.status_code)
+            self._record_unanswered(
+                reservation_id, status, f"{type(exc).__name__} {exc.status_code}", prompt_chars, system_chars
+            )
             raise
         stop_reason = getattr(message, "stop_reason", None)
         if stop_reason == "refusal":
@@ -208,13 +278,13 @@ class AnthropicDocumentReader:
             # « max_tokens » : réponse coupée (la réflexion a pu tout prendre) ; jamais lue en partie.
             self._record(reservation_id, reservation, message, status="failed", prompt_chars=prompt_chars,
                          system_chars=system_chars, output_chars=len(text), error=f"stop_reason {stop_reason}")
-            raise ValueError(f"Anthropic response stopped on {stop_reason}")
+            raise ReaderOutputCut(f"Anthropic response stopped on {stop_reason}")
         try:
             parsed = parse_json_response(text)
-        except ValueError:
+        except ValueError as exc:
             self._record(reservation_id, reservation, message, status="failed", prompt_chars=prompt_chars,
-                         system_chars=system_chars, output_chars=len(text), error="invalid JSON")
-            raise
+                         system_chars=system_chars, output_chars=len(text), error=INVALID_JSON_MESSAGE)
+            raise ReaderInvalidJSON(INVALID_JSON_MESSAGE) from exc
         self._record(reservation_id, reservation, message, status="succeeded", prompt_chars=prompt_chars,
                      system_chars=system_chars, output_chars=len(text))
         return parsed

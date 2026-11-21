@@ -423,6 +423,35 @@ def finalize_llm_request(
     )
 
 
+def record_llm_request_ceiling(reservation_id: str | None, *, input_tokens: int, output_tokens: int) -> None:
+    """Note sur la réservation ses plafonds de jetons, comptés dans le budget quotidien jusqu'aux jetons réels.
+
+    Sans cela, un appel en vol ne compte que ``UNMETERED_REQUEST_COST_EUR`` et des appels concurrents peuvent passer
+    ensemble au-dessus du budget partagé. À l'inverse de :func:`record_llm_request`, un échec bloque l'appel : le
+    plafond doit être écrit avant le contrôle du budget (``pipeline_usage.enforce_daily_budget``).
+    """
+
+    if not reservation_id:
+        return
+    settings = load_settings()
+    mode = _storage_mode(settings)
+    if mode is None:
+        return
+    payload = _finalize_payload(
+        str(reservation_id),
+        status="reserved",
+        input_tokens_estimate=max(0, int(input_tokens)),
+        output_tokens_estimate=max(0, int(output_tokens)),
+    )
+    try:
+        if mode == "postgres":
+            _finalize_via_postgres(settings, payload)
+        else:
+            _finalize_via_rest(settings, payload)
+    except Exception as exc:
+        raise LLMRequestStorageUnavailable("Could not record the reserved token ceilings") from exc
+
+
 def release_llm_request(reservation_id: str | None, *, reason: str) -> None:
     """Release a reservation when another local guard prevents the POST."""
 

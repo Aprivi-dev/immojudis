@@ -84,16 +84,40 @@ def test_page_without_any_field_word_is_never_sent() -> None:
     assert vision.page_field_score("Le bien est libre de toute occupation ; contenance 12 a 50 ca") >= 2
 
 
-def test_pdf_extract_keeps_only_the_selected_pages_in_order_and_skips_missing_ones() -> None:
+def test_excerpt_keeps_only_the_selected_pages_in_order_and_skips_missing_ones() -> None:
     pdfs = {1: _pdf("D1 page un", "D1 page deux", "D1 page trois"), 2: _pdf("D2 page un"), 3: b"not a pdf"}
     wanted = [PageRef(1, 3), PageRef(2, 1), PageRef(1, 9), PageRef(3, 1), PageRef(4, 1)]
 
-    extract, kept = vision.pdf_extract(pdfs, wanted)
+    excerpt, kept = vision.build_document_excerpt(pdfs, wanted)
 
     assert kept == [PageRef(1, 3), PageRef(2, 1)]
-    with pymupdf.open(stream=extract, filetype="pdf") as document:
+    with pymupdf.open(stream=excerpt, filetype="pdf") as document:
         assert [page.get_text().strip() for page in document] == ["D1 page trois", "D2 page un"]
-    assert vision.pdf_extract(pdfs, [PageRef(4, 1)]) == (b"", [])
+    assert vision.build_document_excerpt(pdfs, [PageRef(4, 1)]) == (b"", [])
+
+
+def test_excerpt_carries_no_annotation_link_or_metadata() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Surface habitable de 50 m2")
+    page.insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(72, 60, 300, 80), "uri": "https://example.test/x"})
+    page.add_text_annot((72, 200), "Note du clerc : M. Dupont")
+    page.add_highlight_annot(pymupdf.Rect(72, 60, 300, 80))
+    document.set_metadata({"author": "Maître Dupont", "title": "Cahier vente Dupont", "subject": "saisie"})
+    document.set_xml_metadata("<x:xmpmeta xmlns:x='adobe:ns:meta/'>Dupont</x:xmpmeta>")
+    source = document.tobytes()
+    document.close()
+
+    excerpt, kept = vision.build_document_excerpt({1: source}, [PageRef(1, 1)])
+
+    assert kept == [PageRef(1, 1)]
+    assert b"Dupont" not in excerpt and b"example.test" not in excerpt
+    with pymupdf.open(stream=excerpt, filetype="pdf") as result:
+        page = result[0]
+        assert list(page.annots()) == [] and page.get_links() == []
+        assert not any(value for value in result.metadata.values() if value and value not in {"PDF 1.7", "PDF 1.4"})
+        assert result.get_xml_metadata() == ""
+        assert "Surface habitable de 50 m2" in page.get_text()
 
 
 # --- Prompt -------------------------------------------------------------------------------------------------------
@@ -233,6 +257,54 @@ def test_only_future_visit_dates_are_kept() -> None:
     assert vision.primary_verdicts(past, _context(text), today=TODAY)[vision.VISITS].status == UNKNOWN_STATUS
 
 
+@pytest.mark.parametrize(
+    ("page_text", "quote", "dates", "accepted"),
+    [
+        # The day must be bound to its month: « le 10 décembre à 3 h » does not say 3 December.
+        ("Visite le 10 décembre à 3 h. ", "Visite le 10 décembre à 3 h", ["2026-12-03"], False),
+        ("Visite le 10 décembre à 3 h. ", "Visite le 10 décembre à 3 h", ["2026-12-10"], True),
+        # A written year must be the year of the date: an elapsed year does not prove a future date.
+        ("Visite le 3 décembre 2025. ", "Visite le 3 décembre 2025", ["2026-12-03"], False),
+        ("Visite le 03/12/2025 à 10h. ", "Visite le 03/12/2025 à 10h", ["2026-12-03"], False),
+        ("Visite le 03/12/26 à 10h. ", "Visite le 03/12/26 à 10h", ["2026-12-03"], True),
+        # Without a year, only the next occurrence after today.
+        ("Visite le 3 décembre. ", "Visite le 3 décembre", ["2026-12-03"], True),
+        ("Visite le 3 décembre. ", "Visite le 3 décembre", ["2027-12-03"], False),
+        ("Visite le 15 janvier. ", "Visite le 15 janvier", ["2027-01-15"], True),
+        # A list of days before one month still binds each day.
+        ("Visites le 3 et le 10 décembre 2026. ", "Visites le 3 et le 10 décembre 2026", ["2026-12-03", "2026-12-10"], True),
+        ("Visite le 1er décembre 2026. ", "Visite le 1er décembre 2026", ["2026-12-01"], True),
+    ],
+)
+def test_visit_day_is_bound_to_its_month_and_year(page_text: str, quote: str, dates: list[str], accepted: bool) -> None:
+    reading = _reading(visit_dates=_claim(dates, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + FILLER), today=TODAY)[vision.VISITS]
+    assert (verdict.status == CANDIDATE) is accepted
+
+
+# --- Surfaces -----------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote", "value", "accepted"),
+    [
+        # A number of the quote that is no surface (year, lot, rooms) proves nothing.
+        ("Acquis en 2020, surface habitable de 45 m². ", "Acquis en 2020, surface habitable de 45 m²", 2020, False),
+        ("Lot 62, surface habitable de 45 m². ", "Lot 62, surface habitable de 45 m²", 62, False),
+        ("Surface habitable de 45 m² et 3 pièces. ", "Surface habitable de 45 m² et 3 pièces", 3, False),
+        ("Acquis en 2020, surface habitable de 45 m². ", "Acquis en 2020, surface habitable de 45 m²", 45, True),
+        # A number without unit, right after « surface » with no other number between.
+        ("Surface habitable : 45,30 ", "Surface habitable : 45,30", 45.3, True),
+        ("Surface habitable relevée en 2020 : 45 ", "Surface habitable relevée en 2020 : 45", 45, False),
+        ("Un logement de 45 mètres carrés habitables. ", "Un logement de 45 mètres carrés habitables", 45, True),
+    ],
+)
+def test_surface_value_must_be_written_as_a_surface(page_text: str, quote: str, value: object, accepted: bool) -> None:
+    reading = _reading(habitable_surface_m2=_claim(value, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + FILLER), today=TODAY)[vision.HABITABLE]
+    assert (verdict.status == CANDIDATE) is accepted
+
+
 # --- Cohérence ----------------------------------------------------------------------------------------------------
 
 
@@ -248,8 +320,16 @@ def test_sale_with_several_lots_and_no_identified_lot_is_rejected() -> None:
     )
     assert vision.primary_verdicts(said_by_reader, _context(), today=TODAY)[vision.ROOMS].reason == "lot_non_identifie"
 
-    identified = _context(several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
-    assert vision.primary_verdicts(reading, identified, today=TODAY)[vision.ROOMS].status == CANDIDATE
+    named = "Le lot 1 comprend 3 pièces principales. " + FILLER
+    identified = _context(named, several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    naming = _reading(rooms_count=_claim(3, "Le lot 1 comprend 3 pièces principales"))
+    assert vision.primary_verdicts(naming, identified, today=TODAY)[vision.ROOMS].status == CANDIDATE
+
+
+def test_known_lot_that_the_quote_does_not_name_is_rejected() -> None:
+    context = _context(several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_nomme")
 
 
 def test_quote_naming_another_lot_than_the_sold_one_is_rejected() -> None:
@@ -283,10 +363,49 @@ def test_vacant_needs_an_explicit_free_statement_and_no_contrary_word_on_the_pag
     assert vision.primary_verdicts(reading, context, today=TODAY)[vision.OCCUPANCY].reason == "libre_contredit"
 
 
-def test_negated_occupation_words_do_not_contradict_vacant() -> None:
-    assert not vision.pages_contradict_vacant(["Le logement est non occupé et inoccupé depuis 2024, pas occupé."])
-    assert vision.pages_contradict_vacant(["Le logement est occupé."])
-    assert vision.pages_contradict_vacant(["Présence d'un locataire."])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Le bien est loué.",
+        "La maison est louée depuis 2019.",
+        "Un loyer mensuel de 600 euros.",
+        "Contrat de location du 2 mars 2020.",
+        "Le preneur a donné congé.",
+        "Un bail commercial a été consenti.",
+        "Présence d'un locataire.",
+        "Un occupant a été rencontré.",
+        "Le logement est occupé.",
+        "Les lieux sont occupés par la famille du débiteur.",
+        "Un squat a été constaté.",
+        "Le local est squatté.",
+        "Occupé sans droit ni titre.",
+        "Le saisi y demeure avec ses enfants.",
+        "Le débiteur y demeure.",
+    ],
+)
+def test_every_contrary_word_contradicts_vacant(text: str) -> None:
+    assert vision.pages_contradict_vacant([text])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Le logement est non occupé et inoccupé depuis 2024, pas occupé.",
+        "Le bien n'est pas loué, sans locataire ni bail, libre de toute location et libre d'occupant.",
+        "Aucun bail en cours ; libre de tout occupant.",
+        "Ni loué ni occupé.",
+    ],
+)
+def test_negated_occupation_words_do_not_contradict_vacant(text: str) -> None:
+    assert not vision.pages_contradict_vacant([text])
+
+
+def test_vacant_is_contradicted_by_any_page_of_the_dossier_even_one_not_sent() -> None:
+    free = "Lors de la visite, le bien est libre de toute occupation. " + FILLER
+    reading = _reading(occupancy_status=_claim("vacant", "le bien est libre de toute occupation"))
+    context = _context(free)
+    context.dossier_texts = (free, FILLER, "Page 37 : le saisi y demeure. " + FILLER)
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.OCCUPANCY].reason == "libre_contredit"
 
 
 def test_occupied_or_rented_are_accepted_on_agreement_even_with_contrary_words() -> None:

@@ -8,7 +8,7 @@ Déroulé d'une lecture :
 
 1. :func:`select_vision_pages` retient au plus dix pages qui parlent des champs visés, d'après la couche texte ou
    l'OCR déjà produits par le pipeline (``pdf_text``) ;
-2. :func:`pdf_extract` découpe ces pages dans un seul PDF, que le lecteur principal lit en entier
+2. :func:`build_document_excerpt` découpe ces pages dans un seul PDF, que le lecteur principal lit en entier
    (:data:`SYSTEM_PROMPT`, :func:`build_user_prompt`, réponse contrainte par :func:`response_schema`) ;
 3. :func:`primary_verdicts` garde, champ par champ, les valeurs dont la citation exacte est retrouvée dans le texte
    de la page indiquée et qui passent les règles de cohérence ;
@@ -31,7 +31,13 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.document_reading import ReadingDocument, SoldLot, names_another_lot, sold_lot_line
+from src.document_reading import (
+    ReadingDocument,
+    SoldLot,
+    names_another_lot,
+    sale_lot_numbers_named,
+    sold_lot_line,
+)
 from src.enrichment.extraction_grounding import cited_excerpt, occupancy_is_supported, rooms_count_is_supported
 from src.french_dates import MONTH_NUMBERS
 from src.text_folding import strip_accents
@@ -79,8 +85,20 @@ _PAGE_TERMS: dict[str, re.Pattern[str]] = {
     "visite": re.compile(r"\bvisites?\b"),
 }
 
-# Mots qui contredisent « libre » sur une page lue. « non occupé », « pas occupé » et « inoccupé » n'en sont pas.
-_CONTRARY_TO_VACANT = re.compile(r"(?<!\bnon )(?<!\bpas )\b(?:occupee?s?|occupants?|locataires?|bail|baux)\b")
+# Mots qui contredisent « libre » quelque part dans le dossier (texte sans accents, en minuscules).
+_CONTRARY_TO_VACANT = re.compile(
+    r"\b(?:"
+    r"loue(?:e|s|es)?|loyers?|locations?|preneurs?|bail|baux|locataires?|occupants?|occupee?s?|"
+    r"squatt?(?:s|e|ee|es|eur|eurs|ers?)?|sans droit ni titre|y demeure(?:nt)?"
+    r")\b"
+)
+# Ces mêmes mots niés ne contredisent rien : « non occupé », « inoccupé », « pas loué », « aucun bail »,
+# « sans locataire », « libre de toute location », « libre d'occupant », « ni loué ni occupé ».
+_NEGATED_OCCUPATION = re.compile(
+    r"(?:\b(?:non|pas|aucune?|sans|ni|libre de toute?s?|libre de tous)\s+|\blibre d'|\bin)"
+    r"(?=occup|lou|loy|locat|preneur|bail|baux|squat)"
+    r"\w+"
+)
 
 _LAND_WORDS = re.compile(r"\b(?:terrain|contenance|parcelles?|cadastr\w*|jardin)\b")
 _SURFACE_WORDS = re.compile(r"\b(?:surface|superficie)s?\b")
@@ -95,7 +113,7 @@ class PageRef:
 
 
 def _folded(text: str) -> str:
-    return re.sub(r"\s+", " ", strip_accents(text).lower())
+    return re.sub(r"\s+", " ", strip_accents(text).lower().replace("’", "'"))
 
 
 def page_field_score(text: str) -> int:
@@ -120,11 +138,14 @@ def select_vision_pages(documents: Sequence[ReadingDocument], max_pages: int = M
     return sorted(PageRef(document, number) for _, document, number in best)
 
 
-def pdf_extract(pdfs: Mapping[int, bytes], pages: Sequence[PageRef]) -> tuple[bytes, list[PageRef]]:
-    """Un PDF des seules ``pages`` (pièces par index), dans cet ordre, et la page d'origine de chacune de ses pages.
+def build_document_excerpt(pdfs: Mapping[int, bytes], pages: Sequence[PageRef]) -> tuple[bytes, list[PageRef]]:
+    """L'extrait envoyé au lecteur : un PDF des seules ``pages`` (pièces par index), dans cet ordre, et la page
+    d'origine de chacune de ses pages. Seul point de passage des pièces vers le modèle.
 
     Page n de l'extrait = n-ième élément de la liste rendue. Une page d'une pièce absente ou illisible est laissée de
-    côté. pymupdf est déjà une dépendance du pipeline : aucune bibliothèque PDF de plus.
+    côté. Rien d'autre que le contenu des pages ne sort : ni annotations ni champs de formulaire, ni liens, ni
+    métadonnées du document (auteur, titre, XMP), ni fichiers joints. pymupdf est déjà une dépendance du pipeline :
+    aucune bibliothèque PDF de plus.
     """
     import pymupdf
 
@@ -142,9 +163,17 @@ def pdf_extract(pdfs: Mapping[int, bytes], pages: Sequence[PageRef]) -> tuple[by
             source = sources[ref.document]
             if source is None or not 1 <= ref.page <= source.page_count:
                 continue
-            extract.insert_pdf(source, from_page=ref.page - 1, to_page=ref.page - 1)
+            extract.insert_pdf(source, from_page=ref.page - 1, to_page=ref.page - 1, links=False, annots=False)
             kept.append(ref)
-        return (extract.tobytes(garbage=3, deflate=True) if kept else b""), kept
+        if not kept:
+            return b"", kept
+        extract.set_metadata({})
+        extract.del_xml_metadata()
+        # Les liens dessinés dans le contenu des pages (pas ceux des annotations, déjà écartés) sont retirés aussi.
+        for page in extract:
+            for link in page.get_links():
+                page.delete_link(link)
+        return extract.tobytes(garbage=4, deflate=True, clean=True), kept
     finally:
         for source in sources.values():
             if source is not None:
@@ -337,17 +366,37 @@ _NUMBER = re.compile(r"\d{1,3}(?:[  ]\d{3}(?!\d))+(?:,\d+)?|\d+(?:[.,]\d+)*")
 _CONTENANCE = re.compile(r"(?:(\d+)\s*ha\s*)?(\d+)\s*a\s*(\d+)\s*ca\b")
 
 
-def _numbers_in(text: str) -> set[Decimal]:
-    """Les nombres écrits dans le texte, avec les deux lectures d'un point (décimale ou milliers), et les
-    contenances cadastrales (« 12 a 50 ca » : 1 250 m²)."""
+_SQUARE_METRES_AFTER = re.compile(r"\s*(?:m\s?(?:2|²)|metres?\s+carres?)(?![a-z0-9])")
+_SURFACE_CONTEXT = re.compile(r"\b(?:surface|superficie|contenance|carrez|habitable)s?\b")
+# Un nombre sans unité compte comme surface s'il suit l'un de ces mots de près, sans autre nombre entre eux.
+SURFACE_CONTEXT_CHARS = 40
+
+
+def _readings(raw: str) -> set[Decimal]:
+    """Les deux lectures d'un nombre écrit : le point comme décimale, ou comme séparateur des milliers."""
+    compact = re.sub(r"[  ]", "", raw)
+    numbers: set[Decimal] = set()
+    for candidate in {compact.replace(",", "."), compact.replace(".", "").replace(",", ".")}:
+        try:
+            numbers.add(Decimal(candidate))
+        except InvalidOperation:
+            continue
+    return numbers
+
+
+def _surface_numbers(text: str) -> set[Decimal]:
+    """Les surfaces écrites : un nombre suivi de « m² », ou placé juste après « surface », « superficie »,
+    « contenance », « Carrez » ou « habitable » ; et les contenances cadastrales (« 12 a 50 ca » : 1 250 m²).
+
+    Un nombre quelconque de la citation (année, numéro de lot, nombre de pièces) ne prouve pas une surface.
+    """
     numbers: set[Decimal] = set()
     for match in _NUMBER.finditer(text):
-        compact = re.sub(r"[  ]", "", match.group())
-        for candidate in {compact.replace(",", "."), compact.replace(".", "").replace(",", ".")}:
-            try:
-                numbers.add(Decimal(candidate))
-            except InvalidOperation:
-                continue
+        before = text[max(0, match.start() - SURFACE_CONTEXT_CHARS) : match.start()]
+        words = list(_SURFACE_CONTEXT.finditer(before))
+        near_word = bool(words) and not re.search(r"\d", before[words[-1].end() :])
+        if _SQUARE_METRES_AFTER.match(text, match.end()) or near_word:
+            numbers |= _readings(match.group())
     for match in _CONTENANCE.finditer(text):
         hectares, ares, centiares = (int(group or 0) for group in match.groups())
         numbers.add(Decimal(hectares * 10_000 + ares * 100 + centiares))
@@ -356,7 +405,7 @@ def _numbers_in(text: str) -> set[Decimal]:
 
 def _surface_quote_reason(field_name: str, excerpt: str, value: Decimal) -> str | None:
     text = _folded(excerpt)
-    if value not in _numbers_in(text):
+    if value not in _surface_numbers(text):
         return "valeur_absente_de_la_citation"
     if field_name == CARREZ:
         return None if "carrez" in text else "citation_hors_champ"
@@ -368,20 +417,50 @@ def _surface_quote_reason(field_name: str, excerpt: str, value: Decimal) -> str 
     return "citation_hors_champ"
 
 
-def _date_stated(text: str, day: date) -> bool:
-    """Le jour et le mois de la date figurent dans la citation (« 3/12 », « 3 et 10 décembre », « 1er décembre »)."""
-    if re.search(rf"(?<!\d)0?{day.day}\s*[/.-]\s*0?{day.month}(?!\d)", text):
-        return True
+def _next_occurrence(day: int, month: int, today: date) -> date | None:
+    """Le prochain jour/mois après aujourd'hui (une date sans année ne désigne que celle-là)."""
+    for year in (today.year, today.year + 1):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if candidate > today:
+            return candidate
+    return None
+
+
+def _date_stated(text: str, day: date, today: date) -> bool:
+    """La citation écrit ce jour LIÉ à son mois (« 3/12 », « 3 décembre », « 3 et 10 décembre », « 1er décembre »).
+
+    « le 10 décembre à 3 h » ne dit pas le 3 décembre. Une année écrite doit être celle de la date ; sans année,
+    seule la prochaine occurrence après aujourd'hui est acceptée.
+    """
     months = "|".join(strip_accents(name) for name, number in MONTH_NUMBERS.items() if number == day.month)
-    return bool(re.search(rf"(?<!\d)0?{day.day}(?:er)?(?!\d)", text) and re.search(rf"\b(?:{months})\b", text))
+    # Le jour, éventuellement suivi d'autres jours de la même liste, puis le mois.
+    other_days = r"(?:\s*(?:,|et|&)\s*(?:le\s+)?\d{1,2}(?:er)?)*"
+    patterns = (
+        rf"(?<![\d/.-])0?{day.day}\s*[/.-]\s*0?{day.month}(?:\s*[/.-]\s*(\d{{4}}|\d{{2}}))?(?![\d/.-])",
+        rf"(?<!\d)0?{day.day}(?:er)?{other_days}\s+(?:{months})\b(?:\s+(\d{{4}}))?",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            year = match.group(1)
+            if year:
+                if int(year) + (2000 if len(year) == 2 else 0) == day.year:
+                    return True
+            elif _next_occurrence(day.day, day.month, today) == day:
+                return True
+    return False
 
 
-def grounding_reason(field_name: str, claim: Claim, page_texts: Mapping[PageRef, str], sold_lot: SoldLot | None) -> str | None:
+def grounding_reason(
+    field_name: str, claim: Claim, page_texts: Mapping[PageRef, str], sold_lot: SoldLot | None, today: date
+) -> str | None:
     """Pourquoi la valeur citée n'est pas vérifiée (None : elle l'est).
 
     La citation doit être retrouvée mot pour mot dans la couche texte ou l'OCR de la page indiquée
-    (``extraction_grounding``) et dire la valeur du champ ; une citation qui nomme un autre lot que le lot vendu
-    est rejetée.
+    (``extraction_grounding``) et dire la valeur du champ. Quand le lot vendu est connu (annonce à plusieurs lots),
+    la citation doit le nommer : une citation qui ne nomme aucun lot peut décrire un autre lot du dossier.
     """
     page_text = page_texts.get(claim.page) if claim.page is not None else None
     if not page_text:
@@ -389,8 +468,11 @@ def grounding_reason(field_name: str, claim: Claim, page_texts: Mapping[PageRef,
     excerpt = cited_excerpt(page_text, {"quote": claim.quote})
     if excerpt is None:
         return "citation_introuvable"
-    if sold_lot is not None and names_another_lot(excerpt, sold_lot):
-        return "autre_lot"
+    if sold_lot is not None:
+        if names_another_lot(excerpt, sold_lot):
+            return "autre_lot"
+        if sold_lot.number not in sale_lot_numbers_named(excerpt):
+            return "lot_non_nomme"
     if field_name in SURFACE_FIELDS:
         return _surface_quote_reason(field_name, excerpt, claim.value)  # type: ignore[arg-type]
     if field_name == ROOMS:
@@ -401,7 +483,7 @@ def grounding_reason(field_name: str, claim: Claim, page_texts: Mapping[PageRef,
         return None if occupancy_is_supported(page_text, str(claim.value), evidence) else "valeur_absente_de_la_citation"
     if field_name == VISITS:
         text = _folded(excerpt)
-        return None if all(_date_stated(text, day) for day in claim.value) else "valeur_absente_de_la_citation"  # type: ignore[attr-defined]
+        return None if all(_date_stated(text, day, today) for day in claim.value) else "valeur_absente_de_la_citation"  # type: ignore[attr-defined]
     return "champ_non_lu"
 
 
@@ -424,11 +506,16 @@ class Verdict:
 
 @dataclass
 class SaleContext:
-    """Ce que la vente dit d'elle-même : le lot vendu, s'il est désigné, et si l'annonce vend plusieurs lots."""
+    """Ce que la vente dit d'elle-même : le lot vendu, s'il est désigné, et si l'annonce vend plusieurs lots.
+
+    ``page_texts`` : texte des pages envoyées au lecteur (les citations y sont cherchées). ``dossier_texts`` : texte
+    de TOUTES les pages du dossier, déjà produit par le pipeline, où « libre » ne doit être contredit nulle part.
+    """
 
     sold_lot: SoldLot | None = None
     several_lots: bool = False
     page_texts: dict[PageRef, str] = field(default_factory=dict)
+    dossier_texts: tuple[str, ...] = ()
 
 
 def values_agree(field_name: str, first: object, second: object) -> bool:
@@ -440,8 +527,9 @@ def values_agree(field_name: str, first: object, second: object) -> bool:
 
 
 def pages_contradict_vacant(texts: Sequence[str]) -> bool:
-    """Un mot contraire à « libre » (occupé, occupant, locataire, bail) figure sur une des pages lues."""
-    return any(_CONTRARY_TO_VACANT.search(_folded(text)) for text in texts)
+    """Un mot contraire à « libre » (loué, loyer, location, preneur, bail, locataire, occupant, occupé, squat,
+    « sans droit ni titre », « y demeure ») figure, non nié, sur une des pages."""
+    return any(_CONTRARY_TO_VACANT.search(_NEGATED_OCCUPATION.sub(" ", _folded(text))) for text in texts)
 
 
 def _future_visits(claim: Claim, today: date) -> Claim:
@@ -458,7 +546,7 @@ def _checked_claim(field_name: str, claim: Claim, context: SaleContext, today: d
         return Verdict(UNKNOWN_STATUS)
     if claim.status != "value":
         return Verdict(REJECTED, "reponse_invalide")
-    reason = grounding_reason(field_name, claim, context.page_texts, context.sold_lot)
+    reason = grounding_reason(field_name, claim, context.page_texts, context.sold_lot, today)
     if reason is not None:
         return Verdict(REJECTED, reason)
     return Verdict(CANDIDATE, value=claim.value, page=claim.page)
@@ -483,7 +571,7 @@ def primary_verdicts(reading: Reading, context: SaleContext, *, today: date) -> 
         occupancy is not None
         and occupancy.status == CANDIDATE
         and occupancy.value == "vacant"
-        and pages_contradict_vacant(list(context.page_texts.values()))
+        and pages_contradict_vacant([*context.dossier_texts, *context.page_texts.values()])
     ):
         verdicts[OCCUPANCY] = Verdict(REJECTED, "libre_contredit")
     rooms = verdicts.get(ROOMS)

@@ -17,6 +17,13 @@
 --
 -- Refuse tout autre corps que ceux de 20261203100000 (ou ceux d'avant : rejoué, il ne change rien) ; vérifie les
 -- empreintes à la fin, dans la même transaction.
+--
+-- Accepte aussi le corps de reserve_pipeline_prediction(uuid,text,int,int) posé par 20261207100000 (prix des
+-- lecteurs de pièces Claude Haiku 5.5 et Claude Sonnet 5.5, md5 842cf4593a018dfbd38e30d2e88242f5). Ce retour
+-- arrière remet le corps d'avant les voies : il RETIRE donc les deux branches Claude, et toute réservation de ces
+-- modèles dans une exécution autonome est ensuite refusée (« no configured cost reservation »). TOKEN_PRICES
+-- (services/data-pipeline/src/pipeline_usage.py) garde leurs prix : les appels hors exécution autonome restent
+-- comptés dans le budget quotidien.
 
 \set ON_ERROR_STOP on
 
@@ -31,14 +38,17 @@ declare
 begin
   for expected in
     select * from (values
-      ('public.claim_autonomous_pipeline_run()', '29fb0e896e8b0ee0332d0ed98853363a', '0ee8bdb4cd09923283f3f3a357852b0f'),
-      ('public.reserve_pipeline_prediction(uuid,text)', '1b4c820c5bac83affc7eddfc1e5bd3f2', 'e02842aa56a1915843d3d7ba8501778b'),
-      ('public.reserve_pipeline_prediction(uuid,text,integer,integer)', 'f76b0e91b21d18342d47979c099cf97d', 'c5db331db33b54c40d38e88b9d27244e'),
-      ('app_private.evaluate_operational_health(timestamptz)', 'fe8e2c373948e17727c15898b6fbaca3', 'a3ffbb215334372e19ab6cc250d2e3f3')
-    ) as t(signature, lane_md5, before_md5)
+      ('public.claim_autonomous_pipeline_run()', '29fb0e896e8b0ee0332d0ed98853363a', '0ee8bdb4cd09923283f3f3a357852b0f', null),
+      ('public.reserve_pipeline_prediction(uuid,text)', '1b4c820c5bac83affc7eddfc1e5bd3f2', 'e02842aa56a1915843d3d7ba8501778b', null),
+      -- 842cf459… : corps de 20261207100000 (branches Claude), retirées par ce retour arrière.
+      ('public.reserve_pipeline_prediction(uuid,text,integer,integer)', 'f76b0e91b21d18342d47979c099cf97d', 'c5db331db33b54c40d38e88b9d27244e', '842cf4593a018dfbd38e30d2e88242f5'),
+      ('app_private.evaluate_operational_health(timestamptz)', 'fe8e2c373948e17727c15898b6fbaca3', 'a3ffbb215334372e19ab6cc250d2e3f3', null)
+    ) as t(signature, lane_md5, before_md5, later_md5)
   loop
     select md5(prosrc) into found_md5 from pg_catalog.pg_proc where oid = expected.signature::regprocedure;
-    if found_md5 not in (expected.lane_md5, expected.before_md5) then
+    -- coalesce : une empreinte absente ne doit pas rendre la comparaison nulle (« not in » avec null laisse passer).
+    if found_md5 is null
+       or found_md5 not in (expected.lane_md5, expected.before_md5, coalesce(expected.later_md5, expected.lane_md5)) then
       raise exception using errcode = '55000',
         message = format('Unexpected body for %s (md5 %s); refusing the rollback.', expected.signature, found_md5);
     end if;

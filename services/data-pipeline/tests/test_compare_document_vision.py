@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
+import anthropic
+import httpx2
 import pymupdf
 import pytest
 
 from scripts import compare_document_vision as bench
 from src.document_vision import HABITABLE, OCCUPANCY, ROOMS, VISITS
-from src.enrichment.anthropic_reader import ReaderCall
+from src.enrichment.anthropic_reader import (
+    HAIKU,
+    SONNET,
+    DocumentReaderRefused,
+    ReaderInvalidJSON,
+    ReaderOutputCut,
+)
+from src.llm_requests import LLMRequestTransportAmbiguous
 from src.pipeline_usage import PipelineBudgetExhausted
 
 TODAY = date(2026, 11, 21)
@@ -67,8 +78,11 @@ class FakeConnection:
     def __init__(self, rows: dict[str, tuple[Any, ...]]) -> None:
         self.rows = rows
         self.statements: list[str] = []
+        self.read_only = False
+        self.read_only_at_each_query: list[bool] = []
 
     def execute(self, sql: str, parameters: tuple[Any, ...] = ()) -> Any:
+        self.read_only_at_each_query.append(self.read_only is True)
         self.statements.append(sql)
         rows = self.rows
 
@@ -111,10 +125,11 @@ class FakeModel:
         return _answer(fields, self.values)
 
 
-def _reader(role: str, model: FakeModel, max_calls: int = 30) -> bench.Reader:
-    stats = bench.ReaderStats(model=f"model-{role}")
-    stats.usage.append(ReaderCall(True, 1000, 2000, None))
-    return bench.Reader(role, model, stats, max_calls)
+def _reader(
+    role: str, model: FakeModel, max_calls: int = 30, spend: bench.SpendCap | None = None
+) -> bench.Reader:
+    stats = bench.ReaderStats(model=HAIKU if role == "principal" else SONNET)
+    return bench.Reader(role, model, stats, max_calls, spend or bench.SpendCap(Decimal("3")))
 
 
 def _fetch(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str, bytes]:
@@ -197,17 +212,92 @@ def test_call_cap_stops_the_bench() -> None:
     assert report.processed == 1 and "plafond de 1 appels" in str(report.stop_reason)
 
 
-def test_reader_failure_skips_the_sale_and_is_counted() -> None:
+_REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (DocumentReaderRefused(), "refus"),
+        (ReaderOutputCut("stopped on max_tokens"), "max_tokens"),
+        (anthropic.BadRequestError("bad", response=httpx2.Response(400, request=_REQUEST), body=None), "400"),
+        (LLMRequestTransportAmbiguous("timeout"), "délai"),
+        (ReaderInvalidJSON("Invalid JSON from LLM"), "json_invalide"),
+        (anthropic.RateLimitError("slow", response=httpx2.Response(429, request=_REQUEST), body=None), "limite_de_débit"),
+        (RuntimeError("unexpected"), "autre"),
+    ],
+)
+def test_reader_failure_skips_the_sale_and_is_counted_by_kind(error: Exception, kind: str) -> None:
     report = bench.run_bench(
         FakeConnection({SALE_ID: _row()}),
-        _reader("principal", FakeModel({}, error=ValueError("invalid JSON"))),
+        _reader("principal", FakeModel({}, error=error)),
         _reader("second", FakeModel({})),
         _fetch,
         sample=1,
         today=TODAY,
     )
     assert report.skipped["lecture principale en échec"] == 1
-    assert report.readers["principal"].failures == 1
+    assert report.readers["principal"].failures == {kind: 1}
+    markdown = bench.render_report(report)
+    assert f"échecs : {kind} 1" in markdown
+    # The error message never reaches the report.
+    assert str(error) not in markdown or not str(error)
+
+
+def test_connection_is_read_only_before_the_first_query() -> None:
+    connection = FakeConnection({SALE_ID: _row()})
+    bench.run_bench(
+        connection, _reader("principal", FakeModel({})), _reader("second", FakeModel({})), _fetch, sample=1, today=TODAY
+    )
+    assert connection.read_only is True
+    assert connection.read_only_at_each_query and all(connection.read_only_at_each_query)
+
+
+def test_spending_cap_stops_the_bench_before_a_call_that_could_exceed_it() -> None:
+    spend = bench.SpendCap(Decimal("0.02"))
+    primary = FakeModel({})
+    bench.run_bench(
+        FakeConnection({SALE_ID: _row()}),
+        _reader("principal", primary, spend=spend),
+        _reader("second", FakeModel({}), spend=spend),
+        _fetch,
+        sample=1,
+        today=TODAY,
+    )
+    # A Haiku call of one page may cost up to about 0.0085 USD: the first fits, a second would not after it.
+    assert len(primary.calls) == 1
+    spend_after_one = spend.committed
+    assert Decimal(0) < spend_after_one <= Decimal("0.02")
+
+    tight = bench.SpendCap(Decimal("0.001"))
+    stopped = bench.run_bench(
+        FakeConnection({SALE_ID: _row()}),
+        _reader("principal", FakeModel({}), spend=tight),
+        _reader("second", FakeModel({}), spend=tight),
+        _fetch,
+        sample=1,
+        today=TODAY,
+    )
+    assert stopped.stop_reason == "principal : plafond de dépense de 0.001 $ atteint"
+    assert stopped.processed == 0 and tight.committed == 0
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "5.01", "abc"])
+def test_spending_cap_is_bounded_by_the_shared_daily_budget(value: str) -> None:
+    with pytest.raises(SystemExit):
+        bench.parse_args(["--sample", "1", "--max-usd", value])
+    assert bench.parse_args(["--sample", "1"]).max_usd == Decimal("3")
+
+
+def test_document_download_logs_no_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    logger = logging.getLogger("src.pdf_enrichment")
+    previous = logger.level
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    try:
+        assert bench.main(["--sample", "1"]) == 2  # stops early: no database configured
+        assert logger.level == logging.ERROR
+    finally:
+        logger.setLevel(previous)
 
 
 def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:

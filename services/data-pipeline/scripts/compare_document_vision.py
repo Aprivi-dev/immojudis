@@ -6,30 +6,35 @@ actuelle (texte des pages ``pdf_text`` et extraction des faits complète), chois
 fait relire à Claude Sonnet 5.5 les seules pages citées par les valeurs qui seraient retenues. Le verdict par champ
 (``src.document_vision``) est comparé à la valeur actuelle de la fiche.
 
-LECTURE SEULE sur les ventes : la connexion qui les lit est en lecture seule et rien n'est écrit sur une fiche.
-Restent, comme pour tout appel du pipeline : la réservation et le compte rendu de chaque appel au modèle dans
-``llm_usage_events`` (étape ``vision_trial``), dans le budget quotidien partagé (un refus arrête le banc
-proprement), et la copie partagée des robots.txt lors du téléchargement poli des pièces.
+LECTURE SEULE sur les ventes : la connexion qui les lit est passée en lecture seule avant sa première requête et rien
+n'est écrit sur une fiche. Restent, comme pour tout appel du pipeline : la réservation et le compte rendu de chaque
+appel au modèle dans ``llm_usage_events`` (étape ``vision_trial``), dans le budget quotidien partagé (un refus arrête
+le banc proprement), et la copie partagée des robots.txt lors du téléchargement poli des pièces. Le banc s'arrête
+aussi avant qu'un appel puisse porter sa propre dépense au-delà de ``--max-usd``.
 
-Le rapport est agrégé : par champ, accords, désaccords, « inconnu », rejets, écarts avec la fiche, et coût réel
-de chaque lecteur. Il ne contient ni identifiant de vente, ni citation, ni texte des pièces.
+Le rapport est agrégé : par champ, accords, désaccords, « inconnu », rejets, écarts avec la fiche, et pour chaque
+lecteur ses échecs par type et son coût réel. Il ne contient ni identifiant de vente, ni citation, ni texte, ni URL
+des pièces (le journal du téléchargement est réduit aux erreurs).
 
-    python -m scripts.compare_document_vision --sample 10 --output document-vision-report.md
+    python -m scripts.compare_document_vision --sample 10 --max-usd 3 --output document-vision-report.md
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import sys
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+
+import anthropic
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
@@ -56,26 +61,42 @@ from src.document_vision import (  # noqa: E402
     Reading,
     SaleContext,
     Verdict,
+    build_document_excerpt,
     build_user_prompt,
     cited_pages,
     compare_with_sale,
     final_verdicts,
     parse_reading,
-    pdf_extract,
     primary_verdicts,
     response_schema,
     select_vision_pages,
 )
-from src.enrichment.anthropic_reader import HAIKU, SONNET, AnthropicDocumentReader, ReaderCall  # noqa: E402
+from src.enrichment.anthropic_reader import (  # noqa: E402
+    DEFAULT_MAX_TOKENS,
+    HAIKU,
+    SONNET,
+    AnthropicDocumentReader,
+    DocumentReaderRefused,
+    ReaderCall,
+    ReaderInvalidJSON,
+    ReaderOutputCut,
+    call_ceiling_cost,
+    input_token_ceiling,
+    pdf_page_count,
+)
 from src.french_dates import PARIS  # noqa: E402
-from src.llm_requests import llm_request_context  # noqa: E402
+from src.llm_requests import LLMRequestTransportAmbiguous, llm_request_context  # noqa: E402
 from src.lot_scope import is_lot_scoped  # noqa: E402
 from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
 
 MAX_SAMPLE = 30
+DEFAULT_MAX_USD = Decimal("3")
 TRIAL_STAGE = "vision_trial"
 TRIAL_REASON = "document_vision_comparison"
 DEFAULT_OUTPUT = "document-vision-report.md"
+PRIMARY_TIMEOUT_SECONDS = 300.0
+# Sonnet réfléchit plus longtemps que Haiku sur les mêmes pages.
+SECOND_TIMEOUT_SECONDS = 600.0
 
 # Ventes à venir dont les pièces ont été lues par la chaîne actuelle (texte des pages persisté, extraction des
 # faits complète), les plus récemment lues d'abord. Seuls les identifiants sont lus ici.
@@ -128,17 +149,47 @@ select {", ".join(f"sale.{column}" for column in (*SALE_COLUMNS, *SALE_VALUE_COL
 
 Generate = Callable[[str, str, bytes, Mapping[str, Any]], Mapping[str, object]]
 FetchPdfs = Callable[[Mapping[str, Any], Sequence[str]], Mapping[str, bytes]]
+FAILURE_KINDS = ("refus", "max_tokens", "400", "délai", "json_invalide", "limite_de_débit", "autre")
 
 
 class BenchStopped(RuntimeError):
-    """Le budget ou le plafond d'appels arrête le banc : la vente en cours n'est pas comptée."""
+    """Le budget, le plafond de dépense ou le plafond d'appels arrête le banc : la vente en cours n'est pas comptée."""
+
+
+def failure_kind(error: BaseException) -> str:
+    """Le type d'un échec d'appel, pour le rapport (jamais son message : il pourrait citer une pièce)."""
+    if isinstance(error, DocumentReaderRefused):
+        return "refus"
+    if isinstance(error, ReaderOutputCut):
+        return "max_tokens"
+    if isinstance(error, ReaderInvalidJSON):
+        return "json_invalide"
+    if isinstance(error, (LLMRequestTransportAmbiguous, anthropic.APIConnectionError)):
+        return "délai"
+    if isinstance(error, anthropic.RateLimitError):
+        return "limite_de_débit"
+    if isinstance(error, anthropic.BadRequestError):
+        return "400"
+    return "autre"
+
+
+@dataclass
+class SpendCap:
+    """Plafond de dépense du banc (``--max-usd``) : un appel n'est lancé que si son coût maximal y tient encore.
+
+    Chaque appel fait y compte pour son coût réel, ou pour son coût maximal quand ses jetons sont inconnus (issue
+    incertaine).
+    """
+
+    max_usd: Decimal
+    committed: Decimal = Decimal(0)
 
 
 @dataclass
 class ReaderStats:
     model: str
     calls: int = 0
-    failures: int = 0
+    failures: Counter[str] = field(default_factory=Counter)
     pages: int = 0
     usage: list[ReaderCall] = field(default_factory=list)
 
@@ -153,6 +204,7 @@ class FieldStats:
 @dataclass
 class BenchReport:
     sample: int
+    max_usd: Decimal = DEFAULT_MAX_USD
     candidates: int = 0
     processed: int = 0
     skipped: Counter[str] = field(default_factory=Counter)
@@ -163,27 +215,51 @@ class BenchReport:
 
 @dataclass
 class Reader:
-    """Un lecteur : son appel au modèle, son plafond d'appels et ses compteurs."""
+    """Un lecteur : son appel au modèle, son plafond d'appels, le plafond de dépense partagé et ses compteurs."""
 
     role: str
     generate: Generate
     stats: ReaderStats
     max_calls: int
+    spend: SpendCap
+    max_tokens: int = DEFAULT_MAX_TOKENS
 
     def read(self, user_prompt: str, pdf: bytes, fields: Sequence[str], pages: Sequence[PageRef]) -> Reading | None:
         if self.stats.calls >= self.max_calls:
             raise BenchStopped(f"{self.role} : plafond de {self.max_calls} appels atteint")
+        schema = response_schema(fields)
+        ceiling = call_ceiling_cost(
+            self.stats.model, input_token_ceiling(pdf_page_count(pdf), SYSTEM_PROMPT, user_prompt, schema), self.max_tokens
+        )
+        if self.spend.committed + ceiling > self.spend.max_usd:
+            raise BenchStopped(f"{self.role} : plafond de dépense de {self.spend.max_usd} $ atteint")
         self.stats.calls += 1
         self.stats.pages += len(pages)
+        usage_before = len(self.stats.usage)
         try:
-            payload = self.generate(SYSTEM_PROMPT, user_prompt, pdf, response_schema(fields))
-        except (PipelineBudgetExhausted, LLMModelNotPriced) as exc:
-            # Budget quotidien ou horaire, issue incertaine d'un appel, palier de prix dépassé : on s'arrête.
-            raise BenchStopped(f"{self.role} : {type(exc).__name__}") from exc
-        except Exception:
-            self.stats.failures += 1
+            payload = self.generate(SYSTEM_PROMPT, user_prompt, pdf, schema)
+        except LLMRequestTransportAmbiguous as exc:
+            # Issue incertaine (délai, connexion coupée) : comptée à son coût maximal, le banc continue.
+            self.spend.committed += ceiling
+            self.stats.failures[failure_kind(exc)] += 1
             return None
+        except (PipelineBudgetExhausted, LLMModelNotPriced) as exc:
+            # Budget quotidien ou horaire partagé, palier de prix dépassé : rien n'a été envoyé, on s'arrête.
+            raise BenchStopped(f"{self.role} : {type(exc).__name__}") from exc
+        except Exception as exc:
+            self._commit(usage_before)
+            self.stats.failures[failure_kind(exc)] += 1
+            return None
+        self._commit(usage_before, ceiling)
         return parse_reading(payload, fields, pages)
+
+    def _commit(self, usage_before: int, ceiling: Decimal = Decimal(0)) -> None:
+        """Ajoute au plafond de dépense le coût des appels notés depuis ``usage_before`` (coût maximal s'il manque)."""
+        new_calls = self.stats.usage[usage_before:]
+        for call in new_calls:
+            self.spend.committed += call.cost_usd if call.cost_usd is not None else ceiling
+        if not new_calls:
+            self.spend.committed += ceiling
 
 
 def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: object, quality_flags: object) -> SaleContext:
@@ -224,9 +300,9 @@ def compare_sale(
     """Verdicts d'une vente, ou la raison pour laquelle elle n'est pas comparée."""
     raw_payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), Mapping) else {}
     manifest = row.get("result")
-    documents: list[ReadingDocument] = documents_from_manifest(manifest)
+    all_documents: list[ReadingDocument] = documents_from_manifest(manifest)
     # Une page qui s'adresse à un modèle n'est jamais lue (même détecteur que la lecture des pièces).
-    documents = without_pages(documents, injected_pages(documents))
+    documents = without_pages(all_documents, injected_pages(all_documents))
     pages = select_vision_pages(documents)
     if not pages:
         return None, "aucune page sur les champs visés"
@@ -235,26 +311,28 @@ def compare_sale(
         pdfs = readable_documents(manifest, fetch_pdfs(row, urls))
     except Exception:
         return None, "pièces non téléchargées"
-    extract, pages = pdf_extract(pdfs, pages)
+    excerpt, pages = build_document_excerpt(pdfs, pages)
     if not pages:
         return None, "pièces modifiées ou illisibles depuis leur lecture"
     context = sale_context(raw_payload, row.get("property_type"), row.get("city"), row.get("quality_flags"))
     texts = {doc.index: doc.pages for doc in documents}
     context.page_texts = {ref: texts[ref.document][ref.page] for ref in pages}
+    # « libre » ne doit être contredit sur aucune page du dossier, envoyée ou non (texte déjà produit, sans coût).
+    context.dossier_texts = tuple(text for doc in all_documents for text in doc.pages.values())
     with llm_request_context(
         sale_id=str(row.get("id") or ""), source_url=str(row.get("source_url") or ""), stage=TRIAL_STAGE, reason=TRIAL_REASON
     ):
-        reading = primary.read(build_user_prompt(pages, FIELDS, today=today, sold_lot=context.sold_lot), extract, FIELDS, pages)
+        reading = primary.read(build_user_prompt(pages, FIELDS, today=today, sold_lot=context.sold_lot), excerpt, FIELDS, pages)
         if reading is None:
             return None, "lecture principale en échec"
         candidates = primary_verdicts(reading, context, today=today)
         fields = [name for name, verdict in candidates.items() if verdict.status == CANDIDATE]
         second_reading = None
         if fields:
-            second_extract, second_pages = pdf_extract(pdfs, cited_pages(candidates))
+            second_excerpt, second_pages = build_document_excerpt(pdfs, cited_pages(candidates))
             second_reading = second.read(
                 build_user_prompt(second_pages, fields, today=today, sold_lot=context.sold_lot),
-                second_extract,
+                second_excerpt,
                 fields,
                 second_pages,
             )
@@ -271,7 +349,11 @@ def run_bench(
     today: date,
 ) -> BenchReport:
     """Lit les ventes (lecture seule), les compare et agrège le résultat. Aucune écriture sur une vente."""
-    report = BenchReport(sample=sample, readers={"principal": primary.stats, "second": second.stats})
+    # Avant la première requête : chaque transaction de cette connexion est READ ONLY, une écriture échouerait.
+    connection.read_only = True
+    report = BenchReport(
+        sample=sample, max_usd=primary.spend.max_usd, readers={"principal": primary.stats, "second": second.stats}
+    )
     sale_ids = [str(row[0]) for row in connection.execute(CANDIDATES_SQL, (sample,)).fetchall()]
     connection.rollback()
     report.candidates = len(sale_ids)
@@ -319,7 +401,7 @@ def render_report(report: BenchReport) -> str:
         "## Banc de lecture des pièces (mode fantôme)",
         "",
         f"- Échantillon demandé : {report.sample} ; ventes candidates : {report.candidates} ; "
-        f"comparées : {report.processed}.",
+        f"comparées : {report.processed} ; plafond de dépense : {report.max_usd} $.",
         f"- Arrêt : {report.stop_reason or 'aucun (banc complet)'}.",
     ]
     for reason, count in sorted(report.skipped.items()):
@@ -344,8 +426,9 @@ def render_report(report: BenchReport) -> str:
     lines += ["", "### Lecteurs et coût réel", ""]
     for role, stats in report.readers.items():
         unpriced = sum(1 for call in stats.usage if call.cost_usd is None)
+        failures = ", ".join(f"{kind} {stats.failures[kind]}" for kind in FAILURE_KINDS if stats.failures[kind]) or "aucun"
         lines.append(
-            f"- {role} (`{stats.model}`) : {stats.calls} appel(s), {stats.failures} en échec, {stats.pages} page(s) ; "
+            f"- {role} (`{stats.model}`) : {stats.calls} appel(s), {stats.pages} page(s) ; échecs : {failures} ; "
             f"jetons facturés : {_tokens([call.input_tokens for call in stats.usage])} en entrée, "
             f"{_tokens([call.output_tokens for call in stats.usage])} en sortie (réflexion comprise) ; "
             f"coût : {_known_cost(stats.usage):.4f} $"
@@ -377,20 +460,35 @@ def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str,
         }
 
 
+def _positive_usd(text: str) -> Decimal:
+    try:
+        value = Decimal(text)
+    except InvalidOperation as exc:
+        raise argparse.ArgumentTypeError("montant en dollars attendu") from exc
+    if not value.is_finite() or value <= 0 or value > 5:
+        raise argparse.ArgumentTypeError("attendu entre 0 (exclu) et 5, le budget quotidien partagé")
+    return value
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sample", type=_bounded_int(1, MAX_SAMPLE), required=True)
+    parser.add_argument("--max-usd", type=_positive_usd, default=DEFAULT_MAX_USD)
     parser.add_argument("--output", type=Path, default=Path(DEFAULT_OUTPUT))
     return parser.parse_args(argv)
 
 
-def _reader(role: str, model: str, max_calls: int) -> Reader:
-    client = AnthropicDocumentReader(model=model)
-    return Reader(role, client.generate_json_with_pdf, ReaderStats(model=model, usage=client.usage), max_calls)
+def _reader(role: str, model: str, max_calls: int, spend: SpendCap, timeout_seconds: float) -> Reader:
+    client = AnthropicDocumentReader(model=model, timeout_seconds=timeout_seconds)
+    stats = ReaderStats(model=model, usage=client.usage)
+    return Reader(role, client.generate_json_with_pdf, stats, max_calls, spend, client.max_tokens)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    # Le téléchargement des pièces journalise leurs URL (avertissements, informations) : seules les erreurs sortent
+    # dans le journal de l'exécution.
+    logging.getLogger("src.pdf_enrichment").setLevel(logging.ERROR)
     settings = load_settings()
     db_url = settings.get("supabase_db_url")
     if not db_url:
@@ -399,15 +497,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not settings.get("anthropic_api_key"):
         print("ANTHROPIC_API_KEY est requise.", file=sys.stderr)
         return 2
+    spend = SpendCap(max_usd=args.max_usd)
     # Au plus un appel de chaque lecteur par vente.
-    primary = _reader("principal", HAIKU, args.sample)
-    second = _reader("second", SONNET, args.sample)
+    primary = _reader("principal", HAIKU, args.sample, spend, PRIMARY_TIMEOUT_SECONDS)
+    second = _reader("second", SONNET, args.sample, spend, SECOND_TIMEOUT_SECONDS)
     from src.storage.supabase_client import connect
 
     connection = connect(str(db_url))
     try:
-        # Chaque requête de cette connexion tourne dans une transaction READ ONLY : une écriture échouerait.
-        connection.read_only = True
         report = run_bench(
             connection, primary, second, download_sale_pdfs, sample=args.sample, today=datetime.now(PARIS).date()
         )

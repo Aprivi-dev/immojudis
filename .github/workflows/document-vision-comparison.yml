@@ -5,8 +5,8 @@ name: Document vision comparison
 # lit un extrait PDF d'au plus dix pages, Claude Sonnet 5.5 relit les seules pages citées) et compare le verdict par
 # champ à la fiche. Lecture seule sur les ventes : rien n'est écrit sur une fiche. Les appels au modèle sont réservés
 # et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget quotidien du pipeline ; un refus du
-# budget arrête le banc proprement. Rapport agrégé (sans identifiant de vente ni citation) dans le résumé de
-# l'exécution et en artefact. Aucun déclenchement automatique.
+# budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc proprement. Rapport agrégé (sans identifiant
+# de vente, citation ni URL de pièce) dans le résumé de l'exécution et en artefact. Aucun déclenchement automatique.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +14,11 @@ on:
         description: "Recent sales to compare (1-30)"
         required: true
         default: "10"
+        type: string
+      max_usd:
+        description: "Spending cap of this run in USD, counted as EUR (above 0, at most 5, the shared daily budget)"
+        required: true
+        default: "3"
         type: string
 
 permissions:
@@ -65,9 +70,11 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BENCH_SAMPLE: ${{ inputs.sample }}
+          BENCH_MAX_USD: ${{ inputs.max_usd }}
         run: >
           python -m scripts.compare_document_vision
           --sample "$BENCH_SAMPLE"
+          --max-usd "$BENCH_MAX_USD"
           --output "$RUNNER_TEMP/document-vision-report.md"
 
       - name: Upload the aggregated report
