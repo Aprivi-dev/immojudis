@@ -15,7 +15,12 @@ Réglages (``src.config``) :
   d'audience, ni les dates de visite.
 
 Bornes : :data:`MAX_SALES` ventes et :data:`BUDGET_SECONDS` secondes par passe ; une vente commencée va à son terme
-(:data:`PASS_TIMEOUT_SECONDS` borne le processus).
+(:data:`PASS_TIMEOUT_SECONDS`, 10 minutes, borne le processus : délais d'appel plus courts que ceux du banc).
+
+Aucune requête aux sites (décision du 17/11/2026 : pas une requête de plus par site). Les pièces sont lues dans le
+cache local des pièces téléchargées par la lecture des PDF du pipeline (``data/documents``, gardé d'une exécution à
+l'autre et borné par le workflow), jamais téléchargées : une vente dont aucune pièce utile n'y est attend que ses
+pièces soient relues (état ``waiting_pieces``), sans essai compté.
 
 Ventes lues : celles du banc (``CANDIDATE_SALES_SQL`` : à venir, pièces lues, faits complets, non exclues), avec au
 moins un champ ouvert vide, et sans lecture déjà faite pour l'empreinte de leurs pièces et la version du prompt. Une
@@ -25,16 +30,19 @@ plus tard, et abandonnée au quatrième échec sur les mêmes pièces. L'état d
 payer deux fois la même lecture.
 
 Règles d'écriture, vérifiées sous le verrou d'écriture du catalogue sur la vente relue juste avant l'écriture
-(:func:`plan_write`) : verdict ``accepted`` ; champ ouvert ; colonne vide (pour une surface bâtie, tout le groupe
-:data:`BUILT_SURFACE_GROUP`) ; jamais moins de pièces que de chambres ; vente non exclue (seconde vérification). La
+(:func:`plan_write`) : verdict ``accepted`` ; champ ouvert ; champ que le registre des pièces ne connaît pas pour
+la vente (ni valeur tenue, ni valeur libérée avec mémoire d'écho : ``app_private.sale_registry_columns``) ; colonne
+vide (pour une surface bâtie, tout le groupe :data:`BUILT_SURFACE_GROUP`) ; jamais moins de pièces que de chambres ; vente non exclue (seconde vérification). La
 vente passe ensuite par ``derive_sale_facts`` (la surface affichée se déduit de la surface habitable) et par
 ``upsert_sales_to_supabase(refresh_last_seen=False)``, comme la reprojection du vidage des pièces. Si la déduction
 touche une autre colonne déjà remplie, rien n'est écrit sur cette vente.
 
 Trace : ``raw_payload.pdf_fact_provenance[colonne]`` (``src.pdf_fact_scope.pdf_record_fact_projection``), avec
 ``reader: "document_vision"``, la version du prompt, les deux modèles, l'index et le type de la pièce, sa page et la
-valeur d'avant (``baseline``, nulle pour un champ écrit). Jamais de citation, ni dans la trace ni dans le journal.
-Une relecture de la fiche par la collecte garde ces valeurs (``src.known_document_backfill``).
+valeur d'avant (``baseline``, nulle pour un champ écrit), l'adresse et l'empreinte du PDF de la pièce. Jamais de
+citation, ni dans la trace ni dans le journal. Une relecture de la fiche par la collecte garde ces valeurs
+(``src.known_document_backfill``) ; une relecture complète des pièces aussi, tant que la pièce est lue telle quelle
+(``src.document_vision.vision_traces_kept``) ; une pièce remplacée, retirée ou révoquée les emporte.
 
 Retrait : ``python -m src.document_vision_pass --withdraw --prompt-version X`` ou ``--withdraw --sale URL`` rejoue
 ``_clear_pdf_fact_projections`` sur les seules traces de cette lecture ; la case redevient vide (ou reprend la valeur
@@ -72,12 +80,8 @@ from src.document_vision import (
     TRACE_READER,
     Verdict,
 )
-from src.document_vision_reading import (
-    CANDIDATE_SALES_SQL,
-    NO_FIELD_PAGE,
-    PRIMARY_TIMEOUT_SECONDS,
-    SECOND_TIMEOUT_SECONDS,
-)
+from src.document_vision_pieces import NO_PDF_NOT_CACHED, FetchedPieces, cached_sale_pdfs
+from src.document_vision_reading import CANDIDATE_SALES_SQL, NO_FIELD_PAGE, NO_USABLE_PAGE
 from src.models import AuctionSale
 from src.pdf_fact_scope import _clear_pdf_fact_projections, _pdf_values_match, pdf_record_fact_projection
 from src.sale_finalization import derive_sale_facts
@@ -116,6 +120,9 @@ FACT_COLUMNS = (
 STATE_KEY = "document_vision"
 MAX_SALES = 10
 BUDGET_SECONDS = 4 * 60
+# Délais d'appel de la passe, plus courts que ceux du banc (5 et 10 minutes) : une passe tient en 10 minutes.
+PRIMARY_TIMEOUT_SECONDS = 120.0
+SECOND_TIMEOUT_SECONDS = 240.0
 # Une vente commencée à la fin du budget va à son terme : ses deux appels peuvent prendre leurs délais entiers.
 PASS_TIMEOUT_SECONDS = BUDGET_SECONDS + PRIMARY_TIMEOUT_SECONDS + SECOND_TIMEOUT_SECONDS
 RETRY_BACKOFF_HOURS = (12, 24, 72)
@@ -133,6 +140,7 @@ TOUCHES_FILLED = "toucherait_une_case_remplie"
 FORBIDDEN = "toucherait_la_mise_a_prix_ou_la_date"
 NOT_KEPT = "non_garde_par_la_fiche"
 EXCLUDED = "vente_exclue"
+REGISTRY = "tenu_par_le_registre"
 NOT_RECORDED = "ecriture_ecartee"
 SECOND_FAILED = "second lecteur en échec"
 WRITE_FAILED = "écriture en échec"
@@ -243,6 +251,26 @@ class Candidate:
 # --- Règles d'écriture ----------------------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class ReadingSource:
+    """D'où viennent les valeurs d'une lecture, pour leurs traces : les pièces lues (par index), les deux modèles et
+    l'empreinte du PDF de chaque pièce (par URL, telle que le manifeste la donne)."""
+
+    documents: Mapping[int, ReadingDocument]
+    models: Mapping[str, str]
+    digests: Mapping[str, str] = field(default_factory=dict)
+
+
+def manifest_digests(manifest: object) -> dict[str, str]:
+    """L'empreinte du PDF de chaque pièce du manifeste ``pdf_text``, par URL."""
+    items = manifest if isinstance(manifest, list) else []
+    return {
+        str(item["url"]): str(item["sha256"])
+        for item in items
+        if isinstance(item, Mapping) and item.get("url") and item.get("sha256")
+    }
+
+
 @dataclass
 class WritePlan:
     """Ce que la passe écrirait sur une vente : la vente prête à écrire (None : rien), et l'issue de chaque champ
@@ -264,8 +292,8 @@ def plan_write(
     sale: AuctionSale,
     verdicts: Mapping[str, Verdict],
     open_fields: Sequence[str],
-    documents: Mapping[int, ReadingDocument],
-    models: Mapping[str, str],
+    source: ReadingSource,
+    registry_columns: frozenset[str] = frozenset(),
 ) -> WritePlan:
     """Applique les règles d'écriture à ``sale`` (jamais modifiée) ; rend la copie à écrire, avec ses traces.
 
@@ -275,6 +303,10 @@ def plan_write(
     sur la vente), sauf les étiquettes de la surface (:data:`SURFACE_LABELS`), dont la valeur d'avant est tracée ; la
     mise à prix et la date d'audience ne changent jamais. Un champ que la déduction ne garde pas (surface sous le
     seuil, Carrez écartée par la surface habitable) n'est pas écrit. Chaque fait changé reçoit sa trace.
+
+    ``registry_columns`` : les colonnes que le registre des pièces tient ou a tenues sur la vente
+    (:func:`_registry_columns`). Un champ qui en touche une n'est jamais écrit, même si sa colonne est vide : une valeur
+    libérée garde sa mémoire d'écho, qui retiendrait la valeur écrite.
     """
     outcomes: dict[str, str] = {}
     chosen: dict[str, Verdict] = {}
@@ -284,6 +316,8 @@ def plan_write(
             continue
         if name not in open_fields:
             outcomes[name] = CLOSED
+        elif registry_columns.intersection(required_empty_columns(name)):
+            outcomes[name] = REGISTRY
         elif any(not _empty(getattr(sale, column)) for column in required_empty_columns(name)):
             outcomes[name] = FILLED
         elif name == ROOMS and sale.bedrooms_count is not None and int(verdict.value) < sale.bedrooms_count:  # type: ignore[call-overload]
@@ -304,6 +338,8 @@ def plan_write(
     refusal = None
     if any(column in NEVER_WRITTEN for column in changed):
         refusal = FORBIDDEN
+    elif registry_columns.intersection(changed):
+        refusal = REGISTRY
     elif any(not _empty(before[column]) for column in changed if column not in relabelled):
         refusal = TOUCHES_FILLED
     elif (
@@ -320,9 +356,9 @@ def plan_write(
     for column in changed:
         if column in UNTRACED_COLUMNS or _empty(after[column]):
             continue
-        source = column if column in kept else kept[0]
+        origin = column if column in kept else kept[0]
         _record_trace(
-            written, column, chosen[source], before[column], documents, models, derived=column not in kept, source=source
+            written, column, chosen[origin], before[column], source, derived_from=None if column in kept else origin
         )
     return WritePlan(written, outcomes)
 
@@ -332,24 +368,26 @@ def _record_trace(
     column: str,
     verdict: Verdict,
     previous: object,
-    documents: Mapping[int, ReadingDocument],
-    models: Mapping[str, str],
+    source: ReadingSource,
     *,
-    derived: bool,
-    source: str,
+    derived_from: str | None,
 ) -> None:
     """La trace d'une colonne écrite (ou refaite par la déduction) : jamais la citation."""
     page = verdict.page
-    document = documents.get(page.document) if page is not None else None
+    document = source.documents.get(page.document) if page is not None else None
     details: dict[str, object] = {
         "reader": TRACE_READER,
         "prompt_version": PROMPT_VERSION,
-        "models": dict(models),
+        "models": dict(source.models),
         "document_index": page.document if page is not None else None,
         "document_type": document.document_type if document is not None else None,
     }
-    if derived:
-        details["derived_from"] = source
+    digest = source.digests.get(document.url or "") if document is not None else None
+    if digest:
+        # Une relecture des pièces garde la trace tant que cette pièce est lue telle quelle (TRACE_READER).
+        details["document_sha256"] = digest
+    if derived_from is not None:
+        details["derived_from"] = derived_from
     pdf_record_fact_projection(
         sale,
         [column],
@@ -407,6 +445,12 @@ select sale.source_url
 """
 
 
+# Les colonnes que le registre des pièces tient ou a tenues sur la vente (valeur tenue, ou libérée avec sa mémoire
+# d'écho), par la fonction serveur de la migration 20261208100100 : le pipeline ne lit pas lui-même l'état du registre,
+# et la correspondance entre champs et colonnes reste celle de la base.
+_REGISTRY_COLUMNS_SQL = "select app_private.sale_registry_columns(%s)"
+
+
 def _connect(db_url: str) -> Any:
     from src.storage.supabase_client import connect
 
@@ -440,6 +484,12 @@ def _is_excluded(db_url: str, source_url: str) -> bool:
         return is_sale_excluded_from_document_reading(connection, source_url)
 
 
+def _registry_columns(db_url: str, source_url: str) -> frozenset[str]:
+    with _connect(db_url) as connection:
+        row = connection.execute(_REGISTRY_COLUMNS_SQL, (source_url,)).fetchone()
+    return frozenset(str(column) for column in (row[0] if row and row[0] else []))
+
+
 def _record_state(db_url: str, source_url: str, state: Mapping[str, object]) -> None:
     """Écrit l'état de la lecture dans ``raw_payload`` de la vente, et rien d'autre (même à blanc)."""
     with _connect(db_url) as connection:
@@ -469,12 +519,6 @@ def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[Any]:
         yield lock
 
 
-def _download(sale: AuctionSale) -> Callable[[Mapping[str, Any], Sequence[str]], Any]:
-    from src.document_vision_pieces import download_sale_pdfs
-
-    return lambda _row, urls: download_sale_pdfs(sale, urls)
-
-
 def _readers(max_calls: int) -> tuple[Any, Any]:
     from src.document_vision_reading import SpendCap, anthropic_reader
     from src.enrichment.anthropic_reader import HAIKU, SONNET
@@ -502,6 +546,11 @@ class PassReport:
     failed: int = 0
     abandoned: int = 0
     missing: int = 0
+    # Ventes dont aucune pièce utile n'est dans le cache local : lues quand leurs pièces auront été relues.
+    waiting_pieces: int = 0
+    # Pièces prises dans le cache local, et pièces demandées qui n'y étaient pas (jamais téléchargées par la passe).
+    pieces_from_cache: int = 0
+    pieces_not_cached: int = 0
     stop_reason: str | None = None
     # Par champ retenu par les deux lecteurs : issue (:data:`WRITTEN` ou motif de refus) -> nombre de ventes.
     fields: dict[str, Counter[str]] = field(default_factory=dict)
@@ -520,6 +569,11 @@ class PassReport:
             "failed": self.failed,
             "abandoned": self.abandoned,
             "missing": self.missing,
+            "waiting_pieces": self.waiting_pieces,
+            "pieces_from_cache": self.pieces_from_cache,
+            "pieces_not_cached": self.pieces_not_cached,
+            # La passe n'a aucun chemin vers le réseau des sites : ses pièces viennent du cache local.
+            "site_requests": 0,
             "stop_reason": self.stop_reason,
             "fields": {name: dict(sorted(counts.items())) for name, counts in sorted(self.fields.items())},
         }
@@ -580,6 +634,16 @@ def run_pass(
         return report
     primary, second = readers if readers is not None else _readers(max_sales)
     models = {"primary": primary.stats.model, "second": second.stats.model}
+
+    def pieces_of(sale: AuctionSale) -> Callable[[Mapping[str, Any], Sequence[str]], FetchedPieces]:
+        def fetch(_row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPieces:
+            # Le cache local des pièces seulement : aucune requête aux sites.
+            fetched = cached_sale_pdfs(sale, urls)
+            report.pieces_from_cache += len(fetched.pdfs)
+            report.pieces_not_cached += sum(1 for url in urls if fetched.missing.get(url) == NO_PDF_NOT_CACHED)
+            return fetched
+
+        return fetch
     today = today or datetime.now(PARIS).date()
     for candidate in candidates:
         if clock() - started >= budget_seconds:
@@ -616,7 +680,7 @@ def run_pass(
         }
         try:
             reading, skipped = read_sale(
-                row, primary, second, _download(sale), today=today, stage=PASS_STAGE, reason=PASS_REASON
+                row, primary, second, pieces_of(sale), today=today, stage=PASS_STAGE, reason=PASS_REASON
             )
         except ReadingStopped as exc:
             # Budget partagé ou plafond : la vente n'est pas comptée, son état ne change pas.
@@ -629,12 +693,19 @@ def run_pass(
             "read_at": _now(),
             "text_at": text_at,
         }
+        if reading is None and skipped == f"{NO_USABLE_PAGE} ({NO_PDF_NOT_CACHED})":
+            # Pièces absentes du cache : rien n'a été lu ni payé. La vente revient quand ses pièces sont relues (texte
+            # réécrit), sans essai compté.
+            _record_state(db_url, candidate.source_url, {**new_state, "status": "waiting_pieces", "attempts": attempts})
+            report.waiting_pieces += 1
+            continue
         failure = SECOND_FAILED if reading is not None and reading.second_failed else None
         if reading is None and skipped != NO_FIELD_PAGE:
             failure = skipped
         if failure is None and reading is not None:
+            source = ReadingSource(reading.documents, models, manifest_digests(candidate.manifest))
             try:
-                plan = _apply(db_url, candidate.source_url, sale, settings, reading.final, reading.documents, models)
+                plan = _apply(db_url, candidate.source_url, sale, settings, reading.final, source)
             except CatalogueLockTimeout:
                 report.stop_reason = "catalogue_lock"
                 break
@@ -662,13 +733,12 @@ def _apply(
     sale: AuctionSale,
     settings: VisionSettings,
     verdicts: Mapping[str, Verdict],
-    documents: Mapping[int, ReadingDocument],
-    models: Mapping[str, str],
+    source: ReadingSource,
 ) -> WritePlan:
     """À blanc : les règles appliquées à la vente lue, rien n'est écrit. En écriture : sous le verrou du catalogue,
-    sur la vente relue, après une seconde vérification de l'exclusion."""
+    sur la vente relue, après une seconde vérification de l'exclusion. Le registre des pièces est lu dans les deux cas."""
     if settings.mode != WRITE:
-        return plan_write(sale, verdicts, settings.fields, documents, models)
+        return plan_write(sale, verdicts, settings.fields, source, _registry_columns(db_url, source_url))
     accepted = [name for name in WRITABLE_FIELDS if name in verdicts and verdicts[name].status == ACCEPTED]
     if not accepted:
         return WritePlan(None)
@@ -678,7 +748,7 @@ def _apply(
         current = _fetch_sale(source_url)
         if current is None:
             return WritePlan(None)
-        plan = plan_write(current, verdicts, settings.fields, documents, models)
+        plan = plan_write(current, verdicts, settings.fields, source, _registry_columns(db_url, source_url))
         if plan.sale is None:
             return plan
         lock.ensure_held()

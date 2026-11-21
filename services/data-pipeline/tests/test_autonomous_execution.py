@@ -147,6 +147,36 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
         ]
 
 
+def test_only_the_reading_of_the_pieces_by_claude_gets_the_anthropic_key(monkeypatch) -> None:
+    """Lot V3b-1 : ni le travailleur qui ouvre les PDF, ni les autres passes ne reçoivent la clé de l'API Anthropic."""
+    run_id = "00000000-0000-0000-0000-000000000010"
+    subprocess_calls = []
+
+    class FakeDb:
+        def execute(self, statement, params):
+            if "returning source" in statement:
+                return SimpleNamespace(fetchone=lambda: ("enrichment-queue",))
+            if "select summary from public.auction_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ({},))
+            return SimpleNamespace(fetchone=lambda: (0,), fetchall=lambda: [])
+
+    monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
+    monkeypatch.setattr(
+        autonomous_runner.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
+    )
+    monkeypatch.setenv(config.ANTHROPIC_API_KEY_ENV, "test-key-never-shown")
+
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 0
+
+    with_key = [command[2] for command, kwargs in subprocess_calls if config.ANTHROPIC_API_KEY_ENV in kwargs["env"]]
+    assert with_key == ["src.document_vision_pass"]
+    assert len(subprocess_calls) > 1
+
+
 def test_each_setting_of_a_scheduled_unit_is_read_back_by_its_reader(monkeypatch) -> None:
     """Rejoué dans l'environnement du passage lancé, chaque lecteur retrouve le réglage posé par le lanceur."""
     run_id = "00000000-0000-0000-0000-000000000009"

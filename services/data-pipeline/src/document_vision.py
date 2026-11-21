@@ -67,7 +67,8 @@ VISITS = "visit_dates"
 FIELDS = (HABITABLE, CARREZ, LAND, ROOMS, OCCUPANCY, VISITS)
 SURFACE_FIELDS = frozenset({HABITABLE, CARREZ, LAND})
 # Marque des traces que cette lecture laisse dans ``raw_payload.pdf_fact_provenance`` (``src.document_vision_pass``),
-# lue par le retrait et par la relecture d'une fiche (``src.known_document_backfill``).
+# lue par le retrait, par la relecture d'une fiche (``src.known_document_backfill``) et par la relecture des pièces
+# (:func:`vision_traces_kept`).
 TRACE_READER = "document_vision"
 # Seuls ces états d'occupation sont lus (owner_occupied, squatted : hors de ce lot).
 OCCUPANCY_VALUES = frozenset({"vacant", "occupied", "rented"})
@@ -1047,6 +1048,34 @@ class SaleContext:
         if ref not in self._ocr_texts:
             self._ocr_texts[ref] = self.ocr_reader(ref)
         return self._ocr_texts[ref]
+
+
+def vision_traces_kept(raw_payload: object, pdf_texts: Sequence[object]) -> frozenset[str]:
+    """Les colonnes écrites par cette lecture que la relecture complète des pièces (``pdf_texts``) doit garder.
+
+    Une trace est gardée tant que sa pièce est encore lue, et lue telle quelle : son URL (``document_url``) est parmi
+    les pièces relues et, quand les deux sont connues, l'empreinte du PDF lu (``document_sha256``) est la même. Une
+    pièce retirée du dossier, remplacée ou devenue illisible n'est plus parmi elles : sa trace est effacée comme les
+    autres projections des pièces.
+    """
+    traces = raw_payload.get("pdf_fact_provenance") if isinstance(raw_payload, Mapping) else None
+    pieces = {
+        str(item.get("url")): item.get("sha256")
+        for item in pdf_texts
+        if isinstance(item, Mapping) and item.get("url")
+    }
+    return frozenset(
+        column
+        for column, trace in (traces.items() if isinstance(traces, Mapping) else [])
+        if isinstance(trace, Mapping)
+        and trace.get("reader") == TRACE_READER
+        and trace.get("document_url") in pieces
+        and not (
+            trace.get("document_sha256")
+            and pieces[trace["document_url"]]
+            and trace.get("document_sha256") != pieces[trace["document_url"]]
+        )
+    )
 
 
 def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: object, quality_flags: object) -> SaleContext:

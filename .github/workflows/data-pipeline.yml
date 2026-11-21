@@ -327,6 +327,13 @@ jobs:
           # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
           # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).
           PIPELINE_WATCHDOG_SECONDS: "9600"
+          # Lecture des pièces par Claude (services/data-pipeline/src/document_vision_pass.py, lot V3b-1) : « off »
+          # sans variable de dépôt, aucun champ ouvert sans DOCUMENT_VISION_FIELDS. La clé n'est donnée qu'à cette
+          # étape ; le lanceur autonome ne la transmet qu'à la passe de lecture des pièces, et le reste de l'étape la
+          # retire avant toute autre commande. Aucune commande ne la lit.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DOCUMENT_VISION_MODE: ${{ vars.DOCUMENT_VISION_MODE || 'off' }}
+          DOCUMENT_VISION_FIELDS: ${{ vars.DOCUMENT_VISION_FIELDS || '' }}
         run: |
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"
@@ -341,6 +348,8 @@ jobs:
             bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID" "${lane[@]}"
             exit 0
           fi
+          # Exécutions manuelles : la clé de lecture des pièces par Claude ne sert qu'au lanceur autonome.
+          unset ANTHROPIC_API_KEY
 
           if [ "$REQUESTED_PUBLICATION_CHECK" = "true" ]; then
             python -m src.verify_publication

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.config import PDF_TEXTS_DIR
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.document_vision import vision_traces_kept
 from src.enrichment.surface_reasoning import (
     ExtractedAsset,
     apply_surface_reasoning_to_sale,
@@ -77,8 +78,9 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         # A complete, text-empty document is still authoritative evidence that
         # the previous PDF projection no longer exists.  Partial/failed
         # payloads must leave the last verified projection available for the
-        # next retry.
-        _clear_pdf_fact_projections(sale)
+        # next retry. The values read by Claude (src.document_vision_pass) stay while their piece is read
+        # unchanged: this pass does not read them again.
+        _clear_pdf_fact_projections(sale, keep=vision_traces_kept(sale.raw_payload, pdf_texts))
     if not combined:
         if complete_texts:
             enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"

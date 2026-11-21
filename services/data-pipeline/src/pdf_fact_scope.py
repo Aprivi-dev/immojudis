@@ -585,8 +585,13 @@ def _clear_pdf_fact_projections(
     sale: Any,
     *,
     fields: list[str] | tuple[str, ...] | set[str] | None = None,
+    keep: frozenset[str] = frozenset(),
 ) -> dict[str, set[str]]:
-    """Remove unchanged stale PDF projections and restore trusted source facts."""
+    """Remove unchanged stale PDF projections and restore trusted source facts.
+
+    ``keep``: traced fields left untouched, as if they were not selected (the projections of another reader whose
+    pieces are still read unchanged: ``src.document_vision.vision_traces_kept``).
+    """
     raw_payload = getattr(sale, "raw_payload", None)
     if not isinstance(raw_payload, dict):
         return {"cleared": set(), "preserved": set()}
@@ -612,7 +617,7 @@ def _clear_pdf_fact_projections(
         if not isinstance(trace, dict):
             remaining[field] = trace
             continue
-        if selected is not None and field not in selected:
+        if (selected is not None and field not in selected) or field in keep:
             remaining[field] = trace
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue

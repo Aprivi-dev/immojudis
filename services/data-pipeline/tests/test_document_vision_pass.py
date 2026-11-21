@@ -17,8 +17,10 @@ import pymupdf
 import pytest
 from psycopg.types.json import Jsonb
 
-from src import autonomous_runner
+from src import autonomous_runner, pdf_enrichment
 from src import document_vision_pass as vision
+from src import document_vision_pieces as pieces
+from src import document_vision_reading as reading
 from src.document_reading import ReadingDocument
 from src.document_vision import (
     ACCEPTED,
@@ -43,6 +45,7 @@ TODAY = date(2026, 11, 21)
 SALE_ID = "5a1e0000-0000-4000-8000-000000000001"
 SOURCE_URL = "https://example.test/vente-sur-licitation"
 PIECE_URL = "https://example.test/pieces/cahier-des-conditions.pdf"
+OTHER_URL = "https://example.test/pieces/proces-verbal.pdf"
 DB_URL = "postgresql://example.test/db"
 QUOTE = "surface habitable de 62,40 m2"
 DESCRIPTION = "Appartement de 3 pieces principales, surface habitable de 62,40 m2, actuellement loue par bail."
@@ -147,6 +150,7 @@ class Store:
         self.states: dict[str, dict[str, object]] = {}
         self.written: list[AuctionSale] = []
         self.excluded: set[str] = set()
+        self.registry: frozenset[str] = frozenset()
         self.limits: list[int] = []
         self.locks = 0
 
@@ -178,7 +182,8 @@ class Store:
         monkeypatch.setattr(vision, "_record_state", lambda db_url, url, state: self.states.__setitem__(url, state))
         monkeypatch.setattr(vision, "_is_excluded", lambda db_url, url: url in self.excluded)
         monkeypatch.setattr(vision, "_catalogue_lock", lock)
-        monkeypatch.setattr(vision, "_download", lambda sale: lambda row, urls: FetchedPieces({PIECE_URL: PDF}))
+        monkeypatch.setattr(vision, "cached_sale_pdfs", lambda sale, urls: FetchedPieces({PIECE_URL: PDF}))
+        monkeypatch.setattr(vision, "_registry_columns", lambda db_url, url: self.registry)
 
 
 def _run(
@@ -206,8 +211,16 @@ def _verdict(value: object, page: int = 2) -> Verdict:
 DOCUMENTS = {1: ReadingDocument(1, "Cahier", PIECE_URL, "cahier_conditions_vente", {1: FILLER, 2: DESCRIPTION})}
 
 
-def _plan(sale: AuctionSale, verdicts: Mapping[str, Verdict], fields: Sequence[str] = OPEN_FIELDS) -> vision.WritePlan:
-    return vision.plan_write(sale, verdicts, fields, DOCUMENTS, MODELS)
+SOURCE = vision.ReadingSource(DOCUMENTS, MODELS, vision.manifest_digests(MANIFEST))
+
+
+def _plan(
+    sale: AuctionSale,
+    verdicts: Mapping[str, Verdict],
+    fields: Sequence[str] = OPEN_FIELDS,
+    registry: frozenset[str] = frozenset(),
+) -> vision.WritePlan:
+    return vision.plan_write(sale, verdicts, fields, SOURCE, registry)
 
 
 # --- Réglages -------------------------------------------------------------------------------------------------------
@@ -609,8 +622,214 @@ def test_a_pass_reads_ten_sales_and_starts_none_after_four_minutes(monkeypatch: 
 
 
 def test_the_runner_gives_the_pass_its_budget_and_the_time_of_a_last_sale() -> None:
-    assert autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS == vision.PASS_TIMEOUT_SECONDS
+    assert autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS == vision.PASS_TIMEOUT_SECONDS == 10 * 60
+    # Délais d'appel de la passe : 2 et 4 minutes ; le banc garde les siens (5 et 10 minutes).
+    assert (vision.PRIMARY_TIMEOUT_SECONDS, vision.SECOND_TIMEOUT_SECONDS) == (120.0, 240.0)
+    assert (reading.PRIMARY_TIMEOUT_SECONDS, reading.SECOND_TIMEOUT_SECONDS) == (300.0, 600.0)
     assert "document_vision_exit_code" in autonomous_runner.EXTERNAL_PASS_KEYS
+
+
+# --- Registre des pièces ----------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("registry", "field_name", "value"),
+    [
+        # Surface tenue, ou libérée avec mémoire d'écho : ses colonnes (held_columns de property.surface_m2).
+        (frozenset({"surface_m2", "app_surface_m2", "app_surface_kind"}), HABITABLE, Decimal("62.4")),
+        (frozenset({"surface_m2", "app_surface_m2", "app_surface_kind"}), CARREZ, Decimal("60")),
+        (frozenset({"land_surface_m2"}), LAND, Decimal("500")),
+        (frozenset({"rooms_count"}), ROOMS, 3),
+        (frozenset({"occupancy_status"}), OCCUPANCY, "rented"),
+    ],
+)
+def test_a_field_of_the_fact_registry_is_never_written(registry: frozenset[str], field_name: str, value: object) -> None:
+    plan = _plan(_sale(property_type="house"), {field_name: _verdict(value)}, registry=registry)
+    assert plan.sale is None and plan.outcomes == {field_name: "tenu_par_le_registre"}
+
+
+def test_a_value_that_would_change_a_registry_column_is_not_written() -> None:
+    # La surface habitable ferait la surface affichée, que le registre a tenue (libérée, avec sa mémoire d'écho).
+    plan = _plan(_sale(), {HABITABLE: _verdict(Decimal("62.4")), ROOMS: _verdict(3)}, registry=frozenset({"surface_m2"}))
+    assert plan.outcomes == {HABITABLE: "tenu_par_le_registre", ROOMS: "ecrit"}
+    plan = _plan(_sale(), {HABITABLE: _verdict(Decimal("62.4"))}, registry=frozenset({"surface_scope"}))
+    assert plan.sale is None and plan.outcomes == {HABITABLE: "tenu_par_le_registre"}
+
+
+def test_the_pass_reads_the_registry_before_writing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = Store(_sale(), [_candidate()])
+    store.install(monkeypatch)
+    store.registry = frozenset({"rooms_count"})
+    readers = _readers(FakeModel(VALUES), FakeModel(VALUES))
+    report = vision.run_pass(DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=readers, today=TODAY)
+    assert report.fields[ROOMS] == {"tenu_par_le_registre": 1} and report.fields[HABITABLE] == {"ecrit": 1}
+    assert store.sales[SOURCE_URL].rooms_count is None
+
+
+# --- Pièces : cache local, aucune requête aux sites ------------------------------------------------------------------
+
+
+def test_pieces_come_from_the_local_cache_of_the_pdf_reading(tmp_path: Path) -> None:
+    from src.sale_local_files import document_filename, sale_storage_id
+
+    sale = _sale(documents=[{"url": PIECE_URL, "label": "Cahier des conditions de vente"}, {"url": OTHER_URL}])
+    folder = tmp_path / sale_storage_id(sale)
+    folder.mkdir()
+    (folder / document_filename(sale.documents[0])).write_bytes(PDF)
+
+    fetched = pieces.cached_sale_pdfs(sale, [PIECE_URL, OTHER_URL], root=tmp_path)
+
+    assert fetched.pdfs == {PIECE_URL: PDF}
+    assert fetched.missing == {OTHER_URL: pieces.NO_PDF_NOT_CACHED}
+
+
+def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the pass never downloads a piece")
+
+    monkeypatch.setattr(pdf_enrichment, "download_documents", refuse)
+    monkeypatch.setattr(pieces, "download_sale_pdfs", refuse)
+
+
+def test_the_pass_reads_cached_pieces_and_counts_no_request_to_the_sites(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from src.sale_local_files import document_filename, sale_storage_id
+
+    sale = _sale()
+    folder = tmp_path / sale_storage_id(sale)
+    folder.mkdir()
+    (folder / document_filename(sale.documents[0])).write_bytes(PDF)
+    store = Store(sale, [_candidate()])
+    store.install(monkeypatch)
+    monkeypatch.setattr(vision, "cached_sale_pdfs", lambda sale, urls: pieces.cached_sale_pdfs(sale, urls, root=tmp_path))
+    _no_network(monkeypatch)
+    readers = _readers(FakeModel(VALUES), FakeModel(VALUES))
+
+    report = vision.run_pass(DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=readers, today=TODAY)
+
+    assert report.read == 1 and store.sales[SOURCE_URL].habitable_surface_m2 == Decimal("62.4")
+    summary = report.as_dict()
+    assert summary["site_requests"] == 0 and summary["pieces_from_cache"] == 1 and summary["pieces_not_cached"] == 0
+
+
+def test_a_sale_whose_pieces_are_not_cached_waits_without_any_call_nor_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = Store(_sale(), [_candidate(state=_same_state(status="failed", attempts=2), retry_due=True)])
+    store.install(monkeypatch)
+    monkeypatch.setattr(vision, "cached_sale_pdfs", lambda sale, urls: pieces.cached_sale_pdfs(sale, urls, root=tmp_path))
+    _no_network(monkeypatch)
+    primary = FakeModel(VALUES)
+
+    report = vision.run_pass(
+        DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=_readers(primary, FakeModel(VALUES)), today=TODAY
+    )
+
+    assert primary.calls == 0 and report.waiting_pieces == 1 and report.failed == 0
+    assert report.as_dict()["pieces_not_cached"] == 1 and report.as_dict()["site_requests"] == 0
+    state = store.states[SOURCE_URL]
+    assert state["status"] == "waiting_pieces" and state["attempts"] == 2
+
+
+def test_the_candidates_come_back_when_the_pieces_are_read_again() -> None:
+    # « waiting_pieces » n'est ni lue ni en échec : seul un texte des pièces réécrit (ou une autre version) la ramène.
+    sql = vision.candidates_sql(OPEN_FIELDS)
+    assert "->> 'text_at')::timestamptz < latest.updated_at" in sql
+    assert "waiting_pieces" not in sql
+
+
+# --- Relecture complète des pièces -----------------------------------------------------------------------------------
+
+
+def _pdf_texts(url: str, text: str, sha256: str | None) -> list[dict[str, object]]:
+    item: dict[str, object] = {
+        "url": url,
+        "label": "Cahier des conditions de vente",
+        "document_type": "cahier_conditions_vente",
+        "text": text,
+        "pages": [{"page": 1, "text": text}],
+        "complete": True,
+        "extraction_status": "extracted",
+    }
+    if sha256 is not None:
+        item["sha256"] = sha256
+    return [item]
+
+
+def test_a_written_value_survives_a_complete_reread_of_unchanged_pieces() -> None:
+    from src.pdf_fact_extraction import enrich_sale_from_pdf_text
+
+    sale = _written_sale()
+    enrich_sale_from_pdf_text(sale, _pdf_texts(PIECE_URL, FILLER, hashlib.sha256(PDF).hexdigest()))
+
+    assert sale.habitable_surface_m2 == Decimal("62.4") and sale.rooms_count == 3 and sale.occupancy_status == "rented"
+    assert {HABITABLE, ROOMS, OCCUPANCY, "app_surface_m2"} <= vision.vision_traces(sale)
+    # Sans empreinte connue de la pièce relue, sa présence suffit.
+    enrich_sale_from_pdf_text(sale, _pdf_texts(PIECE_URL, FILLER, None))
+    assert sale.habitable_surface_m2 == Decimal("62.4")
+
+
+@pytest.mark.parametrize(
+    ("url", "sha256"),
+    [(PIECE_URL, "0" * 64), (OTHER_URL, None)],
+    ids=["piece_changed", "piece_removed"],
+)
+def test_a_written_value_goes_when_its_piece_changes_or_leaves_the_dossier(url: str, sha256: str | None) -> None:
+    from src.pdf_fact_extraction import enrich_sale_from_pdf_text
+
+    sale = _written_sale()
+    sale.documents = [{"url": url, "label": "Cahier des conditions de vente"}]
+    enrich_sale_from_pdf_text(sale, _pdf_texts(url, FILLER, sha256))
+
+    assert vision.vision_traces(sale) == set()
+    assert sale.habitable_surface_m2 is None and sale.rooms_count is None and sale.occupancy_status is None
+
+
+def test_a_replaced_piece_takes_the_written_values_with_it() -> None:
+    from src.pdf_enrichment import _invalidate_replaced_document_facts
+
+    sale = _written_sale()
+    sale.raw_payload["document_analysis"] = {"profiles": [{"url": PIECE_URL, "sha256": "a" * 64}]}
+    _invalidate_replaced_document_facts(sale, [{"url": PIECE_URL, "sha256": "b" * 64}])
+
+    assert vision.vision_traces(sale) == set() and sale.habitable_surface_m2 is None and sale.rooms_count is None
+
+
+# --- Clé de l'API et workflow -----------------------------------------------------------------------------------------
+
+
+def test_only_the_reading_of_the_pieces_gets_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[dict[str, str]] = []
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-shown")
+    monkeypatch.setattr(
+        autonomous_runner, "_run_optional_pass", lambda label, command, *, env, timeout: seen.append(env) or 0
+    )
+    autonomous_runner._run_document_vision({"PATH": "/usr/bin"})
+    autonomous_runner._run_document_reading({"PATH": "/usr/bin"})
+    assert seen[0]["ANTHROPIC_API_KEY"] == "test-key-never-shown"
+    assert "ANTHROPIC_API_KEY" not in seen[1]
+
+
+def test_workflow_gives_the_key_and_the_settings_to_the_runner_step_only() -> None:
+    workflows = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+    text = (workflows / "data-pipeline.yml").read_text(encoding="utf-8")
+    key = "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"
+    mode = "DOCUMENT_VISION_MODE: ${{ vars.DOCUMENT_VISION_MODE || 'off' }}"
+    fields = "DOCUMENT_VISION_FIELDS: ${{ vars.DOCUMENT_VISION_FIELDS || '' }}"
+    header, *steps = text.split("\n      - name: ")
+    names = ("ANTHROPIC_API_KEY:", "DOCUMENT_VISION_MODE:", "DOCUMENT_VISION_FIELDS:")
+    assert not any(name in header for name in names)  # not in a job environment
+    receiving = [step.splitlines()[0] for step in steps if any(name in step for name in names)]
+    assert receiving == ["Run manually requested pipeline"]
+    runner_step = next(step for step in steps if step.startswith("Run manually requested pipeline"))
+    assert key in runner_step and mode in runner_step and fields in runner_step
+    assert "python -m src.autonomous_runner" in runner_step
+    # The manual runs of the same step drop the key before any other command.
+    assert runner_step.index("unset ANTHROPIC_API_KEY") > runner_step.index("python -m src.autonomous_runner")
+    # Never read nor shown by a command of the workflow.
+    for reading_form in ("$ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY", "env.ANTHROPIC_API_KEY"):
+        assert reading_form not in text
 
 
 # --- Exécution réelle (PIPELINE_TEST_DB_URL, base jetable, sinon ignoré) ------------------------------------------
@@ -646,7 +865,7 @@ def test_the_candidates_state_and_withdrawal_queries_run_on_postgres() -> None:
                 sale_date timestamptz, observations jsonb not null default '[]', raw_payload jsonb,
                 property_type text, city text, surface_m2 numeric, app_surface_m2 numeric,
                 habitable_surface_m2 numeric, carrez_surface_m2 numeric, land_surface_m2 numeric,
-                rooms_count integer, occupancy_status text)"""
+                rooms_count integer, occupancy_status text, held_fields jsonb)"""
             )
             db.execute(
                 """create table public.auction_extractions(source_url text not null, provider text not null,
@@ -719,5 +938,39 @@ def test_the_candidates_state_and_withdrawal_queries_run_on_postgres() -> None:
             assert traced == [("https://example.test/filled",)]
             assert db.execute(vision._TRACED_SALES_SQL, (TRACE_READER, "autre", "autre")).fetchall() == []
             assert db.execute(vision._TRACED_SALES_SQL, (TRACE_READER, None, None)).fetchall() == traced
+
+            # Registre des pièces : les vrais champs et leurs colonnes (migration 20261116100000).
+            db.execute(
+                """create table public.auction_fact_fields(field_key text primary key, held_columns text[],
+                value_type text, abs_tolerance numeric, rel_tolerance numeric, on_listing_change text,
+                hold_enabled boolean)"""
+            )
+            registry = (ROOT / "supabase/migrations/20261116100000_fact_registry_tables.sql").read_text()
+            start = registry.index("insert into public.auction_fact_fields (")
+            db.execute(registry[start : registry.index("on conflict (field_key) do nothing;", start)])
+            for role in ("anon", "authenticated", "service_role"):
+                db.execute(
+                    f"do $$ begin if not exists(select from pg_roles where rolname='{role}') "
+                    f"then create role {role}; end if; end $$"
+                )
+            function = (ROOT / "supabase/migrations/20261208100100_sale_registry_columns.sql").read_text()
+            db.execute(function[function.index("create or replace function") : function.index("\ncommit;")])
+            held = {
+                "property.surface_m2": {"state": "released", "echo": [{"value": 54}]},
+                "property.rooms_count": {"state": "held", "value": 3},
+            }
+            db.execute(
+                "update public.auction_sales set held_fields = %s where source_url = 'https://example.test/new'",
+                (Jsonb(held),),
+            )
+
+            def registry_columns(url: str) -> list[str]:
+                row = db.execute(vision._REGISTRY_COLUMNS_SQL, (url,)).fetchone()
+                return sorted(row[0])
+
+            assert registry_columns("https://example.test/new") == [
+                "app_surface_kind", "app_surface_m2", "rooms_count", "surface_confidence", "surface_m2", "surface_source",
+            ]
+            assert registry_columns("https://example.test/filled") == []
         finally:
             db.rollback()

@@ -32,6 +32,8 @@ AUTONOMOUS_RUN_ID_ENV = "PIPELINE_AUTONOMOUS_RUN_ID"
 CADASTRE_ENRICH_ENABLED_ENV = "CADASTRE_ENRICH_ENABLED"
 DPE_ENRICH_ENABLED_ENV = "DPE_ENRICH_ENABLED"
 REPLICATE_CANCEL_AFTER_ENV = "REPLICATE_CANCEL_AFTER"
+# Clé de l'API Anthropic : le lanceur autonome ne la transmet qu'à la passe de lecture des pièces par Claude.
+ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 
 class EncheresPubliquesAccessNotAuthorized(RuntimeError):
@@ -434,7 +436,7 @@ def load_settings() -> dict[str, str | float | None]:
         "document_vision_fields": tuple(
             name.strip() for name in (os.getenv("DOCUMENT_VISION_FIELDS") or "").split(",") if name.strip()
         ),
-        "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY"),
+        "anthropic_api_key": os.getenv(ANTHROPIC_API_KEY_ENV),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
         "replicate_dynamic_thinking": env_flag("REPLICATE_DYNAMIC_THINKING", False),

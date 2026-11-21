@@ -1,10 +1,11 @@
 """Les pièces d'une lecture par un modèle qui lit les pages : téléchargement, PDF utilisables, pages en image.
 
 Partagé par le banc (``scripts/compare_document_vision.py``) et la passe d'écriture (``src.document_vision_pass``) :
-les deux lisent les mêmes pièces de la même façon. Le téléchargement est le téléchargement poli du pipeline
-(robots.txt, cadence par hôte, sources retirées, garde d'Enchères Publiques), dans un dossier temporaire effacé
-ensuite ; une pièce non obtenue est rendue avec son motif, jamais avec un message d'erreur (il pourrait citer la
-pièce).
+les deux lisent les mêmes pièces de la même façon. Le banc les télécharge (:func:`download_sale_pdfs`, le
+téléchargement poli du pipeline : robots.txt, cadence par hôte, sources retirées, garde d'Enchères Publiques, dans un
+dossier temporaire effacé ensuite). La passe d'écriture ne fait aucune requête : elle les prend dans le cache local
+des pièces que la lecture des PDF du pipeline a téléchargées (:func:`cached_sale_pdfs`). Une pièce non obtenue est
+rendue avec son motif, jamais avec un message d'erreur (il pourrait citer la pièce).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 import pymupdf
 
-from src.config import load_settings
+from src.config import DOCUMENTS_DIR, load_settings
 from src.document_reading import ReadingDocument
 from src.document_vision import PageRef, page_field_score
 from src.normalize import clean_text
@@ -34,6 +35,7 @@ from src.pdf_ocr import (
     pdf_document_ocr_budget_scope,
 )
 from src.pdf_page_analysis import page_has_substantial_image
+from src.sale_local_files import document_filename, sale_storage_id
 from src.sources.cloud_transport import SOURCE_HOSTS, configured_transport
 
 if TYPE_CHECKING:
@@ -74,6 +76,8 @@ PDF_CHANGED = "PDF modifié depuis la lecture"  # empreinte différente de celle
 PDF_UNREADABLE = "PDF illisible"  # pymupdf ne l'ouvre pas
 PAGE_OUT_OF_RANGE = "page hors bornes"  # numéro de page au-delà des pages du PDF
 UNUSABLE_REASONS = (*NO_PDF_REASONS, PDF_CHANGED, PDF_UNREADABLE, PAGE_OUT_OF_RANGE)
+# Passe d'écriture seulement : la pièce n'est pas dans le cache local (:func:`cached_sale_pdfs`).
+NO_PDF_NOT_CACHED = f"{NO_PDF} : absente du cache des pièces"
 _WORD_FORMATS = frozenset({"doc", "docx"})
 
 
@@ -307,4 +311,26 @@ def download_sale_pdfs(sale: AuctionSale, urls: Sequence[str]) -> FetchedPieces:
             stats=stats,
             relay_available=relay_configured(url),
         )
+    return FetchedPieces(pdfs, missing)
+
+
+def cached_sale_pdfs(sale: AuctionSale, urls: Sequence[str], *, root: Path | None = None) -> FetchedPieces:
+    """Les pièces ``urls`` de la vente prises dans le cache local des pièces (``DOCUMENTS_DIR``), sans aucune requête.
+
+    Le cache est celui où ``src.pdf_enrichment.download_documents`` range chaque pièce téléchargée : le dossier
+    ``sale_storage_id`` de la vente, le nom ``document_filename`` de la pièce. Le contenu n'est pas jugé ici :
+    :func:`usable_documents` n'en garde que le PDF dont l'empreinte est celle du texte lu. Une pièce absente du cache
+    est rendue avec le motif :data:`NO_PDF_NOT_CACHED`.
+    """
+    sale_dir = (root or DOCUMENTS_DIR) / sale_storage_id(sale)
+    documents = {document.get("url"): document for document in sale.documents if isinstance(document, Mapping)}
+    pdfs: dict[str, bytes] = {}
+    missing: dict[str, str] = {}
+    for url in urls:
+        document = documents.get(url)
+        path = sale_dir / document_filename(document) if document is not None else None
+        if path is not None and path.is_file():
+            pdfs[url] = path.read_bytes()
+        else:
+            missing[url] = NO_PDF_NOT_CACHED
     return FetchedPieces(pdfs, missing)
