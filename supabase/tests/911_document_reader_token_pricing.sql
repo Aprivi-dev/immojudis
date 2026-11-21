@@ -17,23 +17,34 @@ insert into public.auction_runs (id, status, source, scheduler_owned, started_at
 values ('91100000-0000-4000-8000-000000000001', 'running', 'enrichment-queue', true,
         statement_timestamp(), '{"running_lease_seconds": 7200}'::jsonb, '{}'::jsonb);
 
+-- Chaque réservation dans sa propre instruction, lue par l'instruction suivante : appelée dans le « where » d'une
+-- lecture, la fonction serait évaluée une fois par ligne parcourue (jamais sur une table vide), et la ligne qu'elle
+-- insère ne serait pas visible dans l'instantané de cette même lecture.
+create temp table pgtap_reservations_911 (model text primary key, id uuid not null);
+insert into pgtap_reservations_911 select 'claude-haiku-5-5', public.reserve_pipeline_prediction(
+  '91100000-0000-4000-8000-000000000001', 'claude-haiku-5-5', 100000, 16000);
+insert into pgtap_reservations_911 select 'claude-sonnet-5-5', public.reserve_pipeline_prediction(
+  '91100000-0000-4000-8000-000000000001', 'claude-sonnet-5-5', 25000, 16000);
+insert into pgtap_reservations_911 select 'qwen/qwen3-7-plus', public.reserve_pipeline_prediction(
+  '91100000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 1000, 500);
+
 select is(
-  (select reserved_usd from public.auction_pipeline_usage where id = public.reserve_pipeline_prediction(
-    '91100000-0000-4000-8000-000000000001', 'claude-haiku-5-5', 100000, 16000)),
+  (select usage.reserved_usd from public.auction_pipeline_usage usage
+     join pgtap_reservations_911 reservation using (id) where reservation.model = 'claude-haiku-5-5'),
   0.018::numeric,
   'Claude Haiku 5.5 reserves 0.10 USD per million input tokens and 0.50 per million output tokens'
 );
 
 select is(
-  (select reserved_usd from public.auction_pipeline_usage where id = public.reserve_pipeline_prediction(
-    '91100000-0000-4000-8000-000000000001', 'claude-sonnet-5-5', 25000, 16000)),
+  (select usage.reserved_usd from public.auction_pipeline_usage usage
+     join pgtap_reservations_911 reservation using (id) where reservation.model = 'claude-sonnet-5-5'),
   0.21::numeric,
   'Claude Sonnet 5.5 reserves 2 USD per million input tokens and 10 per million output tokens'
 );
 
 select is(
-  (select reserved_usd from public.auction_pipeline_usage where id = public.reserve_pipeline_prediction(
-    '91100000-0000-4000-8000-000000000001', 'qwen/qwen3-7-plus', 1000, 500)),
+  (select usage.reserved_usd from public.auction_pipeline_usage usage
+     join pgtap_reservations_911 reservation using (id) where reservation.model = 'qwen/qwen3-7-plus'),
   0.0008265::numeric,
   'Qwen3.7 Plus keeps its price'
 );
