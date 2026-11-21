@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import anthropic
 import pymupdf
@@ -275,6 +275,7 @@ class BenchReport:
     skipped: Counter[str] = field(default_factory=Counter)
     fields: dict[str, FieldStats] = field(default_factory=lambda: {name: FieldStats() for name in FIELDS})
     pages: PageStats = field(default_factory=PageStats)
+    unreadable: Counter[str] = field(default_factory=Counter)
     readers: dict[str, ReaderStats] = field(default_factory=dict)
     stop_reason: str | None = None
 
@@ -287,6 +288,8 @@ class SaleResult:
     final: dict[str, Verdict]
     documents: dict[int, ReadingDocument]
     pages: PageStats
+    # Pièces que pymupdf n'a pas ouvertes pendant la vérification, par type d'erreur.
+    unreadable: Counter[str] = field(default_factory=Counter)
 
 
 @dataclass
@@ -414,50 +417,62 @@ def unread_page_count(manifest: object, documents: Sequence[ReadingDocument]) ->
     )
 
 
-def image_pages(pdfs: Mapping[int, bytes], pages: Sequence[PageRef], ocr_pages: frozenset[PageRef]) -> frozenset[PageRef]:
+def _open_pdf(content: bytes, unreadable: Counter[str]) -> Any | None:
+    """La pièce ouverte par pymupdf, ou None : une pièce qu'il n'ouvre pas est sautée et comptée par type d'erreur
+    (jamais par message, qui pourrait citer la pièce), sans arrêter le banc."""
+    try:
+        return pymupdf.open(stream=content, filetype="pdf")
+    except Exception as exc:  # pymupdf lève selon le défaut FileDataError, RuntimeError, ValueError…
+        unreadable[type(exc).__name__] += 1
+        return None
+
+
+def image_pages(
+    pdfs: Mapping[int, bytes], pages: Sequence[PageRef], ocr_pages: frozenset[PageRef], unreadable: Counter[str]
+) -> frozenset[PageRef]:
     """Parmi ``pages``, celles dont une image couvre une part notable (même seuil que le pipeline pour lancer l'OCR
     d'une page mixte) et dont le texte ne vient pas d'un OCR : la couche texte n'en dit peut-être qu'un en-tête."""
     found: set[PageRef] = set()
     for document_index in sorted({ref.document for ref in pages}):
         content = pdfs.get(document_index)
-        if not content:
+        document = _open_pdf(content, unreadable) if content else None
+        if document is None:
             continue
-        try:
-            with pymupdf.open(stream=content, filetype="pdf") as document:
-                for ref in pages:
-                    if (
-                        ref.document == document_index
-                        and ref not in ocr_pages
-                        and 1 <= ref.page <= document.page_count
-                        and page_has_substantial_image(document[ref.page - 1])
-                    ):
-                        found.add(ref)
-        except Exception:
-            continue
+        with document:
+            for ref in pages:
+                if (
+                    ref.document == document_index
+                    and ref not in ocr_pages
+                    and 1 <= ref.page <= document.page_count
+                    and page_has_substantial_image(document[ref.page - 1])
+                ):
+                    found.add(ref)
     return frozenset(found)
 
 
-def tesseract_page_reader(pdfs: Mapping[int, bytes]) -> Callable[[PageRef], str | None]:
-    """OCR d'une page d'une pièce par le Tesseract du pipeline (``src.pdf_ocr``), borné à ``OCR_PAGE_SECONDS`` ;
-    None si l'OCR n'a rien lu de plus que la couche texte, a échoué ou n'est pas installé."""
+def tesseract_page_reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Callable[[PageRef], str | None]:
+    """OCR d'une page d'une pièce par le Tesseract du pipeline (``src.pdf_ocr``), borné à ``OCR_PAGE_SECONDS``.
+
+    Rend le seul texte lu par l'OCR, sans la couche texte de la page (déjà dans le texte gardé par le pipeline) : un
+    titre de lot n'y est pas compté deux fois et la tolérance de l'OCR ne s'applique pas au texte natif. None si
+    l'OCR n'a rien lu, a échoué ou n'est pas installé.
+    """
     settings = load_settings()
 
     def read(ref: PageRef) -> str | None:
         content = pdfs.get(ref.document)
-        if not content:
+        document = _open_pdf(content, unreadable) if content else None
+        if document is None:
             return None
         try:
-            with pymupdf.open(stream=content, filetype="pdf") as document:
+            with document:
                 if not 1 <= ref.page <= document.page_count:
                     return None
-                page = document[ref.page - 1]
-                native = page.get_text() or ""
                 with pdf_document_ocr_budget_scope(OCR_PAGE_SECONDS):
-                    result = extract_page_text_with_ocr_result(page, native, settings=settings)
+                    result = extract_page_text_with_ocr_result(document[ref.page - 1], "", settings=settings)
         except PdfExtractionDeferred:
             return None
-        text = clean_text(result.get("text"))
-        return text if text and text != clean_text(native) else None
+        return clean_text(result.get("text"))
 
     return read
 
@@ -501,8 +516,9 @@ def compare_sale(
     context.dossier_texts = tuple(text for doc in all_documents for text in doc.pages.values())
     context.dossier_pages = {PageRef(doc.index, number): text for doc in documents for number, text in doc.pages.items()}
     context.ocr_pages = ocr_read_pages(manifest, documents)
-    context.image_pages = image_pages(pdfs, pages, context.ocr_pages)
-    context.ocr_reader = tesseract_page_reader(pdfs) if context.image_pages else None
+    unreadable: Counter[str] = Counter()
+    context.image_pages = image_pages(pdfs, pages, context.ocr_pages, unreadable)
+    context.ocr_reader = tesseract_page_reader(pdfs, unreadable) if context.image_pages else None
     with llm_request_context(
         sale_id=str(row.get("id") or ""), source_url=str(row.get("source_url") or ""), stage=TRIAL_STAGE, reason=TRIAL_REASON
     ):
@@ -521,7 +537,7 @@ def compare_sale(
                 second_pages,
             )
     final = final_verdicts(candidates, second_reading, context, today=today)
-    return SaleResult(candidates, final, {doc.index: doc for doc in documents}, page_stats), None
+    return SaleResult(candidates, final, {doc.index: doc for doc in documents}, page_stats, unreadable), None
 
 
 def _jsonable(value: object) -> object:
@@ -550,14 +566,19 @@ def private_difference(row: Mapping[str, Any], name: str, verdict: Verdict, resu
     }
 
 
-def write_private_review(path: Path, entries: Sequence[Mapping[str, object]]) -> None:
-    """Écrit la revue privée (JSON Lines), lisible du seul propriétaire (0600, même si le fichier existait). Un lien
+def open_private_review(path: Path) -> TextIO:
+    """Ouvre la revue privée (JSON Lines), lisible du seul propriétaire (0600, même si le fichier existait). Un lien
     symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on l'a dit."""
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        os.fchmod(handle.fileno(), 0o600)
-        for entry in entries:
-            handle.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    handle = os.fdopen(descriptor, "w", encoding="utf-8")
+    os.fchmod(handle.fileno(), 0o600)
+    return handle
+
+
+def write_difference(handle: TextIO, entry: Mapping[str, object]) -> None:
+    """Une ligne par écart, écrite tout de suite : un banc arrêté en route garde les écarts déjà vus."""
+    handle.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    handle.flush()
 
 
 def run_bench(
@@ -568,11 +589,11 @@ def run_bench(
     *,
     sample: int,
     today: date,
-    private_review: list[dict[str, object]] | None = None,
+    private_review: Callable[[dict[str, object]], None] | None = None,
 ) -> BenchReport:
     """Lit les ventes (lecture seule), les compare et agrège le résultat. Aucune écriture sur une vente.
 
-    ``private_review`` : si une liste est donnée, chaque valeur retenue qui diffère de la fiche y est ajoutée
+    ``private_review`` : s'il est donné, il reçoit, au fil du banc, chaque valeur retenue qui diffère de la fiche
     (:func:`private_difference`) ; elle n'entre jamais dans le rapport.
     """
     # Avant la première requête : chaque transaction de cette connexion est READ ONLY, une écriture échouerait.
@@ -605,6 +626,7 @@ def run_bench(
         report.pages.sent += result.pages.sent
         report.pages.capped_sales += result.pages.capped_sales
         report.pages.unread += result.pages.unread
+        report.unreadable.update(result.unreadable)
         for name, verdict in result.primary.items():
             if verdict.status == CANDIDATE and verdict.detail:
                 report.fields[name].quote_matches[verdict.detail] += 1
@@ -619,7 +641,7 @@ def run_bench(
                 versus = compare_with_sale(name, verdict.value, row.get(name), today=today)
                 stats.versus_sale[versus] += 1
                 if versus == "different" and private_review is not None:
-                    private_review.append(private_difference(row, name, verdict, result))
+                    private_review(private_difference(row, name, verdict, result))
     connection.rollback()
     return report
 
@@ -719,6 +741,9 @@ def render_report(report: BenchReport) -> str:
         f"- Pages : {pages.with_field_words} parlent des champs, {pages.sent} envoyées au lecteur principal ; "
         f"ventes dont le plafond de {MAX_PAGES} pages en a laissé de côté : {pages.capped_sales} ; pages sans texte "
         f"exploitable (scan non lu), que la sélection ne peut pas choisir : {pages.unread}.",
+        "- Pièces que pymupdf n'a pas ouvertes pendant la vérification, par type d'erreur : "
+        + (", ".join(f"{kind} {count}" for kind, count in sorted(report.unreadable.items())) or "aucune")
+        + ".",
         "",
     ]
     lines += _counts_table(
@@ -819,8 +844,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     second = _reader("second", SONNET, args.sample, spend, SECOND_TIMEOUT_SECONDS)
     from src.storage.supabase_client import connect
 
+    # Ouverte avant la première vente : un chemin refusé arrête le banc avant tout appel au modèle.
+    review = open_private_review(args.private_review) if args.private_review is not None else None
     connection = connect(str(db_url))
-    differences: list[dict[str, object]] | None = [] if args.private_review is not None else None
     try:
         report = run_bench(
             connection,
@@ -829,15 +855,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             download_sale_pdfs,
             sample=args.sample,
             today=datetime.now(PARIS).date(),
-            private_review=differences,
+            private_review=(lambda entry: write_difference(review, entry)) if review is not None else None,
         )
     finally:
         connection.close()
+        if review is not None:
+            review.close()
     markdown = render_report(report)
     args.output.write_text(markdown, encoding="utf-8")
     publish(markdown)
-    if args.private_review is not None and differences is not None:
-        write_private_review(args.private_review, differences)
     return 0
 
 

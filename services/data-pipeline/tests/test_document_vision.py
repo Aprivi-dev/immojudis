@@ -348,6 +348,40 @@ def test_found_quote_maps_back_to_the_text_of_the_page() -> None:
     assert tolerated is False
 
 
+@pytest.mark.parametrize(
+    ("page_text", "quote"),
+    [
+        # Le passage ne peut pas commencer ni finir au milieu d'un nombre de la page.
+        ("Une surface habitable de 125 m² au relevé.", "surface habitable de 12"),
+        ("Une maison de 12 pièces principales.", "2 pièces principales"),
+        ("Un terrain de 1 245 m² de jardin attenant.", "245 m² de jardin"),
+        ("Un terrain de 1\u202f245 m² de jardin attenant.", "245 m² de jardin"),
+        ("Une surface habitable de 12,5 m² au relevé.", "surface habitable de 12"),
+        ("Une surface habitable de 12.5 m² au relevé.", "surface habitable de 12"),
+        ("La contenance totale est de 1 245 m².", "contenance totale est de 1"),
+    ],
+)
+def test_quote_never_cuts_a_number_of_the_page(page_text: str, quote: str) -> None:
+    assert vision.find_quote(page_text, quote, ocr=False) is None
+    assert vision.find_quote(page_text, quote, ocr=True) is None
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote", "found"),
+    [
+        # Un nombre entier, séparé par une espace ou un signe d'un autre nombre, reste trouvé.
+        ("Une maison de 2 pièces principales, 12 pièces au total.", "2 pièces principales", "2 pièces principales"),
+        ("Visites le 3 décembre 2026 10h00 à 12h00.", "Visites le 3 décembre 2026", "Visites le 3 décembre 2026"),
+        ("Surface habitable de 10-12 m² environ.", "habitable de 10", "habitable de 10"),
+        # Une occurrence qui coupe un nombre est sautée au profit de la suivante.
+        ("De 12 pièces principales en tout, dont 2 pièces principales à l'étage.", "2 pièces principales", "2 pièces principales"),
+    ],
+)
+def test_quote_bounded_by_whole_numbers_is_found(page_text: str, quote: str, found: str) -> None:
+    start, end, _ = vision.find_quote(page_text, quote, ocr=False)  # type: ignore[misc]
+    assert page_text[start:end] == found
+
+
 # --- OCR ----------------------------------------------------------------------------------------------------------
 
 OCR_PAGE_TEXT = "Désignation : surface hahitable de 62,40 m² au relevé du métreur. " + FILLER
@@ -593,6 +627,14 @@ def test_one_lot_sale_keeps_the_rejection_when_the_dossier_is_divided_in_lots() 
     assert vision.primary_verdicts(said_one, context, today=TODAY)[vision.ROOMS].status == CANDIDATE
 
 
+def test_one_lot_sale_keeps_the_rejection_when_the_dossier_names_two_lots_in_lower_case() -> None:
+    text = "Lot n° 1 : une maison d'habitation. Lot n° 2 : un terrain à bâtir d'une contenance de 850 m². " + FILLER
+    quote = "un terrain à bâtir d'une contenance de 850 m²"
+    context = _context(text, dossier_pages={PAGE: text})
+    verdict = vision.primary_verdicts(_reading_saying("oui", land_surface_m2=_claim(850, quote)), context, today=TODAY)
+    assert verdict[vision.LAND].reason == "lot_non_identifie" and verdict[vision.LAND].detail == vision.ONE_LOT
+
+
 def test_second_reader_saying_several_lots_on_a_divided_dossier_rejects_the_candidate() -> None:
     first = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
     context = _context(first, dossier_pages={PAGE: first, PageRef(1, 2): "DEUXIEME LOT Un terrain. " + FILLER})
@@ -674,6 +716,41 @@ def test_section_of_the_sold_lot_is_not_assumed_from_an_ambiguous_title(text: st
     assert verdict.reason == "lot_non_nomme"
 
 
+NEIGHBOUR_QUOTE = "un appartement de 4 pièces d'une surface habitable de 85 m²"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Le titre du lot voisin, suivi d'un mot de copropriété, n'est pas un titre pour lot_titles : la citation
+        # ne doit pas se rattacher pour autant au titre du lot vendu.
+        "LOT N° 2 : appartement de 3 pièces, 60 m². LOT N° 3 : copropriété Les Pins, " + NEIGHBOUR_QUOTE + ".",
+        "LOT N° 2 : appartement de 3 pièces, 60 m². LOT N° 3 de l'état descriptif : " + NEIGHBOUR_QUOTE + ".",
+        # Titre du lot voisin écrit avec le symbole ordinal (U+00BA) ou en minuscules.
+        "LOT N° 2 : appartement de 3 pièces, 60 m². LOT Nº 3 : " + NEIGHBOUR_QUOTE + ".",
+        "LOT N° 2 : appartement de 3 pièces, 60 m². Lot n° 3 : " + NEIGHBOUR_QUOTE + ".",
+    ],
+)
+def test_neighbour_lot_never_hides_behind_the_title_of_the_sold_lot(text: str) -> None:
+    context = _context(text + " " + FILLER, sold_lot=SoldLot(number=2, lot_count=3), dossier_pages={PAGE: text})
+    reading = _reading(habitable_surface_m2=_claim(85, NEIGHBOUR_QUOTE))
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.HABITABLE]
+    assert verdict.status == REJECTED and verdict.reason in {"lot_non_nomme", "autre_lot"}
+
+
+def test_another_lot_number_on_the_previous_page_after_the_title_breaks_the_section() -> None:
+    title_page = "DEUXIEME LOT Une cave. Lot n° 3 : une maison. " + FILLER
+    description = "Un appartement comprenant 3 pièces principales. " + FILLER
+    cited = PageRef(1, 5)
+    reading = vision.parse_reading({"champs": {vision.ROOMS: APPARTEMENT}}, [vision.ROOMS], [cited])
+    context = SaleContext(
+        sold_lot=SoldLot(number=2, lot_count=3),
+        page_texts={cited: description},
+        dossier_pages={PageRef(1, 4): title_page, cited: description},
+    )
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].reason == "lot_non_nomme"
+
+
 @pytest.mark.parametrize(
     ("text", "titles"),
     [
@@ -681,6 +758,8 @@ def test_section_of_the_sold_lot_is_not_assumed_from_an_ambiguous_title(text: st
         ("LOT N° 2 puis LOT NUMÉRO 3 puis LOT 1", [2, 3, 1]),
         ("le lot n° 2, Lot 3, premier lot", []),
         ("LOT N° 12", []),
+        # Le symbole ordinal masculin (U+00BA) à la place du degré.
+        ("LOT Nº 2 puis LOT Nº3", [2, 3]),
     ],
 )
 def test_lot_titles_are_capitalised_sale_lot_headings(text: str, titles: list[int]) -> None:

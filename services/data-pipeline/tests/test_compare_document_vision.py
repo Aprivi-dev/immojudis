@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
@@ -386,7 +387,7 @@ def test_private_review_lists_retained_values_that_differ_from_the_sale_and_neve
         _fetch,
         sample=1,
         today=TODAY,
-        private_review=differences,
+        private_review=differences.append,
     )
 
     assert report.fields[ROOMS].versus_sale["different"] == 1
@@ -408,10 +409,11 @@ def test_private_review_lists_retained_values_that_differ_from_the_sale_and_neve
     path = tmp_path / "ecarts.jsonl"
     path.write_text("ancien contenu", encoding="utf-8")
     path.chmod(0o644)
-    bench.write_private_review(path, differences)
-    assert path.stat().st_mode & 0o777 == 0o600
-    lines = path.read_text(encoding="utf-8").splitlines()
-    assert [json.loads(line)["sale_id"] for line in lines] == [SALE_ID]
+    with bench.open_private_review(path) as handle:
+        assert path.stat().st_mode & 0o777 == 0o600 and path.read_text(encoding="utf-8") == ""
+        bench.write_difference(handle, differences[0])
+        # Written as it comes: the line is on disk before the file is closed.
+        assert [json.loads(line)["sale_id"] for line in path.read_text(encoding="utf-8").splitlines()] == [SALE_ID]
 
 
 def test_private_review_is_off_by_default_and_never_follows_a_symbolic_link(tmp_path: Any) -> None:
@@ -431,7 +433,7 @@ def test_private_review_is_off_by_default_and_never_follows_a_symbolic_link(tmp_
     link = tmp_path / "lien.jsonl"
     link.symlink_to(target)
     with pytest.raises(OSError):
-        bench.write_private_review(link, [{"sale_id": SALE_ID}])
+        bench.open_private_review(link)
     assert target.read_text(encoding="utf-8") == "intact"
 
 
@@ -486,15 +488,40 @@ def test_ocr_and_unread_pages_are_read_from_the_manifest() -> None:
 def test_image_pages_are_pages_mostly_covered_by_an_image_and_not_read_by_ocr() -> None:
     pdfs = {1: _pdf(FILLER, DESCRIPTION), 2: _image_pdf(SCANNED_HEADER)}
     pages = [bench.PageRef(1, 1), bench.PageRef(1, 2), bench.PageRef(2, 1), bench.PageRef(3, 1)]
-    assert bench.image_pages(pdfs, pages, frozenset()) == frozenset({bench.PageRef(2, 1)})
-    assert bench.image_pages(pdfs, pages, frozenset({bench.PageRef(2, 1)})) == frozenset()
+    unreadable: Counter[str] = Counter()
+    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
+    assert bench.image_pages(pdfs, pages, frozenset({bench.PageRef(2, 1)}), unreadable) == frozenset()
+    assert unreadable == Counter()
 
 
-def test_tesseract_reader_returns_nothing_when_ocr_reads_nothing_new() -> None:
-    # Without Tesseract (or on a blank image), the OCR keeps the text layer: nothing new, no text.
-    read = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)})
+def test_a_piece_that_pymupdf_cannot_open_is_skipped_and_counted_by_type() -> None:
+    unreadable: Counter[str] = Counter()
+    pdfs = {1: b"pas un PDF", 2: _image_pdf(SCANNED_HEADER)}
+    pages = [bench.PageRef(1, 1), bench.PageRef(2, 1)]
+    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
+    assert bench.tesseract_page_reader(pdfs, unreadable)(bench.PageRef(1, 1)) is None
+    assert sum(unreadable.values()) == 2 and len(unreadable) == 1
+    kind = next(iter(unreadable))
+    report = bench.BenchReport(sample=1, unreadable=unreadable)
+    assert f"par type d'erreur : {kind} 2." in bench.render_report(report)
+
+
+def test_tesseract_reader_returns_the_ocr_text_alone_never_the_text_layer(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without Tesseract (or on a blank image), the OCR reads nothing: no text.
+    read = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())
     assert read(bench.PageRef(1, 1)) is None
     assert read(bench.PageRef(1, 9)) is None and read(bench.PageRef(2, 1)) is None
+
+    fallbacks: list[str] = []
+
+    def ocr(page: Any, fallback: str, *, settings: Mapping[str, object]) -> dict[str, object]:
+        fallbacks.append(fallback)
+        return {"text": "Surface habitable lue par OCR", "method": "ocr_tesseract", "status": "extracted"}
+
+    monkeypatch.setattr(bench, "extract_page_text_with_ocr_result", ocr)
+    text = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())(bench.PageRef(1, 1))
+    assert text == "Surface habitable lue par OCR" and SCANNED_HEADER not in text
+    assert fallbacks == [""]
 
 
 def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -502,7 +529,7 @@ def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) 
     manifest = [{"url": URL, "sha256": hashlib.sha256(scanned).hexdigest(), "pages": [{"page": 1, "text": SCANNED_HEADER}]}]
     read: list[bench.PageRef] = []
 
-    def reader(pdfs: Mapping[int, bytes]) -> Any:
+    def reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Any:
         def read_page(ref: bench.PageRef) -> str:
             read.append(ref)
             return DESCRIPTION

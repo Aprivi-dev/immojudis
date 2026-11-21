@@ -607,11 +607,11 @@ def _ocr_substitutions(length: int) -> int:
     return min(OCR_MAX_SUBSTITUTIONS, length // OCR_CHARS_PER_SUBSTITUTION)
 
 
-def _tolerant_find(haystack: str, needle: str, allowed: int) -> int:
-    """Première position où ``needle`` se lit dans ``haystack`` à au plus ``allowed`` substitutions isolées, hors
-    chiffres ; -1 sinon."""
+def _tolerant_find(haystack: str, needle: str, allowed: int, begin: int = 0) -> int:
+    """Première position à partir de ``begin`` où ``needle`` se lit dans ``haystack`` à au plus ``allowed``
+    substitutions isolées, hors chiffres ; -1 sinon."""
     size = len(needle)
-    for start in range(len(haystack) - size + 1):
+    for start in range(begin, len(haystack) - size + 1):
         substitutions, previous = 0, -2
         for offset in range(size):
             page_char, quote_char = haystack[start + offset], needle[offset]
@@ -630,22 +630,61 @@ def _tolerant_find(haystack: str, needle: str, allowed: int) -> int:
     return -1
 
 
+# Séparateurs des milliers d'un nombre écrit (« 1 245 m² ») : une espace, insécable ou non.
+_THOUSANDS_SEPARATORS = frozenset("   ")
+_THOUSANDS_GROUP = re.compile(r"\d{3}(?!\d)")
+_LAST_GROUP = re.compile(r"(?<!\d)\d{1,3}$")
+_DECIMALS = re.compile(r"[.,]\d")
+
+
+def _digit(char: str) -> bool:
+    return len(char) == 1 and "0" <= char <= "9"
+
+
+def cuts_a_number(text: str, start: int, end: int) -> bool:
+    """Le passage ``text[start:end]`` coupe un nombre de la page.
+
+    Il commence par un chiffre que précède un chiffre (« 2 pièces » dans « 12 pièces ») ou un groupe des milliers
+    (« 245 m² » dans « 1 245 m² »), ou il finit par un chiffre que suit un chiffre, une décimale (« de 12 » dans
+    « de 12,5 m² ») ou un groupe des milliers (« de 1 » dans « de 1 245 m² »). La clé de comparaison ignore les
+    espaces : cette borne se lit sur le texte de la page.
+    """
+    excerpt, before, after = text[start:end], text[:start], text[end:]
+    if _digit(excerpt[:1]) and (
+        _digit(before[-1:])
+        or (before[-1:] in _THOUSANDS_SEPARATORS and _digit(before[-2:-1]) and _THOUSANDS_GROUP.match(excerpt))
+    ):
+        return True
+    return _digit(excerpt[-1:]) and bool(
+        _digit(after[:1])
+        or _DECIMALS.match(after)
+        or (after[:1] in _THOUSANDS_SEPARATORS and _THOUSANDS_GROUP.match(after, 1) and _LAST_GROUP.search(excerpt))
+    )
+
+
 def find_quote(page_text: str, quote: str, *, ocr: bool) -> tuple[int, int, bool] | None:
     """Où la citation se trouve dans le texte de la page : début, fin, et si la tolérance de l'OCR a servi.
 
     Même clé des deux côtés (:func:`match_key`), au moins ``SCALAR_QUOTE_MIN_CHARS`` caractères, comme pour une
-    citation de l'extraction. ``ocr`` : le texte vient d'un OCR, la tolérance de l'OCR s'applique.
+    citation de l'extraction. ``ocr`` : le texte vient d'un OCR, la tolérance de l'OCR s'applique. Un passage qui
+    coupe un nombre de la page (:func:`cuts_a_number`) ne compte pas : on cherche l'occurrence suivante.
     """
     needle, _ = match_key(quote)
     if len(needle) < SCALAR_QUOTE_MIN_CHARS or not page_text:
         return None
     haystack, spans = match_key(page_text)
-    position, tolerated = haystack.find(needle), False
-    if position < 0 and ocr and (allowed := _ocr_substitutions(len(needle))):
-        position, tolerated = _tolerant_find(haystack, needle, allowed), True
-    if position < 0:
-        return None
-    return spans[position][0], spans[position + len(needle) - 1][1], tolerated
+    allowed = _ocr_substitutions(len(needle)) if ocr else 0
+    for tolerated in (False, True) if allowed else (False,):
+        position = -1
+        while True:
+            begin = position + 1
+            position = _tolerant_find(haystack, needle, allowed, begin) if tolerated else haystack.find(needle, begin)
+            if position < 0:
+                break
+            start, end = spans[position][0], spans[position + len(needle) - 1][1]
+            if not cuts_a_number(page_text, start, end):
+                return start, end, tolerated
+    return None
 
 
 @dataclass(frozen=True)
@@ -702,11 +741,11 @@ LOT_UNCERTAIN = "lot_inconnu_fiche"  # vente ramenée à un lot de l'annonce, sa
 # Plus grand numéro de lot de vente lu quand la fiche n'en donne pas le nombre (comme ``names_another_lot``).
 DEFAULT_HIGHEST_SALE_LOT = 9
 
-# Titre de lot de vente : « LOT N° 2 », « LOT NUMÉRO 2 », « 2ÈME LOT », « DEUXIÈME LOT », en capitales. Un lot de
-# copropriété s'écrit le plus souvent dans la phrase (« le lot numéro 12 ») ; la capitale ne suffit pas à l'écarter,
-# d'où la règle d'unicité de :func:`_in_sold_lot_section`.
+# Titre de lot de vente : « LOT N° 2 » (° ou º), « LOT NUMÉRO 2 », « 2ÈME LOT », « DEUXIÈME LOT », en capitales. Un
+# lot de copropriété s'écrit le plus souvent dans la phrase (« le lot numéro 12 ») ; la capitale ne suffit pas à
+# l'écarter, d'où les règles d'unicité et de section de :func:`_in_sold_lot_section`.
 _LOT_TITLE = re.compile(
-    r"\bLOT\s*(?:N\s*°|N[O°]?\.?|NUM[EÉ]RO)?\s*\d{1,3}\b"
+    r"\bLOT\s*(?:N\s*[°º]|N[O°º]?\.?|NUM[EÉ]RO)?\s*\d{1,3}\b"
     r"|\b\d{1,2}\s*(?:ER|[EÈ]RE|RE|E|[EÈ]ME|ND|NDE)\s+LOT\b"
     r"|\b[A-ZÀ-Ý]{5,}\s+LOT\b"
 )
@@ -729,16 +768,28 @@ def lot_titles(text: str, highest: int) -> list[tuple[int, int]]:
 
 
 def _in_sold_lot_section(context: SaleContext, located: LocatedQuote, ref: PageRef, lot: SoldLot) -> bool:
-    """La citation est dans la section du lot vendu : le dernier titre de lot de vente qui la précède, sur sa page ou
-    à défaut sur la page précédente de la même pièce, est celui du lot vendu ; et ce titre n'apparaît qu'une fois
-    dans la pièce (deux titres du même numéro : l'un est un lot de copropriété ou un rappel, la section n'est pas
-    sûre)."""
+    """La citation est dans la section du lot vendu.
+
+    Trois conditions. Le dernier titre de lot de vente qui la précède, sur sa page ou à défaut sur la page
+    précédente de la même pièce, est celui du lot vendu. Du début de ce titre à la fin de la citation, aucun autre
+    numéro de lot de la vente n'est nommé, en capitales ou non, même près d'un mot de copropriété : un titre que
+    :func:`lot_titles` écarte (« LOT N° 3 : copropriété Les Pins ») ouvre peut-être la section du lot voisin. Ce
+    titre n'apparaît qu'une fois dans la pièce (deux titres du même numéro : l'un est un lot de copropriété ou un
+    rappel).
+    """
     highest = lot.lot_count or DEFAULT_HIGHEST_SALE_LOT
-    before = [number for position, number in lot_titles(located.text, highest) if position < located.start]
-    if not before:
+    on_page = [(position, number) for position, number in lot_titles(located.text, highest) if position < located.start]
+    if on_page:
+        position, number = on_page[-1]
+        section = located.text[position : located.end]
+    else:
         previous = context.dossier_pages.get(PageRef(ref.document, ref.page - 1), "")
-        before = [number for _, number in lot_titles(previous, highest)]
-    if not before or before[-1] != lot.number:
+        titles = lot_titles(previous, highest)
+        if not titles:
+            return False
+        position, number = titles[-1]
+        section = previous[position:] + " " + located.text[: located.end]
+    if number != lot.number or any(1 <= other <= highest and other != lot.number for other in lot_numbers_named(section)):
         return False
     pages = {other: text for other, text in context.dossier_pages.items() if other.document == ref.document}
     pages[ref] = located.text
@@ -752,8 +803,9 @@ def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: st
     Lot désigné : rien ici (la citation le nomme ou est sous son titre, :func:`_sold_lot_reason`). Plusieurs lots
     sans lot désigné, lot incertain, biens concurrents dans les pièces : toujours. Vente à un seul lot d'après la
     fiche : seulement si le lecteur dit que le dossier en vend plusieurs ET que la citation nomme un lot de vente ou
-    que le dossier est découpé en titres de lots (deux numéros au moins). Sans cela, le lecteur a pris des lots de
-    copropriété pour des lots de vente, et la citation ne nomme aucun lot.
+    que le dossier nomme deux numéros de lots de vente au moins, titres en capitales ou non (« Lot n° 1 : une
+    maison. Lot n° 2 : un terrain »). Sans cela, le lecteur a pris des lots de copropriété pour des lots de vente, et
+    la citation ne nomme aucun lot.
     """
     if context.sold_lot is not None:
         return None
@@ -761,9 +813,12 @@ def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: st
         return context.lot_situation
     if not several_lots_read:
         return None
-    names_a_lot = any(1 <= number <= DEFAULT_HIGHEST_SALE_LOT for number in sale_lot_numbers_named(excerpt))
-    titled = {number for text in context.dossier_pages.values() for _, number in lot_titles(text, DEFAULT_HIGHEST_SALE_LOT)}
-    return ONE_LOT if names_a_lot or len(titled) >= 2 else None
+
+    def sale_lots(text: str) -> set[int]:
+        return {number for number in sale_lot_numbers_named(text) if 1 <= number <= DEFAULT_HIGHEST_SALE_LOT}
+
+    named = sale_lots(excerpt).union(*(sale_lots(text) for text in context.dossier_pages.values()))
+    return ONE_LOT if sale_lots(excerpt) or len(named) >= 2 else None
 
 
 def _sold_lot_reason(context: SaleContext, located: LocatedQuote, ref: PageRef) -> str | None:
