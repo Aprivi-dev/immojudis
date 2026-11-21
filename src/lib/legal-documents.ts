@@ -201,6 +201,55 @@ export const FULL_SALE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
  */
 export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-21.1 : nouveau sous-traitant Anthropic (décision du propriétaire du
+ * 21/11/2026, option « pages telles quelles »). À publier AVANT le premier envoi d'une pièce à Anthropic.
+ *
+ * - Rôle : lecture par IA (Claude Haiku 5.5 et Claude Sonnet 5.5, par l'API d'Anthropic) des pièces publiques
+ *   des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics), pour en
+ *   extraire surface, terrain, nombre de pièces, occupation et dates de visite.
+ * - Données : contenu des pièces, pages transmises telles quelles, y compris le nom des parties qui y figurent
+ *   (débiteur saisi, occupants). Replicate reçoit le texte des annonces et le texte tiré des pièces
+ *   (`fact_sections_for_sale`) ; Anthropic reçoit les fichiers PDF.
+ * - Cocontractant d'un client établi dans l'EEE selon les conditions commerciales d'Anthropic (en vigueur le
+ *   17/06/2025) : Anthropic Ireland, Limited. Données stockées aux États-Unis, traitement possible aux
+ *   États-Unis, en Europe, en Asie ou en Australie (centre de confidentialité, article du 15/06/2026 « Where
+ *   are your servers located? »).
+ * - Garantie du transfert hors de l'EEE : NON ÉTABLIE. Les clauses contractuelles types de l'accord de
+ *   traitement des données d'Anthropic (Data Processing Addendum, en vigueur le 24/02/2025 : décision (UE)
+ *   2021/914, modules 2 et 3, « to the extent required ») ont pour importateur « the Anthropic entity that
+ *   executed the Agreement », soit Anthropic Ireland, société de l'EEE : elles n'encadrent pas le passage
+ *   vers les États-Unis. Le DPA ne prévoit pour les sous-traitants qu'un contrat « substantially as
+ *   protective » et la responsabilité d'Anthropic (section C.2), plus une aide à l'analyse d'impact du
+ *   transfert, sur demande (section I.4). Il ne nomme ni Anthropic, PBC comme sous-traitant, ni de garantie
+ *   du chapitre V entre les entités Anthropic ; la liste des sous-traitants (trust.anthropic.com) n'a pas pu
+ *   être lue ; aucune certification au cadre UE–États-Unis n'a été vérifiée. Le texte publié n'affirme donc
+ *   aucune garantie. À demander à Anthropic (section I.4) : garantie du transfert Irlande vers les
+ *   États-Unis, liste des sous-traitants. Pages consultées le 21/11/2026.
+ * - Conservation chez Anthropic (centre de confidentialité, article du 01/07/2026) : entrées et sorties de
+ *   l'API supprimées dans les 30 jours, sauf service à conservation plus longue choisie par le client (Files
+ *   API : non utilisée, les PDF sont joints à la requête en bloc document base64, selon le chef d'orchestre
+ *   le 21/11/2026, code non encore présent dans le dépôt) ; si signalées par les contrôles automatiques :
+ *   entrées et sorties jusqu'à 2 ans, scores de classement de sécurité jusqu'à 7 ans ; plus si la loi
+ *   l'impose.
+ * - Tableau des traitements : ligne « Lecture automatique des pièces des ventes » (intérêt légitime ; durée
+ *   reprise de la ligne « Annonces de ventes et pièces publiques »). Droit d'opposition (art. 21, § 4)
+ *   présenté dans une section à part, « Votre droit de vous opposer à la lecture automatique des pièces » :
+ *   l'arrêt de la lecture pour une vente sur opposition doit exister avant le premier envoi.
+ * - « Décisions automatisées et enrichissements » : la phrase « toute intégration d'information sur une fiche
+ *   [est validée] par un membre de l'équipe » était déjà fausse pour les valeurs relevées automatiquement
+ *   dans les pièces publiques ; elle ne vise plus que les informations transmises par un professionnel
+ *   (relecture juridique du 21/11/2026, PR #545).
+ * - Hors champ : les pièces jointes envoyées par les avocats restent lues à la main ; les messages aux
+ *   professionnels ne changent pas.
+ *
+ * La version 2026-11-15.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
+ * avec l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de
+ * rédaction ; à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte
+ * du texte). Relecture `juridique-rgpd` et d'un avocat à faire.
+ */
+export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -215,9 +264,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-15.1",
-    sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
-    effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+    version: "2026-11-21.1",
+    sha256: "70a711a98758935dfe01b43178fb9855181bb4297bb612caf071240b847bfecd",
+    effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
