@@ -4,11 +4,14 @@ name: Document vision comparison
 # compare_document_vision.py relit les pièces de N ventes à venir déjà lues par la chaîne actuelle (Claude Haiku 5.5
 # lit un extrait PDF d'au plus dix pages, Claude Sonnet 5.5 relit les seules pages citées) et compare le verdict par
 # champ à la fiche. Une page citée en partie image que ni la couche texte ni l'OCR du pipeline ne couvrent est lue par
-# Tesseract, le temps de vérifier la citation. Lecture seule sur les ventes : rien n'est écrit sur une fiche. Les
-# appels au modèle sont réservés et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget
+# Tesseract, le temps de vérifier la citation. Les pièces des hôtes qui refusent le runner passent par le relais
+# SOURCE_FETCH_RELAY, comme dans le pipeline (étape du banc seulement). Lecture seule sur les ventes : rien n'est
+# écrit sur une fiche. Les appels au modèle sont réservés et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget
 # quotidien du pipeline ; un refus du budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc
 # proprement. Rapport agrégé (sans identifiant de vente, citation ni URL de pièce) dans le résumé de l'exécution et en
-# artefact. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les ventes et les
+# artefact. Liste des écarts avec la fiche (identifiant de vente, champ, deux valeurs, numéro et type de la pièce, page ;
+# jamais la citation, aucun texte ni l'URL de la pièce) dans un artefact à part, gardé 7 jours : de quoi retrouver la
+# page en base, en lecture seule, et vérifier qui a raison. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les
 # pièces. Aucun déclenchement automatique.
 on:
   workflow_dispatch:
@@ -77,6 +80,11 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Relais des hôtes qui refusent le réseau du runner (Cessions Etat répond 403), comme dans data-pipeline.yml.
+          # Seule cette étape les reçoit. Le jeton est un secret, masqué et jamais affiché ; l'adresse est une variable
+          # du dépôt, non masquée dans les journaux.
+          SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
+          SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
           BENCH_SAMPLE: ${{ inputs.sample }}
           BENCH_MAX_USD: ${{ inputs.max_usd }}
         run: >
@@ -84,6 +92,7 @@ jobs:
           --sample "$BENCH_SAMPLE"
           --max-usd "$BENCH_MAX_USD"
           --output "$RUNNER_TEMP/document-vision-report.md"
+          --differences "$RUNNER_TEMP/document-vision-differences.jsonl"
 
       - name: Upload the aggregated report
         if: always()
@@ -93,3 +102,12 @@ jobs:
           path: ${{ runner.temp }}/document-vision-report.md
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Upload the list of differences with the sales
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: document-vision-differences
+          path: ${{ runner.temp }}/document-vision-differences.jsonl
+          if-no-files-found: ignore
+          retention-days: 7

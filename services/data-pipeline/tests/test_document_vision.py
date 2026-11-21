@@ -426,6 +426,35 @@ def test_ocr_tolerance_is_bounded(page_text: str) -> None:
     assert vision.find_quote(page_text + " " + FILLER, OCR_QUOTE, ocr=True) is None
 
 
+@pytest.mark.parametrize("space", [" ", "\u00a0", "\u202f"])
+def test_ocr_quote_starting_right_after_a_short_number_is_rejected(space: str) -> None:
+    # OCR « 12 45 m² » : l'espace peut cacher une virgule ou rien du tout (12,45 ? 1245 ?). La citation « 45 m² … »
+    # ne prouve pas 45 m² sur une page lue par OCR seulement.
+    page_text = f"Désignation : lot 12{space}45 m² de surface habitable au relevé du métreur. " + FILLER
+    quote = "45 m² de surface habitable au relevé"
+    assert vision.find_quote(page_text, quote, ocr=True) is None
+    reading = _reading(habitable_surface_m2=_claim(45, quote))
+    ocr = _context(page_text, ocr_pages=frozenset({PAGE}))
+    verdict = vision.primary_verdicts(reading, ocr, today=TODAY)[vision.HABITABLE]
+    assert verdict.reason == "citation_introuvable" and verdict.detail == vision.OCR_TEXT_DIFFERS
+    # Sur une couche texte native, l'espace reste une espace.
+    assert vision.find_quote(page_text, quote, ocr=False) is not None
+
+
+@pytest.mark.parametrize(
+    "page_text",
+    [
+        # Un nombre de quatre chiffres (une année), deux espaces, un retour à la ligne ou un signe entre les deux.
+        "Bail de 2019 45 m² de surface habitable au relevé du métreur.",
+        "Lot 12  45 m² de surface habitable au relevé du métreur.",
+        "Lot 12\n45 m² de surface habitable au relevé du métreur.",
+        "Lot 12 : 45 m² de surface habitable au relevé du métreur.",
+    ],
+)
+def test_ocr_quote_after_a_long_or_separated_number_is_still_found(page_text: str) -> None:
+    assert vision.find_quote(page_text, "45 m² de surface habitable au relevé", ocr=True) is not None
+
+
 def test_ocr_tolerance_grows_with_the_quote_and_stops_at_three() -> None:
     quote = "Le bien est occupé par un locataire en vertu d'un bail du premier mars deux mille vingt, toujours en cours"
     assert len(vision.match_key(quote)[0]) >= 80
@@ -633,9 +662,22 @@ def test_one_lot_sale_keeps_the_rejection_when_the_dossier_is_divided_in_lots() 
     verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
     assert verdict.reason == "lot_non_identifie" and verdict.detail == vision.ONE_LOT
 
-    # Sans l'avis du lecteur, rien ne change par rapport au lot V1.
-    said_one = _reading_saying("non", rooms_count=_claim(5, "Une maison comprenant 5 pièces principales"))
-    assert vision.primary_verdicts(said_one, context, today=TODAY)[vision.ROOMS].status == CANDIDATE
+
+
+@pytest.mark.parametrize("several", ["non", "inconnu"])
+def test_one_lot_sale_keeps_the_rejection_when_the_dossier_names_two_lots_whatever_the_reader_says(several: str) -> None:
+    # Lot V3a : un lecteur qui répond « pas plusieurs lots » ne lève pas la garde. Le dossier nomme deux lots de vente :
+    # la valeur citée peut être celle du lot voisin, que la fiche ne montre pas.
+    first = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
+    second = "DEUXIEME LOT Un appartement comprenant 3 pièces principales. " + FILLER
+    context = _context(first, dossier_pages={PAGE: first, PageRef(1, 2): second})
+    reading = _reading_saying(several, rooms_count=_claim(5, "Une maison comprenant 5 pièces principales"))
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+    assert verdict == vision.Verdict(REJECTED, "lot_non_identifie") and verdict.detail == vision.ONE_LOT
+
+    # Un seul lot nommé dans le dossier, lecteur qui n'en voit pas plusieurs : la valeur reste candidate.
+    alone = _context(first, dossier_pages={PAGE: first})
+    assert vision.primary_verdicts(reading, alone, today=TODAY)[vision.ROOMS].status == CANDIDATE
 
 
 @pytest.mark.parametrize(
@@ -664,12 +706,16 @@ def test_one_lot_sale_keeps_the_rejection_when_the_dossier_names_two_lots_in_low
     assert verdict[vision.LAND].reason == "lot_non_identifie" and verdict[vision.LAND].detail == vision.ONE_LOT
 
 
-def test_second_reader_saying_several_lots_on_a_divided_dossier_rejects_the_candidate() -> None:
-    first = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
-    context = _context(first, dossier_pages={PAGE: first, PageRef(1, 2): "DEUXIEME LOT Un terrain. " + FILLER})
+def test_second_reader_saying_several_lots_with_a_quote_naming_a_lot_rejects_the_candidate() -> None:
+    # Le dossier ne nomme qu'un lot : le lecteur principal (« non ») laisse passer la valeur ; le second dit que le
+    # dossier vend plusieurs lots et cite un passage qui nomme un lot.
+    text = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
+    context = _context(text, dossier_pages={PAGE: text})
     claim = _claim(5, "Une maison comprenant 5 pièces principales")
     primary = vision.primary_verdicts(_reading_saying("non", rooms_count=claim), context, today=TODAY)
-    final = vision.final_verdicts(primary, _reading_saying("oui", rooms_count=claim), context, today=TODAY)
+    assert primary[vision.ROOMS].status == CANDIDATE
+    naming = _claim(5, "PREMIER LOT Une maison comprenant 5 pièces principales")
+    final = vision.final_verdicts(primary, _reading_saying("oui", rooms_count=naming), context, today=TODAY)
     assert final[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_identifie")
 
 

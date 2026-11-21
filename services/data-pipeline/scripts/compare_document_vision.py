@@ -18,9 +18,14 @@ rejets et des « inconnu », et pour chaque lecteur ses échecs par type et son 
 identifiant de vente, ni citation, ni texte, ni URL des pièces (le journal du téléchargement est réduit aux
 erreurs).
 
-Revue privée des écarts, en option seulement (``--private-review CHEMIN``) : pour chaque valeur retenue qui diffère
-de la fiche, la vente, le champ, les deux valeurs, la citation et la page, dans un fichier JSON Lines lisible du
-seul propriétaire (mode 0600). Jamais par défaut, jamais en artefact : le workflow ne l'active pas.
+Liste des écarts, en option (``--differences CHEMIN``, activée par le workflow, en artefact) : pour chaque valeur
+retenue qui diffère de la fiche, l'identifiant de la vente, le champ, les deux valeurs, le numéro et le type de la
+pièce et le numéro de page, en JSON Lines (mode 0600). Jamais la citation, ni aucun texte de la pièce, ni son URL :
+l'URL se retrouve en base, en lecture seule, pour vérifier en relisant la page qui a raison.
+
+Revue privée des écarts, en option seulement (``--private-review CHEMIN``) : la même chose avec la citation, dans un
+fichier JSON Lines lisible du seul propriétaire (mode 0600). Jamais par défaut, jamais en artefact : le workflow ne
+l'active pas.
 
     python -m scripts.compare_document_vision --sample 10 --max-usd 3 --output document-vision-report.md
 """
@@ -40,9 +45,11 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
+from urllib.parse import urlsplit
 
 import anthropic
+import httpx
 import pymupdf
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +91,7 @@ from src.document_vision import (  # noqa: E402
     SEVERAL_LOTS,
     SYSTEM_PROMPT,
     UNKNOWN_STATUS,
+    VISITS,
     PageRef,
     Reading,
     SaleContext,
@@ -98,6 +106,7 @@ from src.document_vision import (  # noqa: E402
     response_schema,
     second_reader_pages,
     select_vision_pages,
+    visit_days,
 )
 from src.enrichment.anthropic_reader import (  # noqa: E402
     DEFAULT_MAX_TOKENS,
@@ -121,6 +130,11 @@ from src.llm_requests import (  # noqa: E402
 from src.lot_scope import is_lot_scoped  # noqa: E402
 from src.normalize import clean_text  # noqa: E402
 from src.pdf_deadline import PdfExtractionDeferred  # noqa: E402
+from src.pdf_document_types import (  # noqa: E402
+    PDF_CONDITIONS_GROUP,
+    PDF_DESCRIPTION_GROUP,
+    PDF_DIAGNOSTICS_GROUP,
+)
 from src.pdf_ocr import (  # noqa: E402
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
@@ -130,6 +144,10 @@ from src.pdf_ocr import (  # noqa: E402
 )
 from src.pdf_page_analysis import SETTLED_EXCLUDED_PAGE_STATUSES, page_has_substantial_image  # noqa: E402
 from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
+from src.sources.cloud_transport import SOURCE_HOSTS, configured_transport  # noqa: E402
+
+if TYPE_CHECKING:
+    from src.pdf_enrichment import PdfEnrichmentStats
 
 MAX_SAMPLE = 30
 DEFAULT_MAX_USD = Decimal("3")
@@ -194,7 +212,18 @@ select {", ".join(f"sale.{column}" for column in (*SALE_COLUMNS, *SALE_VALUE_COL
 """
 
 Generate = Callable[[str, str, bytes, Mapping[str, Any]], Mapping[str, object]]
-FetchPdfs = Callable[[Mapping[str, Any], Sequence[str]], Mapping[str, bytes]]
+
+
+@dataclass(frozen=True)
+class FetchedPieces:
+    """Les pièces demandées : le PDF de chacune de celles obtenues, et pour chaque autre, pourquoi le banc ne l'a pas
+    obtenue (un motif de :data:`NO_PDF_REASONS` ; :data:`NO_PDF_OTHER` à défaut)."""
+
+    pdfs: Mapping[str, bytes]
+    missing: Mapping[str, str] = field(default_factory=dict)
+
+
+FetchPdfs = Callable[[Mapping[str, Any], Sequence[str]], FetchedPieces]
 FAILURE_KINDS = (
     "refus", "max_tokens", "400", "délai", "json_invalide", "bloquée_24h", "limite_de_débit", "autre",
 )  # fmt: skip
@@ -267,6 +296,9 @@ class PageStats:
     unread: int = 0
     # Pages qui parlent des champs mais que l'extrait ne peut pas porter, par motif (:func:`usable_documents`).
     unusable: Counter[str] = field(default_factory=Counter)
+    # Pièces demandées et non obtenues, par motif (:data:`NO_PDF_REASONS`), dans toutes les ventes dont les pièces
+    # ont été demandées, comparées ou non.
+    missing_pieces: Counter[str] = field(default_factory=Counter)
 
 
 @dataclass
@@ -365,16 +397,82 @@ def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: ob
     return SaleContext(sold_lot=sold_lot, lot_situation=situation)
 
 
-# Pourquoi une page qui parle des champs ne peut pas entrer dans l'extrait envoyé au modèle.
-NO_PDF = "pièce sans PDF"  # pièce non téléchargée, ou qui n'est pas un PDF (document Word)
+# Pourquoi une page qui parle des champs ne peut pas entrer dans l'extrait envoyé au modèle. D'abord, pourquoi le banc
+# n'a pas obtenu le PDF de sa pièce (:func:`missing_piece_reason`).
+NO_PDF = "pièce sans PDF"
+NO_PDF_WORD = f"{NO_PDF} : Word"  # pièce téléchargée, document Word
+NO_PDF_HTML = f"{NO_PDF} : HTML ou autre format"  # réponse qui n'est ni un PDF ni un document Word
+NO_PDF_CAP = f"{NO_PDF} : limite de pièces par vente"  # laissée de côté par la sélection du téléchargeur poli
+NO_PDF_ROBOTS = f"{NO_PDF} : robots.txt"  # robots.txt de l'hôte l'interdit
+NO_PDF_NETWORK = f"{NO_PDF} : erreur réseau"  # 429, 5xx, délai, connexion, ou robots.txt de l'hôte injoignable
+NO_PDF_RELAY = f"{NO_PDF} : relais SOURCE_FETCH_RELAY non disponible"  # hôte servi par le relais, non configuré
+# Accès refusé, introuvable, trop lourde, source retirée, lien écarté ou type « other », autre erreur.
+NO_PDF_OTHER = f"{NO_PDF} : autre motif"
+NO_PDF_REASONS = (NO_PDF_WORD, NO_PDF_HTML, NO_PDF_CAP, NO_PDF_ROBOTS, NO_PDF_NETWORK, NO_PDF_RELAY, NO_PDF_OTHER)
 PDF_CHANGED = "PDF modifié depuis la lecture"  # empreinte différente de celle du texte lu
 PDF_UNREADABLE = "PDF illisible"  # pymupdf ne l'ouvre pas
 PAGE_OUT_OF_RANGE = "page hors bornes"  # numéro de page au-delà des pages du PDF
-UNUSABLE_REASONS = (NO_PDF, PDF_CHANGED, PDF_UNREADABLE, PAGE_OUT_OF_RANGE)
+UNUSABLE_REASONS = (*NO_PDF_REASONS, PDF_CHANGED, PDF_UNREADABLE, PAGE_OUT_OF_RANGE)
+_WORD_FORMATS = frozenset({"doc", "docx"})
+
+
+def missing_piece_reason(
+    url: str,
+    *,
+    file_format: str | None,
+    selected: bool,
+    selectable_alone: bool,
+    document_type: str,
+    stats: PdfEnrichmentStats,
+    relay_available: bool,
+) -> str:
+    """Pourquoi le téléchargement poli (``src.pdf_enrichment.download_documents``) n'a pas rendu de PDF pour ``url``.
+
+    ``file_format`` : le format de la pièce téléchargée (None : pas téléchargée). ``selected`` : la sélection du
+    téléchargeur l'a retenue ; ``selectable_alone`` : elle la retiendrait seule (une pièce retenue seule mais pas avec
+    les autres a été coupée par la limite de pièces par vente). ``stats`` : ce que le téléchargement a noté, pièce par
+    pièce. ``relay_available`` : la pièce passerait par le relais des hôtes qui refusent le réseau du runner
+    (:func:`relay_configured`).
+    """
+    if file_format in _WORD_FORMATS:
+        return NO_PDF_WORD
+    if not selected:
+        return NO_PDF_CAP if selectable_alone else NO_PDF_OTHER
+    if document_type == "other":
+        return NO_PDF_OTHER  # sautée par le téléchargeur sans requête
+    permanent = {failure.get("url"): failure.get("reason") for failure in stats.permanent_document_failures}.get(url)
+    if url in stats.blocked_document_urls or permanent == "robots_disallowed":
+        return NO_PDF_ROBOTS
+    parts = urlsplit(url)
+    if not relay_available and parts.hostname in SOURCE_HOSTS:
+        return NO_PDF_RELAY
+    if permanent == "unsupported_response":
+        return NO_PDF_HTML
+    # Une erreur réseau est notée pour la pièce, ou pour l'origine dont robots.txt n'a pas répondu.
+    origins = {url, f"{parts.scheme}://{parts.netloc.lower()}"}
+    if permanent is None and any(failure.origin in origins for failure in stats.network_failures):
+        return NO_PDF_NETWORK
+    return NO_PDF_OTHER
+
+
+def relay_configured(url: str) -> bool:
+    """Le téléchargement de ``url`` passerait par le relais : hôte servi par lui, adresse HTTPS ET jeton présents.
+
+    Même règle que le téléchargement, qui la tient de ``cloud_transport.configured_transport`` : une adresse sans
+    jeton (ou l'inverse) fait échouer la requête, le relais n'est pas disponible. Rien n'est envoyé.
+    """
+    try:
+        transport = configured_transport(url)
+    except (ValueError, httpx.InvalidURL):
+        return False
+    if transport is None:
+        return False
+    transport.close()
+    return True
 
 
 def usable_documents(
-    manifest: object, documents: Sequence[ReadingDocument], fetched: Mapping[str, bytes], unreadable: Counter[str]
+    manifest: object, documents: Sequence[ReadingDocument], fetched: FetchedPieces, unreadable: Counter[str]
 ) -> tuple[dict[int, bytes], list[ReadingDocument], Counter[str]]:
     """Les pièces que l'extrait peut porter : leur PDF par index, ces pièces réduites aux pages que le PDF contient,
     et le décompte, par motif, des pages qui parlent des champs et qui sont écartées.
@@ -390,10 +488,10 @@ def usable_documents(
     unusable: Counter[str] = Counter()
     for doc in documents:
         scored = [number for number, text in doc.pages.items() if page_field_score(text) > 0]
-        content = fetched.get(doc.url) if doc.url else None
+        content = fetched.pdfs.get(doc.url) if doc.url else None
         sha256 = expected.get(doc.url)
         if content is None:
-            unusable[NO_PDF] += len(scored)
+            unusable[fetched.missing.get(doc.url, NO_PDF_OTHER) if doc.url else NO_PDF_OTHER] += len(scored)
             continue
         if isinstance(sha256, str) and sha256 and hashlib.sha256(content).hexdigest() != sha256:
             unusable[PDF_CHANGED] += len(scored)
@@ -605,6 +703,45 @@ def _jsonable(value: object) -> object:
     return value
 
 
+# Type de pièce de la liste des écarts : une liste fermée, tirée du seul type normalisé de la pièce, jamais de son
+# libellé ni de son URL.
+_DIFFERENCE_DOCUMENT_TYPES = (
+    ("cahier", PDF_CONDITIONS_GROUP),
+    ("proces_verbal", PDF_DESCRIPTION_GROUP),
+    ("diagnostic", PDF_DIAGNOSTICS_GROUP),
+)
+DIFFERENCE_OTHER_DOCUMENT = "autre"
+
+
+def difference_document_type(document_type: str) -> str:
+    """« cahier », « proces_verbal », « diagnostic » ou « autre »."""
+    return next((name for name, group in _DIFFERENCE_DOCUMENT_TYPES if document_type in group), DIFFERENCE_OTHER_DOCUMENT)
+
+
+def public_difference(row: Mapping[str, Any], name: str, verdict: Verdict, result: SaleResult) -> dict[str, object]:
+    """Une ligne de la liste des écarts (``--differences``, en artefact) : l'identifiant de la vente
+    (``auction_sales.id``), le champ, la valeur retenue, celle de la fiche, la pièce (son numéro dans le dossier, D1…Dn
+    de ``documents_from_manifest``, et son type, :func:`difference_document_type`) et le numéro de page.
+
+    Rien qui vienne du texte d'une pièce ni de son adresse : ni la citation, ni le libellé, ni l'URL (un jeton signé ou
+    un nom peuvent s'y trouver ; elle se retrouve en base, en lecture seule, par la vente et le numéro de la pièce).
+    Les dates de visite de la fiche, texte libre (une adresse, un nom, un téléphone peuvent s'y trouver), sont
+    données par les seuls jours qu'elles nomment (:func:`visit_days` ; le banc n'en compare que les jours à venir).
+    """
+    page = verdict.page
+    document = result.documents.get(page.document) if page is not None else None
+    sale_value = row.get(name)
+    return {
+        "sale_id": str(row.get("id") or ""),
+        "field": name,
+        "retained_value": _jsonable(verdict.value),
+        "sale_value": _jsonable(visit_days(sale_value) if name == VISITS else sale_value),
+        "document_index": page.document if page is not None else None,
+        "document_type": difference_document_type(document.document_type) if document is not None else None,
+        "page": page.page if page is not None else None,
+    }
+
+
 def private_difference(row: Mapping[str, Any], name: str, verdict: Verdict, result: SaleResult) -> dict[str, object]:
     """Une ligne de la revue privée : la vente, le champ, la valeur retenue, celle de la fiche, la citation, la page."""
     page = verdict.page
@@ -622,8 +759,9 @@ def private_difference(row: Mapping[str, Any], name: str, verdict: Verdict, resu
 
 
 def open_private_review(path: Path) -> TextIO:
-    """Ouvre la revue privée (JSON Lines), lisible du seul propriétaire (0600, même si le fichier existait). Un lien
-    symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on l'a dit."""
+    """Ouvre la revue privée, ou la liste des écarts (JSON Lines), lisible du seul propriétaire (0600, même si le
+    fichier existait). Un lien symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on
+    l'a dit."""
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
     handle = os.fdopen(descriptor, "w", encoding="utf-8")
     os.fchmod(handle.fileno(), 0o600)
@@ -645,17 +783,29 @@ def run_bench(
     sample: int,
     today: date,
     private_review: Callable[[dict[str, object]], None] | None = None,
+    differences: Callable[[dict[str, object]], None] | None = None,
 ) -> BenchReport:
     """Lit les ventes (lecture seule), les compare et agrège le résultat. Aucune écriture sur une vente.
 
     ``private_review`` : s'il est donné, il reçoit, au fil du banc, chaque valeur retenue qui diffère de la fiche
-    (:func:`private_difference`) ; elle n'entre jamais dans le rapport.
+    (:func:`private_difference`) ; elle n'entre jamais dans le rapport. ``differences`` : de même, la ligne publique
+    de chacun de ces écarts (:func:`public_difference`).
     """
     # Avant la première requête : chaque transaction de cette connexion est READ ONLY, une écriture échouerait.
     connection.read_only = True
     report = BenchReport(
         sample=sample, max_usd=primary.spend.max_usd, readers={"principal": primary.stats, "second": second.stats}
     )
+
+    def fetch_and_count(row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPieces:
+        # Les pièces non obtenues sont comptées pour toute vente dont les pièces sont demandées, même si elle n'est
+        # pas comparée ensuite (« aucune page utilisable »).
+        fetched = fetch_pdfs(row, urls)
+        report.pages.missing_pieces.update(
+            fetched.missing.get(url, NO_PDF_OTHER) for url in urls if url not in fetched.pdfs
+        )
+        return fetched
+
     sale_ids = [str(row[0]) for row in connection.execute(CANDIDATES_SQL, (sample,)).fetchall()]
     connection.rollback()
     report.candidates = len(sale_ids)
@@ -669,7 +819,7 @@ def run_bench(
             continue
         row = dict(zip(columns, fetched, strict=True))
         try:
-            result, skipped = compare_sale(row, primary, second, fetch_pdfs, today=today)
+            result, skipped = compare_sale(row, primary, second, fetch_and_count, today=today)
         except BenchStopped as exc:
             report.stop_reason = str(exc)
             break
@@ -698,6 +848,8 @@ def run_bench(
                 stats.versus_sale[versus] += 1
                 if versus == "different" and private_review is not None:
                     private_review(private_difference(row, name, verdict, result))
+                if versus == "different" and differences is not None:
+                    differences(public_difference(row, name, verdict, result))
     connection.rollback()
     return report
 
@@ -728,7 +880,7 @@ _DIAGNOSTIC_TABLES = (
         "Lot non identifié, selon la fiche",
         "lot_non_identifie",
         (
-            (ONE_LOT, "Un lot (lecteur : plusieurs)"),
+            (ONE_LOT, "Un lot (dossier ou lecteur : plusieurs)"),
             (ONE_LOT_GUARDED, "Un lot, biens concurrents dans les pièces"),
             (SEVERAL_LOTS, "Plusieurs lots"),
             (LOT_UNCERTAIN, "Lot inconnu"),
@@ -801,6 +953,9 @@ def render_report(report: BenchReport) -> str:
         "- Pages qui parlent des champs, écartées faute de PDF utilisable : "
         + ", ".join(f"{reason} {pages.unusable[reason]}" for reason in UNUSABLE_REASONS)
         + ".",
+        "- Pièces qui parlent des champs, demandées et non obtenues (ventes comparées ou non), par motif : "
+        + ", ".join(f"{reason} {pages.missing_pieces[reason]}" for reason in NO_PDF_REASONS)
+        + ".",
         "- Pièces que pymupdf n'a pas ouvertes, par type d'erreur : "
         + (", ".join(f"{kind} {count}" for kind, count in sorted(report.unreadable.items())) or "aucune")
         + ".",
@@ -831,10 +986,13 @@ def render_report(report: BenchReport) -> str:
     return "\n".join(lines) + "\n"
 
 
-def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str, bytes]:
+def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPieces:
     """Les pièces ``urls`` de la vente, par le téléchargement poli du pipeline (robots.txt, cadence par hôte,
-    sources retirées, garde d'Enchères Publiques), dans un dossier temporaire effacé ensuite."""
-    from src.pdf_enrichment import download_documents
+    sources retirées, garde d'Enchères Publiques), dans un dossier temporaire effacé ensuite ; et pour chaque pièce
+    non obtenue, pourquoi (:func:`missing_piece_reason`)."""
+    from src.pdf_document_selection import select_documents_for_extraction
+    from src.pdf_document_types import canonical_document_type
+    from src.pdf_enrichment import PdfEnrichmentStats, download_documents
 
     sale = sale_from_row(row)
     wanted = set(urls)
@@ -842,13 +1000,34 @@ def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str,
     # Copie en mémoire : sans l'état de lecture des pièces, la sélection ne saute pas les pièces déjà lues
     # (celles-là mêmes dont on veut les pages).
     sale.raw_payload = {key: value for key, value in sale.raw_payload.items() if key != "document_analysis"}
+    # La même sélection que celle du téléchargement, lue avant lui : ce qu'il demandera.
+    selected = {document.get("url") for document in select_documents_for_extraction(sale.documents, sale=sale)}
+    stats = PdfEnrichmentStats()
     with tempfile.TemporaryDirectory(prefix="document-vision-") as directory:
-        downloaded = download_documents(sale, output_root=Path(directory))
-        return {
+        downloaded = download_documents(sale, output_root=Path(directory), stats=stats)
+        formats = {str(item["url"]): item.get("file_format") for item in downloaded if item.get("url") in wanted}
+        pdfs = {
             str(item["url"]): Path(item["file_path"]).read_bytes()
             for item in downloaded
             if item.get("file_format") == "pdf" and item.get("url") in wanted
         }
+    missing: dict[str, str] = {}
+    for document in sale.documents:
+        url = str(document.get("url"))
+        if url in pdfs or url in missing:
+            continue
+        missing[url] = missing_piece_reason(
+            url,
+            file_format=formats.get(url),
+            selected=url in selected,
+            selectable_alone=bool(select_documents_for_extraction([document], sale=sale)),
+            document_type=canonical_document_type(
+                document.get("document_type") or document.get("type"), label=document.get("label"), url=url
+            ),
+            stats=stats,
+            relay_available=relay_configured(url),
+        )
+    return FetchedPieces(pdfs, missing)
 
 
 def _positive_usd(text: str) -> Decimal:
@@ -873,9 +1052,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="fichier JSON Lines (mode 0600) des valeurs retenues qui diffèrent de la fiche, avec vente et citation ; "
         "jamais en artefact",
     )
+    parser.add_argument(
+        "--differences",
+        type=Path,
+        default=None,
+        help="fichier JSON Lines (mode 0600) des valeurs retenues qui diffèrent de la fiche : vente, champ, valeurs, "
+        "numéro et type de la pièce, page ; sans citation, texte ni URL de la pièce",
+    )
     args = parser.parse_args(argv)
-    if args.private_review is not None and args.private_review.resolve() == args.output.resolve():
-        parser.error("--private-review doit viser un autre fichier que le rapport agrégé")
+    paths = [path.resolve() for path in (args.output, args.private_review, args.differences) if path is not None]
+    if len(set(paths)) != len(paths):
+        parser.error("--output, --private-review et --differences doivent viser trois fichiers différents")
     return args
 
 
@@ -906,6 +1093,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Ouverte avant la première vente : un chemin refusé arrête le banc avant tout appel au modèle.
     review = open_private_review(args.private_review) if args.private_review is not None else None
+    differences = open_private_review(args.differences) if args.differences is not None else None
     connection = connect(str(db_url))
     try:
         report = run_bench(
@@ -916,11 +1104,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             sample=args.sample,
             today=datetime.now(PARIS).date(),
             private_review=(lambda entry: write_difference(review, entry)) if review is not None else None,
+            differences=(lambda entry: write_difference(differences, entry)) if differences is not None else None,
         )
     finally:
         connection.close()
-        if review is not None:
-            review.close()
+        for handle in (review, differences):
+            if handle is not None:
+                handle.close()
     markdown = render_report(report)
     args.output.write_text(markdown, encoding="utf-8")
     publish(markdown)
