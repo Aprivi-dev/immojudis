@@ -1,7 +1,8 @@
 """Ventes exclues de la lecture automatique des pièces (lot V3b-0, migration 20261208100000).
 
-Une vente exclue n'est plus lue par aucun modèle : ni par le banc de lecture des pièces
-(``scripts/compare_document_vision.py``), ni par la passe d'écriture du lot V3b-1. La règle « cette vente est-elle
+Une vente exclue n'est plus lue par aucun modèle : ni par la lecture Qwen (``src.document_reading``), ni par le banc
+de lecture des pièces (``scripts/compare_document_vision.py``), ni par la passe d'écriture du lot V3b-1 ; sa lecture
+déjà servie aux abonnés est supprimée (:func:`forget_readings_of_excluded_sales`). La règle « cette vente est-elle
 exclue ? » n'est écrite qu'ici : :data:`EXCLUDED_SALE_SQL` pour une requête qui parcourt les ventes (alias ``sale``),
 :func:`is_sale_excluded_from_document_reading` pour une vente seule. Les deux disent la même chose : l'URL de
 l'exclusion est l'URL source de la vente, ou l'une des URL qu'elle a reprises en absorbant un doublon.
@@ -37,6 +38,19 @@ returning source_url
 """
 
 
+# La lecture des pièces servie aux abonnés Analyse (``public.auction_document_readings``, écrite par
+# ``src.document_reading``) d'une vente exclue est supprimée, pas vidée : ``points`` est non nul par contrainte, et une
+# lecture « terminée » sans point se lirait « rien à signaler ». Sans ligne, le site dit qu'aucune lecture n'existe ;
+# la table n'a ni journal ni purge propre à garder (seule la suppression de la vente l'efface, en cascade), et la vente
+# exclue n'est plus jamais lue, la ligne ne revient donc pas.
+_FORGET_READINGS_SQL = f"""
+delete from public.auction_document_readings reading
+ using public.auction_sales sale
+ where reading.sale_id = sale.id
+   and {EXCLUDED_SALE_SQL}
+"""
+
+
 def is_sale_excluded_from_document_reading(conn: Any, source_url: str) -> bool:
     """La vente d'URL source ``source_url`` est exclue de toute lecture automatique de ses pièces.
 
@@ -54,3 +68,11 @@ def exclude_sale_from_document_reading(
         raise ValueError(f"motif hors liste : attendu l'un de {', '.join(REASONS)}")
     row = conn.execute(_EXCLUDE_SQL, (source_url, reason, str(request_id) if request_id else None)).fetchone()
     return row is not None
+
+
+def forget_readings_of_excluded_sales(conn: Any) -> int:
+    """Supprime la lecture des pièces servie aux abonnés de toute vente exclue ; rend le nombre de lectures retirées.
+
+    Sans paramètre : la règle d'exclusion seule désigne les ventes, et un second appel ne retire plus rien.
+    """
+    return int(conn.execute(_FORGET_READINGS_SQL).rowcount or 0)

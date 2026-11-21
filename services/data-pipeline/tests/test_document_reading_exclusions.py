@@ -1,4 +1,4 @@
-"""Ventes exclues de la lecture automatique des pièces (lot V3b-0) : règle, commande opérateur, banc."""
+"""Ventes exclues de la lecture automatique des pièces (lot V3b-0) : règle, commande opérateur, banc, lecture Qwen."""
 
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from psycopg.types.json import Jsonb
 
 from scripts import compare_document_vision as bench
 from scripts import exclude_sale_from_document_reading as command
+from src import document_reading
 from src.document_reading_exclusions import (
     EXCLUDED_SALE_SQL,
     exclude_sale_from_document_reading,
+    forget_readings_of_excluded_sales,
     is_sale_excluded_from_document_reading,
 )
 
@@ -26,15 +28,19 @@ REQUEST = UUID("91200000-0000-4000-8000-000000000001")
 
 
 class FakeConnection:
-    def __init__(self, row: tuple[Any, ...] | None) -> None:
+    def __init__(self, row: tuple[Any, ...] | None, rowcount: int = 0) -> None:
         self.row = row
+        self.rowcount = rowcount
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
     def execute(self, sql: str, parameters: tuple[Any, ...] = ()) -> Any:
         self.calls.append((sql, parameters))
         row = self.row
+        count = self.rowcount
 
         class Cursor:
+            rowcount = count
+
             def fetchone(self) -> tuple[Any, ...] | None:
                 return row
 
@@ -71,6 +77,17 @@ def test_the_bench_leaves_excluded_sales_out_before_any_download() -> None:
     assert f"not {EXCLUDED_SALE_SQL}" in bench.CANDIDATES_SQL
 
 
+def test_the_qwen_reading_leaves_excluded_sales_out_with_the_same_rule() -> None:
+    assert f"not {EXCLUDED_SALE_SQL}" in document_reading.CANDIDATES_SQL
+
+
+def test_the_served_reading_of_every_excluded_sale_is_deleted() -> None:
+    connection = FakeConnection(None, rowcount=1)
+    assert forget_readings_of_excluded_sales(connection) == 1
+    sql, parameters = connection.calls[0]
+    assert "delete from public.auction_document_readings" in sql and EXCLUDED_SALE_SQL in sql and parameters == ()
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -95,7 +112,7 @@ def test_command_excludes_the_sale_and_prints_counts_only(
 ) -> None:
     from src.storage import supabase_client
 
-    connection = FakeConnection((URL,))
+    connection = FakeConnection((URL,), rowcount=1)
     withdrawn: list[tuple[str, str | None]] = []
     monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://example.test/db")
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda url, **options: connection)
@@ -111,11 +128,14 @@ def test_command_excludes_the_sale_and_prints_counts_only(
     assert command.main(["--source-url", URL, "--reason", "opposition", "--request-id", str(REQUEST)]) == 0
 
     assert connection.calls[0][1] == (URL, "opposition", str(REQUEST))
+    # Puis, dans la même transaction, la lecture servie aux abonnés est supprimée.
+    assert "delete from public.auction_document_readings" in connection.calls[1][0]
     assert withdrawn == [("postgresql://example.test/db", URL)]
     output = capsys.readouterr().out
     assert json.loads(output) == {
         "excluded": True,
         "already_excluded": False,
+        "readings_removed": 1,
         "withdrawn": {"sales": 1, "cleared": 2, "preserved": 0, "not_recorded": 0},
     }
     assert URL not in output
@@ -161,5 +181,20 @@ def test_the_rule_runs_on_postgres_for_a_sale_and_for_the_url_it_absorbed() -> N
                 f"select source_url from public.auction_sales sale where {EXCLUDED_SALE_SQL} order by 1"
             ).fetchall()
             assert excluded == [("https://example.test/conservee",)]
+
+            # La lecture servie de la vente exclue (par l'URL qu'elle a absorbée) est supprimée, pas les autres.
+            db.execute("alter table public.auction_sales add column id integer")
+            db.execute("update public.auction_sales set id = length(source_url)")
+            db.execute("create table public.auction_document_readings (sale_id integer primary key, points jsonb)")
+            db.execute(
+                "insert into public.auction_document_readings select id, '[]'::jsonb from public.auction_sales"
+            )
+            assert forget_readings_of_excluded_sales(db) == 1
+            assert forget_readings_of_excluded_sales(db) == 0
+            kept = db.execute(
+                "select sale.source_url from public.auction_document_readings reading"
+                " join public.auction_sales sale on sale.id = reading.sale_id order by 1"
+            ).fetchall()
+            assert kept == [("https://example.test/autre",), ("https://example.test/sans-liste",)]
         finally:
             db.rollback()
