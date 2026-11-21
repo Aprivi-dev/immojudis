@@ -1,12 +1,15 @@
 name: Document vision comparison
 
-# Banc de la lecture des pièces par Claude (lot V1, mode fantôme) : services/data-pipeline/scripts/
+# Banc de la lecture des pièces par Claude (lots V1 et V2, mode fantôme) : services/data-pipeline/scripts/
 # compare_document_vision.py relit les pièces de N ventes à venir déjà lues par la chaîne actuelle (Claude Haiku 5.5
 # lit un extrait PDF d'au plus dix pages, Claude Sonnet 5.5 relit les seules pages citées) et compare le verdict par
-# champ à la fiche. Lecture seule sur les ventes : rien n'est écrit sur une fiche. Les appels au modèle sont réservés
-# et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget quotidien du pipeline ; un refus du
-# budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc proprement. Rapport agrégé (sans identifiant
-# de vente, citation ni URL de pièce) dans le résumé de l'exécution et en artefact. Aucun déclenchement automatique.
+# champ à la fiche. Une page citée en partie image que ni la couche texte ni l'OCR du pipeline ne couvrent est lue par
+# Tesseract, le temps de vérifier la citation. Lecture seule sur les ventes : rien n'est écrit sur une fiche. Les
+# appels au modèle sont réservés et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget
+# quotidien du pipeline ; un refus du budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc
+# proprement. Rapport agrégé (sans identifiant de vente, citation ni URL de pièce) dans le résumé de l'exécution et en
+# artefact. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les ventes et les
+# pièces. Aucun déclenchement automatique.
 on:
   workflow_dispatch:
     inputs:
@@ -61,6 +64,11 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: services/data-pipeline/requirements.lock
+
+      # OCR d'une page citée sans texte (src.pdf_ocr). Nouvelles tentatives bornées, échec rapide et visible sur une
+      # panne durable (même script que data-pipeline.yml).
+      - name: Install OCR packages
+        run: bash scripts/install_system_packages.sh tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
 
       - name: Install Python dependencies
         run: python -m pip install --require-hashes -r requirements.lock

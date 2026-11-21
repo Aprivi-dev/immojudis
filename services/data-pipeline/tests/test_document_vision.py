@@ -54,7 +54,11 @@ def _context(text: str = PAGE_TEXT, **kwargs: object) -> SaleContext:
 
 
 def _reading(**claims: dict[str, object]) -> Reading:
-    return vision.parse_reading({"plusieurs_lots": "non", "champs": claims}, list(claims), [PAGE])
+    return _reading_saying("non", **claims)
+
+
+def _reading_saying(several_lots: str, **claims: dict[str, object]) -> Reading:
+    return vision.parse_reading({"plusieurs_lots": several_lots, "champs": claims}, list(claims), [PAGE])
 
 
 # --- Choix des pages ----------------------------------------------------------------------------------------------
@@ -77,6 +81,49 @@ def test_page_selection_keeps_at_most_ten_pages_about_the_fields_in_dossier_orde
     assert pages == sorted(pages)
     # Richest first: the two rich pages are kept, then plain pages in dossier order up to ten.
     assert PageRef(2, 4) not in pages
+
+
+TEMPLATE_PAGE = (
+    "Conformément à la loi Carrez, la superficie du lot est mentionnée. Si le bien est loué, l'adjudicataire fera "
+    "son affaire du bail et des locataires ; les pièces de la procédure et la visite des lieux. " + FILLER
+)
+
+
+def _typed(index: int, document_type: str, pages: dict[int, str]) -> ReadingDocument:
+    return ReadingDocument(index=index, label="Pièce", url=f"https://example.test/{index}.pdf", document_type=document_type, pages=pages)
+
+
+def test_report_and_visit_pages_are_not_crowded_out_by_template_clauses() -> None:
+    report = "Séjour, cuisine, deux chambres : 3 pièces principales, surface habitable de 62 m². Le logement est occupé. "
+    visits = "Visites : le 3 décembre 2026 de 10 heures à 11 heures. " + FILLER
+    documents = [
+        _typed(1, "cahier_conditions_vente", {number: TEMPLATE_PAGE for number in range(1, 13)} | {13: visits}),
+        _typed(2, "pv_huissier", {1: FILLER, 2: report + FILLER}),
+    ]
+    assert vision.page_field_score(TEMPLATE_PAGE) > vision.page_field_score(report) > vision.page_field_score(visits)
+
+    pages = vision.select_vision_pages(documents)
+
+    assert len(pages) == 10
+    assert PageRef(2, 2) in pages and PageRef(1, 13) in pages
+
+
+def test_each_field_is_looked_for_first_in_the_piece_that_states_it() -> None:
+    past_visit = "Le 3 mars 2026, lors de la visite, surface habitable de 62 m². " + FILLER
+    sale_visits = "Visites le 3 décembre 2026. " + FILLER
+    documents = [_typed(1, "pv_huissier", {1: past_visit}), _typed(2, "cahier_conditions_vente", {4: sale_visits})]
+    assert vision.select_vision_pages(documents, max_pages=1) == [PageRef(1, 1)]  # surface habitable d'abord
+    visits_only = [_typed(1, "pv_huissier", {1: "Le 3 mars 2026, lors de la visite. " + FILLER}), documents[1]]
+    assert vision.select_vision_pages(visits_only, max_pages=1) == [PageRef(2, 4)]
+
+
+@pytest.mark.parametrize("pages", [vision.MAX_PAGES, 15])
+def test_selection_stays_below_the_haiku_price_tier(pages: int) -> None:
+    from src.enrichment.anthropic_reader import input_token_ceiling
+
+    refs = [PageRef(index, number) for index in range(1, 4) for number in range(100, 100 + pages)][:pages]
+    prompt = vision.build_user_prompt(refs, vision.FIELDS, today=TODAY, sold_lot=SoldLot(number=2, lot_count=3, label="x" * 120))
+    assert input_token_ceiling(pages, vision.SYSTEM_PROMPT, prompt, vision.response_schema(vision.FIELDS)) < 100_000
 
 
 def test_page_without_any_field_word_is_never_sent() -> None:
@@ -232,7 +279,180 @@ def test_quote_must_be_on_the_page_it_names() -> None:
     )
     context = _context()
     context.page_texts[PageRef(1, 2)] = FILLER
-    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].reason == "citation_introuvable"
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+    assert verdict.reason == "citation_introuvable" and verdict.detail == vision.OTHER_PAGE
+
+
+def test_quote_found_by_the_v1_rule_is_marked_exact() -> None:
+    verdicts = vision.primary_verdicts(_reading(rooms_count=_claim(3, "comprenant 3 pièces principales")), _context(), today=TODAY)
+    assert verdicts[vision.ROOMS].detail == vision.EXACT
+    assert verdicts[vision.ROOMS].quote == "comprenant 3 pièces principales"
+
+
+# --- Normalisation symétrique -------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote"),
+    [
+        # Espaces insécables (fine ou non) et retours à la ligne.
+        ("Surface habitable de 62,40 m² au relevé.", "Surface habitable de 62,40 m²"),
+        ("Surface\nhabitable :  62,40 m² au relevé.", "Surface habitable : 62,40 m²"),
+        # « m² » écrit avec l'exposant, « m2 » dans la citation, et l'inverse.
+        ("Surface habitable de 62,40 m² au relevé.", "Surface habitable de 62,40 m2"),
+        ("Surface habitable de 62,40 m2 au relevé.", "Surface habitable de 62,40 m²"),
+        # Ligature typographique.
+        ("Une superﬁcie habitable de 62,40 m² au relevé.", "Une superficie habitable de 62,40 m²"),
+        # Apostrophes et tirets typographiques.
+        ("D’une surface habitable – 62,40 m² au relevé.", "D'une surface habitable - 62,40 m²"),
+        # Césure en fin de ligne.
+        ("Une surface habi-\ntable de 62,40 m² au relevé.", "Une surface habitable de 62,40 m²"),
+        # Accent décomposé (lettre puis accent combinant) et guillemets.
+        ("La « surface habitable » relevée est de 62,40 m².", "La surface habitable relevée est de 62,40 m²"),
+        ("Surface habitable relevée : 62,40 m².", "Surface habitable relevée : 62,40 m²"),
+    ],
+)
+def test_quote_is_found_despite_typographic_differences(page_text: str, quote: str) -> None:
+    reading = _reading(habitable_surface_m2=_claim(62.4, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + " " + FILLER), today=TODAY)[vision.HABITABLE]
+    assert verdict.status == CANDIDATE
+    assert verdict.detail in {vision.NORMALIZED, vision.EXACT}
+
+
+def test_ligature_oe_is_two_letters_on_both_sides() -> None:
+    text = "Au cœur du bourg, une maison de 4 pièces principales. " + FILLER
+    reading = _reading(rooms_count=_claim(4, "Au coeur du bourg, une maison de 4 pièces principales"))
+    verdict = vision.primary_verdicts(reading, _context(text), today=TODAY)[vision.ROOMS]
+    assert verdict.status == CANDIDATE and verdict.detail == vision.NORMALIZED
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote"),
+    [
+        # Un autre mot, une lettre de plus ou de moins, un autre chiffre : jamais retrouvée.
+        ("Surface habitable de 62,40 m².", "Surface utile de 62,40 m²"),
+        ("Un appartement de 62,40 m² habitables.", "Un apartement de 62,40 m² habitables"),
+        ("Surface habitable de 62,40 m².", "Surface habitable de 62,45 m²"),
+        # Un tiret entre deux chiffres reste.
+        ("Surface habitable de 10-12 m² environ.", "Surface habitable de 1012 m²"),
+    ],
+)
+def test_normalization_never_accepts_a_different_text(page_text: str, quote: str) -> None:
+    assert vision.find_quote(page_text, quote, ocr=False) is None
+
+
+def test_found_quote_maps_back_to_the_text_of_the_page() -> None:
+    page_text = "Désignation :\nune surface habi-\ntable de 62,40 m² relevée."
+    start, end, tolerated = vision.find_quote(page_text, "surface habitable de 62,40 m2", ocr=False)  # type: ignore[misc]
+    assert page_text[start:end] == "surface habi-\ntable de 62,40 m²"
+    assert tolerated is False
+
+
+# --- OCR ----------------------------------------------------------------------------------------------------------
+
+OCR_PAGE_TEXT = "Désignation : surface hahitable de 62,40 m² au relevé du métreur. " + FILLER
+OCR_QUOTE = "surface habitable de 62,40 m² au relevé"
+
+
+def test_isolated_ocr_substitution_is_tolerated_on_an_ocr_page_only() -> None:
+    reading = _reading(habitable_surface_m2=_claim(62.4, OCR_QUOTE))
+    ocr = _context(OCR_PAGE_TEXT, ocr_pages=frozenset({PAGE}))
+    verdict = vision.primary_verdicts(reading, ocr, today=TODAY)[vision.HABITABLE]
+    assert verdict.status == CANDIDATE and verdict.detail == vision.OCR_TOLERANCE
+
+    native = vision.primary_verdicts(reading, _context(OCR_PAGE_TEXT), today=TODAY)[vision.HABITABLE]
+    assert native.reason == "citation_introuvable" and native.detail == vision.NATIVE_TEXT_DIFFERS
+
+
+@pytest.mark.parametrize(
+    "page_text",
+    [
+        # Plus d'une substitution pour une citation de moins de 40 caractères (clé de 33 : une seule permise).
+        "surface hahitahle de 62,40 m² au relevé",
+        "surface hahitable de 62,40 m² au relevá",
+        # Une insertion ou une suppression n'est pas une substitution.
+        "surface habittable de 62,40 m² au relevé",
+        "surface habiable de 62,40 m² au relevé",
+        # Une substitution sur un chiffre, même isolée.
+        "surface habitable de 82,40 m² au relevé",
+    ],
+)
+def test_ocr_tolerance_is_bounded(page_text: str) -> None:
+    assert vision.find_quote(page_text + " " + FILLER, OCR_QUOTE, ocr=True) is None
+
+
+def test_ocr_tolerance_grows_with_the_quote_and_stops_at_three() -> None:
+    quote = "Le bien est occupé par un locataire en vertu d'un bail du premier mars deux mille vingt, toujours en cours"
+    assert len(vision.match_key(quote)[0]) >= 80
+    three = quote.replace("bien", "bicn").replace("locataire", "locatairc").replace("vertu", "vcrtu")
+    four = three.replace("premier", "prcmier")
+    assert vision.find_quote(three, quote, ocr=True) is not None
+    assert vision.find_quote(four, quote, ocr=True) is None
+    # Deux substitutions voisines ne sont pas des caractères isolés.
+    assert vision.find_quote(quote.replace("bien", "bicm"), quote, ocr=True) is None
+    assert vision.find_quote(quote.replace("bien", "bicn"), quote, ocr=True) is not None
+    # Une citation courte n'a droit à aucune substitution.
+    assert vision.find_quote("3 pieccs", "3 pièces", ocr=True) is None
+
+
+def test_image_page_without_text_is_read_by_ocr_once_for_every_field() -> None:
+    header = "Procès-verbal de description dressé par l'huissier de justice soussigné."
+    read: list[PageRef] = []
+
+    def ocr(ref: PageRef) -> str:
+        read.append(ref)
+        return PAGE_TEXT
+
+    reading = _reading(
+        habitable_surface_m2=_claim(62.4, "surface habitable de 62,40 m²"),
+        rooms_count=_claim(3, "comprenant 3 pièces principales"),
+    )
+    context = _context(header, image_pages=frozenset({PAGE}), ocr_reader=ocr)
+    verdicts = vision.primary_verdicts(reading, context, today=TODAY)
+    assert {verdict.detail for verdict in verdicts.values()} == {vision.BENCH_OCR}
+    assert {verdict.status for verdict in verdicts.values()} == {CANDIDATE}
+    assert read == [PAGE]
+    # Le second lecteur relit la même page : pas de second OCR.
+    vision.final_verdicts(verdicts, reading, context, today=TODAY)
+    assert read == [PAGE]
+
+
+@pytest.mark.parametrize("ocr_reader", [None, lambda ref: None])
+def test_image_page_that_ocr_cannot_read_is_reported_without_text(ocr_reader: object) -> None:
+    header = "Procès-verbal de description dressé par l'huissier de justice soussigné."
+    reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
+    context = _context(header, image_pages=frozenset({PAGE}), ocr_reader=ocr_reader)
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+    assert verdict.reason == "citation_introuvable" and verdict.detail == vision.NO_TEXT
+
+
+def test_ocr_text_that_does_not_hold_the_quote_is_reported_as_different() -> None:
+    reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
+    context = _context(FILLER, image_pages=frozenset({PAGE}), ocr_reader=lambda ref: "Une page de photographies du bien.")
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+    assert verdict.detail == vision.OCR_TEXT_DIFFERS
+
+
+# --- « Inconnu » --------------------------------------------------------------------------------------------------
+
+
+def test_unknown_says_whether_the_value_was_on_the_pages_sent() -> None:
+    unknown = _reading(rooms_count={"valeur": "inconnu"}, land_surface_m2={"valeur": "inconnu"},
+                       carrez_surface_m2={"valeur": "inconnu"})
+    unsent = PageRef(1, 7)
+    context = _context(dossier_pages={PAGE: PAGE_TEXT, unsent: "Terrain d'une contenance de 12 a 50 ca. " + FILLER})
+    verdicts = vision.primary_verdicts(unknown, context, today=TODAY)
+    assert verdicts[vision.ROOMS].detail == vision.CUE_SENT  # « 3 pièces » était envoyé : le modèle n'a pas répondu
+    assert verdicts[vision.LAND].detail == vision.CUE_NOT_SENT
+    assert verdicts[vision.CARREZ].detail == vision.CUE_SENT
+    nothing = _context("Le présent cahier est déposé au greffe. " + FILLER)
+    assert vision.primary_verdicts(unknown, nothing, today=TODAY)[vision.ROOMS].detail == vision.NO_CUE
+
+
+def test_unknown_after_past_visit_dates_says_so() -> None:
+    text = "Visite le 3 novembre 2026. " + FILLER
+    past = _reading(visit_dates=_claim(["2026-11-03"], "Visite le 3 novembre 2026"))
+    assert vision.primary_verdicts(past, _context(text), today=TODAY)[vision.VISITS].detail == vision.PAST_VISITS
 
 
 def test_land_contenance_in_ares_and_centiares_states_square_metres() -> None:
@@ -312,26 +532,24 @@ def test_surface_value_must_be_written_as_a_surface(page_text: str, quote: str, 
 # --- Cohérence ----------------------------------------------------------------------------------------------------
 
 
-def test_sale_with_several_lots_and_no_identified_lot_is_rejected() -> None:
-    reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
-    verdicts = vision.primary_verdicts(reading, _context(several_lots=True), today=TODAY)
-    assert verdicts[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_identifie")
+@pytest.mark.parametrize("situation", [vision.SEVERAL_LOTS, vision.LOT_UNCERTAIN, vision.ONE_LOT_GUARDED])
+def test_sale_whose_lot_cannot_be_identified_is_rejected_whatever_the_reader_says(situation: str) -> None:
+    for several in ("non", "oui"):
+        reading = _reading_saying(several, rooms_count=_claim(3, "comprenant 3 pièces principales"))
+        verdict = vision.primary_verdicts(reading, _context(lot_situation=situation), today=TODAY)[vision.ROOMS]
+        assert verdict == vision.Verdict(REJECTED, "lot_non_identifie")
+        assert verdict.detail == situation
 
-    said_by_reader = vision.parse_reading(
-        {"plusieurs_lots": "oui", "champs": {vision.ROOMS: _claim(3, "comprenant 3 pièces principales")}},
-        [vision.ROOMS],
-        [PAGE],
-    )
-    assert vision.primary_verdicts(said_by_reader, _context(), today=TODAY)[vision.ROOMS].reason == "lot_non_identifie"
 
+def test_designated_lot_named_by_the_quote_is_a_candidate() -> None:
     named = "Le lot 1 comprend 3 pièces principales. " + FILLER
-    identified = _context(named, several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
-    naming = _reading(rooms_count=_claim(3, "Le lot 1 comprend 3 pièces principales"))
+    identified = _context(named, sold_lot=SoldLot(number=1, lot_count=2))
+    naming = _reading_saying("oui", rooms_count=_claim(3, "Le lot 1 comprend 3 pièces principales"))
     assert vision.primary_verdicts(naming, identified, today=TODAY)[vision.ROOMS].status == CANDIDATE
 
 
 def test_known_lot_that_the_quote_does_not_name_is_rejected() -> None:
-    context = _context(several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    context = _context(sold_lot=SoldLot(number=1, lot_count=2))
     reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
     assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_nomme")
 
@@ -339,8 +557,134 @@ def test_known_lot_that_the_quote_does_not_name_is_rejected() -> None:
 def test_quote_naming_another_lot_than_the_sold_one_is_rejected() -> None:
     text = "Le lot 2 comprend 3 pièces principales. " + FILLER
     reading = _reading(rooms_count=_claim(3, "Le lot 2 comprend 3 pièces principales"))
-    context = _context(text, several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    context = _context(text, sold_lot=SoldLot(number=1, lot_count=2))
     assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].reason == "autre_lot"
+
+
+# --- Lot unique d'après la fiche ----------------------------------------------------------------------------------
+
+
+def test_one_lot_sale_does_not_need_a_quote_naming_a_lot_when_the_reader_says_several() -> None:
+    # Lecteur trompé par des lots de copropriété : la citation ne nomme aucun lot, le dossier n'a pas de titres de lots.
+    text = "Le lot numéro 12 et le lot numéro 45 (cave). Un appartement comprenant 3 pièces principales. " + FILLER
+    reading = _reading_saying("oui", rooms_count=_claim(3, "Un appartement comprenant 3 pièces principales"))
+    context = _context(text, dossier_pages={PAGE: text})
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].status == CANDIDATE
+
+
+def test_one_lot_sale_keeps_the_rejection_when_the_quote_names_a_lot() -> None:
+    text = "Lot 2 : un appartement comprenant 3 pièces principales. " + FILLER
+    reading = _reading_saying("oui", rooms_count=_claim(3, "Lot 2 : un appartement comprenant 3 pièces principales"))
+    verdict = vision.primary_verdicts(reading, _context(text), today=TODAY)[vision.ROOMS]
+    assert verdict == vision.Verdict(REJECTED, "lot_non_identifie") and verdict.detail == vision.ONE_LOT
+
+
+def test_one_lot_sale_keeps_the_rejection_when_the_dossier_is_divided_in_lots() -> None:
+    # La fiche ne voit qu'un lot, mais le cahier en vend deux sous des titres : le lot voisin ne doit pas passer.
+    first = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
+    second = "DEUXIEME LOT Un appartement comprenant 3 pièces principales. " + FILLER
+    reading = _reading_saying("oui", rooms_count=_claim(5, "Une maison comprenant 5 pièces principales"))
+    context = _context(first, dossier_pages={PAGE: first, PageRef(1, 2): second})
+    verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+    assert verdict.reason == "lot_non_identifie" and verdict.detail == vision.ONE_LOT
+
+    # Sans l'avis du lecteur, rien ne change par rapport au lot V1.
+    said_one = _reading_saying("non", rooms_count=_claim(5, "Une maison comprenant 5 pièces principales"))
+    assert vision.primary_verdicts(said_one, context, today=TODAY)[vision.ROOMS].status == CANDIDATE
+
+
+def test_second_reader_saying_several_lots_on_a_divided_dossier_rejects_the_candidate() -> None:
+    first = "PREMIER LOT Une maison comprenant 5 pièces principales. " + FILLER
+    context = _context(first, dossier_pages={PAGE: first, PageRef(1, 2): "DEUXIEME LOT Un terrain. " + FILLER})
+    claim = _claim(5, "Une maison comprenant 5 pièces principales")
+    primary = vision.primary_verdicts(_reading_saying("non", rooms_count=claim), context, today=TODAY)
+    final = vision.final_verdicts(primary, _reading_saying("oui", rooms_count=claim), context, today=TODAY)
+    assert final[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_identifie")
+
+
+# --- Section du lot vendu -----------------------------------------------------------------------------------------
+
+TWO_LOTS = (
+    "PREMIER LOT Une maison d'habitation comprenant 5 pièces principales. "
+    "DEUXIEME LOT Un appartement comprenant 3 pièces principales. " + FILLER
+)
+MAISON = _claim(5, "Une maison d'habitation comprenant 5 pièces principales")
+APPARTEMENT = _claim(3, "Un appartement comprenant 3 pièces principales")
+
+
+@pytest.mark.parametrize(
+    ("sold", "claim", "accepted"),
+    [
+        (2, APPARTEMENT, True),
+        (1, MAISON, True),
+        # Le lot voisin ne passe jamais.
+        (2, MAISON, False),
+        (1, APPARTEMENT, False),
+    ],
+)
+def test_quote_under_the_title_of_the_sold_lot_is_accepted_and_the_neighbour_lot_never(
+    sold: int, claim: dict[str, object], accepted: bool
+) -> None:
+    context = _context(TWO_LOTS, sold_lot=SoldLot(number=sold, lot_count=2), dossier_pages={PAGE: TWO_LOTS})
+    verdict = vision.primary_verdicts(_reading(rooms_count=claim), context, today=TODAY)[vision.ROOMS]
+    assert (verdict.status == CANDIDATE) is accepted
+    if not accepted:
+        assert verdict.reason == "lot_non_nomme"
+
+
+def test_title_of_the_sold_lot_on_the_previous_page_of_the_same_piece_counts() -> None:
+    title_page = "Désignation des biens mis en vente. " + FILLER + " DEUXIEME LOT"
+    description = "Un appartement comprenant 3 pièces principales. " + FILLER
+    cited = PageRef(1, 5)
+    reading = vision.parse_reading({"champs": {vision.ROOMS: APPARTEMENT}}, [vision.ROOMS], [cited])
+
+    def verdict(previous: PageRef, sold: int) -> vision.Verdict:
+        context = SaleContext(
+            sold_lot=SoldLot(number=sold, lot_count=3),
+            page_texts={cited: description},
+            dossier_pages={previous: title_page, cited: description},
+        )
+        return vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS]
+
+    assert verdict(PageRef(1, 4), sold=2).status == CANDIDATE
+    assert verdict(PageRef(1, 4), sold=1).reason == "lot_non_nomme"
+    # Page précédente d'une autre pièce, ou deux pages plus haut : pas de section.
+    assert verdict(PageRef(2, 4), sold=2).reason == "lot_non_nomme"
+    assert verdict(PageRef(1, 3), sold=2).reason == "lot_non_nomme"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Un autre titre entre celui du lot vendu et la citation.
+        "DEUXIEME LOT Une cave. TROISIEME LOT Un appartement comprenant 3 pièces principales. " + FILLER,
+        # Le titre du lot vendu apparaît deux fois dans la pièce (rappel ou lot de copropriété en capitales).
+        "PREMIER LOT Un immeuble dont le LOT N° 2 forme un logement. DEUXIEME LOT Un appartement comprenant 3 pièces "
+        "principales. " + FILLER,
+        # Un lot de copropriété nommé dans la phrase n'est pas un titre de lot de vente.
+        "PREMIER LOT Dans l'immeuble, le lot n° 2 : Un appartement comprenant 3 pièces principales. " + FILLER,
+        # Un numéro voisin d'un mot de copropriété n'est pas un titre de lot de vente.
+        "PREMIER LOT Le LOT N° 2 de l'état descriptif de division : Un appartement comprenant 3 pièces principales. "
+        + FILLER,
+    ],
+)
+def test_section_of_the_sold_lot_is_not_assumed_from_an_ambiguous_title(text: str) -> None:
+    context = _context(text, sold_lot=SoldLot(number=2, lot_count=3), dossier_pages={PAGE: text})
+    verdict = vision.primary_verdicts(_reading(rooms_count=APPARTEMENT), context, today=TODAY)[vision.ROOMS]
+    assert verdict.reason == "lot_non_nomme"
+
+
+@pytest.mark.parametrize(
+    ("text", "titles"),
+    [
+        ("PREMIER LOT x DEUXIÈME LOT y 3ÈME LOT", [1, 2, 3]),
+        ("LOT N° 2 puis LOT NUMÉRO 3 puis LOT 1", [2, 3, 1]),
+        ("le lot n° 2, Lot 3, premier lot", []),
+        ("LOT N° 12", []),
+    ],
+)
+def test_lot_titles_are_capitalised_sale_lot_headings(text: str, titles: list[int]) -> None:
+    assert [number for _, number in vision.lot_titles(text, 9)] == titles
 
 
 def test_surface_incompatible_with_the_number_of_rooms_rejects_both() -> None:
