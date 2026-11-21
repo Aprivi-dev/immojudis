@@ -401,6 +401,13 @@ def test_pages_beyond_the_pdf_are_left_out_and_counted() -> None:
     assert report.pages.unusable == {bench.PAGE_OUT_OF_RANGE: 1}
 
 
+def test_without_a_fingerprint_a_pdf_shorter_than_the_text_read_is_another_pdf() -> None:
+    one_page = _pdf(DESCRIPTION)
+    manifest = [_manifest_item(URL, "pv_huissier", {1: DESCRIPTION, 7: RICH_PAGE})]  # pas d'empreinte
+    report = _bench_one(manifest, {URL: one_page})
+    assert report.skipped == {"aucune page utilisable (PDF modifié depuis la lecture)": 1}
+
+
 def test_multi_lot_sale_without_identified_lot_rejects_values() -> None:
     report = bench.run_bench(
         FakeConnection({SALE_ID: _row(quality_flags=["multi_lot_sale"])}),

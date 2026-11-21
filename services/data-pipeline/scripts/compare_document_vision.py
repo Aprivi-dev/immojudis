@@ -36,7 +36,7 @@ import sys
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -404,6 +404,11 @@ def usable_documents(
             continue
         with document:
             page_count = document.page_count
+        if not sha256 and doc.pages and max(doc.pages) > page_count:
+            # Sans empreinte, un PDF plus court que le texte lu n'est pas celui qui a été lu : la pièce entière est
+            # écartée, et ses pages restantes ne sont pas réputées être celles du texte.
+            unusable[PDF_CHANGED] += len(scored)
+            continue
         unusable[PAGE_OUT_OF_RANGE] += sum(1 for number in scored if not 1 <= number <= page_count)
         pages = {number: text for number, text in doc.pages.items() if 1 <= number <= page_count}
         if pages:
@@ -571,19 +576,22 @@ def compare_sale(
         candidates = primary_verdicts(reading, context, today=today)
         fields = [name for name, verdict in candidates.items() if verdict.status == CANDIDATE]
         second_reading = None
+        second_context = context
         if fields:
             second_excerpt, second_pages = build_document_excerpt(
                 pdfs, second_reader_pages(candidates, context, reading.several_lots is True)
             )
-            # Une page précédente ajoutée pour le second lecteur lui est envoyée : ses citations y sont cherchées.
-            context.page_texts.update({ref: context.dossier_pages[ref] for ref in second_pages if ref not in context.page_texts})
+            # Une page précédente ajoutée pour le second lecteur lui est envoyée : ses citations y sont cherchées. Une
+            # copie du contexte, pour ne pas changer les pages envoyées au lecteur principal (même cache d'OCR).
+            added = {ref: context.dossier_pages[ref] for ref in second_pages if ref not in context.page_texts}
+            second_context = replace(context, page_texts={**context.page_texts, **added})
             second_reading = second.read(
                 build_user_prompt(second_pages, fields, today=today, sold_lot=context.sold_lot),
                 second_excerpt,
                 fields,
                 second_pages,
             )
-    final = final_verdicts(candidates, second_reading, context, today=today)
+    final = final_verdicts(candidates, second_reading, second_context, today=today)
     return SaleResult(candidates, final, {doc.index: doc for doc in documents}, page_stats, unreadable), None
 
 

@@ -639,18 +639,19 @@ def test_one_lot_sale_keeps_the_rejection_when_the_dossier_is_divided_in_lots() 
 
 
 @pytest.mark.parametrize(
-    "lots",
+    ("first", "second"),
     [
-        # Un mot de copropriété près du numéro ne l'écarte pas du décompte.
-        "Lot n° 1 : dans une copropriété, une maison. Lot n° 2 : ",
+        # Un mot de copropriété près du numéro ne l'écarte pas du décompte (ici sur une autre page du dossier : sur
+        # la page citée, il écarterait déjà le terrain, motif terrain_copropriete).
+        ("Lot n° 1 : dans une copropriété, une maison. ", "Lot n° 2 : "),
         # Lots désignés par une lettre.
-        "LOT A : une maison. LOT B : ",
+        ("LOT A : une maison. ", "LOT B : "),
     ],
 )
-def test_one_lot_sale_counts_every_lot_designation_of_the_dossier(lots: str) -> None:
+def test_one_lot_sale_counts_every_lot_designation_of_the_dossier(first: str, second: str) -> None:
     quote = "un terrain à bâtir d'une contenance de 850 m²"
-    text = lots + quote + ". " + FILLER
-    context = _context(text, dossier_pages={PAGE: text})
+    text = second + quote + ". " + FILLER
+    context = _context(text, dossier_pages={PageRef(1, 9): first + FILLER, PAGE: text})
     verdict = vision.primary_verdicts(_reading_saying("oui", land_surface_m2=_claim(850, quote)), context, today=TODAY)
     assert verdict[vision.LAND].reason == "lot_non_identifie" and verdict[vision.LAND].detail == vision.ONE_LOT
 
@@ -1083,3 +1084,78 @@ def test_second_reader_also_gets_the_previous_page_when_a_lot_is_at_stake() -> N
     assert vision.second_reader_pages(verdicts, SaleContext(dossier_pages=pages), several_lots_read=False) == [cited]
     withheld = SaleContext(sold_lot=SoldLot(number=2, lot_count=3), dossier_pages={cited: pages[cited]})
     assert vision.second_reader_pages(verdicts, withheld, several_lots_read=False) == [cited]
+
+
+# --- Terrain de copropriété, occupation terminée, ares ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote", "value"),
+    [
+        ("Un immeuble en copropriété sur terrain cadastré pour 12 a 50 ca. ", "terrain cadastré pour 12 a 50 ca", 1250),
+        ("Un jardin privatif de 50 m² (lot n° 12 de la copropriété). ", "Un jardin privatif de 50 m²", 50),
+        # Le passage ne dit pas « copropriété », sa page si.
+        ("Bâtiment B de la copropriété Les Pins. Un terrain de 300 m² attenant. ", "Un terrain de 300 m² attenant", 300),
+        ("Le terrain d'assiette, d'une contenance de 12 a 50 ca, est commun. ", "d'une contenance de 12 a 50 ca", 1250),
+    ],
+)
+def test_land_of_a_co_ownership_is_rejected(page_text: str, quote: str, value: int) -> None:
+    reading = _reading(land_surface_m2=_claim(value, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + FILLER), today=TODAY)[vision.LAND]
+    assert verdict == vision.Verdict(REJECTED, "terrain_copropriete")
+    # Même prédicat pour l'indice : la page n'annonce pas de terrain.
+    assert not vision.field_cue(vision.LAND, vision._folded(page_text))
+
+
+def test_land_of_a_house_is_still_accepted() -> None:
+    text = "Une maison sur un terrain de 300 m² attenant. " + FILLER
+    reading = _reading(land_surface_m2=_claim(300, "un terrain de 300 m² attenant"))
+    assert vision.primary_verdicts(reading, _context(text), today=TODAY)[vision.LAND].status == CANDIDATE
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote", "value"),
+    [
+        ("Le bien était loué jusqu'en 2019. ", "Le bien était loué", "rented"),
+        ("La maison a été occupée par M. X jusqu'à son décès en 2020. ", "occupée par M. X", "occupied"),
+        ("Le logement occupé par l'ancien occupant est à ce jour vide. ", "Le logement occupé par", "occupied"),
+        ("Le local loué à la société Y, bail résilié le 3 mars 2025. ", "Le local loué à la société Y", "rented"),
+        ("L'appartement occupé par le saisi a été libéré en 2024. ", "L'appartement occupé par le saisi", "occupied"),
+    ],
+)
+def test_an_occupation_that_the_sentence_says_ended_is_rejected(page_text: str, quote: str, value: str) -> None:
+    reading = _reading(occupancy_status=_claim(value, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + FILLER), today=TODAY)[vision.OCCUPANCY]
+    assert verdict == vision.Verdict(REJECTED, "occupation_terminee")
+
+
+def test_a_current_occupation_or_a_vacant_property_freed_earlier_is_still_accepted() -> None:
+    rented = "Le bien est loué depuis 2019 à M. X. Une phrase suivante jusqu'au bout. " + FILLER
+    reading = _reading(occupancy_status=_claim("rented", "Le bien est loué depuis 2019 à M. X"))
+    assert vision.primary_verdicts(reading, _context(rented), today=TODAY)[vision.OCCUPANCY].status == CANDIDATE
+    freed = "Le logement a été libéré et il est libre de toute occupation. " + FILLER
+    vacant = _reading(occupancy_status=_claim("vacant", "il est libre de toute occupation"))
+    assert vision.primary_verdicts(vacant, _context(freed), today=TODAY)[vision.OCCUPANCY].status == CANDIDATE
+
+
+def test_sentence_around_stops_at_the_sentence_bounds_not_at_a_civility_dot() -> None:
+    text = "Première phrase. Occupée par M. X jusqu'à son décès. Dernière phrase."
+    start = text.index("Occupée")
+    assert vision.sentence_around(text, start, start + 16).strip() == "Occupée par M. X jusqu'à son décès."
+
+
+@pytest.mark.parametrize(
+    ("page_text", "quote", "value", "accepted"),
+    [
+        ("Un terrain d'une contenance : 05 a 20 ca. ", "terrain d'une contenance : 05 a 20 ca", 5, False),
+        ("Un terrain d'une contenance : 05 a 20 ca. ", "terrain d'une contenance : 05 a 20 ca", 520, True),
+        ("Un terrain d'une contenance de 5 a environ. ", "terrain d'une contenance de 5 a", 5, False),
+        ("Un terrain d'une contenance de 1 ha 05 a 20 ca. ", "terrain d'une contenance de 1 ha 05 a 20 ca", 1, False),
+        ("Un terrain d'une contenance de 1 ha 05 a 20 ca. ", "terrain d'une contenance de 1 ha 05 a 20 ca", 10520, True),
+        ("Un terrain d'une contenance de 1 ha 20 ca. ", "terrain d'une contenance de 1 ha 20 ca", 10020, True),
+    ],
+)
+def test_ares_and_hectares_are_only_read_converted(page_text: str, quote: str, value: int, accepted: bool) -> None:
+    reading = _reading(land_surface_m2=_claim(value, quote))
+    verdict = vision.primary_verdicts(reading, _context(page_text + FILLER), today=TODAY)[vision.LAND]
+    assert (verdict.status == CANDIDATE) is accepted

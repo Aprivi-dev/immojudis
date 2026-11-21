@@ -157,16 +157,22 @@ _DAY_AND_MONTH = re.compile(
 )
 
 
-# Ce qui ressemble à un indice sans en être un : le terrain d'assiette d'un immeuble, une page de copropriété (le
-# prompt y attend « inconnu » pour le terrain), une phrase de clause type pour l'occupation.
-_LAND_BASE = re.compile(r"\bterrains?\s+d'assiette\b")
+# Ce qui ressemble à un indice sans en être un : une phrase de clause type pour l'occupation, et pour le terrain une
+# page de copropriété (:func:`co_ownership_land`).
+_CO_OWNERSHIP_LAND = re.compile(r"\bcopropriete\b|\bterrains?\s+d'assiette\b")
 _SENTENCE_END = re.compile(r"(?<=[.;!?])\s+")
 
 
+def co_ownership_land(folded: str) -> bool:
+    """Le texte (replié par :func:`_folded`) parle d'une copropriété ou d'un terrain d'assiette : le terrain qu'il
+    décrit est celui d'un immeuble, ou un jardin privatif d'un lot, jamais la contenance du bien vendu (le prompt y
+    attend « inconnu »). Seul prédicat de cette règle : l'indice du terrain (:func:`field_cue`) et la vérification
+    d'une valeur de terrain (:func:`_value_reason`) changent ensemble."""
+    return bool(_CO_OWNERSHIP_LAND.search(folded))
+
+
 def _land_cue(folded: str) -> bool:
-    if "copropriete" in folded:
-        return False
-    return bool(_LAND_WORDS.search(_LAND_BASE.sub(" ", folded))) and bool(_surface_numbers(folded))
+    return not co_ownership_land(folded) and bool(_LAND_WORDS.search(folded)) and bool(_surface_numbers(folded))
 
 
 def _occupancy_cue(folded: str) -> bool:
@@ -470,7 +476,10 @@ def parse_reading(payload: object, fields: Sequence[str], pages: Sequence[PageRe
 
 # « 1 250,5 » (milliers séparés par une espace) ou « 52,30 », « 1.250 », « 1.250,50 ».
 _NUMBER = re.compile(r"\d{1,3}(?:[  ]\d{3}(?!\d))+(?:,\d+)?|\d+(?:[.,]\d+)*")
-_CONTENANCE = re.compile(r"(?:(\d+)\s*ha\s*)?(\d+)\s*a\s*(\d+)\s*ca\b")
+# Contenance cadastrale : « 12 a 50 ca », « 1 ha 05 a 20 ca », « 1 ha 20 ca », « 50 ca ».
+_CONTENANCE = re.compile(r"(?:(\d+)\s*ha\s*)?(?:(\d+)\s*a\s*)?(\d+)\s*ca\b")
+# Un nombre suivi de « a » ou de « ha » compte des ares ou des hectares, jamais des mètres carrés.
+_ARES_OR_HECTARES_AFTER = re.compile(r"\s*h?a\b")
 
 
 _SQUARE_METRES_AFTER = re.compile(r"\s*(?:m\s?(?:2|²)|metres?\s+carres?)(?![a-z0-9])")
@@ -495,16 +504,23 @@ def _surface_numbers(text: str) -> set[Decimal]:
     """Les surfaces écrites : un nombre suivi de « m² », ou placé juste après « surface », « superficie »,
     « contenance », « Carrez » ou « habitable » ; et les contenances cadastrales (« 12 a 50 ca » : 1 250 m²).
 
-    Un nombre quelconque de la citation (année, numéro de lot, nombre de pièces) ne prouve pas une surface.
+    Un nombre quelconque de la citation (année, numéro de lot, nombre de pièces) ne prouve pas une surface. Un
+    nombre pris dans une contenance, ou suivi de « a » ou « ha », n'est lu que converti : « contenance : 05 a 20 ca »
+    vaut 520 m², jamais 5 ; « 1 ha 05 a 20 ca » vaut 10 520 m², jamais 1.
     """
     numbers: set[Decimal] = set()
+    contenances = list(_CONTENANCE.finditer(text))
     for match in _NUMBER.finditer(text):
+        if any(span.start() <= match.start() < span.end() for span in contenances) or _ARES_OR_HECTARES_AFTER.match(
+            text, match.end()
+        ):
+            continue
         before = text[max(0, match.start() - SURFACE_CONTEXT_CHARS) : match.start()]
         words = list(_SURFACE_CONTEXT.finditer(before))
         near_word = bool(words) and not re.search(r"\d", before[words[-1].end() :])
         if _SQUARE_METRES_AFTER.match(text, match.end()) or near_word:
             numbers |= _readings(match.group())
-    for match in _CONTENANCE.finditer(text):
+    for match in contenances:
         hectares, ares, centiares = (int(group or 0) for group in match.groups())
         numbers.add(Decimal(hectares * 10_000 + ares * 100 + centiares))
     return numbers
@@ -914,8 +930,34 @@ def _sold_lot_reason(context: SaleContext, located: LocatedQuote, ref: PageRef) 
     return "lot_non_nomme"
 
 
-def _value_reason(field_name: str, claim: Claim, excerpt: str, today: date) -> str | None:
-    """La valeur se lit dans le passage de la page (jamais dans la citation du modèle) ; None : elle s'y lit."""
+# Fin de phrase sur la page : « . », « ! » ou « ? » suivis d'une espace ou de la fin, ou un retour à la ligne. Le
+# point d'une abréviation de civilité (« M. X », « Mme. Y ») ne termine pas la phrase.
+_SENTENCE_BOUNDARY = re.compile(r"(?<!\bM)(?<!\bMM)(?<!\bMme)(?<!\bMlle)(?<!\bMe)(?<!\bDr)[.!?](?=\s|$)|\n")
+# Un état d'occupation terminé : « loué jusqu'en 2019 », « occupée jusqu'à son décès », « ancien locataire »,
+# « a quitté les lieux », « libéré », « depuis le départ », « bail résilié » (texte replié).
+_ENDED_OCCUPATION = re.compile(
+    r"\bjusqu'(?:au|en|a)\b|\banciens?\s+(?:locataires?|occupants?)\b|\banciennes?\s+(?:locataires?|occupantes?)\b"
+    r"|\ba\s+quitte\b|\bliberee?s?\b|\bdepuis\s+le\s+depart\b|\bdeces\b|\bresiliee?s?\b"
+)
+
+
+def sentence_around(text: str, start: int, end: int) -> str:
+    """La ou les phrases de ``text`` qui contiennent le passage ``text[start:end]``, jusqu'à leurs bornes."""
+    begin = max((match.end() for match in _SENTENCE_BOUNDARY.finditer(text, 0, start)), default=0)
+    after = _SENTENCE_BOUNDARY.search(text, end)
+    return text[begin : after.end() if after else len(text)]
+
+
+def _value_reason(field_name: str, claim: Claim, located: LocatedQuote, today: date) -> str | None:
+    """La valeur se lit dans le passage de la page (jamais dans la citation du modèle) ; None : elle s'y lit.
+
+    Terrain : jamais celui d'une copropriété ou d'un terrain d'assiette, dit par le passage ou par sa page
+    (:func:`co_ownership_land`). Occupé ou loué : jamais un état que la phrase du passage dit terminé (« loué
+    jusqu'en 2019 », « occupée jusqu'à son décès ») ; « libre » garde sa propre règle (``libre_contredit``).
+    """
+    excerpt = located.excerpt
+    if field_name == LAND and co_ownership_land(_folded(located.text)):
+        return "terrain_copropriete"
     if field_name in SURFACE_FIELDS:
         return _surface_quote_reason(field_name, excerpt, claim.value)  # type: ignore[arg-type]
     if field_name == ROOMS:
@@ -923,7 +965,12 @@ def _value_reason(field_name: str, claim: Claim, excerpt: str, today: date) -> s
         return None if rooms_count_is_supported(excerpt, evidence, int(claim.value)) else "valeur_absente_de_la_citation"  # type: ignore[call-overload]
     if field_name == OCCUPANCY:
         evidence = {OCCUPANCY: {"quote": excerpt}}
-        return None if occupancy_is_supported(excerpt, str(claim.value), evidence) else "valeur_absente_de_la_citation"
+        if not occupancy_is_supported(excerpt, str(claim.value), evidence):
+            return "valeur_absente_de_la_citation"
+        sentence = sentence_around(located.text, located.start, located.end)
+        if claim.value != "vacant" and _ENDED_OCCUPATION.search(_folded(sentence)):
+            return "occupation_terminee"
+        return None
     if field_name == VISITS:
         text = _folded(excerpt)
         return None if all(_date_stated(text, day, today) for day in claim.value) else "valeur_absente_de_la_citation"  # type: ignore[attr-defined]
@@ -1040,7 +1087,7 @@ def _checked_claim(field_name: str, claim: Claim, context: SaleContext, today: d
     located = locate_quote(claim, context)
     if isinstance(located, str):
         return Verdict(REJECTED, "citation_introuvable", detail=located)
-    reason = _sold_lot_reason(context, located, claim.page) or _value_reason(field_name, claim, located.excerpt, today)
+    reason = _sold_lot_reason(context, located, claim.page) or _value_reason(field_name, claim, located, today)
     if reason is not None:
         return Verdict(REJECTED, reason)
     lot = _unidentified_lot(context, several_lots_read, located.excerpt)
