@@ -3,9 +3,10 @@
     python -m scripts.exclude_sale_from_document_reading --source-url URL --reason opposition [--request-id UUID]
 
 Commande opérateur (lot V3b-0). Elle inscrit l'URL source de la vente dans ``public.document_reading_exclusions``
-par la connexion directe (``SUPABASE_DB_URL``) : dès lors, ni le banc de lecture des pièces ni la passe d'écriture
-ne lisent plus ses pièces. Une vente déjà exclue garde son inscription. La sortie ne reprend que des comptes,
-jamais l'URL.
+par la connexion directe (``SUPABASE_DB_URL``) : dès lors, ni la lecture Qwen, ni le banc de lecture des pièces, ni
+la passe d'écriture ne lisent plus ses pièces. Dans la même transaction, la lecture des pièces déjà servie aux
+abonnés est supprimée (``auction_document_readings``). Une vente déjà exclue garde son inscription. La sortie ne
+reprend que des comptes, jamais l'URL.
 """
 
 from __future__ import annotations
@@ -22,7 +23,11 @@ if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
 from src.config import load_settings  # noqa: E402
-from src.document_reading_exclusions import REASONS, exclude_sale_from_document_reading  # noqa: E402
+from src.document_reading_exclusions import (  # noqa: E402
+    REASONS,
+    exclude_sale_from_document_reading,
+    forget_readings_of_excluded_sales,
+)
 
 
 def _source_url(text: str) -> str:
@@ -52,7 +57,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         added = exclude_sale_from_document_reading(
             connection, args.source_url, reason=args.reason, request_id=args.request_id
         )
-    print(json.dumps({"excluded": True, "already_excluded": not added}))
+        readings_removed = forget_readings_of_excluded_sales(connection)
+    print(json.dumps({"excluded": True, "already_excluded": not added, "readings_removed": readings_removed}))
     return 0
 
 

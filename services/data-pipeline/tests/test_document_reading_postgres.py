@@ -34,8 +34,12 @@ def setup(db) -> None:
     db.execute(
         """create table auction_sales(id uuid primary key default gen_random_uuid(), source_url text unique,
         source_name text not null default 'licitor', observations jsonb default '[]',
-        status text default 'upcoming', sale_date timestamptz, property_type text, city text, raw_payload jsonb)"""
+        status text default 'upcoming', sale_date timestamptz, property_type text, city text, raw_payload jsonb,
+        source_urls jsonb default '[]')"""
     )
+    # Ventes exclues de la lecture automatique des pièces : la vraie migration (lot V3b-0).
+    db.execute("create table if not exists public.data_subject_requests(id uuid primary key)")
+    db.execute(migration("20261208100000_document_reading_exclusions.sql"))
     db.execute(
         """create table auction_source_state(source_name text primary key,
         catalogue_withdrawn boolean not null default false)"""
@@ -167,6 +171,29 @@ def test_sales_whose_sources_are_all_withdrawn_are_not_read():
 
             db.execute("update auction_source_state set catalogue_withdrawn = false where source_name = 'vench'")
             assert set(candidates(db)) == {"withdrawn", "merged", "active"}
+        finally:
+            db.rollback()
+
+
+def test_excluded_sales_are_not_read_by_their_url_nor_by_the_url_they_absorbed():
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            add_sale(db, "excluded", status=None)
+            add_sale(db, "kept-after-merge", status=None)
+            add_sale(db, "other", status=None)
+            db.execute(
+                "update auction_sales set source_urls = '[\"absorbed\"]'::jsonb where source_url = 'kept-after-merge'"
+            )
+            db.execute(
+                "insert into public.document_reading_exclusions(source_url, reason)"
+                " values ('excluded', 'opposition'), ('absorbed', 'opposition')"
+            )
+
+            assert set(candidates(db)) == {"other"}
         finally:
             db.rollback()
 
