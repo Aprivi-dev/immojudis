@@ -1,10 +1,11 @@
 """Banc de comparaison : lecture des pièces par deux modèles Claude, contre la chaîne actuelle.
 
-Lot V1, mode fantôme. Prend les N ventes à venir dont les pièces ont été lues le plus récemment par la chaîne
+Lots V1 et V2, mode fantôme. Prend les N ventes à venir dont les pièces ont été lues le plus récemment par la chaîne
 actuelle (texte des pages ``pdf_text`` et extraction des faits complète), choisit au plus dix pages par vente
 (``src.document_vision.select_vision_pages``), en découpe un extrait PDF que Claude Haiku 5.5 lit en entier, puis
 fait relire à Claude Sonnet 5.5 les seules pages citées par les valeurs qui seraient retenues. Le verdict par champ
-(``src.document_vision``) est comparé à la valeur actuelle de la fiche.
+(``src.document_vision``) est comparé à la valeur actuelle de la fiche. Une page citée en partie image, que ni la
+couche texte ni l'OCR du pipeline ne couvrent, est lue par Tesseract (``src.pdf_ocr``) le temps de la vérification.
 
 LECTURE SEULE sur les ventes : la connexion qui les lit est passée en lecture seule avant sa première requête et rien
 n'est écrit sur une fiche. Restent, comme pour tout appel du pipeline : la réservation et le compte rendu de chaque
@@ -12,9 +13,14 @@ appel au modèle dans ``llm_usage_events`` (étape ``vision_trial``), dans le bu
 le banc proprement), et la copie partagée des robots.txt lors du téléchargement poli des pièces. Le banc s'arrête
 aussi avant qu'un appel puisse porter sa propre dépense au-delà de ``--max-usd``.
 
-Le rapport est agrégé : par champ, accords, désaccords, « inconnu », rejets, écarts avec la fiche, et pour chaque
-lecteur ses échecs par type et son coût réel. Il ne contient ni identifiant de vente, ni citation, ni texte, ni URL
-des pièces (le journal du téléchargement est réduit aux erreurs).
+Le rapport est agrégé : par champ, accords, désaccords, « inconnu », rejets, écarts avec la fiche, diagnostic des
+rejets et des « inconnu », et pour chaque lecteur ses échecs par type et son coût réel. Il ne contient ni
+identifiant de vente, ni citation, ni texte, ni URL des pièces (le journal du téléchargement est réduit aux
+erreurs).
+
+Revue privée des écarts, en option seulement (``--private-review CHEMIN``) : pour chaque valeur retenue qui diffère
+de la fiche, la vente, le champ, les deux valeurs, la citation et la page, dans un fichier JSON Lines lisible du
+seul propriétaire (mode 0600). Jamais par défaut, jamais en artefact : le workflow ne l'active pas.
 
     python -m scripts.compare_document_vision --sample 10 --max-usd 3 --output document-vision-report.md
 """
@@ -23,7 +29,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
+import os
 import sys
 import tempfile
 from collections import Counter
@@ -32,9 +40,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import anthropic
+import pymupdf
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
@@ -51,10 +60,27 @@ from src.document_reading import (  # noqa: E402
 )
 from src.document_vision import (  # noqa: E402
     ACCEPTED,
+    BENCH_OCR,
     CANDIDATE,
+    CUE_NOT_SENT,
+    CUE_SENT,
     DISAGREEMENT,
+    EXACT,
     FIELDS,
+    LOT_UNCERTAIN,
+    MAX_PAGES,
+    NATIVE_TEXT_DIFFERS,
+    NO_CUE,
+    NO_TEXT,
+    NORMALIZED,
+    OCR_TEXT_DIFFERS,
+    OCR_TOLERANCE,
+    ONE_LOT,
+    ONE_LOT_GUARDED,
+    OTHER_PAGE,
+    PAST_VISITS,
     REJECTED,
+    SEVERAL_LOTS,
     SYSTEM_PROMPT,
     UNKNOWN_STATUS,
     PageRef,
@@ -66,6 +92,7 @@ from src.document_vision import (  # noqa: E402
     cited_pages,
     compare_with_sale,
     final_verdicts,
+    page_field_score,
     parse_reading,
     primary_verdicts,
     response_schema,
@@ -91,6 +118,16 @@ from src.llm_requests import (  # noqa: E402
     llm_request_context,
 )
 from src.lot_scope import is_lot_scoped  # noqa: E402
+from src.normalize import clean_text  # noqa: E402
+from src.pdf_deadline import PdfExtractionDeferred  # noqa: E402
+from src.pdf_ocr import (  # noqa: E402
+    OCR_NO_TEXT_METHOD,
+    OCR_NO_TEXT_UNVERIFIED_METHOD,
+    OCR_PICTURE_NO_TEXT_METHOD,
+    extract_page_text_with_ocr_result,
+    pdf_document_ocr_budget_scope,
+)
+from src.pdf_page_analysis import SETTLED_EXCLUDED_PAGE_STATUSES, page_has_substantial_image  # noqa: E402
 from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
 
 MAX_SAMPLE = 30
@@ -101,6 +138,10 @@ DEFAULT_OUTPUT = "document-vision-report.md"
 PRIMARY_TIMEOUT_SECONDS = 300.0
 # Sonnet réfléchit plus longtemps que Haiku sur les mêmes pages.
 SECOND_TIMEOUT_SECONDS = 600.0
+# OCR d'une page citée, le temps de la vérification : le même délai qu'une page du pipeline (``src.pdf_ocr``).
+OCR_PAGE_SECONDS = 60.0
+# Méthodes de ``pdf_ocr`` qui gardent le texte natif faute d'avoir lu quoi que ce soit : pas un texte d'OCR.
+_OCR_WITHOUT_TEXT = frozenset({OCR_NO_TEXT_METHOD, OCR_NO_TEXT_UNVERIFIED_METHOD, OCR_PICTURE_NO_TEXT_METHOD})
 
 # Ventes à venir dont les pièces ont été lues par la chaîne actuelle (texte des pages persisté, extraction des
 # faits complète), les plus récemment lues d'abord. Seuls les identifiants sont lus ici.
@@ -207,6 +248,22 @@ class FieldStats:
     statuses: Counter[str] = field(default_factory=Counter)
     reasons: Counter[str] = field(default_factory=Counter)
     versus_sale: Counter[str] = field(default_factory=Counter)
+    # Détail de diagnostic des verdicts finaux, par « motif ou statut:détail » (``Verdict.detail``).
+    details: Counter[str] = field(default_factory=Counter)
+    # Citations des candidats du lecteur principal, par façon dont elles ont été retrouvées.
+    quote_matches: Counter[str] = field(default_factory=Counter)
+
+
+@dataclass
+class PageStats:
+    """Pages des ventes comparées : ce que la sélection pouvait envoyer et ce qu'elle a envoyé."""
+
+    with_field_words: int = 0
+    sent: int = 0
+    # Ventes dont le plafond de pages a laissé de côté des pages qui parlent des champs.
+    capped_sales: int = 0
+    # Pages du dossier sans texte exploitable (scan non lu), hors pages blanches et pages de photographies réglées.
+    unread: int = 0
 
 
 @dataclass
@@ -217,8 +274,22 @@ class BenchReport:
     processed: int = 0
     skipped: Counter[str] = field(default_factory=Counter)
     fields: dict[str, FieldStats] = field(default_factory=lambda: {name: FieldStats() for name in FIELDS})
+    pages: PageStats = field(default_factory=PageStats)
+    unreadable: Counter[str] = field(default_factory=Counter)
     readers: dict[str, ReaderStats] = field(default_factory=dict)
     stop_reason: str | None = None
+
+
+@dataclass
+class SaleResult:
+    """Ce que la comparaison d'une vente rend au banc : verdicts, pièces lues, chiffres de la sélection."""
+
+    primary: dict[str, Verdict]
+    final: dict[str, Verdict]
+    documents: dict[int, ReadingDocument]
+    pages: PageStats
+    # Pièces que pymupdf n'a pas ouvertes pendant la vérification, par type d'erreur.
+    unreadable: Counter[str] = field(default_factory=Counter)
 
 
 @dataclass
@@ -276,13 +347,19 @@ class Reader:
 
 
 def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: object, quality_flags: object) -> SaleContext:
-    """Le lot vendu, s'il est désigné, et si la vente porte sur une annonce à plusieurs lots."""
+    """Le lot vendu, s'il est désigné, et la situation de la vente quant aux lots, d'après la fiche."""
     flags = quality_flags if isinstance(quality_flags, list) else []
-    several = is_lot_scoped(dict(raw_payload)) or "multi_lot_sale" in flags or bool(raw_payload.get("pdf_multi_lot_guard"))
-    return SaleContext(
-        sold_lot=sold_lot_from_sale(property_type, city, raw_payload.get("source_lot_selection")),
-        several_lots=several,
-    )
+    sold_lot = sold_lot_from_sale(property_type, city, raw_payload.get("source_lot_selection"))
+    lot_scoped = is_lot_scoped(dict(raw_payload))
+    if lot_scoped and sold_lot is None:
+        situation = LOT_UNCERTAIN
+    elif lot_scoped or "multi_lot_sale" in flags:
+        situation = SEVERAL_LOTS
+    elif raw_payload.get("pdf_multi_lot_guard"):
+        situation = ONE_LOT_GUARDED
+    else:
+        situation = ONE_LOT
+    return SaleContext(sold_lot=sold_lot, lot_situation=situation)
 
 
 def readable_documents(manifest: object, pdfs: Mapping[str, bytes]) -> dict[int, bytes]:
@@ -302,6 +379,104 @@ def readable_documents(manifest: object, pdfs: Mapping[str, bytes]) -> dict[int,
     return {doc.index: by_url[doc.url] for doc in documents_from_manifest(manifest) if doc.url in by_url}
 
 
+def _manifest_pages(manifest: object) -> list[tuple[str | None, Mapping[str, Any]]]:
+    """Chaque page du manifeste ``pdf_text``, avec l'URL de sa pièce."""
+    pages: list[tuple[str | None, Mapping[str, Any]]] = []
+    for item in manifest if isinstance(manifest, list) else []:
+        if isinstance(item, Mapping):
+            url = clean_text(item.get("url"))
+            pages += [(url, page) for page in item.get("pages") or [] if isinstance(page, Mapping)]
+    return pages
+
+
+def _page_number(page: Mapping[str, Any]) -> int:
+    try:
+        return int(page.get("page") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def ocr_read_pages(manifest: object, documents: Sequence[ReadingDocument]) -> frozenset[PageRef]:
+    """Les pages dont le texte gardé par le pipeline vient d'un OCR qui a lu quelque chose."""
+    read_by_ocr = {
+        (url, _page_number(page))
+        for url, page in _manifest_pages(manifest)
+        if str(page.get("method") or "").startswith("ocr_") and page.get("method") not in _OCR_WITHOUT_TEXT
+    }
+    return frozenset(PageRef(doc.index, n) for doc in documents for n in doc.pages if (doc.url, n) in read_by_ocr)
+
+
+def unread_page_count(manifest: object, documents: Sequence[ReadingDocument]) -> int:
+    """Pages du dossier sans texte exploitable, hors pages blanches et pages de photographies réglées : un modèle qui
+    lit l'image pourrait y trouver une valeur, mais la sélection, qui part du texte, ne peut pas les choisir."""
+    read = {(doc.url, number) for doc in documents for number in doc.pages}
+    return sum(
+        1
+        for url, page in _manifest_pages(manifest)
+        if (url, _page_number(page)) not in read and page.get("status") not in SETTLED_EXCLUDED_PAGE_STATUSES
+    )
+
+
+def _open_pdf(content: bytes, unreadable: Counter[str]) -> Any | None:
+    """La pièce ouverte par pymupdf, ou None : une pièce qu'il n'ouvre pas est sautée et comptée par type d'erreur
+    (jamais par message, qui pourrait citer la pièce), sans arrêter le banc."""
+    try:
+        return pymupdf.open(stream=content, filetype="pdf")
+    except Exception as exc:  # pymupdf lève selon le défaut FileDataError, RuntimeError, ValueError…
+        unreadable[type(exc).__name__] += 1
+        return None
+
+
+def image_pages(
+    pdfs: Mapping[int, bytes], pages: Sequence[PageRef], ocr_pages: frozenset[PageRef], unreadable: Counter[str]
+) -> frozenset[PageRef]:
+    """Parmi ``pages``, celles dont une image couvre une part notable (même seuil que le pipeline pour lancer l'OCR
+    d'une page mixte) et dont le texte ne vient pas d'un OCR : la couche texte n'en dit peut-être qu'un en-tête."""
+    found: set[PageRef] = set()
+    for document_index in sorted({ref.document for ref in pages}):
+        content = pdfs.get(document_index)
+        document = _open_pdf(content, unreadable) if content else None
+        if document is None:
+            continue
+        with document:
+            for ref in pages:
+                if (
+                    ref.document == document_index
+                    and ref not in ocr_pages
+                    and 1 <= ref.page <= document.page_count
+                    and page_has_substantial_image(document[ref.page - 1])
+                ):
+                    found.add(ref)
+    return frozenset(found)
+
+
+def tesseract_page_reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Callable[[PageRef], str | None]:
+    """OCR d'une page d'une pièce par le Tesseract du pipeline (``src.pdf_ocr``), borné à ``OCR_PAGE_SECONDS``.
+
+    Rend le seul texte lu par l'OCR, sans la couche texte de la page (déjà dans le texte gardé par le pipeline) : un
+    titre de lot n'y est pas compté deux fois et la tolérance de l'OCR ne s'applique pas au texte natif. None si
+    l'OCR n'a rien lu, a échoué ou n'est pas installé.
+    """
+    settings = load_settings()
+
+    def read(ref: PageRef) -> str | None:
+        content = pdfs.get(ref.document)
+        document = _open_pdf(content, unreadable) if content else None
+        if document is None:
+            return None
+        try:
+            with document:
+                if not 1 <= ref.page <= document.page_count:
+                    return None
+                with pdf_document_ocr_budget_scope(OCR_PAGE_SECONDS):
+                    result = extract_page_text_with_ocr_result(document[ref.page - 1], "", settings=settings)
+        except PdfExtractionDeferred:
+            return None
+        return clean_text(result.get("text"))
+
+    return read
+
+
 def compare_sale(
     row: Mapping[str, Any],
     primary: Reader,
@@ -309,7 +484,7 @@ def compare_sale(
     fetch_pdfs: FetchPdfs,
     *,
     today: date,
-) -> tuple[dict[str, Verdict] | None, str | None]:
+) -> tuple[SaleResult | None, str | None]:
     """Verdicts d'une vente, ou la raison pour laquelle elle n'est pas comparée."""
     raw_payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), Mapping) else {}
     manifest = row.get("result")
@@ -327,11 +502,23 @@ def compare_sale(
     excerpt, pages = build_document_excerpt(pdfs, pages)
     if not pages:
         return None, "pièces modifiées ou illisibles depuis leur lecture"
+    with_field_words = sum(1 for doc in documents for text in doc.pages.values() if page_field_score(text) > 0)
+    page_stats = PageStats(
+        with_field_words=with_field_words,
+        sent=len(pages),
+        capped_sales=int(with_field_words > MAX_PAGES),
+        unread=unread_page_count(manifest, all_documents),
+    )
     context = sale_context(raw_payload, row.get("property_type"), row.get("city"), row.get("quality_flags"))
     texts = {doc.index: doc.pages for doc in documents}
     context.page_texts = {ref: texts[ref.document][ref.page] for ref in pages}
     # « libre » ne doit être contredit sur aucune page du dossier, envoyée ou non (texte déjà produit, sans coût).
     context.dossier_texts = tuple(text for doc in all_documents for text in doc.pages.values())
+    context.dossier_pages = {PageRef(doc.index, number): text for doc in documents for number, text in doc.pages.items()}
+    context.ocr_pages = ocr_read_pages(manifest, documents)
+    unreadable: Counter[str] = Counter()
+    context.image_pages = image_pages(pdfs, pages, context.ocr_pages, unreadable)
+    context.ocr_reader = tesseract_page_reader(pdfs, unreadable) if context.image_pages else None
     with llm_request_context(
         sale_id=str(row.get("id") or ""), source_url=str(row.get("source_url") or ""), stage=TRIAL_STAGE, reason=TRIAL_REASON
     ):
@@ -349,7 +536,49 @@ def compare_sale(
                 fields,
                 second_pages,
             )
-    return final_verdicts(candidates, second_reading, context, today=today), None
+    final = final_verdicts(candidates, second_reading, context, today=today)
+    return SaleResult(candidates, final, {doc.index: doc for doc in documents}, page_stats, unreadable), None
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, (frozenset, set)):
+        return sorted(_jsonable(item) for item in value)  # type: ignore[type-var]
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, (date, Decimal)):
+        return str(value)
+    return value
+
+
+def private_difference(row: Mapping[str, Any], name: str, verdict: Verdict, result: SaleResult) -> dict[str, object]:
+    """Une ligne de la revue privée : la vente, le champ, la valeur retenue, celle de la fiche, la citation, la page."""
+    page = verdict.page
+    document = result.documents.get(page.document) if page is not None else None
+    return {
+        "sale_id": str(row.get("id") or ""),
+        "source_url": row.get("source_url"),
+        "field": name,
+        "retained_value": _jsonable(verdict.value),
+        "sale_value": _jsonable(row.get(name)),
+        "quote": verdict.quote,
+        "document": {"ref": document.ref, "label": document.label, "url": document.url} if document else None,
+        "page": page.page if page is not None else None,
+    }
+
+
+def open_private_review(path: Path) -> TextIO:
+    """Ouvre la revue privée (JSON Lines), lisible du seul propriétaire (0600, même si le fichier existait). Un lien
+    symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on l'a dit."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    handle = os.fdopen(descriptor, "w", encoding="utf-8")
+    os.fchmod(handle.fileno(), 0o600)
+    return handle
+
+
+def write_difference(handle: TextIO, entry: Mapping[str, object]) -> None:
+    """Une ligne par écart, écrite tout de suite : un banc arrêté en route garde les écarts déjà vus."""
+    handle.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    handle.flush()
 
 
 def run_bench(
@@ -360,8 +589,13 @@ def run_bench(
     *,
     sample: int,
     today: date,
+    private_review: Callable[[dict[str, object]], None] | None = None,
 ) -> BenchReport:
-    """Lit les ventes (lecture seule), les compare et agrège le résultat. Aucune écriture sur une vente."""
+    """Lit les ventes (lecture seule), les compare et agrège le résultat. Aucune écriture sur une vente.
+
+    ``private_review`` : s'il est donné, il reçoit, au fil du banc, chaque valeur retenue qui diffère de la fiche
+    (:func:`private_difference`) ; elle n'entre jamais dans le rapport.
+    """
     # Avant la première requête : chaque transaction de cette connexion est READ ONLY, une écriture échouerait.
     connection.read_only = True
     report = BenchReport(
@@ -380,21 +614,34 @@ def run_bench(
             continue
         row = dict(zip(columns, fetched, strict=True))
         try:
-            verdicts, skipped = compare_sale(row, primary, second, fetch_pdfs, today=today)
+            result, skipped = compare_sale(row, primary, second, fetch_pdfs, today=today)
         except BenchStopped as exc:
             report.stop_reason = str(exc)
             break
-        if verdicts is None:
+        if result is None:
             report.skipped[skipped or "non traitée"] += 1
             continue
         report.processed += 1
-        for name, verdict in verdicts.items():
+        report.pages.with_field_words += result.pages.with_field_words
+        report.pages.sent += result.pages.sent
+        report.pages.capped_sales += result.pages.capped_sales
+        report.pages.unread += result.pages.unread
+        report.unreadable.update(result.unreadable)
+        for name, verdict in result.primary.items():
+            if verdict.status == CANDIDATE and verdict.detail:
+                report.fields[name].quote_matches[verdict.detail] += 1
+        for name, verdict in result.final.items():
             stats = report.fields[name]
             stats.statuses[verdict.status] += 1
             if verdict.reason:
                 stats.reasons[verdict.reason] += 1
+            if verdict.detail:
+                stats.details[f"{verdict.reason or verdict.status}:{verdict.detail}"] += 1
             if verdict.status == ACCEPTED:
-                stats.versus_sale[compare_with_sale(name, verdict.value, row.get(name), today=today)] += 1
+                versus = compare_with_sale(name, verdict.value, row.get(name), today=today)
+                stats.versus_sale[versus] += 1
+                if versus == "different" and private_review is not None:
+                    private_review(private_difference(row, name, verdict, result))
     connection.rollback()
     return report
 
@@ -406,6 +653,56 @@ def _known_cost(usage: Sequence[ReaderCall]) -> Decimal:
 def _tokens(values: Sequence[int | None]) -> str:
     known = [value for value in values if value is not None]
     return f"{sum(known):,}".replace(",", " ") if known else "0"
+
+
+# Tableaux du diagnostic : (titre, clé « motif ou statut » des détails, colonnes (détail, libellé)). Libellés fixes :
+# rien de ce qui vient d'une vente n'entre dans le rapport.
+_DIAGNOSTIC_TABLES = (
+    (
+        "Citations introuvables, selon la page citée",
+        "citation_introuvable",
+        (
+            (NO_TEXT, "Sans couche texte ni OCR"),
+            (OTHER_PAGE, "Sur une autre page envoyée"),
+            (NATIVE_TEXT_DIFFERS, "Couche texte, citation absente"),
+            (OCR_TEXT_DIFFERS, "OCR, citation absente"),
+        ),
+    ),
+    (
+        "Lot non identifié, selon la fiche",
+        "lot_non_identifie",
+        (
+            (ONE_LOT, "Un lot (lecteur : plusieurs)"),
+            (ONE_LOT_GUARDED, "Un lot, biens concurrents dans les pièces"),
+            (SEVERAL_LOTS, "Plusieurs lots"),
+            (LOT_UNCERTAIN, "Lot inconnu"),
+        ),
+    ),
+    (
+        "« Inconnu », selon les pages",
+        UNKNOWN_STATUS,
+        (
+            (CUE_SENT, "Indice dans les pages envoyées (pas de réponse)"),
+            (CUE_NOT_SENT, "Indice hors des pages envoyées"),
+            (NO_CUE, "Aucun indice dans le texte"),
+            (PAST_VISITS, "Dates passées"),
+        ),
+    ),
+)
+_QUOTE_MATCH_COLUMNS = (
+    (EXACT, "Exacte (règle V1)"),
+    (NORMALIZED, "Typographie normalisée"),
+    (OCR_TOLERANCE, "Tolérance OCR"),
+    (BENCH_OCR, "OCR de la page par le banc"),
+)
+
+
+def _counts_table(title: str, columns: Sequence[tuple[str, str]], counts: Callable[[FieldStats, str], int], report: BenchReport) -> list[str]:
+    lines = [f"#### {title}", "", "| Champ | " + " | ".join(label for _, label in columns) + " |"]
+    lines.append("|---" * (len(columns) + 1) + "|")
+    for name, stats in report.fields.items():
+        lines.append(f"| {name} | " + " | ".join(str(counts(stats, key)) for key, _ in columns) + " |")
+    return [*lines, ""]
 
 
 def render_report(report: BenchReport) -> str:
@@ -436,7 +733,28 @@ def render_report(report: BenchReport) -> str:
     for name, stats in report.fields.items():
         reasons = ", ".join(f"{reason} {count}" for reason, count in sorted(stats.reasons.items())) or "aucun"
         lines.append(f"- {name} : {reasons}.")
-    lines += ["", "### Lecteurs et coût réel", ""]
+    pages = report.pages
+    lines += [
+        "",
+        "### Diagnostic",
+        "",
+        f"- Pages : {pages.with_field_words} parlent des champs, {pages.sent} envoyées au lecteur principal ; "
+        f"ventes dont le plafond de {MAX_PAGES} pages en a laissé de côté : {pages.capped_sales} ; pages sans texte "
+        f"exploitable (scan non lu), que la sélection ne peut pas choisir : {pages.unread}.",
+        "- Pièces que pymupdf n'a pas ouvertes pendant la vérification, par type d'erreur : "
+        + (", ".join(f"{kind} {count}" for kind, count in sorted(report.unreadable.items())) or "aucune")
+        + ".",
+        "",
+    ]
+    lines += _counts_table(
+        "Citations des candidats du lecteur principal, selon la façon dont elles ont été retrouvées",
+        _QUOTE_MATCH_COLUMNS,
+        lambda stats, key: stats.quote_matches[key],
+        report,
+    )
+    for title, prefix, columns in _DIAGNOSTIC_TABLES:
+        lines += _counts_table(title, columns, lambda stats, key, prefix=prefix: stats.details[f"{prefix}:{key}"], report)
+    lines += ["### Lecteurs et coût réel", ""]
     for role, stats in report.readers.items():
         unpriced = sum(1 for call in stats.usage if call.cost_usd is None)
         failures = ", ".join(f"{kind} {stats.failures[kind]}" for kind in FAILURE_KINDS if stats.failures[kind]) or "aucun"
@@ -488,7 +806,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--sample", type=_bounded_int(1, MAX_SAMPLE), required=True)
     parser.add_argument("--max-usd", type=_positive_usd, default=DEFAULT_MAX_USD)
     parser.add_argument("--output", type=Path, default=Path(DEFAULT_OUTPUT))
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--private-review",
+        type=Path,
+        default=None,
+        help="fichier JSON Lines (mode 0600) des valeurs retenues qui diffèrent de la fiche, avec vente et citation ; "
+        "jamais en artefact",
+    )
+    args = parser.parse_args(argv)
+    if args.private_review is not None and args.private_review.resolve() == args.output.resolve():
+        parser.error("--private-review doit viser un autre fichier que le rapport agrégé")
+    return args
 
 
 def _reader(role: str, model: str, max_calls: int, spend: SpendCap, timeout_seconds: float) -> Reader:
@@ -516,13 +844,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     second = _reader("second", SONNET, args.sample, spend, SECOND_TIMEOUT_SECONDS)
     from src.storage.supabase_client import connect
 
+    # Ouverte avant la première vente : un chemin refusé arrête le banc avant tout appel au modèle.
+    review = open_private_review(args.private_review) if args.private_review is not None else None
     connection = connect(str(db_url))
     try:
         report = run_bench(
-            connection, primary, second, download_sale_pdfs, sample=args.sample, today=datetime.now(PARIS).date()
+            connection,
+            primary,
+            second,
+            download_sale_pdfs,
+            sample=args.sample,
+            today=datetime.now(PARIS).date(),
+            private_review=(lambda entry: write_difference(review, entry)) if review is not None else None,
         )
     finally:
         connection.close()
+        if review is not None:
+            review.close()
     markdown = render_report(report)
     args.output.write_text(markdown, encoding="utf-8")
     publish(markdown)

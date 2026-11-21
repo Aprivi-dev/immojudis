@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -15,7 +18,16 @@ import pymupdf
 import pytest
 
 from scripts import compare_document_vision as bench
-from src.document_vision import HABITABLE, OCCUPANCY, ROOMS, VISITS
+from src.document_vision import (
+    HABITABLE,
+    LOT_UNCERTAIN,
+    OCCUPANCY,
+    ONE_LOT,
+    ONE_LOT_GUARDED,
+    ROOMS,
+    SEVERAL_LOTS,
+    VISITS,
+)
 from src.enrichment.anthropic_reader import (
     HAIKU,
     SONNET,
@@ -169,6 +181,12 @@ def test_bench_compares_fields_and_reports_aggregates_only() -> None:
     assert SALE_ID not in markdown and SALE_ID[:8] not in markdown
     assert PRIVATE_QUOTE not in markdown and URL not in markdown and "loue" not in markdown
     assert "| habitable_surface_m2 | 1 | 0 | 0 | 0 | 1 | 0 | 0 |" in markdown
+    # Diagnostic: how the primary quotes were found, why fields are unknown, which pages were sent.
+    assert report.fields[HABITABLE].quote_matches == {"exacte": 1}
+    assert report.fields[VISITS].details == {"unknown:aucun_indice": 1}
+    assert report.pages.with_field_words == 1 and report.pages.sent == 1 and report.pages.capped_sales == 0
+    assert "### Diagnostic" in markdown
+    assert "| habitable_surface_m2 | 1 | 0 | 0 | 0 |" in markdown.split("### Diagnostic")[1]
 
 
 def test_second_reader_is_not_called_without_a_candidate() -> None:
@@ -325,9 +343,209 @@ def test_multi_lot_sale_without_identified_lot_rejects_values() -> None:
         today=TODAY,
     )
     assert report.fields[HABITABLE].reasons["lot_non_identifie"] == 1
+    assert report.fields[HABITABLE].details["lot_non_identifie:vente_plusieurs_lots"] == 1
+    assert "| habitable_surface_m2 | 0 | 0 | 1 | 0 |" in bench.render_report(report)
 
 
 @pytest.mark.parametrize("value", ["0", "31", "x"])
 def test_sample_is_bounded_to_thirty(value: str) -> None:
     with pytest.raises(SystemExit):
         bench.parse_args(["--sample", value])
+
+
+@pytest.mark.parametrize(
+    ("raw_payload", "flags", "situation", "designated"),
+    [
+        ({}, [], ONE_LOT, False),
+        ({"pdf_multi_lot_guard": {"status": "ambiguous"}}, [], ONE_LOT_GUARDED, False),
+        ({}, ["multi_lot_sale"], SEVERAL_LOTS, False),
+        ({"source_lot_selection": {"status": "ambiguous"}}, ["multi_lot_sale"], LOT_UNCERTAIN, False),
+        ({"source_lot_selection": {"status": "selected", "lot_number": 2, "lot_count": 3}}, ["multi_lot_sale"], SEVERAL_LOTS, True),
+    ],
+)
+def test_sale_context_reads_the_lot_situation_of_the_sale(
+    raw_payload: dict[str, Any], flags: list[str], situation: str, designated: bool
+) -> None:
+    context = bench.sale_context(raw_payload, "apartment", "Nice", flags)
+    assert context.lot_situation == situation
+    assert (context.sold_lot is not None) is designated
+
+
+# --- Revue privée des écarts --------------------------------------------------------------------------------------
+
+AGREEING = {ROOMS: (3, "3 pieces principales")}
+
+
+def test_private_review_lists_retained_values_that_differ_from_the_sale_and_never_reaches_the_report(
+    tmp_path: Any,
+) -> None:
+    differences: list[dict[str, object]] = []
+    report = bench.run_bench(
+        FakeConnection({SALE_ID: _row(rooms_count=4)}),
+        _reader("principal", FakeModel(AGREEING)),
+        _reader("second", FakeModel(AGREEING)),
+        _fetch,
+        sample=1,
+        today=TODAY,
+        private_review=differences.append,
+    )
+
+    assert report.fields[ROOMS].versus_sale["different"] == 1
+    assert differences == [
+        {
+            "sale_id": SALE_ID,
+            "source_url": "https://example.test/vente",
+            "field": ROOMS,
+            "retained_value": 3,
+            "sale_value": 4,
+            "quote": "3 pieces principales",
+            "document": {"ref": "D1", "label": "Cahier des conditions de vente", "url": URL},
+            "page": 2,
+        }
+    ]
+    markdown = bench.render_report(report)
+    assert SALE_ID not in markdown and "3 pieces principales" not in markdown and URL not in markdown
+
+    path = tmp_path / "ecarts.jsonl"
+    path.write_text("ancien contenu", encoding="utf-8")
+    path.chmod(0o644)
+    with bench.open_private_review(path) as handle:
+        assert path.stat().st_mode & 0o777 == 0o600 and path.read_text(encoding="utf-8") == ""
+        bench.write_difference(handle, differences[0])
+        # Written as it comes: the line is on disk before the file is closed.
+        assert [json.loads(line)["sale_id"] for line in path.read_text(encoding="utf-8").splitlines()] == [SALE_ID]
+
+
+def test_private_review_is_off_by_default_and_never_follows_a_symbolic_link(tmp_path: Any) -> None:
+    # Same values as above, without the option: nothing is collected.
+    bench.run_bench(
+        FakeConnection({SALE_ID: _row(rooms_count=4)}),
+        _reader("principal", FakeModel(AGREEING)),
+        _reader("second", FakeModel(AGREEING)),
+        _fetch,
+        sample=1,
+        today=TODAY,
+    )
+    assert bench.parse_args(["--sample", "1"]).private_review is None
+
+    target = tmp_path / "ailleurs.txt"
+    target.write_text("intact", encoding="utf-8")
+    link = tmp_path / "lien.jsonl"
+    link.symlink_to(target)
+    with pytest.raises(OSError):
+        bench.open_private_review(link)
+    assert target.read_text(encoding="utf-8") == "intact"
+
+
+def test_private_review_cannot_be_the_aggregated_report(tmp_path: Any) -> None:
+    report = tmp_path / "report.md"
+    with pytest.raises(SystemExit):
+        bench.parse_args(["--sample", "1", "--output", str(report), "--private-review", str(report)])
+
+
+def test_workflow_never_asks_for_the_private_review() -> None:
+    workflow = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "document-vision-comparison.yml"
+    assert "private-review" not in workflow.read_text(encoding="utf-8")
+
+
+# --- Pages : texte, OCR, images -----------------------------------------------------------------------------------
+
+
+def _image_pdf(text: str) -> bytes:
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((72, 40), text, fontsize=8)
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), 0)
+    pixmap.clear_with(255)
+    page.insert_image(pymupdf.Rect(36, 60, 559, 800), pixmap=pixmap)
+    content = document.tobytes()
+    document.close()
+    return content
+
+
+SCANNED_HEADER = "PROCES-VERBAL DE DESCRIPTION : surface et pieces du bien, constat de l'huissier"
+
+
+def test_ocr_and_unread_pages_are_read_from_the_manifest() -> None:
+    manifest = [
+        {
+            "url": URL,
+            "pages": [
+                {"page": 1, "text": FILLER, "method": "pymupdf_text"},
+                {"page": 2, "text": DESCRIPTION, "method": "ocr_tesseract"},
+                {"page": 3, "text": FILLER, "method": "ocr_picture_no_text"},
+                {"page": 4, "text": "", "method": "fallback_text", "status": "failed"},
+                {"page": 5, "text": "", "method": "blank_page", "status": "blank_excluded"},
+                {"page": 6, "text": "", "method": "ocr_picture_no_text", "status": "picture_page_excluded"},
+            ],
+        }
+    ]
+    documents = bench.documents_from_manifest(manifest)
+    assert bench.ocr_read_pages(manifest, documents) == frozenset({bench.PageRef(1, 2)})
+    assert bench.unread_page_count(manifest, documents) == 1
+
+
+def test_image_pages_are_pages_mostly_covered_by_an_image_and_not_read_by_ocr() -> None:
+    pdfs = {1: _pdf(FILLER, DESCRIPTION), 2: _image_pdf(SCANNED_HEADER)}
+    pages = [bench.PageRef(1, 1), bench.PageRef(1, 2), bench.PageRef(2, 1), bench.PageRef(3, 1)]
+    unreadable: Counter[str] = Counter()
+    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
+    assert bench.image_pages(pdfs, pages, frozenset({bench.PageRef(2, 1)}), unreadable) == frozenset()
+    assert unreadable == Counter()
+
+
+def test_a_piece_that_pymupdf_cannot_open_is_skipped_and_counted_by_type() -> None:
+    unreadable: Counter[str] = Counter()
+    pdfs = {1: b"pas un PDF", 2: _image_pdf(SCANNED_HEADER)}
+    pages = [bench.PageRef(1, 1), bench.PageRef(2, 1)]
+    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
+    assert bench.tesseract_page_reader(pdfs, unreadable)(bench.PageRef(1, 1)) is None
+    assert sum(unreadable.values()) == 2 and len(unreadable) == 1
+    kind = next(iter(unreadable))
+    report = bench.BenchReport(sample=1, unreadable=unreadable)
+    assert f"par type d'erreur : {kind} 2." in bench.render_report(report)
+
+
+def test_tesseract_reader_returns_the_ocr_text_alone_never_the_text_layer(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without Tesseract (or on a blank image), the OCR reads nothing: no text.
+    read = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())
+    assert read(bench.PageRef(1, 1)) is None
+    assert read(bench.PageRef(1, 9)) is None and read(bench.PageRef(2, 1)) is None
+
+    fallbacks: list[str] = []
+
+    def ocr(page: Any, fallback: str, *, settings: Mapping[str, object]) -> dict[str, object]:
+        fallbacks.append(fallback)
+        return {"text": "Surface habitable lue par OCR", "method": "ocr_tesseract", "status": "extracted"}
+
+    monkeypatch.setattr(bench, "extract_page_text_with_ocr_result", ocr)
+    text = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())(bench.PageRef(1, 1))
+    assert text == "Surface habitable lue par OCR" and SCANNED_HEADER not in text
+    assert fallbacks == [""]
+
+
+def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
+    scanned = _image_pdf(SCANNED_HEADER)
+    manifest = [{"url": URL, "sha256": hashlib.sha256(scanned).hexdigest(), "pages": [{"page": 1, "text": SCANNED_HEADER}]}]
+    read: list[bench.PageRef] = []
+
+    def reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Any:
+        def read_page(ref: bench.PageRef) -> str:
+            read.append(ref)
+            return DESCRIPTION
+
+        return read_page
+
+    monkeypatch.setattr(bench, "tesseract_page_reader", reader)
+    values = {HABITABLE: (62.4, PRIVATE_QUOTE)}
+    report = bench.run_bench(
+        FakeConnection({SALE_ID: _row(result=manifest, habitable_surface_m2=None)}),
+        _reader("principal", FakeModel(values)),
+        _reader("second", FakeModel(values)),
+        lambda row, urls: {URL: scanned},
+        sample=1,
+        today=TODAY,
+    )
+    assert report.fields[HABITABLE].statuses["accepted"] == 1
+    assert report.fields[HABITABLE].quote_matches == {"ocr_du_banc": 1}
+    assert read == [bench.PageRef(1, 1)]

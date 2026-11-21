@@ -1,23 +1,28 @@
 """Lecture des pièces par un modèle qui lit les pages : choix des pages, prompt, verdict par champ.
 
-Lot V1, en mode fantôme : ce module prépare et mesure, il n'écrit rien (ni fiche, ni base). Seul le banc
+Lots V1 et V2, en mode fantôme : ce module prépare et mesure, il n'écrit rien (ni fiche, ni base). Seul le banc
 ``scripts/compare_document_vision.py`` l'appelle ; l'interrupteur ``DOCUMENT_VISION_ENABLED`` (éteint) n'est
 encore branché sur aucune écriture.
 
 Déroulé d'une lecture :
 
 1. :func:`select_vision_pages` retient au plus dix pages qui parlent des champs visés, d'après la couche texte ou
-   l'OCR déjà produits par le pipeline (``pdf_text``) ;
+   l'OCR déjà produits par le pipeline (``pdf_text``), dont, pour chaque champ, la meilleure page qui en porte un
+   indice (:func:`field_cue`) ;
 2. :func:`build_document_excerpt` découpe ces pages dans un seul PDF, que le lecteur principal lit en entier
    (:data:`SYSTEM_PROMPT`, :func:`build_user_prompt`, réponse contrainte par :func:`response_schema`) ;
-3. :func:`primary_verdicts` garde, champ par champ, les valeurs dont la citation exacte est retrouvée dans le texte
-   de la page indiquée et qui passent les règles de cohérence ;
+3. :func:`primary_verdicts` garde, champ par champ, les valeurs dont la citation est retrouvée sur la page indiquée
+   (:func:`locate_quote`) et qui passent les règles de lot et de cohérence ;
 4. le second lecteur relit seulement les pages citées par ces valeurs, sans connaître les valeurs trouvées ;
 5. :func:`final_verdicts` ne retient que les valeurs sur lesquelles les deux lecteurs s'accordent.
 
 Citation vérifiée par nos soins plutôt que par l'option ``citations`` de l'API : celle-ci cite le texte que l'API
 extrait du PDF, absent d'une page scannée, et ne se combine pas avec une réponse JSON contrainte. Ici la citation
-est cherchée dans la couche texte ou l'OCR que le pipeline a déjà produits, page scannée comprise.
+est cherchée dans la couche texte ou l'OCR que le pipeline a déjà produits ; une page en partie image que ni l'une
+ni l'autre ne couvre est lue par Tesseract au moment de la vérification (``SaleContext.ocr_reader``).
+
+Chaque verdict porte un détail de diagnostic (``Verdict.detail``) : comment la citation a été retrouvée, pourquoi
+elle ne l'a pas été, pourquoi le lot n'est pas identifié, pourquoi le champ est « inconnu ».
 
 Jamais la mise à prix ni la date d'audience : ces champs ne sont ni demandés ni lus.
 """
@@ -25,20 +30,28 @@ Jamais la mise à prix ni la date d'audience : ces champs ne sont ni demandés n
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+import unicodedata
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.document_reading import (
+    CO_OWNERSHIP_LOT_WINDOW_CHARS,
     ReadingDocument,
     SoldLot,
+    lot_numbers_named,
     names_another_lot,
     sale_lot_numbers_named,
     sold_lot_line,
 )
-from src.enrichment.extraction_grounding import cited_excerpt, occupancy_is_supported, rooms_count_is_supported
+from src.enrichment.extraction_grounding import (
+    SCALAR_QUOTE_MIN_CHARS,
+    cited_excerpt,
+    occupancy_is_supported,
+    rooms_count_is_supported,
+)
 from src.french_dates import MONTH_NUMBERS
 from src.text_folding import strip_accents
 
@@ -55,7 +68,9 @@ OCCUPANCY_VALUES = frozenset({"vacant", "occupied", "rented"})
 
 # Dix pages : le coût d'un appel, et un prompt loin des 100 000 jetons au-delà desquels Claude Haiku 5.5 coûte cinq
 # fois plus (l'API lit chaque page comme texte et comme image : de 1 500 à 3 000 jetons de texte et au plus 1 568
-# d'image par page).
+# d'image par page). Quinze pages tiendraient encore sous ce palier (plafond calculé d'environ 77 000 jetons) ; on
+# n'y passe que si le diagnostic du banc le justifie : des « inconnu » dont l'indice est resté hors des pages
+# envoyées, des ventes dont le plafond a écarté des pages (lot V2, 21/11/2026).
 MAX_PAGES = 10
 MAX_QUOTE_CHARS = 400
 
@@ -128,20 +143,82 @@ def page_field_score(text: str) -> int:
     return sum(1 for pattern in _PAGE_TERMS.values() if pattern.search(folded))
 
 
+_SURFACE_CUE_WORDS = re.compile(r"\b(?:habitables?|surfaces?|superficies?)\b")
+_ROOMS_CUE = re.compile(
+    r"\b(?:\d{1,2}|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+(?:[a-z]+\s+)?pieces?\b"
+    r"|\b[tf]\s?[1-9]\b|\bstudio\b"
+)
+_VISIT_WORD = re.compile(r"\bvisites?\b")
+_DAY_AND_MONTH = re.compile(
+    r"\b\d{1,2}(?:er)?\s+(?:" + "|".join(sorted({strip_accents(name) for name in MONTH_NUMBERS})) + r")\b"
+    r"|\b\d{1,2}\s*[/.]\s*\d{1,2}\b"
+)
+
+
+def field_cue(field_name: str, folded: str) -> bool:
+    """La page (texte replié par :func:`_folded`) porte un indice d'une valeur du champ : une surface écrite près de
+    son mot, un nombre de pièces, un mot d'occupation, une visite et une date. Un indice n'est pas une preuve : il
+    sert à choisir les pages et à classer les « inconnu » du diagnostic."""
+    if field_name == HABITABLE:
+        return bool(_SURFACE_CUE_WORDS.search(folded)) and bool(_surface_numbers(folded))
+    if field_name == CARREZ:
+        return "carrez" in folded and bool(_surface_numbers(folded))
+    if field_name == LAND:
+        return bool(_LAND_WORDS.search(folded)) and bool(_surface_numbers(folded))
+    if field_name == ROOMS:
+        return bool(_ROOMS_CUE.search(folded))
+    if field_name == OCCUPANCY:
+        return bool(_PAGE_TERMS["occupation"].search(folded))
+    if field_name == VISITS:
+        return bool(_VISIT_WORD.search(folded)) and bool(_DAY_AND_MONTH.search(folded))
+    return False
+
+
+# Pièces où chercher d'abord la page d'un champ. Le procès-verbal de description, les diagnostics (attestations de
+# surface) et le bail décrivent le bien lui-même ; le cahier des conditions de vente le reprend entre des clauses
+# types qui parlent de tout bien. Les visites à venir sont annoncées par le cahier et l'annonce ; la visite du
+# procès-verbal est passée.
+_DESCRIPTION_DOCUMENTS = frozenset({"pv_huissier", "proces_verbal", "pv_notaire", "diagnostics_techniques", "dpe", "bail"})
+_CONDITIONS_DOCUMENTS = frozenset({"cahier_conditions_vente", "conditions_vente"})
+_VISIT_DOCUMENTS = _CONDITIONS_DOCUMENTS | {"annonce_vente"}
+
+
+def _document_rank(field_name: str, document_type: str) -> int:
+    if field_name == VISITS:
+        return 0 if document_type in _VISIT_DOCUMENTS else 1
+    if document_type in _DESCRIPTION_DOCUMENTS:
+        return 0
+    return 1 if document_type in _CONDITIONS_DOCUMENTS else 2
+
+
 def select_vision_pages(documents: Sequence[ReadingDocument], max_pages: int = MAX_PAGES) -> list[PageRef]:
-    """Au plus ``max_pages`` pages qui parlent des champs visés, les plus riches d'abord, dans l'ordre du dossier.
+    """Au plus ``max_pages`` pages qui parlent des champs visés, dans l'ordre du dossier.
+
+    D'abord, pour chaque champ, la meilleure page qui en porte un indice (:func:`field_cue`) : pièce la plus
+    probable pour ce champ, puis page la plus riche. Sans cette réserve (lot V1), les pages de clauses types du
+    cahier, riches en mots de tous les champs, pouvaient prendre toutes les places devant le procès-verbal de
+    description et la page des visites, qui n'en portent souvent qu'un ou deux. Puis les pages les plus riches.
 
     Une page sans aucun mot des champs n'est jamais envoyée : on n'envoie pas tout le document. À score égal, la
     pièce et la page les plus tôt dans le dossier passent d'abord (le début d'un cahier décrit le bien).
     """
-    scored = [
-        (score, doc.index, number)
-        for doc in documents
-        for number, text in doc.pages.items()
-        if (score := page_field_score(text)) > 0
-    ]
-    best = sorted(scored, key=lambda item: (-item[0], item[1], item[2]))[: max(0, max_pages)]
-    return sorted(PageRef(document, number) for _, document, number in best)
+    scores: dict[PageRef, int] = {}
+    folded: dict[PageRef, str] = {}
+    types: dict[PageRef, str] = {}
+    for doc in documents:
+        for number, text in doc.pages.items():
+            ref = PageRef(doc.index, number)
+            if (score := page_field_score(text)) > 0:
+                scores[ref], folded[ref], types[ref] = score, _folded(text), doc.document_type
+    chosen: list[PageRef] = []
+    for field_name in FIELDS:
+        if any(field_cue(field_name, folded[ref]) for ref in chosen):
+            continue
+        with_cue = [ref for ref in scores if field_cue(field_name, folded[ref])]
+        if with_cue:
+            chosen.append(min(with_cue, key=lambda ref: (_document_rank(field_name, types[ref]), -scores[ref], ref)))
+    richest = sorted((ref for ref in scores if ref not in chosen), key=lambda ref: (-scores[ref], ref))
+    return sorted([*chosen, *richest][: max(0, max_pages)])
 
 
 def build_document_excerpt(pdfs: Mapping[int, bytes], pages: Sequence[PageRef]) -> tuple[bytes, list[PageRef]]:
@@ -206,8 +283,9 @@ Pour chaque champ, donne la valeur, une citation recopiée mot pour mot de la pa
 coupure « … », sans corriger l'orthographe), et le numéro de la page du document joint où elle figure (1 pour
 sa première page). Si les pages ne disent pas explicitement la valeur, réponds "inconnu" (citation vide,
 page 0) : c'est une réponse valide et attendue. Si le dossier vend plusieurs lots et que la citation ne nomme
-pas le lot vendu, réponds "inconnu". Indique aussi si le dossier vend plusieurs lots ("oui", "non" ou
-"inconnu")."""
+pas le lot vendu ni ne se trouve sous son titre (« Lot n° X »), réponds "inconnu". Les lots de copropriété
+d'un même bien ne sont pas des lots de vente. Indique aussi si le dossier vend plusieurs lots ("oui", "non"
+ou "inconnu")."""
 
 
 def build_user_prompt(
@@ -465,34 +543,364 @@ def _date_stated(text: str, day: date, today: date) -> bool:
     return False
 
 
-def grounding_reason(
-    field_name: str, claim: Claim, page_texts: Mapping[PageRef, str], sold_lot: SoldLot | None, today: date
-) -> str | None:
-    """Pourquoi la valeur citée n'est pas vérifiée (None : elle l'est).
+# --- Citation retrouvée sur sa page -------------------------------------------------------------------------------
 
-    La citation doit être retrouvée mot pour mot dans la couche texte ou l'OCR de la page indiquée
-    (``extraction_grounding``) et dire la valeur du champ. Quand le lot vendu est connu (annonce à plusieurs lots),
-    la citation doit le nommer : une citation qui ne nomme aucun lot peut décrire un autre lot du dossier.
+# Clé de comparaison, la même pour la citation et pour la page : seule la typographie s'efface, jamais une lettre ni
+# un chiffre. Espaces (insécables comprises) et caractères invisibles (trait d'union conditionnel) retirés ; formes
+# de compatibilité Unicode ramenées à leurs caractères ordinaires (ligatures « ﬁ », exposant de « m² ») ; casse
+# ignorée ; apostrophes et tirets typographiques ramenés à un seul signe ; guillemets retirés ; « œ » et « æ » en
+# deux lettres ; tiret entre deux lettres retiré (césure en fin de ligne, mot composé coupé). Un tiret entre deux
+# chiffres reste : « 10-12 » n'est pas « 1012 ».
+_KEY_CHARACTERS = {
+    **dict.fromkeys("'’‘‛ʼ′`´", "'"),
+    **dict.fromkeys("-‐‑‒–—―−¬", "-"),
+    **dict.fromkeys("\"«»“”„‟", ""),
+    "œ": "oe",
+    "æ": "ae",
+}
+# Un caractère et ses accents combinants : un accent décomposé (« e » puis U+0301) compte avec sa lettre.
+_CLUSTER = re.compile(r".[̀-ͯ]*", re.S)
+
+# Tolérance de l'OCR, sur un texte lu par OCR seulement : au plus une substitution de caractère par tranche de
+# 20 caractères de la clé, trois au plus, jamais deux voisines, jamais sur un chiffre (des deux côtés). Pas
+# d'insertion ni de suppression : la citation et le passage de la page ont la même longueur. Une valeur n'est de
+# toute façon vérifiée que sur le texte de la page, jamais sur la citation.
+OCR_CHARS_PER_SUBSTITUTION = 20
+OCR_MAX_SUBSTITUTIONS = 3
+
+# Comment la citation a été retrouvée (détail d'un candidat, puis d'une valeur retenue).
+EXACT = "exacte"  # règle du lot V1 (``extraction_grounding.cited_excerpt``)
+NORMALIZED = "normalisee"
+OCR_TOLERANCE = "tolerance_ocr"
+BENCH_OCR = "ocr_du_banc"
+# Pourquoi elle ne l'a pas été (détail de ``citation_introuvable``).
+NO_TEXT = "page_sans_texte"
+OTHER_PAGE = "autre_page"
+NATIVE_TEXT_DIFFERS = "texte_natif_different"
+OCR_TEXT_DIFFERS = "texte_ocr_different"
+
+
+def _key_characters(cluster: str) -> str:
+    text = unicodedata.normalize("NFKC", "".join(_KEY_CHARACTERS.get(char, char) for char in cluster)).casefold()
+    return "".join(
+        _KEY_CHARACTERS.get(char, char) for char in text if not char.isspace() and unicodedata.category(char) != "Cf"
+    )
+
+
+def match_key(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """La clé de comparaison du texte et, pour chacun de ses caractères, la tranche du texte d'où il vient."""
+    chars: list[str] = []
+    spans: list[tuple[int, int]] = []
+    for cluster in _CLUSTER.finditer(text):
+        for char in _key_characters(cluster.group()):
+            chars.append(char)
+            spans.append(cluster.span())
+    kept = [
+        index
+        for index, char in enumerate(chars)
+        if not (char == "-" and 0 < index < len(chars) - 1 and chars[index - 1].isalpha() and chars[index + 1].isalpha())
+    ]
+    return "".join(chars[index] for index in kept), [spans[index] for index in kept]
+
+
+def _ocr_substitutions(length: int) -> int:
+    return min(OCR_MAX_SUBSTITUTIONS, length // OCR_CHARS_PER_SUBSTITUTION)
+
+
+def _tolerant_find(haystack: str, needle: str, allowed: int, begin: int = 0) -> int:
+    """Première position à partir de ``begin`` où ``needle`` se lit dans ``haystack`` à au plus ``allowed``
+    substitutions isolées, hors chiffres ; -1 sinon."""
+    size = len(needle)
+    for start in range(begin, len(haystack) - size + 1):
+        substitutions, previous = 0, -2
+        for offset in range(size):
+            page_char, quote_char = haystack[start + offset], needle[offset]
+            if page_char == quote_char:
+                continue
+            if (
+                substitutions == allowed
+                or offset == previous + 1
+                or page_char.isdigit()
+                or quote_char.isdigit()
+            ):
+                break
+            substitutions, previous = substitutions + 1, offset
+        else:
+            return start
+    return -1
+
+
+# Séparateurs des milliers d'un nombre écrit (« 1 245 m² ») : une espace, insécable, fine (U+2009) ou fine
+# insécable (U+202F).
+_THOUSANDS_SEPARATORS = frozenset("    ")
+_THOUSANDS_GROUP = re.compile(r"\d{3}(?!\d)")
+_LAST_GROUP = re.compile(r"(?<!\d)\d{1,3}$")
+_DECIMALS = re.compile(r"[.,]\d")
+
+
+def _digit(char: str) -> bool:
+    return len(char) == 1 and "0" <= char <= "9"
+
+
+def cuts_a_number(text: str, start: int, end: int) -> bool:
+    """Le passage ``text[start:end]`` coupe un nombre de la page.
+
+    Il commence par un chiffre que précède un chiffre (« 2 pièces » dans « 12 pièces »), un groupe des milliers
+    (« 245 m² » dans « 1 245 m² ») ou un point ou une virgule eux-mêmes précédés d'un chiffre (« 245 m² » dans
+    « 1.245 m² », « 5 m² » dans « 12,5 m² »), ou il finit par un chiffre que suit un chiffre, une décimale (« de 12 » dans
+    « de 12,5 m² ») ou un groupe des milliers (« de 1 » dans « de 1 245 m² »). La clé de comparaison ignore les
+    espaces : cette borne se lit sur le texte de la page.
     """
-    page_text = page_texts.get(claim.page) if claim.page is not None else None
-    if not page_text:
-        return "page_sans_texte"
-    excerpt = cited_excerpt(page_text, {"quote": claim.quote})
-    if excerpt is None:
-        return "citation_introuvable"
-    if sold_lot is not None:
-        if names_another_lot(excerpt, sold_lot):
-            return "autre_lot"
-        if sold_lot.number not in sale_lot_numbers_named(excerpt):
-            return "lot_non_nomme"
+    excerpt, before, after = text[start:end], text[:start], text[end:]
+    if _digit(excerpt[:1]) and (
+        _digit(before[-1:])
+        or (before[-1:] in (".", ",") and _digit(before[-2:-1]))
+        or (before[-1:] in _THOUSANDS_SEPARATORS and _digit(before[-2:-1]) and _THOUSANDS_GROUP.match(excerpt))
+    ):
+        return True
+    return _digit(excerpt[-1:]) and bool(
+        _digit(after[:1])
+        or _DECIMALS.match(after)
+        or (after[:1] in _THOUSANDS_SEPARATORS and _THOUSANDS_GROUP.match(after, 1) and _LAST_GROUP.search(excerpt))
+    )
+
+
+def find_quote(page_text: str, quote: str, *, ocr: bool) -> tuple[int, int, bool] | None:
+    """Où la citation se trouve dans le texte de la page : début, fin, et si la tolérance de l'OCR a servi.
+
+    Même clé des deux côtés (:func:`match_key`), au moins ``SCALAR_QUOTE_MIN_CHARS`` caractères, comme pour une
+    citation de l'extraction. ``ocr`` : le texte vient d'un OCR, la tolérance de l'OCR s'applique. Un passage qui
+    coupe un nombre de la page (:func:`cuts_a_number`) ne compte pas : on cherche l'occurrence suivante.
+    """
+    needle, _ = match_key(quote)
+    if len(needle) < SCALAR_QUOTE_MIN_CHARS or not page_text:
+        return None
+    haystack, spans = match_key(page_text)
+    allowed = _ocr_substitutions(len(needle)) if ocr else 0
+    for tolerated in (False, True) if allowed else (False,):
+        position = -1
+        while True:
+            begin = position + 1
+            position = _tolerant_find(haystack, needle, allowed, begin) if tolerated else haystack.find(needle, begin)
+            if position < 0:
+                break
+            start, end = spans[position][0], spans[position + len(needle) - 1][1]
+            if not cuts_a_number(page_text, start, end):
+                return start, end, tolerated
+    return None
+
+
+@dataclass(frozen=True)
+class LocatedQuote:
+    """La citation retrouvée : le texte de la page où elle l'a été, sa position, et comment."""
+
+    text: str
+    start: int
+    end: int
+    how: str
+
+    @property
+    def excerpt(self) -> str:
+        return self.text[self.start : self.end]
+
+
+def locate_quote(claim: Claim, context: SaleContext) -> LocatedQuote | str:
+    """La citation retrouvée sur la page qu'elle indique, ou le détail de son absence.
+
+    D'abord dans le texte de la page produit par le pipeline (couche texte ou OCR). Puis, pour une page en partie
+    image que ni l'une ni l'autre ne couvre (``context.image_pages``), dans l'OCR de cette seule page. Toujours sur
+    la page indiquée : une citation retrouvée sur une autre page reste introuvable (``autre_page``).
+    """
+    ref = claim.page
+    stored = context.page_texts.get(ref, "") if ref is not None else ""
+    found = find_quote(stored, claim.quote, ocr=ref in context.ocr_pages)
+    if found is not None:
+        start, end, tolerated = found
+        how = EXACT if cited_excerpt(stored, {"quote": claim.quote}) else OCR_TOLERANCE if tolerated else NORMALIZED
+        return LocatedQuote(stored, start, end, how)
+    read = context.page_ocr(ref) if ref is not None and ref in context.image_pages else None
+    found = find_quote(read or "", claim.quote, ocr=True)
+    if read and found is not None:
+        return LocatedQuote(read, found[0], found[1], BENCH_OCR)
+    if any(
+        find_quote(text, claim.quote, ocr=other in context.ocr_pages) is not None
+        for other, text in context.page_texts.items()
+        if other != ref
+    ):
+        return OTHER_PAGE
+    if not read and (not stored or ref in context.image_pages):
+        return NO_TEXT
+    return OCR_TEXT_DIFFERS if read or ref in context.ocr_pages else NATIVE_TEXT_DIFFERS
+
+
+# --- Lots ------------------------------------------------------------------------------------------------------
+
+# Situation de la vente quant aux lots, d'après la fiche (``sale_context`` du banc). Elle ne compte que sans lot
+# désigné : avec un lot désigné (``SaleContext.sold_lot``), la citation doit le nommer ou se trouver sous son titre.
+ONE_LOT = "vente_un_lot"  # la fiche ne montre qu'un lot
+ONE_LOT_GUARDED = "vente_un_lot_garde_pieces"  # un lot, mais la lecture des pièces a vu des biens concurrents
+SEVERAL_LOTS = "vente_plusieurs_lots"  # annonce à plusieurs lots
+LOT_UNCERTAIN = "lot_inconnu_fiche"  # vente ramenée à un lot de l'annonce, sans certitude sur lequel
+# Plus grand numéro de lot de vente lu quand la fiche n'en donne pas le nombre (comme ``names_another_lot``).
+DEFAULT_HIGHEST_SALE_LOT = 9
+
+# Titre de lot de vente : « LOT N° 2 » (° ou º), « LOT NUMÉRO 2 », « 2ÈME LOT », « DEUXIÈME LOT », en capitales. Un
+# lot de copropriété s'écrit le plus souvent dans la phrase (« le lot numéro 12 ») ; la capitale ne suffit pas à
+# l'écarter, d'où les règles d'unicité et de section de :func:`_in_sold_lot_section`.
+_LOT_TITLE = re.compile(
+    r"\bLOT\s*(?:N\s*[°º]|N[O°º]?\.?|NUM[EÉ]RO)?\s*\d{1,3}\b"
+    r"|\b\d{1,2}\s*(?:ER|[EÈ]RE|RE|E|[EÈ]ME|ND|NDE)\s+LOT\b"
+    r"|\b[A-ZÀ-Ý]{5,}\s+LOT\b"
+)
+
+
+def lot_titles(text: str, highest: int) -> list[tuple[int, int]]:
+    """Titres de lot de vente du texte (position, numéro), numéros de 1 à ``highest`` seulement, hors des titres
+    qu'un mot de copropriété voisin (« copropriété », « état descriptif », « tantièmes ») désigne comme un lot de
+    copropriété."""
+    titles: list[tuple[int, int]] = []
+    for match in _LOT_TITLE.finditer(text):
+        numbers = lot_numbers_named(match.group())
+        if len(numbers) != 1:
+            continue
+        number = next(iter(numbers))
+        window = text[max(0, match.start() - CO_OWNERSHIP_LOT_WINDOW_CHARS) : match.end() + CO_OWNERSHIP_LOT_WINDOW_CHARS]
+        if 1 <= number <= highest and number in sale_lot_numbers_named(window):
+            titles.append((match.start(), number))
+    return titles
+
+
+# Désignations d'un lot autres qu'un chiffre : nombre en lettres (un à vingt), chiffres romains (I à XX), lettre
+# seule (« LOT C »), « # » (« LOT #3 »). Les chiffres romains et la lettre seule ne se lisent qu'en capitale après
+# « LOT » ou « Lot » : « un lot à usage d'habitation » ne désigne aucun lot. « un » et « une » ne comptent qu'après
+# « n° », « numéro » ou « # » : « DEUXIÈME LOT Un appartement » ne nomme pas le lot 1.
+_LOT_NUMBER_WORDS = {
+    "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9,
+    "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16, "dix-sept": 17,
+    "dix-huit": 18, "dix-neuf": 19, "vingt": 20,
+}  # fmt: skip
+_LOT_NUMBERING = r"(?:n\s*[°º]|n[o°º]?\.?|num[eé]ros?|#)"
+_LOT_WORD = re.compile(
+    r"\blots?\s*(?:"
+    + _LOT_NUMBERING
+    + r"\s*(?P<numbered>"
+    + "|".join(sorted(_LOT_NUMBER_WORDS, key=len, reverse=True))
+    + r")|(?P<word>"
+    + "|".join(sorted((word for word, number in _LOT_NUMBER_WORDS.items() if number > 1), key=len, reverse=True))
+    + r"))\b",
+    re.IGNORECASE,
+)
+_LOT_HASH = re.compile(r"\blots?\s*#\s*(?P<number>\d{1,3})\b", re.IGNORECASE)
+_LOT_CAPITAL = re.compile(
+    r"\b(?:LOTS?|Lots?)\s*(?:N\s*[°º]|N[O°º]?\.?|NUM[EÉ]RO|#)?\s*(?P<mark>[A-Z]+)(?![\w°º.]|\s*\d)"
+)
+_ROMAN = re.compile(r"X{0,2}(?:IX|IV|V?I{0,3})")
+_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10}
+
+
+def _roman_value(numeral: str) -> int | None:
+    """Valeur d'un nombre romain de I à XX, ou None."""
+    if not _ROMAN.fullmatch(numeral):
+        return None
+    values = [_ROMAN_VALUES[char] for char in numeral]
+    total = sum(-value if value < next_value else value for value, next_value in zip(values, [*values[1:], 0], strict=True))
+    return total if 1 <= total <= 20 else None
+
+
+def lot_designations(text: str) -> set[int | str]:
+    """Les lots que nomme le texte, sans aucune exclusion (copropriété, nombre de lots de la fiche) : numéros en
+    chiffres et ordinaux (:func:`lot_numbers_named`), après « # », en lettres, en chiffres romains (comme numéros),
+    et lettres seules (« LOT C » : la lettre, qui ne se compare à aucun numéro)."""
+    designations: set[int | str] = set(lot_numbers_named(text))
+    designations |= {int(match["number"]) for match in _LOT_HASH.finditer(text)}
+    designations |= {_LOT_NUMBER_WORDS[(match["numbered"] or match["word"]).lower()] for match in _LOT_WORD.finditer(text)}
+    for match in _LOT_CAPITAL.finditer(text):
+        roman = _roman_value(match["mark"])
+        if roman is not None:
+            designations.add(roman)
+        elif len(match["mark"]) == 1:
+            designations.add(match["mark"])
+    return designations
+
+
+def _in_sold_lot_section(context: SaleContext, located: LocatedQuote, ref: PageRef, lot: SoldLot) -> bool:
+    """La citation est dans la section du lot vendu.
+
+    Trois conditions. Le dernier titre de lot de vente qui la précède, sur sa page ou à défaut sur la page
+    précédente de la même pièce, est celui du lot vendu. Du début de ce titre à la fin de la citation, aucun autre
+    lot n'est nommé (:func:`lot_designations`) : en capitales ou non, même près d'un mot de copropriété, même
+    au-delà du nombre de lots de la fiche, en lettres, en chiffres romains ou par une lettre. Un titre que
+    :func:`lot_titles` écarte (« LOT N° 3 : copropriété Les Pins », « LOT III ») ouvre peut-être la section du lot
+    voisin. Ce
+    titre n'apparaît qu'une fois dans la pièce (deux titres du même numéro : l'un est un lot de copropriété ou un
+    rappel).
+    """
+    highest = lot.lot_count or DEFAULT_HIGHEST_SALE_LOT
+    on_page = [(position, number) for position, number in lot_titles(located.text, highest) if position < located.start]
+    if on_page:
+        position, number = on_page[-1]
+        section = located.text[position : located.end]
+    else:
+        previous = context.dossier_pages.get(PageRef(ref.document, ref.page - 1), "")
+        titles = lot_titles(previous, highest)
+        if not titles:
+            return False
+        position, number = titles[-1]
+        section = previous[position:] + " " + located.text[: located.end]
+    if number != lot.number or lot_designations(section) - {lot.number}:
+        return False
+    pages = {other: text for other, text in context.dossier_pages.items() if other.document == ref.document}
+    pages[ref] = located.text
+    return sum(number == lot.number for text in pages.values() for _, number in lot_titles(text, highest)) == 1
+
+
+def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: str) -> str | None:
+    """La situation de lot qui empêche de rattacher la citation à la vente (détail de ``lot_non_identifie``), ou
+    None.
+
+    Lot désigné : rien ici (la citation le nomme ou est sous son titre, :func:`_sold_lot_reason`). Plusieurs lots
+    sans lot désigné, lot incertain, biens concurrents dans les pièces : toujours. Vente à un seul lot d'après la
+    fiche : seulement si le lecteur dit que le dossier en vend plusieurs ET que la citation nomme un lot ou que le
+    dossier en nomme deux au moins (:func:`lot_designations`, sans exclusion de copropriété : « Lot n° 1 : dans une
+    copropriété, une maison. Lot n° 2 : un terrain »). Seuls les numéros au-delà de ``DEFAULT_HIGHEST_SALE_LOT`` ne
+    comptent pas : ce sont ceux des lots de copropriété (« lots numéros 12 et 45 ») que le lecteur a pris pour des
+    lots de vente.
+    """
+    if context.sold_lot is not None:
+        return None
+    if context.lot_situation != ONE_LOT:
+        return context.lot_situation
+    if not several_lots_read:
+        return None
+
+    def sale_lots(text: str) -> set[int | str]:
+        return {lot for lot in lot_designations(text) if isinstance(lot, str) or 1 <= lot <= DEFAULT_HIGHEST_SALE_LOT}
+
+    named = sale_lots(excerpt).union(*(sale_lots(text) for text in context.dossier_pages.values()))
+    return ONE_LOT if sale_lots(excerpt) or len(named) >= 2 else None
+
+
+def _sold_lot_reason(context: SaleContext, located: LocatedQuote, ref: PageRef) -> str | None:
+    lot = context.sold_lot
+    if lot is None:
+        return None
+    if names_another_lot(located.excerpt, lot):
+        return "autre_lot"
+    if lot.number in sale_lot_numbers_named(located.excerpt) or _in_sold_lot_section(context, located, ref, lot):
+        return None
+    return "lot_non_nomme"
+
+
+def _value_reason(field_name: str, claim: Claim, excerpt: str, today: date) -> str | None:
+    """La valeur se lit dans le passage de la page (jamais dans la citation du modèle) ; None : elle s'y lit."""
     if field_name in SURFACE_FIELDS:
         return _surface_quote_reason(field_name, excerpt, claim.value)  # type: ignore[arg-type]
     if field_name == ROOMS:
-        evidence = {ROOMS: {"quote": claim.quote}}
-        return None if rooms_count_is_supported(page_text, evidence, int(claim.value)) else "valeur_absente_de_la_citation"  # type: ignore[call-overload]
+        evidence = {ROOMS: {"quote": excerpt}}
+        return None if rooms_count_is_supported(excerpt, evidence, int(claim.value)) else "valeur_absente_de_la_citation"  # type: ignore[call-overload]
     if field_name == OCCUPANCY:
-        evidence = {OCCUPANCY: {"quote": claim.quote}}
-        return None if occupancy_is_supported(page_text, str(claim.value), evidence) else "valeur_absente_de_la_citation"
+        evidence = {OCCUPANCY: {"quote": excerpt}}
+        return None if occupancy_is_supported(excerpt, str(claim.value), evidence) else "valeur_absente_de_la_citation"
     if field_name == VISITS:
         text = _folded(excerpt)
         return None if all(_date_stated(text, day, today) for day in claim.value) else "valeur_absente_de_la_citation"  # type: ignore[attr-defined]
@@ -514,20 +922,43 @@ class Verdict:
     reason: str | None = None
     value: object = None
     page: PageRef | None = None
+    # Diagnostic, hors de l'égalité de deux verdicts : comment la citation a été retrouvée (candidat, valeur
+    # retenue), détail d'un rejet (citation introuvable, lot non identifié) ou d'un « inconnu ».
+    detail: str | None = field(default=None, compare=False)
+    # Passage de la page cité par le lecteur principal : revue privée des écarts seulement, jamais dans le rapport.
+    quote: str = field(default="", compare=False, repr=False)
 
 
 @dataclass
 class SaleContext:
-    """Ce que la vente dit d'elle-même : le lot vendu, s'il est désigné, et si l'annonce vend plusieurs lots.
+    """Ce que la vente dit d'elle-même et le texte de ses pièces, pour vérifier les citations.
 
+    ``sold_lot`` : le lot vendu, s'il est désigné ; sinon ``lot_situation`` (:data:`ONE_LOT`, :data:`SEVERAL_LOTS`…).
     ``page_texts`` : texte des pages envoyées au lecteur (les citations y sont cherchées). ``dossier_texts`` : texte
     de TOUTES les pages du dossier, déjà produit par le pipeline, où « libre » ne doit être contredit nulle part.
+    ``dossier_pages`` : les pages du dossier que le modèle aurait pu lire (sans celles qui s'adressent à un modèle),
+    où se cherchent les titres de lots et les indices des « inconnu ». ``ocr_pages`` : pages dont le texte vient d'un
+    OCR. ``image_pages`` : pages en partie image que ni la couche texte ni l'OCR du pipeline ne couvrent ;
+    ``ocr_reader`` en lit une par OCR à la demande (None : pas d'OCR).
     """
 
     sold_lot: SoldLot | None = None
-    several_lots: bool = False
+    lot_situation: str = ONE_LOT
     page_texts: dict[PageRef, str] = field(default_factory=dict)
     dossier_texts: tuple[str, ...] = ()
+    dossier_pages: dict[PageRef, str] = field(default_factory=dict)
+    ocr_pages: frozenset[PageRef] = frozenset()
+    image_pages: frozenset[PageRef] = frozenset()
+    ocr_reader: Callable[[PageRef], str | None] | None = None
+    _ocr_texts: dict[PageRef, str | None] = field(default_factory=dict, repr=False)
+
+    def page_ocr(self, ref: PageRef) -> str | None:
+        """OCR d'une page, lu une seule fois pour les deux lecteurs."""
+        if self.ocr_reader is None:
+            return None
+        if ref not in self._ocr_texts:
+            self._ocr_texts[ref] = self.ocr_reader(ref)
+        return self._ocr_texts[ref]
 
 
 def values_agree(field_name: str, first: object, second: object) -> bool:
@@ -551,6 +982,20 @@ def pages_contradict_vacant(texts: Sequence[str]) -> bool:
     return any(_contradicts_vacant(text) for text in texts)
 
 
+# Pourquoi un champ est « inconnu » (détail de diagnostic).
+PAST_VISITS = "dates_passees"
+CUE_SENT = "indice_dans_les_pages_envoyees"  # le modèle n'a pas répondu
+CUE_NOT_SENT = "indice_hors_des_pages_envoyees"  # la valeur était sans doute dans une page non envoyée
+NO_CUE = "aucun_indice"  # rien dans le texte du dossier ne l'annonce
+
+
+def _unknown_detail(field_name: str, context: SaleContext) -> str:
+    if any(field_cue(field_name, _folded(text)) for text in context.page_texts.values()):
+        return CUE_SENT
+    unsent = (text for ref, text in context.dossier_pages.items() if ref not in context.page_texts)
+    return CUE_NOT_SENT if any(field_cue(field_name, _folded(text)) for text in unsent) else NO_CUE
+
+
 def _future_visits(claim: Claim, today: date) -> Claim:
     if claim.status != "value":
         return claim
@@ -558,33 +1003,44 @@ def _future_visits(claim: Claim, today: date) -> Claim:
     return Claim("value", future, claim.quote, claim.page) if future else UNKNOWN
 
 
-def _checked_claim(field_name: str, claim: Claim, context: SaleContext, today: date) -> Verdict:
+def _checked_claim(field_name: str, claim: Claim, context: SaleContext, today: date, several_lots_read: bool) -> Verdict:
+    """Verdict d'une réponse d'un lecteur. ``several_lots_read`` : ce lecteur dit que le dossier vend plusieurs lots."""
     if field_name == VISITS:
-        claim = _future_visits(claim, today)
+        future = _future_visits(claim, today)
+        if future.status != claim.status:
+            return Verdict(UNKNOWN_STATUS, detail=PAST_VISITS)
+        claim = future
     if claim.status == "unknown":
         return Verdict(UNKNOWN_STATUS)
-    if claim.status != "value":
+    if claim.status != "value" or claim.page is None:
         return Verdict(REJECTED, "reponse_invalide")
-    reason = grounding_reason(field_name, claim, context.page_texts, context.sold_lot, today)
+    located = locate_quote(claim, context)
+    if isinstance(located, str):
+        return Verdict(REJECTED, "citation_introuvable", detail=located)
+    reason = _sold_lot_reason(context, located, claim.page) or _value_reason(field_name, claim, located.excerpt, today)
     if reason is not None:
         return Verdict(REJECTED, reason)
-    return Verdict(CANDIDATE, value=claim.value, page=claim.page)
+    lot = _unidentified_lot(context, several_lots_read, located.excerpt)
+    if lot is not None:
+        return Verdict(REJECTED, "lot_non_identifie", detail=lot)
+    return Verdict(CANDIDATE, value=claim.value, page=claim.page, detail=located.how, quote=located.excerpt)
 
 
 def primary_verdicts(reading: Reading, context: SaleContext, *, today: date) -> dict[str, Verdict]:
     """Verdict de la lecture principale : candidats à relire par le second lecteur, inconnus et rejets.
 
-    Règles : citation vérifiée (:func:`grounding_reason`) ; dates de visite futures seulement ; vente à plusieurs
-    lots sans lot vendu identifié : rejet ; « libre » seulement si aucune page lue ne dit le contraire ; surface et
-    nombre de pièces incompatibles : rejet des deux.
+    Règles : citation retrouvée sur sa page (:func:`locate_quote`) et valeur lue dans le passage cité ; dates de
+    visite futures seulement ; lot vendu nommé par la citation ou titre de sa section ; vente dont le lot ne peut
+    pas être identifié : rejet (:func:`_unidentified_lot`) ; « libre » seulement si aucune page lue ne dit le
+    contraire ; surface et nombre de pièces incompatibles : rejet des deux.
     """
-    verdicts = {name: _checked_claim(name, claim, context, today) for name, claim in reading.claims.items()}
-    several_lots = context.several_lots or reading.several_lots is True
-    if several_lots and context.sold_lot is None:
-        return {
-            name: Verdict(REJECTED, "lot_non_identifie") if verdict.status == CANDIDATE else verdict
-            for name, verdict in verdicts.items()
-        }
+    several_lots_read = reading.several_lots is True
+    verdicts = {
+        name: _checked_claim(name, claim, context, today, several_lots_read) for name, claim in reading.claims.items()
+    }
+    for name, verdict in verdicts.items():
+        if verdict.status == UNKNOWN_STATUS and verdict.detail is None:
+            verdicts[name] = Verdict(UNKNOWN_STATUS, detail=_unknown_detail(name, context))
     occupancy = verdicts.get(OCCUPANCY)
     if (
         occupancy is not None
@@ -621,28 +1077,29 @@ def final_verdicts(
 ) -> dict[str, Verdict]:
     """Verdict final : un candidat n'est retenu que si le second lecteur donne, citation vérifiée, la même valeur.
 
-    « inconnu » du second lecteur, une citation non vérifiée ou une autre valeur : « désaccord ». Rien n'est
-    retenu sans second lecteur.
+    « inconnu » du second lecteur, une citation non vérifiée ou une autre valeur : « désaccord ». Un lot que la
+    réponse du second lecteur ne permet pas d'identifier : rejet. Rien n'est retenu sans second lecteur.
     """
     final: dict[str, Verdict] = {}
-    lot_unknown = second is not None and second.several_lots is True and context.sold_lot is None
+    several_lots_read = second is not None and second.several_lots is True
     for name, verdict in primary.items():
         if verdict.status != CANDIDATE:
             final[name] = verdict
             continue
-        if lot_unknown:
-            final[name] = Verdict(REJECTED, "lot_non_identifie")
-            continue
         claim = second.claims.get(name, INVALID) if second is not None else INVALID
-        checked = _checked_claim(name, claim, context, today)
-        if checked.status == UNKNOWN_STATUS:
+        checked = _checked_claim(name, claim, context, today, several_lots_read)
+        if checked.reason == "lot_non_identifie":
+            final[name] = checked
+        elif checked.status == UNKNOWN_STATUS:
             final[name] = Verdict(DISAGREEMENT, "second_inconnu")
         elif checked.status != CANDIDATE:
-            final[name] = Verdict(DISAGREEMENT, "second_non_verifie")
+            final[name] = Verdict(DISAGREEMENT, "second_non_verifie", detail=checked.reason)
         elif not values_agree(name, verdict.value, checked.value):
             final[name] = Verdict(DISAGREEMENT, "valeurs_differentes")
         else:
-            final[name] = Verdict(ACCEPTED, value=verdict.value, page=verdict.page)
+            final[name] = Verdict(
+                ACCEPTED, value=verdict.value, page=verdict.page, detail=verdict.detail, quote=verdict.quote
+            )
     return final
 
 

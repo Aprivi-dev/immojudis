@@ -784,7 +784,7 @@ def test_no_workflow_calls_apt_get_directly() -> None:
                     users.append(path.name)
 
     assert offenders == []
-    assert users == ["data-pipeline.yml", "information-agent-evidence.yml"]
+    assert users == ["data-pipeline.yml", "document-vision-comparison.yml", "information-agent-evidence.yml"]
 
 
 def test_the_pipeline_installs_its_packages_through_the_bounded_script() -> None:
