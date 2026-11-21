@@ -40,6 +40,7 @@ from src.document_reading import (
 )
 from src.enrichment.extraction_grounding import cited_excerpt, occupancy_is_supported, rooms_count_is_supported
 from src.french_dates import MONTH_NUMBERS
+from src.occupancy_statements import is_template_clause, split_sentences
 from src.text_folding import strip_accents
 
 HABITABLE = "habitable_surface_m2"
@@ -88,17 +89,23 @@ _PAGE_TERMS: dict[str, re.Pattern[str]] = {
 # Mots qui contredisent « libre » quelque part dans le dossier (texte sans accents, en minuscules).
 _CONTRARY_TO_VACANT = re.compile(
     r"\b(?:"
-    r"loue(?:e|s|es)?|loyers?|locations?|preneurs?|bail|baux|locataires?|occupants?|occupee?s?|"
-    r"squatt?(?:s|e|ee|es|eur|eurs|ers?)?|sans droit ni titre|y demeure(?:nt)?"
+    r"loue(?:e|s|es)?|loyers?|locations?|preneurs?|bail|baux|locataires?|occupants?|occupee?s?|occupations?|"
+    r"habitee?s?|reside(?:nt)?|residente?s?|squatt?(?:s|e|ee|es|eur|eurs|ers?)?|sans droit ni titre|y demeure(?:nt)?"
     r")\b"
 )
-# Ces mêmes mots niés ne contredisent rien : « non occupé », « inoccupé », « pas loué », « aucun bail »,
-# « sans locataire », « libre de toute location », « libre d'occupant », « ni loué ni occupé ».
+# Seules ces expressions figées, contiguës, ne contredisent pas « libre ». La négation et le mot sont sur la même
+# ligne, séparés seulement par des espaces ou tabulations : une rubrique de formulaire (« Ascenseur : non » puis
+# « Loué : oui » à la ligne) ou un autre mot (« Cave : aucune Location en cours ») ne nie rien.
 _NEGATED_OCCUPATION = re.compile(
-    r"(?:\b(?:non|pas|aucune?|sans|ni|libre de toute?s?|libre de tous)\s+|\blibre d'|\bin)"
-    r"(?=occup|lou|loy|locat|preneur|bail|baux|squat)"
-    r"\w+"
+    r"\bnon[ \t]+occupee?s?\b|\binoccupee?s?\b"
+    r"|\blibre[ \t]+de[ \t]+toute[ \t]+(?:location|occupation)\b|\blibre[ \t]+d'occupants?\b"
+    r"|\bsans[ \t]+locataires?\b|\baucun[ \t]+bail[ \t]+en[ \t]+cours\b"
+    r"|\bni[ \t]+louee?[ \t]+ni[ \t]+occupee?\b"
 )
+# Une clause type (reconnue par ``occupancy_statements.is_template_clause``) parle de tout bien, jamais de celui-ci :
+# elle ne contredit pas « libre ». Au-delà de cette longueur, un passage est une page aplatie (sans ponctuation ni
+# retour à la ligne) : il reste lu en entier plutôt que d'être écarté pour une clause type qu'il contient.
+TEMPLATE_PASSAGE_MAX_CHARS = 400
 
 _LAND_WORDS = re.compile(r"\b(?:terrain|contenance|parcelles?|cadastr\w*|jardin)\b")
 _SURFACE_WORDS = re.compile(r"\b(?:surface|superficie)s?\b")
@@ -429,6 +436,10 @@ def _next_occurrence(day: int, month: int, today: date) -> date | None:
     return None
 
 
+# Un nombre juste après ces mots est un numéro (lot, article, page, pièce), jamais le jour d'une date.
+_NUMBERED_THING_BEFORE = re.compile(r"\b(?:lots?|n°|no|numeros?|articles?|pages?|pieces?|annexes?)\s*$")
+
+
 def _date_stated(text: str, day: date, today: date) -> bool:
     """La citation écrit ce jour LIÉ à son mois (« 3/12 », « 3 décembre », « 3 et 10 décembre », « 1er décembre »).
 
@@ -444,6 +455,8 @@ def _date_stated(text: str, day: date, today: date) -> bool:
     )
     for pattern in patterns:
         for match in re.finditer(pattern, text):
+            if _NUMBERED_THING_BEFORE.search(text, 0, match.start()):
+                continue  # « lot 3, 10 décembre » : 3 est un numéro, pas un jour
             year = match.group(1)
             if year:
                 if int(year) + (2000 if len(year) == 2 else 0) == day.year:
@@ -526,10 +539,22 @@ def values_agree(field_name: str, first: object, second: object) -> bool:
     return first == second
 
 
+def _contradicts_vacant(text: str) -> bool:
+    # Les retours à la ligne sont gardés jusqu'ici : la négation ne traverse pas une ligne.
+    lines = strip_accents(text).lower().replace("’", "'")
+    for passage in split_sentences(_NEGATED_OCCUPATION.sub(" ", lines)):
+        if len(passage) <= TEMPLATE_PASSAGE_MAX_CHARS and is_template_clause(passage):
+            continue
+        if _CONTRARY_TO_VACANT.search(re.sub(r"\s+", " ", passage)):
+            return True
+    return False
+
+
 def pages_contradict_vacant(texts: Sequence[str]) -> bool:
-    """Un mot contraire à « libre » (loué, loyer, location, preneur, bail, locataire, occupant, occupé, squat,
-    « sans droit ni titre », « y demeure ») figure, non nié, sur une des pages."""
-    return any(_CONTRARY_TO_VACANT.search(_NEGATED_OCCUPATION.sub(" ", _folded(text))) for text in texts)
+    """Un mot contraire à « libre » (loué, loyer, location, preneur, bail, locataire, occupant, occupé, occupation,
+    habité, réside, résident, squat, « sans droit ni titre », « y demeure ») figure sur une des pages, hors des
+    expressions figées qui le nient et hors des clauses types."""
+    return any(_contradicts_vacant(text) for text in texts)
 
 
 def _future_visits(claim: Claim, today: date) -> Claim:

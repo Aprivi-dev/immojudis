@@ -85,7 +85,11 @@ from src.enrichment.anthropic_reader import (  # noqa: E402
     pdf_page_count,
 )
 from src.french_dates import PARIS  # noqa: E402
-from src.llm_requests import LLMRequestTransportAmbiguous, llm_request_context  # noqa: E402
+from src.llm_requests import (  # noqa: E402
+    LLMRequestDeterministicCooldown,
+    LLMRequestTransportAmbiguous,
+    llm_request_context,
+)
 from src.lot_scope import is_lot_scoped  # noqa: E402
 from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
 
@@ -149,7 +153,9 @@ select {", ".join(f"sale.{column}" for column in (*SALE_COLUMNS, *SALE_VALUE_COL
 
 Generate = Callable[[str, str, bytes, Mapping[str, Any]], Mapping[str, object]]
 FetchPdfs = Callable[[Mapping[str, Any], Sequence[str]], Mapping[str, bytes]]
-FAILURE_KINDS = ("refus", "max_tokens", "400", "délai", "json_invalide", "limite_de_débit", "autre")
+FAILURE_KINDS = (
+    "refus", "max_tokens", "400", "délai", "json_invalide", "bloquée_24h", "limite_de_débit", "autre",
+)  # fmt: skip
 
 
 class BenchStopped(RuntimeError):
@@ -158,6 +164,8 @@ class BenchStopped(RuntimeError):
 
 def failure_kind(error: BaseException) -> str:
     """Le type d'un échec d'appel, pour le rapport (jamais son message : il pourrait citer une pièce)."""
+    if isinstance(error, LLMRequestDeterministicCooldown):
+        return "bloquée_24h"
     if isinstance(error, DocumentReaderRefused):
         return "refus"
     if isinstance(error, ReaderOutputCut):
@@ -241,6 +249,11 @@ class Reader:
         except LLMRequestTransportAmbiguous as exc:
             # Issue incertaine (délai, connexion coupée) : comptée à son coût maximal, le banc continue.
             self.spend.committed += ceiling
+            self.stats.failures[failure_kind(exc)] += 1
+            return None
+        except LLMRequestDeterministicCooldown as exc:
+            # La même lecture a rendu un JSON invalide il y a moins de 24 heures : refusée avant l'envoi, sans coût.
+            # Seule cette pièce est sautée.
             self.stats.failures[failure_kind(exc)] += 1
             return None
         except (PipelineBudgetExhausted, LLMModelNotPriced) as exc:

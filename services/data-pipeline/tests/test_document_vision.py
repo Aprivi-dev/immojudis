@@ -263,6 +263,10 @@ def test_only_future_visit_dates_are_kept() -> None:
         # The day must be bound to its month: « le 10 décembre à 3 h » does not say 3 December.
         ("Visite le 10 décembre à 3 h. ", "Visite le 10 décembre à 3 h", ["2026-12-03"], False),
         ("Visite le 10 décembre à 3 h. ", "Visite le 10 décembre à 3 h", ["2026-12-10"], True),
+        # A number after « lot » is no day, even in a comma list before a month.
+        ("Visite du lot 3, 10 décembre 2026. ", "Visite du lot 3, 10 décembre 2026", ["2026-12-03"], False),
+        ("Visite du lot 3, 10 décembre 2026. ", "Visite du lot 3, 10 décembre 2026", ["2026-12-10"], True),
+        ("Visites les 3, 10 et 17 décembre 2026. ", "Visites les 3, 10 et 17 décembre 2026", ["2026-12-03"], True),
         # A written year must be the year of the date: an elapsed year does not prove a future date.
         ("Visite le 3 décembre 2025. ", "Visite le 3 décembre 2025", ["2026-12-03"], False),
         ("Visite le 03/12/2025 à 10h. ", "Visite le 03/12/2025 à 10h", ["2026-12-03"], False),
@@ -381,6 +385,10 @@ def test_vacant_needs_an_explicit_free_statement_and_no_contrary_word_on_the_pag
         "Occupé sans droit ni titre.",
         "Le saisi y demeure avec ses enfants.",
         "Le débiteur y demeure.",
+        "État d'occupation : voir le procès-verbal.",
+        "La maison est habitée par le débiteur.",
+        "Le saisi réside sur place.",
+        "Un résident a ouvert la porte.",
     ],
 )
 def test_every_contrary_word_contradicts_vacant(text: str) -> None:
@@ -390,14 +398,42 @@ def test_every_contrary_word_contradicts_vacant(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "Le logement est non occupé et inoccupé depuis 2024, pas occupé.",
-        "Le bien n'est pas loué, sans locataire ni bail, libre de toute location et libre d'occupant.",
-        "Aucun bail en cours ; libre de tout occupant.",
+        "Le logement est non occupé, inoccupée depuis 2024.",
+        "Le bien est libre de toute location et libre de toute occupation.",
+        "Libre d'occupant, sans locataire.",
+        "Aucun bail en cours.",
         "Ni loué ni occupé.",
     ],
 )
-def test_negated_occupation_words_do_not_contradict_vacant(text: str) -> None:
+def test_fixed_negations_do_not_contradict_vacant(text: str) -> None:
     assert not vision.pages_contradict_vacant([text])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A negation never crosses a line nor a form heading: the next line says the opposite.
+        "Ascenseur : non\nLoué : oui",
+        "Ascenseur non\nBail commercial en cours",
+        "Garage : sans\nLocataire : M. Dupont",
+        "Cave : aucune Location en cours",
+        "Garage : sans\tlocataire principal : M. Dupont\nLocataire : M. Martin",
+        "Non : occupé",
+    ],
+)
+def test_a_negation_that_is_not_a_fixed_contiguous_expression_negates_nothing(text: str) -> None:
+    assert vision.pages_contradict_vacant([text])
+
+
+def test_template_clauses_of_the_conditions_of_sale_do_not_contradict_vacant() -> None:
+    clause = (
+        "Si le bien est loué ou occupé, l'adjudicataire fera son affaire personnelle des baux, locations et "
+        "occupations, sans recours contre le poursuivant."
+    )
+    assert not vision.pages_contradict_vacant([clause])
+    assert not vision.pages_contradict_vacant(["L'adjudicataire fera son affaire des locataires éventuels."])
+    # A real statement next to the clause still contradicts « libre ».
+    assert vision.pages_contradict_vacant([clause + "\nLe bien est occupé par le saisi."])
 
 
 def test_vacant_is_contradicted_by_any_page_of_the_dossier_even_one_not_sent() -> None:

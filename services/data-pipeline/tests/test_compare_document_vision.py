@@ -23,7 +23,7 @@ from src.enrichment.anthropic_reader import (
     ReaderInvalidJSON,
     ReaderOutputCut,
 )
-from src.llm_requests import LLMRequestTransportAmbiguous
+from src.llm_requests import LLMRequestDeterministicCooldown, LLMRequestTransportAmbiguous
 from src.pipeline_usage import PipelineBudgetExhausted
 
 TODAY = date(2026, 11, 21)
@@ -224,6 +224,7 @@ _REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
         (LLMRequestTransportAmbiguous("timeout"), "délai"),
         (ReaderInvalidJSON("Invalid JSON from LLM"), "json_invalide"),
         (anthropic.RateLimitError("slow", response=httpx2.Response(429, request=_REQUEST), body=None), "limite_de_débit"),
+        (LLMRequestDeterministicCooldown("blocked for 24 hours after invalid JSON"), "bloquée_24h"),
         (RuntimeError("unexpected"), "autre"),
     ],
 )
@@ -238,6 +239,8 @@ def test_reader_failure_skips_the_sale_and_is_counted_by_kind(error: Exception, 
     )
     assert report.skipped["lecture principale en échec"] == 1
     assert report.readers["principal"].failures == {kind: 1}
+    # Only this sale is skipped: the bench goes on.
+    assert report.stop_reason is None
     markdown = bench.render_report(report)
     assert f"échecs : {kind} 1" in markdown
     # The error message never reaches the report.
