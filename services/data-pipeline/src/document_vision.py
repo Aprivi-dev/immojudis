@@ -40,7 +40,6 @@ from src.document_reading import (
 )
 from src.enrichment.extraction_grounding import cited_excerpt, occupancy_is_supported, rooms_count_is_supported
 from src.french_dates import MONTH_NUMBERS
-from src.occupancy_statements import is_template_clause, split_sentences
 from src.text_folding import strip_accents
 
 HABITABLE = "habitable_surface_m2"
@@ -95,17 +94,17 @@ _CONTRARY_TO_VACANT = re.compile(
 )
 # Seules ces expressions figées, contiguës, ne contredisent pas « libre ». La négation et le mot sont sur la même
 # ligne, séparés seulement par des espaces ou tabulations : une rubrique de formulaire (« Ascenseur : non » puis
-# « Loué : oui » à la ligne) ou un autre mot (« Cave : aucune Location en cours ») ne nie rien.
+# « Loué : oui » à la ligne) ou un autre mot (« Cave : aucune Location en cours ») ne nie rien. Une expression suivie
+# de « : » est une rubrique (« Parking : sans locataire : M. Dupont ») : elle ne nie rien non plus.
+# Les clauses types du cahier des conditions de vente ne sont pas écartées : elles contredisent « libre » comme le
+# reste. « libre » est donc rarement retenu, et c'est voulu : mieux vaut ne rien afficher qu'afficher « libre » à tort.
 _NEGATED_OCCUPATION = re.compile(
-    r"\bnon[ \t]+occupee?s?\b|\binoccupee?s?\b"
+    r"(?:\bnon[ \t]+occupee?s?\b|\binoccupee?s?\b"
     r"|\blibre[ \t]+de[ \t]+toute[ \t]+(?:location|occupation)\b|\blibre[ \t]+d'occupants?\b"
     r"|\bsans[ \t]+locataires?\b|\baucun[ \t]+bail[ \t]+en[ \t]+cours\b"
-    r"|\bni[ \t]+louee?[ \t]+ni[ \t]+occupee?\b"
+    r"|\bni[ \t]+louee?[ \t]+ni[ \t]+occupee?\b)"
+    r"(?![ \t]*:)"
 )
-# Une clause type (reconnue par ``occupancy_statements.is_template_clause``) parle de tout bien, jamais de celui-ci :
-# elle ne contredit pas « libre ». Au-delà de cette longueur, un passage est une page aplatie (sans ponctuation ni
-# retour à la ligne) : il reste lu en entier plutôt que d'être écarté pour une clause type qu'il contient.
-TEMPLATE_PASSAGE_MAX_CHARS = 400
 
 _LAND_WORDS = re.compile(r"\b(?:terrain|contenance|parcelles?|cadastr\w*|jardin)\b")
 _SURFACE_WORDS = re.compile(r"\b(?:surface|superficie)s?\b")
@@ -542,18 +541,13 @@ def values_agree(field_name: str, first: object, second: object) -> bool:
 def _contradicts_vacant(text: str) -> bool:
     # Les retours à la ligne sont gardés jusqu'ici : la négation ne traverse pas une ligne.
     lines = strip_accents(text).lower().replace("’", "'")
-    for passage in split_sentences(_NEGATED_OCCUPATION.sub(" ", lines)):
-        if len(passage) <= TEMPLATE_PASSAGE_MAX_CHARS and is_template_clause(passage):
-            continue
-        if _CONTRARY_TO_VACANT.search(re.sub(r"\s+", " ", passage)):
-            return True
-    return False
+    return bool(_CONTRARY_TO_VACANT.search(re.sub(r"\s+", " ", _NEGATED_OCCUPATION.sub(" ", lines))))
 
 
 def pages_contradict_vacant(texts: Sequence[str]) -> bool:
     """Un mot contraire à « libre » (loué, loyer, location, preneur, bail, locataire, occupant, occupé, occupation,
     habité, réside, résident, squat, « sans droit ni titre », « y demeure ») figure sur une des pages, hors des
-    expressions figées qui le nient et hors des clauses types."""
+    expressions figées qui le nient. Une clause type du cahier des conditions de vente contredit aussi « libre »."""
     return any(_contradicts_vacant(text) for text in texts)
 
 

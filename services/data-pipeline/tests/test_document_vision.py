@@ -419,21 +419,31 @@ def test_fixed_negations_do_not_contradict_vacant(text: str) -> None:
         "Cave : aucune Location en cours",
         "Garage : sans\tlocataire principal : M. Dupont\nLocataire : M. Martin",
         "Non : occupé",
+        # A fixed expression followed by « : » is a form heading, not a negation.
+        "Parking : sans locataire : M. Dupont",
+        "Logement non occupé : non",
     ],
 )
 def test_a_negation_that_is_not_a_fixed_contiguous_expression_negates_nothing(text: str) -> None:
     assert vision.pages_contradict_vacant([text])
 
 
-def test_template_clauses_of_the_conditions_of_sale_do_not_contradict_vacant() -> None:
-    clause = (
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Prudence: a template clause of the conditions of sale contradicts « libre » too.
         "Si le bien est loué ou occupé, l'adjudicataire fera son affaire personnelle des baux, locations et "
-        "occupations, sans recours contre le poursuivant."
-    )
-    assert not vision.pages_contradict_vacant([clause])
-    assert not vision.pages_contradict_vacant(["L'adjudicataire fera son affaire des locataires éventuels."])
-    # A real statement next to the clause still contradicts « libre ».
-    assert vision.pages_contradict_vacant([clause + "\nLe bien est occupé par le saisi."])
+        "occupations, sans recours contre le poursuivant.",
+        "L'adjudicataire fera son affaire des locataires éventuels.",
+        # Real statements that a template-clause filter would swallow.
+        "Appartement loué selon bail à loyer modéré.",
+        "Le logement est occupé par le saisi, en cas de besoin le bail sera produit.",
+        "Le bien est occupé par la famille du débiteur, entrée en jouissance à l'adjudication.",
+        "Lot 2 : loué, si le bien est vendu libre le prix change",
+    ],
+)
+def test_template_clauses_and_sentences_that_look_like_them_contradict_vacant(text: str) -> None:
+    assert vision.pages_contradict_vacant([text])
 
 
 def test_vacant_is_contradicted_by_any_page_of_the_dossier_even_one_not_sent() -> None:
