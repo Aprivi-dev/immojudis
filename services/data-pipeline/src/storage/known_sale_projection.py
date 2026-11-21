@@ -144,6 +144,7 @@ KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "rooms_bedrooms_conflict_evidence",
     "geocode",
     "tribunal_assignment",
+    "document_vision",
 )
 
 

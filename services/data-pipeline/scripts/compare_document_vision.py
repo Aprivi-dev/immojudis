@@ -7,6 +7,8 @@ fait relire à Claude Sonnet 5.5 les seules pages citées par les valeurs qui se
 (``src.document_vision``) est comparé à la valeur actuelle de la fiche. Une page citée en partie image, que ni la
 couche texte ni l'OCR du pipeline ne couvrent, est lue par Tesseract (``src.pdf_ocr``) le temps de la vérification.
 Une vente exclue de la lecture automatique des pièces (``src.document_reading_exclusions``) n'est jamais prise.
+La lecture elle-même (pièces, pages, lecteurs, verdicts) est celle de la passe d'écriture du lot V3b-1 :
+``src.document_vision_reading`` et ``src.document_vision_pieces``. Le banc y ajoute ses comptes et son rapport.
 
 LECTURE SEULE sur les ventes : la connexion qui les lit est passée en lecture seule avant sa première requête et rien
 n'est écrit sur une fiche. Restent, comme pour tout appel du pipeline : la réservation et le compte rendu de chaque
@@ -34,24 +36,17 @@ l'active pas.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
 import sys
-import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TextIO
-from urllib.parse import urlsplit
-
-import anthropic
-import httpx
-import pymupdf
+from typing import Any, TextIO
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
@@ -59,14 +54,7 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 from scripts.fact_chunk_trial import SALE_COLUMNS, _bounded_int, publish, sale_from_row  # noqa: E402
 from src.config import load_settings  # noqa: E402
-from src.document_reading import (  # noqa: E402
-    ReadingDocument,
-    documents_from_manifest,
-    injected_pages,
-    sold_lot_from_sale,
-    without_pages,
-)
-from src.document_reading_exclusions import EXCLUDED_SALE_SQL  # noqa: E402
+from src.document_reading import ReadingDocument  # noqa: E402
 from src.document_vision import (  # noqa: E402
     ACCEPTED,
     BENCH_OCR,
@@ -91,101 +79,55 @@ from src.document_vision import (  # noqa: E402
     PROMPT_VERSION,
     REJECTED,
     SEVERAL_LOTS,
-    SYSTEM_PROMPT,
     UNKNOWN_STATUS,
     VISITS,
-    PageRef,
-    Reading,
-    SaleContext,
     Verdict,
-    build_document_excerpt,
-    build_user_prompt,
     compare_with_sale,
-    final_verdicts,
     page_field_score,
-    parse_reading,
-    primary_verdicts,
-    response_schema,
-    second_reader_pages,
-    select_vision_pages,
     visit_days,
 )
-from src.enrichment.anthropic_reader import (  # noqa: E402
-    DEFAULT_MAX_TOKENS,
-    HAIKU,
-    SONNET,
-    AnthropicDocumentReader,
-    DocumentReaderRefused,
-    ReaderCall,
-    ReaderInvalidJSON,
-    ReaderOutputCut,
-    call_ceiling_cost,
-    input_token_ceiling,
-    pdf_page_count,
+from src.document_vision_pieces import (  # noqa: E402
+    NO_PDF_OTHER,
+    NO_PDF_REASONS,
+    UNUSABLE_REASONS,
+    FetchedPieces,
+    FetchPdfs,
+    download_sale_pdfs,
+    manifest_pages,
+    page_number,
 )
+from src.document_vision_reading import (  # noqa: E402
+    CANDIDATE_SALES_SQL,
+    FAILURE_KINDS,
+    PRIMARY_TIMEOUT_SECONDS,
+    SECOND_TIMEOUT_SECONDS,
+    Reader,
+    ReaderStats,
+    ReadingStopped,
+    SpendCap,
+    anthropic_reader,
+    read_sale,
+)
+from src.enrichment.anthropic_reader import HAIKU, SONNET, ReaderCall  # noqa: E402
 from src.french_dates import PARIS  # noqa: E402
-from src.llm_requests import (  # noqa: E402
-    LLMRequestDeterministicCooldown,
-    LLMRequestTransportAmbiguous,
-    llm_request_context,
-)
-from src.lot_scope import is_lot_scoped  # noqa: E402
-from src.normalize import clean_text  # noqa: E402
-from src.pdf_deadline import PdfExtractionDeferred  # noqa: E402
 from src.pdf_document_types import (  # noqa: E402
     PDF_CONDITIONS_GROUP,
     PDF_DESCRIPTION_GROUP,
     PDF_DIAGNOSTICS_GROUP,
 )
-from src.pdf_ocr import (  # noqa: E402
-    OCR_NO_TEXT_METHOD,
-    OCR_NO_TEXT_UNVERIFIED_METHOD,
-    OCR_PICTURE_NO_TEXT_METHOD,
-    extract_page_text_with_ocr_result,
-    pdf_document_ocr_budget_scope,
-)
-from src.pdf_page_analysis import SETTLED_EXCLUDED_PAGE_STATUSES, page_has_substantial_image  # noqa: E402
-from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
-from src.sources.cloud_transport import SOURCE_HOSTS, configured_transport  # noqa: E402
-
-if TYPE_CHECKING:
-    from src.pdf_enrichment import PdfEnrichmentStats
+from src.pdf_page_analysis import SETTLED_EXCLUDED_PAGE_STATUSES  # noqa: E402
 
 MAX_SAMPLE = 30
 DEFAULT_MAX_USD = Decimal("3")
 TRIAL_STAGE = "vision_trial"
 TRIAL_REASON = "document_vision_comparison"
 DEFAULT_OUTPUT = "document-vision-report.md"
-PRIMARY_TIMEOUT_SECONDS = 300.0
-# Sonnet réfléchit plus longtemps que Haiku sur les mêmes pages.
-SECOND_TIMEOUT_SECONDS = 600.0
-# OCR d'une page citée, le temps de la vérification : le même délai qu'une page du pipeline (``src.pdf_ocr``).
-OCR_PAGE_SECONDS = 60.0
-# Méthodes de ``pdf_ocr`` qui gardent le texte natif faute d'avoir lu quoi que ce soit : pas un texte d'OCR.
-_OCR_WITHOUT_TEXT = frozenset({OCR_NO_TEXT_METHOD, OCR_NO_TEXT_UNVERIFIED_METHOD, OCR_PICTURE_NO_TEXT_METHOD})
 
-# Ventes à venir dont les pièces ont été lues par la chaîne actuelle (texte des pages persisté, extraction des
-# faits complète), les plus récemment lues d'abord, hors des ventes exclues de la lecture automatique des pièces
-# (écartées ici, avant tout téléchargement). Seuls les identifiants sont lus ici.
+# Les ventes que la lecture peut prendre (``CANDIDATE_SALES_SQL`` : exclues écartées avant tout téléchargement), les
+# plus récemment lues d'abord. Seuls les identifiants sont lus ici.
 CANDIDATES_SQL = f"""
 select sale.id::text
-  from public.auction_sales sale
-  join lateral (
-    select extraction.updated_at
-      from public.auction_extractions extraction
-     where extraction.source_url = sale.source_url
-       and extraction.provider = 'pdf_text'
-       and jsonb_typeof(extraction.result) = 'array'
-     order by extraction.updated_at desc
-     limit 1
-  ) latest on true
- where sale.status in ('upcoming', 'unknown', 'postponed')
-   and (sale.sale_date is null or sale.sale_date >= now())
-   and not app_private.sale_is_fully_withdrawn(
-     sale.source_name, sale.observations, (select app_private.catalogue_withdrawn_sources())
-   )
-   and sale.raw_payload -> 'llm_fact_coverage' ->> 'complete' = 'true'
-   and not {EXCLUDED_SALE_SQL}
+{CANDIDATE_SALES_SQL}
  order by latest.updated_at desc, sale.id
  limit %s
 """
@@ -214,67 +156,6 @@ select {", ".join(f"sale.{column}" for column in (*SALE_COLUMNS, *SALE_VALUE_COL
   ) latest on true
  where sale.id::text = %s
 """
-
-Generate = Callable[[str, str, bytes, Mapping[str, Any]], Mapping[str, object]]
-
-
-@dataclass(frozen=True)
-class FetchedPieces:
-    """Les pièces demandées : le PDF de chacune de celles obtenues, et pour chaque autre, pourquoi le banc ne l'a pas
-    obtenue (un motif de :data:`NO_PDF_REASONS` ; :data:`NO_PDF_OTHER` à défaut)."""
-
-    pdfs: Mapping[str, bytes]
-    missing: Mapping[str, str] = field(default_factory=dict)
-
-
-FetchPdfs = Callable[[Mapping[str, Any], Sequence[str]], FetchedPieces]
-FAILURE_KINDS = (
-    "refus", "max_tokens", "400", "délai", "json_invalide", "bloquée_24h", "limite_de_débit", "autre",
-)  # fmt: skip
-
-
-class BenchStopped(RuntimeError):
-    """Le budget, le plafond de dépense ou le plafond d'appels arrête le banc : la vente en cours n'est pas comptée."""
-
-
-def failure_kind(error: BaseException) -> str:
-    """Le type d'un échec d'appel, pour le rapport (jamais son message : il pourrait citer une pièce)."""
-    if isinstance(error, LLMRequestDeterministicCooldown):
-        return "bloquée_24h"
-    if isinstance(error, DocumentReaderRefused):
-        return "refus"
-    if isinstance(error, ReaderOutputCut):
-        return "max_tokens"
-    if isinstance(error, ReaderInvalidJSON):
-        return "json_invalide"
-    if isinstance(error, (LLMRequestTransportAmbiguous, anthropic.APIConnectionError)):
-        return "délai"
-    if isinstance(error, anthropic.RateLimitError):
-        return "limite_de_débit"
-    if isinstance(error, anthropic.BadRequestError):
-        return "400"
-    return "autre"
-
-
-@dataclass
-class SpendCap:
-    """Plafond de dépense du banc (``--max-usd``) : un appel n'est lancé que si son coût maximal y tient encore.
-
-    Chaque appel fait y compte pour son coût réel, ou pour son coût maximal quand ses jetons sont inconnus (issue
-    incertaine).
-    """
-
-    max_usd: Decimal
-    committed: Decimal = Decimal(0)
-
-
-@dataclass
-class ReaderStats:
-    model: str
-    calls: int = 0
-    failures: Counter[str] = field(default_factory=Counter)
-    pages: int = 0
-    usage: list[ReaderCall] = field(default_factory=list)
 
 
 @dataclass
@@ -331,290 +212,15 @@ class SaleResult:
     unreadable: Counter[str] = field(default_factory=Counter)
 
 
-@dataclass
-class Reader:
-    """Un lecteur : son appel au modèle, son plafond d'appels, le plafond de dépense partagé et ses compteurs."""
-
-    role: str
-    generate: Generate
-    stats: ReaderStats
-    max_calls: int
-    spend: SpendCap
-    max_tokens: int = DEFAULT_MAX_TOKENS
-
-    def read(self, user_prompt: str, pdf: bytes, fields: Sequence[str], pages: Sequence[PageRef]) -> Reading | None:
-        if self.stats.calls >= self.max_calls:
-            raise BenchStopped(f"{self.role} : plafond de {self.max_calls} appels atteint")
-        schema = response_schema(fields)
-        ceiling = call_ceiling_cost(
-            self.stats.model, input_token_ceiling(pdf_page_count(pdf), SYSTEM_PROMPT, user_prompt, schema), self.max_tokens
-        )
-        if self.spend.committed + ceiling > self.spend.max_usd:
-            raise BenchStopped(f"{self.role} : plafond de dépense de {self.spend.max_usd} $ atteint")
-        self.stats.calls += 1
-        self.stats.pages += len(pages)
-        usage_before = len(self.stats.usage)
-        try:
-            payload = self.generate(SYSTEM_PROMPT, user_prompt, pdf, schema)
-        except LLMRequestTransportAmbiguous as exc:
-            # Issue incertaine (délai, connexion coupée) : comptée à son coût maximal, le banc continue.
-            self.spend.committed += ceiling
-            self.stats.failures[failure_kind(exc)] += 1
-            return None
-        except LLMRequestDeterministicCooldown as exc:
-            # La même lecture a rendu un JSON invalide il y a moins de 24 heures : refusée avant l'envoi, sans coût.
-            # Seule cette pièce est sautée.
-            self.stats.failures[failure_kind(exc)] += 1
-            return None
-        except (PipelineBudgetExhausted, LLMModelNotPriced) as exc:
-            # Budget quotidien ou horaire partagé, palier de prix dépassé : rien n'a été envoyé, on s'arrête.
-            raise BenchStopped(f"{self.role} : {type(exc).__name__}") from exc
-        except Exception as exc:
-            self._commit(usage_before)
-            self.stats.failures[failure_kind(exc)] += 1
-            return None
-        self._commit(usage_before, ceiling)
-        return parse_reading(payload, fields, pages)
-
-    def _commit(self, usage_before: int, ceiling: Decimal = Decimal(0)) -> None:
-        """Ajoute au plafond de dépense le coût des appels notés depuis ``usage_before`` (coût maximal s'il manque)."""
-        new_calls = self.stats.usage[usage_before:]
-        for call in new_calls:
-            self.spend.committed += call.cost_usd if call.cost_usd is not None else ceiling
-        if not new_calls:
-            self.spend.committed += ceiling
-
-
-def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: object, quality_flags: object) -> SaleContext:
-    """Le lot vendu, s'il est désigné, et la situation de la vente quant aux lots, d'après la fiche."""
-    flags = quality_flags if isinstance(quality_flags, list) else []
-    sold_lot = sold_lot_from_sale(property_type, city, raw_payload.get("source_lot_selection"))
-    lot_scoped = is_lot_scoped(dict(raw_payload))
-    if lot_scoped and sold_lot is None:
-        situation = LOT_UNCERTAIN
-    elif lot_scoped or "multi_lot_sale" in flags:
-        situation = SEVERAL_LOTS
-    elif raw_payload.get("pdf_multi_lot_guard"):
-        situation = ONE_LOT_GUARDED
-    else:
-        situation = ONE_LOT
-    return SaleContext(sold_lot=sold_lot, lot_situation=situation)
-
-
-# Pourquoi une page qui parle des champs ne peut pas entrer dans l'extrait envoyé au modèle. D'abord, pourquoi le banc
-# n'a pas obtenu le PDF de sa pièce (:func:`missing_piece_reason`).
-NO_PDF = "pièce sans PDF"
-NO_PDF_WORD = f"{NO_PDF} : Word"  # pièce téléchargée, document Word
-NO_PDF_HTML = f"{NO_PDF} : HTML ou autre format"  # réponse qui n'est ni un PDF ni un document Word
-NO_PDF_CAP = f"{NO_PDF} : limite de pièces par vente"  # laissée de côté par la sélection du téléchargeur poli
-NO_PDF_ROBOTS = f"{NO_PDF} : robots.txt"  # robots.txt de l'hôte l'interdit
-NO_PDF_NETWORK = f"{NO_PDF} : erreur réseau"  # 429, 5xx, délai, connexion, ou robots.txt de l'hôte injoignable
-NO_PDF_RELAY = f"{NO_PDF} : relais SOURCE_FETCH_RELAY non disponible"  # hôte servi par le relais, non configuré
-# Accès refusé, introuvable, trop lourde, source retirée, lien écarté ou type « other », autre erreur.
-NO_PDF_OTHER = f"{NO_PDF} : autre motif"
-NO_PDF_REASONS = (NO_PDF_WORD, NO_PDF_HTML, NO_PDF_CAP, NO_PDF_ROBOTS, NO_PDF_NETWORK, NO_PDF_RELAY, NO_PDF_OTHER)
-PDF_CHANGED = "PDF modifié depuis la lecture"  # empreinte différente de celle du texte lu
-PDF_UNREADABLE = "PDF illisible"  # pymupdf ne l'ouvre pas
-PAGE_OUT_OF_RANGE = "page hors bornes"  # numéro de page au-delà des pages du PDF
-UNUSABLE_REASONS = (*NO_PDF_REASONS, PDF_CHANGED, PDF_UNREADABLE, PAGE_OUT_OF_RANGE)
-_WORD_FORMATS = frozenset({"doc", "docx"})
-
-
-def missing_piece_reason(
-    url: str,
-    *,
-    file_format: str | None,
-    selected: bool,
-    selectable_alone: bool,
-    document_type: str,
-    stats: PdfEnrichmentStats,
-    relay_available: bool,
-) -> str:
-    """Pourquoi le téléchargement poli (``src.pdf_enrichment.download_documents``) n'a pas rendu de PDF pour ``url``.
-
-    ``file_format`` : le format de la pièce téléchargée (None : pas téléchargée). ``selected`` : la sélection du
-    téléchargeur l'a retenue ; ``selectable_alone`` : elle la retiendrait seule (une pièce retenue seule mais pas avec
-    les autres a été coupée par la limite de pièces par vente). ``stats`` : ce que le téléchargement a noté, pièce par
-    pièce. ``relay_available`` : la pièce passerait par le relais des hôtes qui refusent le réseau du runner
-    (:func:`relay_configured`).
-    """
-    if file_format in _WORD_FORMATS:
-        return NO_PDF_WORD
-    if not selected:
-        return NO_PDF_CAP if selectable_alone else NO_PDF_OTHER
-    if document_type == "other":
-        return NO_PDF_OTHER  # sautée par le téléchargeur sans requête
-    permanent = {failure.get("url"): failure.get("reason") for failure in stats.permanent_document_failures}.get(url)
-    if url in stats.blocked_document_urls or permanent == "robots_disallowed":
-        return NO_PDF_ROBOTS
-    parts = urlsplit(url)
-    if not relay_available and parts.hostname in SOURCE_HOSTS:
-        return NO_PDF_RELAY
-    if permanent == "unsupported_response":
-        return NO_PDF_HTML
-    # Une erreur réseau est notée pour la pièce, ou pour l'origine dont robots.txt n'a pas répondu.
-    origins = {url, f"{parts.scheme}://{parts.netloc.lower()}"}
-    if permanent is None and any(failure.origin in origins for failure in stats.network_failures):
-        return NO_PDF_NETWORK
-    return NO_PDF_OTHER
-
-
-def relay_configured(url: str) -> bool:
-    """Le téléchargement de ``url`` passerait par le relais : hôte servi par lui, adresse HTTPS ET jeton présents.
-
-    Même règle que le téléchargement, qui la tient de ``cloud_transport.configured_transport`` : une adresse sans
-    jeton (ou l'inverse) fait échouer la requête, le relais n'est pas disponible. Rien n'est envoyé.
-    """
-    try:
-        transport = configured_transport(url)
-    except (ValueError, httpx.InvalidURL):
-        return False
-    if transport is None:
-        return False
-    transport.close()
-    return True
-
-
-def usable_documents(
-    manifest: object, documents: Sequence[ReadingDocument], fetched: FetchedPieces, unreadable: Counter[str]
-) -> tuple[dict[int, bytes], list[ReadingDocument], Counter[str]]:
-    """Les pièces que l'extrait peut porter : leur PDF par index, ces pièces réduites aux pages que le PDF contient,
-    et le décompte, par motif, des pages qui parlent des champs et qui sont écartées.
-
-    Un PDF ne sert que s'il est celui dont le texte a été lu (même empreinte quand le manifeste la donne) et que
-    pymupdf l'ouvre. Les numéros de page du manifeste comptent à partir de 1 (``extract_pdf_pages``) : la page n est
-    la page d'indice n - 1 pour pymupdf, comme dans ``build_document_excerpt``.
-    """
-    items = manifest if isinstance(manifest, list) else []
-    expected = {clean_text(item.get("url")): item.get("sha256") for item in items if isinstance(item, Mapping)}
-    pdfs: dict[int, bytes] = {}
-    kept: list[ReadingDocument] = []
-    unusable: Counter[str] = Counter()
-    for doc in documents:
-        scored = [number for number, text in doc.pages.items() if page_field_score(text) > 0]
-        content = fetched.pdfs.get(doc.url) if doc.url else None
-        sha256 = expected.get(doc.url)
-        if content is None:
-            unusable[fetched.missing.get(doc.url, NO_PDF_OTHER) if doc.url else NO_PDF_OTHER] += len(scored)
-            continue
-        if isinstance(sha256, str) and sha256 and hashlib.sha256(content).hexdigest() != sha256:
-            unusable[PDF_CHANGED] += len(scored)
-            continue
-        document = _open_pdf(content, unreadable)
-        if document is None:
-            unusable[PDF_UNREADABLE] += len(scored)
-            continue
-        with document:
-            page_count = document.page_count
-        if not sha256 and doc.pages and max(doc.pages) > page_count:
-            # Sans empreinte, un PDF plus court que le texte lu n'est pas celui qui a été lu : la pièce entière est
-            # écartée, et ses pages restantes ne sont pas réputées être celles du texte.
-            unusable[PDF_CHANGED] += len(scored)
-            continue
-        unusable[PAGE_OUT_OF_RANGE] += sum(1 for number in scored if not 1 <= number <= page_count)
-        pages = {number: text for number, text in doc.pages.items() if 1 <= number <= page_count}
-        if pages:
-            pdfs[doc.index] = content
-            kept.append(ReadingDocument(doc.index, doc.label, doc.url, doc.document_type, pages))
-    return pdfs, kept, +unusable
-
-
-def _manifest_pages(manifest: object) -> list[tuple[str | None, Mapping[str, Any]]]:
-    """Chaque page du manifeste ``pdf_text``, avec l'URL de sa pièce."""
-    pages: list[tuple[str | None, Mapping[str, Any]]] = []
-    for item in manifest if isinstance(manifest, list) else []:
-        if isinstance(item, Mapping):
-            url = clean_text(item.get("url"))
-            pages += [(url, page) for page in item.get("pages") or [] if isinstance(page, Mapping)]
-    return pages
-
-
-def _page_number(page: Mapping[str, Any]) -> int:
-    try:
-        return int(page.get("page") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def ocr_read_pages(manifest: object, documents: Sequence[ReadingDocument]) -> frozenset[PageRef]:
-    """Les pages dont le texte gardé par le pipeline vient d'un OCR qui a lu quelque chose."""
-    read_by_ocr = {
-        (url, _page_number(page))
-        for url, page in _manifest_pages(manifest)
-        if str(page.get("method") or "").startswith("ocr_") and page.get("method") not in _OCR_WITHOUT_TEXT
-    }
-    return frozenset(PageRef(doc.index, n) for doc in documents for n in doc.pages if (doc.url, n) in read_by_ocr)
-
-
 def unread_page_count(manifest: object, documents: Sequence[ReadingDocument]) -> int:
     """Pages du dossier sans texte exploitable, hors pages blanches et pages de photographies réglées : un modèle qui
     lit l'image pourrait y trouver une valeur, mais la sélection, qui part du texte, ne peut pas les choisir."""
     read = {(doc.url, number) for doc in documents for number in doc.pages}
     return sum(
         1
-        for url, page in _manifest_pages(manifest)
-        if (url, _page_number(page)) not in read and page.get("status") not in SETTLED_EXCLUDED_PAGE_STATUSES
+        for url, page in manifest_pages(manifest)
+        if (url, page_number(page)) not in read and page.get("status") not in SETTLED_EXCLUDED_PAGE_STATUSES
     )
-
-
-def _open_pdf(content: bytes, unreadable: Counter[str]) -> Any | None:
-    """La pièce ouverte par pymupdf, ou None : une pièce qu'il n'ouvre pas est sautée et comptée par type d'erreur
-    (jamais par message, qui pourrait citer la pièce), sans arrêter le banc."""
-    try:
-        return pymupdf.open(stream=content, filetype="pdf")
-    except Exception as exc:  # pymupdf lève selon le défaut FileDataError, RuntimeError, ValueError…
-        unreadable[type(exc).__name__] += 1
-        return None
-
-
-def image_pages(
-    pdfs: Mapping[int, bytes], pages: Sequence[PageRef], ocr_pages: frozenset[PageRef], unreadable: Counter[str]
-) -> frozenset[PageRef]:
-    """Parmi ``pages``, celles dont une image couvre une part notable (même seuil que le pipeline pour lancer l'OCR
-    d'une page mixte) et dont le texte ne vient pas d'un OCR : la couche texte n'en dit peut-être qu'un en-tête."""
-    found: set[PageRef] = set()
-    for document_index in sorted({ref.document for ref in pages}):
-        content = pdfs.get(document_index)
-        document = _open_pdf(content, unreadable) if content else None
-        if document is None:
-            continue
-        with document:
-            for ref in pages:
-                if (
-                    ref.document == document_index
-                    and ref not in ocr_pages
-                    and 1 <= ref.page <= document.page_count
-                    and page_has_substantial_image(document[ref.page - 1])
-                ):
-                    found.add(ref)
-    return frozenset(found)
-
-
-def tesseract_page_reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Callable[[PageRef], str | None]:
-    """OCR d'une page d'une pièce par le Tesseract du pipeline (``src.pdf_ocr``), borné à ``OCR_PAGE_SECONDS``.
-
-    Rend le seul texte lu par l'OCR, sans la couche texte de la page (déjà dans le texte gardé par le pipeline) : un
-    titre de lot n'y est pas compté deux fois et la tolérance de l'OCR ne s'applique pas au texte natif. None si
-    l'OCR n'a rien lu, a échoué ou n'est pas installé.
-    """
-    settings = load_settings()
-
-    def read(ref: PageRef) -> str | None:
-        content = pdfs.get(ref.document)
-        document = _open_pdf(content, unreadable) if content else None
-        if document is None:
-            return None
-        try:
-            with document:
-                if not 1 <= ref.page <= document.page_count:
-                    return None
-                with pdf_document_ocr_budget_scope(OCR_PAGE_SECONDS):
-                    result = extract_page_text_with_ocr_result(document[ref.page - 1], "", settings=settings)
-        except PdfExtractionDeferred:
-            return None
-        return clean_text(result.get("text"))
-
-    return read
 
 
 def compare_sale(
@@ -626,75 +232,18 @@ def compare_sale(
     today: date,
 ) -> tuple[SaleResult | None, str | None]:
     """Verdicts d'une vente, ou la raison pour laquelle elle n'est pas comparée."""
-    raw_payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), Mapping) else {}
-    manifest = row.get("result")
-    all_documents: list[ReadingDocument] = documents_from_manifest(manifest)
-    # Une page qui s'adresse à un modèle n'est jamais lue (même détecteur que la lecture des pièces).
-    documents = without_pages(all_documents, injected_pages(all_documents))
-    # Les pièces d'abord, la sélection ensuite : elle ne choisit que des pages qu'un PDF disponible porte. Choisies
-    # avant le téléchargement, les pages d'une pièce sans PDF (document Word, pièce non téléchargée) prenaient des
-    # places, ou toutes, et l'extrait restait vide.
-    urls = sorted(
-        {doc.url for doc in documents if doc.url and any(page_field_score(text) > 0 for text in doc.pages.values())}
-    )
-    if not urls:
-        return None, "aucune page sur les champs visés"
-    try:
-        fetched = fetch_pdfs(row, urls)
-    except Exception:
-        return None, "pièces non téléchargées"
-    unreadable: Counter[str] = Counter()
-    pdfs, usable, unusable = usable_documents(manifest, documents, fetched, unreadable)
-    pages = select_vision_pages(usable)
-    if not pages:
-        main = unusable.most_common(1)[0][0] if unusable else "aucune page sur les champs visés"
-        return None, f"aucune page utilisable ({main})"
-    excerpt, pages = build_document_excerpt(pdfs, pages)
-    if not pages:
-        return None, "extrait vide"
-    with_field_words = sum(1 for doc in usable for text in doc.pages.values() if page_field_score(text) > 0)
+    reading, skipped = read_sale(row, primary, second, fetch_pdfs, today=today, stage=TRIAL_STAGE, reason=TRIAL_REASON)
+    if reading is None:
+        return None, skipped
+    with_field_words = sum(1 for doc in reading.usable for text in doc.pages.values() if page_field_score(text) > 0)
     page_stats = PageStats(
         with_field_words=with_field_words,
-        sent=len(pages),
+        sent=len(reading.pages),
         capped_sales=int(with_field_words > MAX_PAGES),
-        unread=unread_page_count(manifest, all_documents),
-        unusable=unusable,
+        unread=unread_page_count(row.get("result"), reading.all_documents),
+        unusable=reading.unusable,
     )
-    context = sale_context(raw_payload, row.get("property_type"), row.get("city"), row.get("quality_flags"))
-    texts = {doc.index: doc.pages for doc in documents}
-    context.page_texts = {ref: texts[ref.document][ref.page] for ref in pages}
-    # « libre » ne doit être contredit sur aucune page du dossier, envoyée ou non (texte déjà produit, sans coût).
-    context.dossier_texts = tuple(text for doc in all_documents for text in doc.pages.values())
-    context.dossier_pages = {PageRef(doc.index, number): text for doc in documents for number, text in doc.pages.items()}
-    context.ocr_pages = ocr_read_pages(manifest, documents)
-    context.image_pages = image_pages(pdfs, pages, context.ocr_pages, unreadable)
-    context.ocr_reader = tesseract_page_reader(pdfs, unreadable) if context.image_pages else None
-    with llm_request_context(
-        sale_id=str(row.get("id") or ""), source_url=str(row.get("source_url") or ""), stage=TRIAL_STAGE, reason=TRIAL_REASON
-    ):
-        reading = primary.read(build_user_prompt(pages, FIELDS, today=today, sold_lot=context.sold_lot), excerpt, FIELDS, pages)
-        if reading is None:
-            return None, "lecture principale en échec"
-        candidates = primary_verdicts(reading, context, today=today)
-        fields = [name for name, verdict in candidates.items() if verdict.status == CANDIDATE]
-        second_reading = None
-        second_context = context
-        if fields:
-            second_excerpt, second_pages = build_document_excerpt(
-                pdfs, second_reader_pages(candidates, context, reading.several_lots is True)
-            )
-            # Une page précédente ajoutée pour le second lecteur lui est envoyée : ses citations y sont cherchées. Une
-            # copie du contexte, pour ne pas changer les pages envoyées au lecteur principal (même cache d'OCR).
-            added = {ref: context.dossier_pages[ref] for ref in second_pages if ref not in context.page_texts}
-            second_context = replace(context, page_texts={**context.page_texts, **added})
-            second_reading = second.read(
-                build_user_prompt(second_pages, fields, today=today, sold_lot=context.sold_lot),
-                second_excerpt,
-                fields,
-                second_pages,
-            )
-    final = final_verdicts(candidates, second_reading, second_context, today=today)
-    return SaleResult(candidates, final, {doc.index: doc for doc in documents}, page_stats, unreadable), None
+    return SaleResult(reading.primary, reading.final, reading.documents, page_stats, reading.unreadable), None
 
 
 def _jsonable(value: object) -> object:
@@ -824,7 +373,7 @@ def run_bench(
         row = dict(zip(columns, fetched, strict=True))
         try:
             result, skipped = compare_sale(row, primary, second, fetch_and_count, today=today)
-        except BenchStopped as exc:
+        except ReadingStopped as exc:
             report.stop_reason = str(exc)
             break
         if result is None:
@@ -990,48 +539,9 @@ def render_report(report: BenchReport) -> str:
     return "\n".join(lines) + "\n"
 
 
-def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPieces:
-    """Les pièces ``urls`` de la vente, par le téléchargement poli du pipeline (robots.txt, cadence par hôte,
-    sources retirées, garde d'Enchères Publiques), dans un dossier temporaire effacé ensuite ; et pour chaque pièce
-    non obtenue, pourquoi (:func:`missing_piece_reason`)."""
-    from src.pdf_document_selection import select_documents_for_extraction
-    from src.pdf_document_types import canonical_document_type
-    from src.pdf_enrichment import PdfEnrichmentStats, download_documents
-
-    sale = sale_from_row(row)
-    wanted = set(urls)
-    sale.documents = [document for document in sale.documents if document.get("url") in wanted]
-    # Copie en mémoire : sans l'état de lecture des pièces, la sélection ne saute pas les pièces déjà lues
-    # (celles-là mêmes dont on veut les pages).
-    sale.raw_payload = {key: value for key, value in sale.raw_payload.items() if key != "document_analysis"}
-    # La même sélection que celle du téléchargement, lue avant lui : ce qu'il demandera.
-    selected = {document.get("url") for document in select_documents_for_extraction(sale.documents, sale=sale)}
-    stats = PdfEnrichmentStats()
-    with tempfile.TemporaryDirectory(prefix="document-vision-") as directory:
-        downloaded = download_documents(sale, output_root=Path(directory), stats=stats)
-        formats = {str(item["url"]): item.get("file_format") for item in downloaded if item.get("url") in wanted}
-        pdfs = {
-            str(item["url"]): Path(item["file_path"]).read_bytes()
-            for item in downloaded
-            if item.get("file_format") == "pdf" and item.get("url") in wanted
-        }
-    missing: dict[str, str] = {}
-    for document in sale.documents:
-        url = str(document.get("url"))
-        if url in pdfs or url in missing:
-            continue
-        missing[url] = missing_piece_reason(
-            url,
-            file_format=formats.get(url),
-            selected=url in selected,
-            selectable_alone=bool(select_documents_for_extraction([document], sale=sale)),
-            document_type=canonical_document_type(
-                document.get("document_type") or document.get("type"), label=document.get("label"), url=url
-            ),
-            stats=stats,
-            relay_available=relay_configured(url),
-        )
-    return FetchedPieces(pdfs, missing)
+def download_row_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPieces:
+    """Les pièces ``urls`` de la vente lue par le banc (``download_sale_pdfs`` sur la vente de la ligne)."""
+    return download_sale_pdfs(sale_from_row(row), urls)
 
 
 def _positive_usd(text: str) -> Decimal:
@@ -1070,12 +580,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def _reader(role: str, model: str, max_calls: int, spend: SpendCap, timeout_seconds: float) -> Reader:
-    client = AnthropicDocumentReader(model=model, timeout_seconds=timeout_seconds)
-    stats = ReaderStats(model=model, usage=client.usage)
-    return Reader(role, client.generate_json_with_pdf, stats, max_calls, spend, client.max_tokens)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     # Le téléchargement des pièces journalise leurs URL (avertissements, informations) : seules les erreurs sortent
@@ -1091,8 +595,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     spend = SpendCap(max_usd=args.max_usd)
     # Au plus un appel de chaque lecteur par vente.
-    primary = _reader("principal", HAIKU, args.sample, spend, PRIMARY_TIMEOUT_SECONDS)
-    second = _reader("second", SONNET, args.sample, spend, SECOND_TIMEOUT_SECONDS)
+    primary = anthropic_reader("principal", HAIKU, args.sample, spend, PRIMARY_TIMEOUT_SECONDS)
+    second = anthropic_reader("second", SONNET, args.sample, spend, SECOND_TIMEOUT_SECONDS)
     from src.storage.supabase_client import connect
 
     # Ouverte avant la première vente : un chemin refusé arrête le banc avant tout appel au modèle.
@@ -1104,7 +608,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             connection,
             primary,
             second,
-            download_sale_pdfs,
+            download_row_pdfs,
             sample=args.sample,
             today=datetime.now(PARIS).date(),
             private_review=(lambda entry: write_difference(review, entry)) if review is not None else None,

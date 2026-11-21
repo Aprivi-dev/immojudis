@@ -1,8 +1,8 @@
 """Lecture des pièces par un modèle qui lit les pages : choix des pages, prompt, verdict par champ.
 
-Lots V1 et V2, en mode fantôme : ce module prépare et mesure, il n'écrit rien (ni fiche, ni base). Seul le banc
-``scripts/compare_document_vision.py`` l'appelle ; l'interrupteur ``DOCUMENT_VISION_ENABLED`` (éteint) n'est
-encore branché sur aucune écriture.
+Ce module prépare et juge, il n'écrit rien (ni fiche, ni base). Le banc ``scripts/compare_document_vision.py`` et la
+passe d'écriture ``src.document_vision_pass`` (lot V3b-1, réglée par ``DOCUMENT_VISION_MODE``, éteinte par défaut)
+l'appellent par ``src.document_vision_reading``.
 
 Déroulé d'une lecture :
 
@@ -44,6 +44,7 @@ from src.document_reading import (
     lot_numbers_named,
     names_another_lot,
     sale_lot_numbers_named,
+    sold_lot_from_sale,
     sold_lot_line,
 )
 from src.enrichment.extraction_grounding import (
@@ -53,6 +54,7 @@ from src.enrichment.extraction_grounding import (
     rooms_count_is_supported,
 )
 from src.french_dates import MONTH_NUMBERS
+from src.lot_scope import is_lot_scoped
 from src.occupancy_statements import is_template_clause
 from src.text_folding import strip_accents
 
@@ -64,6 +66,9 @@ OCCUPANCY = "occupancy_status"
 VISITS = "visit_dates"
 FIELDS = (HABITABLE, CARREZ, LAND, ROOMS, OCCUPANCY, VISITS)
 SURFACE_FIELDS = frozenset({HABITABLE, CARREZ, LAND})
+# Marque des traces que cette lecture laisse dans ``raw_payload.pdf_fact_provenance`` (``src.document_vision_pass``),
+# lue par le retrait et par la relecture d'une fiche (``src.known_document_backfill``).
+TRACE_READER = "document_vision"
 # Seuls ces états d'occupation sont lus (owner_occupied, squatted : hors de ce lot).
 OCCUPANCY_VALUES = frozenset({"vacant", "occupied", "rented"})
 
@@ -1042,6 +1047,22 @@ class SaleContext:
         if ref not in self._ocr_texts:
             self._ocr_texts[ref] = self.ocr_reader(ref)
         return self._ocr_texts[ref]
+
+
+def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: object, quality_flags: object) -> SaleContext:
+    """Le lot vendu, s'il est désigné, et la situation de la vente quant aux lots, d'après la fiche."""
+    flags = quality_flags if isinstance(quality_flags, list) else []
+    sold_lot = sold_lot_from_sale(property_type, city, raw_payload.get("source_lot_selection"))
+    lot_scoped = is_lot_scoped(dict(raw_payload))
+    if lot_scoped and sold_lot is None:
+        situation = LOT_UNCERTAIN
+    elif lot_scoped or "multi_lot_sale" in flags:
+        situation = SEVERAL_LOTS
+    elif raw_payload.get("pdf_multi_lot_guard"):
+        situation = ONE_LOT_GUARDED
+    else:
+        situation = ONE_LOT
+    return SaleContext(sold_lot=sold_lot, lot_situation=situation)
 
 
 def values_agree(field_name: str, first: object, second: object) -> bool:

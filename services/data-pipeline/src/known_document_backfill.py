@@ -1,4 +1,5 @@
-"""Reprise, depuis le détail déjà connu d'une vente, des champs établis par les pièces (surfaces, mise à prix).
+"""Reprise, depuis le détail déjà connu d'une vente, des champs établis par les pièces (surfaces, mise à prix, et
+les cases écrites par la lecture des pièces par Claude).
 
 Une collecte qui relit la fiche source (liste ou détail) ne doit pas écraser une valeur que les documents PDF ont
 établie : ``src.known_enrichment`` copie ces champs depuis la ligne publiée quand la fiche collectée ne les porte pas.
@@ -9,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
+from src.document_vision import TRACE_READER
 from src.normalize import parse_price
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
@@ -179,3 +181,26 @@ def backfill_document_occupancy_from_known(
         return 0
     sale["occupancy_status"] = value
     return 1
+
+
+def backfill_document_vision_fields_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep every column written by the reading of the pieces by Claude when the source page gives none.
+
+    The pass (``src.document_vision_pass``) writes only empty cells and marks each written column (and each column
+    the sale facts derived from it) with a trace ``reader: "document_vision"``. A complete re-read of the page brings
+    those cells back empty: without this, the value would be lost while its trace stays, and the pass, which already
+    read these pieces, would not write it again. Whatever field is open, a traced column is kept.
+    """
+    known_payload = known.get("raw_payload")
+    provenance = known_payload.get("pdf_fact_provenance") if isinstance(known_payload, dict) else None
+    copied = 0
+    for column, trace in provenance.items() if isinstance(provenance, dict) else []:
+        if not isinstance(trace, dict) or trace.get("reader") != TRACE_READER:
+            continue
+        if is_missing_raw_value(sale.get(column)) and not is_missing_raw_value(known.get(column)):
+            sale[column] = known[column]
+            copied += 1
+    return copied

@@ -96,14 +96,28 @@ def test_command_excludes_the_sale_and_prints_counts_only(
     from src.storage import supabase_client
 
     connection = FakeConnection((URL,))
+    withdrawn: list[tuple[str, str | None]] = []
     monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://example.test/db")
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda url, **options: connection)
+
+    def withdraw(db_url: str, *, source_url: str | None = None) -> dict[str, int]:
+        # Le retrait vient après l'inscription : la passe ne peut plus réécrire ce qu'il enlève.
+        assert connection.calls, "exclusion first"
+        withdrawn.append((db_url, source_url))
+        return {"sales": 1, "cleared": 2, "preserved": 0, "not_recorded": 0}
+
+    monkeypatch.setattr(command, "withdraw", withdraw)
 
     assert command.main(["--source-url", URL, "--reason", "opposition", "--request-id", str(REQUEST)]) == 0
 
     assert connection.calls[0][1] == (URL, "opposition", str(REQUEST))
+    assert withdrawn == [("postgresql://example.test/db", URL)]
     output = capsys.readouterr().out
-    assert json.loads(output) == {"excluded": True, "already_excluded": False}
+    assert json.loads(output) == {
+        "excluded": True,
+        "already_excluded": False,
+        "withdrawn": {"sales": 1, "cleared": 2, "preserved": 0, "not_recorded": 0},
+    }
     assert URL not in output
 
 

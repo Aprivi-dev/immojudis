@@ -18,6 +18,9 @@ import pymupdf
 import pytest
 
 from scripts import compare_document_vision as bench
+from src import document_vision_pieces as pieces
+from src import document_vision_reading as reading
+from src.document_reading import documents_from_manifest
 from src.document_vision import (
     CARREZ,
     FIELDS,
@@ -31,8 +34,10 @@ from src.document_vision import (
     ROOMS,
     SEVERAL_LOTS,
     VISITS,
+    PageRef,
     parse_claim,
     response_schema,
+    sale_context,
 )
 from src.enrichment.anthropic_reader import (
     HAIKU,
@@ -375,12 +380,12 @@ def test_selection_only_keeps_pages_of_pieces_whose_pdf_is_available() -> None:
     ]
     primary = FakeModel({HABITABLE: (62.4, PRIVATE_QUOTE)})
 
-    report = _bench_one(manifest, {URL: PDF}, primary, {WORD_URL: bench.NO_PDF_WORD})
+    report = _bench_one(manifest, {URL: PDF}, primary, {WORD_URL: pieces.NO_PDF_WORD})
 
     assert report.processed == 1 and not report.skipped
     assert primary.calls[0]["pages"] == [DESCRIPTION]
-    assert report.pages.unusable == {bench.NO_PDF_WORD: 12}
-    assert report.pages.missing_pieces == {bench.NO_PDF_WORD: 1}
+    assert report.pages.unusable == {pieces.NO_PDF_WORD: 12}
+    assert report.pages.missing_pieces == {pieces.NO_PDF_WORD: 1}
     markdown = bench.render_report(report)
     assert "pièce sans PDF : Word 12, pièce sans PDF : HTML ou autre format 0" in markdown
     assert "PDF modifié depuis la lecture 0, PDF illisible 0, page hors bornes 0." in markdown
@@ -395,10 +400,10 @@ def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:
 def test_sale_without_any_usable_page_says_why() -> None:
     no_pdf = _bench_one(MANIFEST, {})
     assert no_pdf.skipped == {"aucune page utilisable (pièce sans PDF : autre motif)": 1}
-    relay = _bench_one(MANIFEST, {}, missing={URL: bench.NO_PDF_RELAY})
+    relay = _bench_one(MANIFEST, {}, missing={URL: pieces.NO_PDF_RELAY})
     assert relay.skipped == {"aucune page utilisable (pièce sans PDF : relais SOURCE_FETCH_RELAY non disponible)": 1}
     # The piece is counted even though the sale is not compared.
-    assert relay.pages.missing_pieces == {bench.NO_PDF_RELAY: 1}
+    assert relay.pages.missing_pieces == {pieces.NO_PDF_RELAY: 1}
 
     one_page = _pdf(DESCRIPTION)
     beyond = [_manifest_item(URL, "pv_huissier", {1: FILLER, 2: DESCRIPTION}, one_page)]
@@ -416,7 +421,7 @@ def test_pages_beyond_the_pdf_are_left_out_and_counted() -> None:
     primary = FakeModel({})
     report = _bench_one(manifest, {URL: one_page}, primary)
     assert report.processed == 1 and primary.calls[0]["pages"] == [DESCRIPTION]
-    assert report.pages.unusable == {bench.PAGE_OUT_OF_RANGE: 1}
+    assert report.pages.unusable == {pieces.PAGE_OUT_OF_RANGE: 1}
 
 
 def test_without_a_fingerprint_a_pdf_shorter_than_the_text_read_is_another_pdf() -> None:
@@ -459,7 +464,7 @@ def test_sample_is_bounded_to_thirty(value: str) -> None:
 def test_sale_context_reads_the_lot_situation_of_the_sale(
     raw_payload: dict[str, Any], flags: list[str], situation: str, designated: bool
 ) -> None:
-    context = bench.sale_context(raw_payload, "apartment", "Nice", flags)
+    context = sale_context(raw_payload, "apartment", "Nice", flags)
     assert context.lot_situation == situation
     assert (context.sold_lot is not None) is designated
 
@@ -582,9 +587,9 @@ def test_differences_list_public_data_only_never_the_quote_or_the_text_of_the_pi
 def test_differences_give_the_visit_days_of_the_sale_never_its_free_text() -> None:
     row = dict(zip((*bench.SALE_COLUMNS, *bench.SALE_VALUE_COLUMNS, "result"), _row(), strict=True))
     row[VISITS] = ["le 3 décembre 2026 à 10h, rendez-vous avec M. Martin au 06 12 34 56 78"]
-    documents = {doc.index: doc for doc in bench.documents_from_manifest(MANIFEST)}
+    documents = {doc.index: doc for doc in documents_from_manifest(MANIFEST)}
     result = bench.SaleResult({}, {}, documents, bench.PageStats())
-    verdict = bench.Verdict("accepted", value=frozenset({date(2026, 12, 10)}), page=bench.PageRef(1, 2), quote="visite")
+    verdict = bench.Verdict("accepted", value=frozenset({date(2026, 12, 10)}), page=PageRef(1, 2), quote="visite")
 
     entry = bench.public_difference(row, VISITS, verdict, result)
 
@@ -668,7 +673,7 @@ def test_every_field_of_the_differences_has_a_value_type_without_free_text() -> 
             else:
                 assert option["type"] in {"number", "integer"} and _VALUE_KINDS[name] in {"number", "integer"}, name
         # Whatever the reader writes, a free text never becomes a retained value.
-        page = bench.PageRef(1, 1)
+        page = PageRef(1, 1)
         for raw in (FREE_TEXT, [FREE_TEXT]):
             claim = parse_claim(name, {"valeur": raw, "citation": "une citation", "page": 1}, [page])
             assert claim.status == "invalid", name
@@ -684,10 +689,10 @@ def test_every_field_of_the_differences_has_a_value_type_without_free_text() -> 
         OCCUPANCY: "rented",
         VISITS: frozenset({date(2026, 12, 10)}),
     }
-    documents = {doc.index: doc for doc in bench.documents_from_manifest(MANIFEST)}
+    documents = {doc.index: doc for doc in documents_from_manifest(MANIFEST)}
     result = bench.SaleResult({}, {}, documents, bench.PageStats())
     for name in FIELDS:
-        verdict = bench.Verdict("accepted", value=retained[name], page=bench.PageRef(1, 2), quote=FREE_TEXT)
+        verdict = bench.Verdict("accepted", value=retained[name], page=PageRef(1, 2), quote=FREE_TEXT)
         entry = json.loads(json.dumps(bench.public_difference(row, name, verdict, result), default=str))
         for value in (entry["retained_value"], entry["sale_value"]):
             kind = _VALUE_KINDS[name]
@@ -786,9 +791,9 @@ def test_relay_is_available_only_with_an_https_address_and_a_token(
 ) -> None:
     monkeypatch.setenv("SOURCE_FETCH_RELAY_URL", address)
     monkeypatch.setenv("SOURCE_FETCH_RELAY_TOKEN", token)
-    assert bench.relay_configured(RELAYED_URL) is available
+    assert pieces.relay_configured(RELAYED_URL) is available
     # Another host never goes through the relay.
-    assert bench.relay_configured(URL) is False
+    assert pieces.relay_configured(URL) is False
 
 
 def _stats(**lists: Any) -> PdfEnrichmentStats:
@@ -798,22 +803,22 @@ def _stats(**lists: Any) -> PdfEnrichmentStats:
 @pytest.mark.parametrize(
     ("url", "options", "stats", "reason"),
     [
-        (URL, {"file_format": "docx"}, _stats(), bench.NO_PDF_WORD),
-        (URL, {"file_format": "doc"}, _stats(), bench.NO_PDF_WORD),
-        (URL, {"selected": False}, _stats(), bench.NO_PDF_CAP),
-        (URL, {"selected": False, "selectable_alone": False}, _stats(), bench.NO_PDF_OTHER),
-        (URL, {"document_type": "other"}, _stats(), bench.NO_PDF_OTHER),
-        (URL, {}, _stats(blocked_document_urls=[URL]), bench.NO_PDF_ROBOTS),
-        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "robots_disallowed"}]), bench.NO_PDF_ROBOTS),
-        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "unsupported_response"}]), bench.NO_PDF_HTML),
-        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "not_found"}]), bench.NO_PDF_OTHER),
-        (URL, {}, _stats(network_failures=[NetworkFailure(URL, "timeout", False)]), bench.NO_PDF_NETWORK),
-        (URL, {}, _stats(network_failures=[NetworkFailure("https://example.test", "robots.txt timeout", True)]), bench.NO_PDF_NETWORK),
-        (URL, {}, _stats(network_failures=[NetworkFailure("https://other.test", "timeout", True)]), bench.NO_PDF_OTHER),
-        (URL, {}, _stats(), bench.NO_PDF_OTHER),
+        (URL, {"file_format": "docx"}, _stats(), pieces.NO_PDF_WORD),
+        (URL, {"file_format": "doc"}, _stats(), pieces.NO_PDF_WORD),
+        (URL, {"selected": False}, _stats(), pieces.NO_PDF_CAP),
+        (URL, {"selected": False, "selectable_alone": False}, _stats(), pieces.NO_PDF_OTHER),
+        (URL, {"document_type": "other"}, _stats(), pieces.NO_PDF_OTHER),
+        (URL, {}, _stats(blocked_document_urls=[URL]), pieces.NO_PDF_ROBOTS),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "robots_disallowed"}]), pieces.NO_PDF_ROBOTS),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "unsupported_response"}]), pieces.NO_PDF_HTML),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "not_found"}]), pieces.NO_PDF_OTHER),
+        (URL, {}, _stats(network_failures=[NetworkFailure(URL, "timeout", False)]), pieces.NO_PDF_NETWORK),
+        (URL, {}, _stats(network_failures=[NetworkFailure("https://example.test", "robots.txt timeout", True)]), pieces.NO_PDF_NETWORK),
+        (URL, {}, _stats(network_failures=[NetworkFailure("https://other.test", "timeout", True)]), pieces.NO_PDF_OTHER),
+        (URL, {}, _stats(), pieces.NO_PDF_OTHER),
         # Cessions Etat answers 403 to the runner: without the relay, that is the cause.
-        (RELAYED_URL, {}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), bench.NO_PDF_RELAY),
-        (RELAYED_URL, {"relay_available": True}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), bench.NO_PDF_OTHER),
+        (RELAYED_URL, {}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), pieces.NO_PDF_RELAY),
+        (RELAYED_URL, {"relay_available": True}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), pieces.NO_PDF_OTHER),
     ],
 )
 def test_missing_piece_reason_says_why_the_bench_did_not_get_the_pdf(
@@ -827,7 +832,7 @@ def test_missing_piece_reason_says_why_the_bench_did_not_get_the_pdf(
         "relay_available": False,
         **options,
     }
-    assert bench.missing_piece_reason(url, stats=stats, **arguments) == reason
+    assert pieces.missing_piece_reason(url, stats=stats, **arguments) == reason
 
 
 def test_download_names_the_piece_cut_by_the_limit_of_pieces_per_sale(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -856,10 +861,10 @@ def test_download_names_the_piece_cut_by_the_limit_of_pieces_per_sale(monkeypatc
 
     monkeypatch.setattr(pdf_enrichment, "download_documents", download)
 
-    fetched = bench.download_sale_pdfs(row, urls)
+    fetched = bench.download_row_pdfs(row, urls)
 
     assert sorted(fetched.pdfs) == sorted(set(urls) - {urls[1], urls[6]})
-    assert fetched.missing == {urls[1]: bench.NO_PDF_ROBOTS, urls[6]: bench.NO_PDF_CAP}
+    assert fetched.missing == {urls[1]: pieces.NO_PDF_ROBOTS, urls[6]: pieces.NO_PDF_CAP}
 
 
 # --- Pages : texte, OCR, images -----------------------------------------------------------------------------------
@@ -894,26 +899,26 @@ def test_ocr_and_unread_pages_are_read_from_the_manifest() -> None:
             ],
         }
     ]
-    documents = bench.documents_from_manifest(manifest)
-    assert bench.ocr_read_pages(manifest, documents) == frozenset({bench.PageRef(1, 2)})
+    documents = documents_from_manifest(manifest)
+    assert pieces.ocr_read_pages(manifest, documents) == frozenset({PageRef(1, 2)})
     assert bench.unread_page_count(manifest, documents) == 1
 
 
 def test_image_pages_are_pages_mostly_covered_by_an_image_and_not_read_by_ocr() -> None:
     pdfs = {1: _pdf(FILLER, DESCRIPTION), 2: _image_pdf(SCANNED_HEADER)}
-    pages = [bench.PageRef(1, 1), bench.PageRef(1, 2), bench.PageRef(2, 1), bench.PageRef(3, 1)]
+    pages = [PageRef(1, 1), PageRef(1, 2), PageRef(2, 1), PageRef(3, 1)]
     unreadable: Counter[str] = Counter()
-    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
-    assert bench.image_pages(pdfs, pages, frozenset({bench.PageRef(2, 1)}), unreadable) == frozenset()
+    assert pieces.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({PageRef(2, 1)})
+    assert pieces.image_pages(pdfs, pages, frozenset({PageRef(2, 1)}), unreadable) == frozenset()
     assert unreadable == Counter()
 
 
 def test_a_piece_that_pymupdf_cannot_open_is_skipped_and_counted_by_type() -> None:
     unreadable: Counter[str] = Counter()
     pdfs = {1: b"pas un PDF", 2: _image_pdf(SCANNED_HEADER)}
-    pages = [bench.PageRef(1, 1), bench.PageRef(2, 1)]
-    assert bench.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({bench.PageRef(2, 1)})
-    assert bench.tesseract_page_reader(pdfs, unreadable)(bench.PageRef(1, 1)) is None
+    pages = [PageRef(1, 1), PageRef(2, 1)]
+    assert pieces.image_pages(pdfs, pages, frozenset(), unreadable) == frozenset({PageRef(2, 1)})
+    assert pieces.tesseract_page_reader(pdfs, unreadable)(PageRef(1, 1)) is None
     assert sum(unreadable.values()) == 2 and len(unreadable) == 1
     kind = next(iter(unreadable))
     report = bench.BenchReport(sample=1, unreadable=unreadable)
@@ -922,9 +927,9 @@ def test_a_piece_that_pymupdf_cannot_open_is_skipped_and_counted_by_type() -> No
 
 def test_tesseract_reader_returns_the_ocr_text_alone_never_the_text_layer(monkeypatch: pytest.MonkeyPatch) -> None:
     # Without Tesseract (or on a blank image), the OCR reads nothing: no text.
-    read = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())
-    assert read(bench.PageRef(1, 1)) is None
-    assert read(bench.PageRef(1, 9)) is None and read(bench.PageRef(2, 1)) is None
+    read = pieces.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())
+    assert read(PageRef(1, 1)) is None
+    assert read(PageRef(1, 9)) is None and read(PageRef(2, 1)) is None
 
     fallbacks: list[str] = []
 
@@ -932,8 +937,8 @@ def test_tesseract_reader_returns_the_ocr_text_alone_never_the_text_layer(monkey
         fallbacks.append(fallback)
         return {"text": "Surface habitable lue par OCR", "method": "ocr_tesseract", "status": "extracted"}
 
-    monkeypatch.setattr(bench, "extract_page_text_with_ocr_result", ocr)
-    text = bench.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())(bench.PageRef(1, 1))
+    monkeypatch.setattr(pieces, "extract_page_text_with_ocr_result", ocr)
+    text = pieces.tesseract_page_reader({1: _image_pdf(SCANNED_HEADER)}, Counter())(PageRef(1, 1))
     assert text == "Surface habitable lue par OCR" and SCANNED_HEADER not in text
     assert fallbacks == [""]
 
@@ -941,16 +946,16 @@ def test_tesseract_reader_returns_the_ocr_text_alone_never_the_text_layer(monkey
 def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
     scanned = _image_pdf(SCANNED_HEADER)
     manifest = [{"url": URL, "sha256": hashlib.sha256(scanned).hexdigest(), "pages": [{"page": 1, "text": SCANNED_HEADER}]}]
-    read: list[bench.PageRef] = []
+    read: list[PageRef] = []
 
     def reader(pdfs: Mapping[int, bytes], unreadable: Counter[str]) -> Any:
-        def read_page(ref: bench.PageRef) -> str:
+        def read_page(ref: PageRef) -> str:
             read.append(ref)
             return DESCRIPTION
 
         return read_page
 
-    monkeypatch.setattr(bench, "tesseract_page_reader", reader)
+    monkeypatch.setattr(reading, "tesseract_page_reader", reader)
     values = {HABITABLE: (62.4, PRIVATE_QUOTE)}
     report = bench.run_bench(
         FakeConnection({SALE_ID: _row(result=manifest, habitable_surface_m2=None)}),
@@ -962,7 +967,7 @@ def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) 
     )
     assert report.fields[HABITABLE].statuses["accepted"] == 1
     assert report.fields[HABITABLE].quote_matches == {"ocr_du_banc": 1}
-    assert read == [bench.PageRef(1, 1)]
+    assert read == [PageRef(1, 1)]
 
 
 def test_report_shows_the_prompt_version() -> None:

@@ -106,11 +106,12 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     # Le travailleur reçoit ses propres plafonds, sous les noms qu'il lit.
     assert subprocess_calls[0][1]["env"][ENRICHMENT_BUDGET_SECONDS_ENV] == str(ENRICHMENT_BUDGET_SECONDS)
     assert subprocess_calls[0][1]["env"][ENRICHMENT_MAX_JOBS_ENV] == str(ENRICHMENT_MAX_JOBS)
-    # After the queue: the attachment catch-up, the document reading, the batch positions, the photos of the
-    # attachments, then one tick of the Licitor history collector.
+    # After the queue: the attachment catch-up, the document reading, the reading of the pieces by Claude, the batch
+    # positions, the photos of the attachments, then one tick of the Licitor history collector.
     assert [call[0][2] for call in subprocess_calls[1:]] == [
         "src.document_backlog",
         "src.document_reading",
+        "src.document_vision_pass",
         "src.address_positions",
         "src.pdf_photos",
         "src.sources.licitor_history_refresh",
@@ -119,12 +120,16 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert subprocess_calls[1][1]["timeout"] == autonomous_runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
     # The reading step that follows reads the texts: the catch-up does not run its own.
     assert subprocess_calls[1][1]["env"][document_reading.READING_ENABLED_ENV] == "false"
-    assert subprocess_calls[3][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
-    assert subprocess_calls[3][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
-    assert subprocess_calls[4][0][3:] == ["--max-sales", "25", "--budget-seconds", "180"]
-    assert subprocess_calls[4][1]["timeout"] == autonomous_runner.PDF_PHOTOS_BUDGET_SECONDS
-    assert subprocess_calls[5][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    # Ten sales and four minutes per pass (lot V3b-1).
+    assert subprocess_calls[3][0][3:] == ["--max-sales", "10", "--budget-minutes", "4"]
+    assert subprocess_calls[3][1]["timeout"] == autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS
+    assert subprocess_calls[4][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
+    assert subprocess_calls[4][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
+    assert subprocess_calls[5][0][3:] == ["--max-sales", "25", "--budget-seconds", "180"]
+    assert subprocess_calls[5][1]["timeout"] == autonomous_runner.PDF_PHOTOS_BUDGET_SECONDS
+    assert subprocess_calls[6][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
     assert updates[0][2].obj["document_backlog_exit_code"] == 0
+    assert updates[0][2].obj["document_vision_exit_code"] == 0
     assert updates[0][2].obj["address_positions_exit_code"] == 0
     assert updates[0][2].obj["pdf_photos_exit_code"] == 0
     assert updates[0][2].obj["licitor_history_exit_code"] == 0
@@ -698,8 +703,8 @@ def test_optional_passes_that_contact_a_site_run_inside_the_source_traffic_turn(
     monkeypatch.setattr(autonomous_runner.subprocess, "run", run_and_note)
     assert autonomous_runner.execute(LANE_RUN_ID, enrichment_lane=True, connect=_lane_db(updates, statements)) == 0
 
-    assert len(calls) == 6
-    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+    assert len(calls) == 7
+    for module in ("src.document_backlog", "src.document_vision_pass", "src.address_positions", "src.pdf_photos",
                    "src.sources.licitor_history_refresh"):
         assert during[module] == 1, module
     # The worker takes the turn itself, batch by batch (src.collection_priority.yield_to_sources).
@@ -761,7 +766,7 @@ def test_passes_that_contact_a_site_keep_their_daily_volume(monkeypatch) -> None
     modules = [command[2] for command, _ in calls]
     # Three cycles: the LLM-only reading every cycle, the passes that contact a host once.
     assert modules.count("src.document_reading") == 3
-    for module in ("src.document_backlog", "src.address_positions", "src.pdf_photos",
+    for module in ("src.document_backlog", "src.document_vision_pass", "src.address_positions", "src.pdf_photos",
                    "src.sources.licitor_history_refresh"):
         assert modules.count(module) == 1, module
     skipped = updates[0][2].obj["enrichment_unit"]["cycles"][1]["passes_skipped"]
