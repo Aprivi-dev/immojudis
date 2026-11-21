@@ -359,6 +359,11 @@ def test_found_quote_maps_back_to_the_text_of_the_page() -> None:
         ("Une surface habitable de 12,5 m² au relevé.", "surface habitable de 12"),
         ("Une surface habitable de 12.5 m² au relevé.", "surface habitable de 12"),
         ("La contenance totale est de 1 245 m².", "contenance totale est de 1"),
+        # Un point ou une virgule précédés d'un chiffre : milliers ou décimales.
+        ("Un terrain de 1.245 m² de jardin attenant.", "245 m² de jardin"),
+        ("Une surface de 12,5 m² habitables au relevé.", "5 m² habitables au relevé"),
+        # Espace fine (U+2009) entre les milliers.
+        ("Un terrain de 1 245 m² de jardin attenant.", "245 m² de jardin"),
     ],
 )
 def test_quote_never_cuts_a_number_of_the_page(page_text: str, quote: str) -> None:
@@ -627,6 +632,23 @@ def test_one_lot_sale_keeps_the_rejection_when_the_dossier_is_divided_in_lots() 
     assert vision.primary_verdicts(said_one, context, today=TODAY)[vision.ROOMS].status == CANDIDATE
 
 
+@pytest.mark.parametrize(
+    "lots",
+    [
+        # Un mot de copropriété près du numéro ne l'écarte pas du décompte.
+        "Lot n° 1 : dans une copropriété, une maison. Lot n° 2 : ",
+        # Lots désignés par une lettre.
+        "LOT A : une maison. LOT B : ",
+    ],
+)
+def test_one_lot_sale_counts_every_lot_designation_of_the_dossier(lots: str) -> None:
+    quote = "un terrain à bâtir d'une contenance de 850 m²"
+    text = lots + quote + ". " + FILLER
+    context = _context(text, dossier_pages={PAGE: text})
+    verdict = vision.primary_verdicts(_reading_saying("oui", land_surface_m2=_claim(850, quote)), context, today=TODAY)
+    assert verdict[vision.LAND].reason == "lot_non_identifie" and verdict[vision.LAND].detail == vision.ONE_LOT
+
+
 def test_one_lot_sale_keeps_the_rejection_when_the_dossier_names_two_lots_in_lower_case() -> None:
     text = "Lot n° 1 : une maison d'habitation. Lot n° 2 : un terrain à bâtir d'une contenance de 850 m². " + FILLER
     quote = "un terrain à bâtir d'une contenance de 850 m²"
@@ -736,6 +758,32 @@ def test_neighbour_lot_never_hides_behind_the_title_of_the_sold_lot(text: str) -
     reading = _reading(habitable_surface_m2=_claim(85, NEIGHBOUR_QUOTE))
     verdict = vision.primary_verdicts(reading, context, today=TODAY)[vision.HABITABLE]
     assert verdict.status == REJECTED and verdict.reason in {"lot_non_nomme", "autre_lot"}
+
+
+@pytest.mark.parametrize(
+    "neighbour",
+    ["LOT TROIS", "Lot numéro trois", "LOT III", "LOT C", "LOT #3", "TROISIEME LOT", "LOT N°3", "3ÈME LOT", "LOT N.3",
+     # Numéro au-delà du nombre de lots de la fiche.
+     "LOT N° 4", "Lot n° 12"],
+)  # fmt: skip
+def test_any_other_lot_designation_under_the_title_of_the_sold_lot_breaks_the_section(neighbour: str) -> None:
+    text = f"LOT N° 2 : appartement de 3 pièces, 60 m². {neighbour} : copropriété Les Pins, {NEIGHBOUR_QUOTE}."
+    context = _context(text + " " + FILLER, sold_lot=SoldLot(number=2, lot_count=3), dossier_pages={PAGE: text})
+    reading = _reading(habitable_surface_m2=_claim(85, NEIGHBOUR_QUOTE))
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.HABITABLE].status == REJECTED
+
+
+@pytest.mark.parametrize(
+    ("text", "designations"),
+    [
+        ("LOT TROIS, Lot numéro un, lot #7, LOT XX, Lot IV, LOT C", {3, 1, 7, 20, 4, "C"}),
+        # Un article après « LOT » n'est pas un numéro ; ni « un lot à usage », ni un mot entier en capitales.
+        ("DEUXIEME LOT Un appartement, un lot à usage d'habitation, LOT UNIQUE, LOT N 2", {2}),
+        ("LOT XXI", set()),
+    ],
+)
+def test_lot_designations_read_words_roman_numerals_letters_and_hash(text: str, designations: set[object]) -> None:
+    assert vision.lot_designations(text) == designations
 
 
 def test_another_lot_number_on_the_previous_page_after_the_title_breaks_the_section() -> None:

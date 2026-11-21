@@ -630,8 +630,9 @@ def _tolerant_find(haystack: str, needle: str, allowed: int, begin: int = 0) -> 
     return -1
 
 
-# Séparateurs des milliers d'un nombre écrit (« 1 245 m² ») : une espace, insécable ou non.
-_THOUSANDS_SEPARATORS = frozenset("   ")
+# Séparateurs des milliers d'un nombre écrit (« 1 245 m² ») : une espace, insécable, fine (U+2009) ou fine
+# insécable (U+202F).
+_THOUSANDS_SEPARATORS = frozenset("    ")
 _THOUSANDS_GROUP = re.compile(r"\d{3}(?!\d)")
 _LAST_GROUP = re.compile(r"(?<!\d)\d{1,3}$")
 _DECIMALS = re.compile(r"[.,]\d")
@@ -644,14 +645,16 @@ def _digit(char: str) -> bool:
 def cuts_a_number(text: str, start: int, end: int) -> bool:
     """Le passage ``text[start:end]`` coupe un nombre de la page.
 
-    Il commence par un chiffre que précède un chiffre (« 2 pièces » dans « 12 pièces ») ou un groupe des milliers
-    (« 245 m² » dans « 1 245 m² »), ou il finit par un chiffre que suit un chiffre, une décimale (« de 12 » dans
+    Il commence par un chiffre que précède un chiffre (« 2 pièces » dans « 12 pièces »), un groupe des milliers
+    (« 245 m² » dans « 1 245 m² ») ou un point ou une virgule eux-mêmes précédés d'un chiffre (« 245 m² » dans
+    « 1.245 m² », « 5 m² » dans « 12,5 m² »), ou il finit par un chiffre que suit un chiffre, une décimale (« de 12 » dans
     « de 12,5 m² ») ou un groupe des milliers (« de 1 » dans « de 1 245 m² »). La clé de comparaison ignore les
     espaces : cette borne se lit sur le texte de la page.
     """
     excerpt, before, after = text[start:end], text[:start], text[end:]
     if _digit(excerpt[:1]) and (
         _digit(before[-1:])
+        or (before[-1:] in (".", ",") and _digit(before[-2:-1]))
         or (before[-1:] in _THOUSANDS_SEPARATORS and _digit(before[-2:-1]) and _THOUSANDS_GROUP.match(excerpt))
     ):
         return True
@@ -767,13 +770,68 @@ def lot_titles(text: str, highest: int) -> list[tuple[int, int]]:
     return titles
 
 
+# Désignations d'un lot autres qu'un chiffre : nombre en lettres (un à vingt), chiffres romains (I à XX), lettre
+# seule (« LOT C »), « # » (« LOT #3 »). Les chiffres romains et la lettre seule ne se lisent qu'en capitale après
+# « LOT » ou « Lot » : « un lot à usage d'habitation » ne désigne aucun lot. « un » et « une » ne comptent qu'après
+# « n° », « numéro » ou « # » : « DEUXIÈME LOT Un appartement » ne nomme pas le lot 1.
+_LOT_NUMBER_WORDS = {
+    "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9,
+    "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16, "dix-sept": 17,
+    "dix-huit": 18, "dix-neuf": 19, "vingt": 20,
+}  # fmt: skip
+_LOT_NUMBERING = r"(?:n\s*[°º]|n[o°º]?\.?|num[eé]ros?|#)"
+_LOT_WORD = re.compile(
+    r"\blots?\s*(?:"
+    + _LOT_NUMBERING
+    + r"\s*(?P<numbered>"
+    + "|".join(sorted(_LOT_NUMBER_WORDS, key=len, reverse=True))
+    + r")|(?P<word>"
+    + "|".join(sorted((word for word, number in _LOT_NUMBER_WORDS.items() if number > 1), key=len, reverse=True))
+    + r"))\b",
+    re.IGNORECASE,
+)
+_LOT_HASH = re.compile(r"\blots?\s*#\s*(?P<number>\d{1,3})\b", re.IGNORECASE)
+_LOT_CAPITAL = re.compile(
+    r"\b(?:LOTS?|Lots?)\s*(?:N\s*[°º]|N[O°º]?\.?|NUM[EÉ]RO|#)?\s*(?P<mark>[A-Z]+)(?![\w°º.]|\s*\d)"
+)
+_ROMAN = re.compile(r"X{0,2}(?:IX|IV|V?I{0,3})")
+_ROMAN_VALUES = {"I": 1, "V": 5, "X": 10}
+
+
+def _roman_value(numeral: str) -> int | None:
+    """Valeur d'un nombre romain de I à XX, ou None."""
+    if not _ROMAN.fullmatch(numeral):
+        return None
+    values = [_ROMAN_VALUES[char] for char in numeral]
+    total = sum(-value if value < next_value else value for value, next_value in zip(values, [*values[1:], 0], strict=True))
+    return total if 1 <= total <= 20 else None
+
+
+def lot_designations(text: str) -> set[int | str]:
+    """Les lots que nomme le texte, sans aucune exclusion (copropriété, nombre de lots de la fiche) : numéros en
+    chiffres et ordinaux (:func:`lot_numbers_named`), après « # », en lettres, en chiffres romains (comme numéros),
+    et lettres seules (« LOT C » : la lettre, qui ne se compare à aucun numéro)."""
+    designations: set[int | str] = set(lot_numbers_named(text))
+    designations |= {int(match["number"]) for match in _LOT_HASH.finditer(text)}
+    designations |= {_LOT_NUMBER_WORDS[(match["numbered"] or match["word"]).lower()] for match in _LOT_WORD.finditer(text)}
+    for match in _LOT_CAPITAL.finditer(text):
+        roman = _roman_value(match["mark"])
+        if roman is not None:
+            designations.add(roman)
+        elif len(match["mark"]) == 1:
+            designations.add(match["mark"])
+    return designations
+
+
 def _in_sold_lot_section(context: SaleContext, located: LocatedQuote, ref: PageRef, lot: SoldLot) -> bool:
     """La citation est dans la section du lot vendu.
 
     Trois conditions. Le dernier titre de lot de vente qui la précède, sur sa page ou à défaut sur la page
     précédente de la même pièce, est celui du lot vendu. Du début de ce titre à la fin de la citation, aucun autre
-    numéro de lot de la vente n'est nommé, en capitales ou non, même près d'un mot de copropriété : un titre que
-    :func:`lot_titles` écarte (« LOT N° 3 : copropriété Les Pins ») ouvre peut-être la section du lot voisin. Ce
+    lot n'est nommé (:func:`lot_designations`) : en capitales ou non, même près d'un mot de copropriété, même
+    au-delà du nombre de lots de la fiche, en lettres, en chiffres romains ou par une lettre. Un titre que
+    :func:`lot_titles` écarte (« LOT N° 3 : copropriété Les Pins », « LOT III ») ouvre peut-être la section du lot
+    voisin. Ce
     titre n'apparaît qu'une fois dans la pièce (deux titres du même numéro : l'un est un lot de copropriété ou un
     rappel).
     """
@@ -789,7 +847,7 @@ def _in_sold_lot_section(context: SaleContext, located: LocatedQuote, ref: PageR
             return False
         position, number = titles[-1]
         section = previous[position:] + " " + located.text[: located.end]
-    if number != lot.number or any(1 <= other <= highest and other != lot.number for other in lot_numbers_named(section)):
+    if number != lot.number or lot_designations(section) - {lot.number}:
         return False
     pages = {other: text for other, text in context.dossier_pages.items() if other.document == ref.document}
     pages[ref] = located.text
@@ -802,10 +860,11 @@ def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: st
 
     Lot désigné : rien ici (la citation le nomme ou est sous son titre, :func:`_sold_lot_reason`). Plusieurs lots
     sans lot désigné, lot incertain, biens concurrents dans les pièces : toujours. Vente à un seul lot d'après la
-    fiche : seulement si le lecteur dit que le dossier en vend plusieurs ET que la citation nomme un lot de vente ou
-    que le dossier nomme deux numéros de lots de vente au moins, titres en capitales ou non (« Lot n° 1 : une
-    maison. Lot n° 2 : un terrain »). Sans cela, le lecteur a pris des lots de copropriété pour des lots de vente, et
-    la citation ne nomme aucun lot.
+    fiche : seulement si le lecteur dit que le dossier en vend plusieurs ET que la citation nomme un lot ou que le
+    dossier en nomme deux au moins (:func:`lot_designations`, sans exclusion de copropriété : « Lot n° 1 : dans une
+    copropriété, une maison. Lot n° 2 : un terrain »). Seuls les numéros au-delà de ``DEFAULT_HIGHEST_SALE_LOT`` ne
+    comptent pas : ce sont ceux des lots de copropriété (« lots numéros 12 et 45 ») que le lecteur a pris pour des
+    lots de vente.
     """
     if context.sold_lot is not None:
         return None
@@ -814,8 +873,8 @@ def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: st
     if not several_lots_read:
         return None
 
-    def sale_lots(text: str) -> set[int]:
-        return {number for number in sale_lot_numbers_named(text) if 1 <= number <= DEFAULT_HIGHEST_SALE_LOT}
+    def sale_lots(text: str) -> set[int | str]:
+        return {lot for lot in lot_designations(text) if isinstance(lot, str) or 1 <= lot <= DEFAULT_HIGHEST_SALE_LOT}
 
     named = sale_lots(excerpt).union(*(sale_lots(text) for text in context.dossier_pages.values()))
     return ONE_LOT if sale_lots(excerpt) or len(named) >= 2 else None
