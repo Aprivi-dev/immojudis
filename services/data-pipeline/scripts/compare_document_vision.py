@@ -79,6 +79,7 @@ from src.document_vision import (  # noqa: E402
     ONE_LOT_GUARDED,
     OTHER_PAGE,
     PAST_VISITS,
+    PROMPT_VERSION,
     REJECTED,
     SEVERAL_LOTS,
     SYSTEM_PROMPT,
@@ -89,13 +90,13 @@ from src.document_vision import (  # noqa: E402
     Verdict,
     build_document_excerpt,
     build_user_prompt,
-    cited_pages,
     compare_with_sale,
     final_verdicts,
     page_field_score,
     parse_reading,
     primary_verdicts,
     response_schema,
+    second_reader_pages,
     select_vision_pages,
 )
 from src.enrichment.anthropic_reader import (  # noqa: E402
@@ -571,7 +572,11 @@ def compare_sale(
         fields = [name for name, verdict in candidates.items() if verdict.status == CANDIDATE]
         second_reading = None
         if fields:
-            second_excerpt, second_pages = build_document_excerpt(pdfs, cited_pages(candidates))
+            second_excerpt, second_pages = build_document_excerpt(
+                pdfs, second_reader_pages(candidates, context, reading.several_lots is True)
+            )
+            # Une page précédente ajoutée pour le second lecteur lui est envoyée : ses citations y sont cherchées.
+            context.page_texts.update({ref: context.dossier_pages[ref] for ref in second_pages if ref not in context.page_texts})
             second_reading = second.read(
                 build_user_prompt(second_pages, fields, today=today, sold_lot=context.sold_lot),
                 second_excerpt,
@@ -755,6 +760,7 @@ def render_report(report: BenchReport) -> str:
         "",
         f"- Échantillon demandé : {report.sample} ; ventes candidates : {report.candidates} ; "
         f"comparées : {report.processed} ; plafond de dépense : {report.max_usd} $.",
+        f"- Version du prompt : {PROMPT_VERSION}.",
         f"- Arrêt : {report.stop_reason or 'aucun (banc complet)'}.",
     ]
     for reason, count in sorted(report.skipped.items()):

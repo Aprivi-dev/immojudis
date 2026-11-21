@@ -617,3 +617,31 @@ def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) 
     assert report.fields[HABITABLE].statuses["accepted"] == 1
     assert report.fields[HABITABLE].quote_matches == {"ocr_du_banc": 1}
     assert read == [bench.PageRef(1, 1)]
+
+
+def test_report_shows_the_prompt_version() -> None:
+    assert f"- Version du prompt : {bench.PROMPT_VERSION}." in bench.render_report(bench.BenchReport(sample=1))
+
+
+def test_second_reader_gets_the_page_before_the_cited_one_when_the_sold_lot_is_designated() -> None:
+    title = "Designation des biens mis en vente aux encheres publiques. DEUXIEME LOT"
+    description = "Un appartement de 3 pieces principales, au deuxieme etage de l'immeuble."
+    pdf = _pdf(title, description)
+    manifest = [_manifest_item(URL, "cahier_conditions_vente", {1: title, 2: description}, pdf)]
+    selection = {"status": "selected", "lot_number": 2, "lot_count": 2}
+    row = _row(result=manifest, raw_payload={"source_lot_selection": selection}, quality_flags=["multi_lot_sale"])
+    primary = FakeModel({ROOMS: (3, "Un appartement de 3 pieces principales")})
+    second = FakeModel({})
+
+    bench.run_bench(
+        FakeConnection({SALE_ID: row}),
+        _reader("principal", primary),
+        _reader("second", second),
+        lambda row, urls: {URL: pdf},
+        sample=1,
+        today=TODAY,
+    )
+
+    assert primary.calls[0]["pages"] == [description]
+    # La page citée et celle qui la précède, où se trouve le titre du lot vendu.
+    assert second.calls[0]["pages"] == [title, description]
