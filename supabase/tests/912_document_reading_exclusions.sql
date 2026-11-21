@@ -3,7 +3,7 @@
 -- laisse l'exclusion en place, une seule exclusion par URL source.
 begin;
 
-select plan(11);
+select plan(12);
 
 select has_table('public', 'document_reading_exclusions', 'the exclusions table exists');
 
@@ -38,6 +38,15 @@ select ok(
   and has_table_privilege('service_role', 'public.document_reading_exclusions', 'INSERT')
   and not has_table_privilege('service_role', 'public.document_reading_exclusions', 'UPDATE'),
   'the service role reads and adds exclusions, and never rewrites one'
+);
+
+select ok(
+  not has_table_privilege('service_role', 'public.document_reading_exclusions', 'UPDATE')
+  and not has_table_privilege('service_role', 'public.document_reading_exclusions', 'DELETE')
+  and not has_table_privilege('service_role', 'public.document_reading_exclusions', 'TRUNCATE')
+  and not has_table_privilege('service_role', 'public.document_reading_exclusions', 'REFERENCES')
+  and not has_table_privilege('service_role', 'public.document_reading_exclusions', 'TRIGGER'),
+  'the service role can neither update, delete nor truncate an exclusion'
 );
 
 set local role service_role;

@@ -18,6 +18,8 @@
 -- s'arrête avant toute lecture : à faire seulement avec le code qui ne la lit plus).
 begin;
 
+set local lock_timeout = '5s';
+
 create table if not exists public.document_reading_exclusions (
   source_url text primary key check (char_length(source_url) between 8 and 2000),
   reason text not null check (reason in ('opposition', 'correction', 'autre')),
@@ -33,7 +35,7 @@ create index if not exists document_reading_exclusions_request_idx
   where data_subject_request_id is not null;
 
 alter table public.document_reading_exclusions enable row level security;
-revoke all on table public.document_reading_exclusions from public, anon, authenticated;
+revoke all on table public.document_reading_exclusions from public, anon, authenticated, service_role;
 grant select, insert on table public.document_reading_exclusions to service_role;
 
 commit;
