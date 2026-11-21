@@ -399,7 +399,9 @@ export function PrivacyPage({
               par leur rôle autant que possible : ce remplacement est automatique et peut laisser
               passer un nom. Si vous êtes cité dans une annonce, en cas d’oubli notamment, écrivez à{" "}
               {legalValue(publisher.contactEmail)} pour demander la rectification ou le retrait,
-              sans créer de compte.
+              sans créer de compte. Les pièces des ventes judiciaires sont lues, sans que les noms
+              en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis (voir «
+              Destinataires et sous-traitants »).
             </p>
             <p className="mt-3">
               Les photos du bien tirées des pièces d’une vente, notamment du procès-verbal
@@ -431,7 +433,8 @@ export function PrivacyPage({
               l’Institut national de l’information géographique et forestière (IGN : Base Adresse
               Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
               prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi que les réponses
-              des professionnels contactés (Replicate, États-Unis), le service de rapport d’erreurs
+              des professionnels contactés (Replicate, États-Unis), le prestataire d’IA qui lit les
+              pièces des ventes judiciaires (Anthropic, États-Unis), le service de rapport d’erreurs
               lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse ni contenu de
               requête), aux avocats référencés uniquement lorsqu’une mise en relation est demandée
               et à l’intermédiaire professionnel contacté par Immojudis après validation par un
@@ -473,6 +476,26 @@ export function PrivacyPage({
               {legalValue(publisher.contactEmail)}.
             </p>
             <p className="mt-3">
+              Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5, qui
+              lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente,
+              procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le
+              nombre de pièces, l’occupation et les dates de visite. Les pages de ces pièces lui
+              sont transmises telles qu’elles sont publiées, sans retirer les noms : elles peuvent
+              contenir des données personnelles, notamment le nom des parties à la procédure (la
+              personne dont le bien est saisi) et celui des occupants. Selon les conditions
+              commerciales d’Anthropic, notre cocontractant est Anthropic Ireland, Limited, à Dublin
+              (Irlande), pour un client établi dans l’Espace économique européen ; ces données sont
+              traitées aux États-Unis, où est établie Anthropic, PBC (San Francisco). Ce transfert
+              est encadré par les clauses contractuelles types adoptées par la Commission européenne
+              (décision (UE) 2021/914 du 4 juin 2021), prévues par l’accord de traitement des
+              données qu’Anthropic intègre à ses conditions commerciales. Ces conditions interdisent
+              à Anthropic d’entraîner ses modèles sur ces données. Anthropic supprime les pièces
+              reçues et les résultats produits dans les 30 jours ; il peut les garder jusqu’à 2 ans
+              si ses contrôles automatiques les signalent comme contraires à sa politique
+              d’utilisation, et plus longtemps si la loi l’impose. Pour toute question, ou pour vous
+              opposer à ce traitement, écrivez à {legalValue(publisher.contactEmail)}.
+            </p>
+            <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
               transmises au Bureau de recherches géologiques et minières (Géorisques) et à
               l’Institut national de l’information géographique et forestière (API Carto, Géoportail
@@ -491,11 +514,13 @@ export function PrivacyPage({
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
               Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
-              pays, notamment Resend, le prestataire d’IA (Replicate), GitHub et Google (Google
-              Analytics, uniquement avec votre accord ; Google est certifié au cadre de protection
-              des données UE–États-Unis). Pour obtenir une copie des garanties qui existent, écrivez
-              à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire. Pour
-              Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).
+              pays, notamment Resend, les prestataires d’IA (Replicate et Anthropic), GitHub et
+              Google (Google Analytics, uniquement avec votre accord ; Google est certifié au cadre
+              de protection des données UE–États-Unis). Pour obtenir une copie des garanties qui
+              existent, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est
+              nécessaire. Pour Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).
+              Pour Anthropic, le transfert repose sur les clauses contractuelles types (voir
+              ci-dessus).
             </p>
           </PrivacySection>
 

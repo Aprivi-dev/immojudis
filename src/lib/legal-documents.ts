@@ -201,6 +201,34 @@ export const FULL_SALE_UNLOCK_EFFECTIVE_DATE = "15 novembre 2026";
  */
 export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-21.1 : nouveau sous-traitant Anthropic (décision du propriétaire du
+ * 21/11/2026, option « pages telles quelles »). À publier AVANT le premier envoi d'une pièce à Anthropic.
+ *
+ * - Rôle : lecture par IA (Claude Haiku 5.5 et Claude Sonnet 5.5, par l'API d'Anthropic) des pièces publiques
+ *   des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics), pour en
+ *   extraire surface, terrain, nombre de pièces, occupation et dates de visite.
+ * - Données : contenu des pièces, pages transmises telles quelles, y compris le nom des parties qui y figurent
+ *   (débiteur saisi, occupants).
+ * - Pays : États-Unis (Anthropic, PBC). Cocontractant d'un client établi dans l'EEE selon les conditions
+ *   commerciales d'Anthropic (en vigueur le 17/06/2025) : Anthropic Ireland, Limited.
+ * - Garantie du transfert : clauses contractuelles types (décision (UE) 2021/914, modules 2 et 3), prévues par
+ *   l'accord de traitement des données d'Anthropic (Data Processing Addendum, en vigueur le 24/02/2025),
+ *   intégré aux conditions commerciales. Pages consultées le 21/11/2026. Aucune certification au cadre de
+ *   protection des données UE–États-Unis n'a été vérifiée : le texte n'en parle pas.
+ * - Conservation chez Anthropic (centre de confidentialité, article du 01/07/2026) : entrées et sorties de
+ *   l'API supprimées dans les 30 jours ; jusqu'à 2 ans si elles sont signalées comme contraires à la
+ *   politique d'utilisation ; plus longtemps si la loi l'impose.
+ * - Hors champ : les pièces jointes envoyées par les avocats restent lues à la main ; les textes sur la
+ *   validation humaine et les messages aux professionnels ne changent pas.
+ *
+ * La version 2026-11-15.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
+ * avec l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de
+ * rédaction ; à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte
+ * du texte). Relecture `juridique-rgpd` et d'un avocat à faire.
+ */
+export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -215,9 +243,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-15.1",
-    sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
-    effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+    version: "2026-11-21.1",
+    sha256: "1749868ded01966aa2d7c65fc96181308dd44c5c7a02b933d4cdda7fa2e07ae6",
+    effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

@@ -8,6 +8,7 @@ import {
   FREE_UNLOCK_EFFECTIVE_DATE,
   FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
+  PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
@@ -224,16 +225,18 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-15.1 (déblocage de vente, fin de l'essai) ; les 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne prévue, la même
-    // que celle des CGU 2026-11-15.1.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-14.1");
+  it("la politique de confidentialité est en version 2026-11-21.1 (Anthropic, lecture des pièces des ventes) ; les 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-21.1");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avant le premier
+    // envoi d'une pièce à Anthropic.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-14.1",
       "2026-11-01.3",
       "2026-11-01.2",
       "2026-11-01.1",
@@ -991,10 +994,10 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données d’usage).",
     );
-    // Seul le paragraphe sur Resend cite les clauses contractuelles types, vérifiées dans son accord de
-    // sous-traitance ; sa certification au cadre UE–États-Unis, non vérifiée sur la liste officielle, n'est
-    // pas affirmée.
-    expect(text.split("clauses contractuelles types")).toHaveLength(2);
+    // Seuls Resend et Anthropic sont dits encadrés par les clauses contractuelles types, vérifiées dans
+    // leur accord de sous-traitance (paragraphes dédiés, plus le rappel d'Anthropic dans « Transferts ») ;
+    // aucune certification au cadre UE–États-Unis, non vérifiée sur la liste officielle, n'est affirmée.
+    expect(text.split("clauses contractuelles types")).toHaveLength(4);
     expect(text).toContain(
       "journaux de remise 30 jours, aux États-Unis. Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), intégrées à son accord de sous-traitance.",
     );
@@ -1018,6 +1021,33 @@ describe("politique de confidentialité", () => {
       "Ces données sont transférées aux États-Unis. À la date de cette version, ce transfert ne repose sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays. Nous mettrons cette page à jour dès que ces points seront établis. Pour toute question, ou pour vous opposer à ce traitement, écrivez à contact@immojudis.example.",
     );
     expect(text).not.toContain("Deux points restent à confirmer");
+  });
+
+  it("déclare Anthropic, ses modèles, les pièces transmises sans retirer les noms et la garantie vérifiée", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "le prestataire d’IA qui lit les pièces des ventes judiciaires (Anthropic, États-Unis)",
+    );
+    expect(text).toContain(
+      "Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5, qui lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates de visite.",
+    );
+    expect(text).toContain(
+      "Les pages de ces pièces lui sont transmises telles qu’elles sont publiées, sans retirer les noms : elles peuvent contenir des données personnelles, notamment le nom des parties à la procédure (la personne dont le bien est saisi) et celui des occupants.",
+    );
+    expect(text).toContain(
+      "Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), prévues par l’accord de traitement des données qu’Anthropic intègre à ses conditions commerciales.",
+    );
+    expect(text).toContain(
+      "Anthropic supprime les pièces reçues et les résultats produits dans les 30 jours ; il peut les garder jusqu’à 2 ans si ses contrôles automatiques les signalent comme contraires à sa politique d’utilisation, et plus longtemps si la loi l’impose.",
+    );
+    expect(text).toContain("les prestataires d’IA (Replicate et Anthropic)");
+    expect(text).toContain(
+      "Pour Anthropic, le transfert repose sur les clauses contractuelles types (voir ci-dessus).",
+    );
+    // Les personnes citées dans les pièces sont informées dans leur propre section.
+    expect(text).toContain(
+      "Les pièces des ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis",
+    );
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
