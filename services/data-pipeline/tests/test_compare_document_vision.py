@@ -321,16 +321,84 @@ def test_document_download_logs_no_url(monkeypatch: pytest.MonkeyPatch) -> None:
         logger.setLevel(previous)
 
 
-def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:
-    report = bench.run_bench(
-        FakeConnection({SALE_ID: _row()}),
-        _reader("principal", FakeModel({})),
+WORD_URL = "https://example.test/cahier.docx"
+RICH_PAGE = (
+    "Surface habitable de 50 m2 ; 3 pieces ; le bien est loue par bail ; visite le 3 decembre ; superficie Carrez "
+    "de 49 m2 ; terrain d'une contenance de 300 m2. " + FILLER
+)
+
+
+def _manifest_item(url: str, document_type: str, pages: dict[int, str], content: bytes | None = None) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "url": url,
+        "document_type": document_type,
+        "pages": [{"page": number, "text": text} for number, text in pages.items()],
+    }
+    if content is not None:
+        item["sha256"] = hashlib.sha256(content).hexdigest()
+    return item
+
+
+def _bench_one(manifest: list[dict[str, Any]], fetched: Mapping[str, bytes], primary: FakeModel | None = None) -> bench.BenchReport:
+    def fetch(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str, bytes]:
+        return {url: content for url, content in fetched.items() if url in urls}
+
+    return bench.run_bench(
+        FakeConnection({SALE_ID: _row(result=manifest)}),
+        _reader("principal", primary or FakeModel({})),
         _reader("second", FakeModel({})),
-        lambda row, urls: {URL: _pdf("autre version", DESCRIPTION)},
+        fetch,
         sample=1,
         today=TODAY,
     )
-    assert report.skipped["pièces modifiées ou illisibles depuis leur lecture"] == 1
+
+
+def test_selection_only_keeps_pages_of_pieces_whose_pdf_is_available() -> None:
+    # Défaut du banc V2 en production (21/11/2026) : les pages étaient choisies avant le téléchargement. Une pièce
+    # sans PDF (document Word, ou pièce non téléchargée) aux pages plus riches prenait toutes les places, seules ses
+    # pages étaient demandées, et la vente sortait en « pièces modifiées ou illisibles ».
+    manifest = [
+        _manifest_item(WORD_URL, "cahier_conditions_vente", {number: RICH_PAGE for number in range(1, 13)}),
+        _manifest_item(URL, "cahier_conditions_vente", {1: FILLER, 2: DESCRIPTION}, PDF),
+    ]
+    primary = FakeModel({HABITABLE: (62.4, PRIVATE_QUOTE)})
+
+    report = _bench_one(manifest, {URL: PDF}, primary)
+
+    assert report.processed == 1 and not report.skipped
+    assert primary.calls[0]["pages"] == [DESCRIPTION]
+    assert report.pages.unusable == {bench.NO_PDF: 12}
+    assert "pièce sans PDF 12, PDF modifié depuis la lecture 0, PDF illisible 0, page hors bornes 0" in (
+        bench.render_report(report)
+    )
+
+
+def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:
+    report = _bench_one(MANIFEST, {URL: _pdf("autre version", DESCRIPTION)})
+    assert report.skipped == {"aucune page utilisable (PDF modifié depuis la lecture)": 1}
+
+
+def test_sale_without_any_usable_page_says_why() -> None:
+    no_pdf = _bench_one(MANIFEST, {})
+    assert no_pdf.skipped == {"aucune page utilisable (pièce sans PDF)": 1}
+
+    one_page = _pdf(DESCRIPTION)
+    beyond = [_manifest_item(URL, "pv_huissier", {1: FILLER, 2: DESCRIPTION}, one_page)]
+    assert _bench_one(beyond, {URL: one_page}).skipped == {"aucune page utilisable (page hors bornes)": 1}
+
+    broken = b"%PDF-1.7 tronque"
+    unreadable = [_manifest_item(URL, "pv_huissier", {1: DESCRIPTION}, broken)]
+    report = _bench_one(unreadable, {URL: broken})
+    assert report.skipped == {"aucune page utilisable (PDF illisible)": 1}
+
+
+def test_pages_beyond_the_pdf_are_left_out_and_counted() -> None:
+    one_page = _pdf(DESCRIPTION)
+    manifest = [_manifest_item(URL, "pv_huissier", {1: DESCRIPTION, 7: RICH_PAGE}, one_page)]
+    primary = FakeModel({})
+    report = _bench_one(manifest, {URL: one_page}, primary)
+    assert report.processed == 1 and primary.calls[0]["pages"] == [DESCRIPTION]
+    assert report.pages.unusable == {bench.PAGE_OUT_OF_RANGE: 1}
 
 
 def test_multi_lot_sale_without_identified_lot_rejects_values() -> None:

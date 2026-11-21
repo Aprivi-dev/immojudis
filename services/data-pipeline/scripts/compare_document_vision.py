@@ -264,6 +264,8 @@ class PageStats:
     capped_sales: int = 0
     # Pages du dossier sans texte exploitable (scan non lu), hors pages blanches et pages de photographies réglées.
     unread: int = 0
+    # Pages qui parlent des champs mais que l'extrait ne peut pas porter, par motif (:func:`usable_documents`).
+    unusable: Counter[str] = field(default_factory=Counter)
 
 
 @dataclass
@@ -362,21 +364,51 @@ def sale_context(raw_payload: Mapping[str, Any], property_type: object, city: ob
     return SaleContext(sold_lot=sold_lot, lot_situation=situation)
 
 
-def readable_documents(manifest: object, pdfs: Mapping[str, bytes]) -> dict[int, bytes]:
-    """Le PDF de chaque pièce, seulement s'il est celui dont le texte a été lu (même empreinte quand elle est connue)."""
-    by_url: dict[str, bytes] = {}
-    for item in manifest if isinstance(manifest, list) else []:
-        if not isinstance(item, Mapping):
-            continue
-        url = item.get("url")
-        content = pdfs.get(url) if isinstance(url, str) else None
+# Pourquoi une page qui parle des champs ne peut pas entrer dans l'extrait envoyé au modèle.
+NO_PDF = "pièce sans PDF"  # pièce non téléchargée, ou qui n'est pas un PDF (document Word)
+PDF_CHANGED = "PDF modifié depuis la lecture"  # empreinte différente de celle du texte lu
+PDF_UNREADABLE = "PDF illisible"  # pymupdf ne l'ouvre pas
+PAGE_OUT_OF_RANGE = "page hors bornes"  # numéro de page au-delà des pages du PDF
+UNUSABLE_REASONS = (NO_PDF, PDF_CHANGED, PDF_UNREADABLE, PAGE_OUT_OF_RANGE)
+
+
+def usable_documents(
+    manifest: object, documents: Sequence[ReadingDocument], fetched: Mapping[str, bytes], unreadable: Counter[str]
+) -> tuple[dict[int, bytes], list[ReadingDocument], Counter[str]]:
+    """Les pièces que l'extrait peut porter : leur PDF par index, ces pièces réduites aux pages que le PDF contient,
+    et le décompte, par motif, des pages qui parlent des champs et qui sont écartées.
+
+    Un PDF ne sert que s'il est celui dont le texte a été lu (même empreinte quand le manifeste la donne) et que
+    pymupdf l'ouvre. Les numéros de page du manifeste comptent à partir de 1 (``extract_pdf_pages``) : la page n est
+    la page d'indice n - 1 pour pymupdf, comme dans ``build_document_excerpt``.
+    """
+    items = manifest if isinstance(manifest, list) else []
+    expected = {clean_text(item.get("url")): item.get("sha256") for item in items if isinstance(item, Mapping)}
+    pdfs: dict[int, bytes] = {}
+    kept: list[ReadingDocument] = []
+    unusable: Counter[str] = Counter()
+    for doc in documents:
+        scored = [number for number, text in doc.pages.items() if page_field_score(text) > 0]
+        content = fetched.get(doc.url) if doc.url else None
+        sha256 = expected.get(doc.url)
         if content is None:
+            unusable[NO_PDF] += len(scored)
             continue
-        expected = item.get("sha256")
-        if isinstance(expected, str) and expected and hashlib.sha256(content).hexdigest() != expected:
+        if isinstance(sha256, str) and sha256 and hashlib.sha256(content).hexdigest() != sha256:
+            unusable[PDF_CHANGED] += len(scored)
             continue
-        by_url[str(url)] = content
-    return {doc.index: by_url[doc.url] for doc in documents_from_manifest(manifest) if doc.url in by_url}
+        document = _open_pdf(content, unreadable)
+        if document is None:
+            unusable[PDF_UNREADABLE] += len(scored)
+            continue
+        with document:
+            page_count = document.page_count
+        unusable[PAGE_OUT_OF_RANGE] += sum(1 for number in scored if not 1 <= number <= page_count)
+        pages = {number: text for number, text in doc.pages.items() if 1 <= number <= page_count}
+        if pages:
+            pdfs[doc.index] = content
+            kept.append(ReadingDocument(doc.index, doc.label, doc.url, doc.document_type, pages))
+    return pdfs, kept, +unusable
 
 
 def _manifest_pages(manifest: object) -> list[tuple[str | None, Mapping[str, Any]]]:
@@ -491,23 +523,34 @@ def compare_sale(
     all_documents: list[ReadingDocument] = documents_from_manifest(manifest)
     # Une page qui s'adresse à un modèle n'est jamais lue (même détecteur que la lecture des pièces).
     documents = without_pages(all_documents, injected_pages(all_documents))
-    pages = select_vision_pages(documents)
-    if not pages:
+    # Les pièces d'abord, la sélection ensuite : elle ne choisit que des pages qu'un PDF disponible porte. Choisies
+    # avant le téléchargement, les pages d'une pièce sans PDF (document Word, pièce non téléchargée) prenaient des
+    # places, ou toutes, et l'extrait restait vide.
+    urls = sorted(
+        {doc.url for doc in documents if doc.url and any(page_field_score(text) > 0 for text in doc.pages.values())}
+    )
+    if not urls:
         return None, "aucune page sur les champs visés"
-    urls = sorted({doc.url for doc in documents if doc.url and any(ref.document == doc.index for ref in pages)})
     try:
-        pdfs = readable_documents(manifest, fetch_pdfs(row, urls))
+        fetched = fetch_pdfs(row, urls)
     except Exception:
         return None, "pièces non téléchargées"
+    unreadable: Counter[str] = Counter()
+    pdfs, usable, unusable = usable_documents(manifest, documents, fetched, unreadable)
+    pages = select_vision_pages(usable)
+    if not pages:
+        main = unusable.most_common(1)[0][0] if unusable else "aucune page sur les champs visés"
+        return None, f"aucune page utilisable ({main})"
     excerpt, pages = build_document_excerpt(pdfs, pages)
     if not pages:
-        return None, "pièces modifiées ou illisibles depuis leur lecture"
-    with_field_words = sum(1 for doc in documents for text in doc.pages.values() if page_field_score(text) > 0)
+        return None, "extrait vide"
+    with_field_words = sum(1 for doc in usable for text in doc.pages.values() if page_field_score(text) > 0)
     page_stats = PageStats(
         with_field_words=with_field_words,
         sent=len(pages),
         capped_sales=int(with_field_words > MAX_PAGES),
         unread=unread_page_count(manifest, all_documents),
+        unusable=unusable,
     )
     context = sale_context(raw_payload, row.get("property_type"), row.get("city"), row.get("quality_flags"))
     texts = {doc.index: doc.pages for doc in documents}
@@ -516,7 +559,6 @@ def compare_sale(
     context.dossier_texts = tuple(text for doc in all_documents for text in doc.pages.values())
     context.dossier_pages = {PageRef(doc.index, number): text for doc in documents for number, text in doc.pages.items()}
     context.ocr_pages = ocr_read_pages(manifest, documents)
-    unreadable: Counter[str] = Counter()
     context.image_pages = image_pages(pdfs, pages, context.ocr_pages, unreadable)
     context.ocr_reader = tesseract_page_reader(pdfs, unreadable) if context.image_pages else None
     with llm_request_context(
@@ -626,6 +668,7 @@ def run_bench(
         report.pages.sent += result.pages.sent
         report.pages.capped_sales += result.pages.capped_sales
         report.pages.unread += result.pages.unread
+        report.pages.unusable.update(result.pages.unusable)
         report.unreadable.update(result.unreadable)
         for name, verdict in result.primary.items():
             if verdict.status == CANDIDATE and verdict.detail:
@@ -738,10 +781,13 @@ def render_report(report: BenchReport) -> str:
         "",
         "### Diagnostic",
         "",
-        f"- Pages : {pages.with_field_words} parlent des champs, {pages.sent} envoyées au lecteur principal ; "
-        f"ventes dont le plafond de {MAX_PAGES} pages en a laissé de côté : {pages.capped_sales} ; pages sans texte "
-        f"exploitable (scan non lu), que la sélection ne peut pas choisir : {pages.unread}.",
-        "- Pièces que pymupdf n'a pas ouvertes pendant la vérification, par type d'erreur : "
+        f"- Pages : {pages.with_field_words} parlent des champs dans un PDF utilisable, {pages.sent} envoyées au "
+        f"lecteur principal ; ventes dont le plafond de {MAX_PAGES} pages en a laissé de côté : {pages.capped_sales} ; "
+        f"pages sans texte exploitable (scan non lu), que la sélection ne peut pas choisir : {pages.unread}.",
+        "- Pages qui parlent des champs, écartées faute de PDF utilisable : "
+        + ", ".join(f"{reason} {pages.unusable[reason]}" for reason in UNUSABLE_REASONS)
+        + ".",
+        "- Pièces que pymupdf n'a pas ouvertes, par type d'erreur : "
         + (", ".join(f"{kind} {count}" for kind, count in sorted(report.unreadable.items())) or "aucune")
         + ".",
         "",
