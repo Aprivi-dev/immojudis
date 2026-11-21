@@ -30,6 +30,23 @@ TOKEN_PRICES = {
         Decimal('0.30'), Decimal('2.50'),
         'https://replicate.com/google/gemini-2.5-flash; checked 2026-09-21',
     ),
+    # Lecture des pièces par l'API Anthropic (src/enrichment/anthropic_reader.py). La réflexion adaptative est
+    # facturée en sortie : elle tient dans max_tokens, le plafond de sortie réservé.
+    'claude-haiku-5-5': (
+        Decimal('0.10'), Decimal('0.50'),
+        'https://platform.claude.com/docs/en/about-claude/pricing; prompts up to 100,000 tokens; checked 2026-11-21',
+    ),
+    'claude-sonnet-5-5': (
+        Decimal('2'), Decimal('10'),
+        'https://platform.claude.com/docs/en/about-claude/pricing; checked 2026-11-21',
+    ),
+}
+# Palier haut d'un modèle dont le prix change au-delà d'un nombre de jetons d'entrée PAR REQUÊTE : (seuil, prix
+# d'entrée, prix de sortie au-delà). Une réservation n'est jamais faite au-delà du seuil (jumelle de la borne
+# d'entrée de reserve_pipeline_prediction, 20261207100000) ; une requête qui le dépasse quand même (plafond
+# d'entrée estimé trop bas) coûte le prix haut, sur toute la requête.
+TOKEN_PRICE_INPUT_LIMITS = {
+    'claude-haiku-5-5': (100_000, Decimal('0.50'), Decimal('2.50')),
 }
 
 # Global daily LLM budget shared by the pipeline, backfills and the information
@@ -259,12 +276,19 @@ def _spend_groups_via_rest(settings: dict, since: datetime) -> list[tuple[str, i
     return [(model, *values) for model, values in groups.items()]
 
 
-def enforce_daily_budget(model: str, *, input_token_ceiling: int, output_token_ceiling: int) -> None:
+def enforce_daily_budget(
+    model: str, *, input_token_ceiling: int, output_token_ceiling: int, ceiling_in_ledger: bool = False
+) -> None:
     """Refuse a request that would take today's LLM spend over LLM_DAILY_BUDGET_EUR.
 
     Applies to every execution mode. Without any configured storage (local
     development and unit tests) there is no ledger to total and the check is
     skipped; production storage is already mandatory in reserve_llm_request.
+
+    ``ceiling_in_ledger`` : la ligne de la requête porte déjà ses plafonds dans ``llm_usage_events``
+    (``llm_requests.record_llm_request_ceiling``), écrits AVANT ce contrôle. Le total lu la compte donc déjà :
+    elle n'est pas ajoutée une seconde fois. Écrire puis contrôler borne les appels concurrents : le dernier
+    écrit voit tous les autres, et le total des appels acceptés reste sous le budget.
     """
     settings = load_settings()
     since = _utc_day_start()
@@ -280,17 +304,49 @@ def enforce_daily_budget(model: str, *, input_token_ceiling: int, output_token_c
     budget = llm_daily_budget_eur()
     spent = spent_today_eur(groups)
     request_cost = _request_cost_eur(model, max(0, input_token_ceiling), max(0, output_token_ceiling))
-    if spent + request_cost > budget:
+    if spent + (Decimal(0) if ceiling_in_ledger else request_cost) > budget:
         raise PipelineBudgetExhausted(
             f'Daily LLM budget exhausted: {spent:.4f} EUR spent of {budget} EUR, '
             f'request needs up to {request_cost:.4f} EUR'
         )
 
 
-def reserve_prediction(model: str, *, input_token_ceiling: int, output_token_ceiling: int) -> str | None:
+def require_lower_price_tier(model: str, input_token_ceiling: int) -> None:
+    """Refuse une requête au-delà du seuil d'un modèle à deux paliers (son prix haut n'est jamais réservé)."""
+    tier = TOKEN_PRICE_INPUT_LIMITS.get(model)
+    if tier is not None and input_token_ceiling > tier[0]:
+        raise LLMModelNotPriced(
+            f'Model {model!r} is priced up to {tier[0]} input tokens per request; '
+            f'refusing a request of {input_token_ceiling}'
+        )
+
+
+def ledger_token_counts(model: str, input_tokens: int, output_tokens: int) -> tuple[int, int]:
+    """Jetons à noter au registre quotidien, qui compte chaque ligne au prix du palier bas du modèle.
+
+    Une requête facturée au palier haut (entrée réelle au-delà du seuil) y est notée en jetons équivalents au palier
+    bas, pour que le total du jour garde son coût réel.
+    """
+    tier = TOKEN_PRICE_INPUT_LIMITS.get(model)
+    if tier is None or input_tokens <= tier[0]:
+        return input_tokens, output_tokens
+    low_input, low_output = TOKEN_PRICES[model][0], TOKEN_PRICES[model][1]
+    return (
+        math.ceil(Decimal(input_tokens) * tier[1] / low_input),
+        math.ceil(Decimal(output_tokens) * tier[2] / low_output),
+    )
+
+
+def reserve_prediction(
+    model: str, *, input_token_ceiling: int, output_token_ceiling: int, ceiling_in_ledger: bool = False
+) -> str | None:
     require_priced_model(model)
+    require_lower_price_tier(model, input_token_ceiling)
     enforce_daily_budget(
-        model, input_token_ceiling=input_token_ceiling, output_token_ceiling=output_token_ceiling
+        model,
+        input_token_ceiling=input_token_ceiling,
+        output_token_ceiling=output_token_ceiling,
+        ceiling_in_ledger=ceiling_in_ledger,
     )
     run_id = autonomous_run_id()
     if not run_id:
@@ -336,7 +392,9 @@ def _prediction_cost(model: str, prediction: dict, metrics: dict) -> tuple[Decim
     if counts is None:
         return None, prices[2]
     metrics['input_token_count'], metrics['output_token_count'] = counts
-    return (Decimal(counts[0]) * prices[0] + Decimal(counts[1]) * prices[1]) / Decimal(1_000_000), prices[2]
+    tier = TOKEN_PRICE_INPUT_LIMITS.get(model)
+    input_price, output_price = (tier[1], tier[2]) if tier and counts[0] > tier[0] else (prices[0], prices[1])
+    return (Decimal(counts[0]) * input_price + Decimal(counts[1]) * output_price) / Decimal(1_000_000), prices[2]
 
 
 def record_prediction(prediction: dict, *, reservation: str | None = None, model: str | None = None) -> None:

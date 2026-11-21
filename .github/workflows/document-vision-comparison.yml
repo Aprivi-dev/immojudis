@@ -1,0 +1,87 @@
+name: Document vision comparison
+
+# Banc de la lecture des pièces par Claude (lot V1, mode fantôme) : services/data-pipeline/scripts/
+# compare_document_vision.py relit les pièces de N ventes à venir déjà lues par la chaîne actuelle (Claude Haiku 5.5
+# lit un extrait PDF d'au plus dix pages, Claude Sonnet 5.5 relit les seules pages citées) et compare le verdict par
+# champ à la fiche. Lecture seule sur les ventes : rien n'est écrit sur une fiche. Les appels au modèle sont réservés
+# et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget quotidien du pipeline ; un refus du
+# budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc proprement. Rapport agrégé (sans identifiant
+# de vente, citation ni URL de pièce) dans le résumé de l'exécution et en artefact. Aucun déclenchement automatique.
+on:
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: "Recent sales to compare (1-30)"
+        required: true
+        default: "10"
+        type: string
+      max_usd:
+        description: "Spending cap of this run in USD, counted as EUR (above 0, at most 5, the shared daily budget)"
+        required: true
+        default: "3"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-document-vision-comparison
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch would run
+    # that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
+    name: Compare document readings by vision
+    runs-on: ubuntu-24.04
+    # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
+    environment: Production
+    # 30 ventes au plus, deux appels et le téléchargement poli des pièces par vente.
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
+      PDF_HOST_MIN_DELAY_SECONDS: 2
+      # Same Encheres Publiques gate as the pipeline: its documents are skipped unless both variables allow them.
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Run the read-only comparison
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BENCH_SAMPLE: ${{ inputs.sample }}
+          BENCH_MAX_USD: ${{ inputs.max_usd }}
+        run: >
+          python -m scripts.compare_document_vision
+          --sample "$BENCH_SAMPLE"
+          --max-usd "$BENCH_MAX_USD"
+          --output "$RUNNER_TEMP/document-vision-report.md"
+
+      - name: Upload the aggregated report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: document-vision-report
+          path: ${{ runner.temp }}/document-vision-report.md
+          if-no-files-found: ignore
+          retention-days: 30

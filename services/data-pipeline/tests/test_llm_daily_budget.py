@@ -83,7 +83,8 @@ def test_spend_counts_tokens_unmetered_requests_and_pinned_model() -> None:
         Decimal("0.0013785")
         + pipeline_usage.UNMETERED_REQUEST_COST_EUR
         + 2 * pipeline_usage.PINNED_REQUEST_COST_USD
-        + Decimal("0.30")
+        # Dearest known input rate: Claude Sonnet 5.5, 2 USD per million tokens (0.30 before 20261207100000).
+        + Decimal("2")
     )
     assert spent == expected
 

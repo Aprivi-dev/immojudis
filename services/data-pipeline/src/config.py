@@ -427,6 +427,11 @@ def load_settings() -> dict[str, str | float | None]:
         "information_agent_evidence_ocr_enabled": env_flag("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", True),
         # Passe sémantique (modèle de texte) sur ces pièces : éteinte par défaut.
         "information_agent_evidence_semantic_enabled": env_flag("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", False),
+        # Lecture des pièces par l'API Anthropic (src/document_vision.py) : éteinte par défaut. Lot V1 : seul le banc
+        # de comparaison lit les pièces, rien n'est écrit sur les fiches ; l'interrupteur n'est encore branché sur
+        # aucune écriture.
+        "document_vision_enabled": env_flag("DOCUMENT_VISION_ENABLED", False),
+        "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY"),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
         "replicate_dynamic_thinking": env_flag("REPLICATE_DYNAMIC_THINKING", False),
