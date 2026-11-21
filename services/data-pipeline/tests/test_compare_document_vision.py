@@ -605,6 +605,25 @@ def test_workflow_uploads_the_differences_in_their_own_artifact_kept_seven_days(
     assert "name: document-vision-report" in text and "retention-days: 30" in text
 
 
+def test_workflow_gives_the_relay_to_the_bench_step_only_as_the_pipeline_does() -> None:
+    workflows = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+    text = (workflows / "document-vision-comparison.yml").read_text(encoding="utf-8")
+    pipeline = (workflows / "data-pipeline.yml").read_text(encoding="utf-8")
+    url = "SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}"
+    token = "SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}"
+    # Same origin as the pipeline: the address is a variable, the token a secret.
+    assert url in pipeline and token in pipeline
+    header, *steps = text.split("\n      - name: ")
+    names = ("SOURCE_FETCH_RELAY_URL:", "SOURCE_FETCH_RELAY_TOKEN:")
+    assert not any(name in header for name in names)  # not in the job environment
+    receiving = [step.splitlines()[0] for step in steps if any(name in step for name in names)]
+    assert receiving == ["Run the read-only comparison"]
+    bench_step = next(step for step in steps if step.startswith("Run the read-only comparison"))
+    assert url in bench_step and token in bench_step
+    # Never shown: no command of the workflow reads them.
+    assert "$SOURCE_FETCH_RELAY" not in text and "env.SOURCE_FETCH_RELAY" not in text
+
+
 # --- Pièces sans PDF : pourquoi -----------------------------------------------------------------------------------
 
 RELAYED_URL = "https://cessions.immobilier-etat.gouv.fr/documents/cahier.pdf"

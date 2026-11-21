@@ -399,7 +399,7 @@ NO_PDF_HTML = f"{NO_PDF} : HTML ou autre format"  # réponse qui n'est ni un PDF
 NO_PDF_CAP = f"{NO_PDF} : limite de pièces par vente"  # laissée de côté par la sélection du téléchargeur poli
 NO_PDF_ROBOTS = f"{NO_PDF} : robots.txt"  # robots.txt de l'hôte l'interdit
 NO_PDF_NETWORK = f"{NO_PDF} : erreur réseau"  # 429, 5xx, délai, connexion, ou robots.txt de l'hôte injoignable
-NO_PDF_RELAY = f"{NO_PDF} : relais SOURCE_FETCH_RELAY non disponible"  # hôte servi par le relais, absent du banc
+NO_PDF_RELAY = f"{NO_PDF} : relais SOURCE_FETCH_RELAY non disponible"  # hôte servi par le relais, non configuré
 # Accès refusé, introuvable, trop lourde, source retirée, lien écarté ou type « other », autre erreur.
 NO_PDF_OTHER = f"{NO_PDF} : autre motif"
 NO_PDF_REASONS = (NO_PDF_WORD, NO_PDF_HTML, NO_PDF_CAP, NO_PDF_ROBOTS, NO_PDF_NETWORK, NO_PDF_RELAY, NO_PDF_OTHER)
