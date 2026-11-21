@@ -19,14 +19,20 @@ import pytest
 
 from scripts import compare_document_vision as bench
 from src.document_vision import (
+    CARREZ,
+    FIELDS,
     HABITABLE,
+    LAND,
     LOT_UNCERTAIN,
     OCCUPANCY,
+    OCCUPANCY_VALUES,
     ONE_LOT,
     ONE_LOT_GUARDED,
     ROOMS,
     SEVERAL_LOTS,
     VISITS,
+    parse_claim,
+    response_schema,
 )
 from src.enrichment.anthropic_reader import (
     HAIKU,
@@ -554,11 +560,20 @@ def test_differences_list_public_data_only_never_the_quote_or_the_text_of_the_pi
 
     assert report.fields[ROOMS].versus_sale["different"] == 1
     assert differences == [
-        {"sale_id": SALE_ID, "field": ROOMS, "retained_value": 3, "sale_value": 4, "document_url": URL, "page": 2}
+        {
+            "sale_id": SALE_ID,
+            "field": ROOMS,
+            "retained_value": 3,
+            "sale_value": 4,
+            "document_index": 1,
+            "document_type": "cahier",
+            "page": 2,
+        }
     ]
-    # Neither the quote nor any text of the piece (not even its label), unlike the private review.
+    # Neither the quote, nor any text of the piece (not even its label), nor its URL, unlike the private review.
     written = json.dumps(differences, ensure_ascii=False)
     assert "3 pieces principales" not in written and "Cahier" not in written and "pieces" not in written
+    assert URL not in written and "example.test" not in written
     assert private and private[0]["quote"] == "3 pieces principales"
     # Off by default.
     assert bench.parse_args(["--sample", "1"]).differences is None
@@ -578,9 +593,136 @@ def test_differences_give_the_visit_days_of_the_sale_never_its_free_text() -> No
         "field": VISITS,
         "retained_value": ["2026-12-10"],
         "sale_value": ["2026-12-03"],
-        "document_url": URL,
+        "document_index": 1,
+        "document_type": "cahier",
         "page": 2,
     }
+
+
+SIGNED_URL = "https://documents.test/pv-dupont.pdf?token=secret#x"
+
+
+def test_differences_file_never_carries_the_url_of_the_piece(tmp_path: Any) -> None:
+    # A signed URL (token) or a name in the file name: the URL is found again in the database, never in the artifact.
+    manifest = [{**MANIFEST[0], "url": SIGNED_URL, "label": "PV de description Dupont", "document_type": "pv_huissier"}]
+    path = tmp_path / "ecarts.jsonl"
+    with bench.open_private_review(path) as handle:
+        report = bench.run_bench(
+            FakeConnection({SALE_ID: _row(rooms_count=4, result=manifest)}),
+            _reader("principal", FakeModel(AGREEING)),
+            _reader("second", FakeModel(AGREEING)),
+            lambda row, urls: bench.FetchedPieces({SIGNED_URL: PDF} if SIGNED_URL in urls else {}),
+            sample=1,
+            today=TODAY,
+            differences=lambda entry: bench.write_difference(handle, entry),
+        )
+
+    assert report.fields[ROOMS].versus_sale["different"] == 1
+    written = path.read_text(encoding="utf-8")
+    assert [json.loads(line)["document_type"] for line in written.splitlines()] == ["proces_verbal"]
+    for fragment in (SIGNED_URL, "documents.test", "dupont", "Dupont", "token", "secret", "pv-"):
+        assert fragment not in written, fragment
+
+
+@pytest.mark.parametrize(
+    ("document_type", "published"),
+    [
+        ("cahier_conditions_vente", "cahier"),
+        ("conditions_vente", "cahier"),
+        ("pv_huissier", "proces_verbal"),
+        ("proces_verbal", "proces_verbal"),
+        ("diagnostics_techniques", "diagnostic"),
+        ("bail", "autre"),
+        ("PV de M. Dupont", "autre"),
+    ],
+)
+def test_differences_give_a_document_type_from_a_closed_list(document_type: str, published: str) -> None:
+    assert bench.difference_document_type(document_type) == published
+
+
+# Type de valeur de chaque champ dans la liste des écarts : jamais un texte libre. Un champ ajouté à FIELDS sans
+# entrée ici fait échouer le test ; un champ texte n'a pas sa place dans l'artefact.
+_VALUE_KINDS = {
+    HABITABLE: "number",
+    CARREZ: "number",
+    LAND: "number",
+    ROOMS: "integer",
+    OCCUPANCY: "occupancy",
+    VISITS: "dates",
+}
+FREE_TEXT = "M. Dupont, 06 12 34 56 78, 3 rue des Lilas"
+
+
+def test_every_field_of_the_differences_has_a_value_type_without_free_text() -> None:
+    assert set(FIELDS) == set(_VALUE_KINDS), "nouveau champ : lui donner un type sans texte libre"
+    schemas = response_schema(FIELDS)["properties"]["champs"]["properties"]
+    for name in FIELDS:
+        value = schemas[name]["properties"]["valeur"]
+        for option in value.get("anyOf", [value]):
+            if option["type"] == "string":
+                # A string is always an enumeration: « inconnu », or an occupancy state.
+                allowed = {"inconnu"} | (OCCUPANCY_VALUES if _VALUE_KINDS[name] == "occupancy" else set())
+                assert set(option["enum"]) <= allowed, name
+            elif option["type"] == "array":
+                assert _VALUE_KINDS[name] == "dates", name
+            else:
+                assert option["type"] in {"number", "integer"} and _VALUE_KINDS[name] in {"number", "integer"}, name
+        # Whatever the reader writes, a free text never becomes a retained value.
+        page = bench.PageRef(1, 1)
+        for raw in (FREE_TEXT, [FREE_TEXT]):
+            claim = parse_claim(name, {"valeur": raw, "citation": "une citation", "page": 1}, [page])
+            assert claim.status == "invalid", name
+
+    # And what reaches the file has that type.
+    row = dict(zip((*bench.SALE_COLUMNS, *bench.SALE_VALUE_COLUMNS, "result"), _row(), strict=True))
+    row.update({HABITABLE: 62, CARREZ: 61, LAND: 300, ROOMS: 4, OCCUPANCY: "vacant", VISITS: [FREE_TEXT]})
+    retained = {
+        HABITABLE: Decimal("62.4"),
+        CARREZ: Decimal("61.8"),
+        LAND: Decimal("850"),
+        ROOMS: 3,
+        OCCUPANCY: "rented",
+        VISITS: frozenset({date(2026, 12, 10)}),
+    }
+    documents = {doc.index: doc for doc in bench.documents_from_manifest(MANIFEST)}
+    result = bench.SaleResult({}, {}, documents, bench.PageStats())
+    for name in FIELDS:
+        verdict = bench.Verdict("accepted", value=retained[name], page=bench.PageRef(1, 2), quote=FREE_TEXT)
+        entry = json.loads(json.dumps(bench.public_difference(row, name, verdict, result), default=str))
+        for value in (entry["retained_value"], entry["sale_value"]):
+            kind = _VALUE_KINDS[name]
+            if kind == "dates":
+                assert isinstance(value, list) and all(date.fromisoformat(day) for day in value), name
+            elif kind == "occupancy":
+                assert value in OCCUPANCY_VALUES, name
+            else:
+                assert isinstance(value, (int, float)) or Decimal(value) > 0, name
+        assert "Dupont" not in json.dumps(entry, ensure_ascii=False), name
+
+
+def test_differences_file_is_written_for_the_owner_only(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.storage import supabase_client
+
+    path = tmp_path / "ecarts.jsonl"
+    path.write_text("ancien contenu", encoding="utf-8")
+    path.chmod(0o644)
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://banc.test/base")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "cle-de-test")
+
+    def refuse(url: str) -> Any:
+        raise RuntimeError("pas de base dans ce test")
+
+    monkeypatch.setattr(supabase_client, "connect", refuse)
+    # main() quiets the download log: its level is restored for the other tests.
+    logger = logging.getLogger("src.pdf_enrichment")
+    previous = logger.level
+    try:
+        with pytest.raises(RuntimeError):
+            bench.main(["--sample", "1", "--output", str(tmp_path / "report.md"), "--differences", str(path)])
+    finally:
+        logger.setLevel(previous)
+    # Opened before the database, like the private review: 0600, emptied.
+    assert path.stat().st_mode & 0o777 == 0o600 and path.read_text(encoding="utf-8") == ""
 
 
 def test_differences_file_is_another_file_than_the_report_and_the_private_review(tmp_path: Any) -> None:
@@ -627,6 +769,26 @@ def test_workflow_gives_the_relay_to_the_bench_step_only_as_the_pipeline_does() 
 # --- Pièces sans PDF : pourquoi -----------------------------------------------------------------------------------
 
 RELAYED_URL = "https://cessions.immobilier-etat.gouv.fr/documents/cahier.pdf"
+
+
+@pytest.mark.parametrize(
+    ("address", "token", "available"),
+    [
+        ("https://relais.test/fetch", "jeton", True),
+        ("https://relais.test/fetch", "", False),
+        ("", "jeton", False),
+        ("", "", False),
+        ("http://relais.test/fetch", "jeton", False),
+    ],
+)
+def test_relay_is_available_only_with_an_https_address_and_a_token(
+    monkeypatch: pytest.MonkeyPatch, address: str, token: str, available: bool
+) -> None:
+    monkeypatch.setenv("SOURCE_FETCH_RELAY_URL", address)
+    monkeypatch.setenv("SOURCE_FETCH_RELAY_TOKEN", token)
+    assert bench.relay_configured(RELAYED_URL) is available
+    # Another host never goes through the relay.
+    assert bench.relay_configured(URL) is False
 
 
 def _stats(**lists: Any) -> PdfEnrichmentStats:

@@ -19,9 +19,9 @@ identifiant de vente, ni citation, ni texte, ni URL des pièces (le journal du t
 erreurs).
 
 Liste des écarts, en option (``--differences CHEMIN``, activée par le workflow, en artefact) : pour chaque valeur
-retenue qui diffère de la fiche, l'identifiant de la vente, le champ, les deux valeurs, l'URL publique de la pièce et
-le numéro de page, en JSON Lines. Des données publiques seulement (annonce et pièces publiées), jamais la citation
-ni aucun texte de la pièce : de quoi vérifier, en relisant la page, qui a raison.
+retenue qui diffère de la fiche, l'identifiant de la vente, le champ, les deux valeurs, le numéro et le type de la
+pièce et le numéro de page, en JSON Lines (mode 0600). Jamais la citation, ni aucun texte de la pièce, ni son URL :
+l'URL se retrouve en base, en lecture seule, pour vérifier en relisant la page qui a raison.
 
 Revue privée des écarts, en option seulement (``--private-review CHEMIN``) : la même chose avec la citation, dans un
 fichier JSON Lines lisible du seul propriétaire (mode 0600). Jamais par défaut, jamais en artefact : le workflow ne
@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, TextIO
 from urllib.parse import urlsplit
 
 import anthropic
+import httpx
 import pymupdf
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +130,11 @@ from src.llm_requests import (  # noqa: E402
 from src.lot_scope import is_lot_scoped  # noqa: E402
 from src.normalize import clean_text  # noqa: E402
 from src.pdf_deadline import PdfExtractionDeferred  # noqa: E402
+from src.pdf_document_types import (  # noqa: E402
+    PDF_CONDITIONS_GROUP,
+    PDF_DESCRIPTION_GROUP,
+    PDF_DIAGNOSTICS_GROUP,
+)
 from src.pdf_ocr import (  # noqa: E402
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
@@ -138,7 +144,7 @@ from src.pdf_ocr import (  # noqa: E402
 )
 from src.pdf_page_analysis import SETTLED_EXCLUDED_PAGE_STATUSES, page_has_substantial_image  # noqa: E402
 from src.pipeline_usage import LLMModelNotPriced, PipelineBudgetExhausted  # noqa: E402
-from src.sources.cloud_transport import SOURCE_HOSTS, relay_url  # noqa: E402
+from src.sources.cloud_transport import SOURCE_HOSTS, configured_transport  # noqa: E402
 
 if TYPE_CHECKING:
     from src.pdf_enrichment import PdfEnrichmentStats
@@ -425,7 +431,8 @@ def missing_piece_reason(
     ``file_format`` : le format de la pièce téléchargée (None : pas téléchargée). ``selected`` : la sélection du
     téléchargeur l'a retenue ; ``selectable_alone`` : elle la retiendrait seule (une pièce retenue seule mais pas avec
     les autres a été coupée par la limite de pièces par vente). ``stats`` : ce que le téléchargement a noté, pièce par
-    pièce. ``relay_available`` : le relais des hôtes qui refusent le réseau du runner est configuré.
+    pièce. ``relay_available`` : la pièce passerait par le relais des hôtes qui refusent le réseau du runner
+    (:func:`relay_configured`).
     """
     if file_format in _WORD_FORMATS:
         return NO_PDF_WORD
@@ -446,6 +453,22 @@ def missing_piece_reason(
     if permanent is None and any(failure.origin in origins for failure in stats.network_failures):
         return NO_PDF_NETWORK
     return NO_PDF_OTHER
+
+
+def relay_configured(url: str) -> bool:
+    """Le téléchargement de ``url`` passerait par le relais : hôte servi par lui, adresse HTTPS ET jeton présents.
+
+    Même règle que le téléchargement, qui la tient de ``cloud_transport.configured_transport`` : une adresse sans
+    jeton (ou l'inverse) fait échouer la requête, le relais n'est pas disponible. Rien n'est envoyé.
+    """
+    try:
+        transport = configured_transport(url)
+    except (ValueError, httpx.InvalidURL):
+        return False
+    if transport is None:
+        return False
+    transport.close()
+    return True
 
 
 def usable_documents(
@@ -680,12 +703,28 @@ def _jsonable(value: object) -> object:
     return value
 
 
+# Type de pièce de la liste des écarts : une liste fermée, tirée du seul type normalisé de la pièce, jamais de son
+# libellé ni de son URL.
+_DIFFERENCE_DOCUMENT_TYPES = (
+    ("cahier", PDF_CONDITIONS_GROUP),
+    ("proces_verbal", PDF_DESCRIPTION_GROUP),
+    ("diagnostic", PDF_DIAGNOSTICS_GROUP),
+)
+DIFFERENCE_OTHER_DOCUMENT = "autre"
+
+
+def difference_document_type(document_type: str) -> str:
+    """« cahier », « proces_verbal », « diagnostic » ou « autre »."""
+    return next((name for name, group in _DIFFERENCE_DOCUMENT_TYPES if document_type in group), DIFFERENCE_OTHER_DOCUMENT)
+
+
 def public_difference(row: Mapping[str, Any], name: str, verdict: Verdict, result: SaleResult) -> dict[str, object]:
     """Une ligne de la liste des écarts (``--differences``, en artefact) : l'identifiant de la vente
-    (``auction_sales.id``), le champ, la valeur retenue, celle de la fiche, l'URL publique de la pièce et le numéro de
-    page.
+    (``auction_sales.id``), le champ, la valeur retenue, celle de la fiche, la pièce (son numéro dans le dossier, D1…Dn
+    de ``documents_from_manifest``, et son type, :func:`difference_document_type`) et le numéro de page.
 
-    Données publiques seulement, et rien qui vienne du texte d'une pièce : ni la citation, ni le libellé de la pièce.
+    Rien qui vienne du texte d'une pièce ni de son adresse : ni la citation, ni le libellé, ni l'URL (un jeton signé ou
+    un nom peuvent s'y trouver ; elle se retrouve en base, en lecture seule, par la vente et le numéro de la pièce).
     Les dates de visite de la fiche, texte libre (une adresse, un nom, un téléphone peuvent s'y trouver), sont
     données par les seuls jours qu'elles nomment (:func:`visit_days` ; le banc n'en compare que les jours à venir).
     """
@@ -697,7 +736,8 @@ def public_difference(row: Mapping[str, Any], name: str, verdict: Verdict, resul
         "field": name,
         "retained_value": _jsonable(verdict.value),
         "sale_value": _jsonable(visit_days(sale_value) if name == VISITS else sale_value),
-        "document_url": document.url if document is not None else None,
+        "document_index": page.document if page is not None else None,
+        "document_type": difference_document_type(document.document_type) if document is not None else None,
         "page": page.page if page is not None else None,
     }
 
@@ -719,8 +759,9 @@ def private_difference(row: Mapping[str, Any], name: str, verdict: Verdict, resu
 
 
 def open_private_review(path: Path) -> TextIO:
-    """Ouvre la revue privée (JSON Lines), lisible du seul propriétaire (0600, même si le fichier existait). Un lien
-    symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on l'a dit."""
+    """Ouvre la revue privée, ou la liste des écarts (JSON Lines), lisible du seul propriétaire (0600, même si le
+    fichier existait). Un lien symbolique n'est pas suivi : le fichier visé ne peut pas être ailleurs que là où on
+    l'a dit."""
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
     handle = os.fdopen(descriptor, "w", encoding="utf-8")
     os.fchmod(handle.fileno(), 0o600)
@@ -984,8 +1025,7 @@ def download_sale_pdfs(row: Mapping[str, Any], urls: Sequence[str]) -> FetchedPi
                 document.get("document_type") or document.get("type"), label=document.get("label"), url=url
             ),
             stats=stats,
-            # Le relais n'est demandé que s'il est configuré (``cloud_transport.configured_transport``).
-            relay_available=bool(relay_url()),
+            relay_available=relay_configured(url),
         )
     return FetchedPieces(pdfs, missing)
 
@@ -1016,8 +1056,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--differences",
         type=Path,
         default=None,
-        help="fichier JSON Lines des valeurs retenues qui diffèrent de la fiche : vente, champ, valeurs, URL publique "
-        "de la pièce et page, sans citation ni texte de la pièce",
+        help="fichier JSON Lines (mode 0600) des valeurs retenues qui diffèrent de la fiche : vente, champ, valeurs, "
+        "numéro et type de la pièce, page ; sans citation, texte ni URL de la pièce",
     )
     args = parser.parse_args(argv)
     paths = [path.resolve() for path in (args.output, args.private_review, args.differences) if path is not None]
@@ -1053,7 +1093,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Ouverte avant la première vente : un chemin refusé arrête le banc avant tout appel au modèle.
     review = open_private_review(args.private_review) if args.private_review is not None else None
-    differences = args.differences.open("w", encoding="utf-8") if args.differences is not None else None
+    differences = open_private_review(args.differences) if args.differences is not None else None
     connection = connect(str(db_url))
     try:
         report = run_bench(

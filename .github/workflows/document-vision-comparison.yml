@@ -9,9 +9,9 @@ name: Document vision comparison
 # écrit sur une fiche. Les appels au modèle sont réservés et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget
 # quotidien du pipeline ; un refus du budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc
 # proprement. Rapport agrégé (sans identifiant de vente, citation ni URL de pièce) dans le résumé de l'exécution et en
-# artefact. Liste des écarts avec la fiche (identifiant de vente, champ, deux valeurs, URL publique de la pièce et page,
-# jamais la citation ni aucun texte de la pièce) dans un artefact à part, gardé 7 jours : des données publiques, de
-# quoi vérifier qui a raison. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les
+# artefact. Liste des écarts avec la fiche (identifiant de vente, champ, deux valeurs, numéro et type de la pièce, page ;
+# jamais la citation, aucun texte ni l'URL de la pièce) dans un artefact à part, gardé 7 jours : de quoi retrouver la
+# page en base, en lecture seule, et vérifier qui a raison. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les
 # pièces. Aucun déclenchement automatique.
 on:
   workflow_dispatch:
@@ -80,8 +80,9 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Relais des hôtes qui refusent le réseau du runner (Cessions Etat répond 403), comme dans data-pipeline.yml :
-          # adresse en variable, jeton en secret, jamais affichés. Seule cette étape les reçoit.
+          # Relais des hôtes qui refusent le réseau du runner (Cessions Etat répond 403), comme dans data-pipeline.yml.
+          # Seule cette étape les reçoit. Le jeton est un secret, masqué et jamais affiché ; l'adresse est une variable
+          # du dépôt, non masquée dans les journaux.
           SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
           SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
           BENCH_SAMPLE: ${{ inputs.sample }}
