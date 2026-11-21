@@ -994,10 +994,11 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données d’usage).",
     );
-    // Seuls Resend et Anthropic sont dits encadrés par les clauses contractuelles types, vérifiées dans
-    // leur accord de sous-traitance (paragraphes dédiés, plus le rappel d'Anthropic dans « Transferts ») ;
-    // aucune certification au cadre UE–États-Unis, non vérifiée sur la liste officielle, n'est affirmée.
-    expect(text.split("clauses contractuelles types")).toHaveLength(4);
+    // Seul le paragraphe sur Resend cite les clauses contractuelles types, vérifiées dans son accord de
+    // sous-traitance. Celles du DPA d'Anthropic ont pour importateur Anthropic Ireland (EEE) : elles
+    // n'encadrent pas le passage vers les États-Unis et ne sont pas citées. Aucune certification au cadre
+    // UE–États-Unis, non vérifiée sur la liste officielle, n'est affirmée.
+    expect(text.split("clauses contractuelles types")).toHaveLength(2);
     expect(text).toContain(
       "journaux de remise 30 jours, aux États-Unis. Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), intégrées à son accord de sous-traitance.",
     );
@@ -1023,30 +1024,82 @@ describe("politique de confidentialité", () => {
     expect(text).not.toContain("Deux points restent à confirmer");
   });
 
-  it("déclare Anthropic, ses modèles, les pièces transmises sans retirer les noms et la garantie vérifiée", () => {
+  it("déclare Anthropic, ses modèles et les fichiers PDF transmis sans retirer les noms, distincts de Replicate", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "le prestataire d’IA qui lit les pièces des ventes judiciaires (Anthropic, États-Unis)",
+      "le prestataire d’IA qui lit les fichiers PDF des pièces des ventes judiciaires (Anthropic, États-Unis)",
     );
     expect(text).toContain(
-      "Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5, qui lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates de visite.",
+      "Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5. Ils lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates de visite.",
     );
     expect(text).toContain(
-      "Les pages de ces pièces lui sont transmises telles qu’elles sont publiées, sans retirer les noms : elles peuvent contenir des données personnelles, notamment le nom des parties à la procédure (la personne dont le bien est saisi) et celui des occupants.",
-    );
-    expect(text).toContain(
-      "Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), prévues par l’accord de traitement des données qu’Anthropic intègre à ses conditions commerciales.",
-    );
-    expect(text).toContain(
-      "Anthropic supprime les pièces reçues et les résultats produits dans les 30 jours ; il peut les garder jusqu’à 2 ans si ses contrôles automatiques les signalent comme contraires à sa politique d’utilisation, et plus longtemps si la loi l’impose.",
+      "Replicate reçoit le texte des annonces et le texte tiré de leurs pièces ; Anthropic reçoit les pages elles-mêmes : chaque fichier PDF est joint directement à la demande, tel qu’il est publié, sans retirer les noms. Ces pages peuvent contenir des données personnelles, notamment le nom des parties à la procédure (la personne dont le bien est saisi) et celui des occupants.",
     );
     expect(text).toContain("les prestataires d’IA (Replicate et Anthropic)");
+  });
+
+  it("n'affirme pour Anthropic que ce que dit son accord de traitement des données, sans garantie de transfert non établie", () => {
+    const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Pour Anthropic, le transfert repose sur les clauses contractuelles types (voir ci-dessus).",
+      "Selon les conditions commerciales d’Anthropic, notre cocontractant est Anthropic Ireland, Limited, à Dublin (Irlande), pour un client établi dans l’Espace économique européen. Anthropic indique que les données de ses clients sont stockées aux États-Unis, et que leur traitement peut avoir lieu aux États-Unis, en Europe, en Asie ou en Australie.",
     );
-    // Les personnes citées dans les pièces sont informées dans leur propre section.
     expect(text).toContain(
-      "Les pièces des ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis",
+      "Anthropic Ireland fait traiter ces données par ses sous-traitants, dans les conditions prévues par l’accord de traitement des données d’Anthropic : un contrat avec chacun de ces sous-traitants leur impose des obligations de protection des données en substance aussi protectrices que celles d’Anthropic, et Anthropic reste responsable envers nous de leurs actes.",
+    );
+    expect(text).toContain(
+      "Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions de son accord de traitement des données (voir ci-dessus).",
+    );
+    expect(text).not.toContain(
+      "Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), prévues",
+    );
+    expect(text).not.toContain("à confirmer");
+  });
+
+  it("donne la conservation chez Anthropic pour des PDF joints à la demande, scores de sécurité compris", () => {
+    expect(pageText(<PrivacyPage />)).toContain(
+      "Les fichiers PDF ne sont pas déposés dans le service de stockage de fichiers d’Anthropic : ils sont joints à chaque demande. Anthropic supprime alors les pièces reçues et les résultats produits dans les 30 jours. Si ses contrôles automatiques les signalent comme contraires à sa politique d’utilisation, il peut garder les pièces et les résultats jusqu’à 2 ans, et les scores de ces contrôles de sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose.",
+    );
+  });
+
+  it("ajoute la lecture automatique des pièces au tableau des traitements, avec la durée des annonces", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Lecture automatique des pièces des ventes");
+    expect(text).toContain(
+      "identité des parties à la procédure et des occupants qui y figurent, situation d’occupation du bien",
+    );
+    expect(text).toContain("Source : les pièces publiées avec l’annonce");
+    expect(text).toContain(
+      "Intérêt légitime à compléter la fiche de la vente à partir des pièces publiées avec l’annonce. Vous pouvez vous y opposer à tout moment, pour des raisons tenant à votre situation, en écrivant à contact@immojudis.example.",
+    );
+    expect(text).toContain(
+      "Celle des pièces, comme pour les annonces de ventes : tant que la vente est consultable, puis archivage.",
+    );
+  });
+
+  it("présente à part le droit d'opposition à la lecture automatique des pièces (art. 21, § 4)", () => {
+    const { container } = render(<PrivacyPage />);
+    const section = container.querySelector("section#opposition-lecture-pieces");
+    expect(section).not.toBeNull();
+    const sectionText = (section?.textContent ?? "").replace(/\s+/g, " ");
+    expect(sectionText).toContain(
+      "Votre droit de vous opposer à la lecture automatique des pièces",
+    );
+    expect(sectionText).toContain(
+      "vous pouvez vous opposer à tout moment, pour des raisons tenant à votre situation particulière, à la lecture automatique de cette pièce et à l’envoi de ses pages à Anthropic (article 21 du RGPD). Pour exercer ce droit, écrivez à contact@immojudis.example en indiquant le lien de la vente ; aucun compte n’est nécessaire.",
+    );
+  });
+
+  it("informe les personnes citées : remplacement des noms limité aux textes affichés, but de la lecture, opposition", () => {
+    expect(pageText(<PrivacyPage />)).toContain(
+      "Ce remplacement ne vaut que pour les textes affichés sur le site. Les pièces des ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à contact@immojudis.example (voir ci-dessous).",
+    );
+  });
+
+  it("ne dit plus que toute information de la fiche est validée par l'équipe : seules celles des professionnels", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("toute intégration d’information sur une fiche");
+    expect(text).toContain(
+      "Tout envoi à un professionnel est validé par un membre de l’équipe ; aucune demande n’est lancée directement par un utilisateur Analyse. Toute information transmise par un professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces publiques des ventes sont affichées sans relecture préalable, avec leur source, et peuvent être signalées.",
     );
   });
 

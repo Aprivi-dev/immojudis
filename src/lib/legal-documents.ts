@@ -209,18 +209,39 @@ export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
  *   des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics), pour en
  *   extraire surface, terrain, nombre de pièces, occupation et dates de visite.
  * - Données : contenu des pièces, pages transmises telles quelles, y compris le nom des parties qui y figurent
- *   (débiteur saisi, occupants).
- * - Pays : États-Unis (Anthropic, PBC). Cocontractant d'un client établi dans l'EEE selon les conditions
- *   commerciales d'Anthropic (en vigueur le 17/06/2025) : Anthropic Ireland, Limited.
- * - Garantie du transfert : clauses contractuelles types (décision (UE) 2021/914, modules 2 et 3), prévues par
- *   l'accord de traitement des données d'Anthropic (Data Processing Addendum, en vigueur le 24/02/2025),
- *   intégré aux conditions commerciales. Pages consultées le 21/11/2026. Aucune certification au cadre de
- *   protection des données UE–États-Unis n'a été vérifiée : le texte n'en parle pas.
+ *   (débiteur saisi, occupants). Replicate reçoit le texte des annonces et le texte tiré des pièces
+ *   (`fact_sections_for_sale`) ; Anthropic reçoit les fichiers PDF.
+ * - Cocontractant d'un client établi dans l'EEE selon les conditions commerciales d'Anthropic (en vigueur le
+ *   17/06/2025) : Anthropic Ireland, Limited. Données stockées aux États-Unis, traitement possible aux
+ *   États-Unis, en Europe, en Asie ou en Australie (centre de confidentialité, article du 15/06/2026 « Where
+ *   are your servers located? »).
+ * - Garantie du transfert hors de l'EEE : NON ÉTABLIE. Les clauses contractuelles types de l'accord de
+ *   traitement des données d'Anthropic (Data Processing Addendum, en vigueur le 24/02/2025 : décision (UE)
+ *   2021/914, modules 2 et 3, « to the extent required ») ont pour importateur « the Anthropic entity that
+ *   executed the Agreement », soit Anthropic Ireland, société de l'EEE : elles n'encadrent pas le passage
+ *   vers les États-Unis. Le DPA ne prévoit pour les sous-traitants qu'un contrat « substantially as
+ *   protective » et la responsabilité d'Anthropic (section C.2), plus une aide à l'analyse d'impact du
+ *   transfert, sur demande (section I.4). Il ne nomme ni Anthropic, PBC comme sous-traitant, ni de garantie
+ *   du chapitre V entre les entités Anthropic ; la liste des sous-traitants (trust.anthropic.com) n'a pas pu
+ *   être lue ; aucune certification au cadre UE–États-Unis n'a été vérifiée. Le texte publié n'affirme donc
+ *   aucune garantie. À demander à Anthropic (section I.4) : garantie du transfert Irlande vers les
+ *   États-Unis, liste des sous-traitants. Pages consultées le 21/11/2026.
  * - Conservation chez Anthropic (centre de confidentialité, article du 01/07/2026) : entrées et sorties de
- *   l'API supprimées dans les 30 jours ; jusqu'à 2 ans si elles sont signalées comme contraires à la
- *   politique d'utilisation ; plus longtemps si la loi l'impose.
- * - Hors champ : les pièces jointes envoyées par les avocats restent lues à la main ; les textes sur la
- *   validation humaine et les messages aux professionnels ne changent pas.
+ *   l'API supprimées dans les 30 jours, sauf service à conservation plus longue choisie par le client (Files
+ *   API : non utilisée, les PDF sont joints à la requête en bloc document base64, selon le chef d'orchestre
+ *   le 21/11/2026, code non encore présent dans le dépôt) ; si signalées par les contrôles automatiques :
+ *   entrées et sorties jusqu'à 2 ans, scores de classement de sécurité jusqu'à 7 ans ; plus si la loi
+ *   l'impose.
+ * - Tableau des traitements : ligne « Lecture automatique des pièces des ventes » (intérêt légitime ; durée
+ *   reprise de la ligne « Annonces de ventes et pièces publiques »). Droit d'opposition (art. 21, § 4)
+ *   présenté dans une section à part, « Votre droit de vous opposer à la lecture automatique des pièces » :
+ *   l'arrêt de la lecture pour une vente sur opposition doit exister avant le premier envoi.
+ * - « Décisions automatisées et enrichissements » : la phrase « toute intégration d'information sur une fiche
+ *   [est validée] par un membre de l'équipe » était déjà fausse pour les valeurs relevées automatiquement
+ *   dans les pièces publiques ; elle ne vise plus que les informations transmises par un professionnel
+ *   (relecture juridique du 21/11/2026, PR #545).
+ * - Hors champ : les pièces jointes envoyées par les avocats restent lues à la main ; les messages aux
+ *   professionnels ne changent pas.
  *
  * La version 2026-11-15.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
  * avec l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de
@@ -244,7 +265,7 @@ export const LEGAL_DOCUMENTS = {
   },
   privacy: {
     version: "2026-11-21.1",
-    sha256: "1749868ded01966aa2d7c65fc96181308dd44c5c7a02b933d4cdda7fa2e07ae6",
+    sha256: "70a711a98758935dfe01b43178fb9855181bb4297bb612caf071240b847bfecd",
     effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     path: "/privacy",
   },

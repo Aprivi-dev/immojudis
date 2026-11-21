@@ -132,6 +132,15 @@ const processingRows = [
       "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte",
   },
   {
+    purpose: "Lecture automatique des pièces des ventes",
+    data: "Pages des pièces publiées avec l’annonce d’une vente judiciaire (cahier des conditions de vente, procès-verbal descriptif, diagnostics), lues par un modèle d’IA d’Anthropic sans que les noms en soient retirés : identité des parties à la procédure et des occupants qui y figurent, situation d’occupation du bien. Valeurs relevées pour la fiche : surface, terrain, nombre de pièces, occupation, dates de visite. Source : les pièces publiées avec l’annonce",
+    basis:
+      "Intérêt légitime à compléter la fiche de la vente à partir des pièces publiées avec l’annonce. Vous pouvez vous y opposer à tout moment, pour des raisons tenant à votre situation, en écrivant à",
+    basisEndsWithContact: true,
+    retention:
+      "Celle des pièces, comme pour les annonces de ventes : tant que la vente est consultable, puis archivage. Chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
+  },
+  {
     purpose: "Photos du bien tirées des pièces des ventes",
     data: "Photos trouvées dans les pièces jointes à l’annonce d’une vente (cahier des conditions de vente, procès-verbal descriptif dressé par un commissaire de justice, anciennement huissier de justice), ajoutées à la galerie de la vente : 12 au plus par vente, sans leurs métadonnées (ni position, ni appareil, ni date de prise de vue). Les photos d’un procès-verbal montrent l’intérieur du bien : des effets personnels, parfois une personne, peuvent y apparaître",
     basis:
@@ -399,9 +408,15 @@ export function PrivacyPage({
               par leur rôle autant que possible : ce remplacement est automatique et peut laisser
               passer un nom. Si vous êtes cité dans une annonce, en cas d’oubli notamment, écrivez à{" "}
               {legalValue(publisher.contactEmail)} pour demander la rectification ou le retrait,
-              sans créer de compte. Les pièces des ventes judiciaires sont lues, sans que les noms
-              en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis (voir «
-              Destinataires et sous-traitants »).
+              sans créer de compte.
+            </p>
+            <p className="mt-3">
+              Ce remplacement ne vaut que pour les textes affichés sur le site. Les pièces des
+              ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA
+              d’Anthropic, aux États-Unis, pour en relever la surface, l’occupation et les dates de
+              visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez
+              vous opposer à cette lecture en écrivant à {legalValue(publisher.contactEmail)} (voir
+              ci-dessous).
             </p>
             <p className="mt-3">
               Les photos du bien tirées des pièces d’une vente, notamment du procès-verbal
@@ -410,6 +425,22 @@ export function PrivacyPage({
               {legalValue(publisher.contactEmail)} en indiquant le lien de la vente : la photo est
               retirée au plus tard un mois après votre demande, sans que vous ayez à créer de
               compte.
+            </p>
+          </PrivacySection>
+
+          <PrivacySection
+            id="opposition-lecture-pieces"
+            title="Votre droit de vous opposer à la lecture automatique des pièces"
+          >
+            <p>
+              Si votre nom figure dans une pièce d’une vente judiciaire, par exemple comme partie à
+              la procédure ou comme occupant, vous pouvez vous opposer à tout moment, pour des
+              raisons tenant à votre situation particulière, à la lecture automatique de cette pièce
+              et à l’envoi de ses pages à Anthropic (article 21 du RGPD). Pour exercer ce droit,
+              écrivez à {legalValue(publisher.contactEmail)} en indiquant le lien de la vente ;
+              aucun compte n’est nécessaire. Nous cessons alors cette lecture, sauf motifs légitimes
+              et impérieux que nous vous indiquerions, et nous vous répondons dans un délai d’un
+              mois.
             </p>
           </PrivacySection>
 
@@ -434,13 +465,13 @@ export function PrivacyPage({
               Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
               prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi que les réponses
               des professionnels contactés (Replicate, États-Unis), le prestataire d’IA qui lit les
-              pièces des ventes judiciaires (Anthropic, États-Unis), le service de rapport d’erreurs
-              lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse ni contenu de
-              requête), aux avocats référencés uniquement lorsqu’une mise en relation est demandée
-              et à l’intermédiaire professionnel contacté par Immojudis après validation par un
-              membre de l’équipe. Dans ce dernier cas, seules les informations nécessaires à
-              l’enrichissement du dossier et au suivi de la réponse sont transmises. Nos
-              sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les
+              fichiers PDF des pièces des ventes judiciaires (Anthropic, États-Unis), le service de
+              rapport d’erreurs lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse
+              ni contenu de requête), aux avocats référencés uniquement lorsqu’une mise en relation
+              est demandée et à l’intermédiaire professionnel contacté par Immojudis après
+              validation par un membre de l’équipe. Dans ce dernier cas, seules les informations
+              nécessaires à l’enrichissement du dossier et au suivi de la réponse sont transmises.
+              Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les
               exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données
               d’usage).
             </p>
@@ -476,24 +507,36 @@ export function PrivacyPage({
               {legalValue(publisher.contactEmail)}.
             </p>
             <p className="mt-3">
-              Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5, qui
+              Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5. Ils
               lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente,
               procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le
-              nombre de pièces, l’occupation et les dates de visite. Les pages de ces pièces lui
-              sont transmises telles qu’elles sont publiées, sans retirer les noms : elles peuvent
-              contenir des données personnelles, notamment le nom des parties à la procédure (la
-              personne dont le bien est saisi) et celui des occupants. Selon les conditions
-              commerciales d’Anthropic, notre cocontractant est Anthropic Ireland, Limited, à Dublin
-              (Irlande), pour un client établi dans l’Espace économique européen ; ces données sont
-              traitées aux États-Unis, où est établie Anthropic, PBC (San Francisco). Ce transfert
-              est encadré par les clauses contractuelles types adoptées par la Commission européenne
-              (décision (UE) 2021/914 du 4 juin 2021), prévues par l’accord de traitement des
-              données qu’Anthropic intègre à ses conditions commerciales. Ces conditions interdisent
-              à Anthropic d’entraîner ses modèles sur ces données. Anthropic supprime les pièces
-              reçues et les résultats produits dans les 30 jours ; il peut les garder jusqu’à 2 ans
-              si ses contrôles automatiques les signalent comme contraires à sa politique
-              d’utilisation, et plus longtemps si la loi l’impose. Pour toute question, ou pour vous
-              opposer à ce traitement, écrivez à {legalValue(publisher.contactEmail)}.
+              nombre de pièces, l’occupation et les dates de visite. Replicate reçoit le texte des
+              annonces et le texte tiré de leurs pièces ; Anthropic reçoit les pages elles-mêmes :
+              chaque fichier PDF est joint directement à la demande, tel qu’il est publié, sans
+              retirer les noms. Ces pages peuvent contenir des données personnelles, notamment le
+              nom des parties à la procédure (la personne dont le bien est saisi) et celui des
+              occupants.
+            </p>
+            <p className="mt-3">
+              Selon les conditions commerciales d’Anthropic, notre cocontractant est Anthropic
+              Ireland, Limited, à Dublin (Irlande), pour un client établi dans l’Espace économique
+              européen. Anthropic indique que les données de ses clients sont stockées aux
+              États-Unis, et que leur traitement peut avoir lieu aux États-Unis, en Europe, en Asie
+              ou en Australie. Anthropic Ireland fait traiter ces données par ses sous-traitants,
+              dans les conditions prévues par l’accord de traitement des données d’Anthropic : un
+              contrat avec chacun de ces sous-traitants leur impose des obligations de protection
+              des données en substance aussi protectrices que celles d’Anthropic, et Anthropic reste
+              responsable envers nous de leurs actes. Les conditions commerciales interdisent à
+              Anthropic d’entraîner ses modèles sur ces données.
+            </p>
+            <p className="mt-3">
+              Les fichiers PDF ne sont pas déposés dans le service de stockage de fichiers
+              d’Anthropic : ils sont joints à chaque demande. Anthropic supprime alors les pièces
+              reçues et les résultats produits dans les 30 jours. Si ses contrôles automatiques les
+              signalent comme contraires à sa politique d’utilisation, il peut garder les pièces et
+              les résultats jusqu’à 2 ans, et les scores de ces contrôles de sécurité jusqu’à 7 ans
+              ; plus longtemps si la loi l’impose. Vous pouvez vous opposer à cette lecture : voir «
+              Votre droit de vous opposer à la lecture automatique des pièces ».
             </p>
             <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
@@ -519,8 +562,8 @@ export function PrivacyPage({
               de protection des données UE–États-Unis). Pour obtenir une copie des garanties qui
               existent, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est
               nécessaire. Pour Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).
-              Pour Anthropic, le transfert repose sur les clauses contractuelles types (voir
-              ci-dessus).
+              Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions
+              de son accord de traitement des données (voir ci-dessus).
             </p>
           </PrivacySection>
 
@@ -573,9 +616,12 @@ export function PrivacyPage({
               pas l’accès à une vente. Ils doivent être vérifiés à partir des sources affichées et
               des pièces officielles. Des outils automatiques, dont certains utilisent l’IA, peuvent
               détecter des informations manquantes et préparer un projet d’email, relu par un membre
-              de l’équipe. Tout envoi à un professionnel et toute intégration d’information sur une
-              fiche sont validés par un membre de l’équipe ; aucune demande n’est lancée directement
-              par un utilisateur Analyse. Le message précise qu’une IA aide à lire et classer les
+              de l’équipe. Tout envoi à un professionnel est validé par un membre de l’équipe ;
+              aucune demande n’est lancée directement par un utilisateur Analyse. Toute information
+              transmise par un professionnel est validée par un membre de l’équipe avant
+              d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces
+              publiques des ventes sont affichées sans relecture préalable, avec leur source, et
+              peuvent être signalées. Le message précise qu’une IA aide à lire et classer les
               réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche
               ; il reste purement informatif et ne contient aucune sollicitation commerciale.
             </p>
