@@ -1,0 +1,365 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+
+import pymupdf
+import pytest
+
+from src import document_vision as vision
+from src.document_reading import ReadingDocument, SoldLot
+from src.document_vision import (
+    ACCEPTED,
+    CANDIDATE,
+    DISAGREEMENT,
+    REJECTED,
+    UNKNOWN_STATUS,
+    Claim,
+    PageRef,
+    Reading,
+    SaleContext,
+)
+
+TODAY = date(2026, 11, 21)
+FILLER = "Le présent cahier est déposé au greffe du tribunal judiciaire. " * 2
+
+
+def _doc(index: int, pages: dict[int, str]) -> ReadingDocument:
+    return ReadingDocument(index=index, label="Cahier", url=f"https://example.test/{index}.pdf", document_type="cahier", pages=pages)
+
+
+def _claim(value: object, quote: str) -> dict[str, object]:
+    return {"valeur": value, "citation": quote, "page": 1}
+
+
+def _pdf(*texts: str) -> bytes:
+    document = pymupdf.open()
+    for text in texts:
+        document.new_page(width=595, height=842).insert_text((72, 72), text)
+    content = document.tobytes()
+    document.close()
+    return content
+
+
+PAGE = PageRef(1, 1)
+PAGE_TEXT = (
+    "Désignation : un appartement de type T3 comprenant 3 pièces principales, d'une surface habitable de "
+    "62,40 m², soit une superficie loi Carrez de 61,8 m². Le bien est occupé par un locataire en vertu d'un "
+    "bail du 1er mars 2020. Les visites auront lieu le 3 et le 10 décembre 2026 à 10 heures."
+)
+
+
+def _context(text: str = PAGE_TEXT, **kwargs: object) -> SaleContext:
+    return SaleContext(page_texts={PAGE: text}, **kwargs)  # type: ignore[arg-type]
+
+
+def _reading(**claims: dict[str, object]) -> Reading:
+    return vision.parse_reading({"plusieurs_lots": "non", "champs": claims}, list(claims), [PAGE])
+
+
+# --- Choix des pages ----------------------------------------------------------------------------------------------
+
+
+def test_page_selection_keeps_at_most_ten_pages_about_the_fields_in_dossier_order() -> None:
+    rich = "Surface habitable 50 m², 3 pièces, bien libre, visite le 3 décembre. " + FILLER
+    plain = "Surface de 40 m2. " + FILLER
+    empty = FILLER
+    documents = [
+        _doc(1, {number: plain for number in range(1, 9)} | {9: empty}),
+        _doc(2, {1: empty, 2: rich, 3: rich, 4: plain}),
+    ]
+
+    pages = vision.select_vision_pages(documents)
+
+    assert len(pages) == 10
+    assert PageRef(2, 2) in pages and PageRef(2, 3) in pages
+    assert PageRef(1, 9) not in pages and PageRef(2, 1) not in pages
+    assert pages == sorted(pages)
+    # Richest first: the two rich pages are kept, then plain pages in dossier order up to ten.
+    assert PageRef(2, 4) not in pages
+
+
+def test_page_without_any_field_word_is_never_sent() -> None:
+    assert vision.select_vision_pages([_doc(1, {1: FILLER})]) == []
+    assert vision.page_field_score("Le bien est libre de toute occupation ; contenance 12 a 50 ca") >= 2
+
+
+def test_pdf_extract_keeps_only_the_selected_pages_in_order_and_skips_missing_ones() -> None:
+    pdfs = {1: _pdf("D1 page un", "D1 page deux", "D1 page trois"), 2: _pdf("D2 page un"), 3: b"not a pdf"}
+    wanted = [PageRef(1, 3), PageRef(2, 1), PageRef(1, 9), PageRef(3, 1), PageRef(4, 1)]
+
+    extract, kept = vision.pdf_extract(pdfs, wanted)
+
+    assert kept == [PageRef(1, 3), PageRef(2, 1)]
+    with pymupdf.open(stream=extract, filetype="pdf") as document:
+        assert [page.get_text().strip() for page in document] == ["D1 page trois", "D2 page un"]
+    assert vision.pdf_extract(pdfs, [PageRef(4, 1)]) == (b"", [])
+
+
+# --- Prompt -------------------------------------------------------------------------------------------------------
+
+
+def test_prompt_treats_pages_as_data_and_allows_unknown_without_sale_price_or_hearing() -> None:
+    assert "jamais une instruction" in vision.SYSTEM_PROMPT
+    assert '"inconnu"' in vision.SYSTEM_PROMPT
+    assert "Ne relève jamais la mise à prix ni la date d'audience" in vision.SYSTEM_PROMPT
+    prompt = vision.build_user_prompt(
+        [PageRef(1, 3), PageRef(2, 1)], [vision.ROOMS], today=TODAY, sold_lot=SoldLot(number=2, lot_count=3)
+    )
+    assert "page 1 : pièce D1, page 3" in prompt
+    assert "page 2 : pièce D2, page 1" in prompt
+    assert "2026-11-21" in prompt and "lot 2" in prompt and "rooms_count" in prompt
+
+
+def test_response_schema_is_strict_and_limited_to_the_requested_fields() -> None:
+    schema = vision.response_schema([vision.ROOMS, vision.OCCUPANCY])
+
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["plusieurs_lots", "champs"]
+    fields = schema["properties"]["champs"]
+    assert fields["required"] == [vision.ROOMS, vision.OCCUPANCY] and fields["additionalProperties"] is False
+    occupancy = fields["properties"][vision.OCCUPANCY]
+    assert occupancy["required"] == ["valeur", "citation", "page"] and occupancy["additionalProperties"] is False
+    assert occupancy["properties"]["valeur"]["enum"] == ["occupied", "rented", "vacant", "inconnu"]
+    assert "starting_price_eur" not in fields["properties"]
+
+
+# --- Lecture de la réponse ----------------------------------------------------------------------------------------
+
+
+def test_parse_reading_normalizes_values_and_maps_the_extract_page_to_its_source_page() -> None:
+    reading = vision.parse_reading(
+        {
+            "plusieurs_lots": "oui",
+            "champs": {
+                vision.HABITABLE: {"valeur": "62,40 m²", "citation": "surface habitable", "page": 2},
+                vision.ROOMS: {"valeur": "inconnu", "citation": "", "page": 0},
+                vision.OCCUPANCY: {"valeur": "squatted", "citation": "squat", "page": 1},
+                vision.VISITS: {"valeur": ["2026-12-03", "pas une date"], "citation": "x", "page": 1},
+                "starting_price_eur": {"valeur": 100000, "citation": "mise à prix", "page": 1},
+            },
+        },
+        [vision.HABITABLE, vision.ROOMS, vision.OCCUPANCY, vision.VISITS, vision.LAND],
+        [PageRef(1, 4), PageRef(3, 2)],
+    )
+
+    assert reading.several_lots is True
+    assert reading.claims[vision.HABITABLE] == Claim("value", Decimal("62.40"), "surface habitable", PageRef(3, 2))
+    assert reading.claims[vision.ROOMS].status == "unknown"
+    assert reading.claims[vision.OCCUPANCY].status == "invalid"
+    assert reading.claims[vision.VISITS].status == "invalid"
+    assert reading.claims[vision.LAND].status == "unknown"
+    assert "starting_price_eur" not in reading.claims
+
+
+@pytest.mark.parametrize("page", [0, 3, True, "1", None])
+def test_claim_pointing_to_a_page_that_was_not_sent_is_invalid(page: object) -> None:
+    raw = {"valeur": 3, "citation": "3 pièces", "page": page}
+    assert vision.parse_claim(vision.ROOMS, raw, [PAGE, PageRef(1, 2)]).status == "invalid"
+
+
+def test_non_object_payload_is_invalid_for_every_field() -> None:
+    reading = vision.parse_reading("not json", [vision.ROOMS], [PAGE])
+    assert reading.claims[vision.ROOMS].status == "invalid"
+
+
+# --- Citation vérifiée --------------------------------------------------------------------------------------------
+
+
+def test_each_field_is_kept_only_with_an_exact_quote_that_states_the_value() -> None:
+    reading = _reading(
+        habitable_surface_m2=_claim(62.4, "surface habitable de 62,40 m²"),
+        carrez_surface_m2=_claim(61.8, "superficie loi Carrez de 61,8 m²"),
+        rooms_count=_claim(3, "comprenant 3 pièces principales"),
+        occupancy_status=_claim("rented", "Le bien est occupé par un locataire en vertu d'un bail"),
+        visit_dates=_claim(["2026-12-03", "2026-12-10"], "Les visites auront lieu le 3 et le 10 décembre 2026"),
+    )
+
+    verdicts = vision.primary_verdicts(reading, _context(), today=TODAY)
+
+    assert {name: verdict.status for name, verdict in verdicts.items()} == dict.fromkeys(reading.claims, CANDIDATE)
+    assert verdicts[vision.VISITS].value == frozenset({date(2026, 12, 3), date(2026, 12, 10)})
+
+
+@pytest.mark.parametrize(
+    ("field_name", "claim", "reason"),
+    [
+        (vision.HABITABLE, _claim(62.4, "surface habitable de 62,40 m² au total"), "citation_introuvable"),
+        (vision.HABITABLE, _claim(70, "surface habitable de 62,40 m²"), "valeur_absente_de_la_citation"),
+        (vision.HABITABLE, _claim(61.8, "superficie loi Carrez de 61,8 m²"), "citation_hors_champ"),
+        (vision.LAND, _claim(62.4, "surface habitable de 62,40 m²"), "citation_hors_champ"),
+        (vision.ROOMS, _claim(4, "comprenant 3 pièces principales"), "valeur_absente_de_la_citation"),
+        (vision.OCCUPANCY, _claim("vacant", "Le bien est occupé par un locataire"), "valeur_absente_de_la_citation"),
+        (vision.VISITS, _claim(["2026-12-04"], "le 3 et le 10 décembre 2026"), "valeur_absente_de_la_citation"),
+    ],
+)
+def test_quote_that_is_missing_or_does_not_state_the_value_is_rejected(
+    field_name: str, claim: dict[str, object], reason: str
+) -> None:
+    verdicts = vision.primary_verdicts(_reading(**{field_name: claim}), _context(), today=TODAY)
+    assert verdicts[field_name] == vision.Verdict(REJECTED, reason)
+
+
+def test_quote_must_be_on_the_page_it_names() -> None:
+    reading = vision.parse_reading(
+        {"champs": {vision.ROOMS: {"valeur": 3, "citation": "comprenant 3 pièces principales", "page": 2}}},
+        [vision.ROOMS],
+        [PAGE, PageRef(1, 2)],
+    )
+    context = _context()
+    context.page_texts[PageRef(1, 2)] = FILLER
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].reason == "citation_introuvable"
+
+
+def test_land_contenance_in_ares_and_centiares_states_square_metres() -> None:
+    text = "Une parcelle cadastrée section AB n° 12 pour une contenance de 12 a 50 ca. " + FILLER
+    reading = _reading(land_surface_m2=_claim(1250, "pour une contenance de 12 a 50 ca"))
+    assert vision.primary_verdicts(reading, _context(text), today=TODAY)[vision.LAND].status == CANDIDATE
+
+
+def test_unknown_is_a_valid_answer_that_publishes_nothing() -> None:
+    verdicts = vision.primary_verdicts(_reading(rooms_count={"valeur": "inconnu"}), _context(), today=TODAY)
+    assert verdicts[vision.ROOMS].status == UNKNOWN_STATUS
+    assert vision.cited_pages(verdicts) == []
+
+
+def test_only_future_visit_dates_are_kept() -> None:
+    text = "Visites le 3 novembre 2026 et le 3 décembre 2026. " + FILLER
+    reading = _reading(visit_dates=_claim(["2026-11-03", "2026-12-03"], "Visites le 3 novembre 2026 et le 3 décembre 2026"))
+    verdict = vision.primary_verdicts(reading, _context(text), today=TODAY)[vision.VISITS]
+    assert verdict.value == frozenset({date(2026, 12, 3)})
+
+    past = _reading(visit_dates=_claim(["2026-11-03"], "Visites le 3 novembre 2026"))
+    assert vision.primary_verdicts(past, _context(text), today=TODAY)[vision.VISITS].status == UNKNOWN_STATUS
+
+
+# --- Cohérence ----------------------------------------------------------------------------------------------------
+
+
+def test_sale_with_several_lots_and_no_identified_lot_is_rejected() -> None:
+    reading = _reading(rooms_count=_claim(3, "comprenant 3 pièces principales"))
+    verdicts = vision.primary_verdicts(reading, _context(several_lots=True), today=TODAY)
+    assert verdicts[vision.ROOMS] == vision.Verdict(REJECTED, "lot_non_identifie")
+
+    said_by_reader = vision.parse_reading(
+        {"plusieurs_lots": "oui", "champs": {vision.ROOMS: _claim(3, "comprenant 3 pièces principales")}},
+        [vision.ROOMS],
+        [PAGE],
+    )
+    assert vision.primary_verdicts(said_by_reader, _context(), today=TODAY)[vision.ROOMS].reason == "lot_non_identifie"
+
+    identified = _context(several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    assert vision.primary_verdicts(reading, identified, today=TODAY)[vision.ROOMS].status == CANDIDATE
+
+
+def test_quote_naming_another_lot_than_the_sold_one_is_rejected() -> None:
+    text = "Le lot 2 comprend 3 pièces principales. " + FILLER
+    reading = _reading(rooms_count=_claim(3, "Le lot 2 comprend 3 pièces principales"))
+    context = _context(text, several_lots=True, sold_lot=SoldLot(number=1, lot_count=2))
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.ROOMS].reason == "autre_lot"
+
+
+def test_surface_incompatible_with_the_number_of_rooms_rejects_both() -> None:
+    text = "Appartement de 5 pièces d'une surface habitable de 20 m². " + FILLER
+    reading = _reading(
+        habitable_surface_m2=_claim(20, "surface habitable de 20 m²"),
+        rooms_count=_claim(5, "Appartement de 5 pièces"),
+    )
+    verdicts = vision.primary_verdicts(reading, _context(text), today=TODAY)
+    assert verdicts[vision.HABITABLE] == vision.Verdict(REJECTED, "surface_incoherente_pieces")
+    assert verdicts[vision.ROOMS] == vision.Verdict(REJECTED, "surface_incoherente_pieces")
+
+
+# --- Occupation asymétrique ---------------------------------------------------------------------------------------
+
+
+def test_vacant_needs_an_explicit_free_statement_and_no_contrary_word_on_the_pages_read() -> None:
+    free = "Lors de la visite, le bien est libre de toute occupation. " + FILLER
+    reading = _reading(occupancy_status=_claim("vacant", "le bien est libre de toute occupation"))
+    assert vision.primary_verdicts(reading, _context(free), today=TODAY)[vision.OCCUPANCY].status == CANDIDATE
+
+    context = _context(free)
+    context.page_texts[PageRef(1, 2)] = "Un bail commercial a été consenti. " + FILLER
+    assert vision.primary_verdicts(reading, context, today=TODAY)[vision.OCCUPANCY].reason == "libre_contredit"
+
+
+def test_negated_occupation_words_do_not_contradict_vacant() -> None:
+    assert not vision.pages_contradict_vacant(["Le logement est non occupé et inoccupé depuis 2024, pas occupé."])
+    assert vision.pages_contradict_vacant(["Le logement est occupé."])
+    assert vision.pages_contradict_vacant(["Présence d'un locataire."])
+
+
+def test_occupied_or_rented_are_accepted_on_agreement_even_with_contrary_words() -> None:
+    reading = _reading(occupancy_status=_claim("rented", "Le bien est occupé par un locataire en vertu d'un bail"))
+    candidates = vision.primary_verdicts(reading, _context(), today=TODAY)
+    final = vision.final_verdicts(candidates, reading, _context(), today=TODAY)
+    assert final[vision.OCCUPANCY] == vision.Verdict(ACCEPTED, value="rented", page=PAGE)
+
+
+# --- Second lecteur -----------------------------------------------------------------------------------------------
+
+
+def test_values_are_kept_only_when_the_second_reader_agrees_within_the_field_tolerance() -> None:
+    primary = vision.primary_verdicts(
+        _reading(habitable_surface_m2=_claim(62.4, "surface habitable de 62,40 m²"),
+                 rooms_count=_claim(3, "comprenant 3 pièces principales")),
+        _context(),
+        today=TODAY,
+    )
+    text = PAGE_TEXT.replace("62,40", "63,10")
+    second = _reading(
+        habitable_surface_m2=_claim(63.1, "surface habitable de 63,10 m²"),
+        rooms_count={"valeur": "inconnu"},
+    )
+
+    final = vision.final_verdicts(primary, second, _context(text), today=TODAY)
+
+    assert final[vision.HABITABLE].status == ACCEPTED
+    assert final[vision.ROOMS] == vision.Verdict(DISAGREEMENT, "second_inconnu")
+
+
+@pytest.mark.parametrize(
+    ("field_name", "first", "second", "agree"),
+    [
+        (vision.HABITABLE, Decimal("50"), Decimal("51"), True),
+        (vision.HABITABLE, Decimal("50"), Decimal("51.1"), False),
+        (vision.LAND, Decimal("1000"), Decimal("1020"), True),
+        (vision.LAND, Decimal("1000"), Decimal("1021"), False),
+        (vision.ROOMS, 3, 3, True),
+        (vision.ROOMS, 3, 4, False),
+        (vision.OCCUPANCY, "occupied", "rented", False),
+    ],
+)
+def test_tolerances_are_those_of_auction_fact_fields(field_name: str, first: object, second: object, agree: bool) -> None:
+    assert vision.values_agree(field_name, first, second) is agree
+
+
+def test_different_value_or_unverified_quote_from_the_second_reader_is_a_disagreement() -> None:
+    primary = vision.primary_verdicts(_reading(rooms_count=_claim(3, "comprenant 3 pièces principales")), _context(), today=TODAY)
+    other_value = _reading(rooms_count=_claim(3, "trois pièces inventées"))
+    assert vision.final_verdicts(primary, other_value, _context(), today=TODAY)[vision.ROOMS].reason == "second_non_verifie"
+    assert vision.final_verdicts(primary, None, _context(), today=TODAY)[vision.ROOMS].status == DISAGREEMENT
+
+
+def test_second_reader_only_rereads_the_pages_cited_by_candidates() -> None:
+    verdicts = {
+        vision.ROOMS: vision.Verdict(CANDIDATE, value=3, page=PageRef(2, 5)),
+        vision.HABITABLE: vision.Verdict(CANDIDATE, value=Decimal(50), page=PageRef(1, 1)),
+        vision.LAND: vision.Verdict(REJECTED, "citation_introuvable"),
+    }
+    assert vision.cited_pages(verdicts) == [PageRef(1, 1), PageRef(2, 5)]
+
+
+# --- Comparaison avec la fiche ------------------------------------------------------------------------------------
+
+
+def test_comparison_with_the_sale_uses_the_same_tolerances_and_reads_visit_texts() -> None:
+    assert vision.compare_with_sale(vision.HABITABLE, Decimal("62.4"), Decimal("62"), today=TODAY) == "same"
+    assert vision.compare_with_sale(vision.HABITABLE, Decimal("62.4"), None, today=TODAY) == "empty"
+    assert vision.compare_with_sale(vision.OCCUPANCY, "rented", "unknown", today=TODAY) == "empty"
+    assert vision.compare_with_sale(vision.ROOMS, 3, 4, today=TODAY) == "different"
+    visits = ["Le 3 décembre 2026 de 10h à 12h", "10/12/2026 14h"]
+    assert vision.compare_with_sale(
+        vision.VISITS, frozenset({date(2026, 12, 3), date(2026, 12, 10)}), visits, today=TODAY
+    ) == "same"
+    assert vision.compare_with_sale(vision.VISITS, frozenset({date(2026, 12, 3)}), ["2026-11-02"], today=TODAY) == "empty"

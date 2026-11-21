@@ -30,6 +30,22 @@ TOKEN_PRICES = {
         Decimal('0.30'), Decimal('2.50'),
         'https://replicate.com/google/gemini-2.5-flash; checked 2026-09-21',
     ),
+    # Lecture des pièces par l'API Anthropic (src/enrichment/anthropic_reader.py). La réflexion adaptative est
+    # facturée en sortie : elle tient dans max_tokens, le plafond de sortie réservé.
+    'claude-haiku-5-5': (
+        Decimal('0.10'), Decimal('0.50'),
+        'https://platform.claude.com/docs/en/about-claude/pricing; prompts up to 100,000 tokens; checked 2026-11-21',
+    ),
+    'claude-sonnet-5-5': (
+        Decimal('2'), Decimal('10'),
+        'https://platform.claude.com/docs/en/about-claude/pricing; checked 2026-11-21',
+    ),
+}
+# Un modèle dont le prix change au-delà d'un nombre de jetons d'entrée par requête n'est réservé qu'en deçà :
+# Claude Haiku 5.5 coûte cinq fois plus (0,50 / 2,50) pour un prompt de plus de 100 000 jetons, palier que la
+# grille ne connaît pas. Jumelle de la borne d'entrée de reserve_pipeline_prediction (20261207100000).
+TOKEN_PRICE_INPUT_LIMITS = {
+    'claude-haiku-5-5': 100_000,
 }
 
 # Global daily LLM budget shared by the pipeline, backfills and the information
@@ -289,6 +305,12 @@ def enforce_daily_budget(model: str, *, input_token_ceiling: int, output_token_c
 
 def reserve_prediction(model: str, *, input_token_ceiling: int, output_token_ceiling: int) -> str | None:
     require_priced_model(model)
+    input_limit = TOKEN_PRICE_INPUT_LIMITS.get(model)
+    if input_limit is not None and input_token_ceiling > input_limit:
+        raise LLMModelNotPriced(
+            f'Model {model!r} is priced up to {input_limit} input tokens per request; '
+            f'refusing a request of {input_token_ceiling}'
+        )
     enforce_daily_budget(
         model, input_token_ceiling=input_token_ceiling, output_token_ceiling=output_token_ceiling
     )

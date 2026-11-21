@@ -75,6 +75,14 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pdf_max_documents_per_sale"] == 6
 
 
+def test_document_vision_switch_is_off_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("DOCUMENT_VISION_ENABLED", raising=False)
+    assert load_settings()["document_vision_enabled"] is False
+
+    monkeypatch.setenv("DOCUMENT_VISION_ENABLED", "true")
+    assert load_settings()["document_vision_enabled"] is True
+
+
 def test_source_isolation_defaults_cover_petites_affiches_inside_existing_budgets(monkeypatch) -> None:
     monkeypatch.delenv("SOURCE_PROCESS_ISOLATION", raising=False)
     monkeypatch.delenv("SOURCE_PROCESS_ISOLATION_SOURCES", raising=False)
