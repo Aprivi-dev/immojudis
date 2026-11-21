@@ -36,6 +36,7 @@ from src.enrichment.anthropic_reader import (
     ReaderOutputCut,
 )
 from src.llm_requests import LLMRequestDeterministicCooldown, LLMRequestTransportAmbiguous
+from src.pdf_enrichment import NetworkFailure, PdfEnrichmentStats
 from src.pipeline_usage import PipelineBudgetExhausted
 
 TODAY = date(2026, 11, 21)
@@ -144,8 +145,8 @@ def _reader(
     return bench.Reader(role, model, stats, max_calls, spend or bench.SpendCap(Decimal("3")))
 
 
-def _fetch(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str, bytes]:
-    return {URL: PDF} if URL in urls else {}
+def _fetch(row: Mapping[str, Any], urls: Sequence[str]) -> bench.FetchedPieces:
+    return bench.FetchedPieces({URL: PDF} if URL in urls else {})
 
 
 PRIMARY_VALUES = {
@@ -339,9 +340,14 @@ def _manifest_item(url: str, document_type: str, pages: dict[int, str], content:
     return item
 
 
-def _bench_one(manifest: list[dict[str, Any]], fetched: Mapping[str, bytes], primary: FakeModel | None = None) -> bench.BenchReport:
-    def fetch(row: Mapping[str, Any], urls: Sequence[str]) -> dict[str, bytes]:
-        return {url: content for url, content in fetched.items() if url in urls}
+def _bench_one(
+    manifest: list[dict[str, Any]],
+    fetched: Mapping[str, bytes],
+    primary: FakeModel | None = None,
+    missing: Mapping[str, str] | None = None,
+) -> bench.BenchReport:
+    def fetch(row: Mapping[str, Any], urls: Sequence[str]) -> bench.FetchedPieces:
+        return bench.FetchedPieces({url: content for url, content in fetched.items() if url in urls}, missing or {})
 
     return bench.run_bench(
         FakeConnection({SALE_ID: _row(result=manifest)}),
@@ -363,14 +369,16 @@ def test_selection_only_keeps_pages_of_pieces_whose_pdf_is_available() -> None:
     ]
     primary = FakeModel({HABITABLE: (62.4, PRIVATE_QUOTE)})
 
-    report = _bench_one(manifest, {URL: PDF}, primary)
+    report = _bench_one(manifest, {URL: PDF}, primary, {WORD_URL: bench.NO_PDF_WORD})
 
     assert report.processed == 1 and not report.skipped
     assert primary.calls[0]["pages"] == [DESCRIPTION]
-    assert report.pages.unusable == {bench.NO_PDF: 12}
-    assert "pièce sans PDF 12, PDF modifié depuis la lecture 0, PDF illisible 0, page hors bornes 0" in (
-        bench.render_report(report)
-    )
+    assert report.pages.unusable == {bench.NO_PDF_WORD: 12}
+    assert report.pages.missing_pieces == {bench.NO_PDF_WORD: 1}
+    markdown = bench.render_report(report)
+    assert "pièce sans PDF : Word 12, pièce sans PDF : HTML ou autre format 0" in markdown
+    assert "PDF modifié depuis la lecture 0, PDF illisible 0, page hors bornes 0." in markdown
+    assert "non obtenues (ventes comparées ou non), par motif : pièce sans PDF : Word 1, " in markdown
 
 
 def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:
@@ -380,7 +388,11 @@ def test_a_pdf_that_changed_since_its_text_was_read_is_not_sent() -> None:
 
 def test_sale_without_any_usable_page_says_why() -> None:
     no_pdf = _bench_one(MANIFEST, {})
-    assert no_pdf.skipped == {"aucune page utilisable (pièce sans PDF)": 1}
+    assert no_pdf.skipped == {"aucune page utilisable (pièce sans PDF : autre motif)": 1}
+    relay = _bench_one(MANIFEST, {}, missing={URL: bench.NO_PDF_RELAY})
+    assert relay.skipped == {"aucune page utilisable (pièce sans PDF : relais SOURCE_FETCH_RELAY non disponible)": 1}
+    # The piece is counted even though the sale is not compared.
+    assert relay.pages.missing_pieces == {bench.NO_PDF_RELAY: 1}
 
     one_page = _pdf(DESCRIPTION)
     beyond = [_manifest_item(URL, "pv_huissier", {1: FILLER, 2: DESCRIPTION}, one_page)]
@@ -523,6 +535,152 @@ def test_workflow_never_asks_for_the_private_review() -> None:
     assert "private-review" not in workflow.read_text(encoding="utf-8")
 
 
+# --- Liste des écarts (artefact) ----------------------------------------------------------------------------------
+
+
+def test_differences_list_public_data_only_never_the_quote_or_the_text_of_the_piece() -> None:
+    differences: list[dict[str, object]] = []
+    private: list[dict[str, object]] = []
+    report = bench.run_bench(
+        FakeConnection({SALE_ID: _row(rooms_count=4)}),
+        _reader("principal", FakeModel(AGREEING)),
+        _reader("second", FakeModel(AGREEING)),
+        _fetch,
+        sample=1,
+        today=TODAY,
+        private_review=private.append,
+        differences=differences.append,
+    )
+
+    assert report.fields[ROOMS].versus_sale["different"] == 1
+    assert differences == [
+        {"sale_id": SALE_ID, "field": ROOMS, "retained_value": 3, "sale_value": 4, "document_url": URL, "page": 2}
+    ]
+    # Neither the quote nor any text of the piece (not even its label), unlike the private review.
+    written = json.dumps(differences, ensure_ascii=False)
+    assert "3 pieces principales" not in written and "Cahier" not in written and "pieces" not in written
+    assert private and private[0]["quote"] == "3 pieces principales"
+    # Off by default.
+    assert bench.parse_args(["--sample", "1"]).differences is None
+
+
+def test_differences_give_the_visit_days_of_the_sale_never_its_free_text() -> None:
+    row = dict(zip((*bench.SALE_COLUMNS, *bench.SALE_VALUE_COLUMNS, "result"), _row(), strict=True))
+    row[VISITS] = ["le 3 décembre 2026 à 10h, rendez-vous avec M. Martin au 06 12 34 56 78"]
+    documents = {doc.index: doc for doc in bench.documents_from_manifest(MANIFEST)}
+    result = bench.SaleResult({}, {}, documents, bench.PageStats())
+    verdict = bench.Verdict("accepted", value=frozenset({date(2026, 12, 10)}), page=bench.PageRef(1, 2), quote="visite")
+
+    entry = bench.public_difference(row, VISITS, verdict, result)
+
+    assert entry == {
+        "sale_id": SALE_ID,
+        "field": VISITS,
+        "retained_value": ["2026-12-10"],
+        "sale_value": ["2026-12-03"],
+        "document_url": URL,
+        "page": 2,
+    }
+
+
+def test_differences_file_is_another_file_than_the_report_and_the_private_review(tmp_path: Any) -> None:
+    report, review = tmp_path / "report.md", tmp_path / "review.jsonl"
+    for argv in (
+        ["--output", str(report), "--differences", str(report)],
+        ["--output", str(report), "--private-review", str(review), "--differences", str(review)],
+    ):
+        with pytest.raises(SystemExit):
+            bench.parse_args(["--sample", "1", *argv])
+    assert bench.parse_args(["--sample", "1", "--differences", str(tmp_path / "ecarts.jsonl")]).differences
+
+
+def test_workflow_uploads_the_differences_in_their_own_artifact_kept_seven_days() -> None:
+    workflow = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "document-vision-comparison.yml"
+    text = workflow.read_text(encoding="utf-8")
+    assert '--differences "$RUNNER_TEMP/document-vision-differences.jsonl"' in text
+    upload = text.split("name: document-vision-differences", 1)[1]
+    assert "path: ${{ runner.temp }}/document-vision-differences.jsonl" in upload
+    assert "retention-days: 7" in upload
+    # The aggregated report keeps its own artifact and retention.
+    assert "name: document-vision-report" in text and "retention-days: 30" in text
+
+
+# --- Pièces sans PDF : pourquoi -----------------------------------------------------------------------------------
+
+RELAYED_URL = "https://cessions.immobilier-etat.gouv.fr/documents/cahier.pdf"
+
+
+def _stats(**lists: Any) -> PdfEnrichmentStats:
+    return PdfEnrichmentStats(**lists)
+
+
+@pytest.mark.parametrize(
+    ("url", "options", "stats", "reason"),
+    [
+        (URL, {"file_format": "docx"}, _stats(), bench.NO_PDF_WORD),
+        (URL, {"file_format": "doc"}, _stats(), bench.NO_PDF_WORD),
+        (URL, {"selected": False}, _stats(), bench.NO_PDF_CAP),
+        (URL, {"selected": False, "selectable_alone": False}, _stats(), bench.NO_PDF_OTHER),
+        (URL, {"document_type": "other"}, _stats(), bench.NO_PDF_OTHER),
+        (URL, {}, _stats(blocked_document_urls=[URL]), bench.NO_PDF_ROBOTS),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "robots_disallowed"}]), bench.NO_PDF_ROBOTS),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "unsupported_response"}]), bench.NO_PDF_HTML),
+        (URL, {}, _stats(permanent_document_failures=[{"url": URL, "reason": "not_found"}]), bench.NO_PDF_OTHER),
+        (URL, {}, _stats(network_failures=[NetworkFailure(URL, "timeout", False)]), bench.NO_PDF_NETWORK),
+        (URL, {}, _stats(network_failures=[NetworkFailure("https://example.test", "robots.txt timeout", True)]), bench.NO_PDF_NETWORK),
+        (URL, {}, _stats(network_failures=[NetworkFailure("https://other.test", "timeout", True)]), bench.NO_PDF_OTHER),
+        (URL, {}, _stats(), bench.NO_PDF_OTHER),
+        # Cessions Etat answers 403 to the runner: without the relay, that is the cause.
+        (RELAYED_URL, {}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), bench.NO_PDF_RELAY),
+        (RELAYED_URL, {"relay_available": True}, _stats(permanent_document_failures=[{"url": RELAYED_URL, "reason": "access_denied"}]), bench.NO_PDF_OTHER),
+    ],
+)
+def test_missing_piece_reason_says_why_the_bench_did_not_get_the_pdf(
+    url: str, options: dict[str, Any], stats: PdfEnrichmentStats, reason: str
+) -> None:
+    arguments: dict[str, Any] = {
+        "file_format": None,
+        "selected": True,
+        "selectable_alone": True,
+        "document_type": "cahier_conditions_vente",
+        "relay_available": False,
+        **options,
+    }
+    assert bench.missing_piece_reason(url, stats=stats, **arguments) == reason
+
+
+def test_download_names_the_piece_cut_by_the_limit_of_pieces_per_sale(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src import pdf_document_selection, pdf_enrichment
+
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    monkeypatch.delenv("SOURCE_FETCH_RELAY_URL", raising=False)
+    urls = [f"https://example.test/pv-{number}.pdf" for number in range(1, 8)]
+    documents = [
+        {"url": url, "label": f"Proces-verbal {number}", "document_type": "pv_huissier"}
+        for number, url in enumerate(urls, 1)
+    ]
+    row = dict(zip((*bench.SALE_COLUMNS, *bench.SALE_VALUE_COLUMNS, "result"), _row(documents=documents), strict=True))
+
+    def download(sale: Any, output_root: Path, stats: PdfEnrichmentStats) -> list[dict[str, str]]:
+        selected = pdf_document_selection.select_documents_for_extraction(sale.documents, sale=sale)
+        downloaded = []
+        for document in selected:
+            if document["url"] == urls[1]:
+                stats.blocked_document_urls.append(document["url"])
+                continue
+            path = output_root / Path(document["url"]).name
+            path.write_bytes(PDF)
+            downloaded.append({"url": document["url"], "file_path": str(path), "file_format": "pdf"})
+        return downloaded
+
+    monkeypatch.setattr(pdf_enrichment, "download_documents", download)
+
+    fetched = bench.download_sale_pdfs(row, urls)
+
+    assert sorted(fetched.pdfs) == sorted(set(urls) - {urls[1], urls[6]})
+    assert fetched.missing == {urls[1]: bench.NO_PDF_ROBOTS, urls[6]: bench.NO_PDF_CAP}
+
+
 # --- Pages : texte, OCR, images -----------------------------------------------------------------------------------
 
 
@@ -617,7 +775,7 @@ def test_bench_reads_a_cited_image_page_by_ocr(monkeypatch: pytest.MonkeyPatch) 
         FakeConnection({SALE_ID: _row(result=manifest, habitable_surface_m2=None)}),
         _reader("principal", FakeModel(values)),
         _reader("second", FakeModel(values)),
-        lambda row, urls: {URL: scanned},
+        lambda row, urls: bench.FetchedPieces({URL: scanned}),
         sample=1,
         today=TODAY,
     )
@@ -644,7 +802,7 @@ def test_second_reader_gets_the_page_before_the_cited_one_when_the_sold_lot_is_d
         FakeConnection({SALE_ID: row}),
         _reader("principal", primary),
         _reader("second", second),
-        lambda row, urls: {URL: pdf},
+        lambda row, urls: bench.FetchedPieces({URL: pdf}),
         sample=1,
         today=TODAY,
     )

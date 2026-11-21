@@ -704,12 +704,25 @@ def cuts_a_number(text: str, start: int, end: int) -> bool:
     )
 
 
+def follows_a_short_number(text: str, start: int) -> bool:
+    """Le passage qui commence à ``start`` commence par un chiffre que précèdent une seule espace puis un nombre de
+    1 à 3 chiffres (« 45 m² » dans « 12 45 m² »).
+
+    Sur une page lue par OCR seulement, cette espace peut cacher un autre signe (« 1245 », « 12,45 ») : le nombre cité
+    est peut-être la fin d'un nombre plus long. :func:`cuts_a_number` ne l'écarte que si le nombre cité est un groupe
+    des milliers de trois chiffres ; sur un texte natif, une espace entre deux nombres reste une espace.
+    """
+    before = text[:start]
+    return _digit(text[start : start + 1]) and before[-1:] in _THOUSANDS_SEPARATORS and bool(_LAST_GROUP.search(before[:-1]))
+
+
 def find_quote(page_text: str, quote: str, *, ocr: bool) -> tuple[int, int, bool] | None:
     """Où la citation se trouve dans le texte de la page : début, fin, et si la tolérance de l'OCR a servi.
 
     Même clé des deux côtés (:func:`match_key`), au moins ``SCALAR_QUOTE_MIN_CHARS`` caractères, comme pour une
     citation de l'extraction. ``ocr`` : le texte vient d'un OCR, la tolérance de l'OCR s'applique. Un passage qui
-    coupe un nombre de la page (:func:`cuts_a_number`) ne compte pas : on cherche l'occurrence suivante.
+    coupe un nombre de la page (:func:`cuts_a_number`) ne compte pas, ni, sur un texte d'OCR, un passage qui commence
+    juste après un nombre court (:func:`follows_a_short_number`) : on cherche l'occurrence suivante.
     """
     needle, _ = match_key(quote)
     if len(needle) < SCALAR_QUOTE_MIN_CHARS or not page_text:
@@ -724,7 +737,7 @@ def find_quote(page_text: str, quote: str, *, ocr: bool) -> tuple[int, int, bool
             if position < 0:
                 break
             start, end = spans[position][0], spans[position + len(needle) - 1][1]
-            if not cuts_a_number(page_text, start, end):
+            if not cuts_a_number(page_text, start, end) and not (ocr and follows_a_short_number(page_text, start)):
                 return start, end, tolerated
     return None
 
@@ -899,24 +912,24 @@ def _unidentified_lot(context: SaleContext, several_lots_read: bool, excerpt: st
 
     Lot désigné : rien ici (la citation le nomme ou est sous son titre, :func:`_sold_lot_reason`). Plusieurs lots
     sans lot désigné, lot incertain, biens concurrents dans les pièces : toujours. Vente à un seul lot d'après la
-    fiche : seulement si le lecteur dit que le dossier en vend plusieurs ET que la citation nomme un lot ou que le
-    dossier en nomme deux au moins (:func:`lot_designations`, sans exclusion de copropriété : « Lot n° 1 : dans une
-    copropriété, une maison. Lot n° 2 : un terrain »). Seuls les numéros au-delà de ``DEFAULT_HIGHEST_SALE_LOT`` ne
-    comptent pas : ce sont ceux des lots de copropriété (« lots numéros 12 et 45 ») que le lecteur a pris pour des
-    lots de vente.
+    fiche : si le dossier nomme deux lots au moins (:func:`lot_designations`, sans exclusion de copropriété : « Lot
+    n° 1 : dans une copropriété, une maison. Lot n° 2 : un terrain »), quelle que soit la réponse du lecteur (un
+    lecteur qui dit « pas plusieurs lots » peut se tromper, et la fiche avec lui) ; ou si le lecteur dit que le
+    dossier en vend plusieurs et que la citation nomme un lot. Seuls les numéros au-delà de
+    ``DEFAULT_HIGHEST_SALE_LOT`` ne comptent pas : ce sont ceux des lots de copropriété (« lots numéros 12 et 45 »)
+    qu'un lecteur prend pour des lots de vente.
     """
     if context.sold_lot is not None:
         return None
     if context.lot_situation != ONE_LOT:
         return context.lot_situation
-    if not several_lots_read:
-        return None
 
     def sale_lots(text: str) -> set[int | str]:
         return {lot for lot in lot_designations(text) if isinstance(lot, str) or 1 <= lot <= DEFAULT_HIGHEST_SALE_LOT}
 
-    named = sale_lots(excerpt).union(*(sale_lots(text) for text in context.dossier_pages.values()))
-    return ONE_LOT if sale_lots(excerpt) or len(named) >= 2 else None
+    quoted = sale_lots(excerpt)
+    named = quoted.union(*(sale_lots(text) for text in context.dossier_pages.values()))
+    return ONE_LOT if len(named) >= 2 or (several_lots_read and quoted) else None
 
 
 def _sold_lot_reason(context: SaleContext, located: LocatedQuote, ref: PageRef) -> str | None:

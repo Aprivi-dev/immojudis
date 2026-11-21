@@ -8,7 +8,9 @@ name: Document vision comparison
 # appels au modèle sont réservés et notés dans llm_usage_events (étape « vision_trial ») et partagent le budget
 # quotidien du pipeline ; un refus du budget, ou le plafond de dépense max_usd de l'exécution, arrête le banc
 # proprement. Rapport agrégé (sans identifiant de vente, citation ni URL de pièce) dans le résumé de l'exécution et en
-# artefact. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les ventes et les
+# artefact. Liste des écarts avec la fiche (identifiant de vente, champ, deux valeurs, URL publique de la pièce et page,
+# jamais la citation ni aucun texte de la pièce) dans un artefact à part, gardé 7 jours : des données publiques, de
+# quoi vérifier qui a raison. La revue privée des écarts du banc n'est jamais demandée ici : elle citerait les
 # pièces. Aucun déclenchement automatique.
 on:
   workflow_dispatch:
@@ -84,6 +86,7 @@ jobs:
           --sample "$BENCH_SAMPLE"
           --max-usd "$BENCH_MAX_USD"
           --output "$RUNNER_TEMP/document-vision-report.md"
+          --differences "$RUNNER_TEMP/document-vision-differences.jsonl"
 
       - name: Upload the aggregated report
         if: always()
@@ -93,3 +96,12 @@ jobs:
           path: ${{ runner.temp }}/document-vision-report.md
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Upload the list of differences with the sales
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: document-vision-differences
+          path: ${{ runner.temp }}/document-vision-differences.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
