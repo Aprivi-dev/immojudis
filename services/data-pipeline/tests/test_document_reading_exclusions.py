@@ -16,6 +16,7 @@ from scripts import exclude_sale_from_document_reading as command
 from src import document_reading
 from src.document_reading_exclusions import (
     EXCLUDED_SALE_SQL,
+    SALES_OF_URL_SQL,
     exclude_sale_from_document_reading,
     forget_readings_of_excluded_sales,
     is_sale_excluded_from_document_reading,
@@ -137,8 +138,35 @@ def test_command_excludes_the_sale_and_prints_counts_only(
         "already_excluded": False,
         "readings_removed": 1,
         "withdrawn": {"sales": 1, "cleared": 2, "preserved": 0, "not_recorded": 0},
+        "sales_not_withdrawn": 0,
     }
     assert URL not in output
+
+
+@pytest.mark.parametrize(
+    "withdrawn",
+    [
+        {"sales": 0, "cleared": 0, "preserved": 0, "not_recorded": 0, "pending": [URL]},
+        {"sales": 1, "cleared": 0, "preserved": 0, "not_recorded": 1, "pending": [URL]},
+    ],
+    ids=["lock_never_came", "write_discarded"],
+)
+def test_command_keeps_the_exclusion_and_fails_when_values_are_left(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], withdrawn: dict[str, Any]
+) -> None:
+    from src.storage import supabase_client
+
+    connection = FakeConnection((URL,), rowcount=0)
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://example.test/db")
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda url, **options: connection)
+    monkeypatch.setattr(command, "withdraw", lambda db_url, *, source_url=None: withdrawn)
+
+    assert command.main(["--source-url", URL, "--reason", "opposition"]) == 1
+
+    # L'inscription a eu lieu avant le retrait, et reste.
+    assert "insert into public.document_reading_exclusions" in connection.calls[0][0]
+    output = capsys.readouterr().out
+    assert json.loads(output)["sales_not_withdrawn"] == 1 and URL not in output
 
 
 # --- Exécution réelle (PIPELINE_TEST_DB_URL, base jetable, sinon ignoré) ------------------------------------------
@@ -181,6 +209,13 @@ def test_the_rule_runs_on_postgres_for_a_sale_and_for_the_url_it_absorbed() -> N
                 f"select source_url from public.auction_sales sale where {EXCLUDED_SALE_SQL} order by 1"
             ).fetchall()
             assert excluded == [("https://example.test/conservee",)]
+            # Le retrait d'une vente retrouve, par la même correspondance, la vente qui a absorbé l'URL inscrite.
+            for url, found in (
+                ("https://example.test/absorbee", [("https://example.test/conservee",)]),
+                ("https://example.test/autre", [("https://example.test/autre",)]),
+                ("https://example.test/inconnue", []),
+            ):
+                assert db.execute(SALES_OF_URL_SQL, {"url": url}).fetchall() == found
 
             # La lecture servie de la vente exclue (par l'URL qu'elle a absorbée) est supprimée, pas les autres.
             db.execute("alter table public.auction_sales add column id integer")

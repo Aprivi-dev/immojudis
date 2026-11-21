@@ -7,8 +7,10 @@ Commande opérateur (lots V3b-0 et V3b-1). Elle inscrit l'URL source de la vente
 Qwen, ni le banc de lecture des pièces, ni la passe d'écriture ne lisent plus ses pièces. Dans la même transaction,
 la lecture des pièces déjà servie aux abonnés est supprimée (``auction_document_readings``). Une vente déjà exclue
 garde son inscription. Elle retire ensuite de la fiche les valeurs que la lecture des pièces par Claude y avait
-écrites (``src.document_vision_pass.withdraw``, sous le verrou d'écriture du catalogue). La sortie ne reprend que des
-comptes, jamais l'URL.
+écrites (``src.document_vision_pass.withdraw``, sous le verrou d'écriture du catalogue, attendu jusqu'à 10 minutes).
+Si une vente n'a pas pu être traitée ou si une écriture de retrait a été écartée, l'inscription reste, la sortie donne
+le nombre de ventes à reprendre et la commande sort en erreur (code 1) : il suffit de la relancer, une vente déjà
+exclue gardant son inscription. La sortie ne reprend que des comptes, jamais l'URL.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from src.document_reading_exclusions import (  # noqa: E402
     exclude_sale_from_document_reading,
     forget_readings_of_excluded_sales,
 )
-from src.document_vision_pass import withdraw  # noqa: E402
+from src.document_vision_pass import withdraw, withdrawal_complete  # noqa: E402
 
 
 def _source_url(text: str) -> str:
@@ -63,17 +65,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         readings_removed = forget_readings_of_excluded_sales(connection)
     # Exclue d'abord : la passe ne peut plus réécrire ce que le retrait enlève.
     withdrawn = withdraw(str(db_url), source_url=args.source_url)
+    pending = withdrawn.get("pending")
+    counts = {key: value for key, value in withdrawn.items() if key != "pending"}
     print(
         json.dumps(
             {
                 "excluded": True,
                 "already_excluded": not added,
                 "readings_removed": readings_removed,
-                "withdrawn": withdrawn,
+                "withdrawn": counts,
+                # Ventes dont les valeurs n'ont pas été retirées (verrou pas venu, échec, écriture écartée).
+                "sales_not_withdrawn": len(pending) if isinstance(pending, list) else 0,
             }
         )
     )
-    return 0
+    # Exclusion gardée ; retrait incomplet : en erreur, pour relancer la commande.
+    return 0 if withdrawal_complete(withdrawn) else 1
 
 
 if __name__ == "__main__":

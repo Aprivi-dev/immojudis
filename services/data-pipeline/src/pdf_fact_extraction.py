@@ -74,13 +74,15 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     texts = [str(item.get("text") or "") if isinstance(item, dict) else item for item in pdf_texts]
     combined = "\n\n".join(text for text in texts if text)
     complete_texts = _document_texts_are_complete(pdf_texts, sale=sale)
+    # The values read by Claude (src.document_vision_pass) stay while their piece is read unchanged: this pass does
+    # not read them again, and the reading by Claude judges the lots itself (never a value of an unidentified lot).
+    vision_kept = vision_traces_kept(sale.raw_payload, pdf_texts)
     if complete_texts:
         # A complete, text-empty document is still authoritative evidence that
         # the previous PDF projection no longer exists.  Partial/failed
         # payloads must leave the last verified projection available for the
-        # next retry. The values read by Claude (src.document_vision_pass) stay while their piece is read
-        # unchanged: this pass does not read them again.
-        _clear_pdf_fact_projections(sale, keep=vision_traces_kept(sale.raw_payload, pdf_texts))
+        # next retry.
+        _clear_pdf_fact_projections(sale, keep=vision_kept)
     if not combined:
         if complete_texts:
             enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
@@ -157,7 +159,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     else:
         sale.raw_payload.pop("pdf_multi_lot_guard", None)
     if guarded_fields:
-        _clear_pdf_fact_projections(sale, fields=guarded_fields)
+        _clear_pdf_fact_projections(sale, fields=guarded_fields, keep=vision_kept)
 
     if sale.land_surface_m2 is None:
         land_surface = None if land_surface_ambiguous else (

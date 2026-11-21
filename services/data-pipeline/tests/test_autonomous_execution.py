@@ -120,8 +120,8 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert subprocess_calls[1][1]["timeout"] == autonomous_runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
     # The reading step that follows reads the texts: the catch-up does not run its own.
     assert subprocess_calls[1][1]["env"][document_reading.READING_ENABLED_ENV] == "false"
-    # Ten sales and four minutes per pass (lot V3b-1).
-    assert subprocess_calls[3][0][3:] == ["--max-sales", "10", "--budget-minutes", "4"]
+    # Ten sales and ten minutes per pass (lot V3b-1).
+    assert subprocess_calls[3][0][3:] == ["--max-sales", "10", "--budget-minutes", "10"]
     assert subprocess_calls[3][1]["timeout"] == autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS
     assert subprocess_calls[4][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
     assert subprocess_calls[4][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS

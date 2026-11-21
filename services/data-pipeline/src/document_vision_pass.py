@@ -9,18 +9,27 @@ peut être écrite.
 Réglages (``src.config``) :
 
 * ``DOCUMENT_VISION_MODE`` : ``off`` (défaut, rien n'est lu), ``dry_run`` (lit, compte et journalise ce qui serait
-  écrit, par champ, sans rien écrire sur la fiche) ou ``write`` ;
+  écrit, par champ) ou ``write``. À blanc, seul l'état de la lecture (``raw_payload.document_vision``) est écrit,
+  jamais la fiche visible ;
 * ``DOCUMENT_VISION_FIELDS`` : les champs ouverts à l'écriture, séparés par des virgules, parmi
   :data:`WRITABLE_FIELDS`. Vide par défaut : rien n'est lu ni écrit, même à blanc. Jamais la mise à prix ni la date
-  d'audience, ni les dates de visite.
+  d'audience, ni les dates de visite. Ouvrir un champ plus tard ne relit pas les ventes déjà lues : seule une nouvelle
+  version du prompt (ou de nouvelles pièces) les fait relire.
 
-Bornes : :data:`MAX_SALES` ventes et :data:`BUDGET_SECONDS` secondes par passe ; une vente commencée va à son terme
-(:data:`PASS_TIMEOUT_SECONDS`, 10 minutes, borne le processus : délais d'appel plus courts que ceux du banc).
+Bornes : :data:`MAX_SALES` ventes et :data:`BUDGET_SECONDS` secondes par passe. Une vente ne commence que s'il reste
+de quoi la finir (:data:`SALE_RESERVE_SECONDS` : ses deux délais d'appel, plus 90 s pour l'attente du verrou et
+l'écriture) ; le lanceur donne au processus :data:`PASS_TIMEOUT_SECONDS`, démarrage compris. Les délais d'appel sont
+plus courts que ceux du banc.
+
+Avant toute lecture, la passe vérifie que la base porte ses migrations (table des exclusions, colonnes du registre) ;
+sinon elle s'arrête (``schema_missing``), sans lire ni payer.
 
 Aucune requête aux sites (décision du 17/11/2026 : pas une requête de plus par site). Les pièces sont lues dans le
 cache local des pièces téléchargées par la lecture des PDF du pipeline (``data/documents``, gardé d'une exécution à
-l'autre et borné par le workflow), jamais téléchargées : une vente dont aucune pièce utile n'y est attend que ses
-pièces soient relues (état ``waiting_pieces``), sans essai compté.
+l'autre et borné par le workflow), jamais téléchargées. Une vente qu'aucun appel n'a pu lire (pièce absente du cache,
+PDF différent du texte lu, pièces illisibles) attend que ses pièces soient relues (état ``waiting_pieces``), sans
+essai compté. Sous le verrou, avant d'écrire, l'empreinte des pièces est recalculée : si elles ont changé depuis la
+lecture, rien n'est écrit et la vente reste à relire, sans essai compté.
 
 Ventes lues : celles du banc (``CANDIDATE_SALES_SQL`` : à venir, pièces lues, faits complets, non exclues), avec au
 moins un champ ouvert vide, et sans lecture déjà faite pour l'empreinte de leurs pièces et la version du prompt. Une
@@ -32,10 +41,11 @@ payer deux fois la même lecture.
 Règles d'écriture, vérifiées sous le verrou d'écriture du catalogue sur la vente relue juste avant l'écriture
 (:func:`plan_write`) : verdict ``accepted`` ; champ ouvert ; champ que le registre des pièces ne connaît pas pour
 la vente (ni valeur tenue, ni valeur libérée avec mémoire d'écho : ``app_private.sale_registry_columns``) ; colonne
-vide (pour une surface bâtie, tout le groupe :data:`BUILT_SURFACE_GROUP`) ; jamais moins de pièces que de chambres ; vente non exclue (seconde vérification). La
-vente passe ensuite par ``derive_sale_facts`` (la surface affichée se déduit de la surface habitable) et par
-``upsert_sales_to_supabase(refresh_last_seen=False)``, comme la reprojection du vidage des pièces. Si la déduction
-touche une autre colonne déjà remplie, rien n'est écrit sur cette vente.
+vide (pour une surface bâtie, tout le groupe :data:`BUILT_SURFACE_GROUP`) ; jamais moins de pièces que de
+chambres ; vente non exclue (seconde vérification). La vente passe ensuite par ``derive_sale_facts`` (la surface
+affichée se déduit de la surface habitable) et par ``upsert_sales_to_supabase(refresh_last_seen=False)``, comme la
+reprojection du vidage des pièces. Si la déduction touche une autre colonne déjà remplie, ou si elle changerait à elle
+seule un fait déjà rempli de la fiche (règles qui ont changé depuis la dernière écriture), rien n'est écrit.
 
 Trace : ``raw_payload.pdf_fact_provenance[colonne]`` (``src.pdf_fact_scope.pdf_record_fact_projection``), avec
 ``reader: "document_vision"``, la version du prompt, les deux modèles, l'index et le type de la pièce, sa page et la
@@ -46,7 +56,11 @@ citation, ni dans la trace ni dans le journal. Une relecture de la fiche par la 
 
 Retrait : ``python -m src.document_vision_pass --withdraw --prompt-version X`` ou ``--withdraw --sale URL`` rejoue
 ``_clear_pdf_fact_projections`` sur les seules traces de cette lecture ; la case redevient vide (ou reprend la valeur
-de l'annonce). La commande d'exclusion d'une vente l'appelle.
+de l'annonce). ``--sale`` retrouve la vente par la règle des exclusions (son URL, ou une URL qu'elle a absorbée).
+Chaque vente attend le verrou du catalogue jusqu'à 10 minutes ; une vente non traitée ou une écriture écartée fait
+sortir la commande en erreur, avec la liste des ventes à reprendre. Un retrait par version se fait avec
+``DOCUMENT_VISION_MODE=off`` : sinon une passe pourrait écrire de nouvelles valeurs de cette version pendant le
+retrait. La commande d'exclusion d'une vente l'appelle.
 """
 
 from __future__ import annotations
@@ -68,7 +82,7 @@ from psycopg.types.json import Jsonb
 
 from src.config import load_settings
 from src.document_reading import ReadingDocument, documents_from_manifest, sold_lot_from_sale
-from src.document_reading_exclusions import is_sale_excluded_from_document_reading
+from src.document_reading_exclusions import SALES_OF_URL_SQL, is_sale_excluded_from_document_reading
 from src.document_vision import (
     ACCEPTED,
     CARREZ,
@@ -81,7 +95,7 @@ from src.document_vision import (
     Verdict,
 )
 from src.document_vision_pieces import NO_PDF_NOT_CACHED, FetchedPieces, cached_sale_pdfs
-from src.document_vision_reading import CANDIDATE_SALES_SQL, NO_FIELD_PAGE, NO_USABLE_PAGE
+from src.document_vision_reading import CANDIDATE_SALES_SQL, NO_FIELD_PAGE, PRIMARY_FAILED
 from src.models import AuctionSale
 from src.pdf_fact_scope import _clear_pdf_fact_projections, _pdf_values_match, pdf_record_fact_projection
 from src.sale_finalization import derive_sale_facts
@@ -119,17 +133,23 @@ FACT_COLUMNS = (
 
 STATE_KEY = "document_vision"
 MAX_SALES = 10
-BUDGET_SECONDS = 4 * 60
-# Délais d'appel de la passe, plus courts que ceux du banc (5 et 10 minutes) : une passe tient en 10 minutes.
+# Délais d'appel de la passe, plus courts que ceux du banc (5 et 10 minutes).
 PRIMARY_TIMEOUT_SECONDS = 120.0
 SECOND_TIMEOUT_SECONDS = 240.0
-# Une vente commencée à la fin du budget va à son terme : ses deux appels peuvent prendre leurs délais entiers.
-PASS_TIMEOUT_SECONDS = BUDGET_SECONDS + PRIMARY_TIMEOUT_SECONDS + SECOND_TIMEOUT_SECONDS
+LOCK_WAIT_SECONDS = 60.0
+# Une vente ne commence que s'il reste ses deux délais d'appel, plus 90 s pour l'attente du verrou et l'écriture.
+SALE_RESERVE_SECONDS = PRIMARY_TIMEOUT_SECONDS + SECOND_TIMEOUT_SECONDS + 90.0
+# Temps de la passe, à partir de son démarrage : la dernière vente y finit.
+BUDGET_SECONDS = 10 * 60
+# Démarrage du processus (imports, lecture des réglages, connexion) avant le premier tic de son budget.
+STARTUP_SECONDS = 60
+PASS_TIMEOUT_SECONDS = BUDGET_SECONDS + STARTUP_SECONDS
+# Retrait : chaque vente attend le verrou du catalogue jusqu'à 10 minutes (une collecte peut le tenir longtemps).
+WITHDRAW_LOCK_WAIT_SECONDS = 10 * 60
 RETRY_BACKOFF_HOURS = (12, 24, 72)
 MAX_FAILED_ATTEMPTS = len(RETRY_BACKOFF_HOURS) + 1
 PASS_STAGE = "vision_pass"
 PASS_REASON = "document_vision_write"
-LOCK_WAIT_SECONDS = 60.0
 
 # Issue d'un champ retenu par les deux lecteurs (comptes et journal).
 WRITTEN = "ecrit"
@@ -141,6 +161,7 @@ FORBIDDEN = "toucherait_la_mise_a_prix_ou_la_date"
 NOT_KEPT = "non_garde_par_la_fiche"
 EXCLUDED = "vente_exclue"
 REGISTRY = "tenu_par_le_registre"
+DRIFT = "la_deduction_changerait_la_fiche"
 NOT_RECORDED = "ecriture_ecartee"
 SECOND_FAILED = "second lecteur en échec"
 WRITE_FAILED = "écriture en échec"
@@ -320,7 +341,7 @@ def plan_write(
             outcomes[name] = REGISTRY
         elif any(not _empty(getattr(sale, column)) for column in required_empty_columns(name)):
             outcomes[name] = FILLED
-        elif name == ROOMS and sale.bedrooms_count is not None and int(verdict.value) < sale.bedrooms_count:  # type: ignore[call-overload]
+        elif name == ROOMS and sale.bedrooms_count is not None and int(str(verdict.value)) < sale.bedrooms_count:
             outcomes[name] = FEWER_ROOMS
         else:
             chosen[name] = verdict
@@ -328,11 +349,21 @@ def plan_write(
         return WritePlan(None, outcomes)
     baseline = sale.model_copy(deep=True)
     derive_sale_facts(baseline)
+    stored, before = _facts(sale), _facts(baseline)
+    if any(
+        not _empty(stored[column]) and not _pdf_values_match(before[column], stored[column])
+        for column in FACT_COLUMNS
+        if column not in UNTRACED_COLUMNS
+    ):
+        # La déduction seule changerait un fait déjà rempli (règles qui ont changé depuis la dernière écriture de la
+        # fiche) : l'écriture le publierait sans que la lecture y soit pour rien. Rien n'est écrit. Le texte d'appui
+        # de la surface n'est pas un fait : il se refait à chaque écriture de la fiche.
+        return WritePlan(None, {**outcomes, **dict.fromkeys(chosen, DRIFT)})
     written = sale.model_copy(deep=True)
     for name, verdict in chosen.items():
         setattr(written, name, verdict.value)
     derive_sale_facts(written)
-    before, after = _facts(baseline), _facts(written)
+    after = _facts(written)
     changed = [column for column in FACT_COLUMNS if not _pdf_values_match(after[column], before[column])]
     relabelled = (*SURFACE_LABELS, *UNTRACED_COLUMNS)
     refusal = None
@@ -450,6 +481,31 @@ select sale.source_url
 # et la correspondance entre champs et colonnes reste celle de la base.
 _REGISTRY_COLUMNS_SQL = "select app_private.sale_registry_columns(%s)"
 
+# Les objets des migrations dont la passe dépend (20261208100000 et 20261208100100).
+_SCHEMA_SQL = """
+select pg_catalog.to_regclass('public.document_reading_exclusions') is not null
+   and pg_catalog.to_regprocedure('app_private.sale_registry_columns(text)') is not null
+"""
+
+# Le dernier texte des pièces de la vente, relu sous le verrou avant d'écrire (même choix que CANDIDATE_SALES_SQL).
+_LATEST_MANIFEST_SQL = """
+select extraction.result
+  from public.auction_extractions extraction
+ where extraction.source_url = %s
+   and extraction.provider = 'pdf_text'
+   and jsonb_typeof(extraction.result) = 'array'
+ order by extraction.updated_at desc
+ limit 1
+"""
+
+
+class RegistryUnavailable(RuntimeError):
+    """Les colonnes du registre n'ont pas pu être lues : la passe s'arrête, sans compter d'essai."""
+
+
+class PiecesChanged(RuntimeError):
+    """Les pièces ont changé entre la lecture et l'écriture : rien n'est écrit, la vente reste à relire."""
+
 
 def _connect(db_url: str) -> Any:
     from src.storage.supabase_client import connect
@@ -484,10 +540,32 @@ def _is_excluded(db_url: str, source_url: str) -> bool:
         return is_sale_excluded_from_document_reading(connection, source_url)
 
 
-def _registry_columns(db_url: str, source_url: str) -> frozenset[str]:
+def _schema_ready(db_url: str) -> bool:
     with _connect(db_url) as connection:
-        row = connection.execute(_REGISTRY_COLUMNS_SQL, (source_url,)).fetchone()
+        row = connection.execute(_SCHEMA_SQL).fetchone()
+    return bool(row and row[0])
+
+
+def _registry_columns(db_url: str, source_url: str) -> frozenset[str]:
+    try:
+        with _connect(db_url) as connection:
+            row = connection.execute(_REGISTRY_COLUMNS_SQL, (source_url,)).fetchone()
+    except Exception as exc:  # fonction absente, droit refusé, base injoignable : rien ne peut être jugé
+        raise RegistryUnavailable(type(exc).__name__) from exc
     return frozenset(str(column) for column in (row[0] if row and row[0] else []))
+
+
+def _latest_manifest(db_url: str, source_url: str) -> object:
+    with _connect(db_url) as connection:
+        row = connection.execute(_LATEST_MANIFEST_SQL, (source_url,)).fetchone()
+    return row[0] if row else None
+
+
+def _sales_of_url(db_url: str, url: str) -> list[str]:
+    """Les ventes que désigne ``url`` par la règle des exclusions : la sienne, ou celle qui l'a absorbée."""
+    with _connect(db_url) as connection:
+        rows = connection.execute(SALES_OF_URL_SQL, {"url": url}).fetchall()
+    return [str(row[0]) for row in rows]
 
 
 def _record_state(db_url: str, source_url: str, state: Mapping[str, object]) -> None:
@@ -546,8 +624,11 @@ class PassReport:
     failed: int = 0
     abandoned: int = 0
     missing: int = 0
-    # Ventes dont aucune pièce utile n'est dans le cache local : lues quand leurs pièces auront été relues.
+    # Ventes qu'aucun appel n'a pu lire (pièces absentes du cache, PDF différent, illisible) : lues quand leurs
+    # pièces auront été relues.
     waiting_pieces: int = 0
+    # Ventes dont les pièces ont changé entre la lecture et l'écriture : à relire.
+    pieces_changed: int = 0
     # Pièces prises dans le cache local, et pièces demandées qui n'y étaient pas (jamais téléchargées par la passe).
     pieces_from_cache: int = 0
     pieces_not_cached: int = 0
@@ -570,6 +651,7 @@ class PassReport:
             "abandoned": self.abandoned,
             "missing": self.missing,
             "waiting_pieces": self.waiting_pieces,
+            "pieces_changed": self.pieces_changed,
             "pieces_from_cache": self.pieces_from_cache,
             "pieces_not_cached": self.pieces_not_cached,
             # La passe n'a aucun chemin vers le réseau des sites : ses pièces viennent du cache local.
@@ -617,7 +699,8 @@ def run_pass(
     today: date | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> PassReport:
-    """Une passe : lit au plus ``max_sales`` ventes et n'en commence plus après ``budget_seconds``."""
+    """Une passe : lit au plus ``max_sales`` ventes, et n'en commence plus une s'il reste moins de
+    :data:`SALE_RESERVE_SECONDS` avant ``budget_seconds``."""
     from src.catalogue_lock import CatalogueLockTimeout
     from src.document_vision_reading import ReadingStopped, read_sale
     from src.french_dates import PARIS
@@ -628,6 +711,10 @@ def run_pass(
         report.stop_reason = OFF if settings.mode == OFF else "no_open_field"
         return report
     started = clock()
+    if not _schema_ready(db_url):
+        # Migrations pas encore appliquées : rien n'est lu, rien n'est payé, aucun essai n'est compté.
+        report.stop_reason = "schema_missing"
+        return report
     candidates = _select_candidates(db_url, settings, max_sales)
     report.candidates = len(candidates)
     if not candidates:
@@ -646,7 +733,7 @@ def run_pass(
         return fetch
     today = today or datetime.now(PARIS).date()
     for candidate in candidates:
-        if clock() - started >= budget_seconds:
+        if budget_seconds - (clock() - started) < SALE_RESERVE_SECONDS:
             report.stop_reason = "budget"
             break
         state = dict(candidate.state)
@@ -693,10 +780,11 @@ def run_pass(
             "read_at": _now(),
             "text_at": text_at,
         }
-        if reading is None and skipped == f"{NO_USABLE_PAGE} ({NO_PDF_NOT_CACHED})":
-            # Pièces absentes du cache : rien n'a été lu ni payé. La vente revient quand ses pièces sont relues (texte
-            # réécrit), sans essai compté.
-            _record_state(db_url, candidate.source_url, {**new_state, "status": "waiting_pieces", "attempts": attempts})
+        if reading is None and skipped not in (NO_FIELD_PAGE, PRIMARY_FAILED):
+            # Aucun appel n'a été fait (pièces absentes du cache, PDF différent du texte lu, illisible, extrait vide) :
+            # rien n'a été payé. La vente revient quand ses pièces sont relues (texte réécrit), sans essai compté.
+            waiting = {**new_state, "status": "waiting_pieces", "attempts": attempts, "waiting_for": skipped}
+            _record_state(db_url, candidate.source_url, waiting)
             report.waiting_pieces += 1
             continue
         failure = SECOND_FAILED if reading is not None and reading.second_failed else None
@@ -705,10 +793,18 @@ def run_pass(
         if failure is None and reading is not None:
             source = ReadingSource(reading.documents, models, manifest_digests(candidate.manifest))
             try:
-                plan = _apply(db_url, candidate.source_url, sale, settings, reading.final, source)
+                plan = _apply(db_url, candidate.source_url, sale, settings, reading.final, source, fingerprint)
             except CatalogueLockTimeout:
                 report.stop_reason = "catalogue_lock"
                 break
+            except RegistryUnavailable:
+                # Le registre ne se lit plus : aucune écriture ne peut être jugée. La passe s'arrête, l'état de la vente
+                # ne change pas (pas d'essai compté).
+                report.stop_reason = "registry_unavailable"
+                break
+            except PiecesChanged:
+                report.pieces_changed += 1
+                continue
             except Exception as exc:  # une vente n'arrête jamais la passe
                 LOGGER.warning("Document vision: sale %s not written (%s)", candidate.sale_id, type(exc).__name__)
                 failure = WRITE_FAILED
@@ -734,9 +830,11 @@ def _apply(
     settings: VisionSettings,
     verdicts: Mapping[str, Verdict],
     source: ReadingSource,
+    fingerprint: str,
 ) -> WritePlan:
     """À blanc : les règles appliquées à la vente lue, rien n'est écrit. En écriture : sous le verrou du catalogue,
-    sur la vente relue, après une seconde vérification de l'exclusion. Le registre des pièces est lu dans les deux cas."""
+    sur la vente relue, après une seconde vérification de l'exclusion et de l'empreinte des pièces
+    (:class:`PiecesChanged`). Le registre des pièces est lu dans les deux cas."""
     if settings.mode != WRITE:
         return plan_write(sale, verdicts, settings.fields, source, _registry_columns(db_url, source_url))
     accepted = [name for name in WRITABLE_FIELDS if name in verdicts and verdicts[name].status == ACCEPTED]
@@ -748,12 +846,18 @@ def _apply(
         current = _fetch_sale(source_url)
         if current is None:
             return WritePlan(None)
+        lot_selection = current.raw_payload.get("source_lot_selection")
+        sold_lot = sold_lot_from_sale(current.property_type, current.city, lot_selection)
+        if reading_fingerprint(_latest_manifest(db_url, source_url), sold_lot) != fingerprint:
+            raise PiecesChanged(source_url)
         plan = plan_write(current, verdicts, settings.fields, source, _registry_columns(db_url, source_url))
         if plan.sale is None:
             return plan
         lock.ensure_held()
         if not _write_sale(plan.sale):
-            outcomes = {name: NOT_RECORDED if outcome == WRITTEN else outcome for name, outcome in plan.outcomes.items()}
+            outcomes = {
+                name: NOT_RECORDED if outcome == WRITTEN else outcome for name, outcome in plan.outcomes.items()
+            }
             return WritePlan(None, outcomes)
         return plan
 
@@ -762,8 +866,9 @@ def _apply(
 
 
 def withdraw_sale(db_url: str, source_url: str, *, prompt_version: str | None = None) -> dict[str, int]:
-    """Retire d'une vente les valeurs écrites par cette lecture, sous le verrou du catalogue."""
-    with _catalogue_lock(db_url, LOCK_WAIT_SECONDS) as lock:
+    """Retire d'une vente les valeurs écrites par cette lecture, sous le verrou du catalogue (attendu jusqu'à
+    :data:`WITHDRAW_LOCK_WAIT_SECONDS`). Lève ``CatalogueLockTimeout`` si le verrou ne vient pas."""
+    with _catalogue_lock(db_url, WITHDRAW_LOCK_WAIT_SECONDS) as lock:
         sale = _fetch_sale(source_url)
         if sale is None:
             return {"sales": 0, "cleared": 0, "preserved": 0, "not_recorded": 0}
@@ -780,18 +885,42 @@ def withdraw_sale(db_url: str, source_url: str, *, prompt_version: str | None = 
     }
 
 
-def withdraw(db_url: str, *, prompt_version: str | None = None, source_url: str | None = None) -> dict[str, int]:
-    """Retrait d'une version du prompt (sur toutes les ventes qui en portent une trace) ou d'une vente."""
+def withdraw(db_url: str, *, prompt_version: str | None = None, source_url: str | None = None) -> dict[str, object]:
+    """Retrait d'une version du prompt (sur toutes les ventes qui en portent une trace) ou d'une vente (par la règle
+    des exclusions : son URL, ou une URL qu'elle a absorbée).
+
+    Rend les comptes et ``pending`` : les ventes à reprendre, dont le verrou n'est pas venu, dont le retrait a échoué
+    ou dont l'écriture a été écartée. Une vente n'arrête jamais le retrait des suivantes.
+    """
+    from src.catalogue_lock import CatalogueLockTimeout
+
     if source_url is not None:
-        urls = [source_url]
+        urls = _sales_of_url(db_url, source_url)
     else:
         with _connect(db_url) as connection:
             rows = connection.execute(_TRACED_SALES_SQL, (TRACE_READER, prompt_version, prompt_version)).fetchall()
         urls = [str(row[0]) for row in rows]
     totals: Counter[str] = Counter({"sales": 0, "cleared": 0, "preserved": 0, "not_recorded": 0})
+    pending: list[str] = []
     for url in urls:
-        totals.update(withdraw_sale(db_url, url, prompt_version=prompt_version))
-    return dict(totals)
+        try:
+            result = withdraw_sale(db_url, url, prompt_version=prompt_version)
+        except CatalogueLockTimeout:
+            pending.append(url)
+            continue
+        except Exception as exc:  # une vente n'arrête pas le retrait des suivantes
+            LOGGER.warning("Document vision withdrawal failed for one sale (%s)", type(exc).__name__)
+            pending.append(url)
+            continue
+        totals.update(result)
+        if result["not_recorded"]:
+            pending.append(url)
+    return {**totals, "pending": pending}
+
+
+def withdrawal_complete(result: Mapping[str, object]) -> bool:
+    """Toutes les ventes visées ont été traitées et chaque écriture de retrait a été enregistrée."""
+    return not result.get("pending") and not result.get("not_recorded")
 
 
 # --- Commande -------------------------------------------------------------------------------------------------------
@@ -802,7 +931,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-sales", type=int, default=MAX_SALES)
     parser.add_argument("--budget-minutes", type=float, default=BUDGET_SECONDS / 60)
     parser.add_argument("--withdraw", action="store_true", help="retire les valeurs écrites par cette lecture")
-    parser.add_argument("--prompt-version", help="avec --withdraw : celles de cette version du prompt")
+    parser.add_argument(
+        "--prompt-version",
+        help="avec --withdraw : celles de cette version du prompt (avec DOCUMENT_VISION_MODE=off pendant le retrait)",
+    )
     parser.add_argument("--sale", help="avec --withdraw : celles de cette vente (URL source)")
     args = parser.parse_args(argv)
     if args.withdraw and (args.prompt_version is None) == (args.sale is None):
@@ -822,8 +954,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not db_url:
             print("SUPABASE_DB_URL est requise.", file=sys.stderr)
             return 2
-        print(json.dumps(withdraw(db_url, prompt_version=args.prompt_version, source_url=args.sale)))
-        return 0
+        result = withdraw(db_url, prompt_version=args.prompt_version, source_url=args.sale)
+        print(json.dumps(result))
+        # Une vente non traitée ou une écriture écartée : en erreur, pour relancer la commande.
+        return 0 if withdrawal_complete(result) else 1
     try:
         vision = vision_settings(settings)
     except ValueError as exc:

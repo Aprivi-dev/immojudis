@@ -151,6 +151,8 @@ class Store:
         self.written: list[AuctionSale] = []
         self.excluded: set[str] = set()
         self.registry: frozenset[str] = frozenset()
+        self.manifest: object = MANIFEST
+        self.schema_ready = True
         self.limits: list[int] = []
         self.locks = 0
 
@@ -184,6 +186,9 @@ class Store:
         monkeypatch.setattr(vision, "_catalogue_lock", lock)
         monkeypatch.setattr(vision, "cached_sale_pdfs", lambda sale, urls: FetchedPieces({PIECE_URL: PDF}))
         monkeypatch.setattr(vision, "_registry_columns", lambda db_url, url: self.registry)
+        monkeypatch.setattr(vision, "_schema_ready", lambda db_url: self.schema_ready)
+        monkeypatch.setattr(vision, "_latest_manifest", lambda db_url, url: self.manifest)
+        monkeypatch.setattr(vision, "_sales_of_url", lambda db_url, url: [url] if url in self.sales else [])
 
 
 def _run(
@@ -281,7 +286,7 @@ def test_main_runs_the_pass_with_its_bounds_and_keeps_the_urls_of_the_pieces_out
         assert vision.main([]) == 0
     finally:
         logger.setLevel(previous)
-    assert seen == [(vision.VisionSettings("dry_run", (ROOMS,)), {"max_sales": 10, "budget_seconds": 240.0}, logging.ERROR)]
+    assert seen == [(vision.VisionSettings("dry_run", (ROOMS,)), {"max_sales": 10, "budget_seconds": 600.0}, logging.ERROR)]
 
 
 # --- À blanc ----------------------------------------------------------------------------------------------------------
@@ -500,13 +505,89 @@ def test_withdraw_command_by_sale_and_by_prompt_version(monkeypatch: pytest.Monk
     monkeypatch.setattr(vision, "_connect", lambda db_url: connection)
 
     assert vision.withdraw(DB_URL, prompt_version=PROMPT_VERSION) == {
-        "sales": 1, "cleared": 7, "preserved": 0, "not_recorded": 0,
+        "sales": 1, "cleared": 7, "preserved": 0, "not_recorded": 0, "pending": [],
     }
     assert connection.parameters == (TRACE_READER, PROMPT_VERSION, PROMPT_VERSION)
     assert store.sales[SOURCE_URL].habitable_surface_m2 is None and store.locks == 1
     # Plus rien à retirer : la fiche n'est pas réécrite.
-    assert vision.withdraw(DB_URL, source_url=SOURCE_URL) == {"sales": 1, "cleared": 0, "preserved": 0, "not_recorded": 0}
+    assert vision.withdraw(DB_URL, source_url=SOURCE_URL) == {
+        "sales": 1, "cleared": 0, "preserved": 0, "not_recorded": 0, "pending": [],
+    }
     assert len(store.written) == 1
+
+
+def test_withdraw_by_sale_finds_the_sale_that_absorbed_the_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = Store(_written_sale(), [])
+    store.install(monkeypatch)
+    absorbed = "https://example.test/vente-absorbee"
+    asked: list[str] = []
+
+    def sales_of_url(db_url: str, url: str) -> list[str]:
+        asked.append(url)
+        return [SOURCE_URL] if url == absorbed else []
+
+    monkeypatch.setattr(vision, "_sales_of_url", sales_of_url)
+    result = vision.withdraw(DB_URL, source_url=absorbed)
+    assert asked == [absorbed] and result["cleared"] == 7 and result["pending"] == []
+    assert store.sales[SOURCE_URL].habitable_surface_m2 is None
+
+
+def test_withdraw_waits_for_the_lock_sale_by_sale_and_lists_what_is_left(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.catalogue_lock import CatalogueLockTimeout
+
+    other = "https://example.test/autre-vente"
+    store = Store(_written_sale(), [])
+    store.sales[other] = _written_sale().model_copy(update={"source_url": other})
+    store.install(monkeypatch)
+    waits: list[float] = []
+
+    @contextmanager
+    def lock(db_url: str, wait_seconds: float) -> Iterator[Any]:
+        waits.append(wait_seconds)
+        if len(waits) == 1:
+            raise CatalogueLockTimeout("busy")
+
+        class Handle:
+            def ensure_held(self) -> None:
+                return None
+
+        yield Handle()
+
+    monkeypatch.setattr(vision, "_catalogue_lock", lock)
+
+    class Connection:
+        def __enter__(self) -> Connection:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def execute(self, sql: str, parameters: tuple[Any, ...]) -> Any:
+            return type("Rows", (), {"fetchall": lambda _self: [(SOURCE_URL,), (other,)]})()
+
+    monkeypatch.setattr(vision, "_connect", lambda db_url: Connection())
+    result = vision.withdraw(DB_URL, prompt_version=PROMPT_VERSION)
+
+    assert waits == [600, 600]  # dix minutes par vente
+    assert result["pending"] == [SOURCE_URL] and result["sales"] == 1 and result["cleared"] == 7
+    assert store.sales[other].habitable_surface_m2 is None
+    assert not vision.withdrawal_complete(result)
+
+
+def test_withdraw_command_fails_when_a_sale_is_left_or_a_write_is_discarded(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SUPABASE_DB_URL", DB_URL)
+    results = iter([
+        {"sales": 1, "cleared": 0, "preserved": 0, "not_recorded": 0, "pending": [SOURCE_URL]},
+        {"sales": 1, "cleared": 0, "preserved": 0, "not_recorded": 1, "pending": [SOURCE_URL]},
+        {"sales": 1, "cleared": 3, "preserved": 0, "not_recorded": 0, "pending": []},
+    ])
+    monkeypatch.setattr(vision, "withdraw", lambda db_url, **options: next(results))
+    assert vision.main(["--withdraw", "--sale", SOURCE_URL]) == 1
+    assert json.loads(capsys.readouterr().out)["pending"] == [SOURCE_URL]
+    assert vision.main(["--withdraw", "--prompt-version", PROMPT_VERSION]) == 1
+    assert vision.main(["--withdraw", "--prompt-version", PROMPT_VERSION]) == 0
 
 
 @pytest.mark.parametrize(
@@ -607,22 +688,26 @@ def test_the_shared_budget_stops_the_pass_without_touching_the_state(monkeypatch
 # --- Bornes -----------------------------------------------------------------------------------------------------------
 
 
-def test_a_pass_reads_ten_sales_and_starts_none_after_four_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
-    ticks = iter([0.0, 0.0, 239.0, 240.0])
+def test_a_pass_reads_ten_sales_and_starts_none_it_could_not_finish(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Dix minutes de passe ; une vente ne commence que s'il reste ses deux délais d'appel et 90 s (450 s).
+    assert vision.SALE_RESERVE_SECONDS == 120 + 240 + 90 and vision.BUDGET_SECONDS == 10 * 60
+    ticks = iter([0.0, 0.0, 150.0, 150.5])
     primary = FakeModel(VALUES)
     report, store = _run(
         monkeypatch, "dry_run", primary=primary, candidates=[_candidate()] * 12, clock=lambda: next(ticks)
     )
     assert store.limits == [10]
     assert primary.calls == 2 and report.stop_reason == "budget"
-    assert vision.MAX_SALES == 10 and vision.BUDGET_SECONDS == 4 * 60
-    for argv in (["--max-sales", "11"], ["--budget-minutes", "5"], ["--max-sales", "0"]):
+    assert vision.MAX_SALES == 10
+    for argv in (["--max-sales", "11"], ["--budget-minutes", "11"], ["--max-sales", "0"]):
         with pytest.raises(SystemExit):
             vision.parse_args(argv)
 
 
 def test_the_runner_gives_the_pass_its_budget_and_the_time_of_a_last_sale() -> None:
-    assert autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS == vision.PASS_TIMEOUT_SECONDS == 10 * 60
+    # Dix minutes de passe et une de démarrage : l'attente du verrou est dans la réserve de chaque vente.
+    assert autonomous_runner.DOCUMENT_VISION_BUDGET_SECONDS == vision.PASS_TIMEOUT_SECONDS == 11 * 60
+    assert vision.SALE_RESERVE_SECONDS >= vision.PRIMARY_TIMEOUT_SECONDS + vision.SECOND_TIMEOUT_SECONDS + vision.LOCK_WAIT_SECONDS
     # Délais d'appel de la passe : 2 et 4 minutes ; le banc garde les siens (5 et 10 minutes).
     assert (vision.PRIMARY_TIMEOUT_SECONDS, vision.SECOND_TIMEOUT_SECONDS) == (120.0, 240.0)
     assert (reading.PRIMARY_TIMEOUT_SECONDS, reading.SECOND_TIMEOUT_SECONDS) == (300.0, 600.0)
@@ -805,8 +890,12 @@ def test_only_the_reading_of_the_pieces_gets_the_api_key(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         autonomous_runner, "_run_optional_pass", lambda label, command, *, env, timeout: seen.append(env) or 0
     )
-    autonomous_runner._run_document_vision({"PATH": "/usr/bin"})
-    autonomous_runner._run_document_reading({"PATH": "/usr/bin"})
+    # L'environnement que le lanceur donne aux passes : celui du job, dont il retire la clé (_execute_claimed, test
+    # de bout en bout dans tests/test_autonomous_execution.py).
+    job_env = {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "test-key-never-shown"}
+    runner_env = {key: value for key, value in job_env.items() if key != "ANTHROPIC_API_KEY"}
+    autonomous_runner._run_document_vision(runner_env)
+    autonomous_runner._run_document_reading(runner_env)
     assert seen[0]["ANTHROPIC_API_KEY"] == "test-key-never-shown"
     assert "ANTHROPIC_API_KEY" not in seen[1]
 
@@ -830,6 +919,135 @@ def test_workflow_gives_the_key_and_the_settings_to_the_runner_step_only() -> No
     # Never read nor shown by a command of the workflow.
     for reading_form in ("$ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY", "env.ANTHROPIC_API_KEY"):
         assert reading_form not in text
+
+
+# --- Pièces revérifiées, schéma, échecs sans appel, déduction --------------------------------------------------------
+
+
+def test_pieces_that_changed_since_the_reading_are_never_written(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = Store(_sale(), [_candidate()])
+    store.install(monkeypatch)
+    changed = json.loads(json.dumps(MANIFEST))
+    changed[0]["pages"][1]["text"] = DESCRIPTION + " Modifie."
+    store.manifest = changed
+    primary = FakeModel(VALUES)
+
+    report = vision.run_pass(
+        DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=_readers(primary, FakeModel(VALUES)), today=TODAY
+    )
+
+    assert primary.calls == 1 and store.written == [] and report.pieces_changed == 1
+    # Ni lue, ni en échec : son état ne change pas, elle revient avec son nouveau texte, sans essai compté.
+    assert store.states == {} and report.failed == 0
+
+
+def test_without_its_migrations_the_pass_reads_and_pays_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = Store(_sale(), [_candidate()])
+    store.install(monkeypatch)
+    store.schema_ready = False
+    primary = FakeModel(VALUES)
+    report = vision.run_pass(
+        DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=_readers(primary, FakeModel(VALUES)), today=TODAY
+    )
+    assert report.stop_reason == "schema_missing" and store.limits == [] and primary.calls == 0
+    assert store.states == {}
+
+
+def test_a_registry_that_cannot_be_read_stops_the_pass_without_an_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = Store(_sale(), [_candidate(), _candidate()])
+    store.install(monkeypatch)
+
+    def unavailable(db_url: str, url: str) -> frozenset[str]:
+        raise vision.RegistryUnavailable("UndefinedFunction")
+
+    monkeypatch.setattr(vision, "_registry_columns", unavailable)
+    primary = FakeModel(VALUES)
+    report = vision.run_pass(
+        DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=_readers(primary, FakeModel(VALUES)), today=TODAY
+    )
+    assert report.stop_reason == "registry_unavailable" and primary.calls == 1
+    assert store.states == {} and store.written == [] and report.failed == 0
+
+
+def test_the_registry_error_is_typed_whatever_the_database_says(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Broken:
+        def __enter__(self) -> Broken:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def execute(self, sql: str, parameters: tuple[Any, ...]) -> Any:
+            raise RuntimeError("function app_private.sale_registry_columns(text) does not exist")
+
+    monkeypatch.setattr(vision, "_connect", lambda db_url: Broken())
+    with pytest.raises(vision.RegistryUnavailable):
+        vision._registry_columns(DB_URL, SOURCE_URL)
+
+
+@pytest.mark.parametrize(
+    "fetched",
+    [
+        FetchedPieces({PIECE_URL: _pdf("Un autre PDF que celui dont le texte a ete lu.")}),  # PDF modifié
+        None,  # téléchargement en échec : pièces non obtenues
+    ],
+    ids=["pdf_changed", "not_obtained"],
+)
+def test_a_reading_that_made_no_call_waits_for_its_pieces_without_an_attempt(
+    monkeypatch: pytest.MonkeyPatch, fetched: FetchedPieces | None
+) -> None:
+    store = Store(_sale(), [_candidate(state=_same_state(status="failed", attempts=1), retry_due=True)])
+    store.install(monkeypatch)
+
+    def pieces_of(sale: AuctionSale, urls: Sequence[str]) -> FetchedPieces:
+        if fetched is None:
+            raise OSError("cache unreadable")
+        return fetched
+
+    monkeypatch.setattr(vision, "cached_sale_pdfs", pieces_of)
+    primary = FakeModel(VALUES)
+    report = vision.run_pass(
+        DB_URL, vision.VisionSettings("write", OPEN_FIELDS), readers=_readers(primary, FakeModel(VALUES)), today=TODAY
+    )
+    assert primary.calls == 0 and report.waiting_pieces == 1 and report.failed == 0
+    state = store.states[SOURCE_URL]
+    assert state["status"] == "waiting_pieces" and state["attempts"] == 1
+
+
+def test_nothing_is_written_when_the_deduction_alone_would_change_a_filled_fact() -> None:
+    # Fiche écrite par d'anciennes règles : 8 m² habitables d'un appartement. La déduction actuelle, seule, en ferait
+    # une pièce ou une annexe (type « other ») : écrire le nombre de pièces publierait ce changement.
+    plan = _plan(_sale(habitable_surface_m2=Decimal("8")), {ROOMS: _verdict(3)})
+    assert plan.sale is None and plan.outcomes == {ROOMS: "la_deduction_changerait_la_fiche"}
+    # Une fiche que la déduction ne change pas s'écrit.
+    assert _plan(_sale(), {ROOMS: _verdict(3)}).outcomes == {ROOMS: "ecrit"}
+
+
+def test_a_value_read_by_claude_survives_the_multi_lot_guard_of_the_pdf_reading() -> None:
+    from src.pdf_fact_extraction import enrich_sale_from_pdf_text
+
+    sale = _written_sale()
+    lots = "Lot 1 : appartement de 3 pieces, 62 m2. Lot 2 : appartement de 5 pieces, 98 m2."
+    texts = _pdf_texts(PIECE_URL, lots, hashlib.sha256(PDF).hexdigest())
+    texts[0]["complete"] = False  # passe partielle : seul l'effacement de la garde des lots s'applique
+    texts[0]["extraction_status"] = "incomplete"
+    enrich_sale_from_pdf_text(sale, texts)
+
+    assert sale.raw_payload.get("pdf_multi_lot_guard") is not None
+    assert sale.habitable_surface_m2 == Decimal("62.4") and sale.rooms_count == 3
+    assert {HABITABLE, ROOMS} <= vision.vision_traces(sale)
+
+
+def test_tesseract_never_receives_a_secret_of_the_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.pdf_ocr import tesseract_environment
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-shown")
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://user:secret@example.test/db")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = tesseract_environment("/usr/share/tessdata")
+    assert "ANTHROPIC_API_KEY" not in env and "SUPABASE_DB_URL" not in env
+    assert env["PATH"] == "/usr/bin" and env["TESSDATA_PREFIX"] == "/usr/share/tessdata"
+    assert set(env) <= {"PATH", "LANG", "LC_ALL", "TESSDATA_PREFIX", "OMP_THREAD_LIMIT", "HOME"}
 
 
 # --- Exécution réelle (PIPELINE_TEST_DB_URL, base jetable, sinon ignoré) ------------------------------------------

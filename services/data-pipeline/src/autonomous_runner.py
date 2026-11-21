@@ -649,21 +649,21 @@ def _run_document_reading(env: dict[str, str]) -> int:
     return _run_optional_pass('Document reading', command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS)
 
 
-# Four minutes of work, then the sale started last may still use the whole timeouts of its two calls (2 and 4
-# minutes): src.document_vision_pass.PASS_TIMEOUT_SECONDS, tied by tests/test_document_vision_pass.py.
-DOCUMENT_VISION_BUDGET_SECONDS = 10 * 60
+# Ten minutes of pass (a sale starts only if its two calls, the lock wait and the write still fit), plus one minute
+# to start the process: src.document_vision_pass.PASS_TIMEOUT_SECONDS, tied by tests/test_document_vision_pass.py.
+DOCUMENT_VISION_BUDGET_SECONDS = 11 * 60
 
 
 def _run_document_vision(env: dict[str, str]) -> int:
     """Bounded « lecture des pièces par Claude » pass after the Qwen reading (src.document_vision_pass, lot V3b-1).
 
-    Off unless DOCUMENT_VISION_MODE says otherwise (dry_run, write). Ten sales and four minutes per pass. It makes no
+    Off unless DOCUMENT_VISION_MODE says otherwise (dry_run, write). Ten sales and ten minutes per pass. It makes no
     request to the sites (the pieces come from the local cache of the PDF reading) and runs at the cadence of the
     external passes, which also bounds its model calls. It is the only process that gets the Anthropic API key, taken
     from the runner's own environment (``execute`` leaves it out of every other one). Optional like the reading: its
     exit code is reported in the run summary and never changes the run status.
     """
-    command = [sys.executable, '-m', 'src.document_vision_pass', '--max-sales', '10', '--budget-minutes', '4']
+    command = [sys.executable, '-m', 'src.document_vision_pass', '--max-sales', '10', '--budget-minutes', '10']
     key = os.environ.get(ANTHROPIC_API_KEY_ENV)
     vision_env = {**env, ANTHROPIC_API_KEY_ENV: key} if key else env
     return _run_optional_pass('Document vision', command, env=vision_env, timeout=DOCUMENT_VISION_BUDGET_SECONDS)
