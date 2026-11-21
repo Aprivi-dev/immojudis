@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.config import document_reading_limits, env_flag_on_unless_false, load_settings
+from src.document_reading_exclusions import EXCLUDED_SALE_SQL
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
 from src.enrichment.display_evidence import (
     EXCEPTIONAL,
@@ -1103,6 +1104,9 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
      or reading.updated_at < {_LATEST_TEXT_AT_SQL}
    )
    and not coalesce({_RETRY_WAITING_SQL}, false)
+   -- Vente exclue de la lecture automatique des pièces (opposition, correction) : aucun modèle ne la lit
+   -- (src/document_reading_exclusions.py, seule écriture de la règle).
+   and not {EXCLUDED_SALE_SQL}
  order by sale.sale_date nulls last
  limit %s
 """

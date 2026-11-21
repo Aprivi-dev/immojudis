@@ -1227,8 +1227,10 @@ READINGS_SCHEMA = (
     """create table public.auction_sales (
          id uuid primary key, source_url text not null unique, source_name text, status text, sale_date timestamptz,
          observations jsonb not null default '[]'::jsonb, property_type text, city text,
-         raw_payload jsonb not null default '{}'::jsonb)""",
+         raw_payload jsonb not null default '{}'::jsonb, source_urls jsonb not null default '[]'::jsonb)""",
     "create table public.auction_extractions (source_url text, provider text, result jsonb, updated_at timestamptz)",
+    # Columns of 20261208100000 (sales excluded from the automatic reading of the pieces).
+    "create table public.document_reading_exclusions (source_url text primary key, reason text not null)",
     # Columns of 20261018110000, 20261020120021 and 20261119101010.
     """create table public.auction_document_readings (
          sale_id uuid primary key, source_url text not null, input_fingerprint text not null,

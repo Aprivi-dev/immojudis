@@ -6,6 +6,7 @@ actuelle (texte des pages ``pdf_text`` et extraction des faits complète), chois
 fait relire à Claude Sonnet 5.5 les seules pages citées par les valeurs qui seraient retenues. Le verdict par champ
 (``src.document_vision``) est comparé à la valeur actuelle de la fiche. Une page citée en partie image, que ni la
 couche texte ni l'OCR du pipeline ne couvrent, est lue par Tesseract (``src.pdf_ocr``) le temps de la vérification.
+Une vente exclue de la lecture automatique des pièces (``src.document_reading_exclusions``) n'est jamais prise.
 
 LECTURE SEULE sur les ventes : la connexion qui les lit est passée en lecture seule avant sa première requête et rien
 n'est écrit sur une fiche. Restent, comme pour tout appel du pipeline : la réservation et le compte rendu de chaque
@@ -65,6 +66,7 @@ from src.document_reading import (  # noqa: E402
     sold_lot_from_sale,
     without_pages,
 )
+from src.document_reading_exclusions import EXCLUDED_SALE_SQL  # noqa: E402
 from src.document_vision import (  # noqa: E402
     ACCEPTED,
     BENCH_OCR,
@@ -163,8 +165,9 @@ OCR_PAGE_SECONDS = 60.0
 _OCR_WITHOUT_TEXT = frozenset({OCR_NO_TEXT_METHOD, OCR_NO_TEXT_UNVERIFIED_METHOD, OCR_PICTURE_NO_TEXT_METHOD})
 
 # Ventes à venir dont les pièces ont été lues par la chaîne actuelle (texte des pages persisté, extraction des
-# faits complète), les plus récemment lues d'abord. Seuls les identifiants sont lus ici.
-CANDIDATES_SQL = """
+# faits complète), les plus récemment lues d'abord, hors des ventes exclues de la lecture automatique des pièces
+# (écartées ici, avant tout téléchargement). Seuls les identifiants sont lus ici.
+CANDIDATES_SQL = f"""
 select sale.id::text
   from public.auction_sales sale
   join lateral (
@@ -182,6 +185,7 @@ select sale.id::text
      sale.source_name, sale.observations, (select app_private.catalogue_withdrawn_sources())
    )
    and sale.raw_payload -> 'llm_fact_coverage' ->> 'complete' = 'true'
+   and not {EXCLUDED_SALE_SQL}
  order by latest.updated_at desc, sale.id
  limit %s
 """
