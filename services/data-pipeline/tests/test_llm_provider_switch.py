@@ -444,7 +444,8 @@ def test_the_anthropic_key_goes_to_the_ai_steps_only(workflow: str, ai_steps: li
     assert "ANTHROPIC_API_KEY" not in header  # never in the job environment
     receiving = [step.splitlines()[0] for step in steps if "ANTHROPIC_API_KEY:" in step]
     assert receiving == ai_steps
-    assert all(KEY in step for step in steps if step.splitlines()[0] in ai_steps)
+    # Plain in the pipeline (reading of the pieces), only when Claude reads elsewhere (test_workflow_security.py).
+    assert all("secrets.ANTHROPIC_API_KEY" in step for step in steps if step.splitlines()[0] in ai_steps)
     # The single rollback setting, the same default as the pipeline and the footer of the agent's messages.
     assert "LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}" in header
     # The Replicate token stays with the same steps, for the rollback (and with the Replicate model benchmark).

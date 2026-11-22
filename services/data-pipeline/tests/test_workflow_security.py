@@ -11,7 +11,8 @@ import pytest
 from src.config import SOURCE_NAMES
 
 WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
-SECRET = re.compile(r"\$\{\{\s*secrets\.")
+# Un secret dans une expression, même conditionnelle (« vars.X == 'y' && secrets.Z || '' »).
+SECRET = re.compile(r"\$\{\{[^}]*\bsecrets\.")
 
 
 @dataclass
@@ -182,11 +183,11 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     for secret in (
         "SUPABASE_SERVICE_ROLE_KEY",
         "SUPABASE_DB_URL",
-        "REPLICATE_API_TOKEN",
         "SUPABASE_URL",
         "SOURCE_FETCH_RELAY_TOKEN",
     ):
         assert f"{secret}: ${{{{ secrets.{secret} }}}}" in pipeline, secret
+    assert REPLICATE_ONLY_IF_ROLLBACK in pipeline
     receiving = {name for name, step in steps.items() if SECRET.search(step.env)}
     assert receiving == {
         "Run manually requested pipeline",
@@ -619,3 +620,58 @@ def test_every_workflow_that_names_an_environment_names_production() -> None:
         for name in re.findall(r"^    environment: (\S+)$", path.read_text(encoding="utf-8"), re.M)
     }
     assert names == {"Production"}
+
+
+# --- Clés du fournisseur d'IA (LLM_PROVIDER : Claude par défaut, Replicate en retour arrière) -------------------------
+
+REPLICATE_ONLY_IF_ROLLBACK = (
+    "REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}"
+)
+ANTHROPIC_ONLY_IF_CLAUDE = "ANTHROPIC_API_KEY: ${{ vars.LLM_PROVIDER != 'replicate' && secrets.ANTHROPIC_API_KEY || '' }}"
+AI_WORKFLOWS = (
+    "data-pipeline.yml",
+    "information-agent-evidence.yml",
+    "fact-chunk-trial.yml",
+    "document-reading-trial.yml",
+    "information-agent-evaluation-trial.yml",
+)
+
+
+def _secret_lines(text: str, name: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip().startswith(f"{name}:")]
+
+
+@pytest.mark.parametrize("name", AI_WORKFLOWS)
+def test_the_replicate_token_is_given_only_for_the_rollback(name: str) -> None:
+    text = (WORKFLOWS / name).read_text(encoding="utf-8")
+    lines = _secret_lines(text, "REPLICATE_API_TOKEN")
+    assert lines and set(lines) == {REPLICATE_ONLY_IF_ROLLBACK}
+
+
+@pytest.mark.parametrize("name", AI_WORKFLOWS[1:])
+def test_the_agent_and_trial_workflows_give_the_anthropic_key_only_when_claude_reads(name: str) -> None:
+    text = (WORKFLOWS / name).read_text(encoding="utf-8")
+    assert _secret_lines(text, "ANTHROPIC_API_KEY") == [ANTHROPIC_ONLY_IF_CLAUDE]
+
+
+def test_the_pipeline_keeps_the_anthropic_key_for_the_reading_of_the_pieces_and_trims_the_provider() -> None:
+    text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    # The reading of the pieces by Claude (document_vision_pass) calls Anthropic whatever LLM_PROVIDER says.
+    assert _secret_lines(text, "ANTHROPIC_API_KEY") == ["ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"]
+    # The manual runs read the provider like Python: trimmed and lower-cased.
+    assert 'provider="${LLM_PROVIDER,,}"' in text
+    assert 'provider="${provider#"${provider%%[![:space:]]*}"}"' in text
+    assert 'provider="${provider%"${provider##*[![:space:]]}"}"' in text
+    assert 'if [ "$provider" = "replicate" ]; then' in text
+    benchmark = text.split("\n  model-benchmark:\n", 1)[1].split("\n    steps:", 1)[0]
+    assert "if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark && vars.LLM_PROVIDER == 'replicate'" in benchmark
+
+
+@pytest.mark.parametrize("name", AI_WORKFLOWS)
+def test_the_hourly_cap_of_claude_is_written_next_to_the_replicate_settings(name: str) -> None:
+    from src.config import DEFAULT_ANTHROPIC_MAX_CALLS_PER_HOUR
+
+    text = (WORKFLOWS / name).read_text(encoding="utf-8")
+    assert re.findall(r"^\s+ANTHROPIC_MAX_CALLS_PER_HOUR:\s*(.+?)\s*$", text, re.MULTILINE) == ['"120"']
+    assert DEFAULT_ANTHROPIC_MAX_CALLS_PER_HOUR == 120
+    assert "REPLICATE_MAX_CALLS_PER_HOUR: 60" in text

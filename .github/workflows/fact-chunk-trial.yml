@@ -66,6 +66,8 @@ jobs:
       REPLICATE_WAIT_SECONDS: 60
       REPLICATE_MAX_RETRIES: 2
       REPLICATE_MAX_CALLS_PER_HOUR: 60
+      # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
+      ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
       REPLICATE_TEMPERATURE: 0.1
@@ -98,8 +100,10 @@ jobs:
       - name: Run the read-only chunk trial
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
+          # Clé Anthropic seulement quand Claude lit (pas avec LLM_PROVIDER=replicate).
+          ANTHROPIC_API_KEY: ${{ vars.LLM_PROVIDER != 'replicate' && secrets.ANTHROPIC_API_KEY || '' }}
           TRIAL_SALES: ${{ inputs.sales }}
           TRIAL_CHUNK_CHARS: ${{ inputs.chunk_chars }}
           TRIAL_MAX_TOKENS: ${{ inputs.max_tokens }}

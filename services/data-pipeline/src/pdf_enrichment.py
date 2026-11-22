@@ -81,7 +81,7 @@ from src.pdf_page_analysis import (
 )
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.sale_local_files import document_filename, sale_storage_id
-from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.pdf_word_documents import document_tool_environment, extract_docx_document, extract_legacy_word_document
 from src.pdf_pass_outcomes import WITHDRAWAL_STATE_UNKNOWN_DEFERRAL, WITHDRAWAL_STATE_UNREADABLE, SpacedPdfFailure
 from src.pipeline_usage import QueueJobDeferred
 from src.source_suspension import suspended_host_until
@@ -1169,6 +1169,8 @@ def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str
             text=True,
             timeout=timeout,
             check=False,
+            # Docling ouvre une pièce reçue d'un tiers : environnement en liste blanche, sans aucune clé.
+            env=document_tool_environment(),
         )
     except subprocess.TimeoutExpired as exc:
         if deadline_bounded:

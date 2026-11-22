@@ -919,7 +919,7 @@ def test_workflow_gives_the_key_and_the_settings_to_the_runner_step_only() -> No
     assert "python -m src.autonomous_runner" in runner_step
     # The manual runs of the same step drop the key before any other command when the text calls go to Replicate.
     assert runner_step.index("unset ANTHROPIC_API_KEY") > runner_step.index("python -m src.autonomous_runner")
-    assert runner_step.index('if [ "${LLM_PROVIDER,,}" = "replicate" ]; then') < runner_step.index("python -m src.main")
+    assert runner_step.index('if [ "$provider" = "replicate" ]; then') < runner_step.index("python -m src.main")
     # Never read nor shown by a command of the workflow.
     for reading_form in ("$ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY", "env.ANTHROPIC_API_KEY"):
         assert reading_form not in text

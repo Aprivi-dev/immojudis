@@ -64,6 +64,8 @@ jobs:
       # Sans effet ici : ce plafond horaire est tenu en base, et l'essai n'a pas accès à la base. Gardé pour la
       # concordance avec le worker ; le plafond de l'essai est celui du script.
       REPLICATE_MAX_CALLS_PER_HOUR: 60
+      # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
+      ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
     steps:
       - name: Check confirmation and inputs
         working-directory: .
@@ -126,8 +128,10 @@ jobs:
 
       - name: Run the trial
         env:
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
+          # Clé Anthropic seulement quand Claude lit (pas avec LLM_PROVIDER=replicate).
+          ANTHROPIC_API_KEY: ${{ vars.LLM_PROVIDER != 'replicate' && secrets.ANTHROPIC_API_KEY || '' }}
           BUDGET_USD: ${{ inputs.budget_usd }}
           APPELS_MAX: ${{ inputs.appels_max }}
         run: |

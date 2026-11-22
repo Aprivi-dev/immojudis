@@ -118,6 +118,8 @@ jobs:
       REPLICATE_WAIT_SECONDS: 60
       REPLICATE_MAX_RETRIES: 2
       REPLICATE_MAX_CALLS_PER_HOUR: 60
+      # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
+      ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
       REPLICATE_RETRY_BACKOFF_SECONDS: 30
       REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
       # Claim two source-detail jobs per RPC, then process them sequentially.
@@ -297,7 +299,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_PUBLICATION_CHECK: ${{ github.event.inputs.publication_check }}
           REQUESTED_ENRICHMENT_ONLY: ${{ github.event.inputs.enrichment_only }}
@@ -353,8 +356,12 @@ jobs:
             bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID" "${lane[@]}"
             exit 0
           fi
-          # Exécutions manuelles : la clé ne sert qu'aux appels de texte à Claude.
-          if [ "${LLM_PROVIDER,,}" = "replicate" ]; then
+          # Exécutions manuelles : la clé ne sert qu'aux appels de texte à Claude. Le fournisseur est lu comme en
+          # Python (src/config.py, llm_provider) : espaces retirés en tête et en fin, minuscules.
+          provider="${LLM_PROVIDER,,}"
+          provider="${provider#"${provider%%[![:space:]]*}"}"
+          provider="${provider%"${provider##*[![:space:]]}"}"
+          if [ "$provider" = "replicate" ]; then
             unset ANTHROPIC_API_KEY
           fi
 
@@ -516,7 +523,8 @@ jobs:
           key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-${{ github.run_id }}
 
   model-benchmark:
-    if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark
+    # Banc de modèles Replicate : seulement quand Replicate est le fournisseur (retour arrière).
+    if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark && vars.LLM_PROVIDER == 'replicate'
     name: Compare Replicate models
     runs-on: ubuntu-24.04
     # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
@@ -547,7 +555,8 @@ jobs:
 
       - name: Compare existing and candidate models
         env:
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
         run: python -m scripts.benchmark_replicate_models --output model-benchmark.json
 
       - name: Save model comparison
