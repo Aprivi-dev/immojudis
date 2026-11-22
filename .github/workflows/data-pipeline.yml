@@ -135,7 +135,10 @@ jobs:
       LLM_FACT_MAX_CHUNKS: 3
       PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE: 4
       LLM_ENABLED: true
-      LLM_PROVIDER: replicate
+      # Fournisseur des appels de texte et d'image (décision du 22/11/2026 : Claude Haiku 5.5, API d'Anthropic).
+      # Retour arrière sans commit : variable de dépôt LLM_PROVIDER=replicate (réglages REPLICATE_* ci-dessus gardés).
+      # Sur Vercel, LLM_PROVIDER absent ou de même valeur : le pied des messages de l'agent nomme ce fournisseur.
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}
       INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "true"
       INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "true"
       INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "true"
@@ -327,10 +330,12 @@ jobs:
           # code 124 et un journal des étapes avant le délai du job (180 min, installation comprise).
           # En exécution automatique, le lanceur impose sa propre valeur (budget de la source moins 90 s).
           PIPELINE_WATCHDOG_SECONDS: "9600"
-          # Lecture des pièces par Claude (services/data-pipeline/src/document_vision_pass.py, lot V3b-1) : « off »
-          # sans variable de dépôt, aucun champ ouvert sans DOCUMENT_VISION_FIELDS. La clé n'est donnée qu'à cette
-          # étape ; le lanceur autonome ne la transmet qu'à la passe de lecture des pièces, et le reste de l'étape la
-          # retire avant toute autre commande. Aucune commande ne la lit.
+          # Clé de l'API Anthropic, donnée à cette seule étape. Le lanceur autonome ne la transmet qu'aux passages qui
+          # appellent Claude : la lecture des pièces par Claude (services/data-pipeline/src/document_vision_pass.py,
+          # lot V3b-1 : « off » sans variable de dépôt, aucun champ ouvert sans DOCUMENT_VISION_FIELDS) et, quand
+          # LLM_PROVIDER vaut anthropic, les travailleurs de la file et la lecture IA des pièces. Une exécution
+          # manuelle la garde pour ses appels à Claude, sauf la vérification de publication, qui n'en fait aucun ;
+          # avec LLM_PROVIDER=replicate, elle la retire avant toute autre commande. Aucune commande ne la lit.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DOCUMENT_VISION_MODE: ${{ vars.DOCUMENT_VISION_MODE || 'off' }}
           DOCUMENT_VISION_FIELDS: ${{ vars.DOCUMENT_VISION_FIELDS || '' }}
@@ -348,10 +353,13 @@ jobs:
             bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID" "${lane[@]}"
             exit 0
           fi
-          # Exécutions manuelles : la clé de lecture des pièces par Claude ne sert qu'au lanceur autonome.
-          unset ANTHROPIC_API_KEY
+          # Exécutions manuelles : la clé ne sert qu'aux appels de texte à Claude.
+          if [ "${LLM_PROVIDER,,}" = "replicate" ]; then
+            unset ANTHROPIC_API_KEY
+          fi
 
           if [ "$REQUESTED_PUBLICATION_CHECK" = "true" ]; then
+            unset ANTHROPIC_API_KEY
             python -m src.verify_publication
             exit 0
           fi
@@ -518,7 +526,8 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      LLM_PROVIDER: replicate
+      # Banc propre à Replicate : scripts/benchmark_replicate_models.py appelle Replicate directement et ne lit pas
+      # LLM_PROVIDER.
       LLM_ENABLED: true
       APP_ENV: benchmark
       PYTHONUNBUFFERED: "1"

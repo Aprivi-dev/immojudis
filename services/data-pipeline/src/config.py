@@ -32,8 +32,37 @@ AUTONOMOUS_RUN_ID_ENV = "PIPELINE_AUTONOMOUS_RUN_ID"
 CADASTRE_ENRICH_ENABLED_ENV = "CADASTRE_ENRICH_ENABLED"
 DPE_ENRICH_ENABLED_ENV = "DPE_ENRICH_ENABLED"
 REPLICATE_CANCEL_AFTER_ENV = "REPLICATE_CANCEL_AFTER"
-# Clé de l'API Anthropic : le lanceur autonome ne la transmet qu'à la passe de lecture des pièces par Claude.
+# Clé de l'API Anthropic : le lanceur autonome ne la transmet qu'aux passages qui appellent Claude
+# (src.autonomous_runner, ``llm_key_env``).
 ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
+# Fournisseur des appels de texte et d'image du pipeline (src.enrichment.llm_client.create_llm_client), seul réglage
+# du retour arrière : « replicate » rend le comportement d'avant le 22/11/2026. Lu de la même façon que le pied des
+# messages de l'agent (src/lib/information-agent-ai-provider.ts) : espaces retirés, minuscules, vide = défaut.
+LLM_PROVIDER_ENV = "LLM_PROVIDER"
+ANTHROPIC_PROVIDER = "anthropic"
+REPLICATE_PROVIDER = "replicate"
+LLM_PROVIDERS = (ANTHROPIC_PROVIDER, REPLICATE_PROVIDER)
+DEFAULT_LLM_PROVIDER = ANTHROPIC_PROVIDER
+DEFAULT_ANTHROPIC_TEXT_MODEL = "claude-haiku-5-5"
+# Plafond horaire des appels de texte à Anthropic. Le compteur horaire est celui du fournisseur, partagé avec la
+# lecture des pièces par Claude (plafond 60, src.enrichment.anthropic_reader) : elle cède la place la première.
+DEFAULT_ANTHROPIC_MAX_CALLS_PER_HOUR = 120
+
+
+def llm_provider() -> str:
+    """Fournisseur configuré (``LLM_PROVIDER``) ; une valeur hors de :data:`LLM_PROVIDERS` est rendue telle quelle."""
+    return (os.getenv(LLM_PROVIDER_ENV) or "").strip().lower() or DEFAULT_LLM_PROVIDER
+
+
+def fact_fingerprint_model(settings: Mapping[str, object]) -> str:
+    """Modèle nommé dans les empreintes des faits : ``REPLICATE_MODEL``, quel que soit le fournisseur qui lit.
+
+    Clés des faits (morceaux, entrée complète, agrégat ancien), manifeste comparé et révision des tâches
+    d'enrichissement le portent. Comme ``FACT_FINGERPRINT_CHUNK_CHARS``, l'empreinte ne suit pas l'appel : passer de
+    Replicate à Claude (22/11/2026) ne périme aucune extraction déjà faite, seules les ventes nouvelles ou dont le
+    texte change sont lues par le nouveau fournisseur. Changer ``REPLICATE_MODEL`` les relance toutes, comme avant.
+    """
+    return str(settings.get("replicate_model") or "")
 
 
 class EncheresPubliquesAccessNotAuthorized(RuntimeError):
@@ -374,7 +403,11 @@ def load_settings() -> dict[str, str | float | None]:
         "dpe_max_results": max(1, int(os.getenv("DPE_MAX_RESULTS", "5"))),
         "dpe_timeout_seconds": float(os.getenv("DPE_TIMEOUT_SECONDS", "12")),
         "llm_enabled": env_flag("LLM_ENABLED", True),
-        "llm_provider": os.getenv("LLM_PROVIDER", "replicate").lower(),
+        "llm_provider": llm_provider(),
+        "anthropic_text_model": (os.getenv("ANTHROPIC_TEXT_MODEL") or "").strip() or DEFAULT_ANTHROPIC_TEXT_MODEL,
+        "anthropic_max_calls_per_hour": max(
+            0, int(os.getenv("ANTHROPIC_MAX_CALLS_PER_HOUR", str(DEFAULT_ANTHROPIC_MAX_CALLS_PER_HOUR)))
+        ),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
         "replicate_model": os.getenv("REPLICATE_MODEL", DEFAULT_REPLICATE_MODEL),
         "replicate_temperature": float(os.getenv("REPLICATE_TEMPERATURE", "0.1")),

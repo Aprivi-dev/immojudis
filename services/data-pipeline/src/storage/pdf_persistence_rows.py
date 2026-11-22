@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import Any
 
+from src.config import fact_fingerprint_model
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import clean_text
@@ -141,7 +142,7 @@ def _enrichment_revision_for_sale(
             if isinstance(profile, dict)
         ),
         str(settings.get("llm_prompt_version") or ""),
-        str(settings.get("replicate_model") or ""),
+        fact_fingerprint_model(settings),
         settings.get("llm_fact_prompt_version"),
         RETIRED_DISPLAY_PROMPT_VERSION,
         sorted(

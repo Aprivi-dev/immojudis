@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Les constructeurs sont appelés pour de vrai ; la base et le réseau ne doivent jamais l'être.
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -73,6 +73,13 @@ import { EMAIL_TEMPLATES } from "./registry";
  * de `LAUNCH_OFFER_END_NEEDS_ANALYSIS` diffèrent : l'estimation détaillée et les ventes comparables
  * reçoivent « sur toutes les ventes (compte gratuit : une vente débloquée) », et le rapport PDF
  * « (compte gratuit : le rapport de la vente débloquée) ». Gabarit toujours dormant.
+ *
+ * Mise à jour explicite du 22/11/2026 (Claude Haiku 5.5 pour tous les appels d'IA, décision du propriétaire) : les
+ * empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT celles-là. L'aperçu de la galerie
+ * nomme désormais le prestataire d'IA configuré (`informationAgentAiProvider`, `LLM_PROVIDER`, Anthropic par
+ * défaut) au lieu de « Replicate (États-Unis) » écrit en dur : seule la parenthèse « Anthropic (Irlande, données
+ * stockées aux États-Unis) » du pied diffère. Avec LLM_PROVIDER=replicate, le rendu redonne les empreintes d'avant
+ * (vérifié). Le test fixe LLM_PROVIDER à vide pour ne pas dépendre de l'environnement.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -87,8 +94,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "e6a88a766ccfe06536ba0ec59c813269c29242793ec72b0eaadade6ca8ccf2c0",
-  agent_court_registry: "47a885986cee939c9a26a948b021a3cc5f5301a01d7f466a0ec21bcdc9dfc498",
+  agent_request: "3e6137fbc6c8468c562d0d6898b73a4f831f5fcc8c670950f061eb163621e633",
+  agent_court_registry: "9d2473702218ed634b045a97df6c35a944aa7e5c0296929485fe8b1c93480199",
 };
 
 async function fingerprints(key: string): Promise<string[]> {
@@ -102,6 +109,13 @@ async function fingerprints(key: string): Promise<string[]> {
 }
 
 describe("neutralité du rendu des emails", () => {
+  beforeEach(() => {
+    vi.stubEnv("LLM_PROVIDER", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each(Object.keys(BASELINE))("le gabarit %s rend les mêmes octets qu'avant", async (key) => {
     const actual = await fingerprints(key);
     expect(actual.length).toBeGreaterThan(0);

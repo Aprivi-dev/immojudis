@@ -1216,13 +1216,17 @@ def _documents_payload(documents: Sequence[ReadingDocument]) -> list[dict[str, o
 
 def _llm_generator() -> tuple[Callable[[str, str], Mapping[str, object]] | None, str | None]:
     try:
+        from src.enrichment.anthropic_reader import AnthropicTextClient
         from src.enrichment.llm_client import create_llm_client
 
         client = create_llm_client()
         if not client.is_available():
             return None, None
-        client.max_tokens = max(int(client.max_tokens or 0), READING_MAX_OUTPUT_TOKENS)
-        client.max_retries = 0
+        if not isinstance(client, AnthropicTextClient):
+            # Réglages de Replicate : le client Anthropic a son propre plafond (réflexion comprise) et aucune
+            # nouvelle tentative.
+            client.max_tokens = max(int(client.max_tokens or 0), READING_MAX_OUTPUT_TOKENS)
+            client.max_retries = 0
         return client.generate_json_once, str(client.model or "") or None
     except Exception as exc:
         # Without a client the pass reads nothing (« unavailable ») and stays optional; the type says why.

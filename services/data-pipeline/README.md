@@ -1245,9 +1245,16 @@ SUPABASE_DB_URL=… SITE_URL=https://immojudis.com CRON_SECRET=… python -m src
 - `CRON_SECRET` (secret de dépôt) et `SITE_URL` (variable de dépôt) ne sont vus que par cette étape.
   Suivi et retour arrière : `docs/runbooks/catalogue-visibility-projection.md`.
 
-## Enrichissement LLM Replicate
+## Enrichissement LLM (Anthropic, Replicate en retour arrière)
 
-Le module `src/enrichment/` utilise Replicate pour extraire les faits des annonces
+Depuis le 22/11/2026, les appels de texte et d'image du pipeline (faits, lecture IA des pièces, agent
+d'information) passent par l'API d'Anthropic, modèle `ANTHROPIC_TEXT_MODEL` (défaut `claude-haiku-5-5`),
+derrière l'interface `generate_json*` de `src/enrichment/llm_client.py` (`create_llm_client`, adaptateur
+`AnthropicTextClient` de `src/enrichment/anthropic_reader.py`). `LLM_PROVIDER=replicate` rend le
+comportement d'avant, sans autre changement. `REPLICATE_MODEL` reste le modèle nommé dans les empreintes des
+faits (`config.fact_fingerprint_model`) : changer de fournisseur ne relance aucune extraction déjà faite.
+
+Avec `LLM_PROVIDER=replicate`, le module `src/enrichment/` utilise Replicate pour extraire les faits des annonces
 et de leurs pièces. La synthèse rédigée par le modèle (`llm_display_description`)
 a été retirée : la fiche affiche une description construite à partir des faits
 vérifiés. Les textes déjà en base restent lus, aucun n'est plus produit. Le modèle par défaut est
@@ -1261,7 +1268,8 @@ Configuration :
 
 ```bash
 LLM_ENABLED=true
-LLM_PROVIDER=replicate
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-anthropic-key
 REPLICATE_API_TOKEN=your-replicate-token
 REPLICATE_MODEL=qwen/qwen3-7-plus
 REPLICATE_TEMPERATURE=0.1

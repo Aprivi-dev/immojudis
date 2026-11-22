@@ -231,6 +231,37 @@ def test_trial_stops_before_the_call_that_would_exceed_the_cap_and_resumes_witho
     assert Decimal(resumed["spend_usd"]) <= Decimal("0.02")
 
 
+def test_trial_with_claude_records_its_billed_tokens_and_keeps_its_own_output_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LLM_PROVIDER=anthropic : le vrai client Claude (faux SDK, aucun appel payant), jetons notés par le client."""
+    from types import SimpleNamespace
+
+    from src.enrichment import anthropic_reader
+
+    for name in ("reserve_llm_request", "record_llm_request_ceiling", "record_llm_request", "record_prediction"):
+        monkeypatch.setattr(anthropic_reader, name, lambda *_a, **_kw: "res-1")
+    created: list[dict] = []
+
+    def create(**kwargs: object) -> object:
+        created.append(kwargs)
+        return SimpleNamespace(
+            id="msg", stop_reason="end_turn", content=[SimpleNamespace(type="text", text='{"facts": []}')],
+            usage=SimpleNamespace(input_tokens=700, output_tokens=300),
+        )
+
+    client = anthropic_reader.AnthropicTextClient(
+        model="claude-haiku-5-5", client=SimpleNamespace(messages=SimpleNamespace(create=create))
+    )
+    result = trial.run_trial(tmp_path / "essai.json", Decimal("1"), max_calls=2, client_factory=lambda: client, log=_quiet)
+
+    assert result["stopped_reason"] == "pilote" and len(created) == 2
+    attempt = next(entry for entry in result["outputs"].values() if entry.get("attempts"))["attempts"][0]
+    assert (attempt["input_tokens"], attempt["output_tokens"]) == (700, 300)
+    # The Replicate answer cap of the reading is not applied to Claude: its answer includes its thinking.
+    assert created[0]["max_tokens"] == 16_000 and not hasattr(client, "fact_max_tokens")
+
+
 def test_trial_charges_the_real_cost_when_it_exceeds_the_estimate_and_stops(tmp_path: Path) -> None:
     output = tmp_path / "essai.json"
     # Raisonnement facturé au-delà du plafond de sortie : 200 000 jetons de sortie par appel.
@@ -310,7 +341,7 @@ def test_trial_workflow_is_manual_main_only_first_attempt_confirmed_and_without_
     assert "if: github.ref == 'refs/heads/main' && github.run_attempt == 1" in workflow
     assert 'if [ "$CONFIRMATION" != "ESSAI PAYANT 5 USD" ]' in workflow
     assert "group: immojudis-information-agent-evaluation-trial" in workflow
-    assert re.findall(r"secrets\.(\w+)", workflow) == ["REPLICATE_API_TOKEN"]
+    assert re.findall(r"secrets\.(\w+)", workflow) == ["REPLICATE_API_TOKEN", "ANTHROPIC_API_KEY"]
     # Ni variable Supabase, ni d'envoi d'email (le commentaire d'en-tête peut les nommer en minuscules).
     assert not re.search(r"SUPABASE_|RESEND_|SMTP|db:migrate", workflow)
     budget = on_block.split("budget_usd:", 1)[1].split("type:", 1)[0]

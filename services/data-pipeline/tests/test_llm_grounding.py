@@ -50,6 +50,8 @@ def test_names_reach_neither_the_provider_nor_the_durable_cache(
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
     monkeypatch.setenv("LLM_FACT_MAX_CHUNKS", "0")
+    # The fact keys name the fingerprint model (REPLICATE_MODEL), whatever client reads.
+    monkeypatch.setenv("REPLICATE_MODEL", "test-model")
 
     def load_contexts(sale: AuctionSale, **_: object) -> list[str]:
         sale.raw_payload["llm_fact_context_coverage"] = {"total_chunks": 1, "selected_chunks": 1, "complete": True}

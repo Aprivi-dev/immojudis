@@ -252,10 +252,49 @@ def test_metered_client_caps_predictions_and_captures_tokens(monkeypatch: pytest
     assert len(events) == 1  # the pipeline telemetry still records the call
 
 
+def test_metered_claude_client_follows_the_provider_setting_caps_calls_and_captures_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from src.enrichment import anthropic_reader
+
+    for name in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_DB_URL"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("reserve_llm_request", "record_llm_request_ceiling", "record_llm_request", "record_prediction"):
+        monkeypatch.setattr(anthropic_reader, name, lambda *_a, **_kw: "res-1")
+    created: list[dict[str, Any]] = []
+
+    def create(**kwargs: Any) -> Any:
+        created.append(kwargs)
+        return SimpleNamespace(
+            id="msg", stop_reason="end_turn", content=[SimpleNamespace(type="text", text='{"rooms_count": 3}')],
+            usage=SimpleNamespace(input_tokens=3_000, output_tokens=900),
+        )
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-shown")
+    monkeypatch.setattr(anthropic_reader.anthropic, "Anthropic", lambda **_kw: SimpleNamespace(messages=SimpleNamespace(create=create)))
+
+    client = trial.metered_client(1, fact_max_tokens=8_192)
+
+    assert isinstance(client, trial.MeteredAnthropicClient) and client.model == "claude-haiku-5-5"
+    assert client.generate_json(extraction.SYSTEM_PROMPT, "texte") == {"rooms_count": 3}
+    with pytest.raises(trial.CallCapReached):
+        client.generate_json(extraction.SYSTEM_PROMPT, "texte")
+    assert client.calls_made == 1 and len(created) == 1
+    # Claude's cap includes its thinking: the Replicate answer cap of the trial does not apply.
+    assert created[0]["max_tokens"] == 16_000
+    usage = client.usage[0]
+    assert (usage.input_tokens, usage.output_tokens, usage.truncated, usage.succeeded) == (3_000, 900, False, True)
+    assert usage.cost_usd is not None and usage.cost_usd > 0
+
+
 def test_main_opens_a_read_only_connection_and_writes_the_step_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://example.invalid/db")
+    monkeypatch.setenv("LLM_PROVIDER", "replicate")
     monkeypatch.setenv("REPLICATE_API_TOKEN", "token")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))

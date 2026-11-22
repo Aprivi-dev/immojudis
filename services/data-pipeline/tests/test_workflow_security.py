@@ -241,7 +241,12 @@ def test_fact_chunk_trial_is_manual_bounded_and_leaves_the_production_chunk_size
     steps = {step.name: step for step in jobs[0].steps}
     assert [name for name, step in steps.items() if SECRET.search(step.env)] == ["Run the read-only chunk trial"]
     trial = steps["Run the read-only chunk trial"]
-    assert set(re.findall(r"secrets\.([A-Z_]+)", trial.env)) == {"SUPABASE_DB_URL", "REPLICATE_API_TOKEN"}
+    # Les deux clés du fournisseur (LLM_PROVIDER : Claude par défaut, Replicate en retour arrière).
+    assert set(re.findall(r"secrets\.([A-Z_]+)", trial.env)) == {
+        "SUPABASE_DB_URL",
+        "REPLICATE_API_TOKEN",
+        "ANTHROPIC_API_KEY",
+    }
     assert "python -m scripts.fact_chunk_trial" in trial.run and "${{" not in trial.run
     # Same model and request budget as the pipeline.
     pipeline_env = parse_jobs((WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8"))[0].env
@@ -269,7 +274,12 @@ def test_document_reading_trial_is_manual_bounded_and_reads_only() -> None:
     steps = {step.name: step for step in jobs[0].steps}
     assert [name for name, step in steps.items() if SECRET.search(step.env)] == ["Run the read-only reading trial"]
     trial = steps["Run the read-only reading trial"]
-    assert set(re.findall(r"secrets\.([A-Z_]+)", trial.env)) == {"SUPABASE_DB_URL", "REPLICATE_API_TOKEN"}
+    # Les deux clés du fournisseur (LLM_PROVIDER : Claude par défaut, Replicate en retour arrière).
+    assert set(re.findall(r"secrets\.([A-Z_]+)", trial.env)) == {
+        "SUPABASE_DB_URL",
+        "REPLICATE_API_TOKEN",
+        "ANTHROPIC_API_KEY",
+    }
     # Free-text inputs reach the script through the environment, never through the command line template.
     assert "python -m scripts.document_reading_trial" in trial.run and "${{" not in trial.run
     pipeline_env = parse_jobs((WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8"))[0].env

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,14 +8,27 @@ import {
 
 const root = process.cwd();
 
+function read(relativePath: string): string {
+  return readFileSync(path.join(root, relativePath), "utf8");
+}
+
 describe("prestataire d'IA du pied de message", () => {
-  it("tire le prestataire de la configuration LLM_PROVIDER, Replicate par défaut", () => {
-    expect(informationAgentAiProvider({})).toEqual({
+  it("tire le prestataire de la configuration LLM_PROVIDER, Anthropic par défaut", () => {
+    // Le libellé du pays n'est écrit qu'une fois, dans l'entrée de information-agent-ai-provider.ts.
+    const anthropic = informationAgentAiProvider({ LLM_PROVIDER: "anthropic" });
+    expect(anthropic).toMatchObject({ id: "anthropic", name: "Anthropic" });
+    expect(informationAgentAiProvider({})).toEqual(anthropic);
+    expect(informationAgentAiProvider({ LLM_PROVIDER: "" })).toEqual(anthropic);
+    expect(informationAgentAiProvider({ LLM_PROVIDER: "  " })).toEqual(anthropic);
+    expect(informationAgentAiProvider({ LLM_PROVIDER: " Anthropic " }).name).toBe("Anthropic");
+  });
+
+  it("nomme Replicate quand le retour arrière est configuré", () => {
+    expect(informationAgentAiProvider({ LLM_PROVIDER: " Replicate " })).toEqual({
       id: "replicate",
       name: "Replicate",
       country: "États-Unis",
     });
-    expect(informationAgentAiProvider({ LLM_PROVIDER: " Replicate " }).name).toBe("Replicate");
   });
 
   it("refuse un prestataire que le pied, la politique et le registre ne nomment pas", () => {
@@ -25,21 +38,53 @@ describe("prestataire d'IA du pied de message", () => {
   });
 
   it("reste aligné sur le pipeline qui lit réellement les réponses", () => {
-    const config = readFileSync(path.join(root, "services/data-pipeline/src/config.py"), "utf8");
-    const client = readFileSync(
-      path.join(root, "services/data-pipeline/src/enrichment/llm_client.py"),
-      "utf8",
-    );
-    const workflow = readFileSync(
-      path.join(root, ".github/workflows/information-agent-evidence.yml"),
-      "utf8",
-    );
-    // Valeur par défaut de LLM_PROVIDER côté pipeline, fournisseur configuré dans le workflow qui
-    // analyse les pièces des réponses, et fournisseur unique accepté par le client.
+    const config = read("services/data-pipeline/src/config.py");
+    const client = read("services/data-pipeline/src/enrichment/llm_client.py");
+    // Même valeur par défaut et même lecture (espaces retirés, minuscules, vide = défaut) côté pipeline.
     expect(config).toContain(
-      `"llm_provider": os.getenv("LLM_PROVIDER", "${DEFAULT_INFORMATION_AGENT_AI_PROVIDER_ID}")`,
+      `DEFAULT_LLM_PROVIDER = ${DEFAULT_INFORMATION_AGENT_AI_PROVIDER_ID.toUpperCase()}_PROVIDER`,
     );
-    expect(workflow).toMatch(/LLM_PROVIDER:\s*replicate\b/);
-    expect(client).toContain('settings["llm_provider"] != "replicate"');
+    expect(config).toContain(
+      'return (os.getenv(LLM_PROVIDER_ENV) or "").strip().lower() or DEFAULT_LLM_PROVIDER',
+    );
+    // Chaque fournisseur que le pipeline accepte est nommé par le pied.
+    const providers = /^LLM_PROVIDERS = \(([^)]*)\)$/m.exec(config)?.[1] ?? "";
+    const ids = [...providers.matchAll(/([A-Z]+)_PROVIDER/g)].map((match) => {
+      const constant = new RegExp(`^${match[1]}_PROVIDER = "([a-z]+)"$`, "m").exec(config);
+      return constant?.[1];
+    });
+    expect(ids).toEqual(["anthropic", "replicate"]);
+    for (const id of ids) {
+      expect(informationAgentAiProvider({ LLM_PROVIDER: id }).id).toBe(id);
+    }
+    expect(client).toContain("if provider == ANTHROPIC_PROVIDER:");
+    expect(client).toContain("if provider == REPLICATE_PROVIDER:");
+  });
+
+  it("tombe sur le même fournisseur que chaque workflow sans réglage manuel", () => {
+    // Le pied lit LLM_PROVIDER sur Vercel ; le traitement réel le lit dans les workflows. Sans variable posée
+    // d'un côté ni de l'autre, les deux doivent désigner le même fournisseur.
+    const directory = path.join(root, ".github/workflows");
+    const settings = readdirSync(directory)
+      .filter((name) => name.endsWith(".yml"))
+      .flatMap((name) =>
+        [...read(`.github/workflows/${name}`).matchAll(/^\s+LLM_PROVIDER:\s*(.+?)\s*$/gm)].map(
+          (match) => [name, match[1]] as const,
+        ),
+      );
+    expect(settings.map(([name]) => name).sort()).toEqual([
+      "data-pipeline.yml",
+      "document-reading-trial.yml",
+      "fact-chunk-trial.yml",
+      "information-agent-evaluation-trial.yml",
+      "information-agent-evidence.yml",
+    ]);
+    for (const [name, value] of settings) {
+      expect([name, value]).toEqual([
+        name,
+        `\${{ vars.LLM_PROVIDER || '${DEFAULT_INFORMATION_AGENT_AI_PROVIDER_ID}' }}`,
+      ]);
+    }
+    expect(informationAgentAiProvider({}).id).toBe("anthropic");
   });
 });

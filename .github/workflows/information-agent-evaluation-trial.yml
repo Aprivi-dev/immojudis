@@ -6,9 +6,9 @@ name: Information Agent Evaluation Trial
 # repaierait sans nouvelle confirmation) : reprendre par un nouveau lancement avec reprise_run_id. Plafond dur
 # de 5 USD par lancement, vérifié avant et après chaque appel par le script
 # (services/data-pipeline/scripts/information_agent_evaluation_trial.py). Pilote d'abord (appels_max = 5), essai
-# complet ensuite (appels_max vide). Ne reçoit que le jeton du modèle : aucune clé Supabase, aucune écriture en
-# base, aucun envoi d'email. Les sorties brutes sont publiées en artefact ; les rejouer dans le banc : voir
-# docs/runbooks/information-agent.md.
+# complet ensuite (appels_max vide). Ne reçoit que les clés du modèle (Anthropic, Replicate, selon LLM_PROVIDER) :
+# aucune clé Supabase, aucune écriture en base, aucun envoi d'email. Les sorties brutes sont publiées en artefact ;
+# les rejouer dans le banc : voir docs/runbooks/information-agent.md.
 on:
   workflow_dispatch:
     inputs:
@@ -57,7 +57,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       # Mêmes réglages du modèle que .github/workflows/information-agent-evidence.yml (test de concordance).
       LLM_ENABLED: "true"
-      LLM_PROVIDER: replicate
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       REPLICATE_MIN_INTERVAL_SECONDS: 11
       REPLICATE_MAX_RETRIES: 0
@@ -127,6 +127,7 @@ jobs:
       - name: Run the trial
         env:
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BUDGET_USD: ${{ inputs.budget_usd }}
           APPELS_MAX: ${{ inputs.appels_max }}
         run: |

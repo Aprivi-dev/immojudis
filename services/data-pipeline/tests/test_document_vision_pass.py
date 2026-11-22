@@ -887,6 +887,9 @@ def test_a_replaced_piece_takes_the_written_values_with_it() -> None:
 def test_only_the_reading_of_the_pieces_gets_the_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[dict[str, str]] = []
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-shown")
+    # Retour arrière des appels de texte sur Replicate ; avec Claude, la lecture IA reçoit aussi la clé
+    # (tests/test_autonomous_execution.py).
+    monkeypatch.setenv("LLM_PROVIDER", "replicate")
     monkeypatch.setattr(
         autonomous_runner, "_run_optional_pass", lambda label, command, *, env, timeout: seen.append(env) or 0
     )
@@ -914,8 +917,9 @@ def test_workflow_gives_the_key_and_the_settings_to_the_runner_step_only() -> No
     runner_step = next(step for step in steps if step.startswith("Run manually requested pipeline"))
     assert key in runner_step and mode in runner_step and fields in runner_step
     assert "python -m src.autonomous_runner" in runner_step
-    # The manual runs of the same step drop the key before any other command.
+    # The manual runs of the same step drop the key before any other command when the text calls go to Replicate.
     assert runner_step.index("unset ANTHROPIC_API_KEY") > runner_step.index("python -m src.autonomous_runner")
+    assert runner_step.index('if [ "${LLM_PROVIDER,,}" = "replicate" ]; then') < runner_step.index("python -m src.main")
     # Never read nor shown by a command of the workflow.
     for reading_form in ("$ANTHROPIC_API_KEY", "${ANTHROPIC_API_KEY", "env.ANTHROPIC_API_KEY"):
         assert reading_form not in text

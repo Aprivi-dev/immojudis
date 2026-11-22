@@ -25,14 +25,16 @@ jobs:
     environment: Production
     timeout-minutes: 25
     env:
-      # Secrets are given only to the steps that call Supabase or Replicate,
+      # Secrets are given only to the steps that call Supabase or the AI provider,
       # never to the apt and pip steps.
       INFORMATION_AGENT_EVIDENCE_BATCH_SIZE: 5
       INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "true"
       INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "true"
       INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "true"
       LLM_ENABLED: "true"
-      LLM_PROVIDER: replicate
+      # Fournisseur de la lecture des réponses (Claude Haiku 5.5 depuis le 22/11/2026) ; retour arrière sans commit :
+      # variable de dépôt LLM_PROVIDER=replicate, la même que celle du pipeline et de Vercel (pied des messages).
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       REPLICATE_MIN_INTERVAL_SECONDS: 11
       REPLICATE_MAX_RETRIES: 0
@@ -98,4 +100,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Les pièces sont ouvertes dans des processus enfants à l'environnement réduit, sans cette clé
+          # (src/information_agent_evidence_child.py) ; Tesseract tourne avec une liste blanche (src/pdf_ocr.py).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m src.information_agent_evidence

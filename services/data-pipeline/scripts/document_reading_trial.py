@@ -7,8 +7,8 @@ points stockés, les points gardés et rejetés de chaque profil et les listes d
 les mêmes pièces contiennent selon l'autre lecture), pour une comparaison point par point.
 
 LECTURE SEULE sur la base : la connexion est ouverte en lecture seule (``read_only``) ; aucune lecture n'est
-écrite. Seuls les appels au modèle passent par le client Replicate du pipeline, avec ses réservations et son
-budget (horaire et quotidien) : ils sont notés dans ``llm_usage_events`` sous l'étape ``reading_trial``.
+écrite. Seuls les appels au modèle passent par le client du pipeline (``LLM_PROVIDER`` : Claude par défaut,
+Replicate en retour arrière), avec ses réservations et son budget (horaire et quotidien) : ils sont notés dans ``llm_usage_events`` sous l'étape ``reading_trial``.
 
 Un appel par vente et par profil, au plus ``--max-calls`` au total. Quand le budget HORAIRE partagé avec le
 pipeline est épuisé, l'essai attend puis relance le même appel, jusqu'à ``--budget-minutes``.
@@ -39,13 +39,13 @@ from scripts.fact_chunk_trial import (  # noqa: E402
     HOURLY_WAIT_SECONDS,
     CallCapReached,
     CallUsage,
-    MeteredReplicateClient,
     TrialClient,
     _bounded_int,
     _fmt,
     _fmt_cost,
     _hourly_budget_refusal,
     _sum,
+    metered_client,
     pick_varied,
     publish,
 )
@@ -59,6 +59,7 @@ from src.document_reading import (  # noqa: E402
     sold_lot_from_sale,
 )
 from src.document_reading_candidate import CANDIDATE_PROFILES  # noqa: E402
+from src.enrichment.anthropic_reader import AnthropicTextClient  # noqa: E402
 from src.llm_requests import llm_request_context  # noqa: E402
 from src.personal_data import redact_personal_text  # noqa: E402
 
@@ -249,7 +250,9 @@ def trial_profile(
             return result, "durée maximale atteinte"
         last_error.clear()
         usage_start = len(client.usage)
-        client.max_tokens = profile.max_output_tokens  # type: ignore[attr-defined]
+        if not isinstance(client, AnthropicTextClient):
+            # Plafond de réponse de Replicate ; celui de Claude comprend sa réflexion et reste celui du pipeline.
+            client.max_tokens = profile.max_output_tokens  # type: ignore[attr-defined]
         rejections: dict[str, int] = {}
         rejected: list[dict[str, object]] = []
         with llm_request_context(source_url=source_url, sale_id=sale_id, stage=TRIAL_STAGE, reason=TRIAL_REASON):
@@ -501,10 +504,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not db_url:
         print("SUPABASE_DB_URL est requise (lecture des ventes).", file=sys.stderr)
         return 2
-    client = MeteredReplicateClient().start_meter(options.max_calls)
-    client.max_retries = 0
+    client = metered_client(options.max_calls)
+    if not isinstance(client, AnthropicTextClient):
+        client.max_retries = 0
     if not client.is_available():
-        print("REPLICATE_API_TOKEN est requise.", file=sys.stderr)
+        key = "ANTHROPIC_API_KEY" if isinstance(client, AnthropicTextClient) else "REPLICATE_API_TOKEN"
+        print(f"{key} est requise.", file=sys.stderr)
         return 2
     from src.storage.supabase_client import connect
 

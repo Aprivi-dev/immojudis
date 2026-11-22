@@ -1,3 +1,4 @@
+import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
 import { INFORMATION_AGENT_OPT_OUT_PATH } from "@/lib/information-agent-link-paths";
 import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import { SAMPLE_APP_URL, SAMPLE_SALE_A } from "../samples";
@@ -69,7 +70,8 @@ async function renderRequest(options: {
       courtRegistryDailyCap: options.court ? 3 : null,
       // Avocat poursuivant : le pied annonce l'affichage de ses réponses sur la fiche (J10).
       replyDisplay: options.court ? "court_registry" : "source_lawyer",
-      aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
+      // Le prestataire configuré (`LLM_PROVIDER`), comme le pied des messages réellement envoyés.
+      aiProvider: informationAgentAiProvider(),
       privacyUrl: `${SAMPLE_APP_URL}/privacy`,
       optOutUrl: OPT_OUT_URL,
     },

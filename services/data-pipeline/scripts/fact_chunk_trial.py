@@ -9,8 +9,8 @@ résultat stocké (``raw_payload.llm_fact_extraction``, extrait à 10 000).
 
 LECTURE SEULE sur la base : la connexion est ouverte en lecture seule (``read_only``), aucune vente, aucun
 cache (disque ou base) n'est écrit ; les textes restent en mémoire. Seuls les appels au modèle passent par le
-client Replicate du pipeline, avec ses réservations et son budget (horaire et quotidien) : ils sont notés dans
-``llm_usage_events`` sous l'étape ``facts_trial``.
+client du pipeline (``LLM_PROVIDER`` : Claude par défaut, Replicate en retour arrière), avec ses réservations et son
+budget (horaire et quotidien) : ils sont notés dans ``llm_usage_events`` sous l'étape ``facts_trial``.
 
 Plafond dur : ``--max-calls`` prédictions au total (une relance « JSON invalide » compte), et ``--budget-minutes``
 de durée. Au-delà, l'essai s'arrête proprement et rend le rapport des ventes déjà traitées.
@@ -42,8 +42,9 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from src.config import load_settings, write_step_summary  # noqa: E402
+from src.config import ANTHROPIC_PROVIDER, fact_fingerprint_model, load_settings, write_step_summary  # noqa: E402
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access  # noqa: E402
+from src.enrichment.anthropic_reader import AnthropicTextClient, ReaderOutputCut  # noqa: E402
 from src.enrichment.extract_structured import (  # noqa: E402
     FACT_FINGERPRINT_CHUNK_CHARS,
     LLMExtraction,
@@ -55,7 +56,7 @@ from src.enrichment.extract_structured import (  # noqa: E402
     extract_source_description,
     fact_sections_for_sale,
 )
-from src.enrichment.llm_client import ReplicateClient, _is_gemini_model, _is_qwen_model  # noqa: E402
+from src.enrichment.llm_client import ReplicateClient, _is_gemini_model, _is_qwen_model, create_llm_client  # noqa: E402
 from src.enrichment.prompts import SYSTEM_PROMPT, build_user_prompt  # noqa: E402
 from src.llm_requests import (  # noqa: E402
     LLMRequestDeterministicCooldown,
@@ -229,6 +230,64 @@ class MeteredReplicateClient(ReplicateClient):
         )
 
 
+class MeteredAnthropicClient(AnthropicTextClient):
+    """The pipeline's Anthropic text client, with the same hard call cap and per-call token capture.
+
+    Reservations, hourly and daily budgets and telemetry are those of :class:`AnthropicTextClient`. Its own record
+    of each call (``ReaderCall``) is turned into the trial's :class:`CallUsage` in ``usage``.
+    """
+
+    def start_meter(self, max_calls: int) -> MeteredAnthropicClient:
+        self.max_calls = max(0, int(max_calls))
+        self.calls_made = 0
+        self.usage: list[CallUsage] = []  # type: ignore[assignment]
+        return self
+
+    def _call(self, request: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        if self.calls_made >= self.max_calls:
+            raise CallCapReached(f"plafond de {self.max_calls} appels atteint")
+        # Counted before the reservation: a call whose outcome is unknown still counts against the cap.
+        self.calls_made += 1
+        start = len(self.usage)
+        error: Exception | None = None
+        try:
+            return super()._call(request, **kwargs)
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            calls = self.usage[start:]
+            del self.usage[start:]
+            input_estimate = round((int(kwargs.get("prompt_chars") or 0) + int(kwargs.get("system_chars") or 0)) / 4)
+            for call in calls:
+                self.usage.append(
+                    CallUsage(
+                        succeeded=call.succeeded,
+                        input_tokens=call.input_tokens,
+                        output_tokens=call.output_tokens,
+                        input_tokens_estimate=input_estimate,
+                        output_tokens_estimate=0,
+                        cost_usd=call.cost_usd,
+                        truncated=isinstance(error, ReaderOutputCut),
+                        error=type(error).__name__ if error is not None else None,
+                    )
+                )
+
+
+def metered_client(max_calls: int, *, fact_max_tokens: int | None = None) -> MeteredReplicateClient | MeteredAnthropicClient:
+    """The trial client of the configured provider (``LLM_PROVIDER``), metered and capped at ``max_calls``.
+
+    ``fact_max_tokens`` is the Replicate answer cap of a fact chunk; Claude's cap includes its adaptive thinking and
+    stays that of the pipeline.
+    """
+    client = create_llm_client()
+    if isinstance(client, AnthropicTextClient):
+        return MeteredAnthropicClient(
+            model=client.model, max_calls_per_hour=client.max_calls_per_hour, client=client.client
+        ).start_meter(max_calls)
+    return MeteredReplicateClient(fact_max_tokens=fact_max_tokens).start_meter(max_calls)
+
+
 @dataclass
 class TrialOptions:
     sales: int = DEFAULT_SALES
@@ -396,7 +455,7 @@ def trial_sale(
         context_10k = "\n\n".join(chunks_10k)
         result.same_input = stored_key in {
             _fact_input_cache_key(context_10k, model, prompt_version)
-            for model in (str(client.model or ""), PINNED_MODEL)
+            for model in (fact_fingerprint_model(settings), PINNED_MODEL)
         }
     chunks = [chunk for chunk in _pack_fact_sections(sections, chunk_chars=max(3000, options.chunk_chars)) if chunk]
     result.trial_chunks = len(chunks)
@@ -692,9 +751,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not db_url:
         print("SUPABASE_DB_URL est requise (lecture des ventes).", file=sys.stderr)
         return 2
-    client = MeteredReplicateClient(fact_max_tokens=options.max_tokens).start_meter(options.max_calls)
+    client = metered_client(options.max_calls, fact_max_tokens=options.max_tokens)
     if not client.is_available():
-        print("REPLICATE_API_TOKEN est requise.", file=sys.stderr)
+        key = "ANTHROPIC_API_KEY" if settings["llm_provider"] == ANTHROPIC_PROVIDER else "REPLICATE_API_TOKEN"
+        print(f"{key} est requise.", file=sys.stderr)
         return 2
     from src.storage.supabase_client import connect
 

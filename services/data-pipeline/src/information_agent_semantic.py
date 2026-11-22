@@ -3,7 +3,8 @@
 The attachment worker can recover text locally without an AI provider.  The
 text pass is an optional second pass for native/OCR text and grounds every
 proposed field in a page citation.  A separately gated photo pass uses the
-documented Qwen3.7-Plus image contract only for bounded descriptive
+image input of the configured provider (``LLM_PROVIDER``: Claude, or the
+documented Qwen3.7-Plus contract on Replicate) only for bounded descriptive
 observations under human review; it never turns a visual impression into a
 property fact.
 """
@@ -547,8 +548,8 @@ def analyze_semantic_evidence(
             model=model,
         )
     try:
-        # The existing Replicate client observes this cooperative deadline and
-        # bounds its HTTP timeout/polling accordingly.
+        # Both provider clients (Anthropic, Replicate) observe this cooperative
+        # deadline and bound their HTTP timeout/polling accordingly.
         from src.llm_task_deadline import llm_task_deadline_scope
 
         deadline = time.monotonic() + max(1.0, min(SEMANTIC_TIMEOUT_SECONDS, float(timeout_seconds)))
@@ -1142,21 +1143,25 @@ def run_configured_semantic_analysis(
     """Use the existing text provider only when explicitly enabled.
 
     This text pass analyzes native/OCR text and never uploads an image. The
-    separately gated :func:`run_configured_photo_analysis` owns the documented
-    Qwen3.7-Plus image input path.
+    separately gated :func:`run_configured_photo_analysis` owns the image
+    input path.
     """
     if not is_true_value(settings.get("information_agent_evidence_semantic_enabled")):
         return SemanticAnalysis("disabled", [])
     try:
+        from src.enrichment.anthropic_reader import AnthropicTextClient
         from src.enrichment.llm_client import create_llm_client
 
         # Lu avant l'appel du modèle : s'il est illisible, rien n'est payé et aucun fait n'est proposé.
         lot_context = lot_context_loader() if lot_context_loader else None
         client = create_llm_client()
-        # Keep this optional pass materially below the existing fact extraction
-        # ceiling; the regular provider reservation still records the call.
-        client.fact_max_tokens = min(int(client.fact_max_tokens or SEMANTIC_MAX_OUTPUT_TOKENS), SEMANTIC_MAX_OUTPUT_TOKENS)
-        client.max_retries = 0
+        if not isinstance(client, AnthropicTextClient):
+            # Keep this optional pass materially below the existing fact extraction
+            # ceiling; the regular provider reservation still records the call.
+            # Réglages de Replicate seulement : la réponse de Claude comprend sa réflexion adaptative, qu'un plafond
+            # de 1 024 jetons couperait ; il ne fait jamais de nouvelle tentative.
+            client.fact_max_tokens = min(int(client.fact_max_tokens or SEMANTIC_MAX_OUTPUT_TOKENS), SEMANTIC_MAX_OUTPUT_TOKENS)
+            client.max_retries = 0
         generate_json = getattr(client, "generate_json_once", client.generate_json)
         return analyze_semantic_evidence(
             pages,
@@ -1170,7 +1175,7 @@ def run_configured_semantic_analysis(
 
 
 def image_bytes_to_data_url(content: bytes, mime_type: str) -> str | None:
-    """Encode one bounded local image for Replicate's file[] input contract."""
+    """Encode one bounded local image as a data URL (Replicate file[] input, Claude base64 image block)."""
     if not content or len(content) > MAX_VISION_IMAGE_BYTES:
         return None
     if mime_type not in {"image/jpeg", "image/png", "image/webp"}:
@@ -1253,22 +1258,25 @@ def run_configured_photo_analysis(
     *,
     ocr_text: str | None = None,
 ) -> PhotoSemanticAnalysis:
-    """Use the existing Replicate client for one explicitly enabled photo pass."""
+    """Use the configured provider client (``LLM_PROVIDER``) for one explicitly enabled photo pass."""
     if not is_true_value(settings.get("information_agent_evidence_vision_enabled")):
         return PhotoSemanticAnalysis("disabled")
     data_url = image_bytes_to_data_url(content, mime_type)
     if data_url is None:
         return PhotoSemanticAnalysis("unavailable", error_code="VISION_IMAGE_FORMAT_UNSUPPORTED")
     try:
+        from src.enrichment.anthropic_reader import AnthropicTextClient
         from src.enrichment.llm_client import create_llm_client
 
         client = create_llm_client()
         if not hasattr(client, "generate_json_with_images"):
             return PhotoSemanticAnalysis("unavailable", error_code="VISION_CLIENT_UNSUPPORTED")
-        client.max_tokens = min(int(client.max_tokens or PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS), PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS)
-        # The photo pass is one bounded inference; transport retry belongs to
-        # the queue and must not duplicate a paid visual request here.
-        client.max_retries = 0
+        if not isinstance(client, AnthropicTextClient):
+            # Réglages de Replicate seulement (voir run_configured_semantic_analysis).
+            client.max_tokens = min(int(client.max_tokens or PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS), PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS)
+            # The photo pass is one bounded inference; transport retry belongs to
+            # the queue and must not duplicate a paid visual request here.
+            client.max_retries = 0
         return analyze_photo_evidence(
             image_data_urls=[data_url],
             generate_json_with_images=client.generate_json_with_images,

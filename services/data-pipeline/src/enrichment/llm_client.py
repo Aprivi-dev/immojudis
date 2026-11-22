@@ -11,11 +11,11 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from src.config import load_settings
+from src.config import ANTHROPIC_PROVIDER, LLM_PROVIDERS, REPLICATE_PROVIDER, load_settings
 from src.host_turn import HostTurnWaitExceeded, host_turn
 from src.llm_requests import (
     RESERVATION_KEY,
@@ -33,6 +33,9 @@ from src.llm_task_deadline import (
     llm_task_deadline_remaining,
 )
 from src.pipeline_usage import QueueJobDeferred, defer_budget_jobs, record_prediction, reserve_prediction
+
+if TYPE_CHECKING:
+    from src.enrichment.anthropic_reader import AnthropicTextClient
 
 LOGGER = logging.getLogger(__name__)
 RETRYABLE_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -60,8 +63,8 @@ class LLMProviderOutputRefused(RuntimeError):
     enter queue state or worker telemetry.
     """
 
-    def __init__(self, *, request_kind: str | None = None) -> None:
-        super().__init__("Replicate refused generated output for provider safety review")
+    def __init__(self, *, request_kind: str | None = None, provider: str = "Replicate") -> None:
+        super().__init__(f"{provider} refused generated output for provider safety review")
         self.request_kind = request_kind
 
 
@@ -263,13 +266,7 @@ class ReplicateClient:
                 last_error = exc
                 if attempt + 1 >= attempts:
                     break
-                prompt = _user_prompt_for_model(
-                    str(self.model),
-                    system_prompt,
-                    f"{user_prompt}\n\nTa réponse précédente n'était pas du JSON valide. "
-                    "Réponds uniquement avec un objet JSON valide. Le premier caractère doit être { "
-                    "et le dernier caractère doit être }. Aucun markdown, aucun commentaire.",
-                )
+                prompt = _user_prompt_for_model(str(self.model), system_prompt, f"{user_prompt}{JSON_RETRY_INSTRUCTION}")
         retry_label = "after retry" if attempts > 1 else "without retry"
         raise ValueError(f"Replicate returned invalid JSON {retry_label}: {last_error}")
 
@@ -301,16 +298,7 @@ class ReplicateClient:
             raise LLMClientUnavailable("REPLICATE_API_TOKEN is missing")
         if not _is_qwen_vision_model(str(self.model or "")):
             raise LLMClientUnavailable("Configured Replicate model has no approved image input contract")
-        images = list(image_inputs)
-        if not 1 <= len(images) <= 4:
-            raise ValueError("Vision requests must contain between 1 and 4 images")
-        for image in images:
-            if not isinstance(image, str) or not image:
-                raise ValueError("Vision image inputs must be non-empty strings")
-            if len(image) > 8_000_000:
-                raise ValueError("Vision image input exceeds the 8 MB encoded limit")
-            if not (image.startswith("https://") or image.startswith("data:image/")):
-                raise ValueError("Vision image inputs must be HTTPS or data image URLs")
+        images = validated_image_inputs(image_inputs)
 
         ensure_llm_task_deadline("starting vision generation")
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
@@ -875,20 +863,59 @@ class ReplicateClient:
             raise
 
 
-def create_llm_client() -> ReplicateClient:
+def create_llm_client() -> ReplicateClient | AnthropicTextClient:
+    """Le client du fournisseur ``LLM_PROVIDER`` (``anthropic`` par défaut, ``replicate`` pour le retour arrière).
+
+    Les deux exposent la même interface (``is_available``, ``generate_json``, ``generate_json_once``,
+    ``generate_json_with_images``, ``model``) : les appelants ne savent pas qui lit.
+    """
     settings = load_settings()
-    if settings["llm_provider"] != "replicate":
-        raise LLMClientUnavailable("Only the Replicate LLM provider is currently configured")
-    return ReplicateClient()
+    provider = settings["llm_provider"]
+    if provider == ANTHROPIC_PROVIDER:
+        from src.enrichment.anthropic_reader import AnthropicTextClient
+
+        return AnthropicTextClient(
+            model=str(settings["anthropic_text_model"]),
+            max_calls_per_hour=int(settings["anthropic_max_calls_per_hour"]),
+        )
+    if provider == REPLICATE_PROVIDER:
+        return ReplicateClient()
+    raise LLMClientUnavailable(f"Unknown LLM provider {provider!r}; expected one of {', '.join(LLM_PROVIDERS)}")
+
+
+# Fin du prompt de l'utilisateur pour une réponse en JSON (Qwen, Gemini et Claude), et consigne ajoutée à la seule
+# nouvelle tentative de ``generate_json`` après une réponse qui n'en était pas.
+JSON_FINAL_REMINDER = (
+    "\n\nRAPPEL FINAL: réponds uniquement par un objet JSON valide. "
+    "Le premier caractère de ta réponse doit être { et le dernier doit être }."
+)
+JSON_RETRY_INSTRUCTION = (
+    "\n\nTa réponse précédente n'était pas du JSON valide. "
+    "Réponds uniquement avec un objet JSON valide. Le premier caractère doit être { "
+    "et le dernier caractère doit être }. Aucun markdown, aucun commentaire."
+)
+MAX_VISION_IMAGES = 4
+MAX_VISION_IMAGE_INPUT_CHARS = 8_000_000
+
+
+def validated_image_inputs(image_inputs: Sequence[str]) -> list[str]:
+    """Images d'un appel de vision : 1 à 4 adresses HTTPS ou ``data:image/``, 8 Mo encodés au plus chacune."""
+    images = list(image_inputs)
+    if not 1 <= len(images) <= MAX_VISION_IMAGES:
+        raise ValueError("Vision requests must contain between 1 and 4 images")
+    for image in images:
+        if not isinstance(image, str) or not image:
+            raise ValueError("Vision image inputs must be non-empty strings")
+        if len(image) > MAX_VISION_IMAGE_INPUT_CHARS:
+            raise ValueError("Vision image input exceeds the 8 MB encoded limit")
+        if not (image.startswith("https://") or image.startswith("data:image/")):
+            raise ValueError("Vision image inputs must be HTTPS or data image URLs")
+    return images
 
 
 def _user_prompt_for_model(model: str, system_prompt: str, user_prompt: str) -> str:
     if _is_gemini_model(model) or _is_qwen_model(model):
-        return (
-            f"{user_prompt}\n\n"
-            "RAPPEL FINAL: réponds uniquement par un objet JSON valide. "
-            "Le premier caractère de ta réponse doit être { et le dernier doit être }."
-        )
+        return f"{user_prompt}{JSON_FINAL_REMINDER}"
     return _combine_prompts(system_prompt, user_prompt)
 
 
