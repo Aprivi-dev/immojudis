@@ -256,14 +256,20 @@ export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
  * même temps que la bascule du réglage, et AVANT le premier envoi d'un texte à Anthropic.
  *
  * - Usages déclarés : extraction des faits des annonces et des pièces (texte), lectures détaillées de l'offre
- *   Analyse, textes affichés, lecture des réponses et des pièces jointes des professionnels par l'agent
- *   d'information (photos comprises, `INFORMATION_AGENT_EVIDENCE_VISION_ENABLED`). La lecture des pages des
+ *   Analyse, lecture des réponses et des pièces jointes des professionnels par l'agent d'information (photos
+ *   comprises, `INFORMATION_AGENT_EVIDENCE_VISION_ENABLED`). Aucun texte d'affichage n'est demandé au modèle
+ *   depuis la #446 (synthèse retirée le 09/11/2026) : cette finalité n'est pas déclarée (relecture sécurité). La lecture des pages des
  *   pièces des ventes (version 2026-11-21.1, Claude Haiku 5.5 et Claude Sonnet 5.5) ne change pas : les pages
  *   partent telles quelles.
  * - Filtre des noms : les textes envoyés restent filtrés comme avec Replicate (`redact_personal_text` pour
  *   les annonces et les pièces, `redact_text_for_model` pour les réponses : noms, signatures, téléphones,
  *   adresses email). Le filtre est automatique : le texte publié dit qu'un nom peut passer. Les photos jointes
- *   à une réponse partent telles quelles.
+ *   à une réponse sont réduites à 1 600 px au plus, réenregistrées en JPEG, sans métadonnées (EXIF, position
+ *   GPS) ; leur contenu n'est pas filtré (`_prepare_image_for_vision`, `information_agent_evidence.py`).
+ * - Réponses aux 15 messages déjà partis en nommant Replicate : lues par une personne, sans IA (garde-fou du
+ *   développeur) ; le texte publié le dit en une phrase, sans chiffre.
+ * - Comptage de la taille du texte (`count_tokens`) avant certaines lectures longues : même service, mêmes
+ *   conditions de conservation, dit à la suite du paragraphe de conservation.
  * - Anthropic : faits vérifiés le 21/11/2026, sans élément nouveau (cocontractant Anthropic Ireland,
  *   Limited ; sous-traitants liés par contrat, section C.2 du DPA ; stockage aux États-Unis ; pas
  *   d'entraînement ; garantie du transfert vers les États-Unis NON ÉTABLIE, voir la note de la 2026-11-21.1).
@@ -312,7 +318,7 @@ export const LEGAL_DOCUMENTS = {
   },
   privacy: {
     version: "2026-11-22.1",
-    sha256: "f853af2457c4c04f158fc3570e5f952ab4fbd80840185a23e7dc06072d7d9c6a",
+    sha256: "c0888b3bb2dd66578c853b9bf634101906393c804eb1785e55d63755d3c08f15",
     effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     path: "/privacy",
   },

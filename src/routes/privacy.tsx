@@ -126,7 +126,7 @@ const processingRows = [
   },
   {
     purpose: "Annonces de ventes et pièces publiques",
-    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait). Le nom et les coordonnées professionnelles (adresse, téléphone, adresse e-mail) de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce d’origine (pour une vente notariale, celle d’immobilier.notaires.fr), sont visibles des personnes connectées à un compte, offre Découverte comprise. Une adresse e-mail masquée par le site d’origine n’est jamais affichée. Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente, rédiger les textes affichés et préparer les lectures détaillées de l’offre Analyse",
+    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait). Le nom et les coordonnées professionnelles (adresse, téléphone, adresse e-mail) de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce d’origine (pour une vente notariale, celle d’immobilier.notaires.fr), sont visibles des personnes connectées à un compte, offre Découverte comprise. Une adresse e-mail masquée par le site d’origine n’est jamais affichée. Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente et préparer les lectures détaillées de l’offre Analyse",
     basis: "Intérêt légitime à informer le public",
     retention:
       "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte. Chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
@@ -159,7 +159,7 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont transmises telles quelles)",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu)",
     basis:
       "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
@@ -332,9 +332,12 @@ export function PrivacyPage({
               aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les
               noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés
               automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes
-              sont transmises telles quelles. Le lieu de stockage des données, les conditions dans
-              lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont
-              indiqués dans « Destinataires et sous-traitants ».
+              sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs
+              métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré. Les réponses
+              aux messages qui nommaient un autre prestataire d’IA sont lues par une personne, sans
+              IA. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait
+              appel à des sous-traitants et la durée de conservation sont indiqués dans «
+              Destinataires et sous-traitants ».
             </p>
             <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
@@ -501,14 +504,15 @@ export function PrivacyPage({
             <p className="mt-3">
               Anthropic nous donne accès à ses modèles d’IA. À la date de cette version, Claude
               Haiku 5.5 lit le texte des annonces et le texte tiré de leurs pièces, pour relever les
-              caractéristiques de la vente, rédiger les textes affichés sur le site et préparer les
-              lectures détaillées de l’offre Analyse. Il lit aussi les réponses et les pièces
-              jointes des professionnels contactés par Immojudis. Avant l’envoi, les noms de
-              particuliers sont remplacés automatiquement par leur rôle dans ces textes ; dans les
-              réponses des professionnels, les noms, signatures, numéros de téléphone et adresses
-              e-mail sont aussi retirés. Ce filtre automatique peut laisser passer un nom : ces
-              textes peuvent donc encore contenir des données personnelles. Les photos jointes à une
-              réponse sont transmises telles quelles.
+              caractéristiques de la vente et préparer les lectures détaillées de l’offre Analyse.
+              Il lit aussi les réponses et les pièces jointes des professionnels contactés par
+              Immojudis. Avant l’envoi, les noms de particuliers sont remplacés automatiquement par
+              leur rôle dans ces textes ; dans les réponses des professionnels, les noms,
+              signatures, numéros de téléphone et adresses e-mail sont aussi retirés. Ce filtre
+              automatique peut laisser passer un nom : ces textes peuvent donc encore contenir des
+              données personnelles. Les photos jointes à une réponse sont réduites à 1 600 pixels au
+              plus, réenregistrées en JPEG et privées de leurs métadonnées (EXIF, dont la position
+              GPS) ; leur contenu n’est pas filtré.
             </p>
             <p className="mt-3">
               Claude Haiku 5.5 et Claude Sonnet 5.5 lisent aussi les pièces publiques des ventes
@@ -539,9 +543,11 @@ export function PrivacyPage({
               données reçues et les résultats produits dans les 30 jours. Si ses contrôles
               automatiques les signalent comme contraires à sa politique d’utilisation, il peut
               garder ces données et les résultats jusqu’à 2 ans, et les scores de ces contrôles de
-              sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose. Vous pouvez vous opposer à
-              la lecture des pièces : voir « Votre droit de vous opposer à la lecture automatique
-              des pièces ».
+              sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose. Pour certaines lectures
+              longues, nous demandons d’abord à Anthropic de compter la taille du texte : cette
+              demande passe par le même service, aux mêmes conditions de conservation. Vous pouvez
+              vous opposer à la lecture des pièces : voir « Votre droit de vous opposer à la lecture
+              automatique des pièces ».
             </p>
             <p className="mt-3">
               Replicate (Replicate, LLC, à San Francisco, États-Unis), qui nous donnait jusqu’ici
