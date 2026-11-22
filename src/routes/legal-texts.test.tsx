@@ -1044,10 +1044,10 @@ describe("politique de confidentialité", () => {
   it("déclare Anthropic pour tous les usages d'IA : textes filtrés des noms, photos et pages des pièces telles quelles", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Anthropic nous donne accès à ses modèles d’IA. À la date de cette version, Claude Haiku 5.5 lit le texte des annonces et le texte tiré de leurs pièces, pour relever les caractéristiques de la vente, rédiger les textes affichés sur le site et préparer les lectures détaillées de l’offre Analyse. Il lit aussi les réponses et les pièces jointes des professionnels contactés par Immojudis.",
+      "Anthropic nous donne accès à ses modèles d’IA. À la date de cette version, Claude Haiku 5.5 lit le texte des annonces et le texte tiré de leurs pièces, pour relever les caractéristiques de la vente et préparer les lectures détaillées de l’offre Analyse. Il lit aussi les réponses et les pièces jointes des professionnels contactés par Immojudis.",
     );
     expect(text).toContain(
-      "Avant l’envoi, les noms de particuliers sont remplacés automatiquement par leur rôle dans ces textes ; dans les réponses des professionnels, les noms, signatures, numéros de téléphone et adresses e-mail sont aussi retirés. Ce filtre automatique peut laisser passer un nom : ces textes peuvent donc encore contenir des données personnelles. Les photos jointes à une réponse sont transmises telles quelles.",
+      "Avant l’envoi, les noms de particuliers sont remplacés automatiquement par leur rôle dans ces textes ; dans les réponses des professionnels, les noms, signatures, numéros de téléphone et adresses e-mail sont aussi retirés. Ce filtre automatique peut laisser passer un nom : ces textes peuvent donc encore contenir des données personnelles. Les photos jointes à une réponse sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré.",
     );
     // Lecture des pages des pièces (version 2026-11-21.1) : inchangée, pages telles quelles.
     expect(text).toContain(
@@ -1062,20 +1062,33 @@ describe("politique de confidentialité", () => {
   it("dit aux professionnels contactés qu'Anthropic lit leurs réponses et pièces jointes, textes filtrés", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont transmises telles quelles. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
+      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré. Les réponses aux messages qui nommaient un autre prestataire d’IA sont lues par une personne, sans IA. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
     );
     expect(text).toContain(
-      "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont transmises telles quelles)",
+      "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu)",
     );
     expect(text).toContain(
       "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; chez Anthropic : 30 jours",
     );
   });
 
+  it("ne déclare plus de rédaction de textes affichés par l'IA, ni de photos « telles quelles » (relecture sécurité)", () => {
+    const text = pageText(<PrivacyPage />);
+    // Plus aucun texte d'affichage n'est demandé au modèle depuis la #446 (synthèse retirée le 09/11/2026).
+    expect(text).not.toContain("rédiger les textes affichés");
+    expect(text).not.toContain("transmises telles quelles");
+    expect(text).toContain(
+      "Aucun fichier n’est déposé dans le service de stockage de fichiers d’Anthropic : textes, pages et photos sont joints à chaque demande.",
+    );
+    expect(text).toContain(
+      "Pour certaines lectures longues, nous demandons d’abord à Anthropic de compter la taille du texte : cette demande passe par le même service, aux mêmes conditions de conservation.",
+    );
+  });
+
   it("déclare au tableau la lecture des annonces par Anthropic, textes filtrés des noms", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente, rédiger les textes affichés et préparer les lectures détaillées de l’offre Analyse",
+      "Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente et préparer les lectures détaillées de l’offre Analyse",
     );
     expect(text).toContain(
       "opposition et demande de retrait par email, sans compte. Chez Anthropic : 30 jours",
