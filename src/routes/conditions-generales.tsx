@@ -429,7 +429,7 @@ export function TermsPage() {
 
 function TermsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="liquid-panel-flat rounded-lg p-5 sm:p-6">
+    <section className="liquid-panel-soft rounded-lg p-5 sm:p-6">
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>

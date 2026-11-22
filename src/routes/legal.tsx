@@ -208,7 +208,7 @@ export function LegalPage() {
 
 function LegalSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="liquid-panel-flat rounded-lg p-5">
+    <section className="liquid-panel-soft rounded-lg p-5">
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <div className="mt-2">{children}</div>
     </section>
