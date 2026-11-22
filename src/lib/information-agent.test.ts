@@ -228,6 +228,7 @@ describe("supervised information agent", () => {
             ? 2
             : null;
       let contactReads = 0;
+      const insertedMessages: Record<string, unknown>[] = [];
       // La structure du destinataire s'oppose APRÈS le premier contrôle : seul le contrôle rejoué après
       // l'approbation, avec les clés de la structure, peut encore arrêter l'envoi.
       let oppositionReads = 0;
@@ -285,8 +286,9 @@ describe("supervised information agent", () => {
 
         private inserting = false;
 
-        insert() {
+        insert(values: Record<string, unknown>) {
           this.inserting = true;
+          if (this.table === "information_agent_messages") insertedMessages.push(values);
           return this;
         }
 
@@ -401,6 +403,7 @@ describe("supervised information agent", () => {
         );
       }
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "true");
+      vi.stubEnv("LLM_PROVIDER", "");
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", "false");
       if (scenario === "notary_sent") vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
       vi.stubEnv("RESEND_API_KEY", "test-resend-key");
@@ -485,6 +488,13 @@ describe("supervised information agent", () => {
           await operation;
           expect(emailMocks.sendResendEmail).toHaveBeenCalledOnce();
           expect(mission.status).toBe("sent");
+          // Le message sortant garde le prestataire d'IA nommé dans son pied (défaut : Anthropic).
+          expect(insertedMessages).toHaveLength(1);
+          expect(insertedMessages[0]).toMatchObject({
+            direction: "outbound",
+            metadata: { ai_provider_id: "anthropic" },
+          });
+          expect(emailMocks.sendResendEmail.mock.calls[0][0].message.text).toContain("Anthropic (");
           expect(mission.reply_to_email).toBe(
             "enquete+44444444-4444-4444-8444-444444444444@reply.example.test",
           );

@@ -250,8 +250,21 @@ def test_agent_evidence_sends_claude_the_filtered_reply(monkeypatch: pytest.Monk
     assert messages.created[0]["max_tokens"] == 16_000
 
 
-def _evidence_worker_requests(monkeypatch: pytest.MonkeyPatch, content: bytes, filename: str, mime_type: str) -> None:
-    """Le vrai worker des pièces reçues, stockage simulé, lecture sémantique et vision allumées."""
+ANTHROPIC_FOOTER = [{"metadata": {"ai_provider_id": "anthropic"}}]
+
+
+def _evidence_worker_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+    filename: str,
+    mime_type: str,
+    *,
+    outbound: list[dict[str, Any]] = ANTHROPIC_FOOTER,
+) -> dict[str, Any]:
+    """Le vrai worker des pièces reçues, stockage simulé, lecture sémantique et vision allumées.
+
+    ``outbound`` : le dernier message sortant du dossier, tel que le rend la base. Rend la fin d'analyse écrite.
+    """
     import hashlib
 
     import httpx
@@ -265,6 +278,8 @@ def _evidence_worker_requests(monkeypatch: pytest.MonkeyPatch, content: bytes, f
              "original_filename": filename, "mime_type": mime_type, "size_bytes": len(content),
              "sha256": hashlib.sha256(content).hexdigest()}
 
+    finished: dict[str, Any] = {}
+
     def respond(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path.endswith("/information_agent_evidence_assets"):
@@ -277,8 +292,14 @@ def _evidence_worker_requests(monkeypatch: pytest.MonkeyPatch, content: bytes, f
             return httpx.Response(200, json=[{}])
         if path.endswith("/information_agent_fact_candidates"):
             return httpx.Response(201, json=[])
+        if path.endswith("/information_agent_evidence_extractions") and request.method == "PATCH":
+            finished.update(json.loads(request.content))
+            return httpx.Response(204)
         if path.endswith("/information_agent_evidence_extractions") or path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            assert request.url.params["direction"] == "eq.outbound" and request.url.params["case_id"] == "eq.case-a"
+            return httpx.Response(200, json=outbound)
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(
@@ -292,6 +313,7 @@ def _evidence_worker_requests(monkeypatch: pytest.MonkeyPatch, content: bytes, f
     )
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         evidence._process_job(client, "https://local.example.test", "fixture-key", job)
+    return finished
 
 
 def _claude_sdk(monkeypatch: pytest.MonkeyPatch, messages: FakeMessages) -> None:
@@ -335,6 +357,64 @@ def test_only_a_photo_reaches_claude_as_it_is(monkeypatch: pytest.MonkeyPatch, n
     # The photo goes inside the request (base64, re-encoded without EXIF), never as an uploaded file.
     assert len(images) == 1 and images[0]["source"]["type"] == "base64"
     assert images[0]["source"]["media_type"] == "image/jpeg"
+
+
+# --- Prestataire nommé dans le pied = prestataire qui lit la réponse --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "outbound",
+    [
+        [],  # no outbound message recorded
+        [{"metadata": {}}],  # the 15 messages sent before 22/11/2026: their footer named Replicate
+        [{"metadata": {"ai_provider_id": "replicate"}}],
+    ],
+)
+@pytest.mark.parametrize(("filename", "mime_type"), [("piece.pdf", "application/pdf"), ("photo.png", "image/png")])
+def test_a_reply_to_a_message_that_named_another_provider_is_never_read_by_claude(
+    monkeypatch: pytest.MonkeyPatch, outbound: list[dict[str, Any]], filename: str, mime_type: str
+) -> None:
+    from src.enrichment import llm_client
+    from tests.test_information_agent_evidence import _pdf_bytes, _pixmap_png
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: pytest.fail("no AI call: the footer named another provider"))
+    content = _pdf_bytes("Surface habitable : 87 m2") if mime_type == "application/pdf" else _pixmap_png()
+
+    finished = _evidence_worker_requests(monkeypatch, content, filename, mime_type, outbound=outbound)
+
+    assert finished["metadata"]["semantic"]["error_code"] == "AI_PROVIDER_MISMATCH"
+    assert "vérification manuelle nécessaire" in finished["summary"]
+    if mime_type == "image/png":
+        assert finished["metadata"]["photo_semantic"]["error_code"] == "AI_PROVIDER_MISMATCH"
+
+
+def test_with_the_replicate_rollback_an_old_reply_is_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.enrichment import llm_client
+    from tests.test_information_agent_evidence import _pdf_bytes
+
+    calls: list[str] = []
+
+    class Replicate:
+        model = "qwen/qwen3-7-plus"
+        fact_max_tokens = 1_024
+        max_retries = 0
+
+        def generate_json(self, _system: str, _user: str) -> dict[str, object]:
+            raise AssertionError("one attempt only")
+
+        def generate_json_once(self, _system: str, _user: str) -> dict[str, object]:
+            calls.append("text")
+            return {"facts": []}
+
+    monkeypatch.setenv("LLM_PROVIDER", "replicate")
+    monkeypatch.setattr(llm_client, "create_llm_client", Replicate)
+
+    finished = _evidence_worker_requests(
+        monkeypatch, _pdf_bytes("Surface habitable : 87 m2"), "piece.pdf", "application/pdf", outbound=[{"metadata": {}}]
+    )
+
+    assert calls == ["text"] and finished["metadata"]["semantic"]["status"] == "completed"
 
 
 # --- Workflows : la clé aux seules étapes qui appellent l'IA ---------------------------------------------------------

@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 import pymupdf as fitz
 
-from src.config import load_settings
+from src.config import llm_provider, load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
 from src.information_agent_evidence_child import (
     child_popen_kwargs,
@@ -32,6 +32,7 @@ from src.information_agent_evidence_rows import (
     fail_job,
     fetch_asset,
     fetch_case_status,
+    fetch_footer_ai_provider,
     fetch_sale,
     fetch_sale_lot_context,
     mark_case_for_review,
@@ -59,6 +60,10 @@ from src.pdf_document_types import classify_document_type
 from src.pdf_ocr_child_output import parse_ocr_child_output
 from src.storage.postgrest_helpers import rest_headers
 
+# Le pied du message envoyé au professionnel nomme un autre prestataire d'IA que celui qui lirait sa réponse : ni
+# lecture du texte ni lecture de la photo par l'IA, relecture humaine.
+AI_PROVIDER_MISMATCH = "AI_PROVIDER_MISMATCH"
+VISION_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"})
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 # Pages lues d'un PDF ; au-delà, les premières pages sont lues et la lecture est déclarée partielle. 300 comme la
 # valeur par défaut des annonces (``pdf_max_total_pages``), sans en dépendre, sous les bornes de la table
@@ -1182,9 +1187,21 @@ def _process_job(
         # Consigne adressée à un modèle dans le texte lu, tous passages confondus : aucun fait (ni règle ni IA),
         # aucun texte de la pièce envoyé au modèle, relecture.
         prompt_injection = analysis.reading is not None and analysis.reading["prompt_injection_seen"] is True
+        is_photo = analysis.status == "completed" and analysis.detected_mime_type in VISION_MIME_TYPES
+        # La réponse n'est lue par l'IA que par le prestataire nommé dans le pied du message envoyé (lu seulement
+        # quand un appel est possible). Un dossier sans prestataire enregistré compte comme Replicate.
+        ai_call_possible = not prompt_injection and (
+            bool(settings.get("information_agent_evidence_semantic_enabled"))
+            or (is_photo and bool(settings.get("information_agent_evidence_vision_enabled")))
+        )
+        provider_mismatch = ai_call_possible and fetch_footer_ai_provider(
+            client, base_url, key, str(job.get("case_id") or "")
+        ) != llm_provider()
         if prompt_injection:
             analysis = _withhold_facts_for_prompt_injection(analysis)
             semantic_analysis = prompt_injection_skip()
+        elif provider_mismatch:
+            semantic_analysis = SemanticAnalysis("unavailable", [], error_code=AI_PROVIDER_MISMATCH)
         else:
             sale_id = str(job.get("sale_id") or "")
             semantic_analysis = run_configured_semantic_analysis(
@@ -1196,16 +1213,12 @@ def _process_job(
         analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
         analysis = _declare_model_reading(analysis, semantic_analysis)
         photo_analysis = PhotoSemanticAnalysis("not_run", error_code="EVIDENCE_NOT_IMAGE")
-        if analysis.status == "completed" and analysis.detected_mime_type in {
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/heic",
-            "image/heif",
-        }:
+        if is_photo:
             if prompt_injection:
                 # Le texte lu sur la photo s'adresse à un modèle : il n'est pas envoyé au modèle de vision.
                 photo_analysis = PhotoSemanticAnalysis("skipped", error_code="PROMPT_INJECTION_SUSPECTED")
+            elif provider_mismatch and settings.get("information_agent_evidence_vision_enabled"):
+                photo_analysis = PhotoSemanticAnalysis("unavailable", error_code=AI_PROVIDER_MISMATCH)
             elif settings.get("information_agent_evidence_vision_enabled"):
                 prepared = _prepare_image_for_vision(content, analysis.detected_mime_type)
                 if prepared is None:

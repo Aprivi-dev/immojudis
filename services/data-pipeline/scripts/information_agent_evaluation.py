@@ -45,6 +45,7 @@ if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
 from src import information_agent_evidence as evidence  # noqa: E402
+from src.config import llm_provider  # noqa: E402
 from src.enrichment import llm_client  # noqa: E402
 from src.information_agent_semantic import (  # noqa: E402
     SEMANTIC_PROCESSOR_VERSION,
@@ -217,6 +218,9 @@ class FakeSupabase:
             return httpx.Response(200, json=[{"status": "review"}])
         if method == "GET" and path.endswith("/rest/v1/auction_sales"):
             return httpx.Response(200, json=[self.sale])
+        if method == "GET" and path.endswith("/rest/v1/information_agent_messages"):
+            # Le message envoyé nomme dans son pied le prestataire qui lit les réponses.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": llm_provider()}}])
         if method == "GET" and path.endswith("/rest/v1/information_agent_fact_candidates"):
             return self._existing_body_rows(params)
         if method == "POST" and path.endswith("/rest/v1/information_agent_fact_candidates"):
