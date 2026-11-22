@@ -264,15 +264,27 @@ export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
  *   les annonces et les pièces, `redact_text_for_model` pour les réponses : noms, signatures, téléphones,
  *   adresses email). Le filtre est automatique : le texte publié dit qu'un nom peut passer. Les photos jointes
  *   à une réponse partent telles quelles.
- * - Anthropic : formulations de la version 2026-11-21.1 reprises sans changement (cocontractant Anthropic
- *   Ireland, Limited ; sous-traitants liés par contrat, section C.2 du DPA ; stockage aux États-Unis ;
- *   pas d'entraînement ; garantie du transfert vers les États-Unis NON ÉTABLIE, voir la note de la
- *   2026-11-21.1). Conservation de 30 jours étendue aux textes et aux photos, qui doivent eux aussi être
- *   joints à la demande, sans Files API (à confirmer par le développeur qui fait la bascule).
+ * - Anthropic : faits vérifiés le 21/11/2026, sans élément nouveau (cocontractant Anthropic Ireland,
+ *   Limited ; sous-traitants liés par contrat, section C.2 du DPA ; stockage aux États-Unis ; pas
+ *   d'entraînement ; garantie du transfert vers les États-Unis NON ÉTABLIE, voir la note de la 2026-11-21.1).
+ *   Le paragraphe du cocontractant reprend la 2026-11-21.1 et dit en plus que le DPA ne précise pas la
+ *   garantie du transfert. Passages réécrits par rapport à la 2026-11-21.1 :
+ *   - parenthèse des destinataires : « (Anthropic, États-Unis) » devient « (Anthropic, Irlande, données
+ *     stockées aux États-Unis) » ;
+ *   - « Personnes citées » : « un modèle d'IA d'Anthropic, aux États-Unis » devient « dont les données sont
+ *     stockées aux États-Unis » (le lieu de traitement n'est pas fixé dans le code) ;
+ *   - « Transferts hors de l'EEE » : la phrase « traitées par ses sous-traitants dans les conditions de son
+ *     accord », qui laissait croire à une garantie, est remplacée par l'absence de garantie vérifiée et la
+ *     demande faite à Anthropic (relecture juridique de la PR #551). Le texte dit « Nous la demandons » :
+ *     la demande doit être partie avant la mise en ligne ;
+ *   - conservation de 30 jours étendue aux textes et aux photos, qui doivent eux aussi être joints à la
+ *     demande, sans Files API (à confirmer par le développeur qui fait la bascule).
  * - Replicate : prestataire de secours, par réglage (`LLM_PROVIDER`). Le texte dit qu'il ne reçoit rien tant
  *   que le réglage n'est pas rebasculé, ce qu'il recevrait alors (mêmes textes filtrés et mêmes photos, pas
  *   les pages des pièces) et l'absence de garantie de transfert vérifiée (J18). Il ne promet pas de modifier
- *   la page avant une rebascule.
+ *   la page avant une rebascule. Pour les données déjà envoyées, il reprend ce que disait la 2026-11-21.1
+ *   (textes, pièces, réponses et photos, avec des données personnelles possibles) et dit que la durée de
+ *   conservation chez Replicate n'était pas indiquée et n'est pas vérifiée.
  * - Pied des messages de l'agent : le prestataire nommé vient de `LLM_PROVIDER`
  *   (`information-agent-ai-provider.ts`), qui connaît désormais Anthropic.
  * - Hors champ : les textes sur la validation humaine des informations transmises par les professionnels
@@ -300,7 +312,7 @@ export const LEGAL_DOCUMENTS = {
   },
   privacy: {
     version: "2026-11-22.1",
-    sha256: "dcc4ed3093d932f2e0c3a70a730eede658ec84a1a19cf16e786bc68a0827dff1",
+    sha256: "f853af2457c4c04f158fc3570e5f952ab4fbd80840185a23e7dc06072d7d9c6a",
     effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     path: "/privacy",
   },

@@ -15,17 +15,20 @@ export type InformationAgentAiProvider = {
   id: string;
   /** Nom du prestataire tel qu'il apparaît dans le pied du message. */
   name: string;
-  /** Pays d'établissement, pour l'information sur les transferts. */
+  /**
+   * Précision affichée entre parenthèses après le nom, pour l'information sur les transferts : entité et
+   * pays du cocontractant, puis lieu de stockage des données s'il diffère.
+   */
   country: string;
 };
 
-// Anthropic : cocontractant Anthropic Ireland, Limited, données stockées aux États-Unis (politique de
-// confidentialité 2026-11-22.1, qui garde Replicate en secours).
+// Anthropic : cocontractant Anthropic Ireland, Limited, données stockées aux États-Unis ; le lieu de
+// traitement n'est pas fixé (politique de confidentialité 2026-11-22.1, qui garde Replicate en secours).
 const KNOWN_AI_PROVIDERS: Readonly<Record<string, InformationAgentAiProvider>> = {
   anthropic: {
     id: "anthropic",
     name: "Anthropic",
-    country: "Irlande, données stockées aux États-Unis",
+    country: "Anthropic Ireland, Limited, Irlande ; données stockées aux États-Unis",
   },
   replicate: { id: "replicate", name: "Replicate", country: "États-Unis" },
 };

@@ -159,7 +159,7 @@ describe("renderInformationRequestEmail", () => {
 
     for (const output of [message.html, message.text]) {
       expect(output).toContain(
-        "Anthropic (Irlande, données stockées aux États-Unis), outil d’IA qui aide à lire et classer les réponses.",
+        "Anthropic (Anthropic Ireland, Limited, Irlande ; données stockées aux États-Unis), outil d’IA qui aide à lire et classer les réponses.",
       );
       expect(output).not.toContain("Replicate");
     }

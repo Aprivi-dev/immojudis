@@ -23,7 +23,7 @@ describe("prestataire d'IA du pied de message", () => {
     expect(provider).toEqual({
       id: "anthropic",
       name: "Anthropic",
-      country: "Irlande, données stockées aux États-Unis",
+      country: "Anthropic Ireland, Limited, Irlande ; données stockées aux États-Unis",
     });
   });
 

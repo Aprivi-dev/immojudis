@@ -332,8 +332,9 @@ export function PrivacyPage({
               aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les
               noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés
               automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes
-              sont transmises telles quelles. Le pays de traitement, les sous-traitants d’Anthropic
-              et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».
+              sont transmises telles quelles. Le lieu de stockage des données, les conditions dans
+              lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont
+              indiqués dans « Destinataires et sous-traitants ».
             </p>
             <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
@@ -422,9 +423,10 @@ export function PrivacyPage({
               Ce remplacement vaut aussi pour les textes que nous transmettons à notre prestataire
               d’IA, Anthropic. Il ne vaut pas pour les pages des pièces des ventes judiciaires :
               elles sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic,
-              aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir
-              « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à
-              cette lecture en écrivant à {legalValue(publisher.contactEmail)} (voir ci-dessous).
+              dont les données sont stockées aux États-Unis, pour en relever la surface,
+              l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si
+              vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à{" "}
+              {legalValue(publisher.contactEmail)} (voir ci-dessous).
             </p>
             <p className="mt-3">
               Les photos du bien tirées des pièces d’une vente, notamment du procès-verbal
@@ -526,8 +528,10 @@ export function PrivacyPage({
               dans les conditions prévues par l’accord de traitement des données d’Anthropic : un
               contrat avec chacun de ces sous-traitants leur impose des obligations de protection
               des données en substance aussi protectrices que celles d’Anthropic, et Anthropic reste
-              responsable envers nous de leurs actes. Les conditions commerciales interdisent à
-              Anthropic d’entraîner ses modèles sur ces données.
+              responsable envers nous de leurs actes. Cet accord ne précise pas sur quelle garantie
+              prévue par le RGPD repose le passage des données hors de l’Espace économique européen
+              (voir « Transferts hors de l’Espace économique européen »). Les conditions
+              commerciales interdisent à Anthropic d’entraîner ses modèles sur ces données.
             </p>
             <p className="mt-3">
               Aucun fichier n’est déposé dans le service de stockage de fichiers d’Anthropic :
@@ -552,8 +556,13 @@ export function PrivacyPage({
               cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne
               s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type
               n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle
-              par un autre prestataire, ni dans quel pays. Pour toute question, écrivez à{" "}
-              {legalValue(publisher.contactEmail)}.
+              par un autre prestataire, ni dans quel pays. Avant le passage à Anthropic, Replicate a
+              reçu le texte des annonces et le texte tiré de leurs pièces, les réponses des
+              professionnels contactés et les photos à lire : elles pouvaient contenir des données
+              personnelles, par exemple le nom d’un professionnel ou d’une personne citée dans une
+              pièce. Les versions précédentes de cette page n’indiquaient pas combien de temps
+              Replicate les conserve, et nous ne l’avons pas vérifié à la date de cette version.
+              Pour toute question, écrivez à {legalValue(publisher.contactEmail)}.
             </p>
             <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
@@ -579,9 +588,12 @@ export function PrivacyPage({
               accord ; Google est certifié au cadre de protection des données UE–États-Unis). Pour
               obtenir une copie des garanties qui existent, écrivez à{" "}
               {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire. Pour Replicate,
-              aucune garantie n’est établie à ce jour (voir ci-dessus). Pour Anthropic, les données
-              sont traitées par ses sous-traitants dans les conditions de son accord de traitement
-              des données (voir ci-dessus).
+              aucune garantie n’est établie à ce jour (voir ci-dessus). Pour Anthropic, notre
+              cocontractant est établi en Irlande, mais les données sont stockées aux États-Unis et
+              peuvent être traitées dans d’autres pays. À la date de cette version, nous n’avons pas
+              pu vérifier sur quelle garantie prévue par le RGPD repose ce passage hors de l’Espace
+              économique européen : l’accord de traitement des données d’Anthropic ne la précise
+              pas. Nous la demandons à Anthropic et indiquerons ici sa réponse.
             </p>
           </PrivacySection>
 

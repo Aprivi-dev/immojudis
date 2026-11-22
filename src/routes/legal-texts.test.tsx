@@ -1029,7 +1029,11 @@ describe("politique de confidentialité", () => {
       "S’il l’était, il recevrait à la place d’Anthropic les mêmes textes, filtrés de la même façon, et les mêmes photos ; les pages des pièces des ventes judiciaires ne lui sont pas envoyées.",
     );
     expect(text).toContain(
-      "Ces données seraient alors transférées aux États-Unis. À la date de cette version, ce transfert ne reposerait sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays. Pour toute question, écrivez à contact@immojudis.example.",
+      "Ces données seraient alors transférées aux États-Unis. À la date de cette version, ce transfert ne reposerait sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays.",
+    );
+    // Données déjà envoyées : rien n'est affirmé sur leur durée de conservation chez Replicate.
+    expect(text).toContain(
+      "Avant le passage à Anthropic, Replicate a reçu le texte des annonces et le texte tiré de leurs pièces, les réponses des professionnels contactés et les photos à lire : elles pouvaient contenir des données personnelles, par exemple le nom d’un professionnel ou d’une personne citée dans une pièce. Les versions précédentes de cette page n’indiquaient pas combien de temps Replicate les conserve, et nous ne l’avons pas vérifié à la date de cette version. Pour toute question, écrivez à contact@immojudis.example.",
     );
     // Aucune promesse sur ce qui se passerait avant une rebascule.
     expect(text).not.toContain("Nous mettrons cette page à jour");
@@ -1058,7 +1062,7 @@ describe("politique de confidentialité", () => {
   it("dit aux professionnels contactés qu'Anthropic lit leurs réponses et pièces jointes, textes filtrés", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont transmises telles quelles.",
+      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont transmises telles quelles. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
     );
     expect(text).toContain(
       "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont transmises telles quelles)",
@@ -1087,8 +1091,17 @@ describe("politique de confidentialité", () => {
       "Anthropic Ireland fait traiter ces données par ses sous-traitants, dans les conditions prévues par l’accord de traitement des données d’Anthropic : un contrat avec chacun de ces sous-traitants leur impose des obligations de protection des données en substance aussi protectrices que celles d’Anthropic, et Anthropic reste responsable envers nous de leurs actes.",
     );
     expect(text).toContain(
-      "Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions de son accord de traitement des données (voir ci-dessus).",
+      "Cet accord ne précise pas sur quelle garantie prévue par le RGPD repose le passage des données hors de l’Espace économique européen (voir « Transferts hors de l’Espace économique européen »).",
     );
+    // Relecture juridique de la PR #551 : aucune garantie de transfert n'est laissée entendre.
+    expect(text).toContain(
+      "Pour Anthropic, notre cocontractant est établi en Irlande, mais les données sont stockées aux États-Unis et peuvent être traitées dans d’autres pays. À la date de cette version, nous n’avons pas pu vérifier sur quelle garantie prévue par le RGPD repose ce passage hors de l’Espace économique européen : l’accord de traitement des données d’Anthropic ne la précise pas. Nous la demandons à Anthropic et indiquerons ici sa réponse.",
+    );
+    expect(text).not.toContain(
+      "Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions de son accord de traitement des données",
+    );
+    // Le lieu de traitement n'est pas fixé : seul le stockage est situé aux États-Unis.
+    expect(text).not.toMatch(/Anthropic,\s+aux États-Unis/);
     expect(text).not.toContain(
       "Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), prévues",
     );
@@ -1131,7 +1144,7 @@ describe("politique de confidentialité", () => {
 
   it("informe les personnes citées : noms remplacés dans les textes affichés et transmis, pas dans les pages des pièces ; opposition", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Ce remplacement vaut aussi pour les textes que nous transmettons à notre prestataire d’IA, Anthropic. Il ne vaut pas pour les pages des pièces des ventes judiciaires : elles sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à contact@immojudis.example (voir ci-dessous).",
+      "Ce remplacement vaut aussi pour les textes que nous transmettons à notre prestataire d’IA, Anthropic. Il ne vaut pas pour les pages des pièces des ventes judiciaires : elles sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, dont les données sont stockées aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à contact@immojudis.example (voir ci-dessous).",
     );
   });
 
