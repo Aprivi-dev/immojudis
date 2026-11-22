@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, fact_fingerprint_model, load_settings
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.extraction_grounding import (
@@ -55,6 +55,9 @@ from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
 from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.sale_local_files import sale_storage_id
 from src.timestamps import assumed_utc_timestamp
+
+if TYPE_CHECKING:
+    from src.enrichment.anthropic_reader import AnthropicTextClient
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
@@ -465,7 +468,7 @@ class LLMEnrichmentDeferred(PipelineBudgetExhausted):
 
 def enrich_sale_with_llm(
     sale: AuctionSale,
-    client: ReplicateClient | None = None,
+    client: ReplicateClient | AnthropicTextClient | None = None,
     output_dir: Path = LLM_EXTRACTIONS_DIR,
 ) -> LLMEnrichmentStats:
     stats = LLMEnrichmentStats()
@@ -513,7 +516,10 @@ def enrich_sale_with_llm(
         return stats
 
     client = client or create_llm_client()
-    model_name = str(getattr(client, "model", "") or settings.get("replicate_model") or "")
+    # Le modèle des empreintes, pas celui du client : changer de fournisseur ne relance aucune extraction. Le cache
+    # durable note, lui, le modèle qui a vraiment lu.
+    model_name = fact_fingerprint_model(settings)
+    reader_model = str(getattr(client, "model", "") or model_name)
     prompt_version = str(settings["llm_prompt_version"])
     incremental = bool(settings.get("incremental_enrichment"))
 
@@ -596,7 +602,7 @@ def enrich_sale_with_llm(
             # Persisting it prevents the same absence from being paid for on
             # every retry.
             chunk = _validated_llm_extraction(raw)
-            _save_fact_chunk(chunk_key, chunk, chunk_path, output_dir, model_name, incremental)
+            _save_fact_chunk(chunk_key, chunk, chunk_path, output_dir, reader_model, incremental)
             chunk_extractions_by_index[index] = chunk
             stats.fact_chunks_analyzed += 1
             newly_cached_chunks += 1
@@ -614,7 +620,7 @@ def enrich_sale_with_llm(
                 f"{_llm_error_message(sale, exc)} [fact chunk {index}/{len(fact_contexts)}]"
             )
             if _is_deterministic_fact_failure(exc):
-                _save_fact_failure_marker(chunk_key, model=model_name, error=exc)
+                _save_fact_failure_marker(chunk_key, model=reader_model, error=exc)
             else:
                 non_deterministic_failure = True
 
@@ -695,6 +701,12 @@ def enrich_sale_with_llm(
             model_name,
             prompt_version=legacy_prompt_version,
         )
+        # Provenance : qui a lu les morceaux de cette passe ; sans appel (tout en cache), le lecteur noté avant.
+        reader = (
+            {"provider": str(getattr(client, "provider", "") or ""), "model": reader_model}
+            if newly_cached_chunks
+            else _previous_reader(sale, output_dir)
+        )
         _save_extraction(
             sale,
             extraction,
@@ -702,6 +714,7 @@ def enrich_sale_with_llm(
             cache_key=legacy_cache_key,
             model=model_name,
             prompt_version=legacy_prompt_version,
+            reader=reader,
         )
     if stats.errors:
         sale.raw_payload.pop("llm_prompt_version", None)
@@ -805,7 +818,7 @@ def has_current_fact_analysis(
             raw_payload["llm_fact_context_coverage"] = previous_context_coverage
     if not contexts or (sale.documents and not (raw_payload.get("document_analysis") or {}).get("documents_extracted")):
         return False
-    model = str(settings.get("replicate_model") or "")
+    model = fact_fingerprint_model(settings)
     prompt_version = str(settings.get("llm_fact_prompt_version") or settings.get("llm_prompt_version") or "")
     expected = _fact_input_cache_key("\n\n".join(contexts), model, prompt_version)
     if expected == input_key and not raw_payload.get("source_content_changed"):
@@ -1141,14 +1154,27 @@ def _save_extraction(
     cache_key: str | None = None,
     model: str | None = None,
     prompt_version: str | None = None,
+    reader: dict[str, str] | None = None,
 ) -> Path:
+    """``model`` : le modèle des empreintes (comparé à la relecture) ; ``reader`` : qui a vraiment lu (provenance)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{sale_storage_id(sale)}.json"
     payload = redact_personal_data(extraction.model_dump(mode="json"))
     if cache_key or model or prompt_version:
         payload["_cache"] = {"key": cache_key, "model": model, "prompt_version": prompt_version}
+        if reader:
+            payload["_cache"]["reader"] = reader
     _atomic_json(path, payload)
     return path
+
+
+def _previous_reader(sale: AuctionSale, output_dir: Path) -> dict[str, str] | None:
+    """Le lecteur noté par la passe précédente de la vente, s'il l'a été."""
+    path = output_dir / f"{sale_storage_id(sale)}.json"
+    payload = _read_json_mapping(path) if path.exists() else None
+    cache = payload.get("_cache") if isinstance(payload, dict) else None
+    reader = cache.get("reader") if isinstance(cache, dict) else None
+    return reader if isinstance(reader, dict) else None
 
 
 def _atomic_json(path: Path, payload: Any) -> None:
@@ -1492,7 +1518,7 @@ def _fact_context_manifest(
     manifest: dict[str, Any] = {
         "source_fingerprint": source_fingerprint,
         "document_identity": _document_identity_key(sale.documents),
-        "model": model or str(load_settings().get("replicate_model") or ""),
+        "model": model or fact_fingerprint_model(load_settings()),
         "fact_prompt_version": fact_prompt_version or str(
             load_settings().get("llm_fact_prompt_version")
             or load_settings().get("llm_prompt_version")
@@ -1684,7 +1710,7 @@ def _manifest_matches_current(
     settings = load_settings() if settings is None else settings
     if not isinstance(settings, dict):
         return False
-    current_model = str(settings.get("replicate_model") or "")
+    current_model = fact_fingerprint_model(settings)
     manifest_model = manifest.get("model")
     if manifest_model != current_model and not (
         current_model == "qwen/qwen3-7-plus" and manifest_model == PINNED_MODEL

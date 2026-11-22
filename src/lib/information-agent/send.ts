@@ -375,6 +375,9 @@ export async function approveAndSendMission({
         // Journal : un message au greffe se distingue d'un message à un avocat.
         ...courtRegistryMessageMetadata(courtFallback),
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+        // Prestataire d'IA nommé dans le pied : la lecture des réponses par un autre prestataire est refusée
+        // (services/data-pipeline/src/information_agent_evidence.py, AI_PROVIDER_MISMATCH).
+        ai_provider_id: legalFooter.aiProvider.id,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
       },

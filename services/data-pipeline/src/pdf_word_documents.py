@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import re
 import shutil
 import subprocess
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -13,6 +16,29 @@ from src.config import load_settings
 from src.normalize import clean_text
 from src.pdf_page_analysis import page_text_confidence
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+
+# Environnement des outils qui ouvrent une pièce reçue d'un tiers (antiword, textutil, Docling) : une liste blanche,
+# sur le modèle de ``photo_mirror.image_decoder_environment``. Docling relit ses réglages (PDF_*, DOCLING_*) et ses
+# caches de modèles ; aucune clé, aucun jeton ni aucune adresse de base n'y entre.
+DOCUMENT_TOOL_ENVIRONMENT = (
+    "PATH", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "HOME", "TMPDIR", "TESSDATA_PREFIX", "ANTIWORDHOME",
+    "OMP_THREAD_LIMIT", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "PYTHONFAULTHANDLER",
+    "HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE", "TRANSFORMERS_CACHE", "XDG_CACHE_HOME",
+)
+DOCUMENT_TOOL_ENVIRONMENT_PREFIXES = ("PDF_", "DOCLING_")
+# Refusé même s'il entre par un préfixe permis.
+_SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|_DB_URL)$|^SUPABASE_|_KEY_|_TOKEN_", re.I)
+
+
+def document_tool_environment(parent: Mapping[str, str] | None = None) -> dict[str, str]:
+    """L'environnement d'un outil qui ouvre une pièce : la liste blanche ci-dessus, aucun secret par construction."""
+    source = os.environ if parent is None else parent
+    return {
+        name: value
+        for name, value in source.items()
+        if (name in DOCUMENT_TOOL_ENVIRONMENT or name.startswith(DOCUMENT_TOOL_ENVIRONMENT_PREFIXES))
+        and not _SECRET_NAME.search(name)
+    }
 
 
 def extract_legacy_word_document(path: Path) -> dict[str, object]:
@@ -34,6 +60,7 @@ def extract_legacy_word_document(path: Path) -> dict[str, object]:
             errors="replace",
             timeout=60,
             check=False,
+            env=document_tool_environment(),
         )
         text = clean_text(result.stdout) or ""
         if result.returncode == 0 and text:

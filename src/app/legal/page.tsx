@@ -10,5 +10,11 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function Page() {
-  return <LegalPage />;
+  // Enveloppe hors du fichier soumis à l'empreinte du document : les panneaux des sections y perdent leur
+  // flou d'arrière-plan (src/styles.css, .legal-document).
+  return (
+    <div className="legal-document">
+      <LegalPage />
+    </div>
+  );
 }

@@ -6,9 +6,9 @@ name: Information Agent Evaluation Trial
 # repaierait sans nouvelle confirmation) : reprendre par un nouveau lancement avec reprise_run_id. Plafond dur
 # de 5 USD par lancement, vérifié avant et après chaque appel par le script
 # (services/data-pipeline/scripts/information_agent_evaluation_trial.py). Pilote d'abord (appels_max = 5), essai
-# complet ensuite (appels_max vide). Ne reçoit que le jeton du modèle : aucune clé Supabase, aucune écriture en
-# base, aucun envoi d'email. Les sorties brutes sont publiées en artefact ; les rejouer dans le banc : voir
-# docs/runbooks/information-agent.md.
+# complet ensuite (appels_max vide). Ne reçoit que les clés du modèle (Anthropic, Replicate, selon LLM_PROVIDER) :
+# aucune clé Supabase, aucune écriture en base, aucun envoi d'email. Les sorties brutes sont publiées en artefact ;
+# les rejouer dans le banc : voir docs/runbooks/information-agent.md.
 on:
   workflow_dispatch:
     inputs:
@@ -57,13 +57,15 @@ jobs:
       PYTHONUNBUFFERED: "1"
       # Mêmes réglages du modèle que .github/workflows/information-agent-evidence.yml (test de concordance).
       LLM_ENABLED: "true"
-      LLM_PROVIDER: replicate
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       REPLICATE_MIN_INTERVAL_SECONDS: 11
       REPLICATE_MAX_RETRIES: 0
       # Sans effet ici : ce plafond horaire est tenu en base, et l'essai n'a pas accès à la base. Gardé pour la
       # concordance avec le worker ; le plafond de l'essai est celui du script.
       REPLICATE_MAX_CALLS_PER_HOUR: 60
+      # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
+      ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
     steps:
       - name: Check confirmation and inputs
         working-directory: .
@@ -126,7 +128,10 @@ jobs:
 
       - name: Run the trial
         env:
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
+          # Clé Anthropic seulement quand Claude lit (pas avec LLM_PROVIDER=replicate).
+          ANTHROPIC_API_KEY: ${{ vars.LLM_PROVIDER != 'replicate' && secrets.ANTHROPIC_API_KEY || '' }}
           BUDGET_USD: ${{ inputs.budget_usd }}
           APPELS_MAX: ${{ inputs.appels_max }}
         run: |

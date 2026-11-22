@@ -88,7 +88,13 @@ branche. Les workflows qui les lisent déclarent `environment: Production`.
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅     | Clé serveur legacy si `SUPABASE_SECRET_KEY` n'est pas encore utilisée.                                                         |
 | `SUPABASE_DB_URL`           | ✅     | URL Postgres utilisée par le workflow de migrations. Replis acceptés côté script : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`. |
 | `REPLICATE_API_TOKEN`       | ❌     | Token LLM pour l'enrichissement premium, si disponible.                                                                        |
+| `ANTHROPIC_API_KEY`         | ✅     | Clé de l'API Anthropic (Claude Haiku 5.5), donnée aux seules étapes qui appellent l'IA (environnement Production).             |
 | `CRON_SECRET`               | ✅ ops | Même secret que Vercel, utilisé pour provisionner le callback Supabase Cron sans l'inscrire dans les migrations.               |
+
+Fournisseur d'IA (22/11/2026) : `LLM_PROVIDER` vaut `anthropic` par défaut dans les workflows (variable de dépôt
+`LLM_PROVIDER`, `replicate` pour le retour arrière) et sur le site, qui ne s'en sert que pour nommer le prestataire
+dans le pied des messages de l'agent. Ne pas poser `LLM_PROVIDER` sur Vercel, ou lui donner la même valeur que la
+variable de dépôt. Le site n'appelle aucun modèle : `ANTHROPIC_API_KEY` n'a pas sa place sur Vercel.
 
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
 Il sert aussi de canal externe par défaut pour `operational-alert.yml`; un webhook HTTPS dédié peut

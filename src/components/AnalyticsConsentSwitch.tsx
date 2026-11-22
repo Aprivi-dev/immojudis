@@ -36,7 +36,11 @@ export function AnalyticsConsentSwitch() {
           J’accepte les cookies de Google Analytics sur ce navigateur
         </span>
       </label>
-      <p id={statusId} role="status" className="mt-2 text-xs">
+      {/* Hauteur réservée pour le plus long des trois textes : le serveur rend « aucun accord »,
+          l'hydratation peut afficher un autre texte sans décaler la page (WebKit ne compense pas le
+          décalage après un saut vers #cookies). Mesuré (lignes de 16 px) : 5 lignes à 320 px, 2 à
+          partir de 640 px, 1 à 1 280 px ; une ligne de marge. */}
+      <p id={statusId} role="status" className="mt-2 min-h-24 text-xs sm:min-h-12 xl:min-h-8">
         {optedOut
           ? "Vous avez coché « Je m’oppose à la mesure d’audience » : Google Analytics n’est pas chargé. Décochez cette autre case pour pouvoir donner votre accord."
           : granted

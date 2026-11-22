@@ -14,11 +14,15 @@ from urllib.parse import quote
 
 import httpx
 
+from src.config import REPLICATE_PROVIDER
 from src.information_agent_semantic import SemanticLotContext, semantic_lot_context
 from src.storage.postgrest_helpers import rest_headers
 
 # Essais pris par ``claim_information_agent_evidence_extractions`` (elle ne reprend que ``attempts < 3``).
 MAX_ATTEMPTS = 3
+# Prestataire d'IA d'un dossier dont le message sortant n'en enregistre aucun : les messages partis avant le
+# 22/11/2026 nommaient Replicate dans leur pied (``metadata.ai_provider_id`` n'existait pas encore).
+UNRECORDED_FOOTER_AI_PROVIDER = REPLICATE_PROVIDER
 
 
 def claim_jobs(client: httpx.Client, base_url: str, key: str, limit: int) -> list[dict[str, Any]]:
@@ -114,6 +118,27 @@ def fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: st
     if not isinstance(rows, list) or not rows:
         raise RuntimeError("Information-agent case not found")
     return str(rows[0].get("status") or "")
+
+
+def fetch_footer_ai_provider(client: httpx.Client, base_url: str, key: str, case_id: str) -> str:
+    """Prestataire d'IA nommé dans le pied du dernier message sortant du dossier (``metadata.ai_provider_id``,
+    écrit à l'envoi par src/lib/information-agent/send.ts) ; :data:`UNRECORDED_FOOTER_AI_PROVIDER` sans valeur."""
+    response = client.get(
+        f"{base_url}/rest/v1/information_agent_messages",
+        headers=rest_headers(key),
+        params={
+            "select": "metadata",
+            "case_id": f"eq.{case_id}",
+            "direction": "eq.outbound",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+    )
+    response.raise_for_status()
+    rows = response.json()
+    metadata = rows[0].get("metadata") if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
+    provider = metadata.get("ai_provider_id") if isinstance(metadata, dict) else None
+    return str(provider).strip().lower() if isinstance(provider, str) and provider.strip() else UNRECORDED_FOOTER_AI_PROVIDER
 
 
 def retry_schedule(attempts: int, now: datetime, not_before: datetime | None = None) -> dict[str, object]:

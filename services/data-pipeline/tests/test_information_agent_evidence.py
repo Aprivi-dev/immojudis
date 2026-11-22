@@ -603,6 +603,9 @@ def test_worker_keeps_document_facts_on_the_case_sale(monkeypatch) -> None:
             return httpx.Response(200, json=[{"status": "replied"}])
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"pdf_ocr_enabled": False})
@@ -691,6 +694,9 @@ def test_worker_does_not_duplicate_body_fact_already_persisted_by_inbound(monkey
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"information_agent_evidence_ocr_enabled": False})
@@ -761,6 +767,9 @@ def test_worker_persists_optional_semantic_facts_as_pending_with_provenance(monk
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"information_agent_evidence_ocr_enabled": False})
@@ -829,6 +838,9 @@ def test_worker_does_not_create_candidates_for_closed_case(monkeypatch) -> None:
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"pdf_ocr_enabled": False})
@@ -857,6 +869,9 @@ def test_worker_rejects_an_asset_attached_to_another_sale() -> None:
             }])
         if request.url.path.endswith("/information_agent_evidence_extractions"):
             return httpx.Response(204)
+        if request.url.path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
@@ -1043,6 +1058,9 @@ def test_worker_checks_the_lot_and_keeps_review_reasons_on_semantic_candidates(m
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(
@@ -1145,6 +1163,9 @@ def test_worker_extracts_nothing_from_an_attachment_that_addresses_a_model(monke
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(
@@ -1237,6 +1258,9 @@ def _body_job_with_semantic(monkeypatch, content: bytes, model_facts: list[dict]
             return httpx.Response(204)
         if path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(
@@ -1356,6 +1380,9 @@ def test_rules_only_attachment_facts_are_never_clear(monkeypatch) -> None:
             return httpx.Response(201, json=[])
         if path.endswith("/information_agent_evidence_extractions") or path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"pdf_ocr_enabled": False})
@@ -1537,6 +1564,9 @@ def _pdf_worker_requests(monkeypatch, content: bytes) -> list[httpx.Request]:
             return httpx.Response(201, json=[])
         if path.endswith("/information_agent_evidence_extractions") or path.endswith("/information_agent_cases"):
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     monkeypatch.setattr(evidence, "load_settings", lambda: {"information_agent_evidence_ocr_enabled": False})
@@ -1727,6 +1757,9 @@ class _ExtractionQueue:
             assert params["attempts"] == f"eq.{row['attempts']}" and params["locked_at"] == f"eq.{row['locked_at']}"
             row.update(json.loads(request.content))
             return httpx.Response(204)
+        if path.endswith("/information_agent_messages") and request.method == "GET":
+            # Prestataire d'IA nommé dans le pied du message envoyé : celui qui lit la réponse.
+            return httpx.Response(200, json=[{"metadata": {"ai_provider_id": "anthropic"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     def run_pass(self, monkeypatch, *, settings: dict | None = None) -> None:

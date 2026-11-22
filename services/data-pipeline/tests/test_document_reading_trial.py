@@ -221,6 +221,7 @@ def test_options_are_bounded() -> None:
 def test_main_opens_a_read_only_connection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                            capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://example.invalid/db")
+    monkeypatch.setenv("LLM_PROVIDER", "replicate")
     monkeypatch.setenv("REPLICATE_API_TOKEN", "token")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))

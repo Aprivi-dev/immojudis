@@ -3718,14 +3718,21 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
     if isinstance(llm_payload, dict):
         cache = _read_json_file(LLM_EXTRACTIONS_DIR / f"{sale_id}.json") or {}
         input_hash = str(cache.get("_cache", {}).get("key") or sale.content_hash or sale.source_url)
+        # Qui a vraiment lu (fournisseur et modèle, src.enrichment.extract_structured) ; absent avant le 22/11/2026.
+        reader = cache.get("_cache", {}).get("reader")
+        reader = reader if isinstance(reader, dict) and reader.get("model") else None
         rows.append(
             {
                 "source_url": sale.source_url,
+                # Clé de la ligne des faits (unicité source_url, provider, input_hash) : gardée telle quelle, quel que
+                # soit le lecteur, pour ne pas dédoubler la ligne d'une vente. Le lecteur réel est dans model et result.
                 "provider": "replicate",
-                "model": str(cache.get("_cache", {}).get("model") or "zsxkib/qwen2-7b-instruct"),
+                "model": str(
+                    (reader or {}).get("model") or cache.get("_cache", {}).get("model") or "zsxkib/qwen2-7b-instruct"
+                ),
                 "input_hash": input_hash,
                 "schema_version": "llm_extraction_v2_structured_assets",
-                "result": llm_payload,
+                "result": {**llm_payload, "_reader": reader} if reader else llm_payload,
                 "confidence": llm_payload.get("confidence") or {},
                 "updated_at": datetime.now(UTC).isoformat(),
             }

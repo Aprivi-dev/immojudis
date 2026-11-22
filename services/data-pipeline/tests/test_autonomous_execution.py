@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -147,8 +148,17 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
         ]
 
 
-def test_only_the_reading_of_the_pieces_by_claude_gets_the_anthropic_key(monkeypatch) -> None:
-    """Lot V3b-1 : ni le travailleur qui ouvre les PDF, ni les autres passes ne reçoivent la clé de l'API Anthropic."""
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        # Retour arrière : la lecture des pièces par Claude seule, comme au lot V3b-1.
+        ("replicate", ["src.document_vision_pass"]),
+        # Appels de texte à Claude : le travailleur de la file (faits) et la lecture IA des pièces en plus. Ni la
+        # collecte, ni le rattrapage des pièces, ni les positions, ni les photos des pièces jointes.
+        ("anthropic", ["src.queued_runner", "src.document_reading", "src.document_vision_pass"]),
+    ],
+)
+def test_only_the_processes_that_call_claude_get_the_anthropic_key(monkeypatch, provider, expected) -> None:
     run_id = "00000000-0000-0000-0000-000000000010"
     subprocess_calls = []
 
@@ -169,12 +179,54 @@ def test_only_the_reading_of_the_pieces_by_claude_gets_the_anthropic_key(monkeyp
         lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
     )
     monkeypatch.setenv(config.ANTHROPIC_API_KEY_ENV, "test-key-never-shown")
+    monkeypatch.setenv(config.LLM_PROVIDER_ENV, provider)
+    monkeypatch.delenv("PIPELINE_ENRICHMENT_GENERAL_WORKERS", raising=False)
 
     assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 0
 
     with_key = [command[2] for command, kwargs in subprocess_calls if config.ANTHROPIC_API_KEY_ENV in kwargs["env"]]
-    assert with_key == ["src.document_vision_pass"]
-    assert len(subprocess_calls) > 1
+    assert with_key == expected
+    assert {command[2] for command, _kwargs in subprocess_calls} > set(expected)
+    assert all(kwargs["env"].get(config.ANTHROPIC_API_KEY_ENV) in (None, "test-key-never-shown") for _c, kwargs in subprocess_calls)
+
+
+@pytest.mark.parametrize(("provider", "with_key"), [("anthropic", True), ("replicate", False)])
+def test_parallel_lane_workers_get_the_key_only_for_text_calls_to_claude(monkeypatch, provider, with_key) -> None:
+    started: list[dict[str, str]] = []
+
+    class FakeProcess:
+        stdout = None
+
+        def wait(self, timeout=None):
+            return 0
+
+        def poll(self):
+            return 0
+
+    def popen(command, *, env, **_kwargs):
+        started.append((command[command.index("--family") + 1], env))
+        return FakeProcess()
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "Popen", popen)
+    monkeypatch.setenv(config.ANTHROPIC_API_KEY_ENV, "test-key-never-shown")
+    monkeypatch.setenv(config.LLM_PROVIDER_ENV, provider)
+    runner_env = {"PATH": "/usr/bin"}  # execute() has already removed the key from the unit's environment
+
+    autonomous_runner._run_enrichment_cycle(
+        runner_env,
+        autonomous_runner.EnrichmentUnit(),
+        db_url="postgresql://test",
+        budget=60,
+        deadline=time.monotonic() + 1,  # no time left for the optional passes: the workers alone
+        licitor_withdrawn=True,
+        external_pass_due=lambda _key: False,
+        general_workers=2,
+    )
+
+    assert [family for family, _env in started] == ["source_detail", "enrichment", "enrichment"]
+    # Only the general workers make AI calls: the source-detail worker never gets the key.
+    assert [config.ANTHROPIC_API_KEY_ENV in env for _family, env in started] == [False, with_key, with_key]
+    assert config.ANTHROPIC_API_KEY_ENV not in runner_env
 
 
 def test_each_setting_of_a_scheduled_unit_is_read_back_by_its_reader(monkeypatch) -> None:

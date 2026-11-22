@@ -24,12 +24,14 @@ from src import collection_priority, source_suspension, source_traffic, source_w
 from src.catalogue_lock import LOCK_WAIT_ENV, CatalogueLockTimeout, catalogue_writer_lock
 from src.config import (
     ANTHROPIC_API_KEY_ENV,
+    ANTHROPIC_PROVIDER,
     AUTONOMOUS_RUN_ID_ENV,
     CADASTRE_ENRICH_ENABLED_ENV,
     DEFAULT_REPLICATE_CANCEL_AFTER,
     DPE_ENRICH_ENABLED_ENV,
     REPLICATE_CANCEL_AFTER_ENV,
     SOURCE_NAMES,
+    llm_provider,
     load_settings,
 )
 from src.document_reading import READING_ENABLED_ENV
@@ -623,6 +625,27 @@ def _run_optional_pass(label: str, command: list[str], *, env: dict[str, str], t
         return 1
 
 
+def _with_anthropic_key(env: dict[str, str]) -> dict[str, str]:
+    """``env`` plus the Anthropic API key, taken from the runner's own environment (``execute`` removes it from ``env``)."""
+    key = os.environ.get(ANTHROPIC_API_KEY_ENV)
+    return {**env, ANTHROPIC_API_KEY_ENV: key} if key else env
+
+
+def llm_key_env(env: dict[str, str]) -> dict[str, str]:
+    """Environment of a process that makes the pipeline's text calls: the general queue workers (facts, replies of the
+    information agent) and the reading. Never the source-detail worker nor the other passes.
+
+    The Anthropic key joins it only when those calls go to Claude (``LLM_PROVIDER=anthropic``, the default); with
+    ``replicate`` they keep the job's Replicate token alone, as before. These workers open untrusted files in their own
+    process with the key in their environment: PDFs of the sales and attachments received by the agent (PyMuPDF), photos
+    (signature, dimensions, normalisation). Only their subprocesses run without it: Tesseract
+    (``src.pdf_ocr.tesseract_environment``), antiword and Docling (``src.pdf_word_documents``, ``src.pdf_enrichment``),
+    and the children that read the agent's attachments (``src.information_agent_evidence_child``) have allow-listed
+    environments.
+    """
+    return _with_anthropic_key(env) if llm_provider() == ANTHROPIC_PROVIDER else env
+
+
 def _run_document_backlog(env: dict[str, str]) -> int:
     """Bounded catch-up of unread attachments after the enrichment queue (src.document_backlog).
 
@@ -646,7 +669,7 @@ def _run_document_reading(env: dict[str, str]) -> int:
     changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_reading', '--max-sales', '15', '--budget-minutes', '4']
-    return _run_optional_pass('Document reading', command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS)
+    return _run_optional_pass('Document reading', command, env=llm_key_env(env), timeout=DOCUMENT_READING_BUDGET_SECONDS)
 
 
 # Ten minutes of pass (a sale starts only if its two calls, the lock wait and the write still fit), plus one minute
@@ -655,18 +678,18 @@ DOCUMENT_VISION_BUDGET_SECONDS = 11 * 60
 
 
 def _run_document_vision(env: dict[str, str]) -> int:
-    """Bounded « lecture des pièces par Claude » pass after the Qwen reading (src.document_vision_pass, lot V3b-1).
+    """Bounded « lecture des pièces par Claude » pass after the AI reading of the pieces (src.document_vision_pass, lot V3b-1).
 
     Off unless DOCUMENT_VISION_MODE says otherwise (dry_run, write). Ten sales and ten minutes per pass. It makes no
     request to the sites (the pieces come from the local cache of the PDF reading) and runs at the cadence of the
-    external passes, which also bounds its model calls. It is the only process that gets the Anthropic API key, taken
-    from the runner's own environment (``execute`` leaves it out of every other one). Optional like the reading: its
-    exit code is reported in the run summary and never changes the run status.
+    external passes, which also bounds its model calls. It gets the Anthropic API key whatever ``LLM_PROVIDER`` says
+    (the other processes: ``llm_key_env``). Optional like the reading: its exit code is reported in the run summary
+    and never changes the run status.
     """
     command = [sys.executable, '-m', 'src.document_vision_pass', '--max-sales', '10', '--budget-minutes', '10']
-    key = os.environ.get(ANTHROPIC_API_KEY_ENV)
-    vision_env = {**env, ANTHROPIC_API_KEY_ENV: key} if key else env
-    return _run_optional_pass('Document vision', command, env=vision_env, timeout=DOCUMENT_VISION_BUDGET_SECONDS)
+    return _run_optional_pass(
+        'Document vision', command, env=_with_anthropic_key(env), timeout=DOCUMENT_VISION_BUDGET_SECONDS
+    )
 
 
 ADDRESS_POSITIONS_BUDGET_SECONDS = 6 * 60
@@ -914,10 +937,12 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
     (``reserve_pipeline_prediction``, 90 calls per 30 minutes) stays the unit's. A failed or killed worker does
     not stop the others; each is bounded by the same budget plus the overrun. Their output is prefixed with
     ``[family#n]``. If the unit itself stops (exception, SIGTERM), the workers still running are terminated. With two
-    general workers or more, the first one claims document readings first (``PDF_FIRST_WORKER_ARGUMENT``).
+    general workers or more, the first one claims document readings first (``PDF_FIRST_WORKER_ARGUMENT``). Only the
+    general workers, which make the AI calls, get the Anthropic key (``llm_key_env``); the source-detail one never does.
     """
     families = [SOURCE_DETAIL_WORKER_FAMILY] + [GENERAL_WORKER_FAMILY] * general_workers
     worker_env = {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), **_lane_thread_env(len(families))}
+    general_env = llm_key_env(worker_env)
     started = time.monotonic()
     timeout = budget + ENRICHMENT_WORKER_OVERRUN_SECONDS
     running: list[tuple[str, str, subprocess.Popen[bytes] | None, str | None]] = []
@@ -932,7 +957,8 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
             if family == GENERAL_WORKER_FAMILY and index == 1 and general_workers >= 2:
                 command.append(PDF_FIRST_WORKER_ARGUMENT)
             try:
-                process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                family_env = general_env if family == GENERAL_WORKER_FAMILY else worker_env
+                process = subprocess.Popen(command, env={**family_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             except Exception as exc:
                 running.append((family, report_path, None, str(exc)[:1000]))
@@ -1021,9 +1047,10 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: 
             workers = _run_lane_workers(general_workers, env, budget, directory)
         else:
             report_path = os.path.join(directory, 'report.json')
+            # The mixed worker makes the AI calls too: it gets the key like a general worker.
             code, failure = _run_worker(
                 list(ENRICHMENT_WORKER_COMMAND),
-                {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                {**llm_key_env(env), ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
                 budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
             )
             report = read_worker_report(report_path) or {}
@@ -1204,8 +1231,9 @@ def _execute_claimed(run_id: str, db_url: str, *, enrichment_lane: bool, prewait
     }
     # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
     env['PYTHONFAULTHANDLER'] = '1'
-    # The Anthropic API key goes to the reading of the pieces by Claude alone (_run_document_vision): neither the
-    # collection, nor the workers that open untrusted PDFs, nor the other passes get it.
+    # The Anthropic API key goes only to the processes that call Claude: the reading of the pieces by Claude
+    # (_run_document_vision) and, when LLM_PROVIDER is anthropic, the queue workers and the document reading
+    # (llm_key_env). Neither the collection nor the other passes get it.
     env.pop(ANTHROPIC_API_KEY_ENV, None)
     failure = None
     execution_started = datetime.now(UTC)

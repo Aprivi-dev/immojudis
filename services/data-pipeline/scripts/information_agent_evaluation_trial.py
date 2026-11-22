@@ -1,9 +1,9 @@
 """Essai réel du modèle sur le jeu d'évaluation de la publication automatique (proposition 8). PAYANT.
 
 Chaque dossier passe par le vrai worker (``information_agent_evaluation.run_case``, base en mémoire) avec le
-VRAI client Replicate du pipeline : même prompt, même version (``semantic_evidence_v3``), mêmes paramètres
-que la lecture des réponses (``run_configured_semantic_analysis`` règle le plafond de sortie, un seul essai,
-l'échéance de 25 s). La sortie de chaque appel est enregistrée pièce par pièce, avec ce que le fournisseur
+VRAI client du pipeline (``LLM_PROVIDER`` : Claude par défaut, Replicate en retour arrière) : même prompt, même
+version (``semantic_evidence_v3``), mêmes paramètres que la lecture des réponses (``run_configured_semantic_analysis``
+règle le plafond de sortie de Replicate, un seul essai, l'échéance de 25 s). La sortie de chaque appel est enregistrée pièce par pièce, avec ce que le fournisseur
 renvoie (jetons d'entrée et de sortie, durée, identifiant et version de la prédiction, sortie brute quand le
 JSON est invalide), dans un fichier que le banc rejoue (``model_outputs/<nom>.json``).
 
@@ -49,8 +49,9 @@ from scripts.information_agent_evaluation import (  # noqa: E402
     prompt_sha256,
     run_case,
 )
-from src.config import load_settings  # noqa: E402
+from src.config import ANTHROPIC_PROVIDER, REPLICATE_PROVIDER, load_settings  # noqa: E402
 from src.enrichment import llm_client  # noqa: E402
+from src.enrichment.anthropic_reader import DEFAULT_MAX_TOKENS, AnthropicTextClient  # noqa: E402
 from src.information_agent_semantic import (  # noqa: E402
     SEMANTIC_PROCESSOR_VERSION,
     SEMANTIC_SYSTEM_PROMPT,
@@ -92,6 +93,13 @@ def _prices(model: str) -> tuple[Decimal, Decimal]:
     if prices is None:
         raise SystemExit(f"Modèle {model!r} sans tarif dans TOKEN_PRICES : coût non bornable, essai refusé")
     return prices[0], prices[1]
+
+
+def output_token_cap(real: Any) -> int:
+    """Plafond de sortie d'un appel : celui de Claude (réflexion comprise), sinon le plafond de faits de Replicate."""
+    if isinstance(real, AnthropicTextClient):
+        return int(real.max_tokens)
+    return int(real.fact_max_tokens or 1_024)
 
 
 def estimated_call_cost_usd(model: str, system_prompt: str, user_prompt: str, output_tokens: int) -> Decimal:
@@ -181,6 +189,9 @@ class RecordingClient:
         self.calls = 0
         # Le worker avale les erreurs du fournisseur (IA « indisponible ») : l'arrêt est noté ici.
         self.stopped: str | None = None
+        if isinstance(real, AnthropicTextClient):
+            # Claude : les jetons facturés de chaque appel sont notés par le client lui-même (``usage``).
+            return
         original_wait = real._wait_for_output
 
         def wait_and_capture(prediction: dict[str, Any]) -> Any:
@@ -201,7 +212,7 @@ class RecordingClient:
             self._stop("pilote", f"pilote : {self._max_calls} appel(s) faits")
             raise PilotLimitReached(self.stopped)
         model = str(self._real.model)
-        estimate = estimated_call_cost_usd(model, system_prompt, user_prompt, int(self._real.fact_max_tokens))
+        estimate = estimated_call_cost_usd(model, system_prompt, user_prompt, output_token_cap(self._real))
         spent = _spend(self._outputs)
         if spent + estimate > self._cap:
             self._stop("budget", f"plafond de {self._cap} USD : {spent} USD engagés, appel suivant {estimate} USD")
@@ -219,23 +230,30 @@ class RecordingClient:
         self._save()
         self.calls += 1
         self._predictions.clear()
+        usage_start = len(getattr(self._real, "usage", None) or [])
         started = time.monotonic()
         try:
             response = self._real.generate_json_once(system_prompt, user_prompt)
         except Exception as exc:
-            self._record(attempt, model, estimate, time.monotonic() - started, error=type(exc).__name__)
+            self._record(attempt, model, estimate, time.monotonic() - started, usage_start, error=type(exc).__name__)
             entry["status"] = "error"
             self._after_call()
             raise
-        self._record(attempt, model, estimate, time.monotonic() - started)
+        self._record(attempt, model, estimate, time.monotonic() - started, usage_start)
         entry.update(status="ok", response=response)
         self._after_call()
         return response
 
-    def _record(self, attempt: dict[str, Any], model: str, estimate: Decimal, wall: float, *, error: str | None = None) -> None:
+    def _record(
+        self, attempt: dict[str, Any], model: str, estimate: Decimal, wall: float, usage_start: int = 0, *,
+        error: str | None = None,
+    ) -> None:
         prediction = self._predictions[-1] if self._predictions else {}
         metrics = dict(prediction.get("metrics") or {})
         counts = _token_counts(prediction, metrics) if prediction else None
+        if isinstance(self._real, AnthropicTextClient):
+            billed = [call for call in self._real.usage[usage_start:] if call.input_tokens is not None]
+            counts = (billed[-1].input_tokens, billed[-1].output_tokens) if billed else None
         attempt.update(
             status="error" if error else "ok",
             error=error,
@@ -271,8 +289,9 @@ class _CaseClient:
         self._real = real
         self.asset_key = ""
         self.model = real.model
-        self.fact_max_tokens = real.fact_max_tokens
-        self.max_retries = real.max_retries
+        # Réglages de Replicate, que le worker ne pose que sur un client Replicate (information_agent_semantic).
+        self.fact_max_tokens = getattr(real, "fact_max_tokens", None)
+        self.max_retries = getattr(real, "max_retries", 0)
 
     def generate_json(self, _system_prompt: str, _user_prompt: str) -> Mapping[str, object]:
         raise RuntimeError("le worker doit appeler generate_json_once (un seul essai)")
@@ -282,9 +301,10 @@ class _CaseClient:
         existing = self._outputs["outputs"].get(key)
         if existing is not None and existing.get("status") == "ok":
             return existing["response"]
-        # Les réglages du worker (plafond de sortie, un seul essai) passent au vrai client.
-        self._real.fact_max_tokens = self.fact_max_tokens
-        self._real.max_retries = self.max_retries
+        if not isinstance(self._real, AnthropicTextClient):
+            # Les réglages du worker (plafond de sortie, un seul essai) passent au vrai client Replicate.
+            self._real.fact_max_tokens = self.fact_max_tokens
+            self._real.max_retries = self.max_retries
         return self._recorder.call(key, system_prompt, user_prompt)
 
 
@@ -351,7 +371,7 @@ def run_trial(
         save()
     if not stopped:
         outputs["stopped_reason"] = "complete"
-    outputs["resume"] = summarize(outputs, int(real.fact_max_tokens or 1_024))
+    outputs["resume"] = summarize(outputs, output_token_cap(real))
     save()
     log(json.dumps(outputs["resume"], ensure_ascii=False, indent=1))
     log(f"{recorder.calls} appel(s) ; fin : {outputs['stopped_reason']} (plafond {cap} USD)")
@@ -385,15 +405,23 @@ def main(argv: list[str] | None = None) -> int:
     cap = budget_cap(args.budget_usd)
     if args.max_calls is not None and args.max_calls < 1:
         raise SystemExit("--max-calls doit être au moins 1")
+    settings = load_settings()
+    provider = settings.get("llm_provider")
     if args.estimate_only:
-        model = str(load_settings()["replicate_model"])
-        calls, total = estimate_full_run_usd(model, 1_024)
+        if provider == ANTHROPIC_PROVIDER:
+            model, output_tokens = str(settings["anthropic_text_model"]), DEFAULT_MAX_TOKENS
+        else:
+            model, output_tokens = str(settings["replicate_model"]), 1_024
+        calls, total = estimate_full_run_usd(model, output_tokens)
         print(f"{calls} appels au plus, coût maximal estimé {total} USD (plafond {cap} USD)")
         return 0
     refuse_production_credentials()
-    settings = load_settings()
-    if settings.get("llm_provider") != "replicate" or not settings.get("replicate_api_token"):
-        raise SystemExit("Essai refusé : LLM_PROVIDER=replicate et REPLICATE_API_TOKEN sont requis")
+    key = {ANTHROPIC_PROVIDER: "anthropic_api_key", REPLICATE_PROVIDER: "replicate_api_token"}.get(str(provider))
+    if key is None or not settings.get(key):
+        raise SystemExit(
+            "Essai refusé : LLM_PROVIDER=anthropic et ANTHROPIC_API_KEY, ou LLM_PROVIDER=replicate et "
+            "REPLICATE_API_TOKEN, sont requis"
+        )
     outputs = run_trial(args.output, cap, max_calls=args.max_calls)
     return 0 if outputs["stopped_reason"] in {"complete", "pilote"} else 2
 

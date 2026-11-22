@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { informationAgentAiProvider } from "../src/lib/information-agent-ai-provider";
 import {
   informationAgentAddressOrigin,
   type InformationAgentLegalFooter,
@@ -141,6 +142,27 @@ describe("renderInformationRequestEmail", () => {
     expect(message.text).not.toContain("Vous publiez d’autres ventes");
     expect(message.text).not.toContain("POUR LES PROFESSIONNELS");
     expect(message.text).toContain("Bien cordialement");
+  });
+
+  it("nomme dans le pied le prestataire d'IA de la configuration, Anthropic compris", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux : précisions sur la vente",
+      bodyText,
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      appUrl: "https://immojudis.com",
+      legalFooter: {
+        ...legalFooter,
+        aiProvider: informationAgentAiProvider({ LLM_PROVIDER: "anthropic" }),
+      },
+    });
+
+    for (const output of [message.html, message.text]) {
+      expect(output).toContain(
+        "Anthropic (Anthropic Ireland, Limited, Irlande ; données stockées aux États-Unis), outil d’IA qui aide à lire et classer les réponses.",
+      );
+      expect(output).not.toContain("Replicate");
+    }
   });
 
   it("ajoute le pied RGPD de l'article 14 avec opposition en un clic", async () => {

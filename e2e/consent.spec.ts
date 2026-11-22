@@ -130,6 +130,8 @@ test("retrait de l'accord par l'interrupteur de /privacy : envois coupés, cooki
 
   const accessSwitch = page.getByRole("switch", { name: /cookies de Google Analytics/ });
   await expect(accessSwitch).toBeChecked({ timeout: 15_000 });
+  await accessSwitch.scrollIntoViewIfNeeded();
+  await expect(accessSwitch).toBeInViewport({ ratio: 1 });
   await accessSwitch.uncheck();
 
   await expect(accessSwitch).not.toBeChecked();
