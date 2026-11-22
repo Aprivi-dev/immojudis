@@ -50,6 +50,11 @@ _GENERATE_JSON_OWNS_DEADLINE_TELEMETRY: ContextVar[bool] = ContextVar(
 )
 
 
+# Genres d'appel notés dans ``llm_usage_events`` (``request_kind``), les mêmes pour Replicate et Claude.
+TEXT_REQUEST_KIND = "fact_extraction"
+VISION_REQUEST_KIND = "vision_analysis"
+
+
 class LLMClientUnavailable(RuntimeError):
     pass
 
@@ -218,7 +223,7 @@ class ReplicateClient:
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
         attempts = 2 if _allow_json_retry else 1
-        request_kind = "fact_extraction"
+        request_kind = TEXT_REQUEST_KIND
         for attempt in range(attempts):
             ensure_llm_task_deadline("starting LLM generation")
             prediction: dict[str, Any] | None = None
@@ -319,7 +324,7 @@ class ReplicateClient:
             parsed = parse_json_response(raw_response)
             self._record_usage(
                 prediction,
-                request_kind="vision_analysis",
+                request_kind=VISION_REQUEST_KIND,
                 attempt_number=1,
                 prompt_chars=len(prompt),
                 system_prompt_chars=len(system_prompt),
@@ -331,7 +336,7 @@ class ReplicateClient:
             if prediction is not None:
                 self._record_usage(
                     prediction,
-                    request_kind="vision_analysis",
+                    request_kind=VISION_REQUEST_KIND,
                     attempt_number=1,
                     prompt_chars=len(prompt),
                     system_prompt_chars=len(system_prompt),
@@ -341,7 +346,7 @@ class ReplicateClient:
                     exception=exc,
                 )
             if isinstance(exc, LLMProviderOutputRefused):
-                exc.request_kind = "vision_analysis"
+                exc.request_kind = VISION_REQUEST_KIND
             raise
 
     def _record_usage(
@@ -454,7 +459,7 @@ class ReplicateClient:
         ensure_llm_task_deadline("creating Replicate prediction")
         metadata_token = _REQUEST_METADATA.set(
             {
-                "request_kind": "vision_analysis" if image_inputs else "fact_extraction",
+                "request_kind": VISION_REQUEST_KIND if image_inputs else TEXT_REQUEST_KIND,
                 "prompt_chars": len(prompt),
                 "system_prompt_chars": len(system_prompt or ""),
                 "image_count": len(image_inputs or ()),
@@ -506,7 +511,7 @@ class ReplicateClient:
         last_response: httpx.Response | None = None
         settings = load_settings()
         metadata = _REQUEST_METADATA.get() or {}
-        request_kind = str(metadata.get("request_kind") or "fact_extraction")
+        request_kind = str(metadata.get("request_kind") or TEXT_REQUEST_KIND)
         prompt_chars = int(metadata.get("prompt_chars") or 0)
         system_prompt_chars = int(metadata.get("system_prompt_chars") or 0)
         for attempt in range(1, attempts + 1):

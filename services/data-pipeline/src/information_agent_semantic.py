@@ -19,6 +19,7 @@ import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from typing import TYPE_CHECKING
 
 from src.config import is_true_value
 from src.document_reading import sold_lot_from_sale
@@ -32,6 +33,9 @@ from src.information_agent_review_signals import (
 )
 from src.normalize import clean_text
 from src.personal_data import redact_personal_text
+
+if TYPE_CHECKING:
+    from src.enrichment.anthropic_reader import AnthropicTextClient
 
 MAX_SEMANTIC_INPUT_CHARS = 12_000
 MAX_SEMANTIC_PAGES = 12
@@ -50,6 +54,9 @@ MAX_PHOTO_DESCRIPTION_CHARS = 800
 MAX_PHOTO_OBSERVATIONS = 8
 MAX_PHOTO_OBSERVATION_CHARS = 300
 PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS = 768
+# Sous Claude, les deux passes (texte et photo) tiennent dans l'échéance de 25 s : réflexion courte (effort « low »)
+# et 4 000 jetons de sortie, réflexion comprise. Un dépassement finit en relecture humaine, comme avant.
+CLAUDE_AGENT_MAX_TOKENS = 4_000
 PHOTO_SEMANTIC_TIMEOUT_SECONDS = 25
 PHOTO_SEMANTIC_PROCESSOR_VERSION = "photo_semantic_v1"
 UNCERTAIN_EVIDENCE_RE = re.compile(
@@ -1155,7 +1162,9 @@ def run_configured_semantic_analysis(
         # Lu avant l'appel du modèle : s'il est illisible, rien n'est payé et aucun fait n'est proposé.
         lot_context = lot_context_loader() if lot_context_loader else None
         client = create_llm_client()
-        if not isinstance(client, AnthropicTextClient):
+        if isinstance(client, AnthropicTextClient):
+            _bound_claude_for_agent(client)
+        else:
             # Keep this optional pass materially below the existing fact extraction
             # ceiling; the regular provider reservation still records the call.
             # Réglages de Replicate seulement : la réponse de Claude comprend sa réflexion adaptative, qu'un plafond
@@ -1172,6 +1181,14 @@ def run_configured_semantic_analysis(
         )
     except Exception:
         return SemanticAnalysis("unavailable", [], error_code="SEMANTIC_PROVIDER_NOT_CONFIGURED")
+
+
+def _bound_claude_for_agent(client: AnthropicTextClient) -> None:
+    """Claude dans l'échéance de 25 s des passes de l'agent : effort « low », 4 000 jetons réflexion comprise."""
+    from src.enrichment.anthropic_reader import LOW_EFFORT
+
+    client.effort = LOW_EFFORT
+    client.max_tokens = CLAUDE_AGENT_MAX_TOKENS
 
 
 def image_bytes_to_data_url(content: bytes, mime_type: str) -> str | None:
@@ -1271,7 +1288,9 @@ def run_configured_photo_analysis(
         client = create_llm_client()
         if not hasattr(client, "generate_json_with_images"):
             return PhotoSemanticAnalysis("unavailable", error_code="VISION_CLIENT_UNSUPPORTED")
-        if not isinstance(client, AnthropicTextClient):
+        if isinstance(client, AnthropicTextClient):
+            _bound_claude_for_agent(client)
+        else:
             # Réglages de Replicate seulement (voir run_configured_semantic_analysis).
             client.max_tokens = min(int(client.max_tokens or PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS), PHOTO_SEMANTIC_MAX_OUTPUT_TOKENS)
             # The photo pass is one bounded inference; transport retry belongs to

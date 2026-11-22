@@ -246,8 +246,9 @@ def test_agent_evidence_sends_claude_the_filtered_reply(monkeypatch: pytest.Monk
     sent = messages.sent_text()
     for personal in ("Pierre Martin", "Jean Dupont", "DUPONT", "06 12 34 56 78", "jean.dupont@cabinet-dupont.fr"):
         assert personal not in sent, personal
-    # The Replicate output caps are not applied to Claude: its answer includes its adaptive thinking.
-    assert messages.created[0]["max_tokens"] == 16_000
+    # Within the 25 s deadline of the agent: short thinking, 4 000 tokens thinking included (not Replicate's 1 024).
+    assert messages.created[0]["max_tokens"] == 4_000
+    assert messages.created[0]["output_config"] == {"effort": "low"}
 
 
 ANTHROPIC_FOOTER = [{"metadata": {"ai_provider_id": "anthropic"}}]
@@ -357,6 +358,10 @@ def test_only_a_photo_reaches_claude_as_it_is(monkeypatch: pytest.MonkeyPatch, n
     # The photo goes inside the request (base64, re-encoded without EXIF), never as an uploaded file.
     assert len(images) == 1 and images[0]["source"]["type"] == "base64"
     assert images[0]["source"]["media_type"] == "image/jpeg"
+    # Both passes of the agent (text, photo) stay within their 25 s deadline: low effort, 4 000 tokens.
+    assert [(request["max_tokens"], request["output_config"]) for request in messages.created] == [
+        (4_000, {"effort": "low"})
+    ] * len(messages.created)
 
 
 # --- Prestataire nommé dans le pied = prestataire qui lit la réponse --------------------------------------------------

@@ -226,6 +226,20 @@ def test_status_errors_are_recorded_by_their_typed_class(
     assert ledger["record"][-1][1]["status"] == recorded
 
 
+def test_any_other_error_after_the_send_is_ambiguous_and_raised(ledger: dict[str, list[Any]]) -> None:
+    messages = FakeMessages(error=anthropic.APIResponseValidationError(
+        response=httpx2.Response(200, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")), body=None
+    ))
+
+    with pytest.raises(anthropic.APIResponseValidationError):
+        _client(messages).generate_json("s", "u")
+
+    assert len(messages.created) == 1
+    kwargs = ledger["record"][-1][1]
+    # The call may have been billed: its ceilings stay (None), it is never retried.
+    assert kwargs["status"] == "ambiguous" and kwargs["input_tokens_estimate"] is None
+
+
 # --- Palier de prix au-delà de 100 000 jetons d'entrée ---------------------------------------------------------------
 
 
@@ -240,6 +254,20 @@ def test_a_long_text_over_the_byte_ceiling_is_counted_by_the_api_then_read_at_th
     assert len(messages.counted) == 1 and messages.counted[0]["model"] == "claude-haiku-5-5"
     assert ledger["ceiling"][0][1]["input_tokens"] == 30_000 + reader_module.REQUEST_OVERHEAD_TOKENS
     assert len(messages.created) == 1
+
+
+def test_a_failed_token_count_is_a_typed_pipeline_refusal_before_any_reservation(ledger: dict[str, list[Any]]) -> None:
+    class CountFails(FakeMessages):
+        def count_tokens(self, **kwargs: Any) -> Any:
+            raise anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages/count_tokens"))
+
+    messages = CountFails()
+
+    with pytest.raises(reader_module.InputTokensUncounted) as refused:
+        _client(messages).generate_json("s", "é" * 60_000)
+
+    assert isinstance(refused.value, LLMModelNotPriced)
+    assert messages.created == [] and ledger["reserve"] == []
 
 
 def test_a_text_over_100000_tokens_is_refused_before_any_reservation(ledger: dict[str, list[Any]]) -> None:
@@ -270,7 +298,14 @@ def test_images_go_first_as_base64_blocks_and_are_reserved_at_their_ceiling(ledg
 
 @pytest.mark.parametrize(
     "images",
-    [[], ["http://example.test/a.png"], ["data:image/bmp;base64,AAAA"], [f"data:image/png;base64,{PNG}"] * 5],
+    [
+        [],
+        ["http://example.test/a.png"],
+        # An address would make Anthropic fetch the image itself from a third party: only data: images are joined.
+        ["https://example.test/a.png"],
+        ["data:image/bmp;base64,AAAA"],
+        [f"data:image/png;base64,{PNG}"] * 5,
+    ],
 )
 def test_invalid_images_are_refused_before_any_reservation(ledger: dict[str, list[Any]], images: list[str]) -> None:
     messages = FakeMessages()

@@ -43,11 +43,13 @@ from typing import Any
 
 import anthropic
 
-from src.config import load_settings
+from src.config import ANTHROPIC_PROVIDER, DEFAULT_ANTHROPIC_TEXT_MODEL, load_settings
 from src.enrichment.llm_client import (
     JSON_FINAL_REMINDER,
     JSON_RETRY_INSTRUCTION,
+    TEXT_REQUEST_KIND,
     VISION_IMAGE_TOKEN_CEILING,
+    VISION_REQUEST_KIND,
     LLMClientUnavailable,
     LLMProviderOutputRefused,
     _response_request_status,
@@ -70,6 +72,7 @@ from src.llm_task_deadline import (
 )
 from src.pipeline_usage import (
     TOKEN_PRICE_INPUT_LIMITS,
+    LLMModelNotPriced,
     _prediction_cost,
     _request_cost_eur,
     ledger_token_counts,
@@ -78,13 +81,10 @@ from src.pipeline_usage import (
     reserve_prediction,
 )
 
-HAIKU = "claude-haiku-5-5"
+# Le modèle de texte par défaut, défini une seule fois (src.config) ; nom gardé pour les lecteurs de PDF.
+HAIKU = DEFAULT_ANTHROPIC_TEXT_MODEL
 SONNET = "claude-sonnet-5-5"
-PROVIDER = "anthropic"
 REQUEST_KIND = "document_reading"
-# Genres d'appel des appels de texte et d'image, les mêmes que ceux du client Replicate (``llm_usage_events``).
-TEXT_REQUEST_KIND = "fact_extraction"
-VISION_REQUEST_KIND = "vision_analysis"
 # Limite d'un document PDF retenue pour ce lot (32 Mo) ; le nombre de pages envoyées est borné par l'appelant.
 MAX_PDF_BYTES = 32 * 1024 * 1024
 # Tous les appels actuels lisent des pièces ou des réponses : « medium ». « low » serait celui des textes rédigés
@@ -100,6 +100,8 @@ ANSWER_TIME_SECONDS = 90.0
 TOKENS_PER_PAGE = 4_600
 # Ce que l'API ajoute au prompt (consigne du schéma de sortie, gabarit de message).
 REQUEST_OVERHEAD_TOKENS = 2_048
+# Effort des passes facultatives de l'agent d'information (échéance de 25 s) : réflexion courte.
+LOW_EFFORT = "low"
 _DATA_IMAGE_URL = re.compile(r"data:(image/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+/=\s]+)", re.S)
 
 
@@ -116,6 +118,10 @@ class ReaderOutputCut(ValueError):
 
 class ReaderInvalidJSON(ValueError):
     """La réponse n'est pas l'objet JSON attendu."""
+
+
+class InputTokensUncounted(LLMModelNotPriced):
+    """Le comptage des jetons d'entrée par l'API a échoué : le coût n'est pas bornable, rien n'est réservé ni envoyé."""
 
 
 # Reconnus par le blocage de 24 heures d'une même clé de requête (migration 20260920144219) : une lecture qui a
@@ -255,7 +261,7 @@ class _AnthropicCaller:
         # Au-delà du palier bas, rien n'est réservé ni envoyé.
         require_lower_price_tier(self.model, input_ceiling)
         reservation_id = reserve_llm_request(
-            provider=PROVIDER,
+            provider=ANTHROPIC_PROVIDER,
             model=self.model,
             request_kind=request_kind,
             attempt_number=attempt_number,
@@ -290,6 +296,10 @@ class _AnthropicCaller:
             self._record_unanswered(
                 reservation_id, status, f"{type(exc).__name__} {exc.status_code}", prompt_chars, system_chars
             )
+            raise
+        except Exception as exc:
+            # Toute autre erreur (du SDK ou d'ailleurs) après l'envoi : l'appel a pu être reçu et facturé.
+            self._record_unanswered(reservation_id, "ambiguous", type(exc).__name__, prompt_chars, system_chars)
             raise
         stop_reason = getattr(message, "stop_reason", None)
         if stop_reason == "refusal":
@@ -367,9 +377,10 @@ class AnthropicDocumentReader(_AnthropicCaller):
 
 
 def _image_block(image: str) -> dict[str, Any]:
-    """Bloc ``image`` d'une adresse HTTPS ou d'une image ``data:`` (JPEG, PNG, GIF ou WebP, en base64)."""
-    if image.startswith("https://"):
-        return {"type": "image", "source": {"type": "url", "url": image}}
+    """Bloc ``image`` d'une image ``data:`` (JPEG, PNG, GIF ou WebP, en base64), jointe à la demande.
+
+    Une adresse (``https://``) est refusée : Anthropic irait chercher l'image elle-même chez un tiers.
+    """
     match = _DATA_IMAGE_URL.fullmatch(image)
     if match is None:
         raise ValueError("Vision data URLs must hold a base64 JPEG, PNG, GIF or WebP image")
@@ -387,6 +398,9 @@ class AnthropicTextClient(_AnthropicCaller):
     tout est déjà en cache n'en a pas besoin. Ses prompts sont ceux qu'écrivent les appelants, filtrés par eux
     (noms des personnes physiques), sans rien de plus : la même entrée que pour Replicate.
     """
+
+    # « medium » ; les passes facultatives de l'agent passent à LOW_EFFORT (src.information_agent_semantic).
+    effort: str = EFFORT
 
     invalid_json_message = TEXT_INVALID_JSON_MESSAGE
 
@@ -442,10 +456,13 @@ class AnthropicTextClient(_AnthropicCaller):
         tier = TOKEN_PRICE_INPUT_LIMITS.get(self.model)
         if tier is None or text_ceiling <= tier[0]:
             return text_ceiling
-        counted = self.client.messages.count_tokens(
-            model=request["model"], system=request["system"], messages=request["messages"], timeout=timeout
-        )
-        return int(counted.input_tokens) + REQUEST_OVERHEAD_TOKENS
+        try:
+            counted = self.client.messages.count_tokens(
+                model=request["model"], system=request["system"], messages=request["messages"], timeout=timeout
+            )
+            return int(counted.input_tokens) + REQUEST_OVERHEAD_TOKENS
+        except anthropic.APIError as exc:
+            raise InputTokensUncounted(f"Anthropic token count failed: {type(exc).__name__}") from exc
 
     def _generate(
         self,
@@ -468,7 +485,7 @@ class AnthropicTextClient(_AnthropicCaller):
             "system": system_prompt,
             "messages": [{"role": "user", "content": content}],
             "thinking": {"type": "adaptive"},
-            "output_config": {"effort": EFFORT},
+            "output_config": {"effort": self.effort},
         }
         user_text = str(content[-1]["text"])
         timeout = llm_task_bounded_timeout(self.timeout_seconds, "sending Anthropic request")
