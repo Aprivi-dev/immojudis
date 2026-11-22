@@ -632,12 +632,16 @@ def _with_anthropic_key(env: dict[str, str]) -> dict[str, str]:
 
 
 def llm_key_env(env: dict[str, str]) -> dict[str, str]:
-    """Environment of a process that makes the pipeline's text calls: the queue workers (facts) and the reading.
+    """Environment of a process that makes the pipeline's text calls: the general queue workers (facts, replies of the
+    information agent) and the reading. Never the source-detail worker nor the other passes.
 
     The Anthropic key joins it only when those calls go to Claude (``LLM_PROVIDER=anthropic``, the default); with
-    ``replicate`` they keep the job's Replicate token alone, as before. The workers open untrusted PDFs, but their OCR
-    runs Tesseract with an allow-listed environment (``src.pdf_ocr.tesseract_environment``) and the attachments of the
-    information agent are opened in children with a reduced one: neither gets the key.
+    ``replicate`` they keep the job's Replicate token alone, as before. These workers open untrusted files in their own
+    process with the key in their environment: PDFs of the sales and attachments received by the agent (PyMuPDF), photos
+    (signature, dimensions, normalisation). Only their subprocesses run without it: Tesseract
+    (``src.pdf_ocr.tesseract_environment``), antiword and Docling (``src.pdf_word_documents``, ``src.pdf_enrichment``),
+    and the children that read the agent's attachments (``src.information_agent_evidence_child``) have allow-listed
+    environments.
     """
     return _with_anthropic_key(env) if llm_provider() == ANTHROPIC_PROVIDER else env
 
@@ -933,10 +937,12 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
     (``reserve_pipeline_prediction``, 90 calls per 30 minutes) stays the unit's. A failed or killed worker does
     not stop the others; each is bounded by the same budget plus the overrun. Their output is prefixed with
     ``[family#n]``. If the unit itself stops (exception, SIGTERM), the workers still running are terminated. With two
-    general workers or more, the first one claims document readings first (``PDF_FIRST_WORKER_ARGUMENT``).
+    general workers or more, the first one claims document readings first (``PDF_FIRST_WORKER_ARGUMENT``). Only the
+    general workers, which make the AI calls, get the Anthropic key (``llm_key_env``); the source-detail one never does.
     """
     families = [SOURCE_DETAIL_WORKER_FAMILY] + [GENERAL_WORKER_FAMILY] * general_workers
     worker_env = {**env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), **_lane_thread_env(len(families))}
+    general_env = llm_key_env(worker_env)
     started = time.monotonic()
     timeout = budget + ENRICHMENT_WORKER_OVERRUN_SECONDS
     running: list[tuple[str, str, subprocess.Popen[bytes] | None, str | None]] = []
@@ -951,7 +957,8 @@ def _run_lane_workers(general_workers: int, env: dict[str, str], budget: int, di
             if family == GENERAL_WORKER_FAMILY and index == 1 and general_workers >= 2:
                 command.append(PDF_FIRST_WORKER_ARGUMENT)
             try:
-                process = subprocess.Popen(command, env={**worker_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                family_env = general_env if family == GENERAL_WORKER_FAMILY else worker_env
+                process = subprocess.Popen(command, env={**family_env, ENRICHMENT_WORKER_REPORT_ENV: report_path},
                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             except Exception as exc:
                 running.append((family, report_path, None, str(exc)[:1000]))
@@ -1035,15 +1042,15 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: 
     side, and the optional passes start once all of them have ended. 0: the mixed worker alone, as before.
     """
     started = time.monotonic()
-    worker_env = llm_key_env(env)
     with tempfile.TemporaryDirectory(prefix='enrichment-worker-') as directory:
         if general_workers:
-            workers = _run_lane_workers(general_workers, worker_env, budget, directory)
+            workers = _run_lane_workers(general_workers, env, budget, directory)
         else:
             report_path = os.path.join(directory, 'report.json')
+            # The mixed worker makes the AI calls too: it gets the key like a general worker.
             code, failure = _run_worker(
                 list(ENRICHMENT_WORKER_COMMAND),
-                {**worker_env, ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
+                {**llm_key_env(env), ENRICHMENT_BUDGET_SECONDS_ENV: str(budget), ENRICHMENT_WORKER_REPORT_ENV: report_path},
                 budget + ENRICHMENT_WORKER_OVERRUN_SECONDS,
             )
             report = read_worker_report(report_path) or {}

@@ -204,7 +204,7 @@ def test_parallel_lane_workers_get_the_key_only_for_text_calls_to_claude(monkeyp
             return 0
 
     def popen(command, *, env, **_kwargs):
-        started.append(env)
+        started.append((command[command.index("--family") + 1], env))
         return FakeProcess()
 
     monkeypatch.setattr(autonomous_runner.subprocess, "Popen", popen)
@@ -223,8 +223,9 @@ def test_parallel_lane_workers_get_the_key_only_for_text_calls_to_claude(monkeyp
         general_workers=2,
     )
 
-    assert len(started) == 3  # one source-detail worker and two general workers
-    assert all((config.ANTHROPIC_API_KEY_ENV in env) is with_key for env in started)
+    assert [family for family, _env in started] == ["source_detail", "enrichment", "enrichment"]
+    # Only the general workers make AI calls: the source-detail worker never gets the key.
+    assert [config.ANTHROPIC_API_KEY_ENV in env for _family, env in started] == [False, with_key, with_key]
     assert config.ANTHROPIC_API_KEY_ENV not in runner_env
 
 
