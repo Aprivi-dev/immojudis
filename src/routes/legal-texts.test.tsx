@@ -8,6 +8,7 @@ import {
   FREE_UNLOCK_EFFECTIVE_DATE,
   FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   LEGAL_DOCUMENTS,
+  PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
@@ -225,17 +226,23 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-21.1 (Anthropic, lecture des pièces des ventes) ; les 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-21.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avant le premier
-    // envoi d'une pièce à Anthropic.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-15.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(FREE_UNLOCK_EFFECTIVE_DATE);
+  it("la politique de confidentialité est en version 2026-11-22.1 (Anthropic, prestataire d'IA de tous les usages) ; les 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-22.1");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avec la bascule
+    // du réglage et avant le premier envoi d'un texte à Anthropic.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-21.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_EFFECTIVE_DATE);
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0]).toMatchObject({
+      version: "2026-11-15.1",
+      effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+      applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+    });
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-15.1",
       "2026-11-14.1",
       "2026-11-01.3",
       "2026-11-01.2",
@@ -816,8 +823,9 @@ describe("politique de confidentialité", () => {
   it("liste Mapbox, le prestataire d'IA et le rapport d'erreurs parmi les destinataires", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Mapbox (cartes, vignettes et géocodage)");
-    expect(text).toContain("le prestataire d’IA utilisé pour lire les annonces et les pièces");
-    expect(text).toContain("Replicate");
+    expect(text).toContain(
+      "le prestataire d’IA qui lit les annonces et les pièces des ventes, ainsi que les réponses et les pièces jointes des professionnels contactés (Anthropic, Irlande, données stockées aux États-Unis)",
+    );
     expect(text).toContain("le service de rapport d’erreurs lorsqu’il est configuré");
   });
 
@@ -985,14 +993,14 @@ describe("politique de confidentialité", () => {
 
   it("nomme le prestataire d'IA et GitHub, sans affirmer de mécanisme de transfert non vérifié", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("les réponses des professionnels contactés (Replicate, États-Unis)");
+    expect(text).not.toContain("(Replicate, États-Unis)");
     expect(text).toContain("Resend (envoi et réception des courriels)");
     expect(text).toContain("GitHub (exécution des traitements automatisés)");
     expect(text).toContain(
       "Pour obtenir une copie des garanties qui existent, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire. Pour Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).",
     );
     expect(text).toContain(
-      "Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données d’usage).",
+      "Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Resend pour ses propres données d’usage, et Replicate, prestataire d’IA de secours).",
     );
     // Seul le paragraphe sur Resend cite les clauses contractuelles types, vérifiées dans son accord de
     // sous-traitance. Celles du DPA d'Anthropic ont pour importateur Anthropic Ireland (EEE) : elles
@@ -1012,30 +1020,66 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("aucune décision d’adéquation ne s’applique donc");
   });
 
-  it("nomme Replicate et le modèle, et dit qu'aucune garantie de transfert n'est vérifiée (J18)", () => {
+  it("garde Replicate en secours, sans envoi tant que le réglage n'est pas rebasculé, et sans garantie de transfert vérifiée (J18)", () => {
     const text = pageText(<PrivacyPage />);
-    expect(text).toContain("Replicate (Replicate, LLC, à San Francisco, États-Unis)");
     expect(text).toContain(
-      "À la date de cette version, le modèle utilisé (référence « qwen/qwen3-7-plus »",
+      "Replicate (Replicate, LLC, à San Francisco, États-Unis), qui nous donnait jusqu’ici accès au modèle d’IA de référence « qwen/qwen3-7-plus », conçu par l’équipe Qwen du groupe Alibaba, reste prévu en secours. Il ne reçoit aucune donnée tant que nous ne l’avons pas de nouveau choisi dans nos réglages.",
     );
     expect(text).toContain(
-      "Ces données sont transférées aux États-Unis. À la date de cette version, ce transfert ne repose sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays. Nous mettrons cette page à jour dès que ces points seront établis. Pour toute question, ou pour vous opposer à ce traitement, écrivez à contact@immojudis.example.",
+      "S’il l’était, il recevrait à la place d’Anthropic les mêmes textes, filtrés de la même façon, et les mêmes photos ; les pages des pièces des ventes judiciaires ne lui sont pas envoyées.",
     );
+    expect(text).toContain(
+      "Ces données seraient alors transférées aux États-Unis. À la date de cette version, ce transfert ne reposerait sur aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre prestataire, ni dans quel pays.",
+    );
+    // Données déjà envoyées : rien n'est affirmé sur leur durée de conservation chez Replicate.
+    expect(text).toContain(
+      "Avant le passage à Anthropic, Replicate a reçu le texte des annonces et le texte tiré de leurs pièces, les réponses des professionnels contactés et les photos à lire : elles pouvaient contenir des données personnelles, par exemple le nom d’un professionnel ou d’une personne citée dans une pièce. Les versions précédentes de cette page n’indiquaient pas combien de temps Replicate les conserve, et nous ne l’avons pas vérifié à la date de cette version. Pour toute question, écrivez à contact@immojudis.example.",
+    );
+    // Aucune promesse sur ce qui se passerait avant une rebascule.
+    expect(text).not.toContain("Nous mettrons cette page à jour");
+    expect(text).not.toContain("Replicate reçoit");
     expect(text).not.toContain("Deux points restent à confirmer");
   });
 
-  it("déclare Anthropic, ses modèles et les fichiers PDF transmis sans retirer les noms, distincts de Replicate", () => {
+  it("déclare Anthropic pour tous les usages d'IA : textes filtrés des noms, photos et pages des pièces telles quelles", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "le prestataire d’IA qui lit les fichiers PDF des pièces des ventes judiciaires (Anthropic, États-Unis)",
+      "Anthropic nous donne accès à ses modèles d’IA. À la date de cette version, Claude Haiku 5.5 lit le texte des annonces et le texte tiré de leurs pièces, pour relever les caractéristiques de la vente, rédiger les textes affichés sur le site et préparer les lectures détaillées de l’offre Analyse. Il lit aussi les réponses et les pièces jointes des professionnels contactés par Immojudis.",
     );
     expect(text).toContain(
-      "Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5. Ils lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates de visite.",
+      "Avant l’envoi, les noms de particuliers sont remplacés automatiquement par leur rôle dans ces textes ; dans les réponses des professionnels, les noms, signatures, numéros de téléphone et adresses e-mail sont aussi retirés. Ce filtre automatique peut laisser passer un nom : ces textes peuvent donc encore contenir des données personnelles. Les photos jointes à une réponse sont transmises telles quelles.",
+    );
+    // Lecture des pages des pièces (version 2026-11-21.1) : inchangée, pages telles quelles.
+    expect(text).toContain(
+      "Claude Haiku 5.5 et Claude Sonnet 5.5 lisent aussi les pièces publiques des ventes judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates de visite. Pour cette lecture, Anthropic reçoit les pages elles-mêmes : chaque fichier PDF est joint directement à la demande, tel qu’il est publié, sans retirer les noms. Ces pages peuvent contenir des données personnelles, notamment le nom des parties à la procédure (la personne dont le bien est saisi) et celui des occupants.",
     );
     expect(text).toContain(
-      "Replicate reçoit le texte des annonces et le texte tiré de leurs pièces ; Anthropic reçoit les pages elles-mêmes : chaque fichier PDF est joint directement à la demande, tel qu’il est publié, sans retirer les noms. Ces pages peuvent contenir des données personnelles, notamment le nom des parties à la procédure (la personne dont le bien est saisi) et celui des occupants.",
+      "notre prestataire d’IA (Anthropic, et Replicate s’il était de nouveau utilisé en secours)",
     );
-    expect(text).toContain("les prestataires d’IA (Replicate et Anthropic)");
+    expect(text).not.toContain("les prestataires d’IA (Replicate et Anthropic)");
+  });
+
+  it("dit aux professionnels contactés qu'Anthropic lit leurs réponses et pièces jointes, textes filtrés", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont transmises telles quelles. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
+    );
+    expect(text).toContain(
+      "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont transmises telles quelles)",
+    );
+    expect(text).toContain(
+      "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; chez Anthropic : 30 jours",
+    );
+  });
+
+  it("déclare au tableau la lecture des annonces par Anthropic, textes filtrés des noms", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente, rédiger les textes affichés et préparer les lectures détaillées de l’offre Analyse",
+    );
+    expect(text).toContain(
+      "opposition et demande de retrait par email, sans compte. Chez Anthropic : 30 jours",
+    );
   });
 
   it("n'affirme pour Anthropic que ce que dit son accord de traitement des données, sans garantie de transfert non établie", () => {
@@ -1047,17 +1091,26 @@ describe("politique de confidentialité", () => {
       "Anthropic Ireland fait traiter ces données par ses sous-traitants, dans les conditions prévues par l’accord de traitement des données d’Anthropic : un contrat avec chacun de ces sous-traitants leur impose des obligations de protection des données en substance aussi protectrices que celles d’Anthropic, et Anthropic reste responsable envers nous de leurs actes.",
     );
     expect(text).toContain(
-      "Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions de son accord de traitement des données (voir ci-dessus).",
+      "Cet accord ne précise pas sur quelle garantie prévue par le RGPD repose le passage des données hors de l’Espace économique européen (voir « Transferts hors de l’Espace économique européen »).",
     );
+    // Relecture juridique de la PR #551 : aucune garantie de transfert n'est laissée entendre.
+    expect(text).toContain(
+      "Pour Anthropic, notre cocontractant est établi en Irlande, mais les données sont stockées aux États-Unis et peuvent être traitées dans d’autres pays. À la date de cette version, nous n’avons pas pu vérifier sur quelle garantie prévue par le RGPD repose ce passage hors de l’Espace économique européen : l’accord de traitement des données d’Anthropic ne la précise pas. Nous la demandons à Anthropic et indiquerons ici sa réponse.",
+    );
+    expect(text).not.toContain(
+      "Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions de son accord de traitement des données",
+    );
+    // Le lieu de traitement n'est pas fixé : seul le stockage est situé aux États-Unis.
+    expect(text).not.toMatch(/Anthropic,\s+aux États-Unis/);
     expect(text).not.toContain(
       "Ce transfert est encadré par les clauses contractuelles types adoptées par la Commission européenne (décision (UE) 2021/914 du 4 juin 2021), prévues",
     );
     expect(text).not.toContain("à confirmer");
   });
 
-  it("donne la conservation chez Anthropic pour des PDF joints à la demande, scores de sécurité compris", () => {
+  it("donne la conservation chez Anthropic pour des données jointes à la demande, scores de sécurité compris", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Les fichiers PDF ne sont pas déposés dans le service de stockage de fichiers d’Anthropic : ils sont joints à chaque demande. Anthropic supprime alors les pièces reçues et les résultats produits dans les 30 jours. Si ses contrôles automatiques les signalent comme contraires à sa politique d’utilisation, il peut garder les pièces et les résultats jusqu’à 2 ans, et les scores de ces contrôles de sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose.",
+      "Aucun fichier n’est déposé dans le service de stockage de fichiers d’Anthropic : textes, pages et photos sont joints à chaque demande. Anthropic supprime alors les données reçues et les résultats produits dans les 30 jours. Si ses contrôles automatiques les signalent comme contraires à sa politique d’utilisation, il peut garder ces données et les résultats jusqu’à 2 ans, et les scores de ces contrôles de sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose.",
     );
   });
 
@@ -1089,9 +1142,9 @@ describe("politique de confidentialité", () => {
     );
   });
 
-  it("informe les personnes citées : remplacement des noms limité aux textes affichés, but de la lecture, opposition", () => {
+  it("informe les personnes citées : noms remplacés dans les textes affichés et transmis, pas dans les pages des pièces ; opposition", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Ce remplacement ne vaut que pour les textes affichés sur le site. Les pièces des ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à contact@immojudis.example (voir ci-dessous).",
+      "Ce remplacement vaut aussi pour les textes que nous transmettons à notre prestataire d’IA, Anthropic. Il ne vaut pas pour les pages des pièces des ventes judiciaires : elles sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic, dont les données sont stockées aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à cette lecture en écrivant à contact@immojudis.example (voir ci-dessous).",
     );
   });
 

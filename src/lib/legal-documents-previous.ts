@@ -4,6 +4,7 @@ import {
   FULL_SALE_UNLOCK_EFFECTIVE_DATE,
   PEPITE_LEGAL_EFFECTIVE_DATE,
   PEPITE_TERMS_EFFECTIVE_DATE,
+  PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
   PRIVACY_COMPLETION_EFFECTIVE_DATE,
   PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
@@ -79,13 +80,20 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     ],
   },
   privacy: {
-    version: "2026-11-15.1",
-    sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
-    effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
-    applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/privacy-2026-11-15.1.tsx.txt",
+    version: "2026-11-21.1",
+    sha256: "70a711a98758935dfe01b43178fb9855181bb4297bb612caf071240b847bfecd",
+    effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+    applicableUntil: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-11-21.1.tsx.txt",
     /** Versions plus anciennes, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-11-15.1",
+        sha256: "d544cf330804d9762de6d26d0e849e5cd9c1b7c0fc5accc75db96f535c9f3531",
+        effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
+        applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/privacy-2026-11-15.1.tsx.txt",
+      },
       {
         version: "2026-11-14.1",
         sha256: "19f625fc11fdc071f28918abcb74d8d52ef2194044967ae0e10449e70d2bea25",

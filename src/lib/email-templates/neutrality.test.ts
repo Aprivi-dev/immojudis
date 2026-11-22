@@ -77,8 +77,8 @@ import { EMAIL_TEMPLATES } from "./registry";
  * Mise à jour explicite du 22/11/2026 (Claude Haiku 5.5 pour tous les appels d'IA, décision du propriétaire) : les
  * empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT celles-là. L'aperçu de la galerie
  * nomme désormais le prestataire d'IA configuré (`informationAgentAiProvider`, `LLM_PROVIDER`, Anthropic par
- * défaut) au lieu de « Replicate (États-Unis) » écrit en dur : seule la parenthèse « Anthropic (Irlande, données
- * stockées aux États-Unis) » du pied diffère. Avec LLM_PROVIDER=replicate, le rendu redonne les empreintes d'avant
+ * défaut) au lieu de « Replicate (États-Unis) » écrit en dur : seule la parenthèse « Anthropic (Anthropic Ireland,
+ * Limited, Irlande ; données stockées aux États-Unis) » du pied diffère (libellé de la politique 2026-11-22.1). Avec LLM_PROVIDER=replicate, le rendu redonne les empreintes d'avant
  * (vérifié). Le test fixe LLM_PROVIDER à vide pour ne pas dépendre de l'environnement.
  */
 const BASELINE: Record<string, string> = {
@@ -94,8 +94,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "3e6137fbc6c8468c562d0d6898b73a4f831f5fcc8c670950f061eb163621e633",
-  agent_court_registry: "9d2473702218ed634b045a97df6c35a944aa7e5c0296929485fe8b1c93480199",
+  agent_request: "def7b6203ef8914bdffa275684a709c72ff8ae8c3842e3b614424fb7d9eb494c",
+  agent_court_registry: "03b772680143d2d698239c06bca83be1a6f6be537a1ffc4308460c735cb9372e",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

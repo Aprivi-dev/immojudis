@@ -31,6 +31,15 @@ describe("prestataire d'IA du pied de message", () => {
     });
   });
 
+  it("nomme Anthropic, prestataire de la politique 2026-11-22.1, quand LLM_PROVIDER le désigne", () => {
+    const provider = informationAgentAiProvider({ LLM_PROVIDER: "anthropic" });
+    expect(provider).toEqual({
+      id: "anthropic",
+      name: "Anthropic",
+      country: "Anthropic Ireland, Limited, Irlande ; données stockées aux États-Unis",
+    });
+  });
+
   it("refuse un prestataire que le pied, la politique et le registre ne nomment pas", () => {
     expect(() => informationAgentAiProvider({ LLM_PROVIDER: "openai" })).toThrow(
       "Prestataire d’IA « openai » non identifié",
