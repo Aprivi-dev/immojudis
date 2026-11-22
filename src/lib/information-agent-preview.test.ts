@@ -109,6 +109,7 @@ vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: send }));
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runAdminInformationAgentAction } from "@/lib/information-agent";
+import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
 import { INFORMATION_AGENT_NO_QUESTION_MESSAGE } from "@/lib/information-agent/draft-checks";
 import { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
 import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
@@ -234,7 +235,10 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
         "Si vous vous opposez depuis l’adresse de contact de votre cabinet, nous n’écrirons plus à aucune adresse de ce cabinet.",
       );
       expect(output).not.toMatch(/votre étude|votre service/);
-      expect(output).toContain("Replicate (États-Unis)");
+      // Prestataire d'IA par défaut (LLM_PROVIDER absent), libellé tiré de son entrée unique.
+      const aiProvider = informationAgentAiProvider({});
+      expect(aiProvider.id).toBe("anthropic");
+      expect(output).toContain(`${aiProvider.name} (${aiProvider.country})`);
       expect(output).toContain("12 mois si vous ne répondez pas");
       expect(output).toContain("12 mois si vous ne répondez pas");
       expect(output).toContain("24 mois après le dernier échange");
