@@ -717,7 +717,7 @@ function PrivacySection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="liquid-panel-soft scroll-mt-24 rounded-lg p-5 sm:p-6">
+    <section id={id} className="liquid-panel-flat scroll-mt-24 rounded-lg p-5 sm:p-6">
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
