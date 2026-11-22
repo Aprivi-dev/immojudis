@@ -19,7 +19,14 @@ export type InformationAgentAiProvider = {
   country: string;
 };
 
+// Anthropic : cocontractant Anthropic Ireland, Limited, données stockées aux États-Unis (politique de
+// confidentialité 2026-11-22.1, qui garde Replicate en secours).
 const KNOWN_AI_PROVIDERS: Readonly<Record<string, InformationAgentAiProvider>> = {
+  anthropic: {
+    id: "anthropic",
+    name: "Anthropic",
+    country: "Irlande, données stockées aux États-Unis",
+  },
   replicate: { id: "replicate", name: "Replicate", country: "États-Unis" },
 };
 

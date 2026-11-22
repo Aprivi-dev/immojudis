@@ -126,10 +126,10 @@ const processingRows = [
   },
   {
     purpose: "Annonces de ventes et pièces publiques",
-    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait). Le nom et les coordonnées professionnelles (adresse, téléphone, adresse e-mail) de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce d’origine (pour une vente notariale, celle d’immobilier.notaires.fr), sont visibles des personnes connectées à un compte, offre Découverte comprise. Une adresse e-mail masquée par le site d’origine n’est jamais affichée",
+    data: "Informations sur les biens, parfois sur les personnes citées (noms remplacés par leur rôle autant que possible ; en cas d’oubli, écrivez-nous pour demander le retrait). Le nom et les coordonnées professionnelles (adresse, téléphone, adresse e-mail) de l’organisateur de la vente (avocat, notaire, étude ou service), tels qu’ils sont publiés dans l’annonce d’origine (pour une vente notariale, celle d’immobilier.notaires.fr), sont visibles des personnes connectées à un compte, offre Découverte comprise. Une adresse e-mail masquée par le site d’origine n’est jamais affichée. Le texte des annonces et le texte tiré de leurs pièces sont lus par un modèle d’IA d’Anthropic, après remplacement automatique des noms de particuliers par leur rôle (un nom peut échapper à ce filtre), pour relever les caractéristiques de la vente, rédiger les textes affichés et préparer les lectures détaillées de l’offre Analyse",
     basis: "Intérêt légitime à informer le public",
     retention:
-      "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte",
+      "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte. Chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
   },
   {
     purpose: "Lecture automatique des pièces des ventes",
@@ -159,11 +159,11 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont transmises telles quelles)",
     basis:
       "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
+      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
   },
   {
     purpose: "Formulaire de contact",
@@ -328,6 +328,14 @@ export function PrivacyPage({
               vous ne répondez pas, 24 mois après le dernier échange si vous répondez.
             </p>
             <p className="mt-3">
+              Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui
+              aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les
+              noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés
+              automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes
+              sont transmises telles quelles. Le pays de traitement, les sous-traitants d’Anthropic
+              et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».
+            </p>
+            <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
               de pièces, l’occupation, la mise à prix ou la date de la vente) peuvent compléter ou
               corriger la fiche publique de la vente, après relecture. Ces valeurs sont affichées
@@ -411,12 +419,12 @@ export function PrivacyPage({
               sans créer de compte.
             </p>
             <p className="mt-3">
-              Ce remplacement ne vaut que pour les textes affichés sur le site. Les pièces des
-              ventes judiciaires sont lues, sans que les noms en soient retirés, par un modèle d’IA
-              d’Anthropic, aux États-Unis, pour en relever la surface, l’occupation et les dates de
-              visite (voir « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez
-              vous opposer à cette lecture en écrivant à {legalValue(publisher.contactEmail)} (voir
-              ci-dessous).
+              Ce remplacement vaut aussi pour les textes que nous transmettons à notre prestataire
+              d’IA, Anthropic. Il ne vaut pas pour les pages des pièces des ventes judiciaires :
+              elles sont lues, sans que les noms en soient retirés, par un modèle d’IA d’Anthropic,
+              aux États-Unis, pour en relever la surface, l’occupation et les dates de visite (voir
+              « Destinataires et sous-traitants »). Si vous y êtes nommé, vous pouvez vous opposer à
+              cette lecture en écrivant à {legalValue(publisher.contactEmail)} (voir ci-dessous).
             </p>
             <p className="mt-3">
               Les photos du bien tirées des pièces d’une vente, notamment du procès-verbal
@@ -463,17 +471,16 @@ export function PrivacyPage({
               (exécution des traitements automatisés), Mapbox (cartes, vignettes et géocodage),
               l’Institut national de l’information géographique et forestière (IGN : Base Adresse
               Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
-              prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi que les réponses
-              des professionnels contactés (Replicate, États-Unis), le prestataire d’IA qui lit les
-              fichiers PDF des pièces des ventes judiciaires (Anthropic, États-Unis), le service de
-              rapport d’erreurs lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse
-              ni contenu de requête), aux avocats référencés uniquement lorsqu’une mise en relation
-              est demandée et à l’intermédiaire professionnel contacté par Immojudis après
-              validation par un membre de l’équipe. Dans ce dernier cas, seules les informations
-              nécessaires à l’enrichissement du dossier et au suivi de la réponse sont transmises.
-              Nos sous-traitants agissent sur nos instructions, dans le cadre d’un contrat, sauf les
-              exceptions indiquées ci-dessous (Replicate, et Resend pour ses propres données
-              d’usage).
+              prestataire d’IA qui lit les annonces et les pièces des ventes, ainsi que les réponses
+              et les pièces jointes des professionnels contactés (Anthropic, Irlande, données
+              stockées aux États-Unis), le service de rapport d’erreurs lorsqu’il est configuré
+              (sans cookie, en-tête, paramètre d’adresse ni contenu de requête), aux avocats
+              référencés uniquement lorsqu’une mise en relation est demandée et à l’intermédiaire
+              professionnel contacté par Immojudis après validation par un membre de l’équipe. Dans
+              ce dernier cas, seules les informations nécessaires à l’enrichissement du dossier et
+              au suivi de la réponse sont transmises. Nos sous-traitants agissent sur nos
+              instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous
+              (Resend pour ses propres données d’usage, et Replicate, prestataire d’IA de secours).
             </p>
             <p className="mt-3">
               Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les
@@ -490,32 +497,25 @@ export function PrivacyPage({
               l’adresse.
             </p>
             <p className="mt-3">
-              Replicate (Replicate, LLC, à San Francisco, États-Unis) nous donne accès au modèle
-              d’IA qui lit les annonces, les pièces et les réponses des professionnels contactés. À
-              la date de cette version, le modèle utilisé (référence « qwen/qwen3-7-plus » chez
-              Replicate) est conçu par l’équipe Qwen du groupe Alibaba. Les textes, pièces et photos
-              à lire lui sont transmis : ils peuvent contenir des données personnelles, par exemple
-              le nom d’un professionnel ou d’une personne citée dans une pièce. Ces données sont
-              transférées aux États-Unis. À la date de cette version, ce transfert ne repose sur
-              aucune garantie prévue par le RGPD que nous ayons pu vérifier. Replicate ne figure
-              pas, à notre connaissance, parmi les organisations certifiées au cadre de protection
-              des données UE–États-Unis : aucune décision d’adéquation ne s’applique donc. Aucun
-              accord de sous-traitance ni aucune clause contractuelle type n’est signé avec lui.
-              Nous ne savons pas non plus si Replicate fait exécuter ce modèle par un autre
-              prestataire, ni dans quel pays. Nous mettrons cette page à jour dès que ces points
-              seront établis. Pour toute question, ou pour vous opposer à ce traitement, écrivez à{" "}
-              {legalValue(publisher.contactEmail)}.
+              Anthropic nous donne accès à ses modèles d’IA. À la date de cette version, Claude
+              Haiku 5.5 lit le texte des annonces et le texte tiré de leurs pièces, pour relever les
+              caractéristiques de la vente, rédiger les textes affichés sur le site et préparer les
+              lectures détaillées de l’offre Analyse. Il lit aussi les réponses et les pièces
+              jointes des professionnels contactés par Immojudis. Avant l’envoi, les noms de
+              particuliers sont remplacés automatiquement par leur rôle dans ces textes ; dans les
+              réponses des professionnels, les noms, signatures, numéros de téléphone et adresses
+              e-mail sont aussi retirés. Ce filtre automatique peut laisser passer un nom : ces
+              textes peuvent donc encore contenir des données personnelles. Les photos jointes à une
+              réponse sont transmises telles quelles.
             </p>
             <p className="mt-3">
-              Anthropic nous donne accès aux modèles d’IA Claude Haiku 5.5 et Claude Sonnet 5.5. Ils
-              lisent les pièces publiques des ventes judiciaires (cahier des conditions de vente,
-              procès-verbal descriptif, diagnostics) pour en relever la surface, le terrain, le
-              nombre de pièces, l’occupation et les dates de visite. Replicate reçoit le texte des
-              annonces et le texte tiré de leurs pièces ; Anthropic reçoit les pages elles-mêmes :
-              chaque fichier PDF est joint directement à la demande, tel qu’il est publié, sans
-              retirer les noms. Ces pages peuvent contenir des données personnelles, notamment le
-              nom des parties à la procédure (la personne dont le bien est saisi) et celui des
-              occupants.
+              Claude Haiku 5.5 et Claude Sonnet 5.5 lisent aussi les pièces publiques des ventes
+              judiciaires (cahier des conditions de vente, procès-verbal descriptif, diagnostics)
+              pour en relever la surface, le terrain, le nombre de pièces, l’occupation et les dates
+              de visite. Pour cette lecture, Anthropic reçoit les pages elles-mêmes : chaque fichier
+              PDF est joint directement à la demande, tel qu’il est publié, sans retirer les noms.
+              Ces pages peuvent contenir des données personnelles, notamment le nom des parties à la
+              procédure (la personne dont le bien est saisi) et celui des occupants.
             </p>
             <p className="mt-3">
               Selon les conditions commerciales d’Anthropic, notre cocontractant est Anthropic
@@ -530,13 +530,30 @@ export function PrivacyPage({
               Anthropic d’entraîner ses modèles sur ces données.
             </p>
             <p className="mt-3">
-              Les fichiers PDF ne sont pas déposés dans le service de stockage de fichiers
-              d’Anthropic : ils sont joints à chaque demande. Anthropic supprime alors les pièces
-              reçues et les résultats produits dans les 30 jours. Si ses contrôles automatiques les
-              signalent comme contraires à sa politique d’utilisation, il peut garder les pièces et
-              les résultats jusqu’à 2 ans, et les scores de ces contrôles de sécurité jusqu’à 7 ans
-              ; plus longtemps si la loi l’impose. Vous pouvez vous opposer à cette lecture : voir «
-              Votre droit de vous opposer à la lecture automatique des pièces ».
+              Aucun fichier n’est déposé dans le service de stockage de fichiers d’Anthropic :
+              textes, pages et photos sont joints à chaque demande. Anthropic supprime alors les
+              données reçues et les résultats produits dans les 30 jours. Si ses contrôles
+              automatiques les signalent comme contraires à sa politique d’utilisation, il peut
+              garder ces données et les résultats jusqu’à 2 ans, et les scores de ces contrôles de
+              sécurité jusqu’à 7 ans ; plus longtemps si la loi l’impose. Vous pouvez vous opposer à
+              la lecture des pièces : voir « Votre droit de vous opposer à la lecture automatique
+              des pièces ».
+            </p>
+            <p className="mt-3">
+              Replicate (Replicate, LLC, à San Francisco, États-Unis), qui nous donnait jusqu’ici
+              accès au modèle d’IA de référence « qwen/qwen3-7-plus », conçu par l’équipe Qwen du
+              groupe Alibaba, reste prévu en secours. Il ne reçoit aucune donnée tant que nous ne
+              l’avons pas de nouveau choisi dans nos réglages. S’il l’était, il recevrait à la place
+              d’Anthropic les mêmes textes, filtrés de la même façon, et les mêmes photos ; les
+              pages des pièces des ventes judiciaires ne lui sont pas envoyées. Ces données seraient
+              alors transférées aux États-Unis. À la date de cette version, ce transfert ne
+              reposerait sur aucune garantie prévue par le RGPD que nous ayons pu vérifier.
+              Replicate ne figure pas, à notre connaissance, parmi les organisations certifiées au
+              cadre de protection des données UE–États-Unis : aucune décision d’adéquation ne
+              s’applique donc. Aucun accord de sous-traitance ni aucune clause contractuelle type
+              n’est signé avec lui. Nous ne savons pas non plus si Replicate fait exécuter ce modèle
+              par un autre prestataire, ni dans quel pays. Pour toute question, écrivez à{" "}
+              {legalValue(publisher.contactEmail)}.
             </p>
             <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
@@ -557,13 +574,14 @@ export function PrivacyPage({
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
               Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
-              pays, notamment Resend, les prestataires d’IA (Replicate et Anthropic), GitHub et
-              Google (Google Analytics, uniquement avec votre accord ; Google est certifié au cadre
-              de protection des données UE–États-Unis). Pour obtenir une copie des garanties qui
-              existent, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est
-              nécessaire. Pour Replicate, aucune garantie n’est établie à ce jour (voir ci-dessus).
-              Pour Anthropic, les données sont traitées par ses sous-traitants dans les conditions
-              de son accord de traitement des données (voir ci-dessus).
+              pays, notamment Resend, notre prestataire d’IA (Anthropic, et Replicate s’il était de
+              nouveau utilisé en secours), GitHub et Google (Google Analytics, uniquement avec votre
+              accord ; Google est certifié au cadre de protection des données UE–États-Unis). Pour
+              obtenir une copie des garanties qui existent, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire. Pour Replicate,
+              aucune garantie n’est établie à ce jour (voir ci-dessus). Pour Anthropic, les données
+              sont traitées par ses sous-traitants dans les conditions de son accord de traitement
+              des données (voir ci-dessus).
             </p>
           </PrivacySection>
 

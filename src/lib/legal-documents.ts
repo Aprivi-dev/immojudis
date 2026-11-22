@@ -250,6 +250,41 @@ export const SALE_PURCHASE_TERMS_EFFECTIVE_DATE = "15 novembre 2026";
  */
 export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-22.1 : Anthropic devient le prestataire d'IA de tous les usages
+ * (décision du propriétaire du 22/11/2026 : Claude Haiku 5.5 remplace Qwen chez Replicate). À publier en
+ * même temps que la bascule du réglage, et AVANT le premier envoi d'un texte à Anthropic.
+ *
+ * - Usages déclarés : extraction des faits des annonces et des pièces (texte), lectures détaillées de l'offre
+ *   Analyse, textes affichés, lecture des réponses et des pièces jointes des professionnels par l'agent
+ *   d'information (photos comprises, `INFORMATION_AGENT_EVIDENCE_VISION_ENABLED`). La lecture des pages des
+ *   pièces des ventes (version 2026-11-21.1, Claude Haiku 5.5 et Claude Sonnet 5.5) ne change pas : les pages
+ *   partent telles quelles.
+ * - Filtre des noms : les textes envoyés restent filtrés comme avec Replicate (`redact_personal_text` pour
+ *   les annonces et les pièces, `redact_text_for_model` pour les réponses : noms, signatures, téléphones,
+ *   adresses email). Le filtre est automatique : le texte publié dit qu'un nom peut passer. Les photos jointes
+ *   à une réponse partent telles quelles.
+ * - Anthropic : formulations de la version 2026-11-21.1 reprises sans changement (cocontractant Anthropic
+ *   Ireland, Limited ; sous-traitants liés par contrat, section C.2 du DPA ; stockage aux États-Unis ;
+ *   pas d'entraînement ; garantie du transfert vers les États-Unis NON ÉTABLIE, voir la note de la
+ *   2026-11-21.1). Conservation de 30 jours étendue aux textes et aux photos, qui doivent eux aussi être
+ *   joints à la demande, sans Files API (à confirmer par le développeur qui fait la bascule).
+ * - Replicate : prestataire de secours, par réglage (`LLM_PROVIDER`). Le texte dit qu'il ne reçoit rien tant
+ *   que le réglage n'est pas rebasculé, ce qu'il recevrait alors (mêmes textes filtrés et mêmes photos, pas
+ *   les pages des pièces) et l'absence de garantie de transfert vérifiée (J18). Il ne promet pas de modifier
+ *   la page avant une rebascule.
+ * - Pied des messages de l'agent : le prestataire nommé vient de `LLM_PROVIDER`
+ *   (`information-agent-ai-provider.ts`), qui connaît désormais Anthropic.
+ * - Hors champ : les textes sur la validation humaine des informations transmises par les professionnels
+ *   (« Décisions automatisées et enrichissements », pied des messages) ne changent pas.
+ *
+ * La version 2026-11-21.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
+ * avec l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de
+ * rédaction ; à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte
+ * du texte). Relecture `juridique-rgpd` et d'un avocat à faire.
+ */
+export const PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE = "22 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -264,9 +299,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-21.1",
-    sha256: "70a711a98758935dfe01b43178fb9855181bb4297bb612caf071240b847bfecd",
-    effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+    version: "2026-11-22.1",
+    sha256: "dcc4ed3093d932f2e0c3a70a730eede658ec84a1a19cf16e786bc68a0827dff1",
+    effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
