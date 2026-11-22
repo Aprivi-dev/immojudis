@@ -391,6 +391,7 @@ def pdf_record_fact_projection(
     payload_keys: tuple[str, ...] = (),
     baseline: object = _PDF_PROVENANCE_UNSET,
     previous_value: object = _PDF_PROVENANCE_UNSET,
+    details: dict[str, object] | None = None,
 ) -> None:
     """Record the last PDF projection without making it source evidence.
 
@@ -398,6 +399,9 @@ def pdf_record_fact_projection(
     still equal the old PDF projection.  A manually corrected field therefore
     survives invalidation, while a stale PDF value can be restored from the
     trusted source snapshot (or cleared when no source value exists).
+
+    ``details``: keys added to the trace by a reader that names itself (``reader``, prompt version, piece and
+    models: ``src.document_vision_pass``). They never replace a key of the trace itself.
     """
     raw_payload = getattr(sale, "raw_payload", None)
     if not isinstance(raw_payload, dict):
@@ -451,6 +455,8 @@ def pdf_record_fact_projection(
             trace["page_number"] = page_number
         if trace_baseline is not _PDF_PROVENANCE_UNSET:
             trace["baseline"] = _pdf_provenance_value(trace_baseline)
+        for key, value in (details or {}).items():
+            trace.setdefault(key, _pdf_provenance_value(value))
         provenance[field] = trace
 
 
@@ -579,8 +585,13 @@ def _clear_pdf_fact_projections(
     sale: Any,
     *,
     fields: list[str] | tuple[str, ...] | set[str] | None = None,
+    keep: frozenset[str] = frozenset(),
 ) -> dict[str, set[str]]:
-    """Remove unchanged stale PDF projections and restore trusted source facts."""
+    """Remove unchanged stale PDF projections and restore trusted source facts.
+
+    ``keep``: traced fields left untouched, as if they were not selected (the projections of another reader whose
+    pieces are still read unchanged: ``src.document_vision.vision_traces_kept``).
+    """
     raw_payload = getattr(sale, "raw_payload", None)
     if not isinstance(raw_payload, dict):
         return {"cleared": set(), "preserved": set()}
@@ -606,7 +617,7 @@ def _clear_pdf_fact_projections(
         if not isinstance(trace, dict):
             remaining[field] = trace
             continue
-        if selected is not None and field not in selected:
+        if (selected is not None and field not in selected) or field in keep:
             remaining[field] = trace
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue

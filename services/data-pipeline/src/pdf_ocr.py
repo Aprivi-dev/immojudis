@@ -337,9 +337,15 @@ def _pixmap_is_uniformly_light(pixmap: object) -> bool | None:
     return inked / measured <= VISUAL_BLANK_INK_RATIO_MAX
 
 
+# The only variables a Tesseract subprocess receives: it reads untrusted documents, so no secret of the pipeline
+# (database URL, API keys) may reach it (security review of lot V3b-1).
+TESSERACT_ENVIRONMENT = ("PATH", "LANG", "LC_ALL", "TESSDATA_PREFIX", "OMP_THREAD_LIMIT", "HOME")
+
+
 def tesseract_environment(tessdata: object = None) -> dict[str, str]:
-    """Environment of one Tesseract subprocess: single-threaded unless the operator chose otherwise."""
-    env = os.environ.copy()
+    """Environment of one Tesseract subprocess, built from :data:`TESSERACT_ENVIRONMENT` alone: single-threaded unless
+    the operator chose otherwise."""
+    env = {name: os.environ[name] for name in TESSERACT_ENVIRONMENT if name in os.environ}
     if tessdata:
         env["TESSDATA_PREFIX"] = str(tessdata)
     if not clean_text(env.get("OMP_THREAD_LIMIT")):

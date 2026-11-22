@@ -23,6 +23,7 @@ from psycopg.types.json import Jsonb
 from src import collection_priority, source_suspension, source_traffic, source_withdrawal
 from src.catalogue_lock import LOCK_WAIT_ENV, CatalogueLockTimeout, catalogue_writer_lock
 from src.config import (
+    ANTHROPIC_API_KEY_ENV,
     AUTONOMOUS_RUN_ID_ENV,
     CADASTRE_ENRICH_ENABLED_ENV,
     DEFAULT_REPLICATE_CANCEL_AFTER,
@@ -648,6 +649,26 @@ def _run_document_reading(env: dict[str, str]) -> int:
     return _run_optional_pass('Document reading', command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS)
 
 
+# Ten minutes of pass (a sale starts only if its two calls, the lock wait and the write still fit), plus one minute
+# to start the process: src.document_vision_pass.PASS_TIMEOUT_SECONDS, tied by tests/test_document_vision_pass.py.
+DOCUMENT_VISION_BUDGET_SECONDS = 11 * 60
+
+
+def _run_document_vision(env: dict[str, str]) -> int:
+    """Bounded « lecture des pièces par Claude » pass after the Qwen reading (src.document_vision_pass, lot V3b-1).
+
+    Off unless DOCUMENT_VISION_MODE says otherwise (dry_run, write). Ten sales and ten minutes per pass. It makes no
+    request to the sites (the pieces come from the local cache of the PDF reading) and runs at the cadence of the
+    external passes, which also bounds its model calls. It is the only process that gets the Anthropic API key, taken
+    from the runner's own environment (``execute`` leaves it out of every other one). Optional like the reading: its
+    exit code is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.document_vision_pass', '--max-sales', '10', '--budget-minutes', '10']
+    key = os.environ.get(ANTHROPIC_API_KEY_ENV)
+    vision_env = {**env, ANTHROPIC_API_KEY_ENV: key} if key else env
+    return _run_optional_pass('Document vision', command, env=vision_env, timeout=DOCUMENT_VISION_BUDGET_SECONDS)
+
+
 ADDRESS_POSITIONS_BUDGET_SECONDS = 6 * 60
 
 
@@ -741,12 +762,14 @@ QUEUED_LEASE_MARGIN_SECONDS = 5 * 60
 EXTERNAL_PASS_TRAFFIC_WAIT_SECONDS = 60
 # A worker pass shorter than this is mostly its finalization margin: the unit ends instead.
 ENRICHMENT_MIN_PASS_SECONDS = 5 * 60
-# Optional passes that contact an external host (attachments, Licitor history, BAN) keep their daily volume of
-# before the lane, about 17 a day (owner, 17/11/2026: not one more request per site): at most once per unit, and only
-# when no enrichment run that ran it finished in the last 24 h / 17. The document reading (LLM only) runs every cycle.
+# Optional passes that contact an external host (attachments, Licitor history, BAN, the pieces read by Claude) keep
+# their daily volume of before the lane, about 17 a day (owner, 17/11/2026: not one more request per site): at most
+# once per unit, and only when no enrichment run that ran it finished in the last 24 h / 17. The document reading
+# (LLM only) runs every cycle.
 EXTERNAL_PASS_MIN_INTERVAL = timedelta(hours=24) / 17
 EXTERNAL_PASS_KEYS = frozenset({
     'document_backlog_exit_code', 'address_positions_exit_code', 'pdf_photos_exit_code', 'licitor_history_exit_code',
+    'document_vision_exit_code',
 })
 
 
@@ -1034,6 +1057,7 @@ def _run_enrichment_cycle(env: dict[str, str], unit: EnrichmentUnit, *, db_url: 
         passes += [
             ('document_backlog_exit_code', _run_document_backlog, DOCUMENT_BACKLOG_BUDGET_SECONDS),
             ('document_reading_exit_code', _run_document_reading, DOCUMENT_READING_BUDGET_SECONDS),
+            ('document_vision_exit_code', _run_document_vision, DOCUMENT_VISION_BUDGET_SECONDS),
             ('address_positions_exit_code', _run_address_positions, ADDRESS_POSITIONS_BUDGET_SECONDS),
             ('pdf_photos_exit_code', _run_pdf_photos, PDF_PHOTOS_BUDGET_SECONDS),
         ]
@@ -1180,6 +1204,9 @@ def _execute_claimed(run_id: str, db_url: str, *, enrichment_lane: bool, prewait
     }
     # A native crash (« Worker exited with status -11 ») otherwise leaves no Python stack in the job log.
     env['PYTHONFAULTHANDLER'] = '1'
+    # The Anthropic API key goes to the reading of the pieces by Claude alone (_run_document_vision): neither the
+    # collection, nor the workers that open untrusted PDFs, nor the other passes get it.
+    env.pop(ANTHROPIC_API_KEY_ENV, None)
     failure = None
     execution_started = datetime.now(UTC)
     unit: EnrichmentUnit | None = None

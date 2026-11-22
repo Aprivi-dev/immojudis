@@ -98,7 +98,8 @@ def test_an_enrichment_unit_ends_inside_its_lease_and_before_the_tick_that_follo
     lease, migration = _enrichment_lease()
     unit = lease - timedelta(seconds=runner.ENRICHMENT_LEASE_MARGIN_SECONDS)
     one_cycle = timedelta(seconds=runner.ENRICHMENT_WORKER_TIMEOUT_SECONDS + runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
-                          + runner.DOCUMENT_READING_BUDGET_SECONDS + runner.ADDRESS_POSITIONS_BUDGET_SECONDS
+                          + runner.DOCUMENT_READING_BUDGET_SECONDS + runner.DOCUMENT_VISION_BUDGET_SECONDS
+                          + runner.ADDRESS_POSITIONS_BUDGET_SECONDS
                           + runner.PDF_PHOTOS_BUDGET_SECONDS + runner.LICITOR_HISTORY_BUDGET_SECONDS
                           + runner.LICITOR_SNAPSHOT_ONLY_SECONDS)
     assert unit >= one_cycle, f"{migration}: une unité de {unit} ne tient pas un passage complet ({one_cycle})"

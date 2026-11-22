@@ -21,6 +21,7 @@ from src.known_document_backfill import (
     backfill_document_price_from_known,
     backfill_document_sale_date_from_known,
     backfill_document_surface_fields_from_known,
+    backfill_document_vision_fields_from_known,
     is_missing_raw_value,
 )
 from src.lot_scope import other_commune
@@ -92,6 +93,9 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "pdf_bedrooms_candidates",
     "pdf_occupancy_candidates",
     "pdf_multi_lot_guard",
+    # État de la lecture des pièces par Claude (src.document_vision_pass) : sans lui, une relecture de la fiche
+    # ferait relire et repayer les mêmes pièces.
+    "document_vision",
 )
 
 KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
@@ -185,6 +189,7 @@ def preserve_known_enrichment_payloads(
         preserved += backfill_document_facts_version_from_known(sale, known)
         preserved += backfill_document_sale_date_from_known(sale, known)
         preserved += backfill_document_occupancy_from_known(sale, known)
+        preserved += backfill_document_vision_fields_from_known(sale, known)
     return preserved
 
 

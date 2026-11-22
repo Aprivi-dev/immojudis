@@ -17,13 +17,29 @@ from uuid import UUID
 
 REASONS = ("opposition", "correction", "autre")
 
+
+
+def _sale_has_url_sql(url: str) -> str:
+    """Condition SQL vraie quand la vente ``sale`` est désignée par ``url`` (expression SQL) : c'est son URL source,
+    ou une URL qu'elle a reprise en absorbant un doublon. Seule écriture de cette correspondance."""
+    return f"(sale.source_url = {url} or coalesce(sale.source_urls, '[]'::jsonb) ? {url})"
+
+
 # Condition SQL vraie quand la vente ``sale`` (public.auction_sales) est exclue.
-EXCLUDED_SALE_SQL = """exists (
+EXCLUDED_SALE_SQL = f"""exists (
     select 1
       from public.document_reading_exclusions exclusion
-     where exclusion.source_url = sale.source_url
-        or coalesce(sale.source_urls, '[]'::jsonb) ? exclusion.source_url
+     where {_sale_has_url_sql("exclusion.source_url")}
   )"""
+
+# Les ventes (URL source) que désigne une URL, par la même correspondance (paramètre nommé ``url``) : celle que la
+# commande d'exclusion a inscrite, retrouvée même après une fusion de doublons.
+SALES_OF_URL_SQL = f"""
+select sale.source_url
+  from public.auction_sales sale
+ where {_sale_has_url_sql("%(url)s")}
+ order by sale.source_url
+"""
 
 _SALE_EXCLUDED_SQL = f"""
 select exists (select 1 from public.document_reading_exclusions where source_url = %s)

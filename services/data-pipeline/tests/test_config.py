@@ -75,12 +75,19 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pdf_max_documents_per_sale"] == 6
 
 
-def test_document_vision_switch_is_off_by_default(monkeypatch) -> None:
-    monkeypatch.delenv("DOCUMENT_VISION_ENABLED", raising=False)
-    assert load_settings()["document_vision_enabled"] is False
+def test_document_vision_pass_is_off_and_writes_no_field_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("DOCUMENT_VISION_MODE", raising=False)
+    monkeypatch.delenv("DOCUMENT_VISION_FIELDS", raising=False)
+    settings = load_settings()
+    assert settings["document_vision_mode"] == "off"
+    assert settings["document_vision_fields"] == ()
+    assert "document_vision_enabled" not in settings
 
-    monkeypatch.setenv("DOCUMENT_VISION_ENABLED", "true")
-    assert load_settings()["document_vision_enabled"] is True
+    monkeypatch.setenv("DOCUMENT_VISION_MODE", " Dry_Run ")
+    monkeypatch.setenv("DOCUMENT_VISION_FIELDS", "habitable_surface_m2, rooms_count,,")
+    settings = load_settings()
+    assert settings["document_vision_mode"] == "dry_run"
+    assert settings["document_vision_fields"] == ("habitable_surface_m2", "rooms_count")
 
 
 def test_source_isolation_defaults_cover_petites_affiches_inside_existing_budgets(monkeypatch) -> None:
