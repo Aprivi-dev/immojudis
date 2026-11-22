@@ -1,6 +1,7 @@
 """Ventes exclues de la lecture automatique des pièces (lot V3b-0, migration 20261208100000).
 
-Une vente exclue n'est plus lue par aucun modèle : ni par la lecture Qwen (``src.document_reading``), ni par le banc
+Une vente exclue n'est plus lue par aucun modèle : ni par la lecture IA des pièces (``src.document_reading``, quel que
+soit ``LLM_PROVIDER``), ni par le banc
 de lecture des pièces (``scripts/compare_document_vision.py``), ni par la passe d'écriture du lot V3b-1 ; sa lecture
 déjà servie aux abonnés est supprimée (:func:`forget_readings_of_excluded_sales`). La règle « cette vente est-elle
 exclue ? » n'est écrite qu'ici : :data:`EXCLUDED_SALE_SQL` pour une requête qui parcourt les ventes (alias ``sale``),

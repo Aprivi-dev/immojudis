@@ -148,6 +148,29 @@ def test_a_sale_read_again_by_claude_keeps_the_fingerprint_of_its_text(
     assert {model for _key, stage, model in saved if stage == "facts"} == {"claude-haiku-5-5"}
 
 
+def test_the_fact_row_names_the_real_reader_without_moving_its_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_ledger: None
+) -> None:
+    from src.storage import supabase_client
+
+    sale = _long_document_sale(tmp_path, monkeypatch)
+    monkeypatch.setenv("LLM_FACT_CHUNK_CHARS", "10000")
+    output = tmp_path / "claude"
+    monkeypatch.setattr(supabase_client, "LLM_EXTRACTIONS_DIR", output)
+    extraction.enrich_sale_with_llm(sale, client=_claude(FakeMessages()), output_dir=output)
+    row = next(row for row in supabase_client._extraction_rows_for_sale(sale) if row["provider"] == "replicate")
+
+    assert row["model"] == "claude-haiku-5-5"
+    assert row["result"]["_reader"] == {"provider": "anthropic", "model": "claude-haiku-5-5"}
+    # The row key (source_url, provider, input_hash) is the one of the Replicate era: no second row per sale.
+    assert row["input_hash"] == json.loads((output / next(output.glob("*.json")).name).read_text())["_cache"]["key"]
+
+    # A later pass with every chunk in the cache keeps the reader that really read.
+    extraction.enrich_sale_with_llm(sale.model_copy(deep=True), client=ReplicateLikeClient(), output_dir=output)
+    again = next(row for row in supabase_client._extraction_rows_for_sale(sale) if row["provider"] == "replicate")
+    assert again["result"]["_reader"] == {"provider": "anthropic", "model": "claude-haiku-5-5"}
+
+
 def test_fact_keys_are_pinned() -> None:
     """Valeurs d'origine/main (22/11/2026) : une clé qui bougerait relancerait toutes les extractions."""
     context = "Appartement de 52,3 m2 à Lyon."

@@ -154,6 +154,9 @@ def cancel_provider_output_refusal_jobs(
 
 @dataclass
 class ReplicateClient:
+    # Fournisseur noté dans la provenance des faits (``_cache.reader`` des extractions).
+    provider = REPLICATE_PROVIDER
+
     api_token: str | None = None
     model: str | None = None
     timeout_seconds: float | None = None

@@ -678,7 +678,7 @@ DOCUMENT_VISION_BUDGET_SECONDS = 11 * 60
 
 
 def _run_document_vision(env: dict[str, str]) -> int:
-    """Bounded « lecture des pièces par Claude » pass after the Qwen reading (src.document_vision_pass, lot V3b-1).
+    """Bounded « lecture des pièces par Claude » pass after the AI reading of the pieces (src.document_vision_pass, lot V3b-1).
 
     Off unless DOCUMENT_VISION_MODE says otherwise (dry_run, write). Ten sales and ten minutes per pass. It makes no
     request to the sites (the pieces come from the local cache of the PDF reading) and runs at the cadence of the

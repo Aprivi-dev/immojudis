@@ -1,7 +1,8 @@
 """Passe d'écriture de la lecture des pièces par Claude (lot V3b-1), à blanc par défaut.
 
 Décision du propriétaire (21/11/2026) : la lecture des pièces par Claude Haiku 5.5, contrôlée par Claude Sonnet 5.5,
-enrichit les fiches automatiquement. La passe suit la lecture Qwen (``src.document_reading``) dans chaque cycle de la
+enrichit les fiches automatiquement. La passe suit la lecture IA des pièces (``src.document_reading``, Claude Haiku
+5.5 depuis le 22/11/2026, Qwen avec ``LLM_PROVIDER=replicate``) dans chaque cycle de la
 file d'enrichissement (``src.autonomous_runner``) et ne la touche pas. Elle lit les pièces comme le banc
 (``src.document_vision_reading``) : seule une valeur sur laquelle les deux modèles s'accordent (verdict ``accepted``)
 peut être écrite.

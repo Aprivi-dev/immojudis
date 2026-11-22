@@ -95,6 +95,9 @@ class FakeConnection:
                 for sale_id, row in self.rows.items()
             ]
         elif sql == trial.USAGE_SQL:
+            # The reference measure is the trial provider's own.
+            assert params in {("anthropic",), ("replicate",)}
+            self.usage_provider = params[0]
             self._result = [self.usage]
         elif sql == trial.SALE_SQL:
             assert params is not None
@@ -287,6 +290,7 @@ def test_metered_claude_client_follows_the_provider_setting_caps_calls_and_captu
     assert created[0]["max_tokens"] == 16_000
     usage = client.usage[0]
     assert (usage.input_tokens, usage.output_tokens, usage.truncated, usage.succeeded) == (3_000, 900, False, True)
+    assert usage.output_tokens_estimate == 900  # the billed tokens, not a hard-coded 0
     assert usage.cost_usd is not None and usage.cost_usd > 0
 
 

@@ -701,6 +701,12 @@ def enrich_sale_with_llm(
             model_name,
             prompt_version=legacy_prompt_version,
         )
+        # Provenance : qui a lu les morceaux de cette passe ; sans appel (tout en cache), le lecteur noté avant.
+        reader = (
+            {"provider": str(getattr(client, "provider", "") or ""), "model": reader_model}
+            if newly_cached_chunks
+            else _previous_reader(sale, output_dir)
+        )
         _save_extraction(
             sale,
             extraction,
@@ -708,6 +714,7 @@ def enrich_sale_with_llm(
             cache_key=legacy_cache_key,
             model=model_name,
             prompt_version=legacy_prompt_version,
+            reader=reader,
         )
     if stats.errors:
         sale.raw_payload.pop("llm_prompt_version", None)
@@ -1147,14 +1154,27 @@ def _save_extraction(
     cache_key: str | None = None,
     model: str | None = None,
     prompt_version: str | None = None,
+    reader: dict[str, str] | None = None,
 ) -> Path:
+    """``model`` : le modèle des empreintes (comparé à la relecture) ; ``reader`` : qui a vraiment lu (provenance)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{sale_storage_id(sale)}.json"
     payload = redact_personal_data(extraction.model_dump(mode="json"))
     if cache_key or model or prompt_version:
         payload["_cache"] = {"key": cache_key, "model": model, "prompt_version": prompt_version}
+        if reader:
+            payload["_cache"]["reader"] = reader
     _atomic_json(path, payload)
     return path
+
+
+def _previous_reader(sale: AuctionSale, output_dir: Path) -> dict[str, str] | None:
+    """Le lecteur noté par la passe précédente de la vente, s'il l'a été."""
+    path = output_dir / f"{sale_storage_id(sale)}.json"
+    payload = _read_json_mapping(path) if path.exists() else None
+    cache = payload.get("_cache") if isinstance(payload, dict) else None
+    reader = cache.get("reader") if isinstance(cache, dict) else None
+    return reader if isinstance(reader, dict) else None
 
 
 def _atomic_json(path: Path, payload: Any) -> None:

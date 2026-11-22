@@ -402,6 +402,8 @@ class AnthropicTextClient(_AnthropicCaller):
     # « medium » ; les passes facultatives de l'agent passent à LOW_EFFORT (src.information_agent_semantic).
     effort: str = EFFORT
 
+    # Fournisseur noté dans la provenance des faits (``_cache.reader`` des extractions).
+    provider = ANTHROPIC_PROVIDER
     invalid_json_message = TEXT_INVALID_JSON_MESSAGE
 
     def _refused(self, request_kind: str) -> Exception:

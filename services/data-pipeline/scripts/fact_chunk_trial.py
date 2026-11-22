@@ -42,7 +42,7 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from src.config import ANTHROPIC_PROVIDER, fact_fingerprint_model, load_settings, write_step_summary  # noqa: E402
+from src.config import ANTHROPIC_PROVIDER, REPLICATE_PROVIDER, fact_fingerprint_model, load_settings, write_step_summary  # noqa: E402
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access  # noqa: E402
 from src.enrichment.anthropic_reader import AnthropicTextClient, ReaderOutputCut  # noqa: E402
 from src.enrichment.extract_structured import (  # noqa: E402
@@ -146,11 +146,13 @@ select {", ".join(f"sale.{column}" for column in SALE_COLUMNS)}, latest.result
 """
 
 # Average production fact call over 30 days (estimates are characters / 4, as recorded by the client).
+# Mesure de référence du fournisseur de l'essai seulement : les jetons de Qwen et de Claude ne se comparent pas.
 USAGE_SQL = """
 select count(*), avg(input_tokens_estimate), avg(output_tokens_estimate)
   from public.llm_usage_events
  where stage = 'facts'
    and request_kind = 'fact_extraction'
+   and provider = %s
    and succeeded
    and created_at >= now() - interval '30 days'
 """
@@ -266,7 +268,8 @@ class MeteredAnthropicClient(AnthropicTextClient):
                         input_tokens=call.input_tokens,
                         output_tokens=call.output_tokens,
                         input_tokens_estimate=input_estimate,
-                        output_tokens_estimate=0,
+                        # Jetons facturés (réflexion comprise) : Claude les rend, rien n'est à estimer.
+                        output_tokens_estimate=int(call.output_tokens or 0),
                         cost_usd=call.cost_usd,
                         truncated=isinstance(error, ReaderOutputCut),
                         error=type(error).__name__ if error is not None else None,
@@ -535,7 +538,8 @@ def run_trial(
     report.candidates = len(candidates)
     report.selected = pick_varied(candidates, options.sales)
     try:
-        report.usage_10k = tuple(connection.execute(USAGE_SQL).fetchone() or ()) or None  # type: ignore[assignment]
+        provider = ANTHROPIC_PROVIDER if isinstance(client, AnthropicTextClient) else REPLICATE_PROVIDER
+        report.usage_10k = tuple(connection.execute(USAGE_SQL, (provider,)).fetchone() or ()) or None  # type: ignore[assignment]
     except Exception:  # noqa: BLE001 - the 10 000 estimate is optional
         report.usage_10k = None
     # Each read ends its (read-only) transaction: none stays open while the model answers.
