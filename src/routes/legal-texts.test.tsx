@@ -10,6 +10,7 @@ import {
   LEGAL_DOCUMENTS,
   PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+  PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
@@ -226,22 +227,30 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-22.1 (Anthropic, prestataire d'IA de tous les usages) ; les 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-22.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avec la bascule
-    // du réglage et avant le premier envoi d'un texte à Anthropic.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-21.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_ANTHROPIC_EFFECTIVE_DATE);
+  it("la politique de confidentialité est en version 2026-11-23.1 (envoi automatique aux avocats poursuivants) ; les 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.1");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avant le premier
+    // envoi automatique réel.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-22.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(
+      PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
+    );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0]).toMatchObject({
+      version: "2026-11-21.1",
+      effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+      applicableUntil: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
+    });
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
       version: "2026-11-15.1",
       effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     });
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-21.1",
       "2026-11-15.1",
       "2026-11-14.1",
       "2026-11-01.3",
@@ -883,13 +892,14 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Aucune information reçue n’est publiée sans vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
-    // Le mode réel du pilote reste verrouillé : aucun message ne part sans validation, et la page
-    // annonce qu'elle changerait avant tout envoi automatique.
+    // 2026-11-23.1 : l'envoi automatique aux avocats poursuivants est annoncé ; la promesse de
+    // modifier la page avant tout envoi automatique est tenue, elle est donc retirée.
     expect(text).toContain(
-      "À ce jour, chaque message est relu et validé par un membre de l’équipe avant son envoi : un outil peut préparer à l’avance des projets de messages, mais aucun ne part sans cette validation. Si nous décidions d’envoyer certains messages automatiquement, cette page serait modifiée avant, et ces messages le diraient.",
+      "Chaque message est relu et validé par un membre de l’équipe avant son envoi, sauf les envois automatiques décrits ci-dessous.",
     );
+    expect(text).not.toContain("Si nous décidions d’envoyer certains messages automatiquement");
     expect(text).not.toContain("déclenchés puis validés");
     expect(text).not.toContain("administrateur");
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
@@ -911,7 +921,7 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
     expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
     expect(text).toContain(
-      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe.",
+      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe, jamais à un envoi automatique.",
     );
     expect(text).toContain(
       "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
@@ -1068,7 +1078,7 @@ describe("politique de confidentialité", () => {
       "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu)",
     );
     expect(text).toContain(
-      "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; chez Anthropic : 30 jours",
+      "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; journal de l’envoi automatique, sans adresse : 5 ans ; chez Anthropic : 30 jours",
     );
   });
 
@@ -1161,11 +1171,36 @@ describe("politique de confidentialité", () => {
     );
   });
 
+  it("décrit l'envoi automatique aux seuls avocats poursuivants (2026-11-23.1)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      `Envoi automatique aux avocats poursuivants. Depuis le ${PRIVACY_AUTOPILOT_EFFECTIVE_DATE}, une partie de nos demandes est envoyée automatiquement par un outil d’Immojudis, sans relecture humaine avant l’envoi. Seul l’avocat poursuivant dont l’adresse professionnelle figure dans l’annonce publique de la vente peut recevoir un message automatique ; jamais un greffe, un notaire, un commissaire de justice, un gestionnaire, une adresse de messagerie grand public, une adresse retrouvée par une recherche ou saisie par l’équipe, ni une adresse masquée sur Licitor.`,
+    );
+    expect(text).toContain(
+      "L’outil n’écrit que si l’adresse a été relevée pour la première fois il y a moins de 30 jours, ou si nous vous avons déjà écrit, et au plus une fois par période de 30 jours, sans relance. Il n’écrit plus pendant 90 jours après une réponse, ni pendant 6 mois après deux messages restés sans réponse.",
+    );
+    expect(text).toContain(
+      "Cet envoi ne produit aucun effet juridique à votre égard et ne vous affecte pas de manière importante : il ne s’agit pas d’une décision automatisée au sens de l’article 22 du RGPD. Répondre reste facultatif.",
+    );
+    expect(text).toContain(
+      "Si vous nous signalez que vous n’êtes pas l’avocat de la vente, l’outil ne vous écrit plus pendant 24 mois et l’envoi automatique est suspendu jusqu’à vérification par l’équipe.",
+    );
+    expect(text).toContain(
+      "pour un envoi automatique, trace de l’envoi (date, contrôles passés, empreinte du texte), sans adresse",
+    );
+    expect(text).toContain(
+      "à l’intermédiaire professionnel contacté par Immojudis après validation par un membre de l’équipe ou par l’envoi automatique décrit dans « Professionnels contactés par Immojudis ».",
+    );
+  });
+
   it("ne dit plus que toute information de la fiche est validée par l'équipe : seules celles des professionnels", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).not.toContain("toute intégration d’information sur une fiche");
+    expect(text).not.toContain(
+      "Tout envoi à un professionnel est validé par un membre de l’équipe",
+    );
     expect(text).toContain(
-      "Tout envoi à un professionnel est validé par un membre de l’équipe ; aucune demande n’est lancée directement par un utilisateur Analyse. Toute information transmise par un professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces publiques des ventes sont affichées sans relecture préalable, avec leur source, et peuvent être signalées.",
+      "Un outil détecte les informations manquantes et prépare la demande à partir d’un modèle fixe, qui n’est pas rédigé par une IA. Les demandes aux professionnels sont validées par un membre de l’équipe, sauf les envois automatiques à l’avocat poursuivant décrits dans la section « Professionnels contactés par Immojudis » ; ces envois ne produisent aucun effet juridique à l’égard du destinataire et ne l’affectent pas de manière importante (article 22 du RGPD). Aucune demande n’est lancée directement par un utilisateur Analyse. Toute information transmise par un professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces publiques des ventes sont affichées sans relecture préalable, avec leur source, et peuvent être signalées.",
     );
   });
 
