@@ -491,6 +491,12 @@ const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
  * `information_agent_autopilot_settings` (migration 20261119100810) et borne du panneau d'administration.
  */
 export const AUTOPILOT_ART14_MAX_DAYS = 90;
+/**
+ * En mode réel, délai de l'article 14 de 30 jours au plus (art. 14.3.a RGPD, relecture juridique du 23/11/2026) ;
+ * les 90 jours ci-dessus ne valent plus qu'en simulation. RÈGLE LIÉE : contrainte
+ * `information_agent_autopilot_settings_art14_live_max_days` (migration 20261209100200).
+ */
+export const AUTOPILOT_ART14_LIVE_MAX_DAYS = 30;
 
 /** Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 90 jours (une valeur plus ancienne peut dépasser). */
 export function effectiveArt14MaxAgeDays(

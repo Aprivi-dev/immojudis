@@ -1527,6 +1527,9 @@ describe("cas juridiques du cahier des charges", () => {
       // 7 jours écoulés ne suffisent plus : 5 jours effectifs (envoi simulé, aucun passage en erreur).
       ["simulation", { stats: stats({ manualRealSends: 40, cleanSimulationDays: 4 }) }],
       ["live_allowed", { settings: settings({ liveAllowed: false }) }],
+      // Mode réel : délai de l'article 14 de 30 jours au plus (relecture juridique du 23/11/2026).
+      ["art14_live", { settings: settings({ art14MaxAgeDays: 31 }) }],
+      ["art14_live", { settings: settings({ art14MaxAgeDays: 90 }) }],
       ["aipd", { settings: settings({ aipdAttestedAt: null, aipdVersion: null }) }],
       ["roundtrip", { roundtripVerifiedAt: "2026-09-01T00:00:00Z" }],
       ["roundtrip", { roundtripVerifiedAt: null }],

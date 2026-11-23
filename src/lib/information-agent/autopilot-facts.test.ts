@@ -74,6 +74,7 @@ import {
   loadAutopilotFirstRecordedAt,
   loadAutopilotHistoryFacts,
   loadAutopilotRegistryFacts,
+  sendInformedRecipient,
 } from "@/lib/information-agent/autopilot-facts";
 import { evaluateAutopilotCandidate } from "@/lib/information-agent/autopilot-rules";
 
@@ -225,6 +226,53 @@ describe("lectures groupées du tri de la file : même définition que les lectu
       const history = await loadAutopilotHistoryFacts(recipient.email, recipient.identityKeys, NOW);
       expect(history.alreadyInformed).toBe(informed?.[index]);
     }
+  });
+
+  it("déjà informé : un envoi en rebond n'informe personne, une plainte suppose un message remis", async () => {
+    // `delivery_status` : alias de `metadata->delivery->>status` dans la lecture (base simulée : colonne directe).
+    db.cases = [
+      {
+        normalized_recipient_email: EMAIL,
+        sent_at: "2026-10-01T08:00:00Z",
+        replied_at: null,
+        delivery_status: "bounced",
+      },
+      {
+        normalized_recipient_email: OTHER,
+        sent_at: "2026-10-01T08:00:00Z",
+        replied_at: null,
+        delivery_status: "complained",
+      },
+    ];
+    db.missions = [
+      {
+        recipient_identity_keys: ["lawyer|bordeaux|dupont jean"],
+        sent_at: "2026-09-01T08:00:00Z",
+        replied_at: null,
+        delivery_status: "bounced_temporary",
+      },
+    ];
+    const recipients = [
+      { email: EMAIL, identityKeys: ["lawyer|bordeaux|dupont jean"] },
+      { email: OTHER, identityKeys: [] },
+    ];
+    const informed = await loadAutopilotAlreadyInformed(recipients);
+    expect(informed).toEqual([false, true]);
+    for (const [index, recipient] of recipients.entries()) {
+      const history = await loadAutopilotHistoryFacts(recipient.email, recipient.identityKeys, NOW);
+      expect(history.alreadyInformed).toBe(informed?.[index]);
+    }
+    // Les pauses comptent toujours tous les envois, rebonds compris.
+    const bounced = await loadAutopilotHistoryFacts(EMAIL, ["lawyer|bordeaux|dupont jean"], NOW);
+    expect(bounced).toMatchObject({
+      silentSendsInSixMonths: 2,
+      lastSendAt: "2026-10-01T08:00:00.000Z",
+    });
+    // Un envoi en rebond ne lève donc plus la règle de l'article 14 pour une adresse relevée il y a longtemps.
+    expect(sendInformedRecipient("bounced")).toBe(false);
+    expect(sendInformedRecipient("bounced_temporary")).toBe(false);
+    expect(sendInformedRecipient("complained")).toBe(true);
+    expect(sendInformedRecipient(null)).toBe(true);
   });
 
   it("déjà informé, lecture pleine : aucune réponse (personne n'est dit jamais informé)", async () => {

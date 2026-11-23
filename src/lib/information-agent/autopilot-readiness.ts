@@ -1,7 +1,11 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import type { AutopilotSettings, AutopilotStats } from "@/lib/information-agent/autopilot-rules";
+import {
+  AUTOPILOT_ART14_LIVE_MAX_DAYS,
+  type AutopilotSettings,
+  type AutopilotStats,
+} from "@/lib/information-agent/autopilot-rules";
 import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
 import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
@@ -183,6 +187,19 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
       settings.liveAllowed
         ? "Verrou levé."
         : "Verrou du lot 3 en place : seule une migration du lot 3 (textes juridiques publiés) le lève.",
+    ),
+  );
+
+  const art14Ok =
+    settings.art14RuleEnabled && settings.art14MaxAgeDays <= AUTOPILOT_ART14_LIVE_MAX_DAYS;
+  checks.push(
+    check(
+      "art14_live",
+      `Règle de l’article 14 active, délai de ${AUTOPILOT_ART14_LIVE_MAX_DAYS} jours au plus`,
+      art14Ok,
+      art14Ok
+        ? `Délai de ${settings.art14MaxAgeDays} jour(s).`
+        : `Délai réglé à ${settings.art14MaxAgeDays} jour(s) : ramenez-le à ${AUTOPILOT_ART14_LIVE_MAX_DAYS} jours au plus avant le mode réel.`,
     ),
   );
 
