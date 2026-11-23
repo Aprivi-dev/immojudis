@@ -5,7 +5,12 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import { AnalyticsConsentSwitch } from "@/components/AnalyticsConsentSwitch";
 import { AudienceOptOutSwitch } from "@/components/AudienceOptOutSwitch";
 import { COURT_REGISTRY_DAILY_CAP_DEFAULT } from "@/lib/information-agent/court-registry-fallback";
-import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import {
+  LEGAL_DOCUMENTS,
+  legalValue,
+  PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+  publicLegalPublisher,
+} from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
@@ -159,11 +164,11 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu)",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu) ; date du premier relevé de l’adresse ; pour un envoi automatique, trace de l’envoi (date, contrôles passés, empreinte du texte), sans adresse",
     basis:
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil peut préparer les projets de messages, mais, à ce jour, chaque message envoyé est validé par un membre de l’équipe. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Aucune information reçue n’est publiée sans vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
+      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; journal de l’envoi automatique, sans adresse : 5 ans ; chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
   },
   {
     purpose: "Formulaire de contact",
@@ -308,24 +313,23 @@ export function PrivacyPage({
               de certains barreaux, annuaire des commissaires de justice) ou sur le site de son
               cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque
               message. Base juridique : intérêt légitime à publier des informations exactes sur les
-              ventes. Les messages ne contiennent aucune offre commerciale. À ce jour, chaque
-              message est relu et validé par un membre de l’équipe avant son envoi : un outil peut
-              préparer à l’avance des projets de messages, mais aucun ne part sans cette validation.
-              Si nous décidions d’envoyer certains messages automatiquement, cette page serait
-              modifiée avant, et ces messages le diraient. Ces adresses et nos échanges ne servent
-              jamais à proposer ou vendre la mise en avant payante d’Immojudis, ni au classement des
-              avocats, ni à la mise en relation.
+              ventes. Les messages ne contiennent aucune offre commerciale. Chaque message est relu
+              et validé par un membre de l’équipe avant son envoi, sauf les envois automatiques
+              décrits ci-dessous. Ces adresses et nos échanges ne servent jamais à proposer ou
+              vendre la mise en avant payante d’Immojudis, ni au classement des avocats, ni à la
+              mise en relation.
             </p>
             <p className="mt-3">
               Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont
               l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la
               collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne
-              servent qu’à une demande d’information validée par un membre de l’équipe. Une adresse
-              relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant
-              que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et
-              supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge
-              hebdomadaire, seuil de 21 jours). Les données d’un échange sont conservées 12 mois si
-              vous ne répondez pas, 24 mois après le dernier échange si vous répondez.
+              servent qu’à une demande d’information validée par un membre de l’équipe, jamais à un
+              envoi automatique. Une adresse relevée à la collecte de l’annonce et non utilisée pour
+              un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie
+              après la date de la vente, et supprimée au plus tard 28 jours après la dernière
+              consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un
+              échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le dernier
+              échange si vous répondez.
             </p>
             <p className="mt-3">
               Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui
@@ -387,6 +391,31 @@ export function PrivacyPage({
               demander l’accès, la rectification ou l’effacement, et saisir la CNIL. Pour exercer
               ces droits, écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est
               nécessaire.
+            </p>
+            <p className="mt-3">
+              Envoi automatique aux avocats poursuivants. Depuis le{" "}
+              {PRIVACY_AUTOPILOT_EFFECTIVE_DATE}, une partie de nos demandes est envoyée
+              automatiquement par un outil d’Immojudis, sans relecture humaine avant l’envoi. Seul
+              l’avocat poursuivant dont l’adresse professionnelle figure dans l’annonce publique de
+              la vente peut recevoir un message automatique ; jamais un greffe, un notaire, un
+              commissaire de justice, un gestionnaire, une adresse de messagerie grand public, une
+              adresse retrouvée par une recherche ou saisie par l’équipe, ni une adresse masquée sur
+              Licitor. Le message suit un modèle fixe, qui n’est pas rédigé par une IA, et ne pose
+              que des questions d’une liste fermée sur les informations absentes de l’annonce.
+              L’outil n’écrit que si l’adresse a été relevée pour la première fois il y a moins de
+              30 jours, ou si nous vous avons déjà écrit, et au plus une fois par période de 30
+              jours, sans relance. Il n’écrit plus pendant 90 jours après une réponse, ni pendant 6
+              mois après deux messages restés sans réponse. Il respecte des plafonds quotidiens,
+              n’écrit qu’en semaine aux heures de bureau, et s’arrête de lui-même en cas de plainte,
+              de rebonds ou d’oppositions en nombre anormal. Cet envoi ne produit aucun effet
+              juridique à votre égard et ne vous affecte pas de manière importante : il ne s’agit
+              pas d’une décision automatisée au sens de l’article 22 du RGPD. Répondre reste
+              facultatif. Si vous nous signalez que vous n’êtes pas l’avocat de la vente, l’outil ne
+              vous écrit plus pendant 24 mois et l’envoi automatique est suspendu jusqu’à
+              vérification par l’équipe. Vos réponses sont lues avec l’aide d’un outil d’IA, puis
+              vérifiées par un membre de l’équipe avant toute mise à jour d’une fiche. L’opposition,
+              les durées de conservation et les droits décrits ci-dessus s’appliquent de la même
+              façon.
             </p>
             <p className="mt-3">
               Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après
@@ -481,11 +510,12 @@ export function PrivacyPage({
               stockées aux États-Unis), le service de rapport d’erreurs lorsqu’il est configuré
               (sans cookie, en-tête, paramètre d’adresse ni contenu de requête), aux avocats
               référencés uniquement lorsqu’une mise en relation est demandée et à l’intermédiaire
-              professionnel contacté par Immojudis après validation par un membre de l’équipe. Dans
-              ce dernier cas, seules les informations nécessaires à l’enrichissement du dossier et
-              au suivi de la réponse sont transmises. Nos sous-traitants agissent sur nos
-              instructions, dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous
-              (Resend pour ses propres données d’usage, et Replicate, prestataire d’IA de secours).
+              professionnel contacté par Immojudis après validation par un membre de l’équipe ou par
+              l’envoi automatique décrit dans « Professionnels contactés par Immojudis ». Dans ce
+              dernier cas, seules les informations nécessaires à l’enrichissement du dossier et au
+              suivi de la réponse sont transmises. Nos sous-traitants agissent sur nos instructions,
+              dans le cadre d’un contrat, sauf les exceptions indiquées ci-dessous (Resend pour ses
+              propres données d’usage, et Replicate, prestataire d’IA de secours).
             </p>
             <p className="mt-3">
               Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les
@@ -650,16 +680,19 @@ export function PrivacyPage({
               Les scores, estimations et synthèses automatisées assistent la lecture d’un dossier,
               mais ne produisent aucune décision juridique ou financière opposable et n’empêchent
               pas l’accès à une vente. Ils doivent être vérifiés à partir des sources affichées et
-              des pièces officielles. Des outils automatiques, dont certains utilisent l’IA, peuvent
-              détecter des informations manquantes et préparer un projet d’email, relu par un membre
-              de l’équipe. Tout envoi à un professionnel est validé par un membre de l’équipe ;
-              aucune demande n’est lancée directement par un utilisateur Analyse. Toute information
-              transmise par un professionnel est validée par un membre de l’équipe avant
-              d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces
-              publiques des ventes sont affichées sans relecture préalable, avec leur source, et
-              peuvent être signalées. Le message précise qu’une IA aide à lire et classer les
-              réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche
-              ; il reste purement informatif et ne contient aucune sollicitation commerciale.
+              des pièces officielles. Un outil détecte les informations manquantes et prépare la
+              demande à partir d’un modèle fixe, qui n’est pas rédigé par une IA. Les demandes aux
+              professionnels sont validées par un membre de l’équipe, sauf les envois automatiques à
+              l’avocat poursuivant décrits dans la section « Professionnels contactés par Immojudis
+              » ; ces envois ne produisent aucun effet juridique à l’égard du destinataire et ne
+              l’affectent pas de manière importante (article 22 du RGPD). Aucune demande n’est
+              lancée directement par un utilisateur Analyse. Toute information transmise par un
+              professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ;
+              les valeurs relevées automatiquement dans les pièces publiques des ventes sont
+              affichées sans relecture préalable, avec leur source, et peuvent être signalées. Le
+              message précise qu’une IA aide à lire et classer les réponses et que l’équipe vérifie
+              les informations avant toute mise à jour de la fiche ; il reste purement informatif et
+              ne contient aucune sollicitation commerciale.
             </p>
           </PrivacySection>
 
