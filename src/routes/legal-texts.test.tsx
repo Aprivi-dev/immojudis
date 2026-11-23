@@ -11,6 +11,7 @@ import {
   PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
   PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+  PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
@@ -227,29 +228,32 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-23.1 (envoi automatique aux avocats poursuivants) ; les 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.1");
-    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne, avant le premier
-    // envoi automatique réel.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-22.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(
-      PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
-    );
+  it("la politique de confidentialité est en version 2026-11-23.2 (adresses Licitor ouvertes à l'envoi automatique) ; les 2026-11-23.1, 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.2");
+    // La version garde la date de rédaction ; l'effet est porté à la mise en ligne.
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_EFFECTIVE_DATE);
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0]).toMatchObject({
+      version: "2026-11-22.1",
+      effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
+      applicableUntil: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+    });
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
       version: "2026-11-21.1",
       effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[2]).toMatchObject({
       version: "2026-11-15.1",
       effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     });
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-22.1",
       "2026-11-21.1",
       "2026-11-15.1",
       "2026-11-14.1",
@@ -921,8 +925,10 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
     expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
     expect(text).toContain(
-      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe, jamais à un envoi automatique.",
+      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce, avec l’accord écrit de Licitor ; elles sont conservées en interne et jamais publiées. Elles peuvent recevoir nos demandes d’information, y compris les envois automatiques décrits ci-dessous, dans les mêmes conditions que les autres adresses d’avocats poursuivants : seule l’adresse de l’avocat de la vente est utilisée ; chaque message donne l’information prévue par l’article 14 du RGPD (source et date de relevé de l’adresse) ; l’opposition décrite ci-dessous s’applique ; l’envoi automatique n’écrit qu’une fois au plus par période de 30 jours, sans relance.",
     );
+    // 2026-11-23.2 : décision du propriétaire du 23/11/2026, accord écrit de Licitor.
+    expect(text).not.toContain("jamais à un envoi automatique");
     expect(text).toContain(
       "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
     );
@@ -944,7 +950,9 @@ describe("politique de confidentialité", () => {
 
   it("décrit l'opposition par adresse, identité et structure rattachée avec certitude, et l'exclusion de 24 mois", () => {
     const text = pageText(<PrivacyPage />);
-    // Relecture du 14/11 : l'accord de Licitor n'est pas affirmé dans la page.
+    // 2026-11-23.2 : l'existence de l'accord écrit de Licitor est affirmée (décision du propriétaire
+    // du 23/11/2026), pas son contenu. La relecture du 14/11 l'excluait tant qu'il n'était pas écrit.
+    expect(text).toContain("avec l’accord écrit de Licitor");
     expect(text).not.toContain("accord de Licitor");
     expect(text).toContain(
       "Elle vaut pour votre adresse et pour votre identité professionnelle : nous ne vous écrirons pas non plus à une autre adresse.",
@@ -1171,11 +1179,12 @@ describe("politique de confidentialité", () => {
     );
   });
 
-  it("décrit l'envoi automatique aux seuls avocats poursuivants (2026-11-23.1)", () => {
+  it("décrit l'envoi automatique aux seuls avocats poursuivants, adresses masquées sur Licitor comprises (2026-11-23.2)", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      `Envoi automatique aux avocats poursuivants. Depuis le ${PRIVACY_AUTOPILOT_EFFECTIVE_DATE}, une partie de nos demandes est envoyée automatiquement par un outil d’Immojudis, sans relecture humaine avant l’envoi. Seul l’avocat poursuivant dont l’adresse professionnelle figure dans l’annonce publique de la vente peut recevoir un message automatique ; jamais un greffe, un notaire, un commissaire de justice, un gestionnaire, une adresse de messagerie grand public, une adresse retrouvée par une recherche ou saisie par l’équipe, ni une adresse masquée sur Licitor.`,
+      `Envoi automatique aux avocats poursuivants. Depuis le ${PRIVACY_AUTOPILOT_EFFECTIVE_DATE}, une partie de nos demandes est envoyée automatiquement par un outil d’Immojudis, sans relecture humaine avant l’envoi. Seul l’avocat poursuivant dont l’adresse professionnelle figure dans l’annonce publique de la vente, y compris une adresse masquée sur Licitor (voir plus haut), peut recevoir un message automatique ; jamais un greffe, un notaire, un commissaire de justice, un gestionnaire, une adresse de messagerie grand public, ni une adresse retrouvée par une recherche ou saisie par l’équipe.`,
     );
+    expect(text).not.toContain("ni une adresse masquée sur Licitor");
     expect(text).toContain(
       "L’outil n’écrit que si l’adresse a été relevée pour la première fois il y a moins de 30 jours, ou si nous vous avons déjà écrit, et au plus une fois par période de 30 jours, sans relance. Il n’écrit plus pendant 90 jours après une réponse, ni pendant 6 mois après deux messages restés sans réponse.",
     );

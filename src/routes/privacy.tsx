@@ -322,14 +322,18 @@ export function PrivacyPage({
             <p className="mt-3">
               Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont
               l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la
-              collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne
-              servent qu’à une demande d’information validée par un membre de l’équipe, jamais à un
-              envoi automatique. Une adresse relevée à la collecte de l’annonce et non utilisée pour
-              un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie
-              après la date de la vente, et supprimée au plus tard 28 jours après la dernière
-              consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un
-              échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le dernier
-              échange si vous répondez.
+              collecte de l’annonce, avec l’accord écrit de Licitor ; elles sont conservées en
+              interne et jamais publiées. Elles peuvent recevoir nos demandes d’information, y
+              compris les envois automatiques décrits ci-dessous, dans les mêmes conditions que les
+              autres adresses d’avocats poursuivants : seule l’adresse de l’avocat de la vente est
+              utilisée ; chaque message donne l’information prévue par l’article 14 du RGPD (source
+              et date de relevé de l’adresse) ; l’opposition décrite ci-dessous s’applique ; l’envoi
+              automatique n’écrit qu’une fois au plus par période de 30 jours, sans relance. Une
+              adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée
+              tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente,
+              et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge
+              hebdomadaire, seuil de 21 jours). Les données d’un échange sont conservées 12 mois si
+              vous ne répondez pas, 24 mois après le dernier échange si vous répondez.
             </p>
             <p className="mt-3">
               Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui
@@ -397,25 +401,25 @@ export function PrivacyPage({
               {PRIVACY_AUTOPILOT_EFFECTIVE_DATE}, une partie de nos demandes est envoyée
               automatiquement par un outil d’Immojudis, sans relecture humaine avant l’envoi. Seul
               l’avocat poursuivant dont l’adresse professionnelle figure dans l’annonce publique de
-              la vente peut recevoir un message automatique ; jamais un greffe, un notaire, un
-              commissaire de justice, un gestionnaire, une adresse de messagerie grand public, une
-              adresse retrouvée par une recherche ou saisie par l’équipe, ni une adresse masquée sur
-              Licitor. Le message suit un modèle fixe, qui n’est pas rédigé par une IA, et ne pose
-              que des questions d’une liste fermée sur les informations absentes de l’annonce.
-              L’outil n’écrit que si l’adresse a été relevée pour la première fois il y a moins de
-              30 jours, ou si nous vous avons déjà écrit, et au plus une fois par période de 30
-              jours, sans relance. Il n’écrit plus pendant 90 jours après une réponse, ni pendant 6
-              mois après deux messages restés sans réponse. Il respecte des plafonds quotidiens,
-              n’écrit qu’en semaine aux heures de bureau, et s’arrête de lui-même en cas de plainte,
-              de rebonds ou d’oppositions en nombre anormal. Cet envoi ne produit aucun effet
-              juridique à votre égard et ne vous affecte pas de manière importante : il ne s’agit
-              pas d’une décision automatisée au sens de l’article 22 du RGPD. Répondre reste
-              facultatif. Si vous nous signalez que vous n’êtes pas l’avocat de la vente, l’outil ne
-              vous écrit plus pendant 24 mois et l’envoi automatique est suspendu jusqu’à
-              vérification par l’équipe. Vos réponses sont lues avec l’aide d’un outil d’IA, puis
-              vérifiées par un membre de l’équipe avant toute mise à jour d’une fiche. L’opposition,
-              les durées de conservation et les droits décrits ci-dessus s’appliquent de la même
-              façon.
+              la vente, y compris une adresse masquée sur Licitor (voir plus haut), peut recevoir un
+              message automatique ; jamais un greffe, un notaire, un commissaire de justice, un
+              gestionnaire, une adresse de messagerie grand public, ni une adresse retrouvée par une
+              recherche ou saisie par l’équipe. Le message suit un modèle fixe, qui n’est pas rédigé
+              par une IA, et ne pose que des questions d’une liste fermée sur les informations
+              absentes de l’annonce. L’outil n’écrit que si l’adresse a été relevée pour la première
+              fois il y a moins de 30 jours, ou si nous vous avons déjà écrit, et au plus une fois
+              par période de 30 jours, sans relance. Il n’écrit plus pendant 90 jours après une
+              réponse, ni pendant 6 mois après deux messages restés sans réponse. Il respecte des
+              plafonds quotidiens, n’écrit qu’en semaine aux heures de bureau, et s’arrête de
+              lui-même en cas de plainte, de rebonds ou d’oppositions en nombre anormal. Cet envoi
+              ne produit aucun effet juridique à votre égard et ne vous affecte pas de manière
+              importante : il ne s’agit pas d’une décision automatisée au sens de l’article 22 du
+              RGPD. Répondre reste facultatif. Si vous nous signalez que vous n’êtes pas l’avocat de
+              la vente, l’outil ne vous écrit plus pendant 24 mois et l’envoi automatique est
+              suspendu jusqu’à vérification par l’équipe. Vos réponses sont lues avec l’aide d’un
+              outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour d’une
+              fiche. L’opposition, les durées de conservation et les droits décrits ci-dessus
+              s’appliquent de la même façon.
             </p>
             <p className="mt-3">
               Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après

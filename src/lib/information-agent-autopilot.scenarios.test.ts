@@ -1496,9 +1496,10 @@ describe("cas juridiques du cahier des charges", () => {
   });
 
   it("J-politique : le mode réel est refusé tant que la version minimale de la politique n'est pas publiée", () => {
-    // Version minimale : celle qui décrit l'envoi automatique, publiée dans la même livraison.
-    expect(AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION).toBe("2026-11-23.1");
-    for (const earlier of ["2026-11-22.1", "2026-11-23.0", "2026-10-31.1"]) {
+    // Version minimale : celle qui ouvre l'envoi automatique aux adresses Licitor décodées (accord écrit de Licitor).
+    // La 2026-11-23.1, qui les excluait, est refusée.
+    expect(AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION).toBe("2026-11-23.2");
+    for (const earlier of ["2026-11-23.1", "2026-11-22.1", "2026-11-23.0", "2026-10-31.1"]) {
       expect(privacyVersionAtLeast(earlier, AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION), earlier).toBe(
         false,
       );
@@ -1508,12 +1509,12 @@ describe("cas juridiques du cahier des charges", () => {
       );
       expect(report.ready, earlier).toBe(false);
     }
-    for (const accepted of ["2026-11-23.1", "2026-11-23.2", "2026-12-01.1"]) {
+    for (const accepted of ["2026-11-23.2", "2026-11-23.3", "2026-12-01.1"]) {
       expect(privacyVersionAtLeast(accepted, AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION), accepted).toBe(
         true,
       );
     }
-    const report = evaluateAutopilotReadiness(readinessInput({ privacyVersion: "2026-11-23.1" }));
+    const report = evaluateAutopilotReadiness(readinessInput({ privacyVersion: "2026-11-23.2" }));
     expect(report.checks.find((check) => check.key === "privacy_version")?.ok).toBe(true);
     expect(report.ready).toBe(true);
   });
