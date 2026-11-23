@@ -9,6 +9,7 @@ import {
 import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
 import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ : celle qui décrit
@@ -32,13 +33,26 @@ const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
 export const AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS = 5;
 const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
 /**
- * Au-delà de cet âge, l'attestation d'aller-retour approche de son échéance : le pilote ouvre un avertissement
+ * Au-delà de cet âge, la preuve d'aller-retour approche de son échéance : le pilote ouvre un avertissement
  * d'exploitation (`autopilotRoundtripExpiry`), cinq jours avant que le contrôle `roundtrip` ne bloque le mode réel.
  */
 const AUTOPILOT_ROUNDTRIP_WARNING_AGE_DAYS = 25;
 const DAY_MS = 86_400_000;
 
 type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail: string };
+
+/**
+ * Preuve la plus récente de l'aller-retour de réception, calculée par la base à la volée
+ * (`public.information_agent_roundtrip_proof`, migration 20261209100300) : l'attestation manuelle (`attestation`) ou
+ * une réponse réelle reçue par le webhook, expéditeur authentifié et identique au destinataire, rattachée
+ * automatiquement à un dossier envoyé (`reply`, avec ce dossier). Le garde SQL du mode réel lit la même fonction.
+ * Jamais d'adresse.
+ */
+export type AutopilotRoundtripProof = {
+  provenAt: string;
+  source: "attestation" | "reply";
+  caseId: string | null;
+};
 export type AutopilotReadiness = { ready: boolean; checks: AutopilotReadinessCheck[] };
 
 export type AutopilotReadinessInput = {
@@ -46,7 +60,7 @@ export type AutopilotReadinessInput = {
   stats: AutopilotStats;
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
-  roundtripVerifiedAt: string | null;
+  roundtripProof: AutopilotRoundtripProof | null;
   /** Nul : état du compte illisible pour le moment (panne passagère) ; le contrôle n'est pas satisfait. */
   actingAdminIsAdmin: boolean | null;
   privacyVersion: string;
@@ -151,16 +165,16 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
     ),
   );
 
-  const roundtrip = input.roundtripVerifiedAt ? Date.parse(input.roundtripVerifiedAt) : NaN;
+  const roundtrip = input.roundtripProof ? Date.parse(input.roundtripProof.provenAt) : NaN;
   const roundtripAge = Number.isFinite(roundtrip) ? (now.getTime() - roundtrip) / DAY_MS : Infinity;
   checks.push(
     check(
       "roundtrip",
-      "Aller-retour de réception attesté depuis moins de 30 jours",
+      "Aller-retour de réception prouvé depuis moins de 30 jours",
       roundtripAge < AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS,
-      Number.isFinite(roundtripAge)
-        ? `Vérifié il y a ${Math.floor(roundtripAge)} jour(s).`
-        : "Jamais vérifié.",
+      input.roundtripProof && Number.isFinite(roundtripAge)
+        ? `Prouvé il y a ${Math.floor(roundtripAge)} jour(s) par ${describeRoundtripProof(input.roundtripProof)}.`
+        : "Jamais prouvé : ni attestation, ni réponse réelle authentifiée rattachée à son dossier.",
     ),
   );
 
@@ -268,9 +282,17 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   return { ready: checks.every((entry) => entry.ok), checks };
 }
 
+/** Preuve retenue, pour l'écran et le journal : sa nature et, pour une réponse, la référence du dossier. */
+export function describeRoundtripProof(proof: AutopilotRoundtripProof): string {
+  return proof.source === "reply" && proof.caseId
+    ? `une réponse réelle authentifiée, rattachée au dossier ${informationAgentCaseReference(proof.caseId)} (${proof.caseId})`
+    : "l’attestation manuelle";
+}
+
 /**
- * Échéance de l'attestation d'aller-retour : `expiring` au-delà de 25 jours, `expired` à 30 jours (le contrôle
- * `roundtrip` bloque alors le mode réel), `valid` avant, `unverified` sans attestation lisible. Fonction pure.
+ * Échéance de la preuve d'aller-retour la plus récente (attestation ou réponse réelle) : `expiring` au-delà de
+ * 25 jours, `expired` à 30 jours (le contrôle `roundtrip` bloque alors le mode réel), `valid` avant, `unverified`
+ * sans preuve lisible. Fonction pure.
  */
 export type AutopilotRoundtripExpiry = {
   state: "unverified" | "valid" | "expiring" | "expired";
@@ -279,10 +301,10 @@ export type AutopilotRoundtripExpiry = {
 };
 
 export function autopilotRoundtripExpiry(
-  verifiedAt: string | null,
+  proof: AutopilotRoundtripProof | null,
   now: Date,
 ): AutopilotRoundtripExpiry {
-  const verified = verifiedAt ? Date.parse(verifiedAt) : NaN;
+  const verified = proof ? Date.parse(proof.provenAt) : NaN;
   if (!Number.isFinite(verified)) return { state: "unverified", ageDays: null, expiresAt: null };
   const age = (now.getTime() - verified) / DAY_MS;
   return {
@@ -331,14 +353,17 @@ export async function loadVerifiedResendDomains(
   }
 }
 
-export async function loadRoundtripVerifiedAt(): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_operations")
-    .select("inbound_roundtrip_verified_at")
-    .eq("singleton", true)
-    .maybeSingle();
+/** Preuve d'aller-retour la plus récente (`AutopilotRoundtripProof`), ou null. Lecture seule ; une erreur remonte. */
+export async function loadRoundtripProof(
+  now = new Date(),
+): Promise<AutopilotRoundtripProof | null> {
+  const { data, error } = await supabaseAdmin.rpc("information_agent_roundtrip_proof", {
+    p_now: now.toISOString(),
+  });
   if (error) throw error;
-  return data?.inbound_roundtrip_verified_at ?? null;
+  const row = data?.[0];
+  if (!row?.proven_at || (row.source !== "attestation" && row.source !== "reply")) return null;
+  return { provenAt: row.proven_at, source: row.source, caseId: row.case_id ?? null };
 }
 
 /** Réponse de l'API Auth pour un compte qui n'existe pas (et non une panne). */

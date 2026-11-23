@@ -78,6 +78,7 @@ import {
   autopilotRoundtripExpiry,
   evaluateAutopilotReadiness,
   privacyVersionAtLeast,
+  type AutopilotRoundtripProof,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
   evaluateAutopilotCandidate,
@@ -123,6 +124,17 @@ const settings = (overrides: Partial<AutopilotSettings> = {}): AutopilotSettings
 const stats = (overrides: Partial<AutopilotStats> = {}): AutopilotStats => ({
   ...parseAutopilotStats({}),
   ...overrides,
+});
+/** Preuves d'aller-retour (`public.information_agent_roundtrip_proof`) : attestation manuelle, réponse réelle. */
+const attested = (provenAt: string): AutopilotRoundtripProof => ({
+  provenAt,
+  source: "attestation",
+  caseId: null,
+});
+const repliedOn = (provenAt: string): AutopilotRoundtripProof => ({
+  provenAt,
+  source: "reply",
+  caseId: "0b1c2d3e-0000-4000-8000-000000000001",
 });
 const candidate = (overrides: Record<string, unknown> = {}) => ({
   saleId: "sale-1",
@@ -173,7 +185,7 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     loadStats: async () => stats(),
     readiness: async () => ({ ready: true, checks: [] }),
     isAdmin: async () => true,
-    loadRoundtripVerifiedAt: async () => "2026-10-25T00:00:00Z",
+    loadRoundtripProof: async () => attested("2026-10-25T00:00:00Z"),
     claimLease: async () => {
       calls.leases += 1;
       return { kind: "held", token: "lease" };
@@ -1531,8 +1543,9 @@ describe("cas juridiques du cahier des charges", () => {
       ["art14_live", { settings: settings({ art14MaxAgeDays: 31 }) }],
       ["art14_live", { settings: settings({ art14MaxAgeDays: 90 }) }],
       ["aipd", { settings: settings({ aipdAttestedAt: null, aipdVersion: null }) }],
-      ["roundtrip", { roundtripVerifiedAt: "2026-09-01T00:00:00Z" }],
-      ["roundtrip", { roundtripVerifiedAt: null }],
+      ["roundtrip", { roundtripProof: attested("2026-09-01T00:00:00Z") }],
+      ["roundtrip", { roundtripProof: repliedOn("2026-09-01T00:00:00Z") }],
+      ["roundtrip", { roundtripProof: null }],
       ["no_blocked_mission", { stats: stats({ manualRealSends: 40, stuckSending: 1 }) }],
       ["acting_admin", { actingAdminIsAdmin: false }],
       ["acting_admin", { actingAdminIsAdmin: null }],
@@ -1553,6 +1566,22 @@ describe("cas juridiques du cahier des charges", () => {
     expect(manual({ manualRealSends: 15, manualComplaints: 1 })?.ok).toBe(false);
     expect(manual({ manualRealSends: 15, manualPermanentBounces: 1 })?.ok).toBe(false);
     expect(manual({ manualRealSends: 34, manualPermanentBounces: 1 })?.ok).toBe(true);
+    // Aller-retour : une réponse réelle authentifiée et rattachée de moins de 30 jours suffit, sans attestation ; l'écran
+    // dit quelle preuve est retenue (dossier), jamais l'adresse.
+    const byReply = evaluateAutopilotReadiness(
+      readinessInput({ roundtripProof: repliedOn("2026-10-30T09:30:00Z") }),
+    ).checks.find((check) => check.key === "roundtrip");
+    expect(byReply).toMatchObject({
+      ok: true,
+      detail:
+        "Prouvé il y a 4 jour(s) par une réponse réelle authentifiée, rattachée au dossier IJ-0B1C2D3E (0b1c2d3e-0000-4000-8000-000000000001).",
+    });
+    expect(byReply?.detail).not.toContain("@");
+    expect(
+      evaluateAutopilotReadiness(readinessInput({})).checks.find(
+        (check) => check.key === "roundtrip",
+      )?.detail,
+    ).toBe("Prouvé il y a 9 jour(s) par l’attestation manuelle.");
     // État du compte illisible (panne passagère) : dit tel quel, jamais « n'est plus administrateur ».
     expect(
       evaluateAutopilotReadiness(readinessInput({ actingAdminIsAdmin: null })).checks.find(
@@ -1611,7 +1640,7 @@ function readinessInput(
       NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.test",
     },
     now: MONDAY_10H,
-    roundtripVerifiedAt: "2026-10-25T00:00:00Z",
+    roundtripProof: attested("2026-10-25T00:00:00Z"),
     actingAdminIsAdmin: true,
     privacyVersion: "2099-01-01.0",
     verifiedResendDomains: new Set(["reponses.immojudis.test"]),
@@ -1909,7 +1938,7 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
   ) => {
     const warnings: WarningCall[] = [];
     const { deps } = harness({
-      loadRoundtripVerifiedAt: async () => verifiedAt,
+      loadRoundtripProof: async () => (verifiedAt ? attested(verifiedAt) : null),
       warning: async (code, active, details) => {
         warnings.push([code, active, details]);
       },
@@ -1920,7 +1949,8 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
   };
 
   it("règle pure : valide jusqu'à 25 jours, à refaire au-delà, expirée à 30 jours, rien sans attestation", () => {
-    const at = (days: number) => new Date(MONDAY_10H.getTime() - days * 86_400_000).toISOString();
+    const at = (days: number) =>
+      attested(new Date(MONDAY_10H.getTime() - days * 86_400_000).toISOString());
     expect(autopilotRoundtripExpiry(at(25), MONDAY_10H).state).toBe("valid");
     expect(autopilotRoundtripExpiry(at(25.01), MONDAY_10H)).toMatchObject({
       state: "expiring",
@@ -1938,7 +1968,11 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
       ageDays: null,
       expiresAt: null,
     });
-    expect(autopilotRoundtripExpiry("pas une date", MONDAY_10H).state).toBe("unverified");
+    expect(autopilotRoundtripExpiry(attested("pas une date"), MONDAY_10H).state).toBe("unverified");
+    // Une réponse réelle compte comme l'attestation : seule la date de la preuve la plus récente compte.
+    expect(autopilotRoundtripExpiry(repliedOn("2026-10-07T09:00:00Z"), MONDAY_10H).state).toBe(
+      "expiring",
+    );
   });
 
   it("attestation récente : l'avertissement est refermé à chaque passage", async () => {
@@ -1958,6 +1992,8 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
           state: "expiring",
           age_days: 27,
           expires_at: "2026-11-06T09:00:00.000Z",
+          proof_source: "attestation",
+          proof_case_id: null,
           runbook: "docs/runbooks/information-agent.md, « Attestation de l’aller-retour »",
         },
       ],
@@ -1990,10 +2026,10 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
 
   it("passage arrêté par sa garde (hors plage) : rien n'est lu ni écrit", async () => {
     const warnings: string[] = [];
-    const read = vi.fn(async () => "2026-10-01T09:00:00Z");
+    const read = vi.fn(async () => attested("2026-10-01T09:00:00Z"));
     const { deps } = harness(
       {
-        loadRoundtripVerifiedAt: read,
+        loadRoundtripProof: read,
         warning: async (code) => {
           warnings.push(code);
         },

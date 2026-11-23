@@ -53,7 +53,7 @@ vi.mock("@/lib/information-agent/autopilot-readiness", () => ({
   currentPrivacyVersion: () => "2026-11-01.1",
   evaluateAutopilotReadiness: mocks.readiness,
   isActiveAdmin: mocks.isAdmin,
-  loadRoundtripVerifiedAt: async () => null,
+  loadRoundtripProof: async () => null,
   loadVerifiedResendDomains: async () => null,
 }));
 

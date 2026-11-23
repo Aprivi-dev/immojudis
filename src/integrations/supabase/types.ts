@@ -16683,6 +16683,14 @@ export type Database = {
         Args: { p_now?: string; p_since?: string };
         Returns: Json;
       };
+      information_agent_roundtrip_proof: {
+        Args: { p_now?: string };
+        Returns: {
+          case_id: string;
+          proven_at: string;
+          source: string;
+        }[];
+      };
       is_admin: { Args: never; Returns: boolean };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
