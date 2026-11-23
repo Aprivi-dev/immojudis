@@ -31,6 +31,13 @@ export type InformationAgentLegalFooter = {
   addressOriginUrl?: string | null;
   /** Adresse retrouvée par l'outil de recherche automatisé : le pied le dit. */
   automatedSearch?: boolean;
+  /**
+   * Message envoyé par le pilote automatique, sans relecture humaine avant l'envoi : rubrique « Envoi
+   * automatique » et compléments de la conservation et de l'opposition (relecture juridique du 23/11/2026). Posé
+   * seulement par l'envoi et l'aperçu du pilote (`trigger`). Jamais avec `automatedSearch`, dont la mention dit le
+   * message « relu et validé par un membre de l'équipe » : la construction refuse les deux ensemble.
+   */
+  automaticSend?: boolean;
   /** Type de source de la recherche : l'autre annonce n'est pas « une page publique » consultée. */
   automatedSearchSource?: InformationAgentAddressSourceKind;
   /**
@@ -338,6 +345,9 @@ export type InformationAgentFooterSection = {
 export function informationAgentLegalFooterSections(
   footer: InformationAgentLegalFooter,
 ): InformationAgentFooterSection[] {
+  if (footer.automaticSend && footer.automatedSearch) {
+    throw new Error(INFORMATION_AGENT_AUTOMATIC_SEND_SEARCHED_ADDRESS_MESSAGE);
+  }
   const sale = footer.saleReference?.trim();
   const controller = `${footer.controllerName}, ${footer.controllerAddress} — ${footer.contactEmail}`;
   const court = typeof footer.courtRegistryDailyCap === "number";
@@ -351,6 +361,9 @@ export function informationAgentLegalFooterSections(
         sale ? `la vente ${sale}` : "cette vente"
       }. ${INFORMATION_AGENT_NO_OFFER_STATEMENT} ${purpose} Responsable de traitement : ${controller}.`,
     },
+    ...(footer.automaticSend
+      ? [{ label: "Envoi automatique :", text: INFORMATION_AGENT_AUTOMATIC_SEND_STATEMENT }]
+      : []),
     {
       label: "Vos données :",
       text: `${
@@ -373,7 +386,12 @@ export function informationAgentLegalFooterSections(
       label: "Destinataires :",
       text: informationAgentRecipientsStatement(footer.aiProvider, footer.contactEmail),
     },
-    { label: "Conservation :", text: INFORMATION_AGENT_RETENTION_STATEMENT },
+    {
+      label: "Conservation :",
+      text: footer.automaticSend
+        ? `${INFORMATION_AGENT_RETENTION_STATEMENT} ${INFORMATION_AGENT_AUTOMATIC_SEND_RETENTION_STATEMENT}`
+        : INFORMATION_AGENT_RETENTION_STATEMENT,
+    },
     {
       label: "Vos droits :",
       text: `${informationAgentRightsStatement(footer.contactEmail)} ${INFORMATION_AGENT_COMPLAINT_STATEMENT}`,
@@ -389,14 +407,40 @@ export function informationAgentLegalFooterSections(
     structureOpposition: footer.structureOpposition ?? null,
     structureAddress: footer.structureAddress ?? null,
   });
-  sections.push({
-    label: "Opposition :",
-    text: scope
-      ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${scope}`
-      : INFORMATION_AGENT_OBJECTION_STATEMENT,
-  });
+  const objection = [
+    INFORMATION_AGENT_OBJECTION_STATEMENT,
+    ...(footer.automaticSend ? [INFORMATION_AGENT_AUTOMATIC_SEND_OBJECTION_STATEMENT] : []),
+    ...(scope ? [scope] : []),
+  ];
+  sections.push({ label: "Opposition :", text: objection.join(" ") });
   return sections;
 }
+
+export const INFORMATION_AGENT_AUTOMATIC_SEND_SEARCHED_ADDRESS_MESSAGE =
+  "Un envoi automatique ne peut pas partir à une adresse retrouvée par recherche.";
+
+/**
+ * Rubrique « Envoi automatique » du pied d'un message du pilote : texte de la relecture juridique du 23/11/2026
+ * (section 2.2), repris mot pour mot. Le pilote n'écrit qu'à l'avocat poursuivant dont l'adresse figure dans
+ * l'annonce (`autopilot-rules.ts`), avec le gabarit publié ; « mauvais destinataire » d'un expéditeur authentifié
+ * exclut l'identité 24 mois et arrête le pilote (`reply-intent.ts`, `wrong-recipient.ts`).
+ */
+const INFORMATION_AGENT_AUTOMATIC_SEND_STATEMENT = [
+  "Ce message a été préparé et envoyé automatiquement par un outil d’Immojudis, sans relecture par un membre de l’équipe avant son envoi.",
+  "L’outil n’écrit qu’à l’avocat dont l’adresse figure dans l’annonce publique de la vente, et ne pose que des questions d’une liste fixe sur les informations absentes de l’annonce.",
+  "Le texte est un modèle fixe : il n’est pas rédigé par une IA.",
+  "Cet envoi ne produit aucun effet juridique à votre égard et ne vous affecte d’aucune autre manière importante : ce n’est pas une décision prise à votre sujet au sens de l’article 22 du RGPD. Répondre est facultatif ; ne pas répondre n’a aucune conséquence pour vous.",
+  "Vos réponses sont lues avec l’aide d’un outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour de la fiche : rien n’est publié automatiquement.",
+  "Si ce message ne vous concerne pas, répondez « mauvais destinataire » : l’outil ne vous écrira plus pendant 24 mois, et l’envoi automatique est arrêté jusqu’à vérification.",
+].join(" ");
+
+/** Complément de la conservation, variante automatique (identités exclues : 24 mois ; journal du pilote sans adresse). */
+const INFORMATION_AGENT_AUTOMATIC_SEND_RETENTION_STATEMENT =
+  "Si vous signalez une erreur de destinataire, votre identité professionnelle est conservée 24 mois, à cette seule fin. Le journal de l’envoi automatique ne contient pas votre adresse.";
+
+/** Complément de l'opposition, variante automatique (page à un seul bouton, désinscription en un clic, « STOP »). */
+const INFORMATION_AGENT_AUTOMATIC_SEND_OBJECTION_STATEMENT =
+  "Le lien « Ne plus être contacté » ouvre une page où un seul bouton enregistre votre opposition, sans compte ni motif. Si votre messagerie affiche un bouton « Se désinscrire », il l’enregistre directement. Vous pouvez aussi répondre « STOP ».";
 
 /** Plain-text rendering, kept identical in meaning to the HTML footer. */
 export function informationAgentLegalFooterLines(footer: InformationAgentLegalFooter): string[] {

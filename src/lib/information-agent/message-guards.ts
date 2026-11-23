@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION } from "../../../emails/information-request";
 import {
+  INFORMATION_AGENT_AUTOMATIC_SEND_SEARCHED_ADDRESS_MESSAGE,
   informationAgentControllerIdentity,
   type InformationAgentAddressOrigin,
   type InformationAgentFooterStructure,
@@ -63,6 +64,7 @@ export function buildInformationAgentLegalFooter({
   saleReference = null,
   structureOpposition = null,
   recipientKind = null,
+  automaticSend = false,
   env = process.env,
   preview,
 }: {
@@ -78,6 +80,8 @@ export function buildInformationAgentLegalFooter({
    * Nulle : aucune section.
    */
   recipientKind?: string | null;
+  /** Envoi (ou aperçu) du pilote automatique : variante « envoi automatique » du pied. */
+  automaticSend?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
   preview?: { blockers: string[] };
 }): InformationAgentLegalFooter {
@@ -87,6 +91,11 @@ export function buildInformationAgentLegalFooter({
   };
   const controller = informationAgentControllerIdentity(env);
   if (!controller) refuse(controllerIdentityMissing());
+  // Le pied d'une adresse retrouvée par recherche dit le message « relu et validé » : jamais sur un envoi automatique.
+  const searchedAutomatic = automaticSend && addressOrigin.automated;
+  if (searchedAutomatic) {
+    refuse(new Error(INFORMATION_AGENT_AUTOMATIC_SEND_SEARCHED_ADDRESS_MESSAGE));
+  }
   const optOut = optOutUrl({ appUrl, email, env, refuse });
   let aiProvider: InformationAgentAiProvider;
   try {
@@ -106,6 +115,8 @@ export function buildInformationAgentLegalFooter({
     courtRegistryDailyCap: addressOrigin.courtRegistry ? courtRegistryDailyCap(env) : null,
     addressOriginUrl: addressOrigin.url,
     automatedSearch: addressOrigin.automated,
+    // En aperçu refusé, la variante automatique est retirée : le pied reste affichable, le motif est dans les blocages.
+    automaticSend: automaticSend && !searchedAutomatic,
     automatedSearchSource: addressOrigin.searchSource,
     structureAddress: addressOrigin.structureAddress ?? null,
     structureOpposition: addressOrigin.courtRegistry ? null : structureOpposition,
