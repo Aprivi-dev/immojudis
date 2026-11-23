@@ -77,7 +77,11 @@ import {
   detectPossibleInformationAgentContactOptOut,
   detectWrongRecipientSignal,
 } from "@/lib/information-agent-inbound/reply-intent";
-import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
+import {
+  applyWrongRecipient,
+  isAutopilotMission,
+  stopAutopilotForUnverifiedWrongRecipient,
+} from "@/lib/information-agent-inbound/wrong-recipient";
 import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
 import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
 
@@ -117,12 +121,20 @@ function parseProviderMessageId(data: unknown): string | null {
   return parsed.success ? parsed.data.message_id : null;
 }
 
-/** Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi. */
-const AGENT_DELIVERY_EVENTS = ["email.bounced", "email.complained"] as const;
+/**
+ * Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi. Remise et échec :
+ * notés sur le dossier et la mission seulement (« déjà informé » du pilote).
+ */
+const AGENT_DELIVERY_EVENTS = [
+  "email.bounced",
+  "email.complained",
+  "email.delivered",
+  "email.failed",
+] as const;
 
 /**
  * Évènements que ce webhook traite, à abonner dans Resend (l'onglet « Adresses » le vérifie) : les réponses
- * reçues, puis les rebonds et plaintes. Les autres sont seulement écrits au journal des envois.
+ * reçues, puis les rebonds, plaintes, remises et échecs. Les autres sont seulement écrits au journal des envois.
  */
 export const INFORMATION_AGENT_WEBHOOK_EVENTS: readonly string[] = [
   "email.received",
@@ -454,18 +466,37 @@ async function ingestReceivedEmail({
     (detectPossiblePromptInjection(received.subject) || detectPossiblePromptInjection(bodyText)
       ? "possible_prompt_injection"
       : null);
-  const contactOptOut = Boolean(
-    senderEmail &&
-    senderMatches &&
-    senderAuthentication.status === "pass" &&
-    detectInformationAgentContactOptOut(bodyText),
+  // Dossier envoyé par le pilote automatique (mission initiatrice marquée `trigger = autopilot`). Pour lui, un signal
+  // fort reçu par le jeton de réponse du dossier vaut dans le sens protecteur même si l'expéditeur n'est pas vérifié
+  // (relecture sécurité de la PR #553) : un envoi automatique ne doit pas continuer sur un « STOP » ou un « mauvais
+  // destinataire » que l'authentification n'a pas pu confirmer.
+  const autopilotCase = isAutopilotMission(mission);
+  const verifiedSender = Boolean(
+    senderEmail && senderMatches && senderAuthentication.status === "pass",
   );
+  const optOutRequested = detectInformationAgentContactOptOut(bodyText);
+  // Adresse à opposer : celle de l'expéditeur vérifié ; sinon, sur un dossier du pilote, l'adresse destinataire du
+  // dossier (jamais l'adresse d'un expéditeur non vérifié).
+  const opposedEmail = !optOutRequested
+    ? null
+    : verifiedSender
+      ? senderEmail
+      : autopilotCase
+        ? expectedRecipientEmail || null
+        : null;
+  // « Mauvais destinataire » fort d'un expéditeur non vérifié sur un dossier du pilote : le pilote s'arrête ;
+  // l'exclusion de 24 mois attend la confirmation d'un administrateur (bouton « Mauvais destinataire »).
+  const unverifiedWrongRecipient =
+    autopilotCase && !verifiedSender && detectWrongRecipientSignal(bodyText) === "strong";
+  // Trace durable de l'aller-retour (elle survit à la purge de la vente) : la base ne l'écrit que si la réponse remplit
+  // les conditions de preuve (public.information_agent_roundtrip_reply_proofs). Réponse automatique : jamais.
+  if (!automaticReply && verifiedSender) await recordRoundtripReplyProof(messageId);
 
   if (deferProcessing) {
     const initialClosedStatus = await ignoreIfCaseClosed(sharedCase.id, messageId, leaseId);
     if (initialClosedStatus) {
       // A closed case takes no more facts, but an opposition is honoured on every channel.
-      if (contactOptOut && senderEmail) await recordInboundContactOptOut(senderEmail, receivedAt);
+      if (opposedEmail) await recordInboundContactOptOut(opposedEmail, receivedAt);
       inboundMetadata = mergeJsonObject(inboundMetadata, {
         processing_ignored_case_status: initialClosedStatus,
       });
@@ -504,13 +535,13 @@ async function ingestReceivedEmail({
       });
     }
 
-    if (contactOptOut && senderEmail) {
+    if (opposedEmail) {
       return finalizeInboundContactOptOut({
         sharedCase,
         messageId,
         providerEmailId: event.data.email_id,
         receivedAt,
-        senderEmail,
+        opposedEmail,
         inboundMetadata,
         processing: existingProcessing,
         leaseFence,
@@ -525,6 +556,8 @@ async function ingestReceivedEmail({
       await ensureInboundJobLease(assertJobLease);
       if (reviewReason === "wrong_recipient") {
         await applyWrongRecipient({ caseId: sharedCase.id, source: "reply" });
+      } else if (unverifiedWrongRecipient) {
+        await stopAutopilotForUnverifiedWrongRecipient(sharedCase.id);
       }
       const caseUpdated = await updateOpenInformationAgentCase(
         sharedCase.id,
@@ -652,13 +685,13 @@ async function ingestReceivedEmail({
     });
   }
 
-  if (contactOptOut && senderEmail) {
+  if (opposedEmail) {
     return finalizeInboundContactOptOut({
       sharedCase,
       messageId,
       providerEmailId: event.data.email_id,
       receivedAt,
-      senderEmail,
+      opposedEmail,
       inboundMetadata,
       processing: inboundProcessingState(inboundMetadata),
       leaseFence,
@@ -673,6 +706,8 @@ async function ingestReceivedEmail({
     await ensureInboundJobLease(assertJobLease);
     if (reviewReason === "wrong_recipient") {
       await applyWrongRecipient({ caseId: sharedCase.id, source: "reply" });
+    } else if (unverifiedWrongRecipient) {
+      await stopAutopilotForUnverifiedWrongRecipient(sharedCase.id);
     }
     const caseUpdated = await updateOpenInformationAgentCase(
       sharedCase.id,
@@ -950,6 +985,27 @@ async function ingestReceivedEmail({
 }
 
 /** Réponse automatique : consignée comme ignorée, le dossier reste ouvert à la vraie réponse. */
+/**
+ * Trace durable de la preuve d'aller-retour (`record_information_agent_roundtrip_reply_proof`). Une panne n'arrête pas
+ * le traitement de la réponse : la trace est secondaire, la preuve se recalcule aussi à la volée tant que le dossier
+ * existe, et le webhook ne doit pas échouer pour elle (le fournisseur rejouerait toute la réponse). Journalisée.
+ */
+async function recordRoundtripReplyProof(messageId: string): Promise<void> {
+  const { error } = await supabaseAdmin.rpc("record_information_agent_roundtrip_reply_proof", {
+    p_message_id: messageId,
+  });
+  if (error) {
+    console.error(
+      JSON.stringify({
+        scope: "information-agent-inbound",
+        level: "error",
+        event: "roundtrip_reply_proof_failed",
+        code: error.code ?? null,
+      }),
+    );
+  }
+}
+
 async function ignoreAutomaticInboundReply({
   sharedCaseId,
   messageId,

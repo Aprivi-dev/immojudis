@@ -498,11 +498,20 @@ export const AUTOPILOT_ART14_MAX_DAYS = 90;
  */
 export const AUTOPILOT_ART14_LIVE_MAX_DAYS = 30;
 
-/** Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 90 jours (une valeur plus ancienne peut dépasser). */
-export function effectiveArt14MaxAgeDays(
-  settings: Pick<AutopilotSettings, "art14MaxAgeDays">,
-): number {
-  return Math.min(settings.art14MaxAgeDays, AUTOPILOT_ART14_MAX_DAYS);
+/**
+ * Réglages lus par la règle de l'article 14 : le délai et, quand il est connu, le mode (en réel, 30 jours au plus).
+ * Le mode est facultatif pour les appelants qui ne raisonnent que sur le délai (aperçus, tests de la règle).
+ */
+type Art14Settings = Pick<AutopilotSettings, "art14MaxAgeDays"> &
+  Partial<Pick<AutopilotSettings, "mode">>;
+
+/**
+ * Délai de l'article 14 appliqué : le réglage enregistré, plafonné à 90 jours (une valeur plus ancienne peut dépasser)
+ * et, en mode réel, à 30 jours (même borne que la contrainte de la base, défense en profondeur).
+ */
+export function effectiveArt14MaxAgeDays(settings: Art14Settings): number {
+  const cap = settings.mode === "live" ? AUTOPILOT_ART14_LIVE_MAX_DAYS : AUTOPILOT_ART14_MAX_DAYS;
+  return Math.min(settings.art14MaxAgeDays, cap);
 }
 const AUTOPILOT_ADDRESS_MAX_AGE_DAYS = 183;
 const AUTOPILOT_REPLY_PAUSE_DAYS = 90;
@@ -560,7 +569,7 @@ function saleTooSoon(saleDate: string | null, now: Date): boolean {
  */
 export function autopilotArt14Refusal(
   facts: Pick<AutopilotCandidateFacts, "alreadyInformed" | "contactFirstRecordedAt">,
-  settings: Pick<AutopilotSettings, "art14MaxAgeDays">,
+  settings: Art14Settings,
   now: Date,
 ): "art14_unknown" | "art14_window_expired" | null {
   if (facts.alreadyInformed) return null;
@@ -592,7 +601,7 @@ export function autopilotQueueRefusal(
         "humanDraftExists" | "alreadyInformed" | "contactFirstRecordedAt"
       >
     >,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14MaxAgeDays">,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded"> & Art14Settings,
   now: Date,
 ): string | null {
   if (facts.recipientRole !== "lawyer") return "role_not_lawyer";
@@ -613,7 +622,7 @@ export function autopilotQueueRefusal(
 
 export function evaluateAutopilotCandidate(
   facts: AutopilotCandidateFacts,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14MaxAgeDays">,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded"> & Art14Settings,
   now: Date,
 ): AutopilotCandidateVerdict {
   const no = (code: string): AutopilotCandidateVerdict => ({ ok: false, code });
@@ -720,7 +729,7 @@ export function evaluateAutopilotSendTime(
     AutopilotCandidateFacts,
     "selectedUnambiguously" | "hasUnpublishedGap" | "humanDraftExists" | "mailDomain" | "saleDate"
   >,
-  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14MaxAgeDays">,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded"> & Art14Settings,
   now: Date,
 ): AutopilotCandidateVerdict {
   return evaluateAutopilotCandidate(

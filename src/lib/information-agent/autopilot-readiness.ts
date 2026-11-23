@@ -21,9 +21,18 @@ export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2026-11-23.1";
 /**
  * Décision du propriétaire du 23/11/2026 : 15 envois manuels, compensés par le plafond de 5 envois par jour en
  * phase 1 et l'arrêt automatique sur rebonds et plaintes.
+ *
+ * RÈGLES LIÉES : ce seuil, le taux de 3 % de rebonds définitifs, les 7 jours de simulation, la date minimale de
+ * l'AIPD et les 30 jours de l'aller-retour sont aussi vérifiés par la porte SQL de
+ * `set_information_agent_autopilot_mode` (migration 20261209100300). Les deux changent ensemble.
  */
 const AUTOPILOT_MIN_MANUAL_SENDS = 15;
 const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
+/**
+ * AIPD attestée le 23/11/2026 ou après (minuit, heure de Paris) : la version qui couvre l'envoi automatique. Une
+ * attestation antérieure portait sur le traitement sans pilote.
+ */
+export const AUTOPILOT_MIN_AIPD_ATTESTED_AT = "2026-11-22T23:00:00.000Z";
 /**
  * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé par un
  * passage PLANIFIÉ et sans passage en erreur, planifié ou lancé à la main (`cleanSimulationDays`). 5 : les jours
@@ -217,12 +226,18 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
     ),
   );
 
+  const aipdAt = settings.aipdAttestedAt ? Date.parse(settings.aipdAttestedAt) : NaN;
+  const aipdRecent = aipdAt >= Date.parse(AUTOPILOT_MIN_AIPD_ATTESTED_AT);
   checks.push(
     check(
       "aipd",
-      "AIPD attestée",
-      Boolean(settings.aipdAttestedAt && settings.aipdVersion),
-      settings.aipdAttestedAt ? `Version ${settings.aipdVersion}.` : "Aucune attestation d’AIPD.",
+      "AIPD attestée le 23/11/2026 ou après",
+      Boolean(settings.aipdAttestedAt && settings.aipdVersion) && aipdRecent,
+      !settings.aipdAttestedAt
+        ? "Aucune attestation d’AIPD."
+        : aipdRecent
+          ? `Version ${settings.aipdVersion}.`
+          : `Version ${settings.aipdVersion}, attestée avant le 23/11/2026 : attestez la version qui couvre l’envoi automatique.`,
     ),
   );
 

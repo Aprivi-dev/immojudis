@@ -3,20 +3,26 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
--- Pilote automatique de l'agent d'information : les envois manuels vers un domaine interne ne comptent plus parmi
--- les « envois manuels réels » (lot validé par le propriétaire le 23/11/2026).
+-- DÉPLOIEMENT : appliquer les migrations AVANT le code.
 --
--- La porte du mode réel exige un nombre minimal d'envois manuels réels, sans plainte et avec peu de rebonds
--- définitifs (`manual_real_sends`, `manual_complaints`, `manual_permanent_bounces`, autopilot-readiness.ts). Le
--- compte n'écartait que l'adresse de test de Resend (delivered@resend.dev) : un message de test envoyé à une adresse
--- de l'équipe (dossier d'essai de l'aller-retour, adresse d'un domaine de public.information_agent_internal_domains)
--- comptait comme un envoi à un professionnel. Il est désormais écarté des trois compteurs.
+-- Pilote automatique de l'agent d'information : les « envois manuels réels » ne comptent plus que des destinataires
+-- professionnels distincts (lot validé par le propriétaire le 23/11/2026, relecture sécurité de la PR #553).
+--
+-- La porte du mode réel exige 15 envois manuels réels, sans plainte et avec moins de 3 % de rebonds définitifs
+-- (`manual_real_sends`, `manual_complaints`, `manual_permanent_bounces` ; autopilot-readiness.ts, et la porte SQL de
+-- set_information_agent_autopilot_mode, 20261209100300). Le compte n'écartait que l'adresse delivered@resend.dev et
+-- comptait des lignes. Désormais, dans le CTE `manual` :
+--   - toute adresse de test de Resend est écartée (domaine `resend.dev`, alias compris : delivered+1@resend.dev) ;
+--   - tout destinataire d'un domaine interne (public.information_agent_internal_domains : dossier d'essai,
+--     aller-retour) est écarté, avec la même comparaison exacte du domaine que public.attest_information_agent_roundtrip
+--     (to_address est en minuscules, contrainte email_send_log_address_lowercase_check) : un sous-domaine n'est pas un
+--     domaine interne ;
+--   - l'adresse d'un compte administrateur (public.user_profiles, rôle « admin ») est écartée ;
+--   - les trois compteurs comptent des DESTINATAIRES DISTINCTS (count(distinct to_address)), pas des lignes : trois
+--     envois au même avocat comptent pour un.
 --
 -- Reprise EN ENTIER de la dernière définition de public.information_agent_autopilot_stats (20261119100820), mêmes
--- droits et même search_path ; seul changement, la condition ajoutée au CTE `manual`. Le domaine est comparé tel quel
--- (to_address est en minuscules, contrainte email_send_log_address_lowercase_check ; information_agent_internal_domains
--- aussi), comme dans public.attest_information_agent_roundtrip : un sous-domaine n'est pas un domaine interne. Aucune
--- donnée modifiée.
+-- droits et même search_path ; seuls le CTE `manual` et les trois compteurs `manual_*` changent. Aucune donnée modifiée.
 --
 -- Verrous : aucun sur une table (CREATE OR REPLACE FUNCTION ne touche que le catalogue).
 --
@@ -63,15 +69,19 @@ begin
     select * from (select * from ap where created_at <= p_now - interval '48 hours' order by created_at desc limit 100) latest
   ),
   manual as (
-    select entry.status, entry.bounce_type
+    select entry.to_address, entry.status, entry.bounce_type
     from public.email_send_log entry
-    where entry.mode = 'manual' and entry.category = 'agent' and entry.to_address <> 'delivered@resend.dev'
-      -- Seul ajout : un envoi vers un domaine interne (dossier d'essai, aller-retour) n'est pas un envoi réel à un
-      -- professionnel. Même liste blanche, même comparaison exacte du domaine que
-      -- public.attest_information_agent_roundtrip.
+    where entry.mode = 'manual' and entry.category = 'agent'
+      -- Changements : adresses de test de Resend, domaines internes et comptes administrateurs écartés ; les
+      -- compteurs ci-dessous comptent des destinataires distincts.
+      and pg_catalog.split_part(entry.to_address, '@', 2) <> 'resend.dev'
       and not exists (
         select 1 from public.information_agent_internal_domains internal
         where internal.domain = pg_catalog.split_part(entry.to_address, '@', 2)
+      )
+      and not exists (
+        select 1 from public.user_profiles profile
+        where profile.user_role = 'admin' and pg_catalog.lower(profile.email) = entry.to_address
       )
   )
   select pg_catalog.jsonb_build_object(
@@ -125,9 +135,9 @@ begin
       where m.metadata ->> 'send_outcome' = 'unverified' and m.status in ('sending', 'failed')),
     'stuck_sending', (select pg_catalog.count(*) from public.information_agent_missions m
       where m.status = 'sending' and m.sent_at is null and coalesce(m.approved_at, m.updated_at) < p_now - interval '30 minutes'),
-    'manual_real_sends', (select pg_catalog.count(*) from manual),
-    'manual_complaints', (select pg_catalog.count(*) from manual where status = 'complained'),
-    'manual_permanent_bounces', (select pg_catalog.count(*) from manual where status = 'bounced' and coalesce(bounce_type, '') = 'permanent'),
+    'manual_real_sends', (select pg_catalog.count(distinct to_address) from manual),
+    'manual_complaints', (select pg_catalog.count(distinct to_address) from manual where status = 'complained'),
+    'manual_permanent_bounces', (select pg_catalog.count(distinct to_address) from manual where status = 'bounced' and coalesce(bounce_type, '') = 'permanent'),
     'would_send_days', (select pg_catalog.count(distinct (e.at at time zone 'Europe/Paris')::date)
       from public.information_agent_autopilot_events e
       where e.kind = 'would_send'
@@ -169,7 +179,7 @@ revoke all on function public.information_agent_autopilot_stats(timestamptz) fro
 grant execute on function public.information_agent_autopilot_stats(timestamptz) to service_role;
 
 comment on function public.information_agent_autopilot_stats(timestamptz) is
-  'Compteurs du pilote automatique de l''agent d''information (plafonds, arrêts automatiques, contrôle de préparation). Les rejets de politique sur 7 jours et les erreurs d''API consécutives se comptent depuis la dernière réactivation journalisée après un arrêt automatique (mode « simulation » ou « live », before_values.auto_stopped vrai). clean_simulation_days : jours de Paris depuis le début de la simulation avec un envoi simulé d''un passage planifié (pas d''un passage lancé à la main) et aucun passage en erreur. Les envois manuels réels excluent l''adresse de test de Resend et tout destinataire d''un domaine interne (information_agent_internal_domains). Aucune adresse. Réservée à service_role.';
+  'Compteurs du pilote automatique de l''agent d''information (plafonds, arrêts automatiques, contrôle de préparation). Les rejets de politique sur 7 jours et les erreurs d''API consécutives se comptent depuis la dernière réactivation journalisée après un arrêt automatique (mode « simulation » ou « live », before_values.auto_stopped vrai). clean_simulation_days : jours de Paris depuis le début de la simulation avec un envoi simulé d''un passage planifié (pas d''un passage lancé à la main) et aucun passage en erreur. Les envois manuels réels comptent des destinataires distincts, hors adresses de test de Resend, domaines internes (information_agent_internal_domains) et comptes administrateurs. Aucune adresse. Réservée à service_role.';
 
 notify pgrst, 'reload schema';
 

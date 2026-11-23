@@ -3,6 +3,7 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+-- DÉPLOIEMENT : appliquer les migrations AVANT le code.
 -- Pilote automatique de l'agent d'information : en mode RÉEL, le délai de l'article 14 est de 30 jours au plus
 -- (relecture juridique du 23/11/2026, « Avis courts », point 4 : l'article 14.3.a du RGPD fixe l'information au plus
 -- tard un mois après l'obtention des données ; 30 jours est un plafond, pas un réglage à allonger).

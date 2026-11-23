@@ -4,7 +4,17 @@
 -- directe ; l'arrêt d'urgence passe toujours.
 begin;
 
-select plan(8);
+select plan(9);
+
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.information_agent_autopilot_settings'::regclass
+      and conname = 'information_agent_autopilot_settings_art14_live_max_days'
+      and contype = 'c' and convalidated
+  ),
+  'the live article 14 constraint exists under its name and is validated'
+);
 
 insert into auth.users (id) values ('91700000-0000-4000-8000-0000000000a1');
 insert into public.user_profiles (user_id, email, user_role) values
@@ -12,8 +22,13 @@ insert into public.user_profiles (user_id, email, user_role) values
 on conflict (user_id) do update set user_role = excluded.user_role;
 select set_config('request.jwt.claims', '{"sub":"91700000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal2"}', true);
 
--- Conditions du mode réel remplies (verrou levé, AIPD, aller-retour récent), pour n'isoler que l'article 14.
-update public.information_agent_autopilot_settings set mode = 'simulation', simulation_started_at = now();
+-- Conditions du mode réel remplies (verrou levé, AIPD, aller-retour récent, 15 envois manuels réels, 7 jours de
+-- simulation), pour n'isoler que l'article 14.
+update public.information_agent_autopilot_settings
+set mode = 'simulation', simulation_started_at = now() - interval '8 days';
+insert into public.email_send_log (resend_email_id, template_key, category, mode, to_address, status)
+select '917-manual-' || n, 'agent_request', 'agent', 'manual', 'avocat' || n || '@cabinet-917.example', 'delivered'
+from generate_series(1, 15) as n;
 select public.attest_information_agent_aipd('AIPD-917', 'AIPD signée pour le test');
 insert into public.information_agent_operations as ops (singleton, inbound_roundtrip_verified_at, updated_at)
 values (true, now() - interval '1 day', now())

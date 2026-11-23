@@ -329,8 +329,9 @@ export const PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE = "22 novembre 2026";
  *   une IA ; validation par un membre de l'équipe sauf l'envoi automatique, sans effet juridique (article 22).
  *   La phrase sur les informations transmises (validées avant la fiche) et sur les valeurs relevées dans les
  *   pièces ne change pas.
- * - Hors champ : le pied des messages du pilote (rubrique « Envoi automatique », section 2.2 de la relecture)
- *   et `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION`, qui reste à « 2099-01-01.0 » : le mode réel reste verrouillé.
+ * - Livrés à part, dans la même PR : le pied des messages du pilote (rubrique « Envoi automatique », section 2.2
+ *   de la relecture) et `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION`, fixée à cette version (« 2026-11-23.1 ») : le
+ *   contrôle de préparation du mode réel exige qu'elle soit en vigueur.
  *
  * La version 2026-11-22.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée avec
  * l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Le paragraphe de

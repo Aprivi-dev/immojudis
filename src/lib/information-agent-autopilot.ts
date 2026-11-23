@@ -595,21 +595,43 @@ export async function runAutopilotPass(
     // Échéance de la preuve d'aller-retour la plus récente (attestation ou réponse réelle) : sans cet avertissement,
     // le mode réel resterait figé en `not_ready` sans que personne le voie. Aucune preuve : rien à rappeler (la RPC
     // refuse alors le mode réel, l'écran le dit).
-    const proof = await deps.loadRoundtripProof(now);
-    const roundtrip = autopilotRoundtripExpiry(proof, now);
-    await deps.warning(
-      ROUNDTRIP_EXPIRY_WARNING,
-      roundtrip.state === "expiring" || roundtrip.state === "expired",
-      {
-        state: roundtrip.state,
-        age_days: roundtrip.ageDays,
-        expires_at: roundtrip.expiresAt,
-        // Preuve retenue : nature et dossier, jamais d'adresse.
-        proof_source: proof?.source ?? null,
-        proof_case_id: proof?.caseId ?? null,
-        runbook: "docs/runbooks/information-agent.md, « Attestation de l’aller-retour »",
-      },
+    // Preuve illisible (panne de la base) : en simulation, le passage continue sans toucher à l'avertissement (il
+    // n'envoie rien, et l'échéance sera relue au passage suivant) ; en réel, il s'arrête là, sans rien envoyer.
+    const proofRead = await deps.loadRoundtripProof(now).then(
+      (proof) => ({ ok: true as const, proof }),
+      (error: unknown) => ({ ok: false as const, error }),
     );
+    if (!proofRead.ok) {
+      console.error(
+        JSON.stringify({
+          scope: "information_agent.autopilot",
+          level: "error",
+          runId,
+          code: "roundtrip_proof_error",
+          error: errorKind(proofRead.error),
+        }),
+      );
+      if (settings.mode === "live" && !onDemand) {
+        await deps.record("run", runId, { code: "roundtrip_proof_error" });
+        return finish("skipped", "roundtrip_proof_error");
+      }
+    } else {
+      const { proof } = proofRead;
+      const roundtrip = autopilotRoundtripExpiry(proof, now);
+      await deps.warning(
+        ROUNDTRIP_EXPIRY_WARNING,
+        roundtrip.state === "expiring" || roundtrip.state === "expired",
+        {
+          state: roundtrip.state,
+          age_days: roundtrip.ageDays,
+          expires_at: roundtrip.expiresAt,
+          // Preuve retenue : nature et dossier, jamais d'adresse.
+          proof_source: proof?.source ?? null,
+          proof_case_id: proof?.caseId ?? null,
+          runbook: "docs/runbooks/information-agent.md, « Attestation de l’aller-retour »",
+        },
+      );
+    }
     // Le pilote tourne : l'alerte critique d'un arrêt automatique précédent (réactivé à la main) se referme.
     await deps.warning("auto_stop", false);
     if (safety.stop) {

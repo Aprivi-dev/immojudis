@@ -122,6 +122,37 @@ describe("état de remise du dossier et de la mission", () => {
     });
   });
 
+  it("« remis » se place entre le rebond passager et le rebond définitif", async () => {
+    db.rows = {
+      information_agent_cases: [
+        { id: "temporary", metadata: { delivery: { status: "bounced_temporary" } } },
+        { id: "bounced", metadata: { delivery: { status: "bounced" } } },
+        { id: "complained", metadata: { delivery: { status: "complained" } } },
+        { id: "unknown", metadata: {} },
+      ],
+      information_agent_missions: [],
+    };
+    await markInformationAgentCaseDelivery({ emailId: "e", status: "delivered", at: "t" });
+    // Un rebond passager suivi d'une remise devient « remis » ; un rebond définitif ou une plainte restent.
+    expect(db.updates.map((update) => update.id)).toEqual(["temporary", "unknown"]);
+
+    db.updates = [];
+    db.rows.information_agent_cases = [
+      { id: "delivered", metadata: { delivery: { status: "delivered" } } },
+    ];
+    await markInformationAgentCaseDelivery({ emailId: "e", status: "bounced", at: "t" });
+    await markInformationAgentCaseDelivery({ emailId: "e", status: "bounced_temporary", at: "t" });
+    await markInformationAgentCaseDelivery({ emailId: "e", status: "failed", at: "t" });
+    // Un rebond définitif arrivé après la remise la remplace ; un passager ou un échec, non.
+    expect(db.updates).toEqual([
+      {
+        table: "information_agent_cases",
+        id: "delivered",
+        metadata: { delivery: { status: "bounced", at: "t" } },
+      },
+    ]);
+  });
+
   it("ne fait rien sans identifiant de message", async () => {
     expect(
       await markInformationAgentCaseDelivery({ emailId: " ", status: "bounced", at: "x" }),

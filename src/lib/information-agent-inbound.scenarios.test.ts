@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   storageFrom: vi.fn(),
   globalLimit: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ enforceGlobalRateLimit: mocks.globalLimit }));
@@ -24,6 +25,7 @@ vi.mock("resend", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from: mocks.from,
+    rpc: mocks.rpc,
     storage: { from: mocks.storageFrom },
   },
 }));
@@ -108,6 +110,8 @@ function fixture({
     information_agent_fact_candidates: facts,
     information_agent_inbound_jobs: jobs,
     information_agent_contacts: contacts,
+    // Journal du pilote (idempotence de l'arrêt « mauvais destinataire » non vérifié) : vide ici.
+    information_agent_autopilot_events: [],
     auction_sales: [
       {
         id: SALE_A,
@@ -417,7 +421,11 @@ function webhook(
   });
 }
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  // Trace durable de l'aller-retour (`record_information_agent_roundtrip_reply_proof`) : sans effet ici.
+  mocks.rpc.mockResolvedValue({ data: null, error: null });
+});
 
 describe("information-agent offline inbound scenarios", () => {
   it("rejects an oversized declared body before signature verification", async () => {
@@ -611,6 +619,11 @@ describe("information-agent offline inbound scenarios", () => {
   });
 
   it("accepts delivered, delayed and failed events without touching the contact registry", async () => {
+    // Remis et échec sont traités (état de remise du dossier), mais seulement pour l'expéditeur de l'agent.
+    expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toEqual(
+      expect.arrayContaining(["email.delivered", "email.failed"]),
+    );
+    expect(INFORMATION_AGENT_WEBHOOK_EVENTS).not.toContain("email.delivery_delayed");
     for (const type of ["email.delivered", "email.delivery_delayed", "email.failed"]) {
       mocks.verify.mockReturnValueOnce({
         type,
@@ -621,7 +634,6 @@ describe("information-agent offline inbound scenarios", () => {
       const result = await webhook(vi.fn(), "signed", {}, false, {}, recordDelivery);
       expect(result).toEqual({ accepted: true, ignored: true });
       expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
-      expect(INFORMATION_AGENT_WEBHOOK_EVENTS).not.toContain(type);
     }
     expect(mocks.from).not.toHaveBeenCalled();
   });
@@ -1179,6 +1191,94 @@ describe("information-agent offline inbound scenarios", () => {
     expect(state.messages[0]?.metadata).toMatchObject({ sender_matches_recipient: false });
     expect(mocks.list).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  describe("dossier envoyé par le pilote, expéditeur non vérifié (relecture sécurité, PR #553)", () => {
+    const UNVERIFIED = null; // aucun résultat SPF, DKIM ni DMARC : `sender_authentication.status = unverified`
+    const pilotCase = (state: ReturnType<typeof fixture>, autopilot: boolean) => {
+      state.missions[0]!.metadata = autopilot ? { trigger: "autopilot" } : { trigger: "manual" };
+    };
+
+    it("« STOP » : l'adresse destinataire du dossier est opposée, jamais celle de l'expéditeur", async () => {
+      const state = fixture();
+      pilotCase(state, true);
+      receivedEmail({
+        from: "Inconnu <autre@ailleurs.test>",
+        text: "STOP",
+        authentication: UNVERIFIED,
+      });
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, processingStatus: "review" });
+      expect(state.contacts).toEqual([
+        expect.objectContaining({
+          scope_sale_id: null,
+          email: "contact@example.test",
+          opposition_status: "opposed",
+        }),
+      ]);
+      expect(state.messages[0]?.metadata).toMatchObject({
+        sender_authentication: { status: "unverified" },
+        inbound_processing: { status: "review", reason: "contact_opposed" },
+      });
+    });
+
+    it("« STOP » non vérifié sur un dossier manuel : aucune opposition (relecture humaine)", async () => {
+      const state = fixture();
+      pilotCase(state, false);
+      receivedEmail({ text: "STOP", authentication: UNVERIFIED });
+      await webhook();
+      expect(state.contacts).toEqual([]);
+    });
+
+    it("« mauvais destinataire » : le pilote s'arrête (wrong_recipient_unverified), sans exclusion de 24 mois", async () => {
+      const state = fixture();
+      pilotCase(state, true);
+      receivedEmail({
+        text: "Bonjour, je ne suis pas l'avocat poursuivant de ce dossier.",
+        authentication: UNVERIFIED,
+      });
+      expect(await webhook()).toMatchObject({ caseId: CASE_A, processingStatus: "review" });
+      expect(mocks.rpc).toHaveBeenCalledWith("record_information_agent_autopilot_auto_stop", {
+        p_reason: "wrong_recipient_unverified",
+        p_details: { caseId: CASE_A, source: "reply" },
+      });
+      const called = mocks.rpc.mock.calls.map(([name]) => name);
+      expect(called).not.toContain("record_information_agent_autopilot_exclusions");
+      expect(called).not.toContain("record_information_agent_autopilot_event");
+      // Pas de trace d'aller-retour pour un expéditeur non vérifié.
+      expect(called).not.toContain("record_information_agent_roundtrip_reply_proof");
+      expect(state.cases[0]?.status).toBe("review");
+    });
+
+    it("« mauvais destinataire » non vérifié sur un dossier manuel : aucun arrêt", async () => {
+      const state = fixture();
+      pilotCase(state, false);
+      receivedEmail({
+        text: "Bonjour, je ne suis pas l'avocat poursuivant de ce dossier.",
+        authentication: UNVERIFIED,
+      });
+      await webhook();
+      expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain(
+        "record_information_agent_autopilot_auto_stop",
+      );
+    });
+
+    it("réponse vérifiée : la trace durable de l'aller-retour est demandée à la base", async () => {
+      fixture();
+      receivedEmail();
+      await webhook();
+      expect(mocks.rpc).toHaveBeenCalledWith("record_information_agent_roundtrip_reply_proof", {
+        p_message_id: expect.any(String),
+      });
+    });
+
+    it("réponse automatique (absence) : aucune trace d'aller-retour", async () => {
+      fixture();
+      receivedEmail({ headers: { "Auto-Submitted": "auto-replied" } });
+      await webhook();
+      expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain(
+        "record_information_agent_roundtrip_reply_proof",
+      );
+    });
   });
 
   it("records an authenticated explicit opt-out globally and skips extraction", async () => {
@@ -1843,6 +1943,7 @@ describe("information-agent offline inbound scenarios", () => {
       expect(identified.facts.some((fact) => (fact.metadata as Row)?.lot_unidentified)).toBe(false);
 
       vi.resetAllMocks();
+      mocks.rpc.mockResolvedValue({ data: null, error: null });
       const single = fixture({ multiLotSale: false });
       receivedEmail();
       await webhook();

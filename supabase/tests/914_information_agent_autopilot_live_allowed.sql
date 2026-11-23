@@ -1,4 +1,4 @@
--- 20261209100000 : verrou du mode réel du pilote levé par migration (décision du propriétaire du 23/11/2026).
+-- 20261209100900 : verrou du mode réel du pilote levé par migration (décision du propriétaire du 23/11/2026).
 -- live_allowed vaut vrai, le mode n'a pas changé (le passage en « Réel » reste un geste du propriétaire), la levée est
 -- journalisée par le système, et la RPC garde ses autres conditions (AIPD, aller-retour).
 begin;

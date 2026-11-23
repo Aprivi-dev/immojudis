@@ -8322,18 +8322,24 @@ export type Database = {
       };
       information_agent_operations: {
         Row: {
+          inbound_roundtrip_proved_at: string | null;
+          inbound_roundtrip_proved_case_id: string | null;
           inbound_roundtrip_verified_at: string | null;
           inbound_roundtrip_verified_by: string | null;
           singleton: boolean;
           updated_at: string;
         };
         Insert: {
+          inbound_roundtrip_proved_at?: string | null;
+          inbound_roundtrip_proved_case_id?: string | null;
           inbound_roundtrip_verified_at?: string | null;
           inbound_roundtrip_verified_by?: string | null;
           singleton?: boolean;
           updated_at?: string;
         };
         Update: {
+          inbound_roundtrip_proved_at?: string | null;
+          inbound_roundtrip_proved_case_id?: string | null;
           inbound_roundtrip_verified_at?: string | null;
           inbound_roundtrip_verified_by?: string | null;
           singleton?: boolean;
@@ -16691,6 +16697,14 @@ export type Database = {
           source: string;
         }[];
       };
+      information_agent_roundtrip_reply_proofs: {
+        Args: { p_now?: string };
+        Returns: {
+          case_id: string;
+          message_id: string;
+          proven_at: string;
+        }[];
+      };
       is_admin: { Args: never; Returns: boolean };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
@@ -16920,6 +16934,10 @@ export type Database = {
       record_information_agent_autopilot_exclusions: {
         Args: { p_identity_keys: string[]; p_reason?: string };
         Returns: number;
+      };
+      record_information_agent_roundtrip_reply_proof: {
+        Args: { p_message_id: string };
+        Returns: string;
       };
       record_sale_signal_feedback: {
         Args: {

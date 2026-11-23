@@ -113,7 +113,8 @@ const settings = (overrides: Partial<AutopilotSettings> = {}): AutopilotSettings
   liveAllowed: true,
   art14RuleEnabled: true,
   art14MaxAgeDays: 30,
-  aipdAttestedAt: "2026-11-01T00:00:00Z",
+  // AIPD du 23/11/2026 ou après : la version qui couvre l'envoi automatique.
+  aipdAttestedAt: "2026-11-23T09:00:00Z",
   aipdVersion: "AIPD-1",
   simulationStartedAt: "2026-10-01T00:00:00Z",
   pausedUntil: null,
@@ -1543,6 +1544,8 @@ describe("cas juridiques du cahier des charges", () => {
       ["art14_live", { settings: settings({ art14MaxAgeDays: 31 }) }],
       ["art14_live", { settings: settings({ art14MaxAgeDays: 90 }) }],
       ["aipd", { settings: settings({ aipdAttestedAt: null, aipdVersion: null }) }],
+      // AIPD attestée avant le 23/11/2026 (minuit, heure de Paris) : refusée.
+      ["aipd", { settings: settings({ aipdAttestedAt: "2026-11-22T22:59:59Z" }) }],
       ["roundtrip", { roundtripProof: attested("2026-09-01T00:00:00Z") }],
       ["roundtrip", { roundtripProof: repliedOn("2026-09-01T00:00:00Z") }],
       ["roundtrip", { roundtripProof: null }],
@@ -2022,6 +2025,38 @@ describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jo
     expect(simulation.roundtrip[0][1]).toBe(true);
     const never = await passWarnings(null);
     expect(never.roundtrip[0][1]).toBe(false);
+  });
+
+  it("preuve illisible en simulation : journalisée, le passage continue sans toucher à l'avertissement", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { summary, roundtrip } = await passWarnings(null, {
+      loadSettings: async () => settings({ mode: "simulation" }),
+      loadRoundtripProof: async () => {
+        throw { code: "57014", message: "timeout" };
+      },
+    });
+    expect(summary.status).toBe("ran");
+    expect(roundtrip).toEqual([]);
+    expect(String(logged.mock.calls[0]?.[0])).toContain("roundtrip_proof_error");
+    logged.mockRestore();
+  });
+
+  it("preuve illisible en réel : le passage s'arrête sans rien envoyer", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { deps, calls } = harness({
+      loadRoundtripProof: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+    expect(await runInformationAgentAutopilot(deps)).toMatchObject({
+      status: "skipped",
+      code: "roundtrip_proof_error",
+      sent: 0,
+    });
+    expect(calls.sends).toBe(0);
+    expect(calls.prepares).toBe(0);
+    expect(calls.records).toEqual([{ kind: "run", details: { code: "roundtrip_proof_error" } }]);
+    logged.mockRestore();
   });
 
   it("passage arrêté par sa garde (hors plage) : rien n'est lu ni écrit", async () => {

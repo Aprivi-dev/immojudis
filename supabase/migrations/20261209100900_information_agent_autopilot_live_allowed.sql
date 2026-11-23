@@ -3,6 +3,10 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+-- DÉPLOIEMENT : appliquer les migrations AVANT le code. Cette migration passe EN DERNIER dans le lot : la borne de
+-- l'article 14 en mode réel (20261209100200) et la porte SQL du mode réel (20261209100300) sont déjà en place quand le
+-- verrou se lève.
+--
 -- Pilote automatique de l'agent d'information : levée du verrou `live_allowed` (décision du propriétaire du
 -- 23/11/2026, envoi automatique aux avocats seulement).
 --
@@ -11,9 +15,9 @@ set local statement_timeout = '60s';
 -- migration le passe à vrai, et rien d'autre :
 --   * le MODE NE CHANGE PAS : il reste celui en cours (« simulation » en production). Le passage en « Réel » reste un
 --     geste du propriétaire, par le bouton, avec motif ; set_information_agent_autopilot_mode (définition de
---     20261119100500) garde toutes ses autres conditions : AIPD attestée, aller-retour vérifié depuis moins de
---     30 jours. Le contrôle de préparation de l'application (autopilot-readiness.ts) s'applique toujours, à
---     l'activation et à chaque passage ;
+--     20261209100300) garde toutes ses autres conditions : double authentification, AIPD du 23/11/2026 ou après,
+--     aller-retour prouvé depuis moins de 30 jours, envois manuels réels, 7 jours de simulation. Le contrôle de
+--     préparation de l'application (autopilot-readiness.ts) s'applique toujours, à l'activation et à chaque passage ;
 --   * la publication automatique sur les fiches n'est PAS concernée : ses verrous (`auto_locked`) ne sont pas
 --     touchés ;
 --   * comme tout changement de réglage, la levée est journalisée dans public.information_agent_autopilot_events
@@ -43,7 +47,7 @@ begin
     'settings_changed', null, 'live_allowed',
     pg_catalog.jsonb_build_object('live_allowed', false, 'mode', v_before.mode),
     pg_catalog.jsonb_build_object('live_allowed', true, 'mode', v_before.mode),
-    'Migration 20261209100000 : verrou du mode réel levé (décision du propriétaire du 23/11/2026). Mode inchangé.',
+    'Migration 20261209100900 : verrou du mode réel levé (décision du propriétaire du 23/11/2026). Mode inchangé.',
     null, '{}'::jsonb
   );
 end;

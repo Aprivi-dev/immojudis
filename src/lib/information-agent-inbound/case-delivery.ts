@@ -10,6 +10,9 @@ import type { Json } from "@/integrations/supabase/types";
  *   éligible pour un autre destinataire (la file de l'agent, `admin_information_agent_queue`).
  * - `bounced_temporary` : rebond passager, rien ne change pour la vente (Resend peut retenter).
  * - `complained` : plainte, l'adresse est déjà en opposition (registre des contacts).
+ * - `delivered` : message remis (`email.delivered`), seule preuve qu'il a informé son destinataire (« déjà informé »
+ *   du pilote). Un rebond arrivé ensuite le remplace ; un rebond passager suivi d'une remise devient « remis ».
+ * - `failed` : échec de l'envoi chez le fournisseur (`email.failed`), le message n'est pas parti.
  *
  * `bounce_type` garde le type brut du fournisseur à côté de l'état (onglet Envois : « Rebond passager »
  * seulement pour « transient ») ; aucune décision ne le lit.
@@ -17,10 +20,24 @@ import type { Json } from "@/integrations/supabase/types";
  * Ni le statut du dossier ni celui de la mission ne changent : le message est bien parti. Le journal des
  * envois (`email_send_log`) garde le détail de chaque évènement de livraison.
  */
-export type CaseDeliveryStatus = "bounced" | "bounced_temporary" | "complained";
+export type CaseDeliveryStatus =
+  | "bounced"
+  | "bounced_temporary"
+  | "complained"
+  | "delivered"
+  | "failed";
 
-/** Un état plus grave n'est jamais remplacé par un moins grave. */
-const DELIVERY_RANK: Record<string, number> = { bounced_temporary: 1, bounced: 2, complained: 3 };
+/**
+ * Un état plus grave n'est jamais remplacé par un moins grave. « Remis » se place entre le rebond passager (le
+ * fournisseur a pu réessayer et remettre) et le rebond définitif (un rebond peut arriver après la remise).
+ */
+const DELIVERY_RANK: Record<string, number> = {
+  failed: 1,
+  bounced_temporary: 1,
+  delivered: 2,
+  bounced: 3,
+  complained: 4,
+};
 
 const TABLES = ["information_agent_cases", "information_agent_missions"] as const;
 

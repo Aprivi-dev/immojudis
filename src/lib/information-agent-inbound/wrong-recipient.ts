@@ -45,15 +45,7 @@ export async function applyWrongRecipient({
   if (error) throw error;
   const missions = data ?? [];
   const keys = [...new Set(missions.flatMap((mission) => mission.recipient_identity_keys ?? []))];
-  const fromAutopilot = missions.some((mission) => {
-    const metadata = mission.metadata;
-    return (
-      Boolean(metadata) &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      (metadata as { trigger?: unknown }).trigger === "autopilot"
-    );
-  });
+  const fromAutopilot = missions.some(isAutopilotMission);
 
   if (keys.length) {
     const { error: exclusionError } = await supabaseAdmin.rpc(
@@ -85,4 +77,44 @@ export async function applyWrongRecipient({
     if (stopError) throw stopError;
   }
   return { stopped: fromAutopilot, excludedIdentities: keys.length };
+}
+
+/** Mission envoyée par le pilote automatique (`metadata.trigger = autopilot`). */
+export function isAutopilotMission(mission: { metadata: unknown }): boolean {
+  const metadata = mission.metadata;
+  return (
+    Boolean(metadata) &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as { trigger?: unknown }).trigger === "autopilot"
+  );
+}
+
+/** Motif d'arrêt du pilote sur un « mauvais destinataire » d'un expéditeur non vérifié. */
+export const AUTOPILOT_WRONG_RECIPIENT_UNVERIFIED = "wrong_recipient_unverified";
+
+/**
+ * « Mauvais destinataire » fort reçu par le jeton de réponse d'un dossier du pilote, d'un expéditeur NON vérifié
+ * (authentification non concluante ou autre adresse que le destinataire) : le pilote s'arrête (motif
+ * `wrong_recipient_unverified`, alerte critique), dans le sens protecteur. Rien d'autre : ni exclusion de 24 mois
+ * (elle attend la confirmation d'un administrateur, bouton « Mauvais destinataire », `applyWrongRecipient`), ni
+ * évènement `wrong_recipient` (qui rendrait cette confirmation sans effet). Idempotent : un webhook rejoué ne
+ * rejoue pas l'arrêt (évènement `auto_stop` de ce motif pour ce dossier déjà journalisé).
+ */
+export async function stopAutopilotForUnverifiedWrongRecipient(caseId: string): Promise<boolean> {
+  const existing = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("id")
+    .eq("kind", "auto_stop")
+    .eq("reason", AUTOPILOT_WRONG_RECIPIENT_UNVERIFIED)
+    .eq("details->>caseId", caseId)
+    .limit(1);
+  if (existing.error) throw existing.error;
+  if ((existing.data ?? []).length > 0) return false;
+  const { error } = await supabaseAdmin.rpc("record_information_agent_autopilot_auto_stop", {
+    p_reason: AUTOPILOT_WRONG_RECIPIENT_UNVERIFIED,
+    p_details: { caseId, source: "reply" },
+  });
+  if (error) throw error;
+  return true;
 }

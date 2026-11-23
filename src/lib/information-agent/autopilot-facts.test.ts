@@ -9,6 +9,7 @@ const db = vi.hoisted(() => ({
   contacts: [] as Array<Record<string, unknown>>,
   cases: [] as Array<Record<string, unknown>>,
   missions: [] as Array<Record<string, unknown>>,
+  internalDomains: [{ domain: "immojudis.com" }] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => {
@@ -17,6 +18,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
     information_agent_contacts: () => db.contacts,
     information_agent_cases: () => db.cases,
     information_agent_missions: () => db.missions,
+    information_agent_internal_domains: () => db.internalDomains,
   };
   class Query {
     private filters: Array<(row: Row) => boolean> = [];
@@ -204,14 +206,21 @@ describe("lectures groupées du tri de la file : même définition que les lectu
 
   it("déjà informé : même réponse que l'historique de chaque destinataire", async () => {
     db.cases = [
-      { normalized_recipient_email: EMAIL, sent_at: "2026-10-01T08:00:00Z", replied_at: null },
+      {
+        normalized_recipient_email: EMAIL,
+        sent_at: "2026-10-01T08:00:00Z",
+        replied_at: null,
+        delivery_status: "delivered",
+      },
       { normalized_recipient_email: OTHER, sent_at: null, replied_at: null },
     ];
     db.missions = [
       {
         recipient_identity_keys: ["lawyer|bordeaux|martin paul"],
+        recipient_email: "me.martin@cabinet-martin.example.test",
         sent_at: "2026-09-01T08:00:00Z",
         replied_at: null,
+        delivery_status: "delivered",
       },
       { recipient_identity_keys: ["lawyer|bordeaux|durand luc"], sent_at: null, replied_at: null },
     ];
@@ -272,7 +281,63 @@ describe("lectures groupées du tri de la file : même définition que les lectu
     expect(sendInformedRecipient("bounced")).toBe(false);
     expect(sendInformedRecipient("bounced_temporary")).toBe(false);
     expect(sendInformedRecipient("complained")).toBe(true);
-    expect(sendInformedRecipient(null)).toBe(true);
+    expect(sendInformedRecipient(null)).toBe(false);
+  });
+
+  it("déjà informé veut dire remis : sans état de remise, personne n'est informé", async () => {
+    db.cases = [
+      { normalized_recipient_email: EMAIL, sent_at: "2026-10-01T08:00:00Z", replied_at: null },
+      {
+        normalized_recipient_email: OTHER,
+        sent_at: "2026-10-01T08:00:00Z",
+        replied_at: null,
+        delivery_status: "failed",
+      },
+    ];
+    db.missions = [];
+    const recipients = [
+      { email: EMAIL, identityKeys: [] },
+      { email: OTHER, identityKeys: [] },
+    ];
+    expect(await loadAutopilotAlreadyInformed(recipients)).toEqual([false, false]);
+    for (const recipient of recipients) {
+      const history = await loadAutopilotHistoryFacts(recipient.email, recipient.identityKeys, NOW);
+      expect(history.alreadyInformed).toBe(false);
+      // L'envoi compte quand même pour les pauses.
+      expect(history.lastSendAt).toBe("2026-10-01T08:00:00.000Z");
+    }
+    expect(sendInformedRecipient("delivered")).toBe(true);
+    expect(sendInformedRecipient("failed")).toBe(false);
+    expect(sendInformedRecipient(undefined)).toBe(false);
+  });
+
+  it("chemin par identité : un envoi remis à une adresse de test ou interne n'informe pas l'avocat", async () => {
+    db.cases = [];
+    const keys = ["lawyer|bordeaux|dupont jean"];
+    for (const recipientEmail of [
+      "delivered@resend.dev",
+      "delivered+1@resend.dev",
+      "essai@immojudis.com",
+    ]) {
+      db.missions = [
+        {
+          recipient_identity_keys: keys,
+          recipient_email: recipientEmail,
+          sent_at: "2026-10-01T08:00:00Z",
+          replied_at: null,
+          delivery_status: "delivered",
+        },
+      ];
+      expect(await loadAutopilotAlreadyInformed([{ email: EMAIL, identityKeys: keys }])).toEqual([
+        false,
+      ]);
+      expect((await loadAutopilotHistoryFacts(EMAIL, keys, NOW)).alreadyInformed).toBe(false);
+    }
+    // Un sous-domaine du domaine interne n'est pas interne (même comparaison exacte qu'en base).
+    db.missions[0]!.recipient_email = "me.dupont@cabinet.immojudis.com.example";
+    expect(await loadAutopilotAlreadyInformed([{ email: EMAIL, identityKeys: keys }])).toEqual([
+      true,
+    ]);
   });
 
   it("déjà informé, lecture pleine : aucune réponse (personne n'est dit jamais informé)", async () => {
