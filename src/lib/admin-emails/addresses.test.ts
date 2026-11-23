@@ -86,7 +86,13 @@ const HEALTHY: ResendFixture = {
     },
     {
       endpoint: "https://immojudis.com/api/webhooks/resend/information-agent",
-      events: ["email.received", "email.bounced", "email.complained"],
+      events: [
+        "email.received",
+        "email.bounced",
+        "email.complained",
+        "email.delivered",
+        "email.failed",
+      ],
     },
   ],
 };
@@ -213,7 +219,7 @@ describe("rapport de l'onglet Adresses", () => {
     ]);
   });
 
-  it("attend du webhook de l'agent les rebonds et plaintes qu'il traite, pas seulement les réponses", async () => {
+  it("attend du webhook de l'agent les rebonds, plaintes, remises et échecs qu'il traite, pas seulement les réponses", async () => {
     configure();
     const report = await getEmailAddressesReport({
       fetchImpl: resendFetch({
@@ -232,7 +238,11 @@ describe("rapport de l'onglet Adresses", () => {
       ok: true,
       items: [
         { state: "ok" },
-        { state: "events_missing", missingEvents: ["email.bounced", "email.complained"] },
+        {
+          state: "events_missing",
+          // Remis et échec : état de remise du dossier, « déjà informé » du pilote (PR #553).
+          missingEvents: ["email.bounced", "email.complained", "email.delivered", "email.failed"],
+        },
       ],
     });
   });
@@ -257,7 +267,13 @@ describe("rapport de l'onglet Adresses", () => {
       ],
     });
     expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toEqual(
-      expect.arrayContaining(["email.received", "email.bounced", "email.complained"]),
+      expect.arrayContaining([
+        "email.received",
+        "email.bounced",
+        "email.complained",
+        "email.delivered",
+        "email.failed",
+      ]),
     );
   });
 

@@ -6,7 +6,7 @@ import {
   currentPrivacyVersion,
   evaluateAutopilotReadiness,
   isActiveAdmin,
-  loadRoundtripVerifiedAt,
+  loadRoundtripProof,
   loadVerifiedResendDomains,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
@@ -197,7 +197,7 @@ async function readiness(now: Date, env: Readonly<Record<string, string | undefi
     stats,
     env,
     now,
-    roundtripVerifiedAt: await loadRoundtripVerifiedAt(),
+    roundtripProof: await loadRoundtripProof(now),
     actingAdminIsAdmin: await actingAdminState(settings.actingAdminId),
     privacyVersion: currentPrivacyVersion(),
     verifiedResendDomains: await loadVerifiedResendDomains(env.RESEND_API_KEY?.trim()),

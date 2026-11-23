@@ -63,6 +63,9 @@ const AUTOPILOT_STOP_LABELS: Record<string, string> = {
   email_failed: "échec d’envoi (domaine ou quota)",
   acting_admin_invalid: "l’administrateur d’exécution n’est plus administrateur",
   wrong_recipient: "une réponse indique un mauvais destinataire",
+  // Expéditeur non vérifié : arrêt sans exclusion, à confirmer par le bouton « Mauvais destinataire ».
+  wrong_recipient_unverified:
+    "une réponse non authentifiée indique un mauvais destinataire (à confirmer par le bouton « Mauvais destinataire »)",
   delayed_24h: "plus de 20 % de messages retardés sur 24 h (pause de 24 h)",
 };
 
@@ -95,6 +98,8 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   not_production: "hors de la production",
   busy: "un autre passage est en cours",
   not_ready: "contrôle de préparation au mode réel non satisfait",
+  roundtrip_proof_error:
+    "preuve d’aller-retour illisible (panne passagère) : aucun envoi en mode réel",
   not_live: "pilote plus en mode réel",
   // Passage lancé à la main par un administrateur.
   on_demand_started: "passage à la demande lancé",

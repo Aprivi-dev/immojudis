@@ -86,6 +86,14 @@ describe("describeOperationalAlert", () => {
       label: "Pilote de l’Agent IA : dernier passage en erreur",
       place: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
     });
+    // Échéance de l'aller-retour (25 jours, puis expiré à 30) : aucun seuil d'arrêt non plus.
+    expect(
+      describeOperationalAlert("information_agent.autopilot.warning.roundtrip_expiry"),
+    ).toEqual({
+      label:
+        "Pilote de l’Agent IA : test d’aller-retour de réception à refaire (échéance de 30 jours)",
+      place: { href: "/admin/agent-ia?onglet=pilote", label: "Agent IA › Pilote" },
+    });
     // Pilote muet (évalué par la santé opérationnelle) : on agit sur la page du pilote.
     expect(describeOperationalAlert("information_agent.autopilot.silent")).toEqual({
       label: "Pilote de l’Agent IA muet : aucun passage planifié dans la plage d’envoi",

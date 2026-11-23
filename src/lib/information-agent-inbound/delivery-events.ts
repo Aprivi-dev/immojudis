@@ -1,5 +1,10 @@
 import "server-only";
-import type { EmailBouncedEvent, EmailComplainedEvent } from "resend";
+import type {
+  EmailBouncedEvent,
+  EmailComplainedEvent,
+  EmailDeliveredEvent,
+  EmailFailedEvent,
+} from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { recordInboundContactOptOut } from "@/lib/information-agent-inbound/case-updates";
@@ -18,15 +23,23 @@ import type { InformationAgentInboundResult } from "@/lib/information-agent-inbo
  * - Plainte (« spam » signalé par le destinataire) : traitée comme une opposition, la mesure la plus
  *   prudente (`opposition_status = 'opposed'`, comme un « STOP » reçu).
  *
+ * - Remis (`email.delivered`) et échec d'envoi (`email.failed`) : rien ne change au registre de contacts ; l'état est
+ *   seulement noté sur le dossier et la mission (`metadata.delivery`). « Remis » est la seule preuve qu'un message a
+ *   informé son destinataire (article 14, règle « déjà informé » du pilote, `sendInformedRecipient`).
+ *
  * Seuls les emails envoyés par l'expéditeur de l'agent (`INFORMATION_AGENT_EMAIL_FROM`) comptent : le
  * même webhook recevrait aussi les rebonds des alertes envoyées aux comptes, dont les adresses n'ont
  * rien à faire dans le registre de contacts de l'agent. Les journaux ne portent aucune adresse.
  */
-export type DeliveryEvent = EmailBouncedEvent | EmailComplainedEvent;
+export type DeliveryEvent =
+  | EmailBouncedEvent
+  | EmailComplainedEvent
+  | EmailDeliveredEvent
+  | EmailFailedEvent;
 
 export type DeliveryAction =
   | { kind: "bounce"; status: "permanent" | "temporary"; emails: string[]; at: string }
-  | { kind: "complaint"; emails: string[]; at: string };
+  | { kind: "complaint" | "delivered" | "failed"; emails: string[]; at: string };
 
 /** L'adresse d'expéditeur de l'agent (sans le nom affiché), ou `null` si elle n'est pas configurée. */
 export function informationAgentSenderAddress(
@@ -59,6 +72,8 @@ export function deliveryActionOf(
     ? new Date(event.created_at).toISOString()
     : new Date().toISOString();
   if (event.type === "email.complained") return { kind: "complaint", emails, at };
+  if (event.type === "email.delivered") return { kind: "delivered", emails, at };
+  if (event.type === "email.failed") return { kind: "failed", emails, at };
   return {
     kind: "bounce",
     status: bounceStatusOf((event as EmailBouncedEvent).data.bounce?.type),
@@ -129,7 +144,7 @@ export async function processDeliveryEvent(
   /** Marque le dossier et la mission du message (état de remise) ; absent : registre de contacts seulement. */
   markDelivery?: (input: {
     emailId: string | null;
-    status: "bounced" | "bounced_temporary" | "complained";
+    status: "bounced" | "bounced_temporary" | "complained" | "delivered" | "failed";
     at: string;
     /** Type brut du rebond chez le fournisseur, conservé pour l'affichage seulement. */
     bounceType?: string;
@@ -140,7 +155,7 @@ export async function processDeliveryEvent(
   // Une erreur remonte : le fournisseur rejoue l'évènement, qui ne doit pas se perdre.
   for (const email of action.emails) {
     if (action.kind === "bounce") await recordInboundContactBounce(email, action.status, action.at);
-    else await recordInboundContactOptOut(email, action.at);
+    else if (action.kind === "complaint") await recordInboundContactOptOut(email, action.at);
   }
   // Type brut du rebond (« Transient », « Permanent », …), pour l'affichage seulement : la décision
   // ci-dessus reste celle de `bounceStatusOf`.
@@ -151,14 +166,17 @@ export async function processDeliveryEvent(
   await markDelivery?.({
     emailId: event.data.email_id ?? null,
     status:
-      action.kind === "complaint"
-        ? "complained"
-        : action.status === "permanent"
+      action.kind === "bounce"
+        ? action.status === "permanent"
           ? "bounced"
-          : "bounced_temporary",
+          : "bounced_temporary"
+        : action.kind === "complaint"
+          ? "complained"
+          : action.kind,
     at: action.at,
     ...(bounceType ? { bounceType } : {}),
   });
+  if (action.kind === "delivered" || action.kind === "failed") return { accepted: true };
   console.warn(
     JSON.stringify({
       scope: "information-agent-delivery",

@@ -1,21 +1,38 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import type { AutopilotSettings, AutopilotStats } from "@/lib/information-agent/autopilot-rules";
+import {
+  AUTOPILOT_ART14_LIVE_MAX_DAYS,
+  type AutopilotSettings,
+  type AutopilotStats,
+} from "@/lib/information-agent/autopilot-rules";
 import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
 import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 
 /**
- * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ. Fixée volontairement
- * à une version FUTURE et non publiée : tant que le lot 3 (politique de confidentialité, pied « envoi
- * automatique », mise en balance, registre, AIPD signée) n'a pas publié une nouvelle version, le mode réel est
- * impossible. Le lot 3 abaisse cette constante à la version qu'il publie, dans le commit qui la publie.
+ * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ : celle qui décrit
+ * l'envoi automatique aux avocats (lot 3, livraison du 23/11/2026). Comparée à la version en vigueur
+ * (`LEGAL_DOCUMENTS.privacy.version`) : tant que cette version n'est pas publiée, le mode réel reste impossible.
  */
-export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2099-01-01.0";
+export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2026-11-23.1";
 
-const AUTOPILOT_MIN_MANUAL_SENDS = 30;
+/**
+ * Décision du propriétaire du 23/11/2026 : 15 envois manuels, compensés par le plafond de 5 envois par jour en
+ * phase 1 et l'arrêt automatique sur rebonds et plaintes.
+ *
+ * RÈGLES LIÉES : ce seuil, le taux de 3 % de rebonds définitifs, les 7 jours de simulation, la date minimale de
+ * l'AIPD et les 30 jours de l'aller-retour sont aussi vérifiés par la porte SQL de
+ * `set_information_agent_autopilot_mode` (migration 20261209100300). Les deux changent ensemble.
+ */
+const AUTOPILOT_MIN_MANUAL_SENDS = 15;
 const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
+/**
+ * AIPD attestée le 23/11/2026 ou après (minuit, heure de Paris) : la version qui couvre l'envoi automatique. Une
+ * attestation antérieure portait sur le traitement sans pilote.
+ */
+export const AUTOPILOT_MIN_AIPD_ATTESTED_AT = "2026-11-22T23:00:00.000Z";
 /**
  * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé par un
  * passage PLANIFIÉ et sans passage en erreur, planifié ou lancé à la main (`cleanSimulationDays`). 5 : les jours
@@ -24,9 +41,27 @@ const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
  */
 export const AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS = 5;
 const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
+/**
+ * Au-delà de cet âge, la preuve d'aller-retour approche de son échéance : le pilote ouvre un avertissement
+ * d'exploitation (`autopilotRoundtripExpiry`), cinq jours avant que le contrôle `roundtrip` ne bloque le mode réel.
+ */
+const AUTOPILOT_ROUNDTRIP_WARNING_AGE_DAYS = 25;
 const DAY_MS = 86_400_000;
 
 type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail: string };
+
+/**
+ * Preuve la plus récente de l'aller-retour de réception, calculée par la base à la volée
+ * (`public.information_agent_roundtrip_proof`, migration 20261209100300) : l'attestation manuelle (`attestation`) ou
+ * une réponse réelle reçue par le webhook, expéditeur authentifié et identique au destinataire, rattachée
+ * automatiquement à un dossier envoyé (`reply`, avec ce dossier). Le garde SQL du mode réel lit la même fonction.
+ * Jamais d'adresse.
+ */
+export type AutopilotRoundtripProof = {
+  provenAt: string;
+  source: "attestation" | "reply";
+  caseId: string | null;
+};
 export type AutopilotReadiness = { ready: boolean; checks: AutopilotReadinessCheck[] };
 
 export type AutopilotReadinessInput = {
@@ -34,7 +69,7 @@ export type AutopilotReadinessInput = {
   stats: AutopilotStats;
   env: Readonly<Record<string, string | undefined>>;
   now: Date;
-  roundtripVerifiedAt: string | null;
+  roundtripProof: AutopilotRoundtripProof | null;
   /** Nul : état du compte illisible pour le moment (panne passagère) ; le contrôle n'est pas satisfait. */
   actingAdminIsAdmin: boolean | null;
   privacyVersion: string;
@@ -139,16 +174,16 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
     ),
   );
 
-  const roundtrip = input.roundtripVerifiedAt ? Date.parse(input.roundtripVerifiedAt) : NaN;
+  const roundtrip = input.roundtripProof ? Date.parse(input.roundtripProof.provenAt) : NaN;
   const roundtripAge = Number.isFinite(roundtrip) ? (now.getTime() - roundtrip) / DAY_MS : Infinity;
   checks.push(
     check(
       "roundtrip",
-      "Aller-retour de réception attesté depuis moins de 30 jours",
+      "Aller-retour de réception prouvé depuis moins de 30 jours",
       roundtripAge < AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS,
-      Number.isFinite(roundtripAge)
-        ? `Vérifié il y a ${Math.floor(roundtripAge)} jour(s).`
-        : "Jamais vérifié.",
+      input.roundtripProof && Number.isFinite(roundtripAge)
+        ? `Prouvé il y a ${Math.floor(roundtripAge)} jour(s) par ${describeRoundtripProof(input.roundtripProof)}.`
+        : "Jamais prouvé : ni attestation, ni réponse réelle authentifiée rattachée à son dossier.",
     ),
   );
 
@@ -178,12 +213,31 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
     ),
   );
 
+  const art14Ok =
+    settings.art14RuleEnabled && settings.art14MaxAgeDays <= AUTOPILOT_ART14_LIVE_MAX_DAYS;
+  checks.push(
+    check(
+      "art14_live",
+      `Règle de l’article 14 active, délai de ${AUTOPILOT_ART14_LIVE_MAX_DAYS} jours au plus`,
+      art14Ok,
+      art14Ok
+        ? `Délai de ${settings.art14MaxAgeDays} jour(s).`
+        : `Délai réglé à ${settings.art14MaxAgeDays} jour(s) : ramenez-le à ${AUTOPILOT_ART14_LIVE_MAX_DAYS} jours au plus avant le mode réel.`,
+    ),
+  );
+
+  const aipdAt = settings.aipdAttestedAt ? Date.parse(settings.aipdAttestedAt) : NaN;
+  const aipdRecent = aipdAt >= Date.parse(AUTOPILOT_MIN_AIPD_ATTESTED_AT);
   checks.push(
     check(
       "aipd",
-      "AIPD attestée",
-      Boolean(settings.aipdAttestedAt && settings.aipdVersion),
-      settings.aipdAttestedAt ? `Version ${settings.aipdVersion}.` : "Aucune attestation d’AIPD.",
+      "AIPD attestée le 23/11/2026 ou après",
+      Boolean(settings.aipdAttestedAt && settings.aipdVersion) && aipdRecent,
+      !settings.aipdAttestedAt
+        ? "Aucune attestation d’AIPD."
+        : aipdRecent
+          ? `Version ${settings.aipdVersion}.`
+          : `Version ${settings.aipdVersion}, attestée avant le 23/11/2026 : attestez la version qui couvre l’envoi automatique.`,
     ),
   );
 
@@ -196,7 +250,7 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   checks.push(
     check(
       "manual_sends",
-      "Au moins 30 envois manuels réels, taux propres",
+      `Au moins ${AUTOPILOT_MIN_MANUAL_SENDS} envois manuels réels, taux propres`,
       manualOk,
       `${stats.manualRealSends} envoi(s) manuel(s) réel(s), ${stats.manualComplaints} plainte(s), ${stats.manualPermanentBounces} rebond(s) définitif(s).`,
     ),
@@ -243,6 +297,43 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   return { ready: checks.every((entry) => entry.ok), checks };
 }
 
+/** Preuve retenue, pour l'écran et le journal : sa nature et, pour une réponse, la référence du dossier. */
+export function describeRoundtripProof(proof: AutopilotRoundtripProof): string {
+  return proof.source === "reply" && proof.caseId
+    ? `une réponse réelle authentifiée, rattachée au dossier ${informationAgentCaseReference(proof.caseId)} (${proof.caseId})`
+    : "l’attestation manuelle";
+}
+
+/**
+ * Échéance de la preuve d'aller-retour la plus récente (attestation ou réponse réelle) : `expiring` au-delà de
+ * 25 jours, `expired` à 30 jours (le contrôle `roundtrip` bloque alors le mode réel), `valid` avant, `unverified`
+ * sans preuve lisible. Fonction pure.
+ */
+export type AutopilotRoundtripExpiry = {
+  state: "unverified" | "valid" | "expiring" | "expired";
+  ageDays: number | null;
+  expiresAt: string | null;
+};
+
+export function autopilotRoundtripExpiry(
+  proof: AutopilotRoundtripProof | null,
+  now: Date,
+): AutopilotRoundtripExpiry {
+  const verified = proof ? Date.parse(proof.provenAt) : NaN;
+  if (!Number.isFinite(verified)) return { state: "unverified", ageDays: null, expiresAt: null };
+  const age = (now.getTime() - verified) / DAY_MS;
+  return {
+    state:
+      age >= AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS
+        ? "expired"
+        : age > AUTOPILOT_ROUNDTRIP_WARNING_AGE_DAYS
+          ? "expiring"
+          : "valid",
+    ageDays: Math.floor(age),
+    expiresAt: new Date(verified + AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS * DAY_MS).toISOString(),
+  };
+}
+
 /** Domaines vérifiés chez Resend (`GET /domains`), `null` si la liste est illisible. Aucune écriture. */
 export async function loadVerifiedResendDomains(
   apiKey: string | undefined,
@@ -277,14 +368,17 @@ export async function loadVerifiedResendDomains(
   }
 }
 
-export async function loadRoundtripVerifiedAt(): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_operations")
-    .select("inbound_roundtrip_verified_at")
-    .eq("singleton", true)
-    .maybeSingle();
+/** Preuve d'aller-retour la plus récente (`AutopilotRoundtripProof`), ou null. Lecture seule ; une erreur remonte. */
+export async function loadRoundtripProof(
+  now = new Date(),
+): Promise<AutopilotRoundtripProof | null> {
+  const { data, error } = await supabaseAdmin.rpc("information_agent_roundtrip_proof", {
+    p_now: now.toISOString(),
+  });
   if (error) throw error;
-  return data?.inbound_roundtrip_verified_at ?? null;
+  const row = data?.[0];
+  if (!row?.proven_at || (row.source !== "attestation" && row.source !== "reply")) return null;
+  return { provenAt: row.proven_at, source: row.source, caseId: row.case_id ?? null };
 }
 
 /** Réponse de l'API Auth pour un compte qui n'existe pas (et non une panne). */

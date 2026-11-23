@@ -201,6 +201,7 @@ export async function previewAdminInformationAgentMission({
     saleReference: missionSaleReference(mission),
     structureOpposition: courtFallback ? null : missionTarget.structureOpposition,
     recipientKind: sentRecipientKind(mission, recipient),
+    automaticSend: Boolean(trigger),
     env,
     preview: { blockers },
   });

@@ -269,6 +269,49 @@ describe("processDeliveryEvent : état de remise du dossier", () => {
   });
 });
 
+describe("processDeliveryEvent : remis et échec (« déjà informé » veut dire « remis »)", () => {
+  const event = (
+    type: "email.delivered" | "email.failed",
+    from = ENV.INFORMATION_AGENT_EMAIL_FROM,
+  ) =>
+    ({
+      type,
+      created_at: "2026-10-23T12:00:00.000Z",
+      data: {
+        created_at: "2026-10-23T12:00:00.000Z",
+        email_id: "email-3",
+        message_id: "message-3",
+        from,
+        to: ["contact@example.test"],
+        subject: "Informations complémentaires",
+        ...(type === "email.failed" ? { failed: { reason: "quota" } } : {}),
+      },
+    }) as unknown as Parameters<typeof processDeliveryEvent>[0];
+
+  it("marque le dossier « remis » ou « échec », sans toucher au registre de contacts", async () => {
+    const mark = vi.fn(async () => 1);
+    expect(await processDeliveryEvent(event("email.delivered"), ENV, mark)).toEqual({
+      accepted: true,
+    });
+    expect(mark).toHaveBeenCalledWith({
+      emailId: "email-3",
+      status: "delivered",
+      at: "2026-10-23T12:00:00.000Z",
+    });
+    mark.mockClear();
+    await processDeliveryEvent(event("email.failed"), ENV, mark);
+    expect(mark).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(db.upserts).toEqual([]);
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("ignore la remise d'un email qui n'est pas celui de l'agent", async () => {
+    const mark = vi.fn(async () => 1);
+    await processDeliveryEvent(event("email.delivered", "alertes@immojudis.com"), ENV, mark);
+    expect(mark).not.toHaveBeenCalled();
+  });
+});
+
 describe("rebonds passagers : deux en 30 jours", () => {
   it("garde les dates de moins de 30 jours et ajoute la nouvelle, sans doublon", () => {
     expect(mergeTemporaryBounces(undefined, "2026-11-02T10:00:00.000Z")).toEqual([

@@ -295,6 +295,7 @@ export async function approveAndSendMission({
       saleReference: missionSaleReference(subscribedMission),
       structureOpposition: courtFallback ? null : recipient.structureOpposition,
       recipientKind: edited.recipient_kind,
+      automaticSend: Boolean(trigger),
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,

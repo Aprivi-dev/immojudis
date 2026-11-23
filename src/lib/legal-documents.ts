@@ -303,6 +303,44 @@ export const PRIVACY_ANTHROPIC_EFFECTIVE_DATE = "21 novembre 2026";
  */
 export const PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE = "22 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-23.1 : envoi automatique des demandes d'information aux seuls avocats
+ * poursuivants (pilote de l'agent d'information, décision du propriétaire du 23/11/2026). La publication
+ * automatique sur les fiches reste fermée. Texte repris de la relecture conformité du 23/11/2026 (document 2,
+ * section 2.1), recalé sur la 2026-11-22.1. À publier AVANT le premier envoi automatique réel.
+ *
+ * - Tableau, ligne « Professionnels contactés » : date du premier relevé de l'adresse et trace de l'envoi
+ *   automatique, sans adresse ; base : validation par un membre de l'équipe sauf l'envoi automatique à l'avocat
+ *   poursuivant, aucune publication sans vérification humaine ; durée du journal du pilote, sans adresse : 5 ans
+ *   (`purge_information_agent_autopilot`). La durée de 24 mois du « mauvais destinataire » y figurait déjà.
+ * - Section « Professionnels contactés » : la promesse « si nous décidions d'envoyer certains messages
+ *   automatiquement, cette page serait modifiée avant, et ces messages le diraient » est retirée ; adresses
+ *   Licitor décodées jamais utilisées pour un envoi automatique (`allow_licitor_decoded` faux, règle par défaut) ;
+ *   nouveau paragraphe « Envoi automatique aux avocats poursuivants » : périmètre, modèle fixe sans IA, article
+ *   14 (moins de 30 jours depuis le premier relevé, réglage par défaut `art14_max_age_days` = 30, bornes 1 à
+ *   90), une fois par période de 30 jours sans relance, pauses de 90 jours et de 6 mois, plafonds, plage
+ *   d'envoi, arrêt automatique, article 22, « mauvais destinataire » (exclusion de 24 mois et arrêt du pilote,
+ *   `applyWrongRecipient`).
+ * - « Destinataires et sous-traitants » : l'intermédiaire professionnel reçoit aussi les informations par l'envoi
+ *   automatique. Les formulations sur Anthropic et Replicate de la 2026-11-22.1 sont gardées telles quelles,
+ *   garantie de transfert non vérifiée et demandée comprise. « Transferts hors de l'EEE » : inchangé (Resend,
+ *   Anthropic et Replicate y sont déjà nommés).
+ * - « Décisions automatisées et enrichissements » : demande préparée à partir d'un modèle fixe, non rédigé par
+ *   une IA ; validation par un membre de l'équipe sauf l'envoi automatique, sans effet juridique (article 22).
+ *   La phrase sur les informations transmises (validées avant la fiche) et sur les valeurs relevées dans les
+ *   pièces ne change pas.
+ * - Livrés à part, dans la même PR : le pied des messages du pilote (rubrique « Envoi automatique », section 2.2
+ *   de la relecture) et `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION`, fixée à cette version (« 2026-11-23.1 ») : le
+ *   contrôle de préparation du mode réel exige qu'elle soit en vigueur.
+ *
+ * La version 2026-11-22.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée avec
+ * l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Le paragraphe de
+ * l'envoi automatique affiche cette date (« Depuis le … ») ; à décaler à la date réelle de mise en ligne si elle
+ * diffère (elle n'entre pas dans l'empreinte du texte). AIPD : `docs/rgpd-aipd-agent-information-pilote.md`, dans le
+ * dépôt interne (`docs/README.md`). Relecture d'un avocat à faire.
+ */
+export const PRIVACY_AUTOPILOT_EFFECTIVE_DATE = "23 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -317,9 +355,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-22.1",
-    sha256: "c0888b3bb2dd66578c853b9bf634101906393c804eb1785e55d63755d3c08f15",
-    effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
+    version: "2026-11-23.1",
+    sha256: "c27e63b257ad746b40533f55db0c65b3a14161fe234f8115399b379eede3f131",
+    effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

@@ -166,7 +166,7 @@ export async function finalizeInboundContactOptOut({
   messageId,
   providerEmailId,
   receivedAt,
-  senderEmail,
+  opposedEmail,
   inboundMetadata,
   processing,
   leaseFence,
@@ -177,7 +177,8 @@ export async function finalizeInboundContactOptOut({
   messageId: string;
   providerEmailId: string;
   receivedAt: string;
-  senderEmail: string;
+  /** Adresse dont l'opposition est enregistrée : l'expéditeur vérifié, ou le destinataire d'un dossier du pilote. */
+  opposedEmail: string;
   inboundMetadata: Json;
   processing: InboundProcessingState | null;
   leaseFence?: InboundLeaseFence;
@@ -185,7 +186,7 @@ export async function finalizeInboundContactOptOut({
   assertJobLease?: InboundJobLeaseGuard;
 }): Promise<InformationAgentInboundResult> {
   await ensureInboundJobLease(assertJobLease);
-  await recordInboundContactOptOut(senderEmail, receivedAt);
+  await recordInboundContactOptOut(opposedEmail, receivedAt);
   const caseUpdated = await updateOpenInformationAgentCase(
     sharedCase.id,
     {

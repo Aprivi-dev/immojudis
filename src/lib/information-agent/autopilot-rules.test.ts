@@ -711,3 +711,14 @@ describe("lecture des compteurs de la base", () => {
     expect(parsed.weeks).toEqual([{ week: 0, sent: 3, complaints: 0, permanent_bounces: 1 }]);
   });
 });
+
+describe("article 14 : délai appliqué selon le mode (relecture juridique du 23/11/2026)", () => {
+  it("en réel, 30 jours au plus quel que soit le réglage ; en simulation, le réglage plafonné à 90", async () => {
+    const { effectiveArt14MaxAgeDays } = await import("@/lib/information-agent/autopilot-rules");
+    expect(effectiveArt14MaxAgeDays({ mode: "live", art14MaxAgeDays: 90 })).toBe(30);
+    expect(effectiveArt14MaxAgeDays({ mode: "live", art14MaxAgeDays: 20 })).toBe(20);
+    expect(effectiveArt14MaxAgeDays({ mode: "simulation", art14MaxAgeDays: 90 })).toBe(90);
+    expect(effectiveArt14MaxAgeDays({ mode: "simulation", art14MaxAgeDays: 365 })).toBe(90);
+    expect(effectiveArt14MaxAgeDays({ art14MaxAgeDays: 60 })).toBe(60);
+  });
+});

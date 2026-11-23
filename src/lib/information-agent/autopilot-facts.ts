@@ -70,6 +70,45 @@ export async function loadAutopilotRegistryFacts(
   };
 }
 
+/**
+ * « Déjà informé » veut dire « remis » (art. 14, relectures juridique et sécurité du 23/11/2026) : seul un envoi dont
+ * le dossier ou la mission porte l'état `delivered` (évènement `email.delivered`) ou `complained` (une plainte suppose
+ * un message remis) dans `metadata.delivery` (`information-agent-inbound/case-delivery.ts`). Un rebond, un échec ou
+ * l'absence d'état (envoi antérieur à cette marque, évènement jamais reçu) ne prouve rien : non informé. Le journal
+ * des envois (`email_send_log`) n'est pas lu : il est purgé après 90 jours et ne sert à aucune décision
+ * (`email-delivery-log.test.ts`).
+ */
+const INFORMED_STATES: ReadonlySet<string> = new Set(["delivered", "complained"]);
+
+/** L'envoi compte pour « déjà informé » : remis selon son dossier ou sa mission. */
+export function sendInformedRecipient(deliveryStatus: string | null | undefined): boolean {
+  return Boolean(deliveryStatus && INFORMED_STATES.has(deliveryStatus));
+}
+
+/**
+ * Domaines dont un envoi n'informe aucun professionnel : adresses de test de Resend et domaines internes
+ * (`information_agent_internal_domains`, dossier d'essai de l'aller-retour). Lecture seule ; une erreur remonte.
+ */
+async function loadNonProfessionalDomains(): Promise<ReadonlySet<string>> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_internal_domains")
+    .select("domain");
+  if (error) throw error;
+  return new Set(["resend.dev", ...(data ?? []).map((row) => row.domain)]);
+}
+
+/**
+ * Chemin par identité : une mission compte si elle a été remise ET si son adresse n'est ni une adresse de test ni
+ * une adresse interne (un essai envoyé à l'équipe sous la clé d'identité d'un avocat n'informe pas cet avocat).
+ */
+function missionInformedRecipient(
+  row: { delivery_status: string | null; recipient_email: string | null },
+  nonProfessional: ReadonlySet<string>,
+): boolean {
+  const domain = (row.recipient_email ?? "").trim().toLowerCase().split("@")[1] ?? "";
+  return sendInformedRecipient(row.delivery_status) && !nonProfessional.has(domain);
+}
+
 /** Lignes lues au plus par lecture groupée du tri de la file (sous le plafond de lignes de l'API). */
 const GROUPED_READ_LIMIT = 500;
 /** Clés d'identité par lecture groupée des missions : borne la longueur de l'URL de la requête. */
@@ -103,7 +142,8 @@ export async function loadAutopilotFirstRecordedAt(
 
 /**
  * Destinataires déjà informés, pour plusieurs à la fois : même définition que `alreadyInformed` de
- * `loadAutopilotHistoryFacts` (un dossier envoyé à l'adresse, ou une mission envoyée à l'une des clés d'identité).
+ * `loadAutopilotHistoryFacts` (un dossier remis à l'adresse, ou une mission remise à l'une des clés d'identité hors
+ * adresses de test et internes : `sendInformedRecipient`, `missionInformedRecipient`).
  * Rendu dans l'ordre des destinataires. Nul quand une lecture atteint sa limite : un envoi a pu échapper à la
  * lecture, et personne ne peut alors être dit « jamais informé ».
  */
@@ -117,17 +157,20 @@ export async function loadAutopilotAlreadyInformed(
   for (let start = 0; start < keys.length; start += IDENTITY_KEYS_PER_READ) {
     keyChunks.push(keys.slice(start, start + IDENTITY_KEYS_PER_READ));
   }
-  const [cases, ...missions] = await Promise.all([
+  const [nonProfessional, cases, ...missions] = await Promise.all([
+    keys.length ? loadNonProfessionalDomains() : Promise.resolve(new Set<string>()),
     supabaseAdmin
       .from("information_agent_cases")
-      .select("normalized_recipient_email")
+      .select("normalized_recipient_email,delivery_status:metadata->delivery->>status")
       .in("normalized_recipient_email", emails)
       .not("sent_at", "is", null)
       .limit(GROUPED_READ_LIMIT),
     ...keyChunks.map((chunk) =>
       supabaseAdmin
         .from("information_agent_missions")
-        .select("recipient_identity_keys")
+        .select(
+          "recipient_identity_keys,recipient_email,delivery_status:metadata->delivery->>status",
+        )
         .overlaps("recipient_identity_keys", chunk)
         .not("sent_at", "is", null)
         .limit(GROUPED_READ_LIMIT),
@@ -137,9 +180,17 @@ export async function loadAutopilotAlreadyInformed(
   for (const read of missions) if (read.error) throw read.error;
   const reads = [cases.data ?? [], ...missions.map((read) => read.data ?? [])];
   if (reads.some((rows) => rows.length >= GROUPED_READ_LIMIT)) return null;
-  const sentEmails = new Set((cases.data ?? []).map((row) => row.normalized_recipient_email));
+  const sentEmails = new Set(
+    (cases.data ?? [])
+      .filter((row) => sendInformedRecipient(row.delivery_status))
+      .map((row) => row.normalized_recipient_email),
+  );
   const sentKeys = new Set(
-    missions.flatMap((read) => (read.data ?? []).flatMap((row) => row.recipient_identity_keys)),
+    missions.flatMap((read) =>
+      (read.data ?? [])
+        .filter((row) => missionInformedRecipient(row, nonProfessional))
+        .flatMap((row) => row.recipient_identity_keys),
+    ),
   );
   return recipients.map(
     (recipient) =>
@@ -162,17 +213,18 @@ export async function loadAutopilotHistoryFacts(
     "alreadyInformed" | "lastReplyAt" | "silentSendsInSixMonths" | "lastSendAt"
   >
 > {
-  const [cases, missions] = await Promise.all([
+  const [nonProfessional, cases, missions] = await Promise.all([
+    identityKeys.length ? loadNonProfessionalDomains() : Promise.resolve(new Set<string>()),
     supabaseAdmin
       .from("information_agent_cases")
-      .select("sent_at,replied_at")
+      .select("sent_at,replied_at,delivery_status:metadata->delivery->>status")
       .eq("normalized_recipient_email", email)
       .not("sent_at", "is", null)
       .limit(50),
     identityKeys.length
       ? supabaseAdmin
           .from("information_agent_missions")
-          .select("sent_at,replied_at")
+          .select("sent_at,replied_at,recipient_email,delivery_status:metadata->delivery->>status")
           .overlaps("recipient_identity_keys", [...identityKeys])
           .not("sent_at", "is", null)
           .limit(50)
@@ -180,13 +232,18 @@ export async function loadAutopilotHistoryFacts(
   ]);
   if (cases.error) throw cases.error;
   if (missions.error) throw missions.error;
-  const rows = [...(cases.data ?? []), ...(missions.data ?? [])];
+  const caseRows = cases.data ?? [];
+  const missionRows = missions.data ?? [];
+  const rows = [...caseRows, ...missionRows];
   const sixMonthsAgo = now.getTime() - 183 * DAY_MS;
   const sentAt = rows.map((row) => Date.parse(row.sent_at ?? "")).filter(Number.isFinite);
   const replies = rows.map((row) => Date.parse(row.replied_at ?? "")).filter(Number.isFinite);
   const iso = (time: number) => new Date(time).toISOString();
   return {
-    alreadyInformed: rows.length > 0,
+    // Seuls les envois remis informent ; les pauses (réponse, silence, dernier envoi) comptent tous les envois.
+    alreadyInformed:
+      caseRows.some((row) => sendInformedRecipient(row.delivery_status)) ||
+      missionRows.some((row) => missionInformedRecipient(row, nonProfessional)),
     lastReplyAt: replies.length ? iso(Math.max(...replies)) : null,
     silentSendsInSixMonths: rows.filter(
       (row) => !row.replied_at && Date.parse(row.sent_at ?? "") >= sixMonthsAgo,
