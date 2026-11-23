@@ -192,10 +192,16 @@ export async function recordAutopilotAutoStop(
   if (error) throw error;
 }
 
-export async function syncAutopilotWarning(code: string, active: boolean): Promise<void> {
+/** Ouvre ou referme l'avertissement `information_agent.autopilot.warning.<code>` ; `details` va dans son e-mail. */
+export async function syncAutopilotWarning(
+  code: string,
+  active: boolean,
+  details?: Record<string, string | number | null>,
+): Promise<void> {
   const { error } = await supabaseAdmin.rpc("sync_information_agent_autopilot_warning", {
     p_code: code,
     p_active: active,
+    p_details: details,
   });
   if (error) throw error;
 }

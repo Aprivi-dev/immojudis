@@ -16,6 +16,7 @@ import {
   type AutopilotCandidateSearch,
 } from "@/lib/information-agent/autopilot-candidates";
 import {
+  autopilotRoundtripExpiry,
   currentPrivacyVersion,
   evaluateAutopilotReadiness,
   isActiveAdmin,
@@ -71,8 +72,8 @@ import { PublicApiError } from "@/lib/api-errors";
  * autopilot`, comme le ferait un administrateur. Un seul chemin d'envoi (`approveAndSendMission`).
  *
  * - `simulation` : brouillons et aperçus, événements `would_send`, ZÉRO appel au fournisseur.
- * - `live` : envoi réel, seulement si le contrôle de préparation est satisfait (il ne l'est pas tant que les
- *   textes juridiques du lot 3 ne sont pas publiés : voir `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION`).
+ * - `live` : envoi réel, seulement si le contrôle de préparation est satisfait (dont la version minimale de la
+ *   politique de confidentialité, `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION`).
  * - Contenu : uniquement ce que `buildInformationRequestDraft` produit avec la révision de gabarit publiée.
  *   Aucun texte libre, aucun texte d'IA.
  * - Le gestionnaire ne relance JAMAIS d'exception après un envoi : il rend un résumé partiel (le rejeu d'un
@@ -135,6 +136,8 @@ export type AutopilotDeps = {
     now: Date,
   ) => Promise<AutopilotReadiness>;
   isAdmin: (userId: string | null) => Promise<boolean>;
+  /** Date de la dernière attestation d'aller-retour, ou null. */
+  loadRoundtripVerifiedAt: () => Promise<string | null>;
   claimLease: () => Promise<CronLease>;
   releaseLease: (token: string) => Promise<void>;
   /** Heure du dernier passage lancé à la main journalisé depuis `since`, ou null. */
@@ -182,6 +185,13 @@ const KNOWN_WARNINGS = [
   "api_errors",
   "delayed_24h",
 ] as const;
+/**
+ * Avertissement d'échéance de l'aller-retour (`information_agent.autopilot.warning.roundtrip_expiry`), ouvert dès
+ * 25 jours et maintenu après l'expiration à 30 jours, jusqu'à une nouvelle attestation. Une alerte ouverte n'est
+ * renotifiée qu'une fois par 24 heures (`app_private.sync_operational_alert`) : au plus un e-mail par jour, et le
+ * premier après l'échéance porte l'état `expired`. RÈGLE LIÉE : libellé dans `operational-alert-labels.ts`.
+ */
+const ROUNDTRIP_EXPIRY_WARNING = "roundtrip_expiry";
 const SIMULATION_PER_RUN = 5;
 const LIVE_PER_RUN = 3;
 /**
@@ -299,6 +309,7 @@ export function defaultAutopilotDeps(
         ),
       }),
     isAdmin: isActiveAdmin,
+    loadRoundtripVerifiedAt,
     claimLease: () => claimCronLease("information-agent-autopilot", AUTOPILOT_LEASE_SECONDS),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
     lastOnDemandRunAt: lastOnDemandAutopilotRunAt,
@@ -580,6 +591,19 @@ export async function runAutopilotPass(
     const safety = evaluateAutopilotSafety(stats);
     summary.warnings = safety.warnings;
     for (const code of KNOWN_WARNINGS) await deps.warning(code, safety.warnings.includes(code));
+    // Échéance de l'aller-retour : sans cet avertissement, le mode réel resterait figé en `not_ready` sans que
+    // personne le voie. Jamais attesté : rien à rappeler (la RPC refuse alors le mode réel, l'écran le dit).
+    const roundtrip = autopilotRoundtripExpiry(await deps.loadRoundtripVerifiedAt(), now);
+    await deps.warning(
+      ROUNDTRIP_EXPIRY_WARNING,
+      roundtrip.state === "expiring" || roundtrip.state === "expired",
+      {
+        state: roundtrip.state,
+        age_days: roundtrip.ageDays,
+        expires_at: roundtrip.expiresAt,
+        runbook: "docs/runbooks/information-agent.md, « Attestation de l’aller-retour »",
+      },
+    );
     // Le pilote tourne : l'alerte critique d'un arrêt automatique précédent (réactivé à la main) se referme.
     await deps.warning("auto_stop", false);
     if (safety.stop) {

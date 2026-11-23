@@ -81,6 +81,12 @@ const ALERT_LABELS: Record<string, AlertEntry> = {
     "Pilote de l’Agent IA : dernier passage en erreur",
     "agentPilot",
   ],
+  // Même famille, sans seuil d'arrêt : attestation d'aller-retour de plus de 25 jours, ou expirée à 30 jours
+  // (le mode réel est alors bloqué). Code `roundtrip_expiry` de `information-agent-autopilot.ts`.
+  "information_agent.autopilot.warning.roundtrip_expiry": [
+    "Pilote de l’Agent IA : test d’aller-retour de réception à refaire (échéance de 30 jours)",
+    "agentPilot",
+  ],
   "billing.reconciliation.mismatch": ["Écart entre Stripe et les abonnements", "clients"],
   "stripe.webhook.unhealthy": ["Notifications de paiement Stripe en échec", "clients"],
   "cron.stale": ["Tâches planifiées en retard", "settings"],

@@ -49,6 +49,7 @@ vi.mock("@/lib/information-agent-autopilot", async (importOriginal) => {
   return { runInformationAgentAutopilotOnDemand: mocks.onDemand };
 });
 vi.mock("@/lib/information-agent/autopilot-readiness", () => ({
+  autopilotRoundtripExpiry: () => ({ state: "unverified", ageDays: null, expiresAt: null }),
   currentPrivacyVersion: () => "2026-11-01.1",
   evaluateAutopilotReadiness: mocks.readiness,
   isActiveAdmin: mocks.isAdmin,

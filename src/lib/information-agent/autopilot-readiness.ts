@@ -7,14 +7,17 @@ import { assertInformationAgentControllerIdentity } from "@/lib/information-agen
 import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
 
 /**
- * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ. Fixée volontairement
- * à une version FUTURE et non publiée : tant que le lot 3 (politique de confidentialité, pied « envoi
- * automatique », mise en balance, registre, AIPD signée) n'a pas publié une nouvelle version, le mode réel est
- * impossible. Le lot 3 abaisse cette constante à la version qu'il publie, dans le commit qui la publie.
+ * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ : celle qui décrit
+ * l'envoi automatique aux avocats (lot 3, livraison du 23/11/2026). Comparée à la version en vigueur
+ * (`LEGAL_DOCUMENTS.privacy.version`) : tant que cette version n'est pas publiée, le mode réel reste impossible.
  */
-export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2099-01-01.0";
+export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2026-11-23.1";
 
-const AUTOPILOT_MIN_MANUAL_SENDS = 30;
+/**
+ * Décision du propriétaire du 23/11/2026 : 15 envois manuels, compensés par le plafond de 5 envois par jour en
+ * phase 1 et l'arrêt automatique sur rebonds et plaintes.
+ */
+const AUTOPILOT_MIN_MANUAL_SENDS = 15;
 const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
 /**
  * Jours de simulation effectifs exigés en plus des 7 jours écoulés : jours avec au moins un envoi simulé par un
@@ -24,6 +27,11 @@ const AUTOPILOT_MIN_SIMULATION_DAYS = 7;
  */
 export const AUTOPILOT_MIN_CLEAN_SIMULATION_DAYS = 5;
 const AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS = 30;
+/**
+ * Au-delà de cet âge, l'attestation d'aller-retour approche de son échéance : le pilote ouvre un avertissement
+ * d'exploitation (`autopilotRoundtripExpiry`), cinq jours avant que le contrôle `roundtrip` ne bloque le mode réel.
+ */
+const AUTOPILOT_ROUNDTRIP_WARNING_AGE_DAYS = 25;
 const DAY_MS = 86_400_000;
 
 type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail: string };
@@ -196,7 +204,7 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   checks.push(
     check(
       "manual_sends",
-      "Au moins 30 envois manuels réels, taux propres",
+      `Au moins ${AUTOPILOT_MIN_MANUAL_SENDS} envois manuels réels, taux propres`,
       manualOk,
       `${stats.manualRealSends} envoi(s) manuel(s) réel(s), ${stats.manualComplaints} plainte(s), ${stats.manualPermanentBounces} rebond(s) définitif(s).`,
     ),
@@ -241,6 +249,35 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
   );
 
   return { ready: checks.every((entry) => entry.ok), checks };
+}
+
+/**
+ * Échéance de l'attestation d'aller-retour : `expiring` au-delà de 25 jours, `expired` à 30 jours (le contrôle
+ * `roundtrip` bloque alors le mode réel), `valid` avant, `unverified` sans attestation lisible. Fonction pure.
+ */
+export type AutopilotRoundtripExpiry = {
+  state: "unverified" | "valid" | "expiring" | "expired";
+  ageDays: number | null;
+  expiresAt: string | null;
+};
+
+export function autopilotRoundtripExpiry(
+  verifiedAt: string | null,
+  now: Date,
+): AutopilotRoundtripExpiry {
+  const verified = verifiedAt ? Date.parse(verifiedAt) : NaN;
+  if (!Number.isFinite(verified)) return { state: "unverified", ageDays: null, expiresAt: null };
+  const age = (now.getTime() - verified) / DAY_MS;
+  return {
+    state:
+      age >= AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS
+        ? "expired"
+        : age > AUTOPILOT_ROUNDTRIP_WARNING_AGE_DAYS
+          ? "expiring"
+          : "valid",
+    ageDays: Math.floor(age),
+    expiresAt: new Date(verified + AUTOPILOT_ROUNDTRIP_MAX_AGE_DAYS * DAY_MS).toISOString(),
+  };
 }
 
 /** Domaines vérifiés chez Resend (`GET /domains`), `null` si la liste est illisible. Aucune écriture. */

@@ -39,10 +39,11 @@ select ok(
 
 -- Valeurs par défaut ------------------------------------------------------------------------------------------------
 select ok(
-  (select mode = 'off' and not allow_licitor_decoded and not live_allowed and art14_rule_enabled and art14_max_age_days = 30
+  -- live_allowed : levé par la migration 20261209100000 (le mode, lui, reste « off » par défaut).
+  (select mode = 'off' and not allow_licitor_decoded and live_allowed and art14_rule_enabled and art14_max_age_days = 30
      and aipd_attested_at is null and acting_admin_id is null
    from public.information_agent_autopilot_settings),
-  'the autopilot is off by default, cannot go live (lot 3 lock), Licitor addresses are excluded and the article 14 rule is on (30 days)'
+  'the autopilot is off by default, the lot 3 lock is lifted by migration, Licitor addresses are excluded and the article 14 rule is on (30 days)'
 );
 
 select throws_ok(
@@ -86,12 +87,14 @@ select throws_ok(
   $$select public.set_information_agent_autopilot_mode('turbo', 'Motif suffisant')$$,
   '22023', null, 'an unknown mode is refused'
 );
+-- Verrou levé par la migration 20261209100000 : le test le remet en place pour vérifier que la RPC le respecte encore.
+update public.information_agent_autopilot_settings set live_allowed = false;
 select throws_ok(
   $$select public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')$$,
   '55000', 'Mode réel non autorisé : les textes juridiques du lot 3 ne sont pas publiés.',
   'the real mode is refused by a direct RPC call while the lot 3 lock (live_allowed) is false'
 );
--- Le verrou du lot 3 ne se lève que par migration : ici, le test le lève pour vérifier les autres conditions.
+-- Le verrou du lot 3 ne se lève que par migration : ici, le test le relève pour vérifier les autres conditions.
 update public.information_agent_autopilot_settings set live_allowed = true;
 select throws_ok(
   $$select public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')$$,

@@ -75,6 +75,7 @@ import {
 } from "@/lib/information-agent-autopilot";
 import {
   AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION,
+  autopilotRoundtripExpiry,
   evaluateAutopilotReadiness,
   privacyVersionAtLeast,
 } from "@/lib/information-agent/autopilot-readiness";
@@ -89,7 +90,6 @@ import {
   INFORMATION_AGENT_CANARY_ONLY_MESSAGE,
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
-import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { ResendRejectedError } from "@/lib/email-alerts";
 import { AdminDailyApprovalCapError } from "@/lib/information-agent/approval-cap";
 import {
@@ -173,6 +173,7 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     loadStats: async () => stats(),
     readiness: async () => ({ ready: true, checks: [] }),
     isAdmin: async () => true,
+    loadRoundtripVerifiedAt: async () => "2026-10-25T00:00:00Z",
     claimLease: async () => {
       calls.leases += 1;
       return { kind: "held", token: "lease" };
@@ -1482,24 +1483,35 @@ describe("cas juridiques du cahier des charges", () => {
   });
 
   it("J-politique : le mode réel est refusé tant que la version minimale de la politique n'est pas publiée", () => {
-    expect(
-      privacyVersionAtLeast(LEGAL_DOCUMENTS.privacy.version, AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION),
-    ).toBe(false);
-    expect(privacyVersionAtLeast("2099-01-01.0", AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION)).toBe(true);
-    expect(privacyVersionAtLeast("2099-01-01.1", "2099-01-01.0")).toBe(true);
-    const report = evaluateAutopilotReadiness(
-      readinessInput({ privacyVersion: LEGAL_DOCUMENTS.privacy.version }),
-    );
-    expect(report.checks.find((check) => check.key === "privacy_version")?.ok).toBe(false);
-    expect(report.ready).toBe(false);
+    // Version minimale : celle qui décrit l'envoi automatique, publiée dans la même livraison.
+    expect(AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION).toBe("2026-11-23.1");
+    for (const earlier of ["2026-11-22.1", "2026-11-23.0", "2026-10-31.1"]) {
+      expect(privacyVersionAtLeast(earlier, AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION), earlier).toBe(
+        false,
+      );
+      const report = evaluateAutopilotReadiness(readinessInput({ privacyVersion: earlier }));
+      expect(report.checks.find((check) => check.key === "privacy_version")?.ok, earlier).toBe(
+        false,
+      );
+      expect(report.ready, earlier).toBe(false);
+    }
+    for (const accepted of ["2026-11-23.1", "2026-11-23.2", "2026-12-01.1"]) {
+      expect(privacyVersionAtLeast(accepted, AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION), accepted).toBe(
+        true,
+      );
+    }
+    const report = evaluateAutopilotReadiness(readinessInput({ privacyVersion: "2026-11-23.1" }));
+    expect(report.checks.find((check) => check.key === "privacy_version")?.ok).toBe(true);
+    expect(report.ready).toBe(true);
   });
 
-  it("J-préparation : 30 envois manuels, 7 jours de simulation, AIPD, aller-retour récent, aucune mission bloquée", () => {
+  it("J-préparation : 15 envois manuels, 7 jours de simulation, AIPD, aller-retour récent, aucune mission bloquée", () => {
     const ok = evaluateAutopilotReadiness(readinessInput({}));
     expect(ok.checks.filter((check) => !check.ok)).toEqual([]);
     expect(ok.ready).toBe(true);
     const cases: Array<[string, Parameters<typeof readinessInput>[0]]> = [
-      ["manual_sends", { stats: stats({ manualRealSends: 29 }) }],
+      // Décision du propriétaire du 23/11/2026 : 15 envois manuels réels au moins.
+      ["manual_sends", { stats: stats({ manualRealSends: 14, cleanSimulationDays: 5 }) }],
       ["manual_sends", { stats: stats({ manualRealSends: 40, manualComplaints: 1 }) }],
       ["simulation", { settings: settings({ simulationStartedAt: "2026-10-30T00:00:00Z" }) }],
       [
@@ -1526,6 +1538,18 @@ describe("cas juridiques du cahier des charges", () => {
       const report = evaluateAutopilotReadiness(readinessInput(override));
       expect(report.checks.find((check) => check.key === key)?.ok, key).toBe(false);
     }
+    // 15 envois suffisent s'ils sont propres ; une plainte ou 3 % de rebonds définitifs ferment toujours la porte.
+    const manual = (manualStats: Partial<AutopilotStats>) =>
+      evaluateAutopilotReadiness(
+        readinessInput({ stats: stats({ cleanSimulationDays: 5, ...manualStats }) }),
+      ).checks.find((check) => check.key === "manual_sends");
+    expect(manual({ manualRealSends: 15 })).toMatchObject({
+      ok: true,
+      label: "Au moins 15 envois manuels réels, taux propres",
+    });
+    expect(manual({ manualRealSends: 15, manualComplaints: 1 })?.ok).toBe(false);
+    expect(manual({ manualRealSends: 15, manualPermanentBounces: 1 })?.ok).toBe(false);
+    expect(manual({ manualRealSends: 34, manualPermanentBounces: 1 })?.ok).toBe(true);
     // État du compte illisible (panne passagère) : dit tel quel, jamais « n'est plus administrateur ».
     expect(
       evaluateAutopilotReadiness(readinessInput({ actingAdminIsAdmin: null })).checks.find(
@@ -1871,5 +1895,120 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
       p_name: "information-agent-autopilot",
       p_ttl_seconds: 330,
     });
+  });
+});
+
+describe("échéance de l'aller-retour : avertissement d'exploitation dès 25 jours, maintenu après 30", () => {
+  type WarningCall = [string, boolean, Record<string, unknown> | undefined];
+  const passWarnings = async (
+    verifiedAt: string | null,
+    overrides: Partial<AutopilotDeps> = {},
+  ) => {
+    const warnings: WarningCall[] = [];
+    const { deps } = harness({
+      loadRoundtripVerifiedAt: async () => verifiedAt,
+      warning: async (code, active, details) => {
+        warnings.push([code, active, details]);
+      },
+      ...overrides,
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    return { summary, roundtrip: warnings.filter(([code]) => code === "roundtrip_expiry") };
+  };
+
+  it("règle pure : valide jusqu'à 25 jours, à refaire au-delà, expirée à 30 jours, rien sans attestation", () => {
+    const at = (days: number) => new Date(MONDAY_10H.getTime() - days * 86_400_000).toISOString();
+    expect(autopilotRoundtripExpiry(at(25), MONDAY_10H).state).toBe("valid");
+    expect(autopilotRoundtripExpiry(at(25.01), MONDAY_10H)).toMatchObject({
+      state: "expiring",
+      ageDays: 25,
+    });
+    expect(autopilotRoundtripExpiry(at(29.99), MONDAY_10H).state).toBe("expiring");
+    expect(autopilotRoundtripExpiry(at(30), MONDAY_10H)).toMatchObject({
+      state: "expired",
+      ageDays: 30,
+      expiresAt: MONDAY_10H.toISOString(),
+    });
+    expect(autopilotRoundtripExpiry(at(90), MONDAY_10H).state).toBe("expired");
+    expect(autopilotRoundtripExpiry(null, MONDAY_10H)).toEqual({
+      state: "unverified",
+      ageDays: null,
+      expiresAt: null,
+    });
+    expect(autopilotRoundtripExpiry("pas une date", MONDAY_10H).state).toBe("unverified");
+  });
+
+  it("attestation récente : l'avertissement est refermé à chaque passage", async () => {
+    const { roundtrip } = await passWarnings("2026-10-25T00:00:00Z");
+    expect(roundtrip).toHaveLength(1);
+    expect(roundtrip[0][1]).toBe(false);
+  });
+
+  it("plus de 25 jours : avertissement ouvert, avec l'âge, l'échéance et la procédure", async () => {
+    const { summary, roundtrip } = await passWarnings("2026-10-07T09:00:00Z");
+    expect(summary.status).toBe("ran");
+    expect(roundtrip).toEqual([
+      [
+        "roundtrip_expiry",
+        true,
+        {
+          state: "expiring",
+          age_days: 27,
+          expires_at: "2026-11-06T09:00:00.000Z",
+          runbook: "docs/runbooks/information-agent.md, « Attestation de l’aller-retour »",
+        },
+      ],
+    ]);
+    // Le détail part dans l'e-mail d'exploitation : jamais d'adresse.
+    expect(JSON.stringify(roundtrip)).not.toContain("@");
+  });
+
+  it("expirée à 30 jours, mode réel figé en not_ready : l'avertissement reste ouvert et le dit", async () => {
+    const { summary, roundtrip } = await passWarnings("2026-10-01T09:00:00Z", {
+      readiness: async () => ({
+        ready: false,
+        checks: [{ key: "roundtrip", label: "Aller-retour", ok: false, detail: "" }],
+      }),
+    });
+    expect(summary).toMatchObject({ status: "skipped", code: "not_ready" });
+    expect(roundtrip).toHaveLength(1);
+    expect(roundtrip[0][1]).toBe(true);
+    expect(roundtrip[0][2]).toMatchObject({ state: "expired", age_days: 33 });
+  });
+
+  it("en simulation aussi (le passage au réel en dépend) ; jamais attesté : aucun rappel", async () => {
+    const simulation = await passWarnings("2026-10-07T09:00:00Z", {
+      loadSettings: async () => settings({ mode: "simulation" }),
+    });
+    expect(simulation.roundtrip[0][1]).toBe(true);
+    const never = await passWarnings(null);
+    expect(never.roundtrip[0][1]).toBe(false);
+  });
+
+  it("passage arrêté par sa garde (hors plage) : rien n'est lu ni écrit", async () => {
+    const warnings: string[] = [];
+    const read = vi.fn(async () => "2026-10-01T09:00:00Z");
+    const { deps } = harness(
+      {
+        loadRoundtripVerifiedAt: read,
+        warning: async (code) => {
+          warnings.push(code);
+        },
+      },
+      NIGHT,
+    );
+    expect(await runInformationAgentAutopilot(deps)).toMatchObject({ code: "outside_window" });
+    expect(read).not.toHaveBeenCalled();
+    expect(warnings).toEqual([]);
+  });
+
+  it("au plus un e-mail par jour : l'avertissement passe par la fonction de la base, qui renotifie toutes les 24 h", async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { syncAutopilotWarning } = await import("@/lib/information-agent/autopilot-settings");
+    await syncAutopilotWarning("roundtrip_expiry", true, { state: "expired", age_days: 31 });
+    expect(vi.mocked(supabaseAdmin.rpc)).toHaveBeenCalledWith(
+      "sync_information_agent_autopilot_warning",
+      { p_code: "roundtrip_expiry", p_active: true, p_details: { state: "expired", age_days: 31 } },
+    );
   });
 });
