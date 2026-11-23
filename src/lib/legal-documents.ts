@@ -341,6 +341,28 @@ export const PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE = "22 novembre 2026";
  */
 export const PRIVACY_AUTOPILOT_EFFECTIVE_DATE = "23 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-23.2 : les adresses masquées sur Licitor, décodées à la collecte, sont
+ * ouvertes à l'envoi automatique aux avocats poursuivants (décision du propriétaire du 23/11/2026 : accord écrit de
+ * Licitor, réglage `allow_licitor_decoded` activé). La 2026-11-23.1 disait le contraire.
+ *
+ * - Paragraphe Licitor de « Professionnels contactés » : « jamais à un envoi automatique » est retiré. Le texte dit
+ *   que ces adresses sont relevées avec l'accord écrit de Licitor (son existence seulement, pas son contenu) et
+ *   qu'elles reçoivent les demandes, envoi automatique compris, dans les mêmes conditions que les autres adresses
+ *   d'avocats poursuivants : adresse de l'avocat de la vente, information de l'article 14 dans chaque message,
+ *   opposition, au plus un envoi automatique par période de 30 jours, sans relance. Origine, conservation et
+ *   purge : inchangées.
+ * - Paragraphe « Envoi automatique aux avocats poursuivants » : l'exclusion « ni une adresse masquée sur Licitor »
+ *   est retirée ; une adresse masquée sur Licitor compte parmi les adresses de l'annonce.
+ * - Rien d'autre ne change. `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` (« 2026-11-23.1 ») accepte cette version
+ *   (`privacyVersionAtLeast` : même date, révision supérieure).
+ *
+ * La version 2026-11-23.1 est archivée. Aucun consentement n'est redemandé. Même date d'effet que la 2026-11-23.1 ;
+ * constante à part pour pouvoir la décaler à la date réelle de mise en ligne sans toucher la date « Depuis le … »
+ * de l'envoi automatique. Relecture d'un avocat à faire.
+ */
+export const PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE = "23 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -355,9 +377,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-23.1",
-    sha256: "c27e63b257ad746b40533f55db0c65b3a14161fe234f8115399b379eede3f131",
-    effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+    version: "2026-11-23.2",
+    sha256: "b7570e1834afb265cb63a45b045a64ea43b4360c311c8be898c257d7036624fb",
+    effectiveDate: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
