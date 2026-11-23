@@ -13,10 +13,11 @@ import { informationAgentCaseReference } from "@/lib/information-agent/case-refe
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ : celle qui décrit
- * l'envoi automatique aux avocats (lot 3, livraison du 23/11/2026). Comparée à la version en vigueur
+ * l'envoi automatique aux avocats, adresses Licitor décodées comprises (accord écrit de Licitor, décision du
+ * propriétaire du 23/11/2026 ; la 2026-11-23.1 les excluait). Comparée à la version en vigueur
  * (`LEGAL_DOCUMENTS.privacy.version`) : tant que cette version n'est pas publiée, le mode réel reste impossible.
  */
-export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2026-11-23.1";
+export const AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION = "2026-11-23.2";
 
 /**
  * Décision du propriétaire du 23/11/2026 : 15 envois manuels, compensés par le plafond de 5 envois par jour en

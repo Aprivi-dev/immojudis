@@ -354,8 +354,8 @@ export const PRIVACY_AUTOPILOT_EFFECTIVE_DATE = "23 novembre 2026";
  *   purge : inchangées.
  * - Paragraphe « Envoi automatique aux avocats poursuivants » : l'exclusion « ni une adresse masquée sur Licitor »
  *   est retirée ; une adresse masquée sur Licitor compte parmi les adresses de l'annonce.
- * - Rien d'autre ne change. `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` (« 2026-11-23.1 ») accepte cette version
- *   (`privacyVersionAtLeast` : même date, révision supérieure).
+ * - Rien d'autre ne change. `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` est portée à « 2026-11-23.2 » dans le même
+ *   lot : le mode réel ne peut pas partir sous la 2026-11-23.1, qui excluait ces adresses.
  *
  * La version 2026-11-23.1 est archivée. Aucun consentement n'est redemandé. Même date d'effet que la 2026-11-23.1 ;
  * constante à part pour pouvoir la décaler à la date réelle de mise en ligne sans toucher la date « Depuis le … »
