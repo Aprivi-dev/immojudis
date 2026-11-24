@@ -210,7 +210,7 @@ export function AdminInformationAgentWorkspace() {
         })}
       </div>
       {tab === null ? (
-        <p role="status" className="text-sm text-brand-navy/60">
+        <p role="status" className="text-sm text-ink-soft">
           Chargement de l’espace de travail…
         </p>
       ) : null}

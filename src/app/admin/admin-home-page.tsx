@@ -170,7 +170,7 @@ export function AdminHomePage() {
                           ? "Une intervention est requise"
                           : "Aucune alerte ni échec récent"}
             </h2>
-            <p className="mt-2 text-sm text-brand-navy/60">
+            <p className="mt-2 text-sm text-ink-soft">
               {data?.checkedAt
                 ? `Exécutions ${error ? "vérifiées pour la dernière fois" : "vérifiées"} ${formatRelativeTime(data.checkedAt)} · santé calculée sur les exécutions récentes, les alertes ouvertes et la surveillance`
                 : "Les résultats apparaîtront après la vérification du tableau de bord."}

@@ -42,7 +42,7 @@ export function queryProblem(
   if (query.data) return null;
   if (query.isLoading) {
     return (
-      <AdminPanel className="p-6 text-sm text-brand-navy/60">
+      <AdminPanel className="p-6 text-sm text-ink-soft">
         <span role="status">{loading}</span>
       </AdminPanel>
     );

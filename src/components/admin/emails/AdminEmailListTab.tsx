@@ -45,7 +45,7 @@ export function AdminEmailListTab({
     <div className="space-y-5">
       {view.footnote ? (
         <AdminPanel className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-sm text-brand-navy/62">{view.footnote}</p>
+          <p className="text-sm text-ink-soft">{view.footnote}</p>
           <button
             type="button"
             className="admin-button-secondary"
@@ -81,9 +81,7 @@ export function AdminEmailListTab({
               <li key={`${item.code}${item.title}`} className="space-y-1 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <strong>{item.title}</strong>
-                  {item.code ? (
-                    <code className="text-xs text-brand-navy/62">{item.code}</code>
-                  ) : null}
+                  {item.code ? <code className="text-xs text-ink-soft">{item.code}</code> : null}
                   {item.badges.map((badge) => (
                     <Pill key={badge.text} tone={badge.tone}>
                       {badge.text}

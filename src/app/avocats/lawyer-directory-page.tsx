@@ -456,7 +456,7 @@ function DirectoryResults({
                 Avocats mis en avant
               </h3>
             </div>
-            <p className="max-w-xl text-sm leading-relaxed text-brand-navy/65 sm:text-right">
+            <p className="max-w-xl text-sm leading-relaxed text-ink-soft sm:text-right">
               {hasTrialPlacement
                 ? "Ces avocats bénéficient d'une visibilité renforcée sur ce barreau : mise en avant payante ou période d'essai de cette offre."
                 : "Ces avocats rémunèrent Immojudis pour une visibilité renforcée sur ce barreau."}
@@ -482,7 +482,7 @@ function DirectoryResults({
       >
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-brand-navy/12 pb-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-brand-navy/65">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-ink-soft">
               Résultats naturels
             </p>
             <h3
@@ -492,7 +492,7 @@ function DirectoryResults({
               Avocats de l'annuaire
             </h3>
           </div>
-          <p className="text-sm text-brand-navy/65">
+          <p className="text-sm text-ink-soft">
             {directoryLawyers.length} fiche{directoryLawyers.length > 1 ? "s" : ""} standard
           </p>
         </div>
@@ -545,7 +545,7 @@ function DirectoryResults({
         {more}
       </section>
 
-      <div className="mt-10 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-brand-navy/65 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-10 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-ink-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-3">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
           <p>
@@ -629,7 +629,7 @@ function LawyerCard({
           <h3 className="font-display text-2xl font-semibold leading-tight text-brand-navy">
             {lawyer.displayName}
           </h3>
-          <p className="mt-1 text-sm text-brand-navy/65">
+          <p className="mt-1 text-sm text-ink-soft">
             {[lawyer.firmName, lawyer.barAssociation].filter(Boolean).join(" · ") ||
               "Avocat inscrit à l'annuaire"}
           </p>
@@ -788,7 +788,7 @@ function ProsecutedSales({
                   {sale.city ? ` à ${sale.city}` : ""}
                 </span>
                 {details.length ? (
-                  <span className="block break-words text-xs text-brand-navy/65">
+                  <span className="block break-words text-xs text-ink-soft">
                     {details.join(" · ")}
                   </span>
                 ) : null}
@@ -798,7 +798,7 @@ function ProsecutedSales({
         })}
       </ul>
       {hidden > 0 ? (
-        <p className="mt-2 text-xs text-brand-navy/65">
+        <p className="mt-2 text-xs text-ink-soft">
           {hidden} autre{hidden > 1 ? "s" : ""} vente{hidden > 1 ? "s" : ""} à venir non affichée
           {hidden > 1 ? "s" : ""}.
         </p>
@@ -842,7 +842,7 @@ function DirectoryFact({
         {icon}
       </span>
       <dt className="font-semibold text-brand-navy">{label}</dt>
-      <dd className="text-brand-navy/65">{children}</dd>
+      <dd className="text-ink-soft">{children}</dd>
     </div>
   );
 }

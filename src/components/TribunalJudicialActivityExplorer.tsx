@@ -90,7 +90,7 @@ export function TribunalJudicialActivityExplorer({
           <PageTitle className="mt-3 max-w-5xl">
             Ventes judiciaires à venir par tribunal judiciaire
           </PageTitle>
-          <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
+          <p className="mt-4 max-w-4xl text-sm leading-relaxed text-ink-soft sm:text-base">
             {adjudicationStatisticsEnabled
               ? "À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre réservé à l’offre Analyse, complété par l’historique des audiences suivies par Immojudis."
               : "Combien de ventes judiciaires sont à venir, et dans quels tribunaux ? Retrouvez, tribunal par tribunal, le nombre de ventes, la prochaine audience et la mise à prix médiane des biens annoncés, complétés, avec l’offre Analyse, par l’historique des audiences suivies par Immojudis."}
@@ -106,7 +106,7 @@ export function TribunalJudicialActivityExplorer({
           // Le serveur ne sait rien du compte : le message n'existe qu'après l'hydratation, hors du HTML
           // lu par les moteurs. Un bloc de même hauteur garde la place.
           hydrated ? (
-            <p className="mt-10 text-sm text-brand-navy/65" role="status">
+            <p className="mt-10 text-sm text-ink-soft" role="status">
               Vérification de votre accès Analyse…
             </p>
           ) : (
@@ -154,12 +154,12 @@ export function TribunalJudicialActivityExplorer({
               className="grid gap-4 lg:grid-cols-[1fr_auto]"
             >
               <label>
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
                   Rechercher un tribunal
                 </span>
                 <span className="relative mt-2 block">
                   <Search
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/65"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft"
                     aria-hidden
                   />
                   <Input
@@ -172,7 +172,7 @@ export function TribunalJudicialActivityExplorer({
                 </span>
               </label>
               <fieldset>
-                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
+                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
                   Historique observé
                 </legend>
                 <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
@@ -185,7 +185,7 @@ export function TribunalJudicialActivityExplorer({
                       className={`min-h-9 rounded px-3 text-sm font-semibold ${
                         historyMonths === value
                           ? "bg-brand-navy text-white"
-                          : "text-brand-navy/65 hover:bg-brand-navy/5"
+                          : "text-ink-soft hover:bg-brand-navy/5"
                       }`}
                     >
                       {value} mois
@@ -238,7 +238,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           >
             Repères du périmètre suivi
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-soft">
             Pipeline à venir : annonces judiciaires du catalogue, vérifiées ou recoupées. Historique
             : audiences passées du catalogue et de l’archive du graphe des résultats, qui conserve
             les annonces retirées du catalogue après l’audience. Toutes sont rattachées à un
@@ -247,7 +247,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             fois. Ce périmètre ne prétend pas couvrir toute la France.
           </p>
         </div>
-        <p className="text-xs font-semibold text-brand-navy/65">
+        <p className="text-xs font-semibold text-ink-soft">
           Historique observé de {data.period.historyMonths} mois · pipeline à venir sur 12 mois
         </p>
       </div>
@@ -279,7 +279,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               detail={formatDaysRange(national.discoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-ink-soft">
             {formatNumber(national.observedPastSales)} audiences passées observées depuis le{" "}
             {formatDate(data.period.historyStart)}. Une audience passée ne prouve pas que le bien a
             été vendu.
@@ -312,7 +312,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               detail={formatDaysRange(national.upcomingDiscoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-ink-soft">
             {formatNumber(national.upcomingSales)} ventes à venir suivies, dont{" "}
             {formatNumber(national.upcomingSales90Days)} dans les 90 prochains jours.
           </p>
@@ -335,7 +335,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
         />
       </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
+      <p className="mt-4 text-xs leading-relaxed text-ink-soft">
         Ces agrégats décrivent seulement le catalogue suivi par Immojudis. Les prix d’adjudication
         déclarés par Licitor sont présentés séparément avec l’offre Analyse ; les taux d’issue
         définitive ne sont pas déduits de ces prix.
@@ -401,7 +401,7 @@ function RegionalCoverage({
               <span className="font-display text-xl font-semibold">{region.name}</span>
               <span
                 className={`mt-2 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
+                  selectedRegion === region.name ? "text-white/70" : "text-ink-soft"
                 }`}
               >
                 {region.coverage.publishableCourtProfiles}/{region.coverage.trackedCourts} profils
@@ -416,7 +416,7 @@ function RegionalCoverage({
               </span>
               <span
                 className={`mt-1 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
+                  selectedRegion === region.name ? "text-white/70" : "text-ink-soft"
                 }`}
               >
                 Pipeline · {formatNumber(region.upcomingSales)} à venir · mise médiane{" "}
@@ -463,12 +463,12 @@ function TribunalProfile({
           <h2 id="court-title" className="mt-2 font-display text-3xl font-semibold sm:text-5xl">
             {tribunal.court.name}
           </h2>
-          <p className="mt-2 text-sm text-brand-navy/65">
+          <p className="mt-2 text-sm text-ink-soft">
             {tribunal.court.judicialRegion ?? "Ressort judiciaire non publié"}
           </p>
         </div>
         <label>
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
             Tribunal affiché
           </span>
           <select
@@ -488,7 +488,7 @@ function TribunalProfile({
       <div className="mt-7 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
-          <p className="mt-1 text-xs text-brand-navy/65">
+          <p className="mt-1 text-xs text-ink-soft">
             Les petits groupes restent masqués sous {TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE} audiences
             passées.
           </p>
@@ -585,13 +585,13 @@ function TribunalProfile({
           <h3 id="interpret-title" className="font-display text-2xl font-semibold">
             Comment lire ces chiffres ?
           </h3>
-          <p className="mt-3 text-sm leading-relaxed text-brand-navy/66">
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
             Les fourchettes historiques vont du 25e au 75e percentile : la moitié des audiences
             passées retenues se situe à l’intérieur. Une mise à prix basse ne signifie pas que le
             bien sera adjugé à ce montant. Les frais, l’état du bien et la concurrence restent
             déterminants.
           </p>
-          <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
+          <p className="mt-3 text-xs leading-relaxed text-ink-soft">
             Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais. Le
             pipeline ne retient que des annonces vérifiées ou recoupées ; l’archive du graphe des
             résultats ne conserve ni ce statut ni les dates de visite.
@@ -623,7 +623,7 @@ function TribunalProfile({
         </section>
       </div>
 
-      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-brand-navy/65">
+      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-ink-soft">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
         Indicateurs de couverture Immojudis, non exhaustifs du greffe et non prédictifs d’une vente
         individuelle. Données en attente, conflictuelles ou sans rattachement exact exclues.
@@ -646,11 +646,9 @@ function ProfileMetric({
   return (
     <div className="border-b border-brand-navy/10 p-5 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0">
       <Icon className="h-5 w-5 text-gold-text" aria-hidden />
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/65">
-        {label}
-      </p>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">{label}</p>
       <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">{detail}</p>
     </div>
   );
 }

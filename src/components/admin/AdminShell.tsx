@@ -148,14 +148,14 @@ export function AdminShell({
               <h1 className="font-display text-[clamp(2.35rem,4vw,3.25rem)] font-medium leading-[0.98] text-brand-navy">
                 {title}
               </h1>
-              <p className="mt-2 text-sm text-brand-navy/68 sm:text-base">{description}</p>
+              <p className="mt-2 text-sm text-ink-soft sm:text-base">{description}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:justify-end xl:flex-nowrap">
             {onSearchChange ? (
               <label className="admin-search">
-                <Search className="size-4 shrink-0 text-brand-navy/55" />
+                <Search className="size-4 shrink-0 text-ink-soft" />
                 <span className="sr-only">Rechercher dans la vue</span>
                 <input
                   type="search"
@@ -291,7 +291,7 @@ export function AdminSectionHeading({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <h2 className="text-lg font-semibold tracking-[-0.01em] text-brand-navy">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-brand-navy/62">{description}</p> : null}
+        {description ? <p className="mt-1 text-sm text-ink-soft">{description}</p> : null}
       </div>
       {action}
     </div>

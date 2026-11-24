@@ -51,7 +51,7 @@ export function SaleDocumentsSection({
             <span className="block font-display text-2xl font-semibold text-brand-navy">
               Consulter les pièces du dossier
             </span>
-            <span className="mt-1 block text-sm text-brand-navy/65">
+            <span className="mt-1 block text-sm text-ink-soft">
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
                 : lockedCount > 0

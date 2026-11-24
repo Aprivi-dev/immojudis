@@ -70,7 +70,7 @@ export function AdminInformationAgentSummary({
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-brand-navy/60">{label}</dt>
+      <dt className="text-xs text-ink-soft">{label}</dt>
       <dd className="mt-0.5 text-lg font-semibold tabular-nums leading-6">{children}</dd>
     </div>
   );

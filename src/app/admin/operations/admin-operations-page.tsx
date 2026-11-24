@@ -292,7 +292,7 @@ function AdminOperations({
                 )}
               </span>
             </div>
-            <p className="mt-1 text-sm text-brand-navy/58">
+            <p className="mt-1 text-sm text-ink-soft">
               {data?.checkedAt
                 ? `Vérifié ${formatRelativeTime(data.checkedAt)}`
                 : "Vérification du runner en attente"}
@@ -337,7 +337,7 @@ function AdminOperations({
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition ${
               activeTab === item.id
                 ? "border-gold-soft text-gold-text"
-                : "border-transparent text-brand-navy/58 hover:text-brand-navy"
+                : "border-transparent text-ink-soft hover:text-brand-navy"
             }`}
           >
             {item.label}
@@ -431,5 +431,5 @@ function runnerStatusLabel(status: AdminDashboardRunsData["runner"]["status"]): 
 function runnerStatusClass(status: AdminDashboardRunsData["runner"]["status"]): string {
   if (status === "active") return "text-emerald-700";
   if (status === "suspended") return "text-red-700";
-  return "text-brand-navy/55";
+  return "text-ink-soft";
 }

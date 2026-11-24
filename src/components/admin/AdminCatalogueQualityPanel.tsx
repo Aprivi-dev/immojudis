@@ -55,7 +55,7 @@ export function AdminCatalogueQualityPanel() {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[40rem] text-left text-sm">
               <caption className="sr-only">Contrôles qualité du catalogue</caption>
-              <thead className="text-xs font-semibold text-brand-navy/62">
+              <thead className="text-xs font-semibold text-ink-soft">
                 <tr>
                   <th>Contrôle</th>
                   <th>Nombre</th>
@@ -69,9 +69,7 @@ export function AdminCatalogueQualityPanel() {
                     <th scope="row" className="py-2 pr-3 font-medium text-foreground">
                       {row.label}
                       {row.note ? (
-                        <span className="block text-xs font-normal text-brand-navy/62">
-                          {row.note}
-                        </span>
+                        <span className="block text-xs font-normal text-ink-soft">{row.note}</span>
                       ) : null}
                     </th>
                     <td className="py-2 pr-3 tabular-nums">{row.count}</td>
@@ -130,7 +128,7 @@ function CeilingCoverage({ coverage }: { coverage: CeilingCoverageView | null })
               <caption className="sr-only">
                 Part des ventes à venir dont le plafond est calculable
               </caption>
-              <thead className="text-xs font-semibold text-brand-navy/62">
+              <thead className="text-xs font-semibold text-ink-soft">
                 <tr>
                   <th>Type de vente</th>
                   <th>Ventes à venir</th>
@@ -152,7 +150,7 @@ function CeilingCoverage({ coverage }: { coverage: CeilingCoverageView | null })
               </tbody>
             </table>
           </div>
-          <p className="mt-1 text-xs text-brand-navy/62">{coverage.note}</p>
+          <p className="mt-1 text-xs text-ink-soft">{coverage.note}</p>
         </>
       ) : (
         <p className="mt-1 text-sm text-brand-navy/70">
@@ -191,7 +189,7 @@ function CrossSourceDuplicates({ duplicates }: { duplicates: CrossSourceDuplicat
               ))}
             </ul>
           ) : null}
-          <p className="mt-1 text-xs text-brand-navy/62">{duplicates.note}</p>
+          <p className="mt-1 text-xs text-ink-soft">{duplicates.note}</p>
         </>
       ) : (
         <p className="mt-1 text-sm text-brand-navy/70">

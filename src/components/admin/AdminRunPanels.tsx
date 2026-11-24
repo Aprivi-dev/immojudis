@@ -37,15 +37,15 @@ export function OperationsRunTable({
   onSelectRun: (id: string) => void;
 }) {
   if (isLoading) {
-    return <div className="p-5 text-sm text-brand-navy/58">Chargement des exécutions…</div>;
+    return <div className="p-5 text-sm text-ink-soft">Chargement des exécutions…</div>;
   }
   if (!runs.length) {
-    return <div className="p-5 text-sm text-brand-navy/58">Aucune exécution trouvée.</div>;
+    return <div className="p-5 text-sm text-ink-soft">Aucune exécution trouvée.</div>;
   }
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[58rem]">
-        <div className="grid grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 border-b border-brand-navy/10 px-5 py-3 text-xs font-semibold text-brand-navy/55">
+        <div className="grid grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 border-b border-brand-navy/10 px-5 py-3 text-xs font-semibold text-ink-soft">
           <span>Collecte</span>
           <span>Source</span>
           <span>Statut</span>
@@ -72,17 +72,17 @@ export function OperationsRunTable({
                 </span>
                 <span className="truncate text-brand-navy/72">{run.source ?? "—"}</span>
                 <StatusPill status={run.status} />
-                <span className="text-brand-navy/65">
+                <span className="text-ink-soft">
                   {run.startedAt ? formatShortDateTime(run.startedAt) : "—"}
                 </span>
-                <span className="text-brand-navy/65">{runDuration(run)}</span>
+                <span className="text-ink-soft">{runDuration(run)}</span>
                 <span className="tabular-nums text-brand-navy">
                   {summaryNumber(run, "collected")}
                 </span>
                 <span className="tabular-nums text-brand-navy">
                   {summaryNumber(run, "upserted")}
                 </span>
-                <span className={errorCount(run.errors) ? "text-red-600" : "text-brand-navy/65"}>
+                <span className={errorCount(run.errors) ? "text-red-600" : "text-ink-soft"}>
                   {errorCount(run.errors)}
                 </span>
               </button>
@@ -106,7 +106,7 @@ export function RunDetails({
   const [showLogs, setShowLogs] = useState(false);
   if (!run) {
     return (
-      <AdminPanel className="flex min-h-96 items-center justify-center p-6 text-sm text-brand-navy/58">
+      <AdminPanel className="flex min-h-96 items-center justify-center p-6 text-sm text-ink-soft">
         Sélectionnez une exécution pour voir son détail.
       </AdminPanel>
     );
@@ -127,13 +127,13 @@ export function RunDetails({
         <StatusPill status={run.status} />
       </div>
       <dl className="mt-5 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-3 text-sm">
-        <dt className="text-brand-navy/55">Source</dt>
+        <dt className="text-ink-soft">Source</dt>
         <dd className="text-brand-navy">{run.source ?? "—"}</dd>
-        <dt className="text-brand-navy/55">Début</dt>
+        <dt className="text-ink-soft">Début</dt>
         <dd className="text-brand-navy">
           {run.startedAt ? formatShortDateTime(run.startedAt) : "—"}
         </dd>
-        <dt className="text-brand-navy/55">Durée</dt>
+        <dt className="text-ink-soft">Durée</dt>
         <dd className="text-brand-navy">{runDuration(run)}</dd>
       </dl>
       <div className="mt-5 grid grid-cols-3 divide-x divide-brand-navy/10 border-y border-brand-navy/10 py-4 text-center">
@@ -153,7 +153,7 @@ export function RunDetails({
             ) : null}
             <RunStageIcon state={runStageState(run, index)} />
             <span className="flex-1 text-brand-navy">{label}</span>
-            <span className="tabular-nums text-brand-navy/58">
+            <span className="tabular-nums text-ink-soft">
               {value} · {runStageLabel(runStageState(run, index))}
             </span>
           </div>
@@ -179,7 +179,7 @@ export function RunDetails({
                   "",
                 ) ?? result.source}
               </span>
-              <span className={result.failed ? "text-amber-700" : "text-brand-navy/65"}>
+              <span className={result.failed ? "text-amber-700" : "text-ink-soft"}>
                 {result.transport} · {result.listings ?? "—"} annonce(s) extraite(s)
                 {result.failed ? " · Erreur signalée" : ""}
               </span>
@@ -205,7 +205,7 @@ export function RunDetails({
         </AdminPrimaryButton>
       </div>
       {!restartRequest ? (
-        <p className="mt-3 text-sm text-brand-navy/65">
+        <p className="mt-3 text-sm text-ink-soft">
           {run.status === "queued" || run.status === "running"
             ? "Cette exécution est déjà en attente ou en cours."
             : "Les paramètres d’origine ne permettent pas cette relance. Utilisez les commandes de collecte ou d’enrichissement de cette page."}
@@ -285,7 +285,7 @@ function RunSummaryNumber({ value, label }: { value: string; label: string }) {
   return (
     <span className="px-2">
       <strong className="block text-xl tabular-nums text-brand-navy">{value}</strong>
-      <span className="mt-1 block text-xs text-brand-navy/55">{label}</span>
+      <span className="mt-1 block text-xs text-ink-soft">{label}</span>
     </span>
   );
 }

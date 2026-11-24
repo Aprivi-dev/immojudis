@@ -54,7 +54,7 @@ export function AdminInformationAgentOperationsPanel() {
       ) : null}
       {view ? (
         <>
-          <p className="mt-1 text-xs text-brand-navy/55">{view.windowLabel}</p>
+          <p className="mt-1 text-xs text-ink-soft">{view.windowLabel}</p>
           <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             {view.rows.map((row) => (
               <div key={row.key} className="flex justify-between gap-3 border-b py-1">

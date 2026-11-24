@@ -35,7 +35,7 @@ export function AdminInformationAgentTemplatePanel() {
 
   if (templateQuery.isLoading) {
     return (
-      <AdminPanel className="flex min-h-80 items-center justify-center p-6 text-sm text-brand-navy/60">
+      <AdminPanel className="flex min-h-80 items-center justify-center p-6 text-sm text-ink-soft">
         <LoadingIndicator />
         Chargement du template
       </AdminPanel>
@@ -188,7 +188,7 @@ function InformationAgentTemplateEditor({
             <h2 className="mt-2 text-xl font-semibold text-brand-navy">
               Template de prise de contact
             </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-navy/65">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-soft">
               Les blocs fixes restent identiques pour toutes les annonces. Les blocs dynamiques
               remplacent automatiquement les variables par les données de la vente et les questions
               détectées par l’agent.
@@ -257,7 +257,7 @@ function InformationAgentTemplateEditor({
             </div>
 
             <div className="mt-5 rounded-xl border border-brand-navy/10 bg-surface-muted p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-navy/58">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
                 Variables autorisées
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -325,7 +325,7 @@ function InformationAgentTemplateEditor({
             </div>
 
             <div className="mt-5 flex flex-col gap-3 border-t border-brand-navy/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-brand-navy/55" role="status" aria-live="polite">
+              <p className="text-xs text-ink-soft" role="status" aria-live="polite">
                 {dirty ? "Modifications non enregistrées" : "Brouillon synchronisé"}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -392,7 +392,7 @@ function InformationAgentTemplateEditor({
                 className="h-[720px] w-full bg-surface"
               />
             ) : (
-              <div className="grid min-h-[28rem] place-items-center p-8 text-center text-sm text-brand-navy/55">
+              <div className="grid min-h-[28rem] place-items-center p-8 text-center text-sm text-ink-soft">
                 <div>
                   <p>Aucun aperçu généré pour ce brouillon.</p>
                 </div>
@@ -507,7 +507,7 @@ function templateContentFromWorkspace(
 
 function EditorField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-brand-navy/58">
+    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-ink-soft">
       {label}
       {children}
     </label>
@@ -541,7 +541,7 @@ function OrderButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-8 place-items-center rounded-md border border-brand-navy/10 text-brand-navy/60 transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30"
+      className="grid size-8 place-items-center rounded-md border border-brand-navy/10 text-ink-soft transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30"
     >
       {children}
     </button>
