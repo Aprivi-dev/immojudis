@@ -313,7 +313,9 @@ const routeBudgets = [
     // inutile de `HomePrimaryAction` retiré (180 311 mesurés). 12/11/2026 : 186 000 avec l'accord du
     // propriétaire (184 973 avant, 185 476 après) : le calcul des dates de Paris, recopié à 8 endroits, est
     // réuni dans `paris-time.ts` et `calendar-day.ts`, un peu plus lourds que les copies qu'ils remplacent.
-    maxBytes: 186_000,
+    // 24/11/2026 : 187 000 avec l'accord du propriétaire (185 765 avant, 186 725 après) : la mise à jour de
+    // sécurité de Next.js 16.4.3 vers 16.4.6 alourdit le socle commun d'environ 960 octets.
+    maxBytes: 187_000,
   },
   {
     name: "pricing",
