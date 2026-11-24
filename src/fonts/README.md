@@ -9,9 +9,9 @@ nom à empreinte et un cache `immutable`.
 | `manrope-latin.woff2` | Manrope (v15) | wght 200-800 | normal |
 
 Manrope est la seule police du site depuis le 25/10/2026 (à la place de Cormorant Garamond et d'IBM
-Plex Sans), sans italique. Le layout la déclare en graisses 400 à 800, toutes sur ce même fichier
+Plex Sans), sans italique, à l'exception des titres de l'accueil (voir plus bas). Le layout la déclare en graisses 400 à 800, toutes sur ce même fichier
 variable (un seul téléchargement), préchargée sur toutes les pages. `npm run build:budgets` vérifie
-sur le build qu'un seul fichier de police est servi.
+sur le build quels fichiers de police sont servis.
 
 C'est le fichier WOFF2 de sous-ensemble `latin` (variable) de Google Fonts, récupéré le 25/10/2026
 dans le paquet npm `@fontsource-variable/manrope` 5.2.5 (`files/manrope-latin-wght-normal.woff2`).
@@ -20,6 +20,22 @@ paquet).
 
 Pour mettre à jour la police : remplacer le fichier par la nouvelle version `latin` variable, sans
 changer son nom, puis relancer `npm run build` et comparer le rendu.
+
+## Titres de l'accueil
+
+| Fichier                          | Famille                     | Axe          | Style  |
+| -------------------------------- | --------------------------- | ------------ | ------ |
+| `cormorant-garamond-latin.woff2` | Cormorant Garamond (v5.3.0) | wght 300-700 | normal |
+
+Depuis la refonte de l'accueil du 24/11/2026, ses titres sont en Cormorant Garamond ; le texte courant
+et toutes les autres pages restent en Manrope. La police est déclarée dans `src/app/page.tsx` : elle
+n'est servie que sur l'accueil et n'est pas préchargée. `npm run build:budgets` vérifie que le build
+sert ces deux fichiers, pas plus, et que seule Manrope est préchargée.
+
+Fichier WOFF2 de sous-ensemble `latin` (variable, sans italique), récupéré le 24/11/2026 dans le
+paquet npm `@fontsource-variable/cormorant-garamond` 5.3.0
+(`files/cormorant-garamond-latin-wght-normal.woff2`). Licence SIL Open Font License 1.1 conservée à
+côté : `OFL-cormorant-garamond.txt`.
 
 ## Image de partage (`src/app/opengraph-image.tsx`)
 
@@ -36,4 +52,4 @@ Ce sont des TrueType statiques de sous-ensemble `latin` dans un conteneur WOFF 1
 07/11/2026 dans le paquet npm `@fontsource/manrope` 5.3.0 (`files/manrope-latin-<graisse>-normal.woff`),
 sous la même licence SIL Open Font License 1.1 (`OFL-manrope.txt`). L'image les lit sur le disque
 (`readFile`), elle ne les importe pas : ils ne passent pas par `next/font` et ne sont jamais servis aux
-pages, qui gardent un seul fichier de police.
+pages.

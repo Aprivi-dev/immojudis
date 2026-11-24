@@ -8,6 +8,14 @@ Cormorant Garamond et d'IBM Plex Sans), la navigation est une pilule flottante e
 sa maquette (`src/components/home/HomePage.module.css`, qui a sa propre échelle). Les jetons vivent dans `src/styles.css`, les composants de base
 dans `src/components/ui/primitives.tsx`.
 
+## Accueil : palette et titres à part (24/11/2026)
+
+Depuis la refonte du 24/11/2026, l'accueil a sa propre identité, et lui seul : palette « pierre et
+bordeaux » (jetons `--pierre-*` de `src/styles.css`, substitués aux jetons du site tant que l'accueil
+est affiché, en-tête et pied de page compris), titres en Cormorant Garamond, peintures et leurs
+boucles vidéo. Les règles ci-dessous restent celles de toutes les autres pages. Détail dans
+`src/components/home/HomePage.module.css` et `HomeScenes.module.css`.
+
 ## Fond et surfaces
 
 - Un seul fond de page : le **papier chaud** `--background` (#fbf9f5). Le ciel #eef7ff n'est plus

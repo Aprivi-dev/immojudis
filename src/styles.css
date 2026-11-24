@@ -143,6 +143,31 @@
   --info-tint: #eaf3f9;
   --cream: #fff7eb;
 
+  /* Palette « pierre et bordeaux » de l'accueil (refonte du 24/11/2026). Ces jetons ne servent que
+     là : `HomePage.module.css` les substitue aux jetons du site tant que l'accueil est affiché. */
+  --pierre-background: #ece6d3;
+  --pierre-surface: #f5f1e6;
+  --pierre-ink: #45201a;
+  --pierre-ink-strong: #5a3a30;
+  --pierre-ink-soft: #7b5c4f;
+  --pierre-bordeaux: #56251e;
+  --pierre-terracotta: #b5613f;
+  /* Terracotta foncée pour le texte : 5,4:1 sur la pierre (WCAG AA). */
+  --pierre-terracotta-text: #8f4526;
+  --pierre-terracotta-light: #e9c9a8;
+  --pierre-terracotta-light-hover: #f2dcc4;
+  --pierre-line: #cdbfa3;
+  --pierre-line-soft: #dcd1b8;
+  --pierre-line-warm: #d6c9ad;
+  --pierre-surface-muted: #f1ecde;
+  --pierre-surface-tint: #e6dcc4;
+  --pierre-sand: #dfd3b8;
+  --pierre-olive: #8e7954;
+  --pierre-on-dark: #f4eddd;
+  --pierre-on-dark-soft: #d9c7b0;
+  /* Boutons pleins : presque noir, comme les objets tramés des peintures. */
+  --pierre-black: #17110f;
+
   --card: var(--surface);
   --card-foreground: var(--foreground);
   --popover: var(--surface);

@@ -12,14 +12,10 @@ function block(selector: string): string {
 }
 
 describe("accueil : cibles tactiles (repasse design n° 20)", () => {
-  it.each([
-    ".textLink",
-    ".quietLink",
-    ".proof a",
-    ".presetButtons button",
-    ".pauseButton",
-    ".segmented button",
-  ])("%s mesure au moins 44 px de haut", (selector) => {
-    expect(block(selector)).toMatch(/min-height:\s*44px;/);
-  });
+  it.each([".textLink", ".proof a", ".pauseButton", ".segmented button"])(
+    "%s mesure au moins 44 px de haut",
+    (selector) => {
+      expect(block(selector)).toMatch(/min-height:\s*44px;/);
+    },
+  );
 });

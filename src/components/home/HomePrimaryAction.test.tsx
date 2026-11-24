@@ -13,7 +13,7 @@ vi.mock("@/hooks/use-launch-offer", () => ({
 }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
-import { HomeBrowseWithoutAccount, HomePrimaryAction } from "./HomePrimaryAction";
+import { HomeBrowseWithoutAccount, HomeHeroActions, HomePrimaryAction } from "./HomePrimaryAction";
 
 beforeEach(() => {
   mocks.auth = { user: null, loading: false };
@@ -28,10 +28,10 @@ afterEach(() => {
 });
 
 describe("HomePrimaryAction", () => {
-  it("mesure le clic sur « Créer mon compte gratuit » et sur le lien sans compte", () => {
-    render(<HomePrimaryAction browseLink />);
+  it("mesure le clic sur « Créer mon compte gratuit » et sur « Voir les ventes » du premier écran", () => {
+    render(<HomeHeroActions />);
     fireEvent.click(screen.getByRole("link", { name: /Créer mon compte gratuit/ }));
-    fireEvent.click(screen.getByRole("link", { name: /Explorer les ventes sans compte/ }));
+    fireEvent.click(screen.getByRole("link", { name: /Voir les ventes/ }));
     expect(mocks.track.mock.calls).toEqual([
       ["home_cta_clicked", { target: "signup" }],
       ["home_cta_clicked", { target: "browse" }],
@@ -46,7 +46,7 @@ describe("HomePrimaryAction", () => {
     mocks.track.mockClear();
 
     mocks.auth = { user: { id: "user-1" }, loading: false };
-    render(<HomePrimaryAction browseLink />);
+    render(<HomePrimaryAction />);
     fireEvent.click(screen.getByRole("link", { name: /Explorer les ventes/ }));
     expect(mocks.track).not.toHaveBeenCalled();
   });

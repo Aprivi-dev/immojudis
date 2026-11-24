@@ -10,9 +10,8 @@ vi.mock("@/hooks/use-launch-offer", () => ({
 }));
 
 import { HomeHero, catalogueSummaryLine } from "./HomeHero";
+import { HomeAnswers, HomeClosing } from "./HomeScenes";
 import {
-  HomeBenefits,
-  HomeClosing,
   HomeFaq,
   HomeGuides,
   HomeStats,
@@ -34,7 +33,7 @@ function visibleText(markup: string): string {
 }
 
 describe("home hero", () => {
-  it("keeps the brand line, the sign-up action and the real figures with a link to /sales", () => {
+  it("keeps the promise, the catalogue action, the sign-up link and the real figures", () => {
     const markup = renderToStaticMarkup(
       <HomeHero
         summary={{ count: 1753, verifiedAt: "2026-10-15T07:30:00.000Z" }}
@@ -43,7 +42,7 @@ describe("home hero", () => {
     );
     const text = visibleText(markup);
 
-    expect(text).toContain("Les enchères immobilières, en toute clarté.");
+    expect(text).toContain("Le prix se décide avant l’audience.");
     expect(text).toMatch(
       /1.753 ventes à venir · 88 départements · données vérifiées le 15\/10\/2026/,
     );
@@ -52,8 +51,8 @@ describe("home hero", () => {
     // Rendu serveur : celui du visiteur, l'essai pas encore lu (ligne du compte gratuit).
     expect(markup).toMatch(/<a[^>]*href="\/login\?mode=investor"[^>]*>Créer mon compte gratuit/);
     expect(text).toContain("Gratuit, sans carte bancaire");
-    // À côté du bouton, le catalogue sans compte.
-    expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>Explorer les ventes sans compte/);
+    // L'action principale du premier écran : le catalogue, sans compte.
+    expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>Voir les ventes/);
     // Pas d'italique : l'accent du titre est une couleur.
     expect(markup).not.toContain("<em");
   });
@@ -76,35 +75,14 @@ describe("home hero", () => {
     );
   });
 
-  it("shows the example photo, its analysis and a verdict from the bid ceiling engine", () => {
+  it("shows the painting of the first screen, described for screen readers, and no fictitious listing", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    const text = visibleText(markup);
-    expect(text).toContain("Exemple fictif");
-    expect(text).toContain("T3 de 68 m², balcon · Bordeaux");
-    expect(text).toContain("Analyse du bien");
-    expect(text).toMatch(/Mise à prix 95.000.€/);
-    // L'estimation et sa fourchette, à côté de l'enchère à ne pas dépasser.
-    expect(text).toMatch(
-      /Valeur d’un bien libre comparable ?230.000.€ ?Fourchette : 215.000 – 247.000.€/,
-    );
-    expect(text).toMatch(/Enchère à ne pas dépasser 136.000.€/);
-    expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
-    expect(text).toContain("Occupation À confirmer");
-    // Bien occupé : mise à prix au m² et médiane des ventes de biens libres, sans écart affiché.
-    expect(text).toMatch(
-      /Mise à prix au m² \/ médiane des ventes de biens libres \d[\d\s]* \/ \d[\d\s]* €\/m²/u,
-    );
-    expect(text).not.toContain("face au marché");
-    expect(text).not.toMatch(/−\d+ %/);
-    // Premier rendu : la situation de /annonce-exemple, et son verdict.
-    expect(text).toContain("Pour y habiter, occupé, rafraîchissement");
-    expect(text).toMatch(/136.000.€/);
-    expect(text).toContain("On enchérit");
-    expect(markup).toContain("dossier-apartment.webp");
-    // Les trois situations, dont celle qui fait passer son tour.
-    for (const label of ["Y habiter", "Revendre, loué", "Louer après rénovation"]) {
-      expect(markup).toMatch(new RegExp(`<button[^>]*>${label}</button>`));
-    }
+    expect(markup).toContain("01-hero.webp");
+    expect(markup).toMatch(/alt="Peinture : la Justice[^"]*ordinateur portable/);
+    // La boucle vidéo n'a pas d'adresse au rendu : le script la charge à l'approche de l'écran.
+    expect(markup).toMatch(/<video[^>]*data-src="\/media\/landing\/accueil\/01-hero\.mp4"/);
+    expect(markup).not.toMatch(/<video[^>]*\ssrc=/);
+    expect(visibleText(markup)).not.toContain("Exemple fictif");
   });
 });
 
@@ -137,28 +115,9 @@ describe("home texts", () => {
     }
   });
 
-  it("compte les points confirmés de l'analyse, sans afficher un « 6 sur 6 » faux", () => {
-    const text = visibleText(renderToStaticMarkup(<HomeHero />));
-    expect(text).toContain("5 sur 6 confirmés");
-    expect(text).not.toContain("6 sur 6");
-  });
-
-  it("mène à l'analyse complète depuis la carte du premier écran", () => {
+  it("mène à l'analyse exemple depuis le premier écran", () => {
     const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Voir l’analyse complète/);
-  });
-
-  it("prépare l'annonce de la valeur finale, sans la lire pendant la démonstration, et masque le montant animé", () => {
-    const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<p class="sr-only">Enchère à ne pas dépasser : 136.000.€/);
-    expect(markup).not.toContain('role="status"');
-    expect(markup).toMatch(/<p[^>]*aria-hidden="true"[^>]*>136.000.€<\/p>/);
-    expect(markup).not.toContain("aria-live");
-  });
-
-  it("propose le bouton de pause de l'animation", () => {
-    const markup = renderToStaticMarkup(<HomeHero />);
-    expect(markup).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Mettre en pause l’animation/);
+    expect(markup).toMatch(/<a[^>]*href="\/annonce-exemple"[^>]*>Une analyse exemple/);
   });
 
   it("renvoie vers les pages piliers et vers le repère Pépite, sans chiffre", () => {
@@ -203,10 +162,10 @@ describe("home texts", () => {
   });
 
   it("suit les nouvelles ventes sans promesse d’exhaustivité", () => {
-    const text = visibleText(renderToStaticMarkup(<HomeBenefits />));
-    expect(text).toContain("Suivez les nouvelles ventes de votre secteur");
+    const text = visibleText(renderToStaticMarkup(<HomeAnswers />));
+    expect(text).toContain("les nouvelles ventes que nous collectons");
     expect(text).not.toContain("Ne ratez plus");
-    expect(text).toContain("(illustration)");
+    expect(text).not.toMatch(/toutes les (nouvelles )?ventes/i);
   });
 
   it("promet 7 jours d'accès à l'offre Analyse, sans « complet »", async () => {

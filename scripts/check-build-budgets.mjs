@@ -159,7 +159,13 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 const MAX_TOTAL_CLIENT_JS_BYTES = 6_890_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
-const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
+// Refonte de l'accueil du 24/11/2026 : neuf peintures et leurs boucles vidéo (3,7 Mo, chargées à
+// l'approche de l'écran) s'ajoutent aux images existantes. Relèvement de 5 000 000 à 7 000 000, à
+// faire confirmer par le propriétaire à la relecture.
+const MAX_PUBLIC_MEDIA_BYTES = 7_000_000;
+// Boucles vidéo des peintures de l'accueil : MP4 déjà allégés (H.264, sans son, 0,2 à 0,4 Mo).
+const HOME_LOOPS_DIR = "public/media/landing/accueil/";
+const MAX_HOME_LOOP_BYTES = 400_000;
 const HOMEPAGE_IMAGE_BUDGETS = {
   "public/media/landing/gallery-townhouse.webp": 460_000,
   "public/media/landing/gallery-land.webp": 460_000,
@@ -436,7 +442,7 @@ for (const [path, expectedText] of requiredHtml) {
 await readFile(".next/server/app/sales/page.js", "utf8");
 await readFile(".next/server/app/annonce-exemple/page.js", "utf8");
 
-await checkSingleFont();
+await checkFonts();
 
 const businessModuleLines = Object.fromEntries(
   await Promise.all(
@@ -525,7 +531,19 @@ if (publicMediaBytes > MAX_PUBLIC_MEDIA_BYTES) {
   );
 }
 
-const legacyMedia = publicMedia.filter((path) => /\.(?:jpe?g|png|mp4)$/i.test(path));
+const normalizedMedia = publicMedia.map((path) => path.split("\\").join("/"));
+const homeLoops = normalizedMedia.filter(
+  (path) => path.startsWith(HOME_LOOPS_DIR) && path.endsWith(".mp4"),
+);
+for (const path of homeLoops) {
+  const bytes = (await stat(path)).size;
+  if (bytes > MAX_HOME_LOOP_BYTES) {
+    throw new Error(`Boucle vidéo de l'accueil trop lourde: ${path} (${bytes} octets).`);
+  }
+}
+const legacyMedia = normalizedMedia.filter(
+  (path) => /\.(?:jpe?g|png|mp4)$/i.test(path) && !homeLoops.includes(path),
+);
 if (legacyMedia.length > 0) {
   throw new Error(`Médias sources non optimisés encore publiés: ${legacyMedia.join(", ")}.`);
 }
@@ -548,20 +566,22 @@ console.info(
 );
 
 /**
- * La police du site, mesurée sur le build et non sur le code source : Manrope seule (25/10/2026).
- * - un seul fichier de police dans `_next/static/media` ;
+ * Les polices du site, mesurées sur le build et non sur le code source : Manrope partout
+ * (25/10/2026), et Cormorant Garamond pour les titres de l'accueil (refonte du 24/11/2026).
+ * - deux fichiers de police, pas plus, dans `_next/static/media` ;
  * - aucune règle `@font-face` italique dans les feuilles de style ;
- * - l'accueil et /sales (variante statique) préchargent ce fichier, une seule fois.
+ * - l'accueil et /sales (variante statique) préchargent un seul fichier, le même : Manrope. La
+ *   police des titres de l'accueil n'est jamais préchargée.
  */
-async function checkSingleFont() {
+async function checkFonts() {
   const media = await readdir(".next/static/media");
   const fontFiles = media.filter((name) => /\.(?:woff2?|ttf|otf)$/iu.test(name));
-  if (fontFiles.length !== 1) {
+  if (fontFiles.length !== 2) {
     throw new Error(
-      `Un seul fichier de police attendu dans .next/static/media, trouvé : ${fontFiles.join(", ") || "aucun"}.`,
+      `Deux fichiers de police attendus dans .next/static/media (Manrope, Cormorant Garamond), trouvé : ${fontFiles.join(", ") || "aucun"}.`,
     );
   }
-  const fontUrl = `/_next/static/media/${fontFiles[0]}`;
+  const fontUrls = fontFiles.map((name) => `/_next/static/media/${name}`);
 
   const stylesheets = await filesUnder(".next/static/chunks", (path) => path.endsWith(".css"));
   for (const path of stylesheets) {
@@ -578,13 +598,20 @@ async function checkSingleFont() {
       .filter((tag) => /\srel="preload"/iu.test(tag) && /\sas="font"/iu.test(tag))
       .map((tag) => /\shref="([^"]+)"/iu.exec(tag)?.[1] ?? "");
 
+  const preloaded = new Set();
   for (const path of [".next/server/app/index.html", ".next/server/app/sales/defaut.html"]) {
     const preloads = fontPreloads(await readFile(path, "utf8"));
-    if (preloads.length !== 1 || preloads[0] !== fontUrl) {
+    if (preloads.length !== 1 || !fontUrls.includes(preloads[0])) {
       throw new Error(
-        `${path} doit précharger la police une fois (${fontUrl}), trouvé : ${JSON.stringify(preloads)}.`,
+        `${path} doit précharger une seule police, trouvé : ${JSON.stringify(preloads)}.`,
       );
     }
+    preloaded.add(preloads[0]);
+  }
+  if (preloaded.size !== 1) {
+    throw new Error(
+      `L'accueil et /sales doivent précharger la même police (Manrope), trouvé : ${[...preloaded].join(", ")}.`,
+    );
   }
 }
 

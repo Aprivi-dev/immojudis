@@ -5,6 +5,10 @@ import { COMPANY_DESCRIPTION } from "@/lib/company-description";
 // Only the `metadata` export matters here: the heavy server-side loaders of the pages are
 // replaced so that importing a page does not need a database.
 vi.mock("@/lib/public-catalogue.server", () => ({ loadInitialCatalogue: vi.fn() }));
+// L'accueil déclare la police de ses titres avec `next/font/local`, que seul le build sait charger.
+vi.mock("next/font/local", () => ({
+  default: (options: { variable?: string }) => ({ variable: String(options.variable) }),
+}));
 vi.mock("@/lib/public-tribunal-activity.server", () => ({ loadPublicTribunalActivity: vi.fn() }));
 // Les constantes de dates (importées par `legal-documents-previous`) restent réelles.
 vi.mock("@/lib/legal-documents", async (importOriginal) => ({
