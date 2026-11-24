@@ -235,11 +235,11 @@ describe("chaque émetteur lit l'expéditeur de sa catégorie", () => {
 
 describe("mention « ne pas répondre » du pied", () => {
   const ADDRESS_LINK = new RegExp(
-    `${SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} <a href="mailto:${CONTACT}"[^>]*color:#84602e;text-decoration:underline[^>]*>${CONTACT}</a>`,
+    `${SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} <a href="mailto:${CONTACT}"[^>]*color:#8f4526;text-decoration:underline[^>]*>${CONTACT}</a>`,
   );
 
   it.each(NO_REPLY.filter((key) => sampleOf(key).sample))(
-    "%s : même phrase en HTML (lien mailto souligné #84602e, dans le pied) et en texte",
+    "%s : même phrase en HTML (lien mailto souligné #8f4526, dans le pied) et en texte",
     async (key) => {
       const { variants } = await messagesOf(key);
       expect(variants.length).toBeGreaterThan(0);

@@ -567,11 +567,11 @@ console.info(
 
 /**
  * Les polices du site, mesurées sur le build et non sur le code source : Manrope partout
- * (25/10/2026), et Cormorant Garamond pour les titres de l'accueil (refonte du 24/11/2026).
+ * pour le texte courant, Cormorant Garamond pour les titres (refonte du 24/11/2026).
  * - deux fichiers de police, pas plus, dans `_next/static/media` ;
  * - aucune règle `@font-face` italique dans les feuilles de style ;
  * - l'accueil et /sales (variante statique) préchargent un seul fichier, le même : Manrope. La
- *   police des titres de l'accueil n'est jamais préchargée.
+ *   police des titres n'est jamais préchargée.
  */
 async function checkFonts() {
   const media = await readdir(".next/static/media");

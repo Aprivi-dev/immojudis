@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Le pictogramme de la marque : le temple du favicon, des icônes d'application et du manifeste
+ * Le pictogramme de la marque : le fronton du favicon, des icônes d'application et du manifeste
  * (`public/brand/immojudis-justice-temple.svg`, mêmes tracés ; couleurs par les jetons du site :
- * marine `brand-navy`, or `gold`, fond crème `surface`, qui valent celles du fichier). Un seul
+ * tuile bordeaux `brand-navy-soft`, fronton ivoire `surface`, qui valent celles du fichier). Un seul
  * pictogramme pour l'en-tête, le pied de page, le favicon et les données structurées. Il ne prend
  * pas la teinte du texte voisin (`currentColor`).
  *
@@ -19,31 +19,17 @@ export function BrandMark({
 }) {
   return (
     <svg
-      viewBox="0 0 256 256"
+      viewBox="0 0 64 64"
       {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": "Immojudis" })}
       className={cn("shrink-0", className)}
     >
-      <rect width="256" height="256" rx="52" className="fill-surface" />
       <path
-        d="M38 101h180L128 42 38 101Z"
-        fill="none"
-        className="stroke-brand-navy"
-        strokeWidth="18"
-        strokeLinejoin="round"
+        d="M14 0h36a14 14 0 0 1 14 14v36a14 14 0 0 1-14 14H14A14 14 0 0 1 0 50V14A14 14 0 0 1 14 0Z"
+        className="fill-brand-navy-soft"
       />
       <path
-        d="M58 202h140M74 101v82M112 101v82M150 101v82M188 101v82"
-        fill="none"
-        className="stroke-brand-navy"
-        strokeWidth="18"
-        strokeLinecap="round"
-      />
-      <path
-        d="M38 216h180"
-        fill="none"
-        className="stroke-gold"
-        strokeWidth="18"
-        strokeLinecap="round"
+        d="M32 15.47 51.41 27.69H12.59ZM14.75 29.84h34.5v2.16h-34.5ZM17.62 34.16h5.75v10.78h-5.75ZM29.12 34.16h5.75v10.78h-5.75ZM40.62 34.16h5.75v10.78h-5.75ZM12.59 47.09h38.81v3.59h-38.81Z"
+        className="fill-surface"
       />
     </svg>
   );

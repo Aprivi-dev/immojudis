@@ -1,37 +1,9 @@
 /*
- * Accueil, refonte du 24/11/2026 : palette pierre et bordeaux, titres en Cormorant Garamond, texte
- * courant en Manrope, peintures vivantes. Cette feuille porte la palette, la typographie, les boutons
+ * Accueil, refonte du 24/11/2026 : peintures vivantes, sur la palette et la typographie du site. Cette feuille porte la palette, la typographie, les boutons
  * et les sections de contenu (chiffres, exemple, guides, offres, questions) ; les sections peintes
  * et leurs scènes sont dans `HomeScenes.module.css`. Apparitions au défilement des blocs
  * `data-reveal` : `HomeMotion`. Rien ne bouge quand le visiteur réduit les animations.
  */
-
-/* La palette vaut pour toute la page d'accueil, en-tête et pied de page compris : les jetons du site
-   sont redéfinis tant que l'accueil est affiché, et seulement là. */
-:global(html):has(.page) {
-  --background: var(--pierre-background);
-  --foreground: var(--pierre-ink);
-  --surface: var(--pierre-surface);
-  --brand-navy: var(--pierre-ink);
-  --brand-navy-soft: var(--pierre-bordeaux);
-  --gold: var(--pierre-terracotta);
-  --gold-soft: var(--pierre-terracotta-text);
-  --gold-text: var(--pierre-terracotta-text);
-  --gold-light: var(--pierre-terracotta-light);
-  --gold-light-hover: var(--pierre-terracotta-light-hover);
-  --ink-strong: var(--pierre-ink-strong);
-  --ink-soft: var(--pierre-ink-soft);
-  --line: var(--pierre-line);
-  --line-soft: var(--pierre-line-soft);
-  --line-warm: var(--pierre-line-warm);
-  --surface-muted: var(--pierre-surface-muted);
-  --surface-tint: var(--pierre-surface-tint);
-  --sand: var(--pierre-sand);
-  --muted: var(--pierre-surface-tint);
-  --band-dark-fg: var(--pierre-on-dark);
-  --band-dark-soft: var(--pierre-on-dark-soft);
-  --border: rgb(69 32 26 / 12%);
-}
 
 .page {
   --home-ink: var(--brand-navy);
@@ -45,14 +17,11 @@
   --home-band: var(--brand-navy-soft);
   --home-band-fg: var(--band-dark-fg);
   --home-band-soft: var(--band-dark-soft);
-  --home-olive: var(--pierre-olive);
-  --home-button: var(--pierre-black);
+  --home-olive: var(--olive);
+  --home-button: var(--ink-black);
   --home-button-fg: var(--band-dark-fg);
   --home-ease: cubic-bezier(0.48, 0.05, 0.35, 0.99);
-  --home-display: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
-  /* Les titres de l'accueil suivent leur propre échelle : la hauteur d'œil de Cormorant est ramenée
-     à celle d'une linéale pour que les tailles en pixels gardent leur présence. */
-  --font-display-adjust: 0.47;
+  --home-display: var(--font-display);
   background: var(--background);
   color: var(--home-ink);
   font-family: var(--font-sans);

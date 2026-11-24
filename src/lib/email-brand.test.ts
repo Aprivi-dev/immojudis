@@ -43,20 +43,20 @@ describe("palette des emails", () => {
     expect(header).not.toMatch(/IMMOJUDIS|text-transform/);
   });
 
-  it("reprend le fond de page du site (#fbf9f5) et le filet de carte, pas l'ancien #fffaf2", () => {
-    expect(EMAIL_COLORS.background).toBe("#fbf9f5");
-    expect(EMAIL_COLORS.line).toBe("#d8cfc1");
+  it("reprend le fond de page du site (#ece6d3) et le filet de carte, pas l'ancien #f5f1e6", () => {
+    expect(EMAIL_COLORS.background).toBe("#ece6d3");
+    expect(EMAIL_COLORS.line).toBe("#cdbfa3");
   });
 
   it("fixe la palette du mode sombre validée", () => {
     expect(EMAIL_DARK_COLORS).toEqual({
       page: "#07111f",
-      card: "#132238",
+      card: "#45201a",
       text: "#f5efe4",
       muted: "#bdb4a4",
-      line: "#263c58",
-      link: "#e8c98e",
-      button: "#e8c98e",
+      line: "#56251e",
+      link: "#e9c9a8",
+      button: "#e9c9a8",
     });
   });
 

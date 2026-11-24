@@ -5,11 +5,11 @@
  */
 export const MAP_PALETTE = {
   /** `--brand-navy` : vente isolée, liseré et nombre des regroupements, contours. */
-  navy: "#132238",
+  navy: "#45201a",
   /** `--gold` : anneau et pictogramme de pépite, et rien d'autre (les regroupements sont blancs liserés marine). */
-  gold: "#c98d45",
+  gold: "#cf8760",
   /** `--gold-soft` : trait de l'état sélectionné (4,92:1 sur blanc, contre 2,85:1 pour `--gold`). */
-  goldSoft: "#9c642b",
+  goldSoft: "#8f4526",
   white: "#ffffff",
 } as const;
 

@@ -69,7 +69,7 @@ describe("système visuel", () => {
   it("interdit les couleurs [#hex] dans les classes (règle ESLint)", async () => {
     const eslint = new ESLint({ cwd: ROOT });
     const [bad] = await eslint.lintText(
-      `export const A = () => <p className="text-[#132238] bg-[#fff]">x</p>;\n`,
+      `export const A = () => <p className="text-[#45201a] bg-[#fff]">x</p>;\n`,
       { filePath: join(ROOT, "src/components/Fake.tsx") },
     );
     expect(bad.messages.some((message) => message.ruleId === "no-restricted-syntax")).toBe(true);

@@ -9,7 +9,8 @@ nom à empreinte et un cache `immutable`.
 | `manrope-latin.woff2` | Manrope (v15) | wght 200-800 | normal |
 
 Manrope est la seule police du site depuis le 25/10/2026 (à la place de Cormorant Garamond et d'IBM
-Plex Sans), sans italique, à l'exception des titres de l'accueil (voir plus bas). Le layout la déclare en graisses 400 à 800, toutes sur ce même fichier
+Plex Sans) jusqu'au 24/11/2026 ; elle est depuis la police du texte courant, les titres étant en
+Cormorant Garamond (voir plus bas). Le layout la déclare en graisses 400 à 800, toutes sur ce même fichier
 variable (un seul téléchargement), préchargée sur toutes les pages. `npm run build:budgets` vérifie
 sur le build quels fichiers de police sont servis.
 
@@ -21,16 +22,16 @@ paquet).
 Pour mettre à jour la police : remplacer le fichier par la nouvelle version `latin` variable, sans
 changer son nom, puis relancer `npm run build` et comparer le rendu.
 
-## Titres de l'accueil
+## Titres
 
 | Fichier                          | Famille                     | Axe          | Style  |
 | -------------------------------- | --------------------------- | ------------ | ------ |
 | `cormorant-garamond-latin.woff2` | Cormorant Garamond (v5.3.0) | wght 300-700 | normal |
 
-Depuis la refonte de l'accueil du 24/11/2026, ses titres sont en Cormorant Garamond ; le texte courant
-et toutes les autres pages restent en Manrope. La police est déclarée dans `src/app/page.tsx` : elle
-n'est servie que sur l'accueil et n'est pas préchargée. `npm run build:budgets` vérifie que le build
-sert ces deux fichiers, pas plus, et que seule Manrope est préchargée.
+Depuis la refonte du 24/11/2026, les titres de tout le site sont en Cormorant Garamond ; le texte
+courant reste en Manrope. La police est déclarée dans `src/app/layout.tsx`, sans préchargement.
+`npm run build:budgets` vérifie que le build sert ces deux fichiers, pas plus, et que seule Manrope
+est préchargée.
 
 Fichier WOFF2 de sous-ensemble `latin` (variable, sans italique), récupéré le 24/11/2026 dans le
 paquet npm `@fontsource-variable/cormorant-garamond` 5.3.0

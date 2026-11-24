@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import { HOME_TITLE, homeDescription } from "@/lib/home-seo";
 import { pageMetadata } from "@/lib/page-metadata";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
@@ -30,20 +29,6 @@ import { jsonLdString } from "@/lib/json-ld";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import { analysisOfferDescription } from "@/lib/offer-comparison";
 import { unlockHighlightsText } from "@/lib/sale-unlocks";
-
-// Police des titres de l'accueil (refonte du 24/11/2026), auto-hébergée dans src/fonts/ comme
-// Manrope : fichier WOFF2 « latin » variable, sans italique. Déclarée ici pour n'être servie que sur
-// cette page, et non préchargée : le texte courant, en Manrope, s'affiche sans l'attendre.
-// Les options de `next/font` doivent être des littéraux.
-const cormorant = localFont({
-  src: "../fonts/cormorant-garamond-latin.woff2",
-  weight: "300 700",
-  style: "normal",
-  display: "swap",
-  variable: "--font-cormorant",
-  preload: false,
-  adjustFontFallback: "Times New Roman",
-});
 
 // Titre et description propres à l'accueil (voir `home-seo.ts`) ; calculés au rendu, comme la page,
 // pour que les notaires et l'État ne soient cités que lorsque ces ventes sont au catalogue.
@@ -99,7 +84,7 @@ export default async function Page() {
         }}
       />
       <LaunchOfferProvider initialActive={trialOpen}>
-        <main id="contenu" className={`${homeStyles.page} ${cormorant.variable}`}>
+        <main id="contenu" className={homeStyles.page}>
           <HomeIntro />
           <HomeHero summary={summary} departments={departments} openFeeRegimes={openFeeRegimes} />
           <HomeStats summary={summary} departments={departments} />

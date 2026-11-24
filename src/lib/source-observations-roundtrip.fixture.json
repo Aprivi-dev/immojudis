@@ -6,9 +6,7 @@
       "id": "inferred_rooms_count",
       "source_url": "https://source.test/roundtrip/inferred",
       "field": "rooms_count",
-      "fields": [
-        "rooms_count"
-      ],
+      "fields": ["rooms_count"],
       "source_field_observations": {
         "rooms_count": {
           "value": 5,
@@ -35,24 +33,18 @@
           "subject_scope": "asset",
           "inference": {
             "method": "parser_field_without_explicit_source_text",
-            "input_fields": [
-              "rooms_count"
-            ],
+            "input_fields": ["rooms_count"],
             "confidence": 0.6
           }
         }
       },
-      "excluded_fields": [
-        "occupancy_status"
-      ]
+      "excluded_fields": ["occupancy_status"]
     },
     {
       "id": "conflict_rooms_count",
       "source_url": "https://source.test/roundtrip/conflict",
       "field": "rooms_count",
-      "fields": [
-        "rooms_count"
-      ],
+      "fields": ["rooms_count"],
       "source_field_observations": {
         "rooms_count": {
           "value": 5,
@@ -77,10 +69,7 @@
           ],
           "provenance": "parser_field",
           "subject_scope": "asset",
-          "values": [
-            5,
-            3
-          ],
+          "values": [5, 3],
           "conflicts": [
             {
               "source_url": "https://source.test/roundtrip/conflict",
@@ -97,9 +86,7 @@
           ]
         }
       },
-      "excluded_fields": [
-        "occupancy_status"
-      ]
+      "excluded_fields": ["occupancy_status"]
     },
     {
       "id": "real_notaires_bordeaux",
@@ -207,10 +194,7 @@
           ],
           "provenance": "parser_field",
           "subject_scope": "asset",
-          "values": [
-            "heat_pump",
-            "gas"
-          ],
+          "values": ["heat_pump", "gas"],
           "conflicts": [
             {
               "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
@@ -363,9 +347,7 @@
           "subject_scope": "asset"
         }
       },
-      "excluded_fields": [
-        "occupancy_status"
-      ]
+      "excluded_fields": ["occupancy_status"]
     }
   ]
 }

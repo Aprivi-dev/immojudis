@@ -166,16 +166,16 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
   it("admet le logo de la charte (une image), sur la production comme en préproduction, et rien d'autre du site", () => {
     const logo = (name: string) => `<img src="https://immojudis.com/brand/email/${name}">`;
     for (const appOrigin of ["https://immojudis.com", "https://staging.immojudis.test"]) {
-      for (const name of ["immojudis-logo-email-v1.png", "immojudis-logo-email-dark-v1.png"]) {
+      for (const name of ["immojudis-logo-email-v2.png", "immojudis-logo-email-dark-v2.png"]) {
         expect(findInformationAgentCommercialMentions(logo(name), { appOrigin })).toEqual([]);
       }
     }
     // Un autre fichier, une autre extension, un paramètre ou un autre hôte restent des liens refusés.
     for (const refused of [
       "https://immojudis.com/brand/email/promo.png",
-      "https://immojudis.com/brand/email/immojudis-logo-email-v1.png?utm_source=x",
+      "https://immojudis.com/brand/email/immojudis-logo-email-v2.png?utm_source=x",
       "https://immojudis.com/brand/immojudis-mark-transparent.png",
-      "https://autre.example/brand/email/immojudis-logo-email-v1.png",
+      "https://autre.example/brand/email/immojudis-logo-email-v2.png",
       "https://immojudis.com/offres",
     ]) {
       const rules = findInformationAgentCommercialMentions(`<a href="${refused}">x</a>`, {
@@ -187,7 +187,7 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
   });
 
   it("n'admet le logo que dans le `src` d'un <img>, jamais dans un lien ni dans un texte", () => {
-    const logo = "https://immojudis.com/brand/email/immojudis-logo-email-v1.png";
+    const logo = "https://immojudis.com/brand/email/immojudis-logo-email-v2.png";
     const options = { appOrigin: "https://immojudis.com" };
     expect(
       findInformationAgentCommercialMentions(`<img src="${logo}" width="144">`, options),

@@ -8,13 +8,22 @@ Cormorant Garamond et d'IBM Plex Sans), la navigation est une pilule flottante e
 sa maquette (`src/components/home/HomePage.module.css`, qui a sa propre échelle). Les jetons vivent dans `src/styles.css`, les composants de base
 dans `src/components/ui/primitives.tsx`.
 
-## Accueil : palette et titres à part (24/11/2026)
+## Refonte du 24/11/2026 : pierre, bordeaux et Cormorant Garamond
 
-Depuis la refonte du 24/11/2026, l'accueil a sa propre identité, et lui seul : palette « pierre et
-bordeaux » (jetons `--pierre-*` de `src/styles.css`, substitués aux jetons du site tant que l'accueil
-est affiché, en-tête et pied de page compris), titres en Cormorant Garamond, peintures et leurs
-boucles vidéo. Les règles ci-dessous restent celles de toutes les autres pages. Détail dans
-`src/components/home/HomePage.module.css` et `HomeScenes.module.css`.
+Depuis le 24/11/2026, tout le site suit la direction de la nouvelle page d'accueil :
+
+- **Palette « pierre et bordeaux »**. Les jetons de `src/styles.css` gardent leurs noms et changent
+  de valeur : `--background` est la pierre (#ece6d3), `--brand-navy` l'encre bordeaux (#45201a),
+  `--brand-navy-soft` le bordeaux des bandeaux (#56251e), `--gold` la terracotta des fonds et des
+  boutons (#cf8760), `--gold-text` la terracotta foncée des textes (#8f4526). Partout où ce document
+  dit « marine » ou « or », lire ces couleurs.
+- **Titres en Cormorant Garamond**, texte courant en Manrope, toujours sans italique.
+  `--font-display-adjust` ramène la hauteur d'œil de Cormorant à 0,47 em pour que les tailles en
+  pixels ci-dessous gardent leur présence.
+- **Logo** : le fronton plein sur tuile bordeaux (`BrandMark`, favicon, icônes, emails).
+- **Peintures et boucles vidéo** : propres à l'accueil (`src/components/home/`).
+
+Les règles de rôle ci-dessous (qui porte quelle couleur, échelle de texte, arrondis) ne changent pas.
 
 ## Fond et surfaces
 
