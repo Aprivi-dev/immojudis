@@ -18,6 +18,8 @@
   --home-band-fg: var(--band-dark-fg);
   --home-band-soft: var(--band-dark-soft);
   --home-olive: var(--olive);
+  /* Largeur du contenu : ce qui reste de part et d'autre est la marge de la page. */
+  --home-max: 1152px;
   --home-button: var(--ink-black);
   --home-button-fg: var(--band-dark-fg);
   --home-ease: cubic-bezier(0.48, 0.05, 0.35, 0.99);
@@ -56,7 +58,7 @@
 }
 
 .container {
-  width: min(1152px, 100%);
+  width: min(var(--home-max), 100%);
   margin-inline: auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -278,13 +280,14 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  background: var(--background);
-  color: var(--home-soft);
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  color: inherit;
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* Chiffres du catalogue ----------------------------------------------------------------------- */
@@ -350,18 +353,23 @@
   gap: 16px;
 }
 
+/* Deux feuillets à plat, comme les tuiles des règles du tribunal : pas d'ombre ni de grand arrondi. */
 .plan {
   display: grid;
   align-content: start;
   gap: 16px;
   padding: 32px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
+  border-radius: 4px;
   background: var(--home-surface);
 }
 
 .planFeatured {
-  border-color: var(--home-accent-fill);
+  background: var(--home-band);
+  color: var(--home-band-fg);
+  /* Sur le bordeaux : textes secondaires, accents et filets dans les teintes du bandeau. */
+  --home-soft: var(--home-band-soft);
+  --home-accent: var(--gold-light);
+  --home-line-strong: rgb(255 255 255 / 34%);
 }
 
 .planHead {
@@ -436,8 +444,7 @@
 
 .faq {
   overflow: hidden;
-  border: 1px solid var(--home-line);
-  border-radius: 16px;
+  border-radius: 4px;
   background: var(--home-surface);
 }
 
@@ -583,8 +590,8 @@
 /* Fiche exemple qui rend un verdict (maquette validée le 26/10/2026) ------------------------- */
 
 .verdict_go {
-  --verdict: var(--success);
-  --verdict-tint: var(--success-tint);
+  --verdict: var(--olive-deep);
+  --verdict-tint: var(--olive-tint);
 }
 
 .verdict_tight {
@@ -621,11 +628,13 @@
 
 .verdictAmount {
   color: var(--verdict);
-  font-size: 44px;
-  font-weight: 800;
+  font-family: var(--home-display);
+  font-size: 60px;
+  font-size-adjust: var(--font-display-adjust);
+  font-weight: 600;
   line-height: 1;
   letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   white-space: nowrap;
   transition: color 500ms var(--home-ease);
 }
@@ -644,7 +653,7 @@
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  background: var(--success);
+  background: var(--olive-deep);
   color: var(--band-dark-fg);
   font-size: 11px;
   font-weight: 800;
@@ -750,15 +759,19 @@
   gap: 64px;
 }
 
+/* La fiche exemple est un registre à plat : un bandeau bordeaux pour le bien, puis des feuillets
+   ivoire séparés par un filet de pierre, sans ombre ni grand arrondi (cohérence avec les tuiles
+   des sections peintes). */
 .tryCard {
   display: grid;
-  gap: 16px;
+  gap: 6px;
   min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
+}
+
+.tryCard > * {
+  padding: 22px 24px;
+  border-radius: 4px;
   background: var(--home-surface);
-  box-shadow: 0 32px 80px -40px rgb(69 32 26 / 35%);
 }
 
 .tryTop {
@@ -767,16 +780,22 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  background: var(--home-band);
+  color: var(--home-band-fg);
 }
 
 .tryTop b {
   display: block;
-  font-size: 18px;
+  font-family: var(--home-display);
+  font-size: 26px;
+  font-size-adjust: var(--font-display-adjust);
+  font-weight: 600;
   line-height: 28px;
+  letter-spacing: -0.02em;
 }
 
 .tryTop span:not(.tag) {
-  color: var(--home-soft);
+  color: var(--home-band-soft);
   font-size: 14px;
   line-height: 20px;
 }
@@ -808,10 +827,9 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 0 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--home-line);
-  border-radius: 10px;
-  background: var(--background);
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--home-surface-2);
 }
 
 .tryData .analysisCheck {
@@ -857,9 +875,8 @@
   display: flex;
   gap: 4px;
   padding: 3px;
-  border: 1px solid var(--home-line);
-  border-radius: 10px;
-  background: var(--surface-muted);
+  border: 1px solid var(--home-line-strong);
+  border-radius: 9999px;
 }
 
 .segmented button {
@@ -867,7 +884,7 @@
   min-height: 44px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 9999px;
   background: transparent;
   color: var(--home-soft);
   font: inherit;
@@ -885,16 +902,13 @@
 }
 
 .segmented button[aria-pressed="true"] {
-  background: var(--home-surface);
-  color: var(--home-ink);
-  box-shadow: 0 4px 10px -6px rgb(69 32 26 / 40%);
+  background: var(--home-button);
+  color: var(--home-button-fg);
 }
 
 .tryVerdict {
   display: grid;
   gap: 4px;
-  padding: 16px;
-  border-radius: 16px;
   background: var(--verdict-tint);
   transition: background-color 500ms var(--home-ease);
 }

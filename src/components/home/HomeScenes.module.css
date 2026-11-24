@@ -169,17 +169,19 @@
 
 .hero {
   position: relative;
-  min-height: clamp(560px, 54vw, 760px);
+  min-height: clamp(620px, 62vw, 1040px);
   overflow: hidden;
 }
 
 .heroPainting {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  height: 104%;
+  /* La peinture domine le premier écran : elle déborde en bas et à droite, et l'ordinateur passe sous
+     le texte, comme sur la référence. */
+  right: -16%;
+  bottom: -12%;
+  height: 118%;
   aspect-ratio: 4 / 3;
-  mask-image: linear-gradient(to right, transparent, black 16%);
+  mask-image: linear-gradient(to right, transparent, black 12%);
 }
 
 .heroCopy {
@@ -789,14 +791,16 @@
     order: 2;
     width: 100%;
     height: auto;
-    aspect-ratio: 5 / 4;
-    margin-top: 24px;
-    mask-image: linear-gradient(to bottom, transparent, black 18%);
+    right: auto;
+    bottom: auto;
+    aspect-ratio: 4 / 5;
+    margin-top: 8px;
+    mask-image: linear-gradient(to bottom, transparent, black 10%);
   }
 
   .heroPainting img,
   .heroPainting video {
-    object-position: 82% 100%;
+    object-position: 76% 100%;
   }
 
   .rulesTop {

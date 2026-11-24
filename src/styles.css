@@ -143,6 +143,9 @@
   --cream: #f8efdc;
   /* Olive des peintures (fonds de scène) et presque noir des boutons pleins et des objets tramés. */
   --olive: #8e7954;
+  /* Vert olive foncé des verdicts favorables et des points confirmés (6,3:1 sur l'ivoire), et sa teinte. */
+  --olive-deep: #4f6b3a;
+  --olive-tint: #e3e4cc;
   --ink-black: #17110f;
 
   --card: var(--surface);
