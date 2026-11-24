@@ -77,6 +77,14 @@ const LOOSE_OPT_OUT_PATTERNS: RegExp[] = [
   /\b(?:arr[êe]t(?:ez|er|e)|cess(?:ez|er)|stopp?(?:ez|er)?|interdi\w*|refus(?:e|ons)\s+(?:tout|toute))\b/iu,
   /\b(?:d[ée]marchage|prospection|publicit[ée]|sollicitations?\s+(?:commerciales?|non\s+sollicit[ée]es?))\b/iu,
   /\b(?:comment|pourquoi|o[ùu])\s+(?:avez|avons)[-\s]?(?:vous|nous)\s+(?:obtenu|eu|trouv[ée])\s+(?:mon|notre|mes|nos)\b/iu,
+  // Refus implicites (audit du 24/11/2026) : « Inutile de me relancer », « Je vous saurais gré de m'oublier »,
+  // « Je ne donne pas suite à ce type de demande », « Je ne souhaite pas répondre ». Bornés à la demande
+  // elle-même : « je ne donne pas suite à l'offre précédente » ou « je ne souhaite pas répondre sur ce point »
+  // ne sont pas des refus.
+  /\binutile\s+de\s+(?:(?:me|nous)\s+|m['’]\s*)?(?:re)?(?:contacter|[ée]crire|solliciter|relancer|rappeler|insister)\b/iu,
+  /\b(?:m['’]|nous\s+)oubli(?:er|ez)\b/iu,
+  /\bne\s+(?:(?:donne|donnons|donnerai|donnerons)\s+pas|(?:souhaite|souhaitons|veux|voulons|peux|pouvons)\s+pas\s+donner)\s+(?:de\s+)?suite(?=\s*(?:[.!…;,\n]|$)|\s+(?:à|a)\s+(?:votre|vos|ce|cette|ces)\s+(?:(?:type|genre)\s+de\s+)?(?:demandes?|sollicitations?|messages?|courriels?|e-?mails?|requ[êe]tes?)\b)/iu,
+  /\bne\s+(?:souhaite|souhaitons|veux|voulons)\s+pas\s+(?:y\s+|vous\s+)?r[ée]pondre(?=\s*(?:[.!…;,\n]|$)|\s+(?:à|a)\s+(?:votre|vos|ce|cette|ces)\s+(?:(?:type|genre)\s+de\s+)?(?:demandes?|sollicitations?|messages?|courriels?|e-?mails?|questionnaires?)\b)/iu,
 ].map(unicodeWordBoundaries);
 
 /**
