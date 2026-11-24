@@ -39,9 +39,9 @@ describe(".liquid-page", () => {
     );
   });
 
-  it("les cartes de connexion sont blanches à filet, sans flou ni ombre", () => {
+  it("les cartes de connexion sont ivoire à filet, sans flou ni ombre", () => {
     const rule = /\.glass-shell\s*\{([^}]*)\}/.exec(css())?.[1] ?? "";
-    expect(rule).toContain("background: #ffffff");
+    expect(rule).toContain("background: var(--surface)");
     expect(rule).toContain("border: 1px solid var(--line)");
     expect(rule).not.toContain("backdrop-filter");
     expect(rule).not.toContain("box-shadow");

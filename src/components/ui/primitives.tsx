@@ -57,7 +57,7 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   // terracotta reste au décor et aux accents. `dark` (bordeaux) est conservé pour les appels existants.
   primary: "bg-ink-black text-white hover:bg-brand-navy",
   secondary: "border border-line bg-white text-brand-navy hover:border-brand-navy",
-  dark: "bg-brand-navy text-white hover:bg-brand-navy-soft",
+  dark: "bg-ink-black text-white hover:bg-brand-navy",
   ghost: "text-brand-navy hover:bg-surface-tint",
   danger: "border border-danger bg-white text-danger hover:bg-danger-tint",
 };
