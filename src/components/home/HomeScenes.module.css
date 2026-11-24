@@ -178,9 +178,9 @@
 
 .heroPainting {
   position: absolute;
-  top: -5vw;
-  left: -8vw;
-  width: 112vw;
+  top: 0;
+  right: 0;
+  height: max(75vw, 100%);
   aspect-ratio: 4 / 3;
 }
 
@@ -791,9 +791,10 @@
   .heroPainting {
     position: relative;
     top: auto;
-    left: auto;
+    right: auto;
     order: 2;
     width: 100%;
+    height: auto;
     aspect-ratio: 2 / 3;
     margin-top: 8px;
   }
