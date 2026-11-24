@@ -19,8 +19,6 @@ import {
 } from "@/components/home/HomeScenes";
 import { HomeScrollScenes } from "@/components/home/HomeScrollScenes";
 import { HomeFaq, homeFaqItems, HomeGuides, HomeStats } from "@/components/home/HomeSections";
-import { HomeTryExample } from "@/components/home/HomeTryExample";
-import { exampleVerdictData } from "@/lib/example-verdict";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
@@ -90,7 +88,6 @@ export default async function Page() {
           <HomeStats summary={summary} departments={departments} />
           <HomeDossier />
           <HomeAnswers />
-          <HomeTryExample data={exampleVerdictData()} />
           <HomePath />
           <HomeRules />
           <HomeGuides />

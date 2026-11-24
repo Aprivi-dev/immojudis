@@ -110,8 +110,8 @@ export function ExampleSalePage({
         topNotice={<ExampleFictionNotice />}
         sale={example.sale}
         marketEstimateOverride={example.marketEstimate}
-        returnTo="/#essayer"
-        backLabel="Retour aux exemples"
+        returnTo="/"
+        backLabel="Retour à l’accueil"
         summaryFooter={<ExampleSummarySignup />}
         publicDemo
         defaultCeilingChoices={ceilingChoices}
