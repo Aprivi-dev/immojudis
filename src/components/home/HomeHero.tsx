@@ -43,7 +43,7 @@ export function HomeHero({
       <HomePainting
         name="01-hero"
         alt="Peinture : la Justice, assise de profil, travaille sur un ordinateur portable ; une balance est posée près d’elle."
-        sizes="(max-width: 960px) 120vw, 70vw"
+        sizes="(max-width: 960px) 200vw, 150vw"
         eager
         className={scenes.heroPainting}
       />

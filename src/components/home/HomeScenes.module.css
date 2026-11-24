@@ -167,21 +167,21 @@
 
 /* Premier écran -------------------------------------------------------------------------------- */
 
+/* Comme sur le site de référence : le premier écran fait la hauteur de la fenêtre, et la peinture,
+   plus large que l'écran, est coupée en haut, à droite et en bas. */
 .hero {
   position: relative;
-  min-height: clamp(620px, 62vw, 1040px);
+  height: 100svh;
+  min-height: 620px;
   overflow: hidden;
 }
 
 .heroPainting {
   position: absolute;
-  /* La peinture domine le premier écran : elle déborde en bas et à droite, et l'ordinateur passe sous
-     le texte, comme sur la référence. */
-  right: -16%;
-  bottom: -12%;
-  height: 118%;
+  top: -23vw;
+  left: -27.5vw;
+  width: 150vw;
   aspect-ratio: 4 / 3;
-  mask-image: linear-gradient(to right, transparent, black 12%);
 }
 
 .heroCopy {
@@ -190,7 +190,7 @@
   display: grid;
   justify-items: start;
   gap: 20px;
-  padding-top: clamp(72px, 9vw, 132px);
+  padding-top: clamp(64px, 8.4vw, 150px);
   padding-bottom: 72px;
   will-change: transform;
 }
@@ -507,7 +507,7 @@
   grid-area: 1 / 1 / 2 / 3;
   align-content: center;
   gap: 12px;
-  padding-left: max(clamp(16px, 6vw, 96px), env(safe-area-inset-left, 0px));
+  padding-left: max(var(--home-gutter), env(safe-area-inset-left, 0px));
 }
 
 .tileA {
@@ -520,7 +520,7 @@
 
 .tileC {
   grid-area: 3 / 1;
-  padding-left: max(clamp(16px, 6vw, 96px), env(safe-area-inset-left, 0px));
+  padding-left: max(var(--home-gutter), env(safe-area-inset-left, 0px));
 }
 
 .tileD {
@@ -776,9 +776,11 @@
 /* Largeurs ------------------------------------------------------------------------------------- */
 
 @media (max-width: 960px) {
+  /* Écran étroit : le texte d'abord, puis la peinture, deux fois plus large que l'écran. */
   .hero {
     display: flex;
     flex-direction: column;
+    height: auto;
     min-height: 0;
   }
 
@@ -788,19 +790,17 @@
 
   .heroPainting {
     position: relative;
+    top: auto;
+    left: auto;
     order: 2;
     width: 100%;
-    height: auto;
-    right: auto;
-    bottom: auto;
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 2 / 3;
     margin-top: 8px;
-    mask-image: linear-gradient(to bottom, transparent, black 10%);
   }
 
   .heroPainting img,
   .heroPainting video {
-    object-position: 76% 100%;
+    object-position: 74% 0%;
   }
 
   .rulesTop {
@@ -824,8 +824,8 @@
   .tile,
   .tileLead,
   .tileC {
-    padding: 22px max(16px, env(safe-area-inset-right, 0px)) 22px
-      max(16px, env(safe-area-inset-left, 0px));
+    padding: 22px max(var(--home-gutter), env(safe-area-inset-right, 0px)) 22px
+      max(var(--home-gutter), env(safe-area-inset-left, 0px));
     border-top: 1px solid var(--home-line);
   }
 

@@ -18,8 +18,9 @@
   --home-band-fg: var(--band-dark-fg);
   --home-band-soft: var(--band-dark-soft);
   --home-olive: var(--olive);
-  /* Largeur du contenu : ce qui reste de part et d'autre est la marge de la page. */
-  --home-max: 1152px;
+  /* Marge de la page, comme sur le site de référence : un douzième de la largeur de l'écran, sans
+     largeur maximale du contenu (120 px à 1 440, 160 px à 1 920) ; 20 px sur écran étroit. */
+  --home-gutter: max(20px, 8.3333vw);
   --home-button: var(--ink-black);
   --home-button-fg: var(--band-dark-fg);
   --home-ease: cubic-bezier(0.48, 0.05, 0.35, 0.99);
@@ -58,10 +59,9 @@
 }
 
 .container {
-  width: min(var(--home-max), 100%);
-  margin-inline: auto;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  width: 100%;
+  padding-left: max(var(--home-gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--home-gutter), env(safe-area-inset-right, 0px));
 }
 
 .section {
@@ -1132,5 +1132,12 @@
 @keyframes home-blink {
   50% {
     opacity: 0.2;
+  }
+}
+
+/* Écran étroit : la marge ne suit plus la largeur, elle reste à 20 px. */
+@media (max-width: 809px) {
+  .page {
+    --home-gutter: 20px;
   }
 }
