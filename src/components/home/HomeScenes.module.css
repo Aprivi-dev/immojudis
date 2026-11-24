@@ -178,9 +178,11 @@
 
 .heroPainting {
   position: absolute;
-  top: 0;
-  right: 0;
-  height: max(75vw, 100%);
+  /* Cadrage réglé par le propriétaire le 24/11/2026 : largeur 97,4 vw, gauche 0, haut −9,2 vw. La
+     hauteur plancher garde la peinture jusqu'au bas du premier écran sur les fenêtres hautes. */
+  top: -9.2vw;
+  left: 0;
+  height: max(73.05vw, calc(100% + 9.2vw));
   aspect-ratio: 4 / 3;
 }
 
@@ -791,7 +793,7 @@
   .heroPainting {
     position: relative;
     top: auto;
-    right: auto;
+    left: auto;
     order: 2;
     width: 100%;
     height: auto;
