@@ -203,7 +203,7 @@ export function AdminInformationAgentReviewPanel() {
           Réponses reçues
         </div>
         <h2 className="mt-2 font-semibold">Informations à contrôler</h2>
-        <p className="mt-1 text-sm text-brand-navy/60">
+        <p className="mt-1 text-sm text-ink-soft">
           Rien n’est intégré à une annonce sans validation. Accepter une pièce (document ou photo)
           la publie pour l’annonce, une fois ses droits de diffusion autorisés. Accepter une autre
           information l’inscrit au registre des pièces, à votre nom : surface, terrain, pièces et
@@ -293,7 +293,7 @@ export function AdminInformationAgentReviewPanel() {
         </section>
       ) : null}
       {query.isPending ? (
-        <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
+        <p className="p-5 text-sm text-ink-soft">Chargement…</p>
       ) : query.error ? (
         <p role="alert" className="p-5 text-sm text-red-700">
           {queryErrorMessage(query.error, "Réponses indisponibles")}
@@ -506,16 +506,14 @@ export function AdminInformationAgentReviewPanel() {
                     </div>
                     <p className="mt-2 font-medium">{fact.display_value}</p>
                     {asset?.original_filename && asset.original_filename !== fact.display_value ? (
-                      <p className="mt-1 text-xs text-brand-navy/55">
+                      <p className="mt-1 text-xs text-ink-soft">
                         Pièce jointe : {asset.original_filename}
                       </p>
                     ) : null}
                     {typeof fact.source_page === "number" && fact.source_page > 0 ? (
-                      <p className="mt-1 text-xs text-brand-navy/55">
-                        Page source : {fact.source_page}
-                      </p>
+                      <p className="mt-1 text-xs text-ink-soft">Page source : {fact.source_page}</p>
                     ) : null}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/60">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-soft">
                       <Link
                         href={saleDetailPath(fact.sale_id)}
                         className="inline-flex items-center gap-1 font-medium text-gold-text underline"
@@ -551,7 +549,7 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     {fact.evidence_excerpt ? (
-                      <p className="mt-2 text-sm text-brand-navy/60">« {fact.evidence_excerpt} »</p>
+                      <p className="mt-2 text-sm text-ink-soft">« {fact.evidence_excerpt} »</p>
                     ) : null}
                     {requiresRights ? (
                       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -563,7 +561,7 @@ export function AdminInformationAgentReviewPanel() {
                           >
                             Droits de diffusion : {rightsStatusLabel(asset?.rights_status)}
                           </span>
-                          <span className="text-brand-navy/65">
+                          <span className="text-ink-soft">
                             Analyse : {extraction?.status ?? "en attente"}
                           </span>
                         </div>
@@ -650,7 +648,7 @@ export function AdminInformationAgentReviewPanel() {
                                   referrerPolicy="no-referrer"
                                   className="h-[28rem] w-full rounded border bg-slate-50"
                                 />
-                                <p className="px-1 pt-2 text-[11px] text-brand-navy/55">
+                                <p className="px-1 pt-2 text-[11px] text-ink-soft">
                                   Ce lien expire rapidement et l’original reste dans le stockage
                                   privé.
                                 </p>
@@ -672,7 +670,7 @@ export function AdminInformationAgentReviewPanel() {
                                 className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-brand-navy outline-none focus:border-gold-soft focus:ring-1 focus:ring-gold-soft"
                               />
                             </label>
-                            <p className="mt-2 text-xs text-brand-navy/60">
+                            <p className="mt-2 text-xs text-ink-soft">
                               La décision enregistre l’administrateur, la date et cette note dans
                               l’historique de la pièce.
                             </p>
@@ -714,7 +712,7 @@ export function AdminInformationAgentReviewPanel() {
                               }
                             />
                           </label>
-                          <p className="mt-2 text-[11px] text-brand-navy/60">
+                          <p className="mt-2 text-[11px] text-ink-soft">
                             Le PDF sera aplati en images sans métadonnées avant publication ; le
                             fichier est servi par lien signé de 10 minutes.
                           </p>
@@ -853,7 +851,7 @@ export function AdminInformationAgentReviewPanel() {
           />
         </div>
       ) : (
-        <p className="p-5 text-sm text-brand-navy/55">Aucune information en attente de contrôle.</p>
+        <p className="p-5 text-sm text-ink-soft">Aucune information en attente de contrôle.</p>
       )}
     </section>
   );
@@ -982,7 +980,7 @@ function ProcessingStatus({ processing }: { processing: Record<string, unknown> 
   const lastError = typeof processing?.last_error === "string" ? processing.last_error : null;
   return (
     <p
-      className={`mt-1 text-xs ${status === "failed" ? "font-medium text-red-800" : "text-brand-navy/65"}`}
+      className={`mt-1 text-xs ${status === "failed" ? "font-medium text-red-800" : "text-ink-soft"}`}
     >
       Traitement automatique : {PROCESSING_STATUS_LABELS[status] ?? status}
       {reason ? ` (${PROCESSING_REASON_LABELS[reason] ?? reason})` : ""}
@@ -1001,7 +999,7 @@ function FactProvenance({ source }: { source: InformationAgentFactSource | undef
         : "Réponse par e-mail";
   const received = source.receivedAt ? formatShortDateTime(source.receivedAt) : null;
   return (
-    <p className="mt-1 text-xs text-brand-navy/60">
+    <p className="mt-1 text-xs text-ink-soft">
       Provenance : {channel}
       {source.fromEmail ? ` · ${source.fromEmail}` : ""}
       {received ? ` · reçue le ${received}` : ""}

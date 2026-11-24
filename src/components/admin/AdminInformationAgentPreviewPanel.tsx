@@ -46,7 +46,7 @@ export function AdminInformationAgentPreviewPanel({
         </button>
       </div>
       {!preview ? (
-        <p className="mt-2 text-xs text-brand-navy/60">
+        <p className="mt-2 text-xs text-ink-soft">
           L’envoi n’est possible qu’après l’affichage de l’aperçu exact du message.
         </p>
       ) : null}
@@ -147,7 +147,7 @@ export function AdminInformationAgentPreviewPanel({
               {preview.preview.text}
             </pre>
           </details>
-          <p className="mt-2 text-xs text-brand-navy/55">
+          <p className="mt-2 text-xs text-ink-soft">
             Le jeton de l’adresse de réponse et le lien privé de dépôt sont attribués au moment de
             l’envoi ; tout le reste est identique au message qui partira.
           </p>

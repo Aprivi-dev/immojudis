@@ -29,7 +29,7 @@ export function AdminOperationalAlerts() {
         </p>
       ) : null}
       {query.isPending ? (
-        <p className="mt-3 text-sm text-brand-navy/60" role="status">
+        <p className="mt-3 text-sm text-ink-soft" role="status">
           Chargement des alertes…
         </p>
       ) : count === null ? (
@@ -63,7 +63,7 @@ export function AdminOperationalAlerts() {
                       </AdminPill>
                       <span className="font-medium text-brand-navy">{label}</span>
                     </div>
-                    <p className="mt-1 text-xs text-brand-navy/60">
+                    <p className="mt-1 text-xs text-ink-soft">
                       Dernier signal le {formatCompactDateTime(alert.lastSeenAt)}
                     </p>
                   </div>

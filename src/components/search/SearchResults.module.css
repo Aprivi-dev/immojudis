@@ -83,7 +83,7 @@
 }
 
 .carouselButton:hover {
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .carouselButton:focus-visible {
@@ -143,7 +143,7 @@
 
 .photoDotActive {
   width: 0.85rem;
-  background: #ffffff;
+  background: var(--surface);
 }
 
 @media (hover: none) {

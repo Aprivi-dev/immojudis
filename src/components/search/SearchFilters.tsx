@@ -142,7 +142,7 @@ export function NoResultsState({
             <button
               type="button"
               onClick={pepite.onKeepOnlyPepite}
-              className="inline-flex min-h-11 cursor-pointer items-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft"
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-full bg-ink-black px-4 text-sm font-semibold text-white hover:bg-brand-navy"
             >
               Retirer les autres filtres
             </button>
@@ -170,7 +170,7 @@ export function NoResultsState({
             <button
               type="button"
               onClick={onReset}
-              className="inline-flex min-h-11 cursor-pointer items-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft"
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-full bg-ink-black px-4 text-sm font-semibold text-white hover:bg-brand-navy"
             >
               Effacer les filtres
             </button>

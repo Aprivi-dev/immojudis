@@ -162,7 +162,7 @@ export function AdminFactClaimDecisionPanel() {
             <h2 id="fact-decision-title" className="mt-2 font-semibold">
               Observations à décider, qui peuvent modifier la fiche
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
+            <p className="mt-1 max-w-3xl text-sm text-ink-soft">
               Une observation acceptée peut remplacer la valeur affichée sur la fiche, si elle
               l’emporte et qu’elle est rattachée au lot ; le résultat s’affiche après
               l’enregistrement. Une opposition ou un retrait d’autorisation sont définitifs.
@@ -205,7 +205,7 @@ export function AdminFactClaimDecisionPanel() {
             {saleInputError}
           </p>
         ) : null}
-        <p className="mt-2 text-xs text-brand-navy/60">
+        <p className="mt-2 text-xs text-ink-soft">
           {saleId
             ? "Toutes les observations de cette vente."
             : "Sans vente choisie : les réponses de professionnels et les saisies d’administrateur."}
@@ -224,7 +224,7 @@ export function AdminFactClaimDecisionPanel() {
       ) : null}
 
       {query.isPending ? (
-        <p role="status" className="p-5 text-sm text-brand-navy/55">
+        <p role="status" className="p-5 text-sm text-ink-soft">
           Chargement des observations…
         </p>
       ) : query.error ? (
@@ -277,7 +277,7 @@ export function AdminFactClaimDecisionPanel() {
           />
         </div>
       ) : (
-        <p className="p-5 text-sm text-brand-navy/60">
+        <p className="p-5 text-sm text-ink-soft">
           {saleId
             ? "Aucune observation pour cette vente."
             : "Aucune observation de professionnel ou d’administrateur à décider."}
@@ -325,19 +325,19 @@ function DecisionLine({
       <div className="flex flex-wrap items-center gap-2">
         <AdminPill tone={state.tone}>{state.label}</AdminPill>
         {item.latestDecision ? (
-          <span className="text-xs text-brand-navy/55">
+          <span className="text-xs text-ink-soft">
             Décision du {formatShortDateTime(item.latestDecision.decidedAt)}
           </span>
         ) : null}
       </div>
       <h3 id={titleId} ref={titleRef} tabIndex={-1} className="mt-2 font-semibold outline-none">
         {factFieldLabel(item.fieldKey)}
-        <span className="font-normal text-brand-navy/60">
+        <span className="font-normal text-ink-soft">
           {" · "}
           {item.sale.title || item.sale.city || "Vente sans titre"}
         </span>
       </h3>
-      <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/55">
+      <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-soft">
         {item.sale.city ? <span>{item.sale.city}</span> : null}
         {item.sale.saleDate ? (
           <span>Vente du {formatShortDateTime(item.sale.saleDate)}</span>
@@ -351,19 +351,19 @@ function DecisionLine({
       </p>
       <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
         <div className="rounded-lg border bg-warning-tint p-3">
-          <dt className="text-xs font-medium text-brand-navy/60">Valeur proposée</dt>
+          <dt className="text-xs font-medium text-ink-soft">Valeur proposée</dt>
           <dd className="mt-1 break-words font-semibold text-warning">
             {displayValue(item.fieldKey, item.value)}
           </dd>
         </div>
         <div className="rounded-lg border bg-surface-muted p-3">
-          <dt className="text-xs font-medium text-brand-navy/60">Valeur affichée aujourd’hui</dt>
+          <dt className="text-xs font-medium text-ink-soft">Valeur affichée aujourd’hui</dt>
           <dd className="mt-1 break-words font-semibold text-brand-navy">
             {displayValue(item.fieldKey, item.currentValue)}
           </dd>
         </div>
       </dl>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-dashed p-3 text-xs text-brand-navy/65">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-dashed p-3 text-xs text-ink-soft">
         <span className="font-medium text-brand-navy">
           Origine : {ORIGIN_LABELS[item.origin] ?? "Autre origine"}
         </span>

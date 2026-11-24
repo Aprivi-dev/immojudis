@@ -124,7 +124,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               )}
               {saleVerificationLabel(procedure.verificationStatus)}
             </span>
-            <p className="max-w-sm text-xs leading-relaxed text-brand-navy/65">
+            <p className="max-w-sm text-xs leading-relaxed text-ink-soft">
               {saleVerificationExplanation(procedure.verificationStatus)}
             </p>
           </div>

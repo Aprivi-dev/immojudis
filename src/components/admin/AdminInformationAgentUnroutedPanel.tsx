@@ -62,14 +62,14 @@ export function AdminInformationAgentUnroutedPanel() {
           Réponses reçues
         </div>
         <h2 className="mt-2 font-semibold">Messages non rattachés</h2>
-        <p className="mt-1 text-sm text-brand-navy/60">
+        <p className="mt-1 text-sm text-ink-soft">
           Messages reçus à l’adresse de réponse sans dossier ouvert. Ils ne sont ni analysés ni
           suivis d’une réponse : lisez-les, puis marquez-les comme traités. Pour intégrer une
           information à une annonce, consignez la réponse sur l’enquête concernée.
         </p>
       </div>
       {query.isPending ? (
-        <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
+        <p className="p-5 text-sm text-ink-soft">Chargement…</p>
       ) : query.error ? (
         <p role="alert" className="p-5 text-sm text-danger">
           {queryErrorMessage(query.error, "Messages indisponibles")}
@@ -95,7 +95,7 @@ export function AdminInformationAgentUnroutedPanel() {
                     <p className="mt-1 break-words text-brand-navy/80">
                       {message.subject || "(sans objet)"}
                     </p>
-                    <p className="mt-1 text-xs text-brand-navy/60">
+                    <p className="mt-1 text-xs text-ink-soft">
                       Reçu le {received} · {REASON_LABELS[message.reason] ?? message.reason} ·{" "}
                       {message.sender_known
                         ? "expéditeur présent dans nos données"
@@ -127,7 +127,7 @@ export function AdminInformationAgentUnroutedPanel() {
                     {message.excerpt}
                   </pre>
                 ) : (
-                  <p className="mt-3 text-xs text-brand-navy/60">
+                  <p className="mt-3 text-xs text-ink-soft">
                     Texte non lu : expéditeur inconnu. Le message est consultable dans Resend
                     (identifiant {message.provider_email_id}).
                   </p>
@@ -146,7 +146,7 @@ export function AdminInformationAgentUnroutedPanel() {
           />
         </div>
       ) : (
-        <p className="p-5 text-sm text-brand-navy/55">Aucun message non rattaché à traiter.</p>
+        <p className="p-5 text-sm text-ink-soft">Aucun message non rattaché à traiter.</p>
       )}
     </section>
   );

@@ -127,7 +127,7 @@ function SponsoredLawyerCard({
       ) : null}
       <a
         href={directoryHref(lawyer)}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Voir l’annuaire du secteur
       </a>
@@ -169,7 +169,7 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
       </p>
       <a
         href={LAWYER_CONTACT_HREF}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-brand-navy px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full bg-ink-black px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Présenter mon cabinet
       </a>

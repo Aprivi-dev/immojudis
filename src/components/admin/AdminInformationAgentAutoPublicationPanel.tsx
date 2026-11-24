@@ -129,7 +129,7 @@ export function AutoPublicationDecisionNote({
 }) {
   if (!decision) {
     return (
-      <p className="mt-2 text-xs text-brand-navy/55">
+      <p className="mt-2 text-xs text-ink-soft">
         Simulation : décision du moteur pas encore calculée.
       </p>
     );

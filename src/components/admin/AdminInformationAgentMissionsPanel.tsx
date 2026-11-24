@@ -600,7 +600,7 @@ export function AdminInformationAgentMissionsPanel({
           <h2 ref={composerHeadingRef} tabIndex={-1} className="mt-2 font-semibold">
             Demandes d’informations
           </h2>
-          <p className="mt-1 text-sm text-brand-navy/60">
+          <p className="mt-1 text-sm text-ink-soft">
             Le brouillon est préparé automatiquement. Chaque envoi est déclenché à la main, fiche
             par fiche, après l’aperçu du message ; aucune relance n’est automatique.
           </p>
@@ -615,7 +615,7 @@ export function AdminInformationAgentMissionsPanel({
       {selection && !activeMission ? (
         <div className="border-b bg-amber-50/50 p-5">
           <h3 className="font-semibold">Préparation du message · {selection.title}</h3>
-          <p className="mt-1 text-xs text-brand-navy/55">Annonce {selection.saleId}</p>
+          <p className="mt-1 text-xs text-ink-soft">Annonce {selection.saleId}</p>
           <p className="mt-3 text-sm text-brand-navy/70" role="status" aria-live="polite">
             {preparingSelectionKey
               ? "Le brouillon est en cours de préparation avec le contact vérifié côté serveur…"
@@ -677,7 +677,7 @@ export function AdminInformationAgentMissionsPanel({
               <h3 className="font-semibold">
                 Brouillon pour {recipientEmail.trim() || "destinataire à vérifier"}
               </h3>
-              <p className="mt-1 text-xs text-brand-navy/55">
+              <p className="mt-1 text-xs text-ink-soft">
                 Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}{" "}
                 · préparé le {formatShortDateTime(activeMission.createdAt)}
               </p>
@@ -766,7 +766,7 @@ export function AdminInformationAgentMissionsPanel({
                 message avant l’envoi ; le contenu saisi n’est pas réécrit automatiquement.
               </p>
             ) : null}
-            <p className="text-xs text-brand-navy/65">
+            <p className="text-xs text-ink-soft">
               Le mail envoyé ajoutera une adresse de réponse propre au dossier, un lien privé de
               dépôt sans compte, l’origine de l’adresse avec le lien de l’annonce et un lien de
               désinscription.
@@ -974,7 +974,7 @@ export function AdminInformationAgentMissionsPanel({
                   className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm leading-6"
                 />
               </label>
-              <p className="mt-1 text-xs text-brand-navy/60">
+              <p className="mt-1 text-xs text-ink-soft">
                 La réponse est rattachée à ce dossier comme import manuel (expéditeur non vérifié).
                 Les informations extraites passent par la revue avant toute publication ; une
                 demande de ne plus être contacté est enregistrée comme opposition.
@@ -1050,7 +1050,7 @@ function InventoryPanel({ items }: { items: InformationAgentInventoryItem[] }) {
   return (
     <section aria-label="Inventaire de la fiche" className="rounded-lg border bg-white p-3">
       <h4 className="text-sm font-semibold">Inventaire de la fiche</h4>
-      <p className="mt-1 text-xs text-brand-navy/60">
+      <p className="mt-1 text-xs text-ink-soft">
         Établi au moment du brouillon à partir des données des sources, des pièces et des faits
         extraits des PDF. Seuls les éléments manquants ou à confirmer sont demandés.
       </p>
@@ -1071,7 +1071,7 @@ function InventoryList({
 }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/60">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{title}</p>
       {items.length ? (
         <ul className="mt-1 space-y-1 text-xs">
           {items.map((item) => (
@@ -1079,7 +1079,7 @@ function InventoryList({
               <span className="font-medium">{item.label}</span>
               {" · "}
               <span>{INVENTORY_STATUS_LABELS[item.status]}</span>
-              <span className="block text-brand-navy/60">
+              <span className="block text-ink-soft">
                 {item.detail}
                 {item.origin ? ` (${item.origin})` : ""}
               </span>
@@ -1087,7 +1087,7 @@ function InventoryList({
           ))}
         </ul>
       ) : (
-        <p className="mt-1 text-xs text-brand-navy/55">Aucun élément.</p>
+        <p className="mt-1 text-xs text-ink-soft">Aucun élément.</p>
       )}
     </div>
   );
@@ -1119,7 +1119,7 @@ function QuestionChoice({
   return (
     <fieldset className="rounded-lg border bg-white p-3">
       <legend className="px-1 text-sm font-semibold">Questions posées</legend>
-      <p className="text-xs text-brand-navy/60">
+      <p className="text-xs text-ink-soft">
         Informations manquantes détectées sur la fiche. Quatre questions au plus restent
         conseillées.
       </p>

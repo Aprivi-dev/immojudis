@@ -139,7 +139,7 @@ export function AdminSecurityPage() {
             </button>
           </div>
         ) : factors === null ? (
-          <p role="status" className="mt-6 text-sm text-brand-navy/60">
+          <p role="status" className="mt-6 text-sm text-ink-soft">
             Chargement…
           </p>
         ) : verified ? (

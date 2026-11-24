@@ -66,7 +66,7 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
           description={property.address}
           ariaLabel={`Afficher la vue aérienne 3D Mapbox de ${property.address}`}
           icon={Navigation}
-          className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+          className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         />
       </div>
     </div>

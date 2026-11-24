@@ -332,7 +332,7 @@ export function AdminSignupsPanel() {
                 {extension.isPending ? "Prolongation…" : "Prolonger l’essai"}
               </button>
             </div>
-            <p className="text-xs text-brand-navy/62">
+            <p className="text-xs text-ink-soft">
               Les comptes gardent l’accès Analyse jusqu’à cette date, puis reviennent seuls en
               Découverte ; rien ne devient payant. Au plus {TRIAL_EXTENSION_MAX_ACCOUNTS} comptes et{" "}
               {TRIAL_EXTENSION_MAX_DAYS} jours par prolongation. Un accès déjà plus long, une fin
@@ -478,7 +478,7 @@ function SignupRow({
       </td>
       <th scope="row" className="max-w-[18rem] px-2 py-3 font-normal">
         <span className="block truncate font-semibold text-brand-navy">{label}</span>
-        <span className="mt-0.5 block truncate text-xs text-brand-navy/62">
+        <span className="mt-0.5 block truncate text-xs text-ink-soft">
           {[
             account.fullName,
             account.accountType === "b2b"
@@ -499,7 +499,7 @@ function SignupRow({
       </td>
       <td className="px-2 py-3">
         <AccessPill access={account.access} />
-        <span className="mt-1 block text-xs text-brand-navy/62">{accessDetail(account)}</span>
+        <span className="mt-1 block text-xs text-ink-soft">{accessDetail(account)}</span>
       </td>
       <UsageCell value={account.usage?.unlocks} />
       <UsageCell value={account.usage?.ceilings} />
@@ -513,7 +513,7 @@ function SignupRow({
 function UsageCell({ value }: { value: number | undefined }) {
   return (
     <td className="px-2 py-3 tabular-nums">
-      {value == null ? <span className="text-xs text-brand-navy/62">non mesuré</span> : value}
+      {value == null ? <span className="text-xs text-ink-soft">non mesuré</span> : value}
     </td>
   );
 }

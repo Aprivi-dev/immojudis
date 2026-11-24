@@ -13,8 +13,7 @@ import { cspRequiresDynamicRendering } from "@/lib/security-headers";
 import { siteOrigin } from "@/lib/site-url";
 
 // Police auto-hébergée dans src/fonts/ (voir le README du dossier) : le build ne télécharge rien
-// depuis Google Fonts. Manrope, seule police du site (décision du 25/10/2026, à la place de
-// Cormorant Garamond et d'IBM Plex Sans) : fichier WOFF2 « latin » variable, chaque graisse listée
+// depuis Google Fonts. Manrope, police du texte courant : fichier WOFF2 « latin » variable, chaque graisse listée
 // réutilise le même fichier (un seul téléchargement). Un @font-face par graisse employée.
 // Les options de `next/font` doivent être des littéraux : pas de variable ni de fonction ici.
 const manrope = localFont({
@@ -40,6 +39,17 @@ const manrope = localFont({
         "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
     },
   ],
+});
+
+// Police des titres (refonte du 24/11/2026) : Cormorant Garamond, auto-hébergée comme Manrope, fichier
+// WOFF2 « latin » variable, sans italique. Non préchargée : le texte courant, en Manrope, s'affiche
+// sans l'attendre, et les titres passent de la police de secours à Cormorant.
+const cormorant = localFont({
+  src: [{ path: "../fonts/cormorant-garamond-latin.woff2", weight: "300 700", style: "normal" }],
+  display: "swap",
+  variable: "--font-cormorant",
+  preload: false,
+  adjustFontFallback: "Times New Roman",
 });
 
 export const metadata: Metadata = {
@@ -78,7 +88,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // default the proxy sends no strict policy at all and static pages stay static.
   if (cspRequiresDynamicRendering()) await connection();
   return (
-    <html lang="fr" className={manrope.variable}>
+    <html lang="fr" className={`${manrope.variable} ${cormorant.variable}`}>
       <body>
         <SkipLink />
         <AppProviders footer={<SiteFooter saleTypes={<SiteFooterSaleTypes />} />}>

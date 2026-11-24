@@ -20,7 +20,7 @@ describe("palette de la carte", () => {
   });
 
   it("dérive les fonds translucides des mêmes jetons", () => {
-    expect(MAP_ACTIVE_FILL).toBe("rgba(201,141,69,0.25)");
-    expect(MAP_PRICE_HALO).toBe("rgba(19,34,56,0.28)");
+    expect(MAP_ACTIVE_FILL).toBe("rgba(207,135,96,0.25)");
+    expect(MAP_PRICE_HALO).toBe("rgba(69,32,26,0.28)");
   });
 });

@@ -105,7 +105,7 @@ export function AdminLawyerStatementPanel() {
         </div>
       ) : null}
       {monthIsValid && query.isPending ? (
-        <p role="status" className="mt-4 text-sm text-brand-navy/60">
+        <p role="status" className="mt-4 text-sm text-ink-soft">
           Chargement du relevé…
         </p>
       ) : null}
@@ -122,7 +122,7 @@ export function AdminLawyerStatementPanel() {
                   Relevé de {lawyerStatementMonthLabel(statement.month)} par avocat référencé
                 </caption>
                 <thead>
-                  <tr className="border-b border-brand-navy/12 text-xs uppercase tracking-[0.08em] text-brand-navy/62">
+                  <tr className="border-b border-brand-navy/12 text-xs uppercase tracking-[0.08em] text-ink-soft">
                     <th scope="col" className="py-2 pr-4 font-semibold">
                       Avocat
                     </th>
@@ -143,7 +143,7 @@ export function AdminLawyerStatementPanel() {
                       <th scope="row" className="py-2 pr-4 font-medium">
                         {row.displayName}
                         {row.firmName ? (
-                          <span className="block text-xs font-normal text-brand-navy/60">
+                          <span className="block text-xs font-normal text-ink-soft">
                             {row.firmName}
                           </span>
                         ) : null}
@@ -179,11 +179,9 @@ export function AdminLawyerStatementPanel() {
               </table>
             </div>
           ) : (
-            <p className="mt-3 text-sm text-brand-navy/65">
-              Aucun avocat actif ni activité ce mois-ci.
-            </p>
+            <p className="mt-3 text-sm text-ink-soft">Aucun avocat actif ni activité ce mois-ci.</p>
           )}
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-relaxed text-brand-navy/62">
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-relaxed text-ink-soft">
             <li>
               Affichages et clics : au plus un par compte connecté, par emplacement et par jour (pas
               de pages vues brutes).

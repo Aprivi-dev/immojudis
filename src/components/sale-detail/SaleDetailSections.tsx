@@ -51,7 +51,7 @@ export function SaleDocumentsSection({
             <span className="block font-display text-2xl font-semibold text-brand-navy">
               Consulter les pièces du dossier
             </span>
-            <span className="mt-1 block text-sm text-brand-navy/65">
+            <span className="mt-1 block text-sm text-ink-soft">
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
                 : lockedCount > 0
@@ -141,7 +141,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             {showLawyerDirectory ? (
               <a
                 href={directoryHref}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink-black px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Voir les avocats disponibles
                 <ArrowRight className="h-4 w-4" aria-hidden />
@@ -149,7 +149,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             ) : hasOrganizerContact ? (
               <a
                 href="#rendez-vous"
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink-black px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Consulter les coordonnées du dossier
               </a>

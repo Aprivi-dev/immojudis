@@ -839,7 +839,7 @@ export function MapPanel({
                   onSearchViewport();
                   setViewportDirty(false);
                 }}
-                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-brand-navy bg-brand-navy px-3 py-1.5 text-left text-sm font-extrabold leading-tight text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-navy bg-ink-black px-3 py-1.5 text-left text-sm font-extrabold leading-tight text-white shadow-lg transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <MapIcon className="h-4 w-4" />
                 Rechercher dans cette zone

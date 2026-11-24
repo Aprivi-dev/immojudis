@@ -298,7 +298,7 @@ export function MarketEvidence({
           </ul>
         </div>
       ) : (
-        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-brand-navy/65">
+        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-ink-soft">
           {usesAggregateStatistics
             ? `Estimation indicative fondée sur la médiane DVF à l’échelle ${aggregateScopeLabel(marketEstimate?.geographyLevel)}. Les ventes détaillées apparaîtront dès qu’un échantillon local homogène sera disponible.`
             : "Les ventes comparables seront affichées ici dès qu'un échantillon homogène est disponible."}

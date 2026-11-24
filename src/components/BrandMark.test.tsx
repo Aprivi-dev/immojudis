@@ -6,7 +6,7 @@ import { BrandMark } from "./BrandMark";
 import { HeaderLogo } from "./site-header-shared";
 
 describe("BrandMark", () => {
-  it("reprend les tracés du temple du favicon, un seul pictogramme pour la marque", () => {
+  it("reprend les tracés du fronton du favicon, un seul pictogramme pour la marque", () => {
     const svg = readFileSync(
       join(process.cwd(), "public", "brand", "immojudis-justice-temple.svg"),
       "utf8",
@@ -17,9 +17,8 @@ describe("BrandMark", () => {
     // Les couleurs du fichier sont celles des jetons que le composant emploie.
     const styles = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
     for (const [color, token, utility] of [
-      ["#132238", "--brand-navy", "stroke-brand-navy"],
-      ["#c98d45", "--gold", "stroke-gold"],
-      ["#fffaf2", "--surface", "fill-surface"],
+      ["#56251e", "--brand-navy-soft", "fill-brand-navy-soft"],
+      ["#f5f1e6", "--surface", "fill-surface"],
     ] as const) {
       expect(svg).toContain(color);
       expect(styles).toContain(`${token}: ${color}`);
@@ -38,7 +37,7 @@ describe("BrandMark", () => {
   it("sert à l'en-tête avec l'accroche unique, sans icône de bibliothèque", () => {
     const markup = renderToStaticMarkup(<HeaderLogo showTagline />);
     expect(markup).toContain("Les enchères immobilières, en toute clarté");
-    expect(markup).toContain("stroke-gold");
+    expect(markup).toContain("fill-brand-navy-soft");
     expect(markup).not.toContain("lucide");
   });
 
@@ -49,6 +48,6 @@ describe("BrandMark", () => {
     expect(manifest.description.startsWith("Les enchères immobilières, en toute clarté")).toBe(
       true,
     );
-    expect(manifest.background_color).toBe("#fbf9f5");
+    expect(manifest.background_color).toBe("#ece6d3");
   });
 });

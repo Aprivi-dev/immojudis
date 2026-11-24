@@ -10,32 +10,32 @@
  */
 export const EMAIL_COLORS = {
   /** `--brand-navy` : titres, boutons, texte principal. */
-  navy: "#132238",
+  navy: "#45201a",
   /** `--gold` : filet de couleur, fond d'accent. */
-  gold: "#c98d45",
+  gold: "#cf8760",
   /** `--gold-text` : texte doré lisible. */
-  goldText: "#84602e",
+  goldText: "#8f4526",
   /** `--ink-strong` : texte courant. */
-  inkStrong: "#3d4b57",
+  inkStrong: "#5a3a30",
   /** `--ink-soft` : texte secondaire, pied de message. */
-  inkSoft: "#526170",
+  inkSoft: "#6d4f43",
   /** `--line` : bordure de la carte. */
-  line: "#d8cfc1",
+  line: "#cdbfa3",
   /** `--line-warm` : filets internes et séparateurs. */
-  lineWarm: "#e1d8ca",
+  lineWarm: "#d6c9ad",
   /** `--background` : fond de la page de l'email (le papier chaud du site). */
-  background: "#fbf9f5",
+  background: "#ece6d3",
   /**
    * `--background` encore, sous son nom de la charte : le « papier » des pages web sans feuille de
    * style (erreur globale), qui ne sont pas des emails.
    */
-  paper: "#fbf9f5",
+  paper: "#ece6d3",
   /** `--surface` : fond des pages web de confirmation (désinscription, erreur), pas des emails. */
-  surface: "#fffaf2",
+  surface: "#f5f1e6",
   /** `--surface-muted` : panneau discret. */
-  surfaceMuted: "#f8f5ef",
+  surfaceMuted: "#f1ecde",
   /** `--cream` : pastille ou encadré doré clair. */
-  cream: "#fff7eb",
+  cream: "#f8efdc",
   white: "#ffffff",
 } as const;
 
@@ -74,17 +74,17 @@ export const EMAIL_DARK_COLORS = {
   /** Fond de la page. */
   page: "#07111f",
   /** Fond de la carte. */
-  card: "#132238",
+  card: "#45201a",
   /** Texte principal et titres. */
   text: "#f5efe4",
   /** Texte secondaire et pied. */
   muted: "#bdb4a4",
   /** Filets et bordures. */
-  line: "#263c58",
+  line: "#56251e",
   /** Liens, surtitres, logo « judis ». */
-  link: "#e8c98e",
+  link: "#e9c9a8",
   /** Fond du bouton principal (texte `navy`). */
-  button: "#e8c98e",
+  button: "#e9c9a8",
 } as const;
 
 /** Origine du site pour les liens fixes de la marque (logo, pied) : jamais une préversion. */
@@ -94,8 +94,8 @@ export const EMAIL_SITE_URL = "https://immojudis.com";
 export const EMAIL_CONTACT_ADDRESS = "contact@immojudis.com";
 
 /** Logos PNG (PNG-8, 288×64, affichés en 144×32), servis par `public/brand/email/`. */
-export const EMAIL_LOGO_LIGHT_URL = `${EMAIL_SITE_URL}/brand/email/immojudis-logo-email-v1.png`;
-export const EMAIL_LOGO_DARK_URL = `${EMAIL_SITE_URL}/brand/email/immojudis-logo-email-dark-v1.png`;
+export const EMAIL_LOGO_LIGHT_URL = `${EMAIL_SITE_URL}/brand/email/immojudis-logo-email-v2.png`;
+export const EMAIL_LOGO_DARK_URL = `${EMAIL_SITE_URL}/brand/email/immojudis-logo-email-dark-v2.png`;
 
 /**
  * En-tête des pages web d'arrivée des liens d'email (opposition de l'agent d'information) : barre or de

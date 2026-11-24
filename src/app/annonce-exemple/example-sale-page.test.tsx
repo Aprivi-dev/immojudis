@@ -173,8 +173,8 @@ describe("ExampleSalePage", () => {
     expect(detail.dataset.city).toBe(city);
     expect(detail.dataset.access).toBe("public-analysis");
     expect(detail.dataset.market).toBe("complete");
-    // L'ancre existe sur l'accueil (`id="essayer"`) ; « #exemples » n'a jamais existé.
-    expect(detail.dataset.returnTo).toBe("/#essayer");
+    // Retour à l'accueil, sans ancre : aucune section de l'accueil ne porte d'exemple.
+    expect(detail.dataset.returnTo).toBe("/");
   });
 
   it("annonce clairement que l'exemple est fictif, avant tout chiffre", () => {

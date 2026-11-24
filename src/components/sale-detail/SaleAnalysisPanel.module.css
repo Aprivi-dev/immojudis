@@ -120,8 +120,8 @@
   min-height: 44px;
   padding: 0 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--brand-navy);
   font-size: 13px;
   font-weight: 600;
@@ -136,8 +136,8 @@
 .changes {
   padding: 16px 18px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .changesTitle {

@@ -45,12 +45,12 @@ export function AdminInformationAgentMissionsList({
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="p-5">
         <h2 className="text-sm font-semibold">Missions récentes</h2>
-        <p className="mt-1 text-xs text-brand-navy/60">
+        <p className="mt-1 text-xs text-ink-soft">
           Brouillons, demandes envoyées et réponses. Un brouillon ou un échec se reprend dans
           l’onglet « À contacter » ; les autres s’ouvrent en lecture seule.
         </p>
         {query.isPending ? (
-          <p className="mt-3 text-sm text-brand-navy/55">Chargement…</p>
+          <p className="mt-3 text-sm text-ink-soft">Chargement…</p>
         ) : query.error ? (
           <p role="alert" className="mt-3 text-sm text-red-700">
             {queryErrorMessage(query.error, "Missions indisponibles")}
@@ -96,7 +96,7 @@ export function AdminInformationAgentMissionsList({
                       {formatShortDateTime(mission.updatedAt)}
                     </p>
                     {delivery?.detail ? (
-                      <p className="mt-0.5 text-xs text-brand-navy/60">
+                      <p className="mt-0.5 text-xs text-ink-soft">
                         {delivery.text} : {delivery.detail}
                       </p>
                     ) : null}
@@ -141,7 +141,7 @@ export function AdminInformationAgentMissionsList({
             />
           </div>
         ) : (
-          <p className="mt-3 text-sm text-brand-navy/55">Aucune mission.</p>
+          <p className="mt-3 text-sm text-ink-soft">Aucune mission.</p>
         )}
       </div>
     </section>

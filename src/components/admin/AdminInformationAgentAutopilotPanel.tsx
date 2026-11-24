@@ -186,7 +186,7 @@ export function AdminInformationAgentAutopilotPanel({
               {view.readiness.checks.map((check) => (
                 <li key={check.label} className={check.ok ? "text-success" : "text-danger"}>
                   {check.ok ? "Oui" : "Non"} · {check.label}{" "}
-                  <span className="text-brand-navy/60">({check.detail})</span>
+                  <span className="text-ink-soft">({check.detail})</span>
                 </li>
               ))}
             </ul>

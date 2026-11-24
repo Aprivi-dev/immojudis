@@ -82,12 +82,12 @@ export function AdminCatalogueReadinessPanel({
       <section className="overflow-hidden rounded-xl border bg-white">
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">File d’enrichissement</h2>
-          <p className="mt-1 text-sm text-brand-navy/60">
+          <p className="mt-1 text-sm text-ink-soft">
             {overview.total} dossier{overview.total > 1 ? "s" : ""} à reprendre avec un contact :
             avocats, puis greffes, puis adresses à confirmer.
           </p>
           {overview.classCounts ? (
-            <p className="mt-1 text-xs text-brand-navy/55">
+            <p className="mt-1 text-xs text-ink-soft">
               Avocat {overview.classCounts.A} · Greffe {overview.classCounts.C} · À confirmer{" "}
               {overview.classCounts.B}
             </p>
@@ -106,7 +106,7 @@ export function AdminCatalogueReadinessPanel({
             ))}
           </div>
         ) : (
-          <p className="p-5 text-sm text-brand-navy/60">Aucun dossier à reprendre.</p>
+          <p className="p-5 text-sm text-ink-soft">Aucun dossier à reprendre.</p>
         )}
         <AdminPagination
           label="file d’enrichissement"
@@ -123,7 +123,7 @@ export function AdminCatalogueReadinessPanel({
           <summary className="cursor-pointer px-5 py-4 font-semibold">
             Contact impossible ({overview.classCounts?.D ?? overview.impossibleItems.length})
           </summary>
-          <p className="border-t px-5 py-3 text-sm text-brand-navy/60">
+          <p className="border-t px-5 py-3 text-sm text-ink-soft">
             L’annonce ne donne aucune adresse email. Si vous en trouvez une sur une page publique,
             saisissez-la : elle est alors citée au destinataire.
           </p>
@@ -183,7 +183,7 @@ function QueueLine({
             ) : null}
           </div>
           <h3 className="mt-2 truncate font-semibold">{title}</h3>
-          <p className="mt-1 text-xs text-brand-navy/55">
+          <p className="mt-1 text-xs text-ink-soft">
             {[item.city, item.department, item.sourceName].filter(Boolean).join(" · ") ||
               "Source inconnue"}
           </p>
@@ -191,9 +191,7 @@ function QueueLine({
             <p className="mt-3 text-sm text-red-700">Blocages : {item.blockers.join(" · ")}</p>
           ) : null}
           {item.missingFields.length ? (
-            <p className="mt-2 text-sm text-brand-navy/65">
-              Manques : {item.missingFields.join(" · ")}
-            </p>
+            <p className="mt-2 text-sm text-ink-soft">Manques : {item.missingFields.join(" · ")}</p>
           ) : null}
           <p className="mt-2 text-xs text-brand-navy/50">
             Contact : {item.lawyerContact || item.lawyerName || "aucun contact détecté"}

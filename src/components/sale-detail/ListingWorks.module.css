@@ -7,7 +7,7 @@
      qu'en dernier recours, et la pastille voisine passe dessous. */
   overflow-wrap: break-word;
   scroll-margin-top: 8px;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--brand-navy, var(--brand-navy));
 }
 
@@ -92,7 +92,7 @@
 .resultCard {
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 12%);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: var(--surface);
   padding: 20px;
 }
@@ -152,7 +152,7 @@
 
 .dpeNote {
   margin: 12px 0 0;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: rgb(19 34 56 / 5%);
   padding: 10px 12px;
   color: rgb(19 34 56 / 80%);
@@ -210,8 +210,8 @@
 .evidenceDisclosure {
   margin-top: 16px;
   border: 1px solid rgb(19 34 56 / 12%);
-  border-radius: 12px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   overflow: hidden;
 }
 

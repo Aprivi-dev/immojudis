@@ -30,8 +30,8 @@
   min-height: 44px;
   padding: 0 15px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--brand-navy);
   font-size: 13px;
   font-weight: 650;
@@ -49,7 +49,7 @@
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
   padding: 22px 24px;
 }
 .lower {
@@ -181,7 +181,7 @@
 .card {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
   padding: 20px;
   min-width: 0;
 }
@@ -189,14 +189,14 @@
   overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
 }
 .descriptionPreview {
   padding: 22px 24px;
   margin-bottom: 12px;
   border: 1px solid var(--line-warm);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
   color: var(--ink-strong);
   font-size: 15px;
   line-height: 1.75;
@@ -353,8 +353,8 @@
   width: 100%;
   min-height: 46px;
   border: 1px solid var(--brand-navy);
-  border-radius: 10px;
-  background: var(--brand-navy);
+  border-radius: 9999px;
+  background: var(--ink-black);
   color: white;
   padding: 10px 16px;
   font-size: 14px;
@@ -365,7 +365,7 @@
   background: var(--brand-navy-soft);
 }
 .outline {
-  background: #ffffff;
+  background: var(--surface);
   color: var(--brand-navy);
   margin-top: 16px;
 }
@@ -399,7 +399,7 @@
 }
 .notice {
   border: 1px solid var(--sand);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
   padding: 12px;
   margin-top: 20px;
@@ -426,15 +426,15 @@
 .field input {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius);
   padding: 11px 12px;
   font-size: 16px;
-  background: white;
+  background: var(--surface);
   color: var(--brand-navy);
 }
 .total {
   background: var(--surface-muted);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 16px;
   margin-top: 16px;
 }
@@ -614,7 +614,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 18px 0 0;
   border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 /* Ligne fixe sous les données clés : d'où viennent les données, ce qui seul fait foi. */
@@ -714,14 +714,14 @@
   justify-content: center;
   min-height: 48px;
   padding: 0 18px;
-  border-radius: var(--radius-md);
+  border-radius: 9999px;
   font-size: 15px;
   font-weight: 500;
   text-align: center;
   text-decoration: none;
 }
 .primaryAction {
-  background: var(--brand-navy);
+  background: var(--ink-black);
   color: #ffffff;
 }
 .primaryAction:hover {
@@ -729,7 +729,7 @@
 }
 .secondaryAction {
   border: 1px solid var(--line);
-  background: #ffffff;
+  background: var(--surface);
   color: var(--brand-navy);
 }
 .secondaryAction:hover {

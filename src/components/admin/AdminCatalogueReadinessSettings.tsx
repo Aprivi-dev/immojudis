@@ -56,7 +56,7 @@ export function AdminCatalogueReadinessSettings() {
             Sélection Analyse
           </div>
           <h2 className="mt-2 text-xl font-semibold">Seuil de maturité du catalogue</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-navy/65">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-soft">
             Les fiches restent conservées en base. Lorsque le filtre est actif, seules les fiches
             prêtes ou publiées par dérogation alimentent l’offre Analyse.
           </p>
@@ -108,7 +108,7 @@ export function AdminCatalogueReadinessSettings() {
         <Metric label="À enrichir" value={overview.counts.needs_enrichment} tone="amber" />
         <Metric label="Prêtes Analyse" value={overview.counts.premium_ready} tone="green" />
       </div>
-      <p className="mt-3 text-xs text-brand-navy/55">
+      <p className="mt-3 text-xs text-ink-soft">
         Politique {overview.policy.policyVersion} · seuil {overview.policy.premiumReadyMin}/100 ·
         confiance minimale {formatShareAsPercent(overview.policy.minimumScoreConfidence)}
       </p>
@@ -136,7 +136,7 @@ function Metric({
   return (
     <div className="rounded-lg border bg-slate-50 p-3">
       <div className={`text-2xl font-semibold tabular-nums ${color}`}>{value}</div>
-      <div className="mt-1 text-xs text-brand-navy/55">{label}</div>
+      <div className="mt-1 text-xs text-ink-soft">{label}</div>
     </div>
   );
 }

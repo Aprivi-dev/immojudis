@@ -31,7 +31,7 @@ describe("emailLayout", () => {
     expect(html).toContain("<title>Objet &lt;test&gt;</title>");
     expect(html).toContain("@media (prefers-color-scheme: dark)");
     expect(html).toContain("background-color: #07111f");
-    expect(html).toContain("background-color: #132238");
+    expect(html).toContain("background-color: #45201a");
   });
 
   it("met en page avec des tableaux, jamais des div, dans une carte de 600 px au filet or de 4 px", () => {
@@ -39,18 +39,18 @@ describe("emailLayout", () => {
     expect(html).not.toContain("<div");
     expect(html).toContain('width="600"');
     expect(html).toContain("max-width:600px");
-    expect(html).toContain("border:1px solid #d8cfc1;border-radius:10px");
-    expect(html).toMatch(/<td height="4" bgcolor="#c98d45"/);
-    expect(html).toContain("background-color:#fbf9f5");
+    expect(html).toContain("border:1px solid #cdbfa3;border-radius:10px");
+    expect(html).toMatch(/<td height="4" bgcolor="#cf8760"/);
+    expect(html).toContain("background-color:#ece6d3");
   });
 
   it("affiche le logo PNG cliquable avec son texte de repli, et sa variante sombre", () => {
     const html = page();
     expect(html).toContain('<a href="https://immojudis.com"');
     expect(html).toContain(
-      'src="https://immojudis.com/brand/email/immojudis-logo-email-v1.png" width="144" height="32" alt="Immojudis"',
+      'src="https://immojudis.com/brand/email/immojudis-logo-email-v2.png" width="144" height="32" alt="Immojudis"',
     );
-    expect(html).toContain("immojudis-logo-email-dark-v1.png");
+    expect(html).toContain("immojudis-logo-email-dark-v2.png");
     expect(html).toContain(".logo-dark { display: block !important");
   });
 
@@ -93,8 +93,8 @@ describe("emailLayout", () => {
 describe("emailButton", () => {
   it("est blindé : cellule colorée, lien en bloc, bordure de la même couleur, 16/20 700, 12 px 20 px", () => {
     const html = emailButton("https://immojudis.com/a?b=1&c=2", "Voir l’annonce");
-    expect(html).toContain('bgcolor="#132238"');
-    expect(html).toContain("border:1px solid #132238;border-radius:6px");
+    expect(html).toContain('bgcolor="#45201a"');
+    expect(html).toContain("border:1px solid #45201a;border-radius:6px");
     expect(html).toContain("display:inline-block;padding:12px 20px");
     expect(html).toContain("font-size:16px;line-height:20px;font-weight:700;color:#ffffff");
     expect(html).toContain('href="https://immojudis.com/a?b=1&amp;c=2"');
@@ -106,8 +106,8 @@ describe("emailButton", () => {
       variant: "secondary",
     });
     expect(html).not.toContain("bgcolor");
-    expect(html).toContain("border:1px solid #132238");
-    expect(html).toContain("color:#132238;text-decoration:none");
+    expect(html).toContain("border:1px solid #45201a");
+    expect(html).toContain("color:#45201a;text-decoration:none");
   });
 });
 
@@ -127,7 +127,7 @@ describe("emailSaleCard", () => {
     expect(html).toContain("Audience : <strong");
     expect(html).toContain("<p>Mention</p>");
     expect(html.match(/class="ej-btn-a"/g)).toHaveLength(1);
-    expect(html).toContain("border-top:1px solid #e1d8ca");
+    expect(html).toContain("border-top:1px solid #d6c9ad");
   });
 });
 

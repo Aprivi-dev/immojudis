@@ -134,7 +134,7 @@ export function DepartmentFranceMap({
               </span>
               <span
                 aria-hidden
-                className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-md bg-brand-navy px-2.5 py-1.5 text-caption font-semibold whitespace-nowrap text-white shadow-lg group-hover:block group-focus-visible:block"
+                className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-full bg-ink-black px-2.5 py-1.5 text-caption font-semibold whitespace-nowrap text-white shadow-lg group-hover:block group-focus-visible:block"
               >
                 {label}
               </span>

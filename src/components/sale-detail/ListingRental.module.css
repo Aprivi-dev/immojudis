@@ -8,7 +8,7 @@
   margin-top: 24px;
   overflow: hidden;
   border: 1px solid rgb(19 34 56 / 12%);
-  border-radius: 18px;
+  border-radius: var(--radius);
   background: var(--surface, var(--surface));
   color: var(--brand-navy, var(--brand-navy));
   box-shadow: 0 12px 34px rgb(19 34 56 / 6%);
@@ -86,8 +86,8 @@
 .resultPanel {
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 10%);
-  border-radius: 16px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   padding: 18px;
 }
 
@@ -115,7 +115,7 @@
   display: grid;
   gap: 4px;
   border: 1px solid rgb(156 100 43 / 20%);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: rgb(201 141 69 / 10%);
   padding: 12px 14px;
 }
@@ -154,7 +154,6 @@
   container-type: inline-size;
 }
 
-
 .field {
   display: grid;
   align-content: start;
@@ -187,7 +186,7 @@
   min-width: 0;
   min-height: 44px;
   border: 1px solid rgb(19 34 56 / 16%);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--cream, var(--cream));
   color: var(--brand-navy, var(--brand-navy));
   padding: 9px 11px;
@@ -233,7 +232,7 @@
 .warning {
   margin: 16px 0 0;
   border: 1px solid var(--gold-light);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--warning-tint);
   color: var(--gold-text);
   padding: 11px 12px;
@@ -244,7 +243,7 @@
 }
 
 .resultPanel {
-  background: linear-gradient(180deg, #ffffff 0%, rgb(255 247 235 / 70%) 100%);
+  background: linear-gradient(180deg, var(--surface) 0%, rgb(255 247 235 / 70%) 100%);
 }
 
 .resultTitle {
@@ -279,8 +278,8 @@
   gap: 5px;
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 10%);
-  border-radius: 12px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   padding: 13px;
 }
 
@@ -331,7 +330,7 @@
 .emptyResult {
   margin: 0;
   border: 1px dashed rgb(19 34 56 / 20%);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 13px;
 }
 

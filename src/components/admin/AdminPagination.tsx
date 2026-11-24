@@ -46,7 +46,7 @@ export function AdminPagination({
       aria-label={`Pagination — ${label}`}
       className={`flex flex-wrap items-center justify-between gap-3 border-t border-brand-navy/10 px-5 py-3 text-sm ${className}`}
     >
-      <span className="text-brand-navy/60" role="status">
+      <span className="text-ink-soft" role="status">
         {known == null
           ? `${shown ? `${offset + 1}–${offset + shown}` : "0"} · page ${page}`
           : `${adminPageRange({ offset, shown, total: known })} · page ${page} sur ${Math.max(1, Math.ceil(known / limit))}`}

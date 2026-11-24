@@ -25,7 +25,7 @@ export function CourtAuctionSummaryTable() {
   });
   if (query.isLoading) {
     return (
-      <p className="mt-8 text-sm text-brand-navy/65" role="status">
+      <p className="mt-8 text-sm text-ink-soft" role="status">
         Chargement des statistiques par tribunal…
       </p>
     );
