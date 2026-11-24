@@ -142,7 +142,11 @@ export function HomeScrollScenes() {
         draw();
       });
     };
+    // Après l'arrêt du script (page quittée, animations réduites), plus rien ne doit être redessiné :
+    // la promesse des polices peut se résoudre après coup.
+    let stopped = false;
     const onResize = () => {
+      if (stopped) return;
       measure();
       draw();
     };
@@ -181,6 +185,7 @@ export function HomeScrollScenes() {
     }
 
     return () => {
+      stopped = true;
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("load", onResize);
