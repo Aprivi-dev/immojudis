@@ -629,7 +629,7 @@
 .verdictAmount {
   color: var(--verdict);
   font-family: var(--home-display);
-  font-size: 60px;
+  font-size: clamp(42px, 13.5vw, 60px);
   font-size-adjust: var(--font-display-adjust);
   font-weight: 600;
   line-height: 1;
@@ -764,6 +764,7 @@
    des sections peintes). */
 .tryCard {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
 }
@@ -873,10 +874,11 @@
 
 .segmented {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--home-line-strong);
-  border-radius: 9999px;
+  border-radius: 26px;
 }
 
 .segmented button {
@@ -908,6 +910,7 @@
 
 .tryVerdict {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   background: var(--verdict-tint);
   transition: background-color 500ms var(--home-ease);

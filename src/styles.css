@@ -158,7 +158,7 @@
   --secondary: #eadfc8;
   --secondary-foreground: var(--foreground);
   --muted: #e6dcc4;
-  --muted-foreground: rgb(69 32 26 / 68%);
+  --muted-foreground: rgb(69 32 26 / 74%);
   --accent: rgb(207 135 96 / 12%);
   --accent-foreground: var(--gold-soft);
   --destructive: oklch(0.62 0.22 25);
