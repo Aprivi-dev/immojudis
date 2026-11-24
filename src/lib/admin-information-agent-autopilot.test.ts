@@ -53,6 +53,7 @@ vi.mock("@/lib/information-agent/autopilot-readiness", () => ({
   currentPrivacyVersion: () => "2026-11-01.1",
   evaluateAutopilotReadiness: mocks.readiness,
   isActiveAdmin: mocks.isAdmin,
+  loadPublishedTemplateFingerprint: async () => ({ revision: 9, fingerprint: "0123456789abcdef" }),
   loadRoundtripProof: async () => null,
   loadVerifiedResendDomains: async () => null,
 }));

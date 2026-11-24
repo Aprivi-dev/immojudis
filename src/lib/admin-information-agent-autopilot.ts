@@ -7,6 +7,7 @@ import {
   evaluateAutopilotReadiness,
   isActiveAdmin,
   loadRoundtripProof,
+  loadPublishedTemplateFingerprint,
   loadVerifiedResendDomains,
 } from "@/lib/information-agent/autopilot-readiness";
 import {
@@ -201,6 +202,7 @@ async function readiness(now: Date, env: Readonly<Record<string, string | undefi
     actingAdminIsAdmin: await actingAdminState(settings.actingAdminId),
     privacyVersion: currentPrivacyVersion(),
     verifiedResendDomains: await loadVerifiedResendDomains(env.RESEND_API_KEY?.trim()),
+    publishedTemplate: await loadPublishedTemplateFingerprint(),
   });
   return { settings, stats, report };
 }

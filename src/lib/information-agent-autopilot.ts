@@ -20,6 +20,9 @@ import {
   currentPrivacyVersion,
   evaluateAutopilotReadiness,
   isActiveAdmin,
+  autopilotTemplateApproved,
+  informationAgentTemplateFingerprint,
+  loadPublishedTemplateFingerprint,
   loadRoundtripProof,
   loadVerifiedResendDomains,
   type AutopilotReadiness,
@@ -308,6 +311,7 @@ export function defaultAutopilotDeps(
           env.RESEND_API_KEY?.trim(),
           fetchImpl,
         ),
+        publishedTemplate: await loadPublishedTemplateFingerprint(),
       }),
     isAdmin: isActiveAdmin,
     loadRoundtripProof,
@@ -316,7 +320,8 @@ export function defaultAutopilotDeps(
     lastOnDemandRunAt: lastOnDemandAutopilotRunAt,
     findCandidates: (settings, now, limit, shouldStop) =>
       findAutopilotCandidates({ settings, now, limit, env, shouldStop }),
-    prepareDraft: prepareAutopilotDraft,
+    prepareDraft: (candidate, settings, runId) =>
+      prepareAutopilotDraft(candidate, settings, runId, env),
     preview: async (draft, settings, runId) => {
       const response = await previewAdminInformationAgentMission({
         auth: actingAuth(settings.actingAdminId ?? ""),
@@ -403,15 +408,23 @@ async function reusedDraftIsStale(
 /**
  * Brouillon du pilote pour un candidat : le brouillon du pilote est réutilisé s'il est à jour (même révision
  * du gabarit publié, vente inchangée), sinon régénéré, ou annulé s'il est caduc. Un brouillon d'administrateur
- * n'est jamais touché (le candidat est écarté en amont s'il en existe un).
+ * n'est jamais touché (le candidat est écarté en amont s'il en existe un). En mode réel, rien n'est préparé si le
+ * modèle publié n'est pas celui approuvé pour l'envoi automatique (publié pendant le passage, par exemple).
  */
 export async function prepareAutopilotDraft(
   candidate: AutopilotCandidate,
   settings: AutopilotSettings,
   runId: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<PreparedAutopilotDraft | { skip: string }> {
   const adminId = settings.actingAdminId ?? "";
   const template = await getPublishedInformationAgentEmailTemplate();
+  if (
+    settings.mode === "live" &&
+    !autopilotTemplateApproved(informationAgentTemplateFingerprint(template.content), env)
+  ) {
+    return { skip: "template_not_approved" };
+  }
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
     .select("*")
