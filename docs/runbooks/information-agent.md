@@ -92,6 +92,36 @@ Après « Arrêt d’urgence » ou un arrêt automatique :
 4. **Plus aucun appel** : en mode « off », la tâche pg_cron n’appelle plus l’application. Vingt minutes plus tard (deux créneaux), aucun nouvel évènement « Passage ». Un passage déjà commencé relit le mode avant chaque candidat et s’interrompt (`interrupted`).
 5. Si l’écran affiche « Arrêt enregistré, état non relu », recharger la page avant toute autre action.
 
+### Couper en urgence quand le site est indisponible
+
+Le bouton « Arrêt d’urgence » passe par l’application : si le site ne répond plus (panne Vercel, déploiement cassé, connexion administrateur impossible), on coupe le pilote **directement en base**, dans l’éditeur SQL de Supabase (rôle propriétaire `postgres`). La RPC `stop_information_agent_autopilot` n’y est pas utilisable : elle exige `is_admin()`, donc un utilisateur connecté, absent de l’éditeur SQL.
+
+1. **Couper l’appel planifié** (plus aucun passage, même si l’application revient) :
+   `select cron.unschedule('immojudis-information-agent-autopilot');`
+2. **Passer le mode à « off »** et le journaliser comme un arrêt d’urgence (acteur nul : le système), dans la même transaction :
+   ```sql
+   begin;
+   select app_private.autopilot_log_event(
+     'emergency_stop', null, 'stop',
+     jsonb_build_object('mode', (select mode from public.information_agent_autopilot_settings where singleton)),
+     jsonb_build_object('mode', 'off'),
+     'Arrêt d''urgence en base : site indisponible', null, '{}'::jsonb
+   );
+   update public.information_agent_autopilot_settings
+   set mode = 'off', simulation_started_at = null, updated_by = null, updated_at = statement_timestamp()
+   where singleton;
+   commit;
+   ```
+   Le mode « off » bloque aussi un passage déjà commencé : il relit le mode avant chaque candidat, et le filet SQL refuse le passage en `sending` d’une mission du pilote hors mode réel.
+3. **Vérifier** : `select mode from public.information_agent_autopilot_settings;` rend `off`, et `select jobname from cron.job where jobname = 'immojudis-information-agent-autopilot';` ne rend aucune ligne.
+
+**Remise en route**, une fois le site revenu et la cause comprise :
+
+1. Recréer la tâche planifiée, à l’identique de la migration `20261110230000` (elle n’appelle l’application que si le mode n’est pas « off ») :
+   `select cron.schedule('immojudis-information-agent-autopilot', '*/10 * * * *', 'select app_private.invoke_information_agent_autopilot_endpoint();');`
+   Vérifier qu’il n’y a qu’une ligne : `select jobid, schedule, active from cron.job where jobname = 'immojudis-information-agent-autopilot';`
+2. Réactiver **depuis l’écran** (onglet Pilote), jamais par SQL : motif saisi, puis « Simulation », comme dans « Réarmer après un arrêt automatique ». L’horloge des 7 jours de simulation repart de cet instant ; le passage en « Réel » repasse par la porte SQL et le contrôle de préparation.
+
 ### Réarmer après un arrêt automatique
 
 1. Lire le motif : avis rouge du panneau, alerte critique « Pilote de l’Agent IA arrêté automatiquement » de l’accueil.
