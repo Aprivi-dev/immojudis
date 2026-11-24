@@ -156,7 +156,9 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // 6 882 377 pour 6 808 188 après le lot 4, les plafonds par page tenus (+3 ko au plus par page) ;
 // Turbopack recopie le module de formatage dans environ 25 chunks. Décision du propriétaire
 // (13/11/2026) : relèvement à 6 890 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_890_000;
+// 24/11/2026 : 6 900 000 avec l'accord du propriétaire (6 891 991 mesurés) : la mise à jour de sécurité de
+// Next.js 16.4.3 vers 16.4.6 alourdit le socle commun.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_900_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 // Refonte de l'accueil du 24/11/2026 : neuf peintures et leurs boucles vidéo (3,7 Mo, chargées à
