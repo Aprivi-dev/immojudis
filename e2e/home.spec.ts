@@ -8,7 +8,7 @@ import { BID_VERDICT_LABEL } from "@/lib/bid-verdict";
 
 /**
  * Accueil : « Essayez sur un exemple » (réglages, verdict, démonstration qui s'arrête au premier
- * choix), situations du premier écran, mouvement réduit et largeur de 320 px. Aucun appel à la base :
+ * choix), premier écran peint, mouvement réduit et largeur de 320 px. Aucun appel à la base :
  * la page se rend côté serveur avec l'annonce exemple.
  */
 
@@ -96,68 +96,55 @@ test.describe("« Essayez sur un exemple »", () => {
   });
 });
 
-test.describe("premier écran : situations de l'exemple", () => {
-  const situations = (page: Page) => page.getByRole("group", { name: "Situations de l’exemple" });
-
-  test("un bouton choisit la situation, qui ne change plus ensuite", async ({ page }) => {
-    await page.clock.install();
+test.describe("premier écran : la peinture et ses actions", () => {
+  test("mène au catalogue et à l'analyse exemple, et propose l'inscription", async ({ page }) => {
     await page.goto("/");
-    const buttons = situations(page).getByRole("button");
-    await expect(buttons.first()).toHaveAttribute("aria-pressed", "true");
-    const count = await buttons.count();
-    expect(count).toBeGreaterThanOrEqual(2);
-
-    const target = buttons.nth(1);
-    await expect(async () => {
-      await target.click();
-      await expect(target).toHaveAttribute("aria-pressed", "true", { timeout: 1000 });
-    }).toPass();
-    await expect(buttons.first()).toHaveAttribute("aria-pressed", "false");
-
-    await page.clock.fastForward(30_000);
-    await expect(target).toHaveAttribute("aria-pressed", "true");
-    await expect(buttons.first()).toHaveAttribute("aria-pressed", "false");
+    const hero = page.locator("section", { has: page.locator("#home-title") });
+    await expect(hero.getByRole("link", { name: "Voir les ventes" })).toHaveAttribute(
+      "href",
+      "/sales",
+    );
+    await expect(hero.getByRole("link", { name: "Une analyse exemple" })).toHaveAttribute(
+      "href",
+      "/annonce-exemple",
+    );
+    await expect(hero.getByRole("link", { name: "Créer mon compte gratuit" })).toBeVisible();
   });
 
-  test("les situations défilent seules sans choix du visiteur", async ({ page }, testInfo) => {
-    test.skip(
-      testInfo.project.name.startsWith("mobile"),
-      "le défilement se lit sur un seul projet",
-    );
-    await page.clock.install();
+  test("la boucle vidéo de la peinture n'est chargée que par le script, sur l'image fixe", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const buttons = situations(page).getByRole("button");
-    await expect(buttons.first()).toHaveAttribute("aria-pressed", "true");
-    await expect(async () => {
-      await page.clock.fastForward(4000);
-      await expect(buttons.first()).toHaveAttribute("aria-pressed", "false", { timeout: 500 });
-    }).toPass({ timeout: 20_000 });
+    const hero = page.locator("section", { has: page.locator("#home-title") });
+    await expect(hero.getByRole("img", { name: /^Peinture : la Justice/ })).toBeVisible();
+    const loop = hero.locator("video[data-home-loop]");
+    // Le rendu serveur ne donne pas d'adresse à la vidéo : le script la pose à l'approche de l'écran.
+    await expect(loop).toHaveAttribute("src", /\/media\/landing\/accueil\/01-hero\.mp4$/);
+    await expect(page.locator("html")).toHaveAttribute("data-home-scenes", "");
   });
 });
 
 test.describe("mouvement réduit", () => {
   test.use({ reducedMotion: "reduce" });
 
-  test("aucune démonstration ne défile, ni au premier écran ni dans « Essayez »", async ({
+  test("rien ne défile ni ne s'anime : ni « Essayez », ni les scènes, ni les boucles vidéo", async ({
     page,
   }) => {
     await page.clock.install();
     await page.goto("/");
     const section = page.locator("#essayer");
     await section.scrollIntoViewIfNeeded();
-    const hero = situations(page);
-    const heroBefore = await hero.locator("button[aria-pressed=true]").innerText();
     const tryBefore = await lastPressed(tryGroup(page, "Occupation")).innerText();
 
     await page.clock.fastForward(60_000);
 
-    await expect(hero.locator("button[aria-pressed=true]")).toHaveText(heroBefore);
     await expect(lastPressed(tryGroup(page, "Occupation"))).toHaveText(tryBefore);
+    // Les scènes épinglées ne sont pas activées, et aucune boucle vidéo n'a reçu d'adresse.
+    await expect(page.locator("html")).not.toHaveAttribute("data-home-scenes", "");
+    await expect(page.locator("video[data-home-loop][src]")).toHaveCount(0);
+    // Tout ce que la scène du dossier réunit reste lisible, posé dans la page.
+    await expect(page.getByText("Cahier des conditions de vente", { exact: true })).toBeVisible();
   });
-
-  function situations(page: Page) {
-    return page.getByRole("group", { name: "Situations de l’exemple" });
-  }
 });
 
 test.describe("largeur de 320 px", () => {
