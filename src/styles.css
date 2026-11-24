@@ -13,18 +13,41 @@
  */
 
 @theme inline {
-  /* Fondations (docs/design/fondations.md) : 4 px repères, 6 px contrôles, 10 px cartes et blocs
-     (lg et xl), pilule pour les pastilles. Les rayons 2xl et plus restent pour l'existant. */
+  /* Fondations (docs/design/fondations.md) : surfaces à plat, 4 px partout (repères, champs, cartes
+     et blocs), pilule pour les boutons et les pastilles. Les rayons 2xl et plus restent pour l'existant. */
   /* Taille « légende » de l'échelle de texte : 13 px (12 px reste le minimum, pour les surtitres). */
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.45;
-  --radius-sm: calc(var(--radius) - 6px);
-  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
   --radius-xl: var(--radius);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-2xl: calc(var(--radius) + 2px);
+  --radius-3xl: calc(var(--radius) + 4px);
+  --radius-4xl: calc(var(--radius) + 8px);
+  /* Le « blanc » du site est l'ivoire des peintures : aucune surface n'est d'un blanc pur. Les gris
+     froids et les teintes d'état de Tailwind sont ramenés aux neutres chauds de la palette. */
+  --color-white: var(--surface);
+  --color-ink-black: var(--ink-black);
+  --color-olive: var(--olive);
+  --color-olive-deep: var(--olive-deep);
+  --color-olive-tint: var(--olive-tint);
+  --color-slate-50: var(--surface-muted);
+  --color-slate-100: var(--surface-tint);
+  --color-slate-200: var(--line-soft);
+  --color-slate-300: var(--line);
+  --color-slate-500: var(--ink-soft);
+  --color-slate-600: var(--ink-soft);
+  --color-slate-700: var(--ink-strong);
+  --color-slate-900: var(--brand-navy);
+  --color-sky-50: var(--info-tint);
+  --color-sky-100: var(--info-tint);
+  --color-sky-200: var(--line);
+  --color-sky-800: var(--info);
+  --color-sky-900: var(--info);
+  --color-sky-950: var(--info);
+  --color-emerald-50: var(--success-tint);
+  --color-amber-50: var(--warning-tint);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -97,7 +120,7 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.25rem;
   /* Titres : hauteur d'œil de Cormorant ramenée à celle d'une linéale (voir en tête). */
   --font-display-adjust: 0.47;
   /* Accueil (maquette du 25/10/2026) : dégradé du titre, textes du bandeau du dernier écran. */
@@ -132,14 +155,14 @@
   --sand: #dfd3b8;
   --night: #1d0f0c;
   /* États (toujours doublés d'un libellé ou d'une icône) : texte ≥ 4,5:1 sur leur teinte */
-  --danger: #b42318;
-  --success: #047857;
-  --warning: #a15c05;
-  --info: #155c85;
-  --danger-tint: #fdf0ee;
-  --success-tint: #ecf6f0;
-  --warning-tint: #fff8e8;
-  --info-tint: #eaf3f9;
+  --danger: #a8281c;
+  --success: #44602f;
+  --warning: #8a4d06;
+  --info: #5a3a30;
+  --danger-tint: #f6e2d9;
+  --success-tint: #e3e4cc;
+  --warning-tint: #f6e8c6;
+  --info-tint: #e6dcc4;
   --cream: #f8efdc;
   /* Olive des peintures (fonds de scène) et presque noir des boutons pleins et des objets tramés. */
   --olive: #8e7954;
@@ -169,8 +192,8 @@
   --ring: var(--gold-soft);
 
   --chart-1: var(--gold);
-  --chart-2: #6a8fb3;
-  --chart-3: #7fd6c2;
+  --chart-2: #4f6b3a;
+  --chart-3: #8e7954;
   --chart-4: #45201a;
   --chart-5: #8f7756;
 
@@ -185,10 +208,10 @@
 
   /* ── Signaux fonctionnels (jamais la couleur seule : toujours doublés
         d'un libellé ou d'une icône côté composant) ─────────────────────── */
-  --signal-opportunity: oklch(0.76 0.13 162); /* opportunité / score élevé   */
+  --signal-opportunity: oklch(0.62 0.09 130); /* opportunité / score élevé   */
   --signal-watch: oklch(0.82 0.12 80); /* vigilance / score moyen     */
   --signal-risk: oklch(0.66 0.2 25); /* risque élevé                */
-  --signal-verified: oklch(0.78 0.07 205); /* donnée vérifiée / recoupée   */
+  --signal-verified: oklch(0.66 0.06 85); /* donnée vérifiée / recoupée   */
   --signal-missing: rgb(69 32 26 / 44%); /* donnée manquante */
   --signal-action: var(--gold); /* action nécessaire           */
 
@@ -688,7 +711,7 @@ html:has([data-sale-tabs]) {
   .form-input,
   .form-textarea {
     width: 100%;
-    border-radius: 0.5rem;
+    border-radius: var(--radius);
     /* Bordure du champ : marine à 55 %, soit 3,5:1 à 3,7:1 sur le blanc et le fond du site
        (WCAG 1.4.11, 3:1 pour un composant d'interface). L'ancien 11 % tenait à 1,3:1. */
     border: 1px solid rgb(69 32 26 / 55%);
@@ -733,7 +756,7 @@ html:has([data-sale-tabs]) {
   .form-dropzone,
   .choice-card {
     display: flex;
-    border-radius: 0.5rem;
+    border-radius: var(--radius);
     border: 1px solid rgb(69 32 26 / 10%);
     background: rgb(255 255 255 / 72%);
     color: var(--foreground);

@@ -141,7 +141,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             {showLawyerDirectory ? (
               <a
                 href={directoryHref}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink-black px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Voir les avocats disponibles
                 <ArrowRight className="h-4 w-4" aria-hidden />
@@ -149,7 +149,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             ) : hasOrganizerContact ? (
               <a
                 href="#rendez-vous"
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink-black px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Consulter les coordonnées du dossier
               </a>

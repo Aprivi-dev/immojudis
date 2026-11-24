@@ -45,8 +45,8 @@
   min-width: 0;
   padding: 16px 18px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .ceiling {
@@ -171,7 +171,7 @@
 .caution {
   margin: 8px 0 0;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--warning-tint);
   color: var(--ink-strong);
   font-size: 14px;

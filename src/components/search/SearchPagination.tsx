@@ -4,7 +4,7 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 
 /** Gabarit commun des contrôles de pagination, sans couleur : chaque liste garde la sienne. */
 const PAGE_CONTROL_BASE_CLASSES =
-  "inline-flex h-11 items-center justify-center gap-2 rounded-md border px-4 text-sm font-bold transition-colors";
+  "inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-bold transition-colors";
 
 const PAGE_CONTROL_CLASSES = `${PAGE_CONTROL_BASE_CLASSES} cursor-pointer border-line bg-white text-brand-navy hover:border-brand-navy hover:text-brand-navy aria-disabled:cursor-not-allowed aria-disabled:opacity-60`;
 
@@ -190,7 +190,7 @@ export function SearchPagination({
             href={firstHref}
             disabled={false}
             onActivate={onFirstPage}
-            className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy"
+            className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy"
           >
             Revenir à la page 1
           </PageControl>

@@ -3,7 +3,7 @@
   padding: clamp(1.1rem, 3vw, 1.8rem);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
   color: var(--brand-navy);
 }
 .heading {
@@ -63,7 +63,7 @@
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
-  background: #ffffff;
+  background: var(--surface);
 }
 .facts dt {
   color: var(--ink-soft);

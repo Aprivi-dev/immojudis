@@ -53,9 +53,9 @@ export type ButtonVariant = "primary" | "secondary" | "dark" | "ghost" | "danger
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  // Bouton principal en marine sur tout le site (décision du propriétaire du 07/11/2026, repasse
-  // design n° 19) : l'or reste au décor et aux accents. `dark` est conservé pour les appels existants.
-  primary: "bg-brand-navy text-white hover:bg-brand-navy-soft",
+  // Bouton principal : pilule presque noire, comme sur l'accueil (refonte du 24/11/2026) ; la
+  // terracotta reste au décor et aux accents. `dark` (bordeaux) est conservé pour les appels existants.
+  primary: "bg-ink-black text-white hover:bg-brand-navy",
   secondary: "border border-line bg-white text-brand-navy hover:border-brand-navy",
   dark: "bg-brand-navy text-white hover:bg-brand-navy-soft",
   ghost: "text-brand-navy hover:bg-surface-tint",
@@ -63,9 +63,9 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
-  sm: "min-h-9 px-3 text-xs",
-  md: "min-h-11 px-4 text-sm",
-  lg: "min-h-12 px-6 text-base",
+  sm: "min-h-9 px-4 text-xs",
+  md: "min-h-11 px-5 text-sm",
+  lg: "min-h-12 px-7 text-base",
 };
 
 /** Classes d'un bouton, utilisables aussi sur un lien (`<Link className={buttonClasses()}>`). */
@@ -75,7 +75,7 @@ export function buttonClasses({
   className,
 }: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
   return cn(
-    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-tint disabled:text-ink-soft",
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-full font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-tint disabled:text-ink-soft",
     BUTTON_VARIANTS[variant],
     BUTTON_SIZES[size],
     className,

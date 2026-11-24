@@ -91,7 +91,7 @@
 .mapFrame :global(.mapboxgl-ctrl-group) {
   overflow: hidden;
   border: 1px solid rgb(19 34 56 / 18%);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: rgb(255 255 255 / 94%);
   box-shadow: 0 5px 16px rgb(19 34 56 / 16%);
 }
@@ -103,7 +103,7 @@
 
 .mapFrame :global(.mapboxgl-ctrl-attrib) {
   max-width: min(70vw, 360px);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: rgb(255 255 255 / 84%);
   color: var(--ink-soft);
   font-size: 12px;
@@ -150,7 +150,7 @@
   padding: 8px 12px;
   border: 1px solid var(--gold-light);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--gold-text);
   font-size: 12px;
   font-weight: 750;
@@ -175,7 +175,7 @@
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--gold-light);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: rgb(255 248 233 / 94%);
   color: var(--gold-text);
   font-size: 12px;
@@ -299,7 +299,7 @@
   .mapFrame {
     min-height: 280px;
     height: min(76vw, 360px);
-    border-radius: 13px;
+    border-radius: var(--radius);
   }
 
   .mapFrame :global(.mapboxgl-ctrl-top-right) {

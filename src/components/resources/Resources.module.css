@@ -1,5 +1,5 @@
 .root {
-  --paper: #ffffff;
+  --paper: var(--surface);
   --ink: var(--brand-navy);
   --copper: var(--gold-text);
   --muted-ink: var(--ink-soft);
@@ -91,8 +91,8 @@
   grid-template-columns: 0.95fr 1.2fr;
   overflow: hidden;
   border: 1px solid var(--line-warm);
-  border-radius: 6px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .featuredArt {
@@ -168,7 +168,7 @@
   gap: 20px;
   padding: 14px 23px;
   border: 1px solid var(--ink);
-  border-radius: 4px;
+  border-radius: 9999px;
   background: var(--ink);
   color: #ffffff;
   font-size: 13px;

@@ -133,3 +133,16 @@ de photo, et chacune occupait 273 px de gris.
 Page par page, dans cet ordre : fiche vente, /sales, accueil ; le reste du site suit au fil des
 changements. Chaque migration n'ajoute que du CSS et des composants serveur : le budget de
 JavaScript client (`scripts/check-build-budgets.mjs`) reste tenu.
+
+### Tout le site au registre de l'accueil (24/11/2026)
+
+Le socle commun porte désormais les règles de l'accueil, pour toutes les pages :
+
+- **Surfaces à plat** : aucun blanc pur. `bg-white` rend l'ivoire (`--surface`) ; les gris froids de
+  Tailwind (`slate`, `sky`) sont ramenés aux neutres chauds de la palette dans `src/styles.css`.
+- **Angles** : 4 px pour les champs, les cartes et les blocs (`--radius`), pilule pour les boutons et
+  les pastilles.
+- **Boutons** : le bouton principal est une pilule presque noire (`--ink-black`), le bouton
+  secondaire une pilule à filet. Le bordeaux reste aux bandeaux et aux titres.
+- **États** : succès en vert olive, information en encre sur teinte pierre, alerte et erreur en tons
+  chauds ; plus de bleu ni de vert froid.

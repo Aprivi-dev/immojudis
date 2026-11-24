@@ -360,9 +360,9 @@ export function ProfessionalPilotWorkspace({
               type="button"
               onClick={() => setActiveStep(step)}
               aria-current={activeStep === step ? "step" : undefined}
-              className={`min-h-10 shrink-0 rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+              className={`min-h-10 shrink-0 rounded-full px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 activeStep === step
-                  ? "bg-brand-navy text-white"
+                  ? "bg-ink-black text-white"
                   : "text-brand-navy/70 hover:bg-slate-100"
               }`}
             >
@@ -705,7 +705,7 @@ export function ProfessionalPilotWorkspace({
             type="button"
             onClick={() => void save()}
             disabled={saving || !hydrated || (canSync && workspaceQuery.isPending)}
-            className="min-h-11 rounded-md bg-brand-navy px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 rounded-full bg-ink-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             {saving ? "Enregistrement…" : "Enregistrer le dossier"}
           </button>

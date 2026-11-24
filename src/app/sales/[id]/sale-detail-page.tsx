@@ -319,7 +319,7 @@ function SaleDetailContent({
         </p>
         <button
           type="button"
-          className="mt-5 min-h-11 rounded-md bg-brand-navy px-4 py-2 text-white"
+          className="mt-5 min-h-11 rounded-full bg-ink-black px-4 py-2 text-white"
           onClick={() => void retryEntitlements()}
         >
           Réessayer
@@ -440,7 +440,7 @@ function SaleDetailContent({
           </p>
           <a
             href={loginPathWithRedirect(loginReturnTo, { reason: "fiche" })}
-            className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-white"
+            className="mt-5 inline-flex min-h-11 items-center rounded-full bg-ink-black px-4 py-2 text-sm font-medium text-white"
           >
             Se connecter ou créer un compte
           </a>

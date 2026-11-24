@@ -111,7 +111,7 @@
   margin-top: 15px;
   padding: 14px 15px;
   border: 1px solid var(--sand);
-  border-radius: 13px;
+  border-radius: var(--radius);
   background: var(--uc-accent-soft);
 }
 
@@ -127,8 +127,8 @@
   height: 26px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 8px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--uc-accent);
 }
 
@@ -168,8 +168,8 @@
 .details {
   margin-top: 14px;
   border: 1px solid var(--uc-border);
-  border-radius: 13px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -320,8 +320,8 @@
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--uc-border);
-  border-radius: 13px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .referenceTop,
@@ -471,8 +471,8 @@
   align-items: start;
   padding: 10px 12px;
   border: 1px solid var(--uc-border);
-  border-radius: 11px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.48;
@@ -528,8 +528,8 @@
   align-items: start;
   padding: 10px 11px;
   border: 1px solid var(--uc-border);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .documentItem > svg {
@@ -571,8 +571,8 @@
   align-items: start;
   padding: 14px;
   border: 1px dashed var(--line);
-  border-radius: 12px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--uc-muted);
   font-size: 13px;
   line-height: 1.55;
@@ -627,7 +627,7 @@
   .headerMark {
     width: 44px;
     height: 44px;
-    border-radius: 13px;
+    border-radius: var(--radius);
   }
 
   .headerMark svg {

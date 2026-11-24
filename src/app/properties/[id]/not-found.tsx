@@ -14,13 +14,13 @@ export default function NotFound() {
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/properties"
-            className="inline-flex min-h-10 items-center justify-center rounded-md bg-gold-soft px-4 text-sm font-semibold text-white hover:bg-gold-text"
+            className="inline-flex min-h-10 items-center justify-center rounded-full bg-gold-soft px-4 text-sm font-semibold text-white hover:bg-gold-text"
           >
             Voir la démo
           </Link>
           <Link
             href="/sales"
-            className="inline-flex min-h-10 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-semibold text-foreground hover:border-gold/50"
+            className="inline-flex min-h-10 items-center justify-center rounded-full border border-border bg-white px-4 text-sm font-semibold text-foreground hover:border-gold/50"
           >
             Retour aux ventes
           </Link>

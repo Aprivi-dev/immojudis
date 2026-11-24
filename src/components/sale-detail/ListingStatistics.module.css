@@ -136,8 +136,8 @@
 .periodControl select {
   min-height: 42px;
   border: 1px solid var(--stats-line);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--stats-navy);
   cursor: pointer;
   font: inherit;
@@ -245,8 +245,8 @@
 .communeItem {
   min-width: 0;
   border: 1px solid var(--stats-line);
-  border-radius: 16px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   box-shadow: 0 9px 26px rgb(19 34 56 / 4%);
 }
 
@@ -455,7 +455,7 @@
 }
 
 .priceMetricGrid > div {
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--stats-warm);
   padding: 13px;
 }
@@ -498,7 +498,7 @@
 
 .lockedCard {
   margin-top: 18px;
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .lockedCard .cardTitle,
@@ -520,8 +520,8 @@
 .nationalDetails,
 .methodDetails {
   border: 1px solid var(--stats-line);
-  border-radius: 14px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   padding: 0 16px;
 }
 
@@ -556,7 +556,7 @@
 .statusCard {
   margin-top: 22px;
   border-color: rgb(19 34 56 / 17%);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .statusCard[role="alert"] {
@@ -571,7 +571,7 @@
   min-height: 40px;
   margin-top: 8px;
   border: 1px solid var(--stats-navy);
-  border-radius: 10px;
+  border-radius: 9999px;
   background: var(--stats-navy);
   color: #ffffff;
   cursor: pointer;
@@ -603,8 +603,8 @@
 .saleItem {
   min-width: 0;
   border: 1px solid var(--stats-line);
-  border-radius: 16px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   box-shadow: 0 9px 26px rgb(19 34 56 / 4%);
 }
 
@@ -672,8 +672,8 @@
 .upcomingToggle {
   min-height: 40px;
   border: 1px solid rgb(156 100 43 / 42%);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--stats-navy);
   cursor: pointer;
   font: inherit;
@@ -720,8 +720,8 @@
   margin-top: 18px;
   overflow: hidden;
   border: 1px solid var(--stats-line);
-  border-radius: 16px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .lawyerRowHeader,

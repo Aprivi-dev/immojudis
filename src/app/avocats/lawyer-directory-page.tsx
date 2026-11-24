@@ -702,7 +702,7 @@ function LawyerCard({
         {lawyer.phone ? (
           <a
             href={`tel:${lawyer.phone}`}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
           >
             <Phone className="h-4 w-4" aria-hidden />
             Appeler
@@ -711,7 +711,7 @@ function LawyerCard({
         {lawyer.email ? (
           <a
             href={`mailto:${lawyer.email}`}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
           >
             <Mail className="h-4 w-4" aria-hidden />
             Écrire
@@ -722,7 +722,7 @@ function LawyerCard({
             href={lawyer.websiteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
           >
             Site
             <ExternalLink className="h-4 w-4" aria-hidden />
@@ -733,7 +733,7 @@ function LawyerCard({
             href={cnbDirectoryHref(lawyer.barAssociation)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-brand-navy/16 px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold"
           >
             Vérifier sur le CNB
             <ExternalLink className="h-4 w-4" aria-hidden />
@@ -819,7 +819,7 @@ function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null })
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
     >
       Résultats officiels du CNB
       <ExternalLink className="h-4 w-4" aria-hidden />
