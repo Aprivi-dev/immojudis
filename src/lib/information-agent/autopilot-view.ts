@@ -220,6 +220,8 @@ const READINESS_ACTIONS: Record<string, string> = {
   manual_sends:
     "Continuez les envois à la main depuis l’onglet « À contacter », sans plainte ni rebond.",
   simulation: "Laissez le pilote en simulation jusqu’à la durée demandée, sans anomalie.",
+  template_approved:
+    "Relisez le modèle de message publié (onglet « Réglages »), puis inscrivez son empreinte dans la configuration de l’hébergement et redéployez (voir le détail).",
   no_blocked_mission: "Traitez les envois bloqués ou à vérifier dans l’onglet « Envois ».",
   acting_admin:
     "Vérifiez que le compte qui a lancé la simulation est toujours administrateur, ou réessayez plus tard.",

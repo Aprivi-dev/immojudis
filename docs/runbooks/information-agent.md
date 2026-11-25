@@ -120,7 +120,7 @@ Le bouton « Arrêt d’urgence » passe par l’application : si le site ne ré
 1. Recréer la tâche planifiée, à l’identique de la migration `20261110230000` (elle n’appelle l’application que si le mode n’est pas « off ») :
    `select cron.schedule('immojudis-information-agent-autopilot', '*/10 * * * *', 'select app_private.invoke_information_agent_autopilot_endpoint();');`
    Vérifier qu’il n’y a qu’une ligne : `select jobid, schedule, active from cron.job where jobname = 'immojudis-information-agent-autopilot';`
-2. Réactiver **depuis l’écran** (onglet Pilote), jamais par SQL : motif saisi, puis « Simulation », comme dans « Réarmer après un arrêt automatique ». L’horloge des 7 jours de simulation repart de cet instant ; le passage en « Réel » repasse par la porte SQL et le contrôle de préparation.
+2. Réactiver **depuis l’écran** (onglet Pilote), jamais par SQL : motif saisi, puis « Simulation », comme dans « Réarmer après un arrêt automatique ». L’horloge des 7 jours de simulation repart de cet instant ; le passage en mode réel (« Passer le pilote en mode réel ») repasse par la porte SQL et le contrôle de préparation.
 
 ### Réarmer après un arrêt automatique
 
