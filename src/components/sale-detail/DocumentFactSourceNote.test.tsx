@@ -8,14 +8,17 @@ import {
   DOCUMENT_ROOMS_LABEL,
   DOCUMENT_SURFACE_LABEL,
   type DocumentFactSource,
+  type DocumentNoteItem,
 } from "@/lib/document-fact-sources";
 import { DocumentFactSourceNote } from "./DocumentFactSourceNote";
+import { useDocumentFactLinks } from "./use-document-fact-links";
 
 const PIECE_URL = "https://example.test/pieces/cahier.pdf";
 const PIECE_KEY = createHash("sha256").update(PIECE_URL, "utf8").digest("hex");
 const surface: DocumentFactSource = {
   key: "app_surface_m2",
   documentType: "cahier_conditions_vente",
+  documentLabel: "Cahier des conditions",
   page: 12,
   documentKey: PIECE_KEY,
 };
@@ -23,9 +26,21 @@ const MENTION = "Surface relevée automatiquement dans la pièce « Cahier des c
 
 afterEach(cleanup);
 
+/** La mention telle que la fiche des comptes la monte : les liens viennent des pièces que la vue sert. */
+function Note({
+  items,
+  documents = {},
+}: {
+  items: readonly DocumentNoteItem[];
+  documents?: { documents_rich?: unknown; documents?: unknown };
+}) {
+  const links = useDocumentFactLinks(documents.documents_rich, items);
+  return <DocumentFactSourceNote items={items} links={links} />;
+}
+
 describe("mention « relevée automatiquement » d'une valeur de la fiche", () => {
   it("dit la valeur, la pièce et la page en texte, sans lien quand la fiche ne sert pas la pièce", () => {
-    render(<DocumentFactSourceNote items={[{ label: DOCUMENT_SURFACE_LABEL, source: surface }]} />);
+    render(<Note items={[{ label: DOCUMENT_SURFACE_LABEL, source: surface }]} />);
     const mention = screen.getByTestId("document-fact-source");
     expect(mention.textContent).toBe(MENTION);
     expect(within(mention).queryByRole("link")).toBeNull();
@@ -33,7 +48,7 @@ describe("mention « relevée automatiquement » d'une valeur de la fiche", () =
 
   it("fait de la pièce un lien vers sa page quand la vue sert déjà la pièce (offre, déblocage)", async () => {
     render(
-      <DocumentFactSourceNote
+      <Note
         items={[{ label: DOCUMENT_SURFACE_LABEL, source: surface }]}
         documents={{ documents_rich: [{ url: PIECE_URL, label: "Cahier" }] }}
       />,
@@ -50,7 +65,7 @@ describe("mention « relevée automatiquement » d'une valeur de la fiche", () =
 
   it("ne fait pas de lien vers une pièce que la vue ne sert pas", async () => {
     render(
-      <DocumentFactSourceNote
+      <Note
         items={[{ label: DOCUMENT_SURFACE_LABEL, source: surface }]}
         documents={{ documents_rich: [{ url: "https://example.test/pieces/autre.pdf" }] }}
       />,
@@ -63,7 +78,7 @@ describe("mention « relevée automatiquement » d'une valeur de la fiche", () =
 
   it("réunit deux valeurs de la même page, et ne dit rien sans valeur relevée", () => {
     const { rerender } = render(
-      <DocumentFactSourceNote
+      <Note
         items={[
           { label: DOCUMENT_SURFACE_LABEL, source: surface },
           { label: DOCUMENT_ROOMS_LABEL, source: { ...surface, key: "rooms_count" } },
@@ -73,7 +88,7 @@ describe("mention « relevée automatiquement » d'une valeur de la fiche", () =
     expect(screen.getByTestId("document-fact-source").textContent).toBe(
       "Surface et nombre de pièces relevés automatiquement dans la pièce « Cahier des conditions », page 12.",
     );
-    rerender(<DocumentFactSourceNote items={[{ label: DOCUMENT_SURFACE_LABEL, source: null }]} />);
+    rerender(<Note items={[{ label: DOCUMENT_SURFACE_LABEL, source: null }]} />);
     expect(screen.queryByTestId("document-fact-source")).toBeNull();
   });
 
@@ -81,7 +96,7 @@ describe("mention « relevée automatiquement » d'une valeur de la fiche", () =
     const { container } = render(
       <p>
         62,4 m²
-        <DocumentFactSourceNote
+        <Note
           items={[{ label: DOCUMENT_SURFACE_LABEL, source: surface }]}
           documents={{ documents_rich: [{ url: PIECE_URL }] }}
         />

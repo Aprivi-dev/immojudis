@@ -454,12 +454,15 @@ export type DocumentFactKey = "app_surface_m2" | "land_surface_m2" | "rooms_coun
 /**
  * Public projection of one value read automatically in a piece (`get_public_sale_document_fact_sources`):
  * the column, the type of the piece (a code such as `cahier_conditions_vente`, or `null`), its page and the
- * SHA-256 digest (hex) of the address of the piece, which only a view that already serves the pieces can
- * turn into a link. Never the value, the quote or the address.
+ * SHA-256 digest (hex) of the address of the piece, given only to an account the views already serve the
+ * pieces to (Analyse offer, unlocked sale), `null` otherwise (always on the public page). Never the value,
+ * the quote or the address.
  */
 export type DocumentFactSource = {
   key: DocumentFactKey;
   documentType: string | null;
+  /** Label of that type in the list of pieces (`documentTypeLabel`), set when the row is read. */
+  documentLabel: string | null;
   page: number;
   documentKey: string | null;
 };

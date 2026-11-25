@@ -3,16 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DOCUMENT_ROOMS_LABEL,
   DOCUMENT_SURFACE_LABEL,
-  DocumentFactSourcesReadError,
-  documentFactLinks,
   documentNoteSentences,
   documentSourceForDisplayedValue,
-  fetchDocumentFactSources,
-  parseDocumentFactSources,
-  warnDocumentFactSourcesFailure,
   withDocumentFactSources,
   type DocumentFactSource,
 } from "./document-fact-sources";
+import {
+  DocumentFactSourcesReadError,
+  fetchDocumentFactSources,
+  parseDocumentFactSources,
+  warnDocumentFactSourcesFailure,
+} from "./document-fact-sources-read";
 
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const PIECE_URL = "https://example.test/pieces/cahier des conditions.pdf";
@@ -25,6 +26,7 @@ const source = (
 ): DocumentFactSource => ({
   key,
   documentType: "cahier_conditions_vente",
+  documentLabel: "Cahier des conditions",
   page: 12,
   documentKey: PIECE_KEY,
   ...overrides,
@@ -47,11 +49,16 @@ describe("lignes de la base", () => {
       ]),
     ).toEqual([
       source("app_surface_m2"),
-      source("rooms_count", { documentType: null, page: 3, documentKey: null }),
+      source("rooms_count", {
+        documentType: null,
+        documentLabel: null,
+        page: 3,
+        documentKey: null,
+      }),
     ]);
   });
 
-  it("écarte une colonne hors liste, une page absente, et neutralise un type ou une empreinte hors forme", () => {
+  it("écarte une colonne hors liste, une page absente, et neutralise un type hors forme", () => {
     expect(
       parseDocumentFactSources([
         { fact_key: "starting_price_eur", document_type: "bail", page_number: 1 },
@@ -62,10 +69,17 @@ describe("lignes de la base", () => {
           fact_key: "rooms_count",
           document_type: "Pièce de M. Dupont",
           page_number: 2,
-          document_key: "https://example.test/pieces/pv.pdf",
+          document_key: null,
         },
       ]),
-    ).toEqual([source("rooms_count", { documentType: null, page: 2, documentKey: null })]);
+    ).toEqual([
+      source("rooms_count", {
+        documentType: null,
+        documentLabel: null,
+        page: 2,
+        documentKey: null,
+      }),
+    ]);
     expect(parseDocumentFactSources(null)).toEqual([]);
     expect(parseDocumentFactSources({ fact_key: "rooms_count" })).toEqual([]);
   });
@@ -80,7 +94,12 @@ describe("lecture", () => {
       error: null,
     });
     await expect(fetchDocumentFactSources({ rpc }, ID)).resolves.toEqual([
-      source("rooms_count", { documentType: "bail", page: 2, documentKey: null }),
+      source("rooms_count", {
+        documentType: "bail",
+        documentLabel: "Bail / occupation",
+        page: 2,
+        documentKey: null,
+      }),
     ]);
     expect(rpc).toHaveBeenCalledWith("get_public_sale_document_fact_sources", { p_sale_id: ID });
   });
@@ -164,7 +183,7 @@ describe("texte de la mention", () => {
     const [rooms] = documentNoteSentences([
       {
         label: DOCUMENT_ROOMS_LABEL,
-        source: source("rooms_count", { documentType: null, page: 3 }),
+        source: source("rooms_count", { documentType: null, documentLabel: null, page: 3 }),
       },
     ]);
     expect(`${rooms.lead} ${rooms.piece}`).toBe(
@@ -190,50 +209,5 @@ describe("texte de la mention", () => {
       "Nombre de pièces relevé automatiquement dans la pièce « Cahier des conditions », page 13",
     ]);
     expect(documentNoteSentences([{ label: DOCUMENT_SURFACE_LABEL, source: null }])).toEqual([]);
-  });
-});
-
-describe("lien vers la pièce", () => {
-  const cited = [{ documentKey: PIECE_KEY, page: 12 }];
-
-  it("mène à la page citée d'une pièce que la vue sert déjà", async () => {
-    const links = await documentFactLinks(
-      { documents_rich: [{ url: PIECE_URL, label: "Cahier" }] },
-      cited,
-    );
-    expect(links.get(`${PIECE_KEY}|12`)).toBe(
-      "https://example.test/pieces/cahier%20des%20conditions.pdf#page=12",
-    );
-    // La liste simple des pièces de la vente compte aussi.
-    const fromList = await documentFactLinks({ documents: [PIECE_URL] }, cited);
-    expect(fromList.size).toBe(1);
-  });
-
-  it("ne fait aucun lien sans la pièce : fiche publique, offre Découverte, autre pièce", async () => {
-    expect((await documentFactLinks({}, cited)).size).toBe(0);
-    expect((await documentFactLinks({ documents_rich: [] }, cited)).size).toBe(0);
-    expect(
-      (
-        await documentFactLinks(
-          { documents_rich: [{ url: "https://example.test/autre.pdf" }] },
-          cited,
-        )
-      ).size,
-    ).toBe(0);
-    expect(
-      (
-        await documentFactLinks({ documents_rich: [{ url: PIECE_URL }] }, [
-          { documentKey: null, page: 12 },
-        ])
-      ).size,
-    ).toBe(0);
-  });
-
-  it("ne fait aucun lien vers une adresse que la fiche ne proposerait pas", async () => {
-    const script = "javascript:alert(1)";
-    const links = await documentFactLinks({ documents_rich: [{ url: script }] }, [
-      { documentKey: sha(script), page: 1 },
-    ]);
-    expect(links.size).toBe(0);
   });
 });

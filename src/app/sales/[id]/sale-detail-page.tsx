@@ -16,7 +16,6 @@ import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
 import { withDocumentFactSources } from "@/lib/document-fact-sources";
-import { getSaleDocumentFactSources } from "@/lib/sale-document-fact-sources.client";
 import { fetchSaleUnlockStatus } from "@/lib/client-api";
 import { useSalePurchaseReturn } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
@@ -253,10 +252,15 @@ function SaleDetailContent({
     staleTime: 5 * 60_000,
     retry: 1,
   });
-  // Valeurs relevées automatiquement dans les pièces (lot V3b-2) : même règle de lecture que ci-dessus.
+  // Valeurs relevées automatiquement dans les pièces (lot V3b-2) : même règle de lecture que ci-dessus. Le module
+  // de lecture n'est chargé qu'au besoin, hors du JavaScript initial de la fiche (la fiche publique rendue par le
+  // serveur porte déjà ces valeurs).
   const documentSourcesQuery = useQuery({
     queryKey: ["sale-document-fact-sources", id],
-    queryFn: () => getSaleDocumentFactSources(id),
+    queryFn: () =>
+      import("@/lib/sale-document-fact-sources.client").then((module) =>
+        module.getSaleDocumentFactSources(id),
+      ),
     enabled: readFactSources,
     staleTime: 5 * 60_000,
     retry: 1,

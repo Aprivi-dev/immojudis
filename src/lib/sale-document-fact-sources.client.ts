@@ -1,9 +1,9 @@
 import { getSupabase } from "@/integrations/supabase/lazy";
+import type { DocumentFactSource } from "@/lib/document-fact-sources";
 import {
   fetchDocumentFactSources,
   warnDocumentFactSourcesFailure,
-  type DocumentFactSource,
-} from "@/lib/document-fact-sources";
+} from "@/lib/document-fact-sources-read";
 import { assertCloudConfigured } from "@/lib/query-configuration";
 
 /**

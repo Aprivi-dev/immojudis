@@ -11,12 +11,11 @@ import {
   withLawyerFactSources,
   type LawyerFactSource,
 } from "@/lib/lawyer-fact-sources";
+import { withDocumentFactSources, type DocumentFactSource } from "@/lib/document-fact-sources";
 import {
   fetchDocumentFactSources,
   warnDocumentFactSourcesFailure,
-  withDocumentFactSources,
-  type DocumentFactSource,
-} from "@/lib/document-fact-sources";
+} from "@/lib/document-fact-sources-read";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
@@ -91,11 +90,16 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
+  // Les valeurs relevées automatiquement dans les pièces sont lues avec la vente, dans la même entrée du cache :
+  // la valeur et sa mention expirent ensemble (un retrait les emporte toutes deux à la même relecture).
+  const [summary, documentSources] = await Promise.all([
+    fetchPublicSaleSummary(client, id, { withIndexability: true }),
+    readDocumentFactSources(client, id),
+  ]);
   if (summary.kind === "missing") return missingOrMerged(client, id);
   return {
     status: "found",
-    sale: summary.sale,
+    sale: withDocumentFactSources(summary.sale, documentSources),
     ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
   };
 }
@@ -142,17 +146,13 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   // dépassé ne reste pas cinq minutes. Seules les 3 premières photos affichées sont cherchées, et
   // les copies trouvées ont leur propre cache (photo-mirror.server.ts). Jamais bloquant ni visible.
   const mirrorClient = client as unknown as PhotoMirrorClient;
-  const [mirrored, lawyerSources, documentSources] = await Promise.all([
+  const [mirrored, lawyerSources] = await Promise.all([
     withPhotoMirror(lookup.sale, mirrorClient, {
       fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
     }),
     cachedLawyerFactSources(client, normalizedId),
-    cachedDocumentFactSources(client, normalizedId),
   ]);
-  const sale = withDocumentFactSources(
-    withLawyerFactSources(mirrored, lawyerSources),
-    documentSources,
-  );
+  const sale = withLawyerFactSources(mirrored, lawyerSources);
   return sale === lookup.sale ? lookup : { ...lookup, sale };
 });
 
@@ -183,23 +183,23 @@ async function cachedLawyerFactSources(
 }
 
 /**
- * Valeurs de la fiche relevées automatiquement dans les pièces (lot V3b-2) : même règle de lecture et de cache que
- * les valeurs de l'avocat poursuivant ci-dessus. Même fenêtre que la vente elle-même : après un retrait, la valeur et
- * sa mention restent dans le cache au plus {@link PUBLIC_SALE_REVALIDATE_SECONDS} secondes.
+ * Valeurs de la fiche relevées automatiquement dans les pièces (lot V3b-2), lues par `readPublicSale` dans l'entrée
+ * du cache de la vente. Le serveur lit en anon : la base ne rend jamais l'empreinte de la pièce (`documentKey` nul).
+ * Une lecture en échec est tracée (code seul) et la vente est gardée sans mention jusqu'à sa prochaine relecture
+ * (au plus {@link PUBLIC_SALE_REVALIDATE_SECONDS} secondes) : la valeur reste affichée sans sa source, plutôt
+ * qu'une fiche en erreur pour un enrichissement.
  */
-async function cachedDocumentFactSources(
+async function readDocumentFactSources(
   client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
   id: string,
 ): Promise<DocumentFactSource[]> {
   try {
-    return await unstable_cache(
-      () => fetchDocumentFactSources(client, id),
-      ["public-sale-document-fact-sources", id],
-      {
-        tags: [publicSaleCacheTag(id), PUBLIC_SALES_CACHE_TAG],
-        revalidate: PUBLIC_SALE_REVALIDATE_SECONDS,
-      },
-    )();
+    // La fiche publique est servie à tous depuis le cache : aucune empreinte de pièce n'y entre, même si la base
+    // en rendait une.
+    return (await fetchDocumentFactSources(client, id)).map((source) => ({
+      ...source,
+      documentKey: null,
+    }));
   } catch (error) {
     warnDocumentFactSourcesFailure(error);
     return [];

@@ -1772,10 +1772,17 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
         {
           key: "app_surface_m2",
           documentType: "cahier_conditions_vente",
+          documentLabel: "Cahier des conditions",
           page: 12,
           documentKey: "a".repeat(64),
         },
-        { key: "rooms_count", documentType: "pv_descriptif", page: 3, documentKey: "b".repeat(64) },
+        {
+          key: "rooms_count",
+          documentType: "pv_descriptif",
+          documentLabel: "PV descriptif",
+          page: 3,
+          documentKey: "b".repeat(64),
+        },
       ],
     });
     const mentions = screen.getAllByTestId("document-fact-source");
@@ -1792,7 +1799,13 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
       ...facts,
       rooms_count: null,
       document_fact_sources: [
-        { key: "rooms_count", documentType: "pv_descriptif", page: 3, documentKey: null },
+        {
+          key: "rooms_count",
+          documentType: "pv_descriptif",
+          documentLabel: "PV descriptif",
+          page: 3,
+          documentKey: null,
+        },
       ],
     });
     expect(screen.queryByTestId("document-fact-source")).toBeNull();
@@ -1802,7 +1815,13 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
     const { container } = renderPreview({
       ...facts,
       document_fact_sources: [
-        { key: "app_surface_m2", documentType: "bail", page: 2, documentKey: null },
+        {
+          key: "app_surface_m2",
+          documentType: "bail",
+          documentLabel: "Bail / occupation",
+          page: 2,
+          documentKey: null,
+        },
       ],
       lawyer_fact_sources: [
         manual("property_type"),

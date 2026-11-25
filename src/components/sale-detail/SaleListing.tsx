@@ -60,6 +60,7 @@ import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
 import { DocumentFactSourceNote } from "./DocumentFactSourceNote";
+import { useDocumentFactLinks } from "./use-document-fact-links";
 import {
   DOCUMENT_SURFACE_LABEL,
   documentSourceForDisplayedValue,
@@ -546,6 +547,7 @@ export function SaleDetailHeading({
           }),
         },
       ];
+  const documentLinks = useDocumentFactLinks(sale.documents_rich, documentHeadingItems);
   const address = showAddress && !cityBlocked ? listingAddress(sale) : "";
   return (
     <header className={styles.pageHeading}>
@@ -570,7 +572,7 @@ export function SaleDetailHeading({
         ) : null}
       </p>
       <LawyerFactSourceNote items={lawyerHeadingItems} cahierHref={PIECES_SECTION_HREF} />
-      <DocumentFactSourceNote items={documentHeadingItems} documents={sale} />
+      <DocumentFactSourceNote items={documentHeadingItems} links={documentLinks} />
     </header>
   );
 }

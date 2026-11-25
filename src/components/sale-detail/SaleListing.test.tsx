@@ -780,7 +780,13 @@ describe("surface relevée automatiquement dans une pièce, sous le titre de la 
       documents: [],
       documents_rich: [],
       document_fact_sources: [
-        { key: "app_surface_m2", documentType: "cahier_conditions_vente", page: 12, documentKey },
+        {
+          key: "app_surface_m2",
+          documentType: "cahier_conditions_vente",
+          documentLabel: "Cahier des conditions",
+          page: 12,
+          documentKey,
+        },
       ],
       ...values,
     });
