@@ -20,7 +20,7 @@ export function ProportionalBars({
       {items.map((item) => (
         <li key={item.key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
           <span className="min-w-0">{item.label}</span>
-          <span className="font-bold tabular-nums">
+          <span className="font-semibold tabular-nums">
             {count.format(item.count)}
             <span className="sr-only"> {unit(item.count)}</span>
           </span>

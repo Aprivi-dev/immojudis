@@ -66,7 +66,7 @@ export function SalePublicDeadline({ sale }: { sale: AuctionSale }) {
   if (!deadline) return null;
   return (
     <Badge tone={deadline.tone} data-testid="public-sale-deadline">
-      <Clock className="h-3.5 w-3.5" aria-hidden />
+      <Clock className="h-4 w-4" aria-hidden />
       {deadline.label}
     </Badge>
   );

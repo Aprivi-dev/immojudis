@@ -175,7 +175,7 @@ export function PepiteBlock({
           id="pepite-title"
           className="flex items-center gap-2 text-lg font-semibold text-brand-navy"
         >
-          <PepiteIcon className="size-5" />
+          <PepiteIcon className="size-4" />
           {title}
         </h2>
         <CriteriaList

@@ -40,13 +40,13 @@ export function SavedSaleComparisons({
   if (!userId) {
     return (
       <div className="rounded-lg border border-line-soft bg-white p-3">
-        <p className="font-bold text-brand-navy">Retrouver cette comparaison plus tard</p>
+        <p className="font-semibold text-brand-navy">Retrouver cette comparaison plus tard</p>
         <p className="mt-1 text-ink-soft">
           Créez un compte gratuit pour enregistrer une comparaison de trois biens et la partager.
         </p>
         <Link
           href={loginPathWithRedirect(localRedirect(returnTo))}
-          className="mt-2 inline-flex min-h-11 items-center rounded-full bg-ink-black px-3 font-bold text-white"
+          className="mt-2 inline-flex min-h-11 items-center rounded-full bg-ink-black px-3 font-semibold text-white"
         >
           Se connecter ou créer un compte
         </Link>
@@ -158,7 +158,7 @@ function AuthenticatedSavedSaleComparisons({
   return (
     <div className="rounded-lg border border-line-soft bg-white p-3 text-brand-navy">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="min-w-[14rem] flex-1 text-xs font-bold">
+        <label className="min-w-[14rem] flex-1 text-xs font-semibold">
           Nom de la comparaison
           <input
             value={name}
@@ -172,7 +172,7 @@ function AuthenticatedSavedSaleComparisons({
           type="button"
           onClick={() => saveMutation.mutate()}
           disabled={!canSave || saveMutation.isPending || setsQuery.isLoading}
-          className="min-h-11 rounded-full bg-ink-black px-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-11 rounded-full bg-ink-black px-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saveMutation.isPending
             ? "Enregistrement…"
@@ -194,7 +194,7 @@ function AuthenticatedSavedSaleComparisons({
       ) : null}
 
       {shareLink ? (
-        <label className="mt-3 block text-xs font-bold">
+        <label className="mt-3 block text-xs font-semibold">
           Lien de partage · valable 30 jours
           <input
             readOnly
@@ -265,7 +265,7 @@ function SavedComparisonRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-tint px-3 py-2">
       <div>
-        <p className="font-bold">{set.name}</p>
+        <p className="font-semibold">{set.name}</p>
         <p className="text-xs text-ink-soft">
           {readSaleComparisonSnapshot(set.summary_snapshot).length} bien(s) · mise à jour le{" "}
           {formatDate(set.updated_at)}
@@ -308,7 +308,7 @@ function SmallButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`min-h-11 rounded-md px-2 text-xs font-bold disabled:opacity-50 ${tone === "danger" ? "text-red-700" : "text-brand-navy"}`}
+      className={`min-h-11 rounded-md px-2 text-xs font-semibold disabled:opacity-50 ${tone === "danger" ? "text-red-700" : "text-brand-navy"}`}
     >
       {children}
     </button>

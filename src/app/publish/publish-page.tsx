@@ -65,7 +65,7 @@ const INITIAL_DRAFT: PublishDraft = {
 };
 
 /** Libellés en capitales des petits blocs : 12 px, encre douce (plus de 11 px). */
-const LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft";
+const LABEL_CLASS = "text-xs font-semibold text-ink-soft";
 
 const DOCUMENT_TYPES = [
   "Cahier des conditions de vente",
@@ -209,7 +209,7 @@ export function PublishPage() {
     return (
       <main id="contenu" className="min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
         <Card role="status" className="mx-auto max-w-3xl p-6">
-          <RefreshCw className="h-5 w-5 animate-spin text-gold-text" aria-hidden />
+          <RefreshCw className="h-4 w-4 animate-spin text-gold-text" aria-hidden />
           <p className="mt-4 text-sm text-ink-soft">Vérification de l'accès pro...</p>
         </Card>
       </main>
@@ -282,7 +282,7 @@ export function PublishPage() {
               className="mt-4 h-2 overflow-hidden rounded-full bg-line-soft"
             >
               <div
-                className="h-full rounded-full bg-gold transition-all"
+                className="h-full rounded-full bg-gold transition-colors"
                 style={{ width: `${completion}%` }}
               />
             </div>
@@ -353,7 +353,7 @@ export function PublishPage() {
                 <Field label="Pièces transmises">
                   {/* Bordure de champ (3:1 au moins), comme `.form-input`. */}
                   <label className="form-dropzone border-brand-navy/55 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-gold-soft">
-                    <ImagePlus className="h-5 w-5 text-gold-text" aria-hidden />
+                    <ImagePlus className="h-4 w-4 text-gold-text" aria-hidden />
                     <span>{files.length > 0 ? `${files.length} fichier(s)` : "Ajouter"}</span>
                     <input
                       type="file"
@@ -530,7 +530,7 @@ export function PublishPage() {
                   Mes demandes
                 </Eyebrow>
                 {requestsLoading ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-soft" aria-hidden />
+                  <RefreshCw className="h-4 w-4 animate-spin text-ink-soft" aria-hidden />
                 ) : null}
               </div>
               <div className="mt-4 grid gap-3">
@@ -593,12 +593,10 @@ function SectionTitle({
   return (
     <div className="flex items-start gap-3">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface-tint text-gold-text">
-        <Icon className="h-5 w-5" />
+        <Icon className="h-4 w-4" />
       </span>
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-brand-navy">
-          {title}
-        </h2>
+        <h2 className="text-sm font-semibold text-brand-navy">{title}</h2>
         <p className="mt-1 text-sm leading-relaxed text-ink-soft">{subtitle}</p>
       </div>
     </div>

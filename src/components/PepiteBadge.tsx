@@ -97,7 +97,7 @@ export function FloodExposedNote({ className = "" }: { className?: string }) {
       data-testid="pepite-flood-exposed"
       className={`inline-flex items-start gap-1 text-xs font-semibold text-warning ${className}`}
     >
-      <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span>{FLOOD_EXPOSED_SHORT}</span>
     </span>
   );
@@ -242,7 +242,7 @@ export function PepiteInfoBadge({
       >
         {variant === "icon" ? (
           <span className="inline-flex size-6 items-center justify-center rounded-full border border-gold bg-white">
-            <PepiteIcon className="size-3.5" />
+            <PepiteIcon className="size-4" />
             <span className="sr-only">
               {PEPITE_LABEL}
               {floodExposed ? `. ${FLOOD_EXPOSED_SHORT}` : ""}

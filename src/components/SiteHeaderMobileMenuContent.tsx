@@ -91,7 +91,7 @@ export function MobileMenu({
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "inline-flex min-h-11 items-center rounded-md text-3xl font-bold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
+                    "inline-flex min-h-11 items-center rounded-md text-3xl font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
                     active ? "text-gold-text" : "hover:text-gold-text",
                   )}
                 >
@@ -190,9 +190,7 @@ function MobileSection({
 }) {
   return (
     <div className="menu-reveal" style={revealStyle(next())}>
-      <p className="pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
+      <p className="pb-1 text-xs font-semibold text-muted-foreground">{title}</p>
       <ul>
         {links.map((link) => {
           const active = isActive(pathname, link.href);

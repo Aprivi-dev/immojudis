@@ -49,7 +49,7 @@ export default function SaleComparisonDialog({
         }}
       >
         <DialogHeader className="border-b border-line-soft px-4 py-4 pr-12 text-left sm:px-6">
-          <DialogTitle className="text-xl font-extrabold">Comparer les biens</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">Comparer les biens</DialogTitle>
           <DialogDescription>
             Les informations du catalogue, côte à côte. Gratuit, sans compte.
           </DialogDescription>
@@ -72,7 +72,7 @@ export default function SaleComparisonDialog({
             aria-expanded={footerOpen}
             aria-controls={footerId}
             onClick={() => setFooterToggled((value) => !value)}
-            className="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-bold text-brand-navy sm:hidden"
+            className="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-semibold text-brand-navy sm:hidden"
           >
             Comparaisons enregistrées et mentions
             <ChevronDown

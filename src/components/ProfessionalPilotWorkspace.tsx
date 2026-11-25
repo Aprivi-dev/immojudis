@@ -389,9 +389,7 @@ export function ProfessionalPilotWorkspace({
                   key={fact.label}
                   className="rounded-lg border border-slate-200 bg-surface-muted p-3"
                 >
-                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    {fact.label}
-                  </dt>
+                  <dt className="text-xs font-semibold text-slate-600">{fact.label}</dt>
                   <dd className="mt-1 font-semibold text-brand-navy">{fact.value}</dd>
                   {fact.detail ? (
                     <p className="mt-1 text-xs text-slate-600">{fact.detail}</p>
@@ -591,7 +589,7 @@ export function ProfessionalPilotWorkspace({
             <dl className="mt-4 grid gap-2 rounded-lg bg-background p-4 text-sm sm:grid-cols-2">
               <div>
                 <dt>Investissement total</dt>
-                <dd className="font-bold text-brand-navy">
+                <dd className="font-semibold text-brand-navy">
                   {economics.totalInvestment === null
                     ? "À chiffrer"
                     : formatPrice(economics.totalInvestment)}
@@ -599,7 +597,7 @@ export function ProfessionalPilotWorkspace({
               </div>
               <div>
                 <dt>Marge brute indicative</dt>
-                <dd className="font-bold text-brand-navy">
+                <dd className="font-semibold text-brand-navy">
                   {economics.marginEur === null ? "À chiffrer" : formatPrice(economics.marginEur)}
                   {economics.marginPct !== null
                     ? ` (${formatPercent(economics.marginPct, 1, 1)})`
@@ -608,7 +606,7 @@ export function ProfessionalPilotWorkspace({
               </div>
               <div>
                 <dt>Fonds propres nécessaires</dt>
-                <dd className="font-bold text-brand-navy">
+                <dd className="font-semibold text-brand-navy">
                   {economics.cashNeededEur === null
                     ? "À chiffrer"
                     : formatPrice(economics.cashNeededEur)}
@@ -616,7 +614,7 @@ export function ProfessionalPilotWorkspace({
               </div>
               <div>
                 <dt>Prix d'entrée maximum selon vos hypothèses</dt>
-                <dd className="font-bold text-brand-navy">
+                <dd className="font-semibold text-brand-navy">
                   {economics.maximumEntryPriceEur === null
                     ? "À chiffrer"
                     : economics.maximumEntryPriceEur < 0
@@ -627,7 +625,7 @@ export function ProfessionalPilotWorkspace({
               {economics.headroomEur !== null ? (
                 <div>
                   <dt>Écart avec le prix envisagé</dt>
-                  <dd className="font-bold text-brand-navy">
+                  <dd className="font-semibold text-brand-navy">
                     {formatPrice(economics.headroomEur)}
                   </dd>
                 </div>

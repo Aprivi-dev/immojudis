@@ -13,9 +13,7 @@ export function SimilarListings({ property }: { property: Property }) {
   return (
     <AnimatedSection id="similar" aria-labelledby="similar-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
-          Comparables
-        </p>
+        <p className="text-xs font-semibold text-gold-text">Comparables</p>
         <h2 id="similar-title" className="mt-2 font-display text-3xl text-foreground">
           Biens similaires
         </h2>
@@ -44,15 +42,15 @@ export function SimilarListings({ property }: { property: Property }) {
                 </p>
                 <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    <BedDouble className="h-3.5 w-3.5" />
+                    <BedDouble className="h-4 w-4" />
                     {listing.beds ?? "—"}
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <Bath className="h-3.5 w-3.5" />
+                    <Bath className="h-4 w-4" />
                     {listing.baths ?? "—"}
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <Ruler className="h-3.5 w-3.5" />
+                    <Ruler className="h-4 w-4" />
                     {formatPropertyArea(listing.sqft)}
                   </span>
                 </div>

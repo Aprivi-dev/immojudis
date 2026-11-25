@@ -106,7 +106,7 @@ export function HeaderLogo({
         <BrandMark className="size-7" />
       </span>
       <span className="flex flex-col leading-none">
-        <span className="font-display text-2xl font-semibold tracking-tight text-foreground">
+        <span className="font-display text-2xl font-semibold text-foreground">
           Immo<span className="text-gold-text">judis</span>
           <span className="sr-only">, accueil</span>
         </span>

@@ -128,7 +128,7 @@ export function ListingActions({
         onClick={() => void share()}
         disabled={sharing}
       >
-        <Share2 className="h-5 w-5" aria-hidden />
+        <Share2 className="h-4 w-4" aria-hidden />
         <span>Partager</span>
       </button>
     </div>

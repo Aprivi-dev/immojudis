@@ -98,7 +98,7 @@ function AccountNotificationCenter({
         <Bell className="h-4 w-4" />
         {mobile ? <span>Notifications</span> : null}
         {unreadCount ? (
-          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-brand-navy">
+          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-xs font-semibold text-brand-navy">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}

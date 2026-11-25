@@ -10,12 +10,7 @@ import { cn } from "@/lib/utils";
 // ── Eyebrow ───────────────────────────────────────────────────────────────
 
 export function Eyebrow({ className, ...props }: ComponentProps<"p">) {
-  return (
-    <p
-      className={cn("text-xs font-semibold uppercase tracking-[0.14em] text-gold-text", className)}
-      {...props}
-    />
-  );
+  return <p className={cn("text-xs font-semibold text-gold-text", className)} {...props} />;
 }
 
 // ── Card ──────────────────────────────────────────────────────────────────
@@ -125,7 +120,7 @@ export function Badge({
   return (
     <span
       className={`${cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-medium",
         BADGE_TONES[tone],
         className,
       )} text-caption`}

@@ -36,7 +36,7 @@ export function FiltersLoadingFallback() {
             role="status"
             aria-live="polite"
             aria-label="Chargement des filtres avancés…"
-            className="text-sm font-bold text-brand-navy"
+            className="text-sm font-semibold text-brand-navy"
           >
             Chargement des filtres avancés…
           </p>

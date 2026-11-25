@@ -95,7 +95,7 @@ export function MobileFilterChips({
             <SlidersHorizontal className="h-4 w-4" aria-hidden />
             Filtres
             {activeFiltersCount > 0 ? (
-              <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
+              <span className="rounded-md bg-brand-navy px-2 py-0.5 text-xs text-white">
                 {activeFiltersCount}
               </span>
             ) : null}

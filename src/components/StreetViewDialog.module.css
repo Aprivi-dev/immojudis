@@ -8,7 +8,7 @@
   background: var(--night);
   padding: 0;
   color: white;
-  box-shadow: 0 24px 80px rgb(0 0 0 / 38%);
+  box-shadow: var(--shadow-float);
 }
 
 .header {

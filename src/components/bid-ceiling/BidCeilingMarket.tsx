@@ -45,9 +45,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
   if (estimate.surfaceBasis === "unit" && estimate.medianUnitPriceEur) {
     return (
       <div className="mt-4 flex items-baseline justify-between border-y border-border py-3 text-xs">
-        <span className="uppercase tracking-[0.12em] text-muted-foreground">
-          Prix unitaire observé
-        </span>
+        <span className="text-muted-foreground">Prix unitaire observé</span>
         <span className="tabular-nums text-foreground">
           {estimate.p10UnitPriceEur ? formatPrice(estimate.p10UnitPriceEur) : "—"} à{" "}
           {estimate.p90UnitPriceEur ? formatPrice(estimate.p90UnitPriceEur) : "—"}
@@ -71,7 +69,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
 
   return (
     <div className="mt-4">
-      <div className="flex items-baseline justify-between gap-3 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+      <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
         <span>
           {estimate.surfaceBasis === "land" ? "Prix foncier au m² observé" : "Prix au m² observé"}
         </span>
@@ -85,7 +83,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
           )}
         </span>
       </div>
-      <p className="mt-1 text-[11px] normal-case tracking-normal text-muted-foreground">
+      <p className="mt-1 text-xs normal-case tracking-normal text-muted-foreground">
         {estimate.sampleSize} vente{estimate.sampleSize > 1 ? "s" : ""} comparable
         {estimate.sampleSize > 1 ? "s" : ""} (une par parcelle) · {estimate.source} ·{" "}
         {dvfPeriodLabel(estimate)}
@@ -107,7 +105,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
           />
         ) : null}
       </div>
-      <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+      <div className="mt-2 flex justify-between text-xs tabular-nums text-muted-foreground">
         <span>min {ppm2(min)}</span>
         <span>
           {observed ? "la moitié des ventes" : "zone retenue"} entre {ppm2(p25)} et {ppm2(p75)}
@@ -122,9 +120,7 @@ function AddressHistory({ estimate }: { estimate: DvfMarketEstimate | null }) {
   const history = estimate?.addressHistory ?? [];
   return (
     <div className="mt-4 border-t border-border pt-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        Historique de l'adresse
-      </div>
+      <div className="text-xs font-semibold text-muted-foreground">Historique de l'adresse</div>
       {history.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">
           Aucune vente connue à cette adresse dans les données DVF récentes.

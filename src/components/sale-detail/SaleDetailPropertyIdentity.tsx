@@ -151,7 +151,7 @@ export function PropertyIdentity({
                 setChosen(choice);
                 setClicked(true);
               }}
-              className={`min-h-10 rounded-full px-4 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+              className={`min-h-10 rounded-md px-4 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 view === choice ? "bg-ink-black text-white" : "text-brand-navy hover:bg-surface"
               }`}
             >
@@ -222,7 +222,7 @@ export function PropertyIdentity({
                   className="absolute left-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:pointer-events-none disabled:opacity-35 md:hidden"
                   aria-label="Photo précédente"
                 >
-                  <ArrowLeft className="h-5 w-5" aria-hidden />
+                  <ArrowLeft className="h-4 w-4" aria-hidden />
                 </button>
                 <button
                   type="button"
@@ -231,7 +231,7 @@ export function PropertyIdentity({
                   className="absolute right-3 top-1/2 z-20 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/92 text-brand-navy shadow-lg backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:pointer-events-none disabled:opacity-35 md:hidden"
                   aria-label="Photo suivante"
                 >
-                  <ArrowRight className="h-5 w-5" aria-hidden />
+                  <ArrowRight className="h-4 w-4" aria-hidden />
                 </button>
               </>
             ) : null}
@@ -246,7 +246,7 @@ export function PropertyIdentity({
                 mirror={photoMirrorForDetail(images[0].mirror)}
                 fetchPriority="high"
                 alt={`Photo principale de ${title}`}
-                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
+                className="h-full w-full object-cover transition-transform duration-500 "
                 referrerPolicy="strict-origin-when-cross-origin"
               />
             </button>
@@ -316,7 +316,7 @@ export function PropertyIdentity({
                     mirror={photoMirrorForCard(image.mirror)}
                     alt={`Photo ${index + 1} de ${title}`}
                     compactFallback
-                    className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+                    className="h-full w-full object-cover transition-transform duration-300 "
                     loading="lazy"
                     referrerPolicy="strict-origin-when-cross-origin"
                     onOriginalError={() => markThumbnailFailed(index)}
@@ -366,7 +366,7 @@ export function PropertyIdentity({
                 mirror={photoMirrorForCard(image.mirror)}
                 alt={`Photo ${index + 2} de ${title}`}
                 compactFallback
-                className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+                className="h-full w-full object-cover transition-transform duration-300 "
                 loading="lazy"
                 referrerPolicy="strict-origin-when-cross-origin"
               />

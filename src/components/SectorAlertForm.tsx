@@ -106,7 +106,7 @@ export function SectorAlertForm({
   return (
     <Card as="section" aria-labelledby={titleId} className="grid gap-3">
       <h2 id={titleId} className="flex items-center gap-2 font-display text-2xl font-semibold">
-        <Bell className="size-5 text-gold-text" aria-hidden />
+        <Bell className="size-4 text-gold-text" aria-hidden />
         {title}
       </h2>
       {intro ? <p className="text-sm text-ink-soft">{intro}</p> : null}

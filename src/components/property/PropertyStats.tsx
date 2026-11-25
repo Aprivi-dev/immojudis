@@ -35,7 +35,7 @@ export function PropertyStats({ property }: { property: Property }) {
         const Icon = stat.icon;
         return (
           <div key={stat.label} className="rounded-md border border-border bg-white p-4 shadow-sm">
-            <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            <dt className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <Icon className="h-4 w-4 text-gold-text" />
               {stat.label}
             </dt>

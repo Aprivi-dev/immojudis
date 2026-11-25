@@ -54,7 +54,7 @@ function saleWord(total: number): string {
 function SidePanel({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <Card as="section" aria-labelledby={id}>
-      <h2 id={id} className="text-lg font-bold">
+      <h2 id={id} className="text-lg font-semibold">
         {title}
       </h2>
       {children}

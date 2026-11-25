@@ -185,7 +185,7 @@ export function MarketEvidence({
       </h3>
       <dl className="mt-7 grid gap-4">
         <MarketFact
-          icon={<BadgeEuro className="h-5 w-5" />}
+          icon={<BadgeEuro className="h-4 w-4" />}
           label="Valeur estimée"
           value={
             marketEstimate?.estimatedValueEur && passesPublicEstimateGate(marketEstimate)
@@ -198,7 +198,7 @@ export function MarketEvidence({
           }
         />
         <MarketFact
-          icon={<ChartNoAxesCombined className="h-5 w-5" />}
+          icon={<ChartNoAxesCombined className="h-4 w-4" />}
           label={sampleLabel}
           value={
             marketEstimate?.medianUnitPriceEur
@@ -209,7 +209,7 @@ export function MarketEvidence({
           }
         />
         <MarketFact
-          icon={<ShieldCheck className="h-5 w-5" />}
+          icon={<ShieldCheck className="h-4 w-4" />}
           label="Solidité des références"
           value={marketReferenceConfidence(marketEstimate).confidenceLabel}
         />
@@ -286,7 +286,7 @@ export function MarketEvidence({
                 </div>
                 <p className="text-sm text-slate-600">{formatDate(item.date)}</p>
                 <div className="sm:text-right">
-                  <p className="text-lg font-bold text-brand-navy">
+                  <p className="text-lg font-semibold text-brand-navy">
                     {formatPrice(item.totalPrice)}
                   </p>
                   {item.pricePerM2 != null && item.pricePerM2 > 0 ? (

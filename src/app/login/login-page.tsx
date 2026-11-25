@@ -484,7 +484,7 @@ export function LoginPage() {
           >
             <div className="max-w-xl">
               <Badge tone="gold">
-                <BriefcaseBusiness className="h-3.5 w-3.5" aria-hidden />
+                <BriefcaseBusiness className="h-4 w-4" aria-hidden />
                 Espace professionnel
               </Badge>
               <p className="mt-6 font-display text-5xl leading-tight text-foreground">
@@ -525,7 +525,7 @@ export function LoginPage() {
           <Card as="section" className="hidden min-h-[38rem] p-8 lg:block">
             <div className="max-w-xl">
               <Badge tone="gold">
-                <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                <ShieldCheck className="h-4 w-4" aria-hidden />
                 Accès Immojudis
               </Badge>
               <p className="mt-6 font-display text-5xl leading-tight text-foreground">
@@ -743,7 +743,7 @@ export function LoginPage() {
                   // Côte à côte dès que la largeur le permet : un champ de moins en hauteur.
                   <div className="grid gap-3 min-[360px]:grid-cols-2">
                     <label className="grid gap-2">
-                      <span className="text-[13px] font-semibold text-muted-foreground">
+                      <span className="text-caption font-semibold text-muted-foreground">
                         Prénom
                       </span>
                       <input
@@ -763,7 +763,7 @@ export function LoginPage() {
                       />
                     </label>
                     <label className="grid gap-2">
-                      <span className="text-[13px] font-semibold text-muted-foreground">Nom</span>
+                      <span className="text-caption font-semibold text-muted-foreground">Nom</span>
                       <input
                         id={FIELD_IDS.last_name}
                         type="text"
@@ -786,7 +786,7 @@ export function LoginPage() {
                 {mode === "professional" ? (
                   <div className="grid gap-3">
                     <label className="grid gap-2">
-                      <span className="text-[13px] font-semibold text-muted-foreground">
+                      <span className="text-caption font-semibold text-muted-foreground">
                         Profil professionnel
                       </span>
                       <select
@@ -804,7 +804,7 @@ export function LoginPage() {
                       </select>
                     </label>
                     <label className="grid gap-2">
-                      <span className="text-[13px] font-semibold text-muted-foreground">
+                      <span className="text-caption font-semibold text-muted-foreground">
                         Organisation
                       </span>
                       <div className="relative">
@@ -836,7 +836,7 @@ export function LoginPage() {
                 ) : null}
 
                 <label className="grid gap-2">
-                  <span className="text-[13px] font-semibold text-muted-foreground">Email</span>
+                  <span className="text-caption font-semibold text-muted-foreground">Email</span>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
                     <input
@@ -854,7 +854,7 @@ export function LoginPage() {
                 </label>
                 <div className="grid gap-1.5">
                   <label className="grid gap-2">
-                    <span className="text-[13px] font-semibold text-muted-foreground">
+                    <span className="text-caption font-semibold text-muted-foreground">
                       Mot de passe
                     </span>
                     <div className="relative">
@@ -1029,7 +1029,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-11 rounded-md px-2 py-2 text-[13px] font-semibold leading-tight transition sm:px-3 sm:text-sm ${
+      className={`min-h-11 rounded-md px-2 py-2 text-caption font-semibold leading-tight transition sm:px-3 sm:text-sm ${
         noWrap ? "whitespace-nowrap" : ""
       } ${
         active
@@ -1055,7 +1055,7 @@ function FeatureLine({
 }) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-line bg-surface-muted p-4">
-      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
       <div>
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <p className="mt-1 text-sm leading-relaxed text-ink-soft">{text}</p>

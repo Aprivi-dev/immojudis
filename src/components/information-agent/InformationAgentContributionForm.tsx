@@ -497,7 +497,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     >
       <div className="mx-auto max-w-3xl">
         <header className="glass-shell rounded-lg p-6 sm:p-9">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-text">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gold-text">
             <ShieldCheck className="size-4" aria-hidden="true" />
             Dépôt sécurisé
           </div>
@@ -511,11 +511,11 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         </header>
 
         {state === "reading" || state === "loading" ? (
-          <StatusCard icon={<LoaderCircle className="size-5 animate-spin" />}>
+          <StatusCard icon={<LoaderCircle className="size-4 animate-spin" />}>
             Vérification du lien sécurisé…
           </StatusCard>
         ) : state === "sent" ? (
-          <StatusCard role="status" icon={<ShieldCheck className="size-5" aria-hidden="true" />}>
+          <StatusCard role="status" icon={<ShieldCheck className="size-4" aria-hidden="true" />}>
             {status} Pour ajouter ou corriger une information, répondez simplement à l’email reçu.
           </StatusCard>
         ) : state === "invalid" || state === "error" ? (
@@ -575,9 +575,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             ) : (
               <>
                 <div className="rounded-lg border border-border bg-white/70 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Vente concernée
-                  </p>
+                  <p className="text-xs font-semibold text-muted-foreground">Vente concernée</p>
                   <p className="mt-1 font-display text-2xl text-foreground">{session.subject}</p>
                   <p className="mt-2 text-xs text-muted-foreground">
                     Référence de suivi :{" "}

@@ -15,9 +15,7 @@ export function StickyContactCard({ property }: { property: Property }) {
     <>
       <aside className="hidden lg:block">
         <div className="sticky top-28 rounded-md border border-border bg-white p-5 shadow-xl shadow-slate-900/8">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Contacter
-          </div>
+          <div className="text-xs font-semibold text-muted-foreground">Contacter</div>
           <div className="mt-3 flex items-center gap-3">
             <div className="h-12 w-12 overflow-hidden rounded-full border border-border bg-muted">
               {agent?.avatarUrl ? (
@@ -85,7 +83,7 @@ export function StickyContactCard({ property }: { property: Property }) {
             </label>
             <button
               type="submit"
-              className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white px-4 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+              className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-white px-4 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <Send className="h-4 w-4" />
               Envoyer

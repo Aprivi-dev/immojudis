@@ -123,7 +123,7 @@ export function MobileFilterDrawer({
     <aside className="relative ml-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-white shadow-2xl sm:rounded-md">
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-brand-navy/10 px-4">
         <div>
-          <h2 id="more-filters-title" className="text-base font-extrabold text-brand-navy">
+          <h2 id="more-filters-title" className="text-base font-semibold text-brand-navy">
             Filtres avancés
           </h2>
           <p className="text-xs font-semibold text-ink-soft">
@@ -137,7 +137,7 @@ export function MobileFilterDrawer({
           className="grid min-h-11 min-w-11 cursor-pointer place-items-center rounded-md border border-line-soft bg-white transition-colors hover:bg-surface-muted"
           aria-label="Fermer"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
@@ -156,11 +156,11 @@ export function MobileFilterDrawer({
         </div>
         <div className="mb-5 grid gap-4 sm:grid-cols-2">
           <fieldset className="min-w-0">
-            <legend className="mb-2 text-sm font-extrabold text-brand-navy">Mise à prix</legend>
+            <legend className="mb-2 text-sm font-semibold text-brand-navy">Mise à prix</legend>
             <PriceFilter stacked draft={draft} setDraft={setDraft} />
           </fieldset>
           <fieldset className="min-w-0">
-            <legend className="mb-2 text-sm font-extrabold text-brand-navy">
+            <legend className="mb-2 text-sm font-semibold text-brand-navy">
               Chambres et salles de bain
             </legend>
             <BedsBathsFilter stacked draft={draft} setDraft={setDraft} />
@@ -329,7 +329,7 @@ export function MobileFilterDrawer({
                 donc donner deux chiffres différents. {PRESUMED_SURFACE_CRITERIA_NOTE}
               </p>
 
-              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-semibold text-brand-navy">
                 <input
                   type="checkbox"
                   checked={draft.houseWithLand}
@@ -375,7 +375,7 @@ export function MobileFilterDrawer({
               />
             </FilterField>
 
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-semibold text-brand-navy">
               <input
                 type="checkbox"
                 disabled={analysisLocked}
@@ -389,7 +389,7 @@ export function MobileFilterDrawer({
               {analysisLocked && <span className="text-xs">· offre Analyse</span>}
             </label>
 
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-semibold text-brand-navy">
               <input
                 type="checkbox"
                 disabled={analysisLocked}
@@ -486,7 +486,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-sand bg-surface px-4 text-sm font-semibold text-gold-text transition-colors hover:border-gold"
         >
           <RotateCcw className="h-4 w-4" />
           Réinitialiser
@@ -494,7 +494,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full bg-ink-black px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full bg-ink-black px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-navy"
         >
           {showResultsLabel(resultCount)}
         </button>
@@ -525,7 +525,7 @@ export function AdvancedGroup({
 }) {
   return (
     <section className={className}>
-      <h3 className="mb-3 text-sm font-extrabold text-brand-navy">{title}</h3>
+      <h3 className="mb-3 text-sm font-semibold text-brand-navy">{title}</h3>
       <div className="grid gap-3">{children}</div>
     </section>
   );
@@ -548,7 +548,7 @@ export function CheckboxFilter({
 }) {
   const hintId = useId();
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
+    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-semibold text-brand-navy">
       <input
         type="checkbox"
         checked={checked}
@@ -589,7 +589,7 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         active
           ? "border-brand-navy bg-ink-black text-white"
           : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
@@ -616,7 +616,7 @@ export function DpeChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+      className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-semibold transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       style={{
         backgroundColor: active ? color?.background : "#ffffff",
         borderColor: color?.border,

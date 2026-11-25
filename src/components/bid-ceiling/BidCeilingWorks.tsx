@@ -42,11 +42,11 @@ export function WorksScenarioSelector({
     }`;
   const badge = (selected: boolean, suggested: boolean) =>
     selected ? (
-      <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-brand-navy">
+      <span className="rounded-md bg-gold px-2 py-0.5 text-xs font-semibold text-brand-navy">
         Retenu
       </span>
     ) : suggested ? (
-      <span className="rounded-full border border-gold/40 px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-gold-text">
+      <span className="rounded-md border border-gold/40 px-2 py-0.5 text-xs font-semibold text-gold-text">
         Suggéré
       </span>
     ) : null;
@@ -55,7 +55,7 @@ export function WorksScenarioSelector({
     <div className="@container rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gold-text">
             <Wrench className="h-4 w-4" />
             Scénario de travaux
           </div>
@@ -83,9 +83,7 @@ export function WorksScenarioSelector({
           className={cardClass(noWorksSelected)}
         >
           <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Sans travaux
-            </span>
+            <span className="text-xs font-semibold text-muted-foreground">Sans travaux</span>
             {badge(noWorksSelected, suggestedScenario === null)}
           </span>
           <span className="mt-3 text-base font-semibold text-foreground">Aucun travaux</span>
@@ -111,7 +109,7 @@ export function WorksScenarioSelector({
               className={cardClass(selected)}
             >
               <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span className="text-xs font-semibold text-muted-foreground">
                   {ppm2(scenario.pricePerM2)}
                 </span>
                 {badge(selected, suggestedScenario === scenario.key)}

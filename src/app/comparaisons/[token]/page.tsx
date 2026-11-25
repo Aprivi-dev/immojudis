@@ -61,7 +61,7 @@ export default async function SharedSaleComparisonPage({
           </p>
           <a
             href="/sales"
-            className="inline-flex min-h-11 items-center font-bold text-brand-navy underline underline-offset-2"
+            className="inline-flex min-h-11 items-center font-semibold text-brand-navy underline underline-offset-2"
           >
             Explorer le catalogue
           </a>
@@ -69,7 +69,7 @@ export default async function SharedSaleComparisonPage({
             Cette comparaison a été préparée avec Immojudis.{" "}
             <Link
               href="/annonce-exemple"
-              className="inline-flex min-h-11 items-center font-bold text-brand-navy underline underline-offset-2"
+              className="inline-flex min-h-11 items-center font-semibold text-brand-navy underline underline-offset-2"
             >
               Voir une analyse exemple
             </Link>

@@ -73,10 +73,10 @@ function SaleRow({
         >
           {block ? (
             <>
-              <span className="text-[1.375rem] font-bold tabular-nums">{block.day}</span>
+              <span className="text-[1.375rem] font-semibold tabular-nums">{block.day}</span>
               <span
                 className={cn(
-                  "text-xs font-semibold tracking-[0.06em] uppercase",
+                  "text-xs font-semibold ",
                   today ? "text-gold-light" : "text-ink-strong",
                 )}
               >
@@ -84,7 +84,7 @@ function SaleRow({
               </span>
             </>
           ) : (
-            <span aria-hidden className="text-[1.375rem] font-bold text-ink-soft">
+            <span aria-hidden className="text-[1.375rem] font-semibold text-ink-soft">
               –
             </span>
           )}
@@ -139,9 +139,7 @@ export function UpcomingSaleWeeks({
   const identicalSales = identicalSaleRanks(sales);
   return groupDepartmentSalesByWeek(sales, now).map((week) => (
     <div key={week.key} className="mt-5">
-      <h3 className="mb-2 text-caption font-bold tracking-[0.12em] text-gold-text uppercase">
-        {week.label}
-      </h3>
+      <h3 className="mb-2 text-caption font-semibold text-gold-text ">{week.label}</h3>
       <ul className="divide-y divide-line-soft rounded-lg border border-line-soft bg-white">
         {week.sales.map((sale) => (
           <SaleRow

@@ -43,7 +43,7 @@ function DepartmentRow({ row, maxCount }: { row: DepartmentDirectoryRow; maxCoun
         {row.count == null ? null : empty ? (
           <span className="text-caption text-ink-soft">Aucune vente à venir</span>
         ) : (
-          <span className="text-sm font-bold tabular-nums">
+          <span className="text-sm font-semibold tabular-nums">
             {numbers.format(row.count)}
             <span className="sr-only"> {row.count > 1 ? "ventes" : "vente"} à venir</span>
           </span>
@@ -154,7 +154,7 @@ export function DepartmentDirectory({
                 aria-pressed={sort === mode}
                 onClick={() => setSort(mode)}
                 className={cn(
-                  "min-h-11 cursor-pointer rounded-full px-3.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft motion-reduce:transition-none",
+                  "min-h-11 cursor-pointer rounded-md px-3.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft motion-reduce:transition-none",
                   sort === mode
                     ? "bg-brand-navy text-white"
                     : "text-brand-navy hover:bg-surface-tint",
@@ -190,7 +190,7 @@ export function DepartmentDirectory({
             const total = all.reduce((sum, row) => sum + (row.count ?? 0), 0);
             return (
               <div key={region} className="border-b border-line-soft py-5 last:border-b-0">
-                <h3 className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 text-lg font-bold">
+                <h3 className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 text-lg font-semibold">
                   {region}
                   {withCounts ? (
                     <span className="text-sm font-medium text-ink-soft">{salesPhrase(total)}</span>

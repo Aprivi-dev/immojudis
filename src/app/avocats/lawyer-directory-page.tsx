@@ -424,7 +424,7 @@ function DirectoryResults({
     <>
       {isDemo ? (
         <Notice tone="info" className="mb-6 flex gap-3">
-          <Info className="mt-0.5 h-5 w-5 shrink-0 text-info" aria-hidden />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden />
           <p>
             Aperçu de développement : ces fiches sont fictives et servent uniquement à tester la
             présentation de l'annuaire.
@@ -445,7 +445,7 @@ function DirectoryResults({
         <section aria-labelledby="partner-lawyers-title">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-gold-text">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gold-text">
                 <Megaphone className="h-4 w-4" aria-hidden />
                 {hasTrialPlacement ? "Mise en avant (essai ou payante)" : "Mise en avant payante"}
               </div>
@@ -482,9 +482,7 @@ function DirectoryResults({
       >
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-brand-navy/12 pb-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-ink-soft">
-              Résultats naturels
-            </p>
+            <p className="text-xs font-semibold text-ink-soft">Résultats naturels</p>
             <h3
               id="directory-lawyers-title"
               className="mt-2 font-display text-3xl font-semibold text-brand-navy"
@@ -547,7 +545,7 @@ function DirectoryResults({
 
       <div className="mt-10 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-ink-soft sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-3">
-          <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
           <p>
             Une mise en avant, payante ou en période d'essai, ne constitue ni une notation, ni une
             recommandation juridique, ni une garantie de résultat. Vérifiez directement auprès de
@@ -600,7 +598,7 @@ function LawyerCard({
     <article
       className={`relative flex flex-col overflow-hidden rounded-lg bg-white [contain-intrinsic-size:auto_22rem] [content-visibility:auto] ${
         sponsored
-          ? "border border-gold/45 p-5 shadow-[0_18px_45px_rgba(19,44,72,0.10)] sm:p-6"
+          ? "border border-gold/45 p-5 shadow-[var(--shadow-float)] sm:p-6"
           : "border border-brand-navy/12 p-5 shadow-sm"
       }`}
     >
@@ -618,13 +616,11 @@ function LawyerCard({
         </span>
         <div className="min-w-0">
           {sponsored ? (
-            <p className="mb-1 text-xs font-bold uppercase tracking-[0.1em] text-gold-text">
+            <p className="mb-1 text-xs font-semibold text-gold-text">
               {sponsoredPlacementLabel(lawyer.placement)}
             </p>
           ) : lawyer.source === "cnb" ? (
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-info">
-              Annuaire officiel CNB
-            </p>
+            <p className="mb-1 text-xs font-semibold text-info">Annuaire officiel CNB</p>
           ) : null}
           <h3 className="font-display text-2xl font-semibold leading-tight text-brand-navy">
             {lawyer.displayName}
@@ -762,10 +758,7 @@ function ProsecutedSales({
 
   return (
     <section aria-labelledby={headingId} className="mt-4">
-      <h4
-        id={headingId}
-        className="text-xs font-bold uppercase tracking-[0.12em] text-brand-navy/70"
-      >
+      <h4 id={headingId} className="text-xs font-semibold text-brand-navy/70">
         Ventes à venir en tant qu'avocat poursuivant
       </h4>
       <ul className="mt-2 grid gap-2">

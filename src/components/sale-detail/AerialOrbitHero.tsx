@@ -401,15 +401,15 @@ export function AerialOrbitHero({
       ) : null}
 
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 md:left-4 md:top-4">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-night/85 px-2.5 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur">
-          <RotateCw className="h-3 w-3" aria-hidden />
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-white/20 bg-night/85 px-2.5 py-1 text-xs font-semibold text-white shadow-lg backdrop-blur">
+          <RotateCw className="h-4 w-4" aria-hidden />
           Vue aérienne 360°
         </span>
-        <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
+        <span className="w-fit rounded-md bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
           Position approximative
         </span>
         {mapShown ? (
-          <span className="w-fit rounded-full bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
+          <span className="w-fit rounded-md bg-night/85 px-2.5 py-0.5 text-xs text-white backdrop-blur">
             3D schématique : hauteurs des bâtiments estimées
           </span>
         ) : null}

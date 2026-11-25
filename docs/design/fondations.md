@@ -146,3 +146,23 @@ Le socle commun porte désormais les règles de l'accueil, pour toutes les pages
   secondaire une pilule à filet. Le bordeaux reste aux bandeaux et aux titres.
 - **États** : succès en vert olive, information en encre sur teinte pierre, alerte et erreur en tons
   chauds ; plus de bleu ni de vert froid.
+
+### Polissage du 25/11/2026 (grille d'audit unslop)
+
+Passe de polissage menée avec la grille d'audit de [unslop](https://github.com/heydamir/unslop), de
+Damir Sokolovsky (CC BY 4.0). Règles retenues, pour toutes les pages hors administration et emails :
+
+- **Libellés en casse normale** : plus de majuscules espacées, y compris les surtitres.
+- **Graisses de 400 à 600** : la hiérarchie vient de la taille et de la couleur.
+- **Rayons par taille** : pilule pour les boutons d'action, 4 px pour les onglets, les filtres, les
+  pastilles et les cartes.
+- **Surfaces pleines** : ni verre, ni dégradé de surface, ni reflet ; deux ombres neutres
+  (`--shadow-sm`, `--shadow-float`).
+- **Échelle de texte** : les tailles sur mesure rejoignent l'échelle, 12 px au minimum ; pas
+  d'interlettrage négatif sous 40 px. L'échelle des titres de page (`2rem` / `2.5rem`) reste.
+- **Icônes** : 16 px pour les icônes de ligne, trait de 1,5.
+- **Mouvement** : une courbe pour l'interface (`--ease-out-soft`), pas de zoom au survol.
+
+Écarts assumés, par choix du propriétaire : les peintures animées en boucle et les scènes épinglées
+de l'accueil (avec leur propre courbe), et Cormorant sur les petits titres. Les textes juridiques
+(`src/routes/`) ne sont pas touchés : leur fichier est soumis à une empreinte.

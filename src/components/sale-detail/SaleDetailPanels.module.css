@@ -4,7 +4,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 7px 24px rgb(19 34 56 / 4%);
+  box-shadow: var(--shadow-float);
   scroll-margin-top: 8px;
 }
 
@@ -12,7 +12,7 @@
   color: var(--brand-navy);
   cursor: pointer;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.4;
   list-style: none;
 }
@@ -68,7 +68,7 @@
 .warning :is(h2, h3) {
   display: block;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .warning p {
@@ -122,7 +122,7 @@
 
 .steps li::marker {
   color: var(--gold-text, var(--gold-text));
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .reportActions {
@@ -195,17 +195,15 @@
 .metricEyebrow {
   display: block;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .marketSnapshot strong {
   display: block;
   margin-top: 6px;
   color: var(--brand-navy);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
 }
 .marketSnapshot .confidenceText {
@@ -271,9 +269,7 @@
 .priceGrid dt {
   color: var(--ink-soft);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .priceGrid dd {
@@ -347,7 +343,7 @@
 .estimationFoot button {
   flex: 0 0 auto;
   color: var(--gold-text, var(--gold-text));
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 4px;
 }

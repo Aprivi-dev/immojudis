@@ -20,15 +20,13 @@
 }
 .header h3 {
   font-size: 1.2rem;
-  font-weight: 700;
+  font-weight: 600;
   margin: 4px 0 8px;
   line-height: 1.35;
 }
 .eyebrow {
   font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--gold-text);
   margin: 0;
 }
@@ -114,7 +112,7 @@
 }
 .section h4 {
   font-size: 0.99rem;
-  font-weight: 700;
+  font-weight: 600;
   margin: 0 0 9px;
 }
 .caption {
@@ -273,7 +271,7 @@
 .checkGrid h5,
 .consequences h4 {
   font-size: 0.77rem;
-  font-weight: 700;
+  font-weight: 600;
   margin: 0 0 5px;
 }
 .attention {
@@ -464,7 +462,7 @@
 .verdict {
   margin: 0 0 12px;
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.45;
   color: var(--brand-navy);
 }

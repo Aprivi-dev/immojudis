@@ -60,7 +60,7 @@ export function MobileMapToggle({
         onClick={onOpenMap}
         onPointerDown={onPreloadMap}
         onTouchStart={onPreloadMap}
-        className={`pointer-events-auto ${scrolled ? "inline-flex" : "hidden"} h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-[0.9375rem] font-bold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft`}
+        className={`pointer-events-auto ${scrolled ? "inline-flex" : "hidden"} h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft`}
       >
         <Map className="h-[18px] w-[18px]" aria-hidden />
         Voir sur la carte
@@ -70,7 +70,7 @@ export function MobileMapToggle({
           type="button"
           onClick={onOpenComparison}
           data-comparison-pill=""
-          className="pointer-events-auto inline-flex h-12 cursor-pointer items-center justify-center rounded-full border border-brand-navy bg-white px-4 text-sm font-bold text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+          className="pointer-events-auto inline-flex h-12 cursor-pointer items-center justify-center rounded-full border border-brand-navy bg-white px-4 text-sm font-semibold text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           Comparer ({comparedCount})
         </button>
@@ -113,7 +113,7 @@ export function NoResultsState({
   return (
     <div className="rounded-md border border-line-soft bg-white p-6 text-center shadow-sm sm:p-10">
       <SearchIcon className="mx-auto h-8 w-8 text-brand-navy" />
-      <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucune vente trouvée</h2>
+      <h2 className="mt-4 text-xl font-semibold text-brand-navy">Aucune vente trouvée</h2>
       <p className="mt-2 text-sm font-medium text-ink-soft">
         {pepite
           ? "Aucune pépite avec ces critères pour le moment."
@@ -201,7 +201,7 @@ export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => v
       className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
     >
       <div>
-        <p className="font-bold">
+        <p className="font-semibold">
           {rejected
             ? "Cette recherche n’est pas possible."
             : "Le catalogue ne répond pas pour le moment."}
@@ -214,7 +214,7 @@ export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => v
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex min-h-11 items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-100"
+          className="inline-flex min-h-11 items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-100"
         >
           Réessayer
         </button>
@@ -228,7 +228,7 @@ export function MapPanelSkeleton() {
     <div className="grid h-full min-h-[28rem] place-items-center bg-surface-tint">
       <div
         role="status"
-        className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg"
+        className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-semibold text-brand-navy shadow-lg"
       >
         <LoaderCircle className="h-4 w-4 animate-spin text-brand-navy" />
         Chargement de la carte

@@ -74,9 +74,7 @@
 .eyebrow {
   color: var(--gold-text);
   font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 .control {
   display: flex;

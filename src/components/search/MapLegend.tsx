@@ -24,7 +24,7 @@ export function MapLegend({ pepiteCount }: { pepiteCount: number }) {
         aria-expanded={legendOpen}
         aria-controls={legendId}
         onClick={() => setLegendOpen((open) => !open)}
-        className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-bold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
+        className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-semibold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
       >
         Légende
         {legendOpen ? (
@@ -78,7 +78,7 @@ export function MapLegend({ pepiteCount }: { pepiteCount: number }) {
         </li>
         {pepiteCount > 0 ? (
           <li className="inline-flex items-center gap-1.5 font-semibold text-gold-text">
-            <PepiteIcon className="size-3.5 shrink-0" />
+            <PepiteIcon className="size-4 shrink-0" />
             <span>
               {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
             </span>

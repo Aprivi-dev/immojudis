@@ -138,7 +138,7 @@ export default function AlertNotificationPanel({
           ))
         ) : (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            <Inbox className="mx-auto mb-2 h-5 w-5" />
+            <Inbox className="mx-auto mb-2 h-4 w-4" />
             Aucune nouvelle vente pour vos alertes pour le moment.
           </div>
         )}
@@ -180,18 +180,18 @@ function NotificationItem({
             {notification.reasons.slice(0, 2).map((reason) => (
               <span
                 key={reason}
-                className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-text"
+                className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold text-gold-text"
               >
                 {reason === PEPITE_ALERT_REASON ? PEPITE_LABEL : reason}
               </span>
             ))}
             {notification.marketDiscountPct != null ? (
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
                 {formatPercent(notification.marketDiscountPct)} sous la valeur estimée (base DVF)
               </span>
             ) : null}
           </div>
-          <div className="mt-2 text-[11px] text-muted-foreground">
+          <div className="mt-2 text-xs text-muted-foreground">
             {formatNotificationDate(notification.scheduledFor)}
           </div>
         </Link>

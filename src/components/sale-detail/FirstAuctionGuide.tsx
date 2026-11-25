@@ -93,7 +93,7 @@ export function FirstAuctionGuide({
         aria-label="Masquer le guide de première vente"
         onClick={onHide}
       >
-        <X aria-hidden className="h-5 w-5" />
+        <X aria-hidden className="h-4 w-4" />
       </button>
     </section>
   );

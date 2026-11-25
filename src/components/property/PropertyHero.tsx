@@ -23,7 +23,7 @@ export function PropertyHero({ property }: { property: Property }) {
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
           <div>
-            <div className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            <div className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
               {formatCurrency(property.price, property.currency)}
             </div>
             <h1 className="mt-3 font-display text-3xl leading-tight text-foreground sm:text-5xl">
@@ -35,9 +35,7 @@ export function PropertyHero({ property }: { property: Property }) {
             </p>
           </div>
           <div className="rounded-md border border-border bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Prix au ft²
-            </div>
+            <div className="text-xs font-semibold text-muted-foreground">Prix au ft²</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">
               {property.pricePerSqft
                 ? `${formatCurrency(property.pricePerSqft, property.currency)}/ft²`

@@ -37,7 +37,7 @@ export function DepartmentAlertProposal({ className }: { className?: string }) {
             id={`${selectId}-title`}
             className="flex items-center gap-2 font-display text-2xl font-semibold"
           >
-            <Bell className="size-5 text-gold-text" aria-hidden />
+            <Bell className="size-4 text-gold-text" aria-hidden />
             {DEPARTMENT_ALERT_LABEL}
           </h2>
           <p className="max-w-2xl text-sm text-ink-soft">

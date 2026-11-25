@@ -180,7 +180,7 @@ export function FavoriteSales() {
               aria-selected={view === id}
               aria-controls={panelId}
               onClick={() => chooseView(id)}
-              className={`min-h-11 rounded-full px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+              className={`min-h-11 rounded-md px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
                 view === id
                   ? "bg-ink-black text-white"
                   : "border border-line bg-white text-brand-navy hover:bg-surface-tint"
