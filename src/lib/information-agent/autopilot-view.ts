@@ -156,6 +156,7 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   interrupted: "pilote coupé pendant le passage",
   draft_refused: "brouillon refusé par les garde-fous",
   draft_recipient_mismatch: "brouillon adressé à un autre destinataire",
+  template_not_approved: "modèle de message non approuvé pour l’envoi automatique",
   draft_stale: "brouillon caduc (vente changée), annulé",
   policy_rejected: "rejet de politique à l’aperçu",
   content_rejected: "rejet de contenu à l’aperçu",
