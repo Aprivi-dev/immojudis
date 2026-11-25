@@ -4,7 +4,14 @@ import {
   RESOURCE_SUMMARIES,
   type ResourceSummary,
 } from "@/lib/resource-articles";
-import { RESOURCE_TOPICS, relatedResources, understandingResources } from "./resource-related";
+import {
+  RELATED_ARTICLES_SHOWN,
+  RESOURCE_TOPICS,
+  relatedResources,
+  rotatingResources,
+  understandingAndRotatingResources,
+  understandingResources,
+} from "./resource-related";
 
 function summary(slug: string, category: string): ResourceSummary {
   return {
@@ -77,9 +84,11 @@ describe("relatedResources", () => {
 
   it("met en tête les articles qui partagent des sujets", () => {
     const related = relatedResources("financer-achat-encheres-pret-delais").map((i) => i.slug);
-    // financement + budget en commun, devant les simples articles de la même catégorie.
-    expect(related[0]).toBe("frais-vente-encheres-judiciaire");
-    expect(related).toContain("prix-plafond-encheres-immobilieres");
+    // financement + budget en commun (la garantie de 10 %), devant un seul sujet commun (les frais).
+    expect(related.slice(0, 2)).toEqual([
+      "garantie-10-pourcent-cheque-banque-caution-encheres",
+      "frais-vente-encheres-judiciaire",
+    ]);
   });
 
   it("rapproche l'article sur le bien occupé de l'immeuble de rapport et de la méthode", () => {
@@ -144,5 +153,62 @@ describe("understandingResources", () => {
       (item) => item.slug === "lire-cahier-conditions-vente-preparer-visite",
     );
     expect(understandingResources("33", onlyOne)).toHaveLength(1);
+  });
+});
+
+describe("liens reçus par chaque article du blog", () => {
+  it("chaque article est proposé au bas d'au moins un autre article", () => {
+    const linked = new Set(
+      RESOURCE_ARTICLES.flatMap(({ slug }) =>
+        relatedResources(slug, RELATED_ARTICLES_SHOWN).map((item) => item.slug),
+      ),
+    );
+    for (const { slug } of RESOURCE_ARTICLES) expect(linked.has(slug), slug).toBe(true);
+  });
+
+  it("chaque article a des sujets déclarés", () => {
+    for (const { slug } of RESOURCE_ARTICLES) expect(RESOURCE_TOPICS[slug], slug).toBeDefined();
+  });
+});
+
+describe("rotatingResources", () => {
+  const seeds = Array.from({ length: 400 }, (_, index) => `vente-${index * 7919}`);
+
+  it("rend des articles du blog distincts, stables pour une page, jamais le guide pilier", () => {
+    for (const seed of seeds.slice(0, 40)) {
+      const picked = rotatingResources(seed, 2);
+      expect(picked).toHaveLength(2);
+      expect(picked[0].slug).not.toBe(picked[1].slug);
+      expect(picked).toEqual(rotatingResources(seed, 2));
+      for (const item of picked) expect(item.href.startsWith("/ressources/")).toBe(true);
+    }
+  });
+
+  it("donne des liens à tous les articles du blog, pas à quelques-uns", () => {
+    const counts = new Map<string, number>();
+    for (const seed of seeds) {
+      for (const item of rotatingResources(seed, 2)) {
+        counts.set(item.slug, (counts.get(item.slug) ?? 0) + 1);
+      }
+    }
+    for (const { slug } of RESOURCE_ARTICLES)
+      expect(counts.get(slug) ?? 0, slug).toBeGreaterThan(0);
+  });
+
+  it("écarte les articles exclus et ne rend pas plus d'articles qu'il n'en reste", () => {
+    const excluded = RESOURCE_ARTICLES.slice(0, RESOURCE_ARTICLES.length - 1).map((a) => a.slug);
+    const last = RESOURCE_ARTICLES[RESOURCE_ARTICLES.length - 1].slug;
+    expect(rotatingResources("33", 3, excluded).map((item) => item.slug)).toEqual([last]);
+    expect(rotatingResources("33", 2, [], [])).toEqual([]);
+  });
+});
+
+describe("understandingAndRotatingResources", () => {
+  it("rend trois articles distincts : les deux du lot, puis un autre article du blog", () => {
+    for (const seed of ["01", "2A", "33", "75", "971", "bobigny"]) {
+      const picked = understandingAndRotatingResources(seed);
+      expect(picked.slice(0, 2)).toEqual(understandingResources(seed));
+      expect(new Set(picked.map((item) => item.slug)).size).toBe(3);
+    }
   });
 });

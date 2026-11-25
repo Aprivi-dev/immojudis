@@ -13,6 +13,7 @@ import {
   saleStructuredData,
 } from "@/lib/seo";
 import { pageMetadata } from "@/lib/page-metadata";
+import { rotatingResources } from "@/lib/resource-related";
 import { siteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "./sale-detail-page";
 import { jsonLdString } from "@/lib/json-ld";
@@ -126,6 +127,13 @@ export default async function Page({ params }: PageProps) {
     : [null, null];
   // Rendement brut de la fiche publique, calculé ici : le navigateur n'embarque pas le calcul des frais.
   const rentalYield = sale ? publicRentalYield(sale, rentReference) : null;
+  // Deux articles du blog en bas de fiche, différents d'une vente à l'autre : les fiches sont les
+  // pages que les moteurs explorent le plus, chaque article y reçoit des liens (`rotatingResources`).
+  const guides = rotatingResources(id.toLowerCase(), 2).map((article) => ({
+    href: article.href,
+    label: article.title,
+    hint: `${article.category} · ${article.readingMinutes} min de lecture`,
+  }));
   const structuredData = sale
     ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin() })
     : null;
@@ -150,6 +158,7 @@ export default async function Page({ params }: PageProps) {
         rentReference={rentReference}
         housingTension={housingTension}
         rentalYield={rentalYield}
+        guides={guides}
       />
     </>
   );
