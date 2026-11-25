@@ -161,8 +161,20 @@ test.describe("admin information agent", () => {
     // Un arrêt d'urgence dans le bandeau et un dans le panneau : le pilote est connu éteint, rien à arrêter.
     await expect(banner.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    // Pilote pas en mode réel : la mise en service est ouverte en tête de l'onglet, sans rien déplier.
+    const goLive = panel.getByRole("region", { name: "Mise en service du mode réel" });
+    await expect(goLive).toBeVisible();
+    await expect(goLive.getByText("À faire", { exact: true })).toBeVisible();
+    await expect(goLive.getByText("Attestez l’AIPD ci-dessous.")).toBeVisible();
+    await expect(goLive.getByLabel("Version de l’AIPD")).toHaveValue("AIPD-AGENT-INFO-PILOTE v1.1");
     // Changer de mode exige un motif : rien ne part sans.
-    await expect(panel.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
+    const live = goLive.getByRole("button", { name: "Passer le pilote en mode réel" });
+    await expect(live).toBeDisabled();
+    // La raison est écrite à l'écran, et le bouton la porte comme description.
+    const liveHint =
+      "Bouton inactif : motif manquant (8 caractères au moins) ; une condition est « À faire ».";
+    await expect(goLive.getByText(liveHint, { exact: true })).toBeVisible();
+    await expect(live).toHaveAccessibleDescription(liveHint);
     await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
     await expect(
       panel.getByText("Saisissez un motif de 8 caractères au moins", { exact: false }),
@@ -1259,7 +1271,14 @@ function autopilotFixture(pilotMission: Record<string, unknown> | null = null) {
     runs: "Dernier passage : aucun · prochain passage : aucun (pilote éteint)",
     readiness: {
       ready: false,
-      checks: [{ label: "AIPD attestée", ok: false, detail: "Aucune attestation d’AIPD." }],
+      checks: [
+        {
+          label: "AIPD attestée",
+          ok: false,
+          detail: "Aucune attestation d’AIPD.",
+          action: "Attestez l’AIPD ci-dessous.",
+        },
+      ],
     },
     ready: {
       count: ready.length,
