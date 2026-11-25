@@ -28,32 +28,32 @@ select set_config('app.autopilot_purge', 'off', true);
 
 insert into public.information_agent_autopilot_events (at, kind, actor, action, before_values, after_values, reason)
 values (
-  '2026-11-14 10:47:15.379+00', 'mode_changed', '92000000-0000-4000-8000-0000000000a1', 'set_mode',
+  '2026-11-14 10:47:15.379+00', 'mode_changed', '92100000-0000-4000-8000-0000000000a1', 'set_mode',
   '{"mode": "off", "auto_stopped": false}', '{"mode": "simulation"}', 'Mise en route de la simulation'
 );
 insert into public.information_agent_autopilot_events (at, kind, action, run_id, details)
 select day + interval '1 minute', 'would_send', 'would_send', run_id, '{}'::jsonb
 from (values
-  ('2026-11-17 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b01'::uuid),
-  ('2026-11-20 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b02'::uuid),
-  ('2026-11-24 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b03'::uuid)
+  ('2026-11-17 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b01'::uuid),
+  ('2026-11-20 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b02'::uuid),
+  ('2026-11-24 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b03'::uuid)
 ) as runs (day, run_id)
 union all
 select day + interval '2 minutes', 'run', 'run', run_id, '{"mode": "simulation", "would_send": 1}'::jsonb
 from (values
-  ('2026-11-17 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b01'::uuid),
-  ('2026-11-20 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b02'::uuid),
-  ('2026-11-24 09:00:00+00'::timestamptz, '92000000-0000-4000-8000-000000000b03'::uuid)
+  ('2026-11-17 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b01'::uuid),
+  ('2026-11-20 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b02'::uuid),
+  ('2026-11-24 09:00:00+00'::timestamptz, '92100000-0000-4000-8000-000000000b03'::uuid)
 ) as runs (day, run_id);
 insert into public.information_agent_autopilot_events (at, kind, actor, action, before_values, after_values, reason)
 values (
-  '2026-11-25 10:01:36.512+00', 'emergency_stop', '92000000-0000-4000-8000-0000000000a1', 'stop',
+  '2026-11-25 10:01:36.512+00', 'emergency_stop', '92100000-0000-4000-8000-0000000000a1', 'stop',
   '{"mode": "simulation"}', '{"mode": "off"}', 'Arrêt d''urgence'
 );
 -- Trace de fin du passage en cours au moment de l'arrêt : un évènement `run` ne compte pas.
 insert into public.information_agent_autopilot_events (at, kind, action, run_id, details)
 values (
-  '2026-11-25 10:03:00+00', 'run', 'run', '92000000-0000-4000-8000-000000000b04',
+  '2026-11-25 10:03:00+00', 'run', 'run', '92100000-0000-4000-8000-000000000b04',
   '{"mode": "simulation", "skip_interrupted": 1}'
 );
 update public.information_agent_autopilot_settings
@@ -104,7 +104,7 @@ update public.information_agent_autopilot_settings
 set auto_stopped_at = null, auto_stop_reason = null where singleton;
 insert into public.information_agent_autopilot_events (at, kind, action, run_id, details)
 values (
-  '2026-11-25 10:04:00+00', 'skip', 'skip', '92000000-0000-4000-8000-000000000b04', '{"code": "interrupted"}'
+  '2026-11-25 10:04:00+00', 'skip', 'skip', '92100000-0000-4000-8000-000000000b04', '{"code": "interrupted"}'
 );
 insert into settings_snapshot select to_jsonb(s) from public.information_agent_autopilot_settings s;
 select throws_like(

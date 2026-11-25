@@ -25,7 +25,7 @@ set local statement_timeout = '60s';
 --     sans adresse ;
 --   * base où le pilote n'a jamais été mis en route (aucun `mode_changed` : rejeu des migrations en CI, base locale) :
 --     rien à corriger, rien n'est écrit. Sans ce cas, le rejeu des migrations à partir de zéro échouerait.
--- La fonction reste en base pour le test pgTAP (920) ; réservée au propriétaire (aucun droit d'exécution accordé).
+-- La fonction reste en base pour le test pgTAP (921) ; réservée au propriétaire (aucun droit d'exécution accordé).
 -- Une fois la correction faite, un second appel est refusé (le mode n'est plus « off »).
 --
 -- Contraintes et déclencheurs de public.information_agent_autopilot_settings : aucun déclencheur ; aucune contrainte
