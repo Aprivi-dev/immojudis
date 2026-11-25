@@ -358,7 +358,12 @@ function Unavailable({ children }: { children: ReactNode }) {
   return <p className="text-sm text-red-700">{children}</p>;
 }
 
-/** État du pilote (lecture seule) et réponses à traiter, lus par les requêtes de l'Agent IA. */
+const PILOT_TAB_HREF = "/admin/agent-ia?onglet=pilote";
+
+/**
+ * État du pilote (lecture seule) et réponses à traiter, lus par les requêtes de l'Agent IA. Tant que le pilote
+ * n'est pas en mode réel, le lien vers son onglet invite à le mettre en service.
+ */
 function AgentSection() {
   const pilot = useQuery(autopilotQuery());
   const { toReview, unrouted, replies } = useInformationAgentReplies();
@@ -367,7 +372,18 @@ function AgentSection() {
     <AdminPanel className="p-5">
       <AdminSectionHeading title="Agent IA" />
       <div className="mt-1 divide-y divide-brand-navy/10">
-        <TodoLine action={<PlaceLink href="/admin/agent-ia?onglet=pilote">Pilote</PlaceLink>}>
+        <TodoLine
+          action={
+            pilot.data && pilot.data.mode !== "live" ? (
+              // Mise en service du mode réel : en tête de l'onglet « Pilote ».
+              <Link href={PILOT_TAB_HREF} className="admin-button-secondary shrink-0">
+                Mettre le pilote en service <ChevronRight className="size-4" aria-hidden />
+              </Link>
+            ) : (
+              <PlaceLink href={PILOT_TAB_HREF}>Pilote</PlaceLink>
+            )
+          }
+        >
           Pilote automatique :{" "}
           {pilot.data ? (
             <strong className="text-brand-navy">{pilot.data.modeLabel}</strong>

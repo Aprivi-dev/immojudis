@@ -224,6 +224,7 @@ describe("AdminHomePage", () => {
       "/admin/agent-ia?onglet=pilote",
       "/admin/agent-ia?onglet=reponses",
     ]);
+    expect(within(agent).getByRole("link", { name: "Mettre le pilote en service" })).toBeTruthy();
 
     const privacy = section("Demandes RGPD");
     expect(await within(privacy).findByText("1 demande ouverte")).toBeTruthy();
@@ -235,6 +236,31 @@ describe("AdminHomePage", () => {
     const publications = section("Annonces de professionnels");
     expect(within(publications).getByText("3 annonces en attente de validation")).toBeTruthy();
     expect(within(publications).getByRole("link").getAttribute("href")).toBe("/admin/publications");
+  });
+
+  it.each([
+    ["off", "Éteint"],
+    ["simulation", "Simulation (aucun envoi)"],
+  ])("invites to put the pilot into service while it is not live (%s)", async (mode, modeLabel) => {
+    mocks.fetchAutopilot.mockResolvedValue({ mode, modeLabel, notice: null });
+    renderHome();
+
+    const agent = section("Agent IA");
+    const link = await within(agent).findByRole("link", { name: "Mettre le pilote en service" });
+    expect(link.getAttribute("href")).toBe("/admin/agent-ia?onglet=pilote");
+    expect(link.className).toContain("admin-button-secondary");
+  });
+
+  it("links to the pilot without the invitation once it is live", async () => {
+    mocks.fetchAutopilot.mockResolvedValue({ mode: "live", modeLabel: "Réel", notice: null });
+    renderHome();
+
+    const agent = section("Agent IA");
+    expect(await within(agent).findByText("Réel")).toBeTruthy();
+    expect(within(agent).queryByRole("link", { name: "Mettre le pilote en service" })).toBeNull();
+    expect(within(agent).getByRole("link", { name: "Pilote" }).getAttribute("href")).toBe(
+      "/admin/agent-ia?onglet=pilote",
+    );
   });
 
   it("says in one line when a section has nothing to handle", async () => {

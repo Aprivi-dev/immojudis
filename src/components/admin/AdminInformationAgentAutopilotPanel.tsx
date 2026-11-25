@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { AdminAutopilotEmergencyStop } from "@/components/admin/AdminAutopilotEmergencyStop";
 import { toast } from "@/lib/toast";
 import {
@@ -18,11 +19,15 @@ import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-v
 
 const BTN = "admin-button-secondary";
 const INPUT = "mt-1 block w-28 rounded-lg border bg-white px-2 py-1";
+/** Champ pleine largeur, 44 px de haut au moins (cible tactile). */
+const FIELD = "mt-1 block min-h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm";
+/** Le mode réel a son propre bouton, dans « Mise en service du mode réel ». */
 const MODES = [
   ["off", "Éteint"],
   ["simulation", "Simulation"],
-  ["live", "Réel"],
 ] as const;
+/** Version de l'AIPD proposée à l'attestation : celle qui couvre l'envoi automatique. */
+const AIPD_VERSION = "AIPD-AGENT-INFO-PILOTE v1.1";
 const SIMULATION_TOASTS: Record<AutopilotOnDemandRun["outcome"], string> = {
   finished: "Passage de simulation terminé.",
   time_budget: "Passage de simulation arrêté par la borne de temps.",
@@ -37,9 +42,13 @@ const SIMULATION_TOASTS: Record<AutopilotOnDemandRun["outcome"], string> = {
  * il se valide. En mode Simulation, un passage peut être lancé à la main (hors plage horaire) ; son résultat ou son
  * refus s’affiche.
  *
- * Les boutons disent l’action qu’ils font, jamais l’état (P3, 14/11/2026). L’article 14 et l’AIPD sont à part,
- * dans « Conformité », et chaque action y demande une confirmation explicite (J9 : l’article 14 ne se désactive
- * plus, son délai va de 1 à 90 jours depuis la décision du propriétaire du 14/11/2026 ; la base le refuse aussi).
+ * Les boutons disent l’action qu’ils font, jamais l’état (P3, 14/11/2026). Tant que le pilote n’est pas en mode
+ * réel, le bloc « Mise en service du mode réel » ouvre l’onglet : conditions du contrôle de préparation, attestation
+ * de l’AIPD, puis passage en mode réel, chacun avec sa confirmation. En mode réel, il laisse place à l’état « Pilote
+ * en mode réel » et au retour en simulation ; l’arrêt d’urgence reste en haut, dans tous les modes. L’article 14
+ * est à part, dans « Conformité », comme l’AIPD une fois en mode réel ; chaque action y demande une confirmation
+ * explicite (J9 : l’article 14 ne se désactive plus, son délai va de 1 à 90 jours depuis la décision du
+ * propriétaire du 14/11/2026 ; la base le refuse aussi).
  */
 export function AdminInformationAgentAutopilotPanel({
   onOpenDraft,
@@ -48,11 +57,13 @@ export function AdminInformationAgentAutopilotPanel({
 }) {
   const queryClient = useQueryClient();
   const reasonHintId = useId();
+  const liveHintId = useId();
   const [reason, setReason] = useState("");
   const [runOutcome, setRunOutcome] = useState<{ refused: boolean; text: string } | null>(null);
+  // Refus du passage en mode réel, tel que le serveur l'a rédigé (double authentification, contrôle).
+  const [liveRefusal, setLiveRefusal] = useState<string | null>(null);
   const [cap, setCap] = useState("");
   const [days, setDays] = useState("");
-  const [aipd, setAipd] = useState("");
   const query = useQuery(autopilotQuery());
   const run = useMutation({
     mutationFn: runAdminInformationAgentAutopilotActionClient,
@@ -91,6 +102,66 @@ export function AdminInformationAgentAutopilotPanel({
   const daysValue = Number(days);
   // RÈGLE LIÉE : 1 à 90 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
   const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 90;
+  const toDo = view ? view.readiness.checks.filter((check) => !check.ok).length : 0;
+  // Pourquoi « Passer le pilote en mode réel » est grisé ; la double authentification n'est connue que par le
+  // refus du serveur (`liveRefusal`).
+  const liveBlockers = [
+    reasonMissing ? "motif manquant (8 caractères au moins)" : null,
+    view && !view.readiness.ready
+      ? toDo > 1
+        ? `${toDo} conditions sont « À faire »`
+        : "une condition est « À faire »"
+      : null,
+  ].filter(Boolean);
+
+  function goLive() {
+    if (
+      !window.confirm(
+        "Passer le pilote en mode réel ? Il enverra lui-même de vrais messages aux professionnels, dans la limite des plafonds du jour. Vous pourrez repasser en simulation ou l’arrêter à tout moment. Le changement est journalisé avec votre motif.",
+      )
+    )
+      return;
+    setLiveRefusal(null);
+    run.mutate(
+      { action: "set_mode", mode: "live", reason },
+      { onError: (error) => setLiveRefusal(queryErrorMessage(error, "Mode réel refusé.")) },
+    );
+  }
+
+  function attestAipd(version: string, motif: string, done: () => void) {
+    run.mutate({ action: "attest_aipd", version, reason: motif }, { onSuccess: done });
+  }
+
+  const reasonField = (
+    <div>
+      <label className="block text-xs font-medium">
+        Motif du changement (8 caractères au moins)
+        <input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          aria-describedby={reasonMissing ? reasonHintId : undefined}
+          className={FIELD}
+        />
+      </label>
+      {reasonMissing ? (
+        <p id={reasonHintId} className="mt-1 text-xs text-brand-navy/70">
+          Saisissez un motif de 8 caractères au moins pour activer les boutons (l’arrêt d’urgence
+          n’en demande pas).
+        </p>
+      ) : null}
+    </div>
+  );
+  const modeButtons = MODES.map(([mode, label]) => (
+    <button
+      key={mode}
+      type="button"
+      className={BTN}
+      disabled={!ready || view?.mode === mode}
+      onClick={() => run.mutate({ action: "set_mode", mode, reason })}
+    >
+      {label}
+    </button>
+  ));
 
   return (
     <section className="rounded-xl border bg-white p-5" aria-labelledby="autopilot-title">
@@ -104,11 +175,14 @@ export function AdminInformationAgentAutopilotPanel({
       ) : null}
       {view ? (
         <div className="mt-3 space-y-4 text-sm">
-          <div>
-            <p>
-              État : <strong>{view.modeLabel}</strong>
-            </p>
-            <p className="text-brand-navy/70">{view.runs}</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p>
+                État : <strong>{view.modeLabel}</strong>
+              </p>
+              <p className="text-brand-navy/70">{view.runs}</p>
+            </div>
+            <AdminAutopilotEmergencyStop mode={view.mode} />
           </div>
           {view.notice ? (
             <p
@@ -118,35 +192,102 @@ export function AdminInformationAgentAutopilotPanel({
               {view.notice.text}
             </p>
           ) : null}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-0 flex-1 text-xs font-medium">
-              Motif du changement (8 caractères au moins)
-              <input
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                aria-describedby={reasonMissing ? reasonHintId : undefined}
-                className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
-              />
-            </label>
-            {MODES.map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                className={BTN}
-                disabled={!ready || view.mode === mode}
-                onClick={() => run.mutate({ action: "set_mode", mode, reason })}
-              >
-                {label}
-              </button>
-            ))}
-            <AdminAutopilotEmergencyStop mode={view.mode} />
-            {reasonMissing ? (
-              <p id={reasonHintId} className="basis-full text-xs text-brand-navy/70">
-                Saisissez un motif de 8 caractères au moins pour activer les boutons (l’arrêt
-                d’urgence n’en demande pas).
+          {view.mode === "live" ? (
+            <section
+              aria-labelledby="autopilot-live-title"
+              className="space-y-3 rounded-lg border-2 border-danger/30 p-3 sm:p-4"
+            >
+              <h3 id="autopilot-live-title" className="text-base font-semibold">
+                Pilote en mode réel
+              </h3>
+              <p>
+                Le pilote envoie lui-même de vrais messages, dans la limite des plafonds du jour.
+                Pour revenir en arrière, saisissez un motif puis repassez en simulation. En cas de
+                problème, utilisez l’arrêt d’urgence, en haut : il ne demande pas de motif.
               </p>
-            ) : null}
-          </div>
+              {reasonField}
+              <div className="flex flex-wrap gap-2">{modeButtons}</div>
+            </section>
+          ) : (
+            <>
+              <section
+                aria-labelledby="autopilot-go-live-title"
+                className="space-y-5 rounded-lg border-2 border-gold-soft/40 bg-surface-tint/40 p-3 sm:p-4"
+              >
+                <div>
+                  <h3 id="autopilot-go-live-title" className="text-base font-semibold">
+                    Mise en service du mode réel
+                  </h3>
+                  <p className="mt-1">
+                    En mode réel, le pilote envoie lui-même de vrais messages aux professionnels.
+                    Suivez les trois étapes ci-dessous.
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-semibold">1. Vérifier les conditions</h4>
+                  <p className="mt-1">
+                    {view.readiness.checks.length - toDo} sur {view.readiness.checks.length}{" "}
+                    conditions remplies.
+                  </p>
+                  <ul className="mt-2 divide-y divide-brand-navy/10 rounded-lg border bg-white px-3">
+                    {view.readiness.checks.map((check) => (
+                      <li
+                        key={check.label}
+                        className="flex flex-col gap-1 py-2 sm:flex-row sm:items-start sm:gap-3"
+                      >
+                        <span className="w-20 shrink-0">
+                          <AdminPill tone={check.ok ? "success" : "warning"}>
+                            {check.ok ? "OK" : "À faire"}
+                          </AdminPill>
+                        </span>
+                        <div className="min-w-0 break-words">
+                          <p className="font-medium">{check.label}</p>
+                          {check.action ? <p>{check.action}</p> : null}
+                          <p className="text-xs text-ink-soft">{check.detail}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="font-semibold">2. Attester l’AIPD</h4>
+                  <AipdAttestation
+                    label={view.settings.aipdLabel}
+                    busy={run.isPending || simulate.isPending}
+                    onAttest={attestAipd}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <h4 className="font-semibold">3. Passer en mode réel</h4>
+                  {reasonField}
+                  <button
+                    type="button"
+                    className="admin-button-primary whitespace-normal"
+                    disabled={liveBlockers.length > 0 || run.isPending || simulate.isPending}
+                    aria-describedby={liveBlockers.length ? liveHintId : undefined}
+                    onClick={goLive}
+                  >
+                    Passer le pilote en mode réel
+                  </button>
+                  {liveBlockers.length ? (
+                    <p id={liveHintId} className="text-xs text-brand-navy/70">
+                      Bouton inactif : {liveBlockers.join(" ; ")}.
+                    </p>
+                  ) : null}
+                  {liveRefusal ? (
+                    <p role="alert" className="text-danger">
+                      {liveRefusal}
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+              <div className="space-y-2">
+                <p className="font-medium">Autres changements de mode</p>
+                <p className="text-xs text-brand-navy/70">Avec le motif saisi à l’étape 3.</p>
+                <div className="flex flex-wrap gap-2">{modeButtons}</div>
+              </div>
+            </>
+          )}
           {view.mode === "simulation" || runOutcome ? (
             <div className="flex flex-wrap items-center gap-2">
               {view.mode === "simulation" ? (
@@ -177,20 +318,6 @@ export function AdminInformationAgentAutopilotPanel({
               </div>
             ))}
           </dl>
-          <details>
-            <summary className="cursor-pointer font-medium">
-              Contrôle de préparation au mode réel :{" "}
-              {view.readiness.ready ? "satisfait" : "non satisfait"}
-            </summary>
-            <ul className="mt-2 space-y-1">
-              {view.readiness.checks.map((check) => (
-                <li key={check.label} className={check.ok ? "text-success" : "text-danger"}>
-                  {check.ok ? "Oui" : "Non"} · {check.label}{" "}
-                  <span className="text-ink-soft">({check.detail})</span>
-                </li>
-              ))}
-            </ul>
-          </details>
           <details>
             <summary className="cursor-pointer font-medium">Réglages du pilote</summary>
             <div className="mt-2 space-y-3 text-xs">
@@ -307,38 +434,19 @@ export function AdminInformationAgentAutopilotPanel({
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
+              {/* Un seul champ d'attestation à la fois : ici en mode réel, sinon à l'étape 2 en haut. */}
+              {view.mode === "live" ? (
+                <AipdAttestation
+                  label={view.settings.aipdLabel}
+                  busy={run.isPending || simulate.isPending}
+                  onAttest={attestAipd}
+                />
+              ) : (
                 <p>
-                  AIPD : <strong>{view.settings.aipdLabel}</strong>
+                  AIPD : <strong>{view.settings.aipdLabel}</strong>. Pour l’attester, utilisez
+                  l’étape 2 de « Mise en service du mode réel », en haut.
                 </p>
-                <div className="flex flex-wrap items-end gap-2">
-                  <label>
-                    Version de l’AIPD
-                    <input
-                      value={aipd}
-                      onChange={(event) => setAipd(event.target.value)}
-                      className={INPUT}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className={BTN}
-                    disabled={!ready || !aipd.trim()}
-                    onClick={() => {
-                      const version = aipd.trim();
-                      if (
-                        !window.confirm(
-                          `Attester l’AIPD, version « ${version} » ? Cette attestation lève l’un des verrous du mode réel : ne la donnez que pour une AIPD rédigée, signée et versée au dossier.`,
-                        )
-                      )
-                        return;
-                      run.mutate({ action: "attest_aipd", version, reason });
-                    }}
-                  >
-                    Attester l’AIPD
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           </details>
           <div>
@@ -375,5 +483,76 @@ export function AdminInformationAgentAutopilotPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Attestation de l'AIPD : version pré-remplie, motif propre à l'attestation (elle précède le motif du passage en
+ * mode réel), confirmation explicite. Rendue à un seul endroit selon le mode (mise en service ou « Conformité »).
+ */
+function AipdAttestation({
+  label,
+  busy,
+  onAttest,
+}: {
+  label: string;
+  busy: boolean;
+  onAttest: (version: string, reason: string, done: () => void) => void;
+}) {
+  const hintId = useId();
+  const [version, setVersion] = useState(AIPD_VERSION);
+  const [reason, setReason] = useState("");
+  const trimmed = version.trim();
+  const blockers = [
+    trimmed ? null : "version manquante",
+    reason.trim().length < 8 ? "motif manquant (8 caractères au moins)" : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="mt-1 space-y-2">
+      <p>
+        AIPD : <strong>{label}</strong>
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block text-xs font-medium">
+          Version de l’AIPD
+          <input
+            value={version}
+            onChange={(event) => setVersion(event.target.value)}
+            className={FIELD}
+          />
+        </label>
+        <label className="block text-xs font-medium">
+          Motif de l’attestation (8 caractères au moins)
+          <input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className={FIELD}
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        className={`${BTN} whitespace-normal`}
+        disabled={busy || blockers.length > 0}
+        aria-describedby={blockers.length ? hintId : undefined}
+        onClick={() => {
+          if (
+            !window.confirm(
+              `Attester l’AIPD, version « ${trimmed} » ? Cette attestation lève l’un des verrous du mode réel : ne la donnez que pour une AIPD rédigée, signée et versée au dossier.`,
+            )
+          )
+            return;
+          onAttest(trimmed, reason, () => setReason(""));
+        }}
+      >
+        Attester l’AIPD
+      </button>
+      {blockers.length ? (
+        <p id={hintId} className="text-xs text-brand-navy/70">
+          Bouton inactif : {blockers.join(" ; ")}.
+        </p>
+      ) : null}
+    </div>
   );
 }
