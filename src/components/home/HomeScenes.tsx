@@ -472,17 +472,3 @@ export function HomeClosing({
     </section>
   );
 }
-
-/** La frise qui ferme la page : chacun travaille sur son écran. */
-export function HomeFrieze() {
-  return (
-    <div className={scenes.frieze}>
-      <HomePainting
-        name="09-frise"
-        alt="Peinture : une rangée d’avocats en robe et de personnages de la Renaissance, les yeux baissés sur leurs ordinateurs portables."
-        sizes="100vw"
-        className={scenes.friezePainting}
-      />
-    </div>
-  );
-}

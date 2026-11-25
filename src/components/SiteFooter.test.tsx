@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { SiteFooter, showsSiteFooter } from "./SiteFooter";
+import { SiteFooterFrieze } from "./SiteFooterFrieze";
 import { SiteFooterSaleTypes } from "./SiteFooterSaleTypes";
 import { SALE_LANDING_KEYS, SALE_LANDING_PAGES } from "@/lib/sale-landing-pages";
 
@@ -33,10 +34,33 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-/** Le pied de page tel que le layout le compose : le groupe « Ventes par type » rendu à part. */
+/** Le pied de page tel que le layout le compose : « Ventes par type » et la frise rendus à part. */
 function renderFooter() {
-  return render(<SiteFooter saleTypes={<SiteFooterSaleTypes />} />);
+  return render(<SiteFooter saleTypes={<SiteFooterSaleTypes />} frieze={<SiteFooterFrieze />} />);
 }
+
+it("pose la frise peinte en fond sur l'accueil seulement, liens par-dessus, vidéo sans adresse", () => {
+  const elsewhere = renderFooter();
+  expect(elsewhere.container.querySelector("video")).toBeNull();
+  expect(elsewhere.container.querySelector("footer")?.className).not.toContain(
+    "site-footer-frieze",
+  );
+  cleanup();
+
+  pathname.current = "/";
+  const home = renderFooter();
+  const footer = home.container.querySelector("footer");
+  expect(footer?.className).toContain("site-footer-frieze");
+  // La boucle n'est chargée que par le script de l'accueil : aucune adresse au rendu.
+  const video = footer?.querySelector("video[data-home-loop]");
+  expect(video?.getAttribute("data-src")).toBe("/media/landing/accueil/09-frise.mp4");
+  expect(video?.hasAttribute("src")).toBe(false);
+  // Décor : masqué aux lecteurs d'écran, et les documents légaux restent accessibles.
+  expect(footer?.querySelector(".site-footer-frieze-ground")?.getAttribute("aria-hidden")).toBe(
+    "true",
+  );
+  expect(screen.getByRole("link", { name: "Mentions légales" })).toBeTruthy();
+});
 
 it("gives every public page access to the legal documents", () => {
   renderFooter();

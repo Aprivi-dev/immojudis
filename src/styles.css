@@ -1096,3 +1096,56 @@ html:has([data-sale-tabs]) {
 [data-site-pill-spacer] ~ main {
   border-top: 6rem solid transparent;
 }
+
+/*
+ * Pied de page de l'accueil : la frise peinte en fond (`SiteFooterFrieze`), les liens par-dessus.
+ * Les jetons du texte et des filets prennent ici les teintes claires des bandeaux sombres.
+ */
+.site-footer-frieze {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--brand-navy);
+  --foreground: var(--band-dark-fg);
+  --muted-foreground: var(--band-dark-soft);
+  --gold-text: var(--gold-light);
+  --border: rgb(245 241 230 / 18%);
+}
+
+.site-footer-frieze > div:last-child {
+  padding-block: 3.5rem;
+}
+
+.site-footer-frieze-ground,
+.site-footer-frieze-ground > * {
+  position: absolute;
+  inset: 0;
+}
+
+.site-footer-frieze-ground {
+  z-index: -1;
+}
+
+.site-footer-frieze-ground > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: bottom;
+}
+
+.site-footer-frieze-ground > video {
+  opacity: 0;
+  transition: opacity 500ms linear;
+}
+
+.site-footer-frieze-ground > video[data-playing] {
+  opacity: 1;
+}
+
+/* Voile bordeaux : les personnages restent visibles, le texte clair garde son contraste. */
+.site-footer-frieze-ground::after {
+  position: absolute;
+  inset: 0;
+  background: rgb(69 32 26 / 85%);
+  content: "";
+}

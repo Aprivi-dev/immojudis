@@ -763,22 +763,6 @@
   opacity: 0;
 }
 
-/* Frise ---------------------------------------------------------------------------------------- */
-
-.frieze {
-  padding-top: 72px;
-  background: var(--home-surface);
-}
-
-.friezePainting {
-  aspect-ratio: 21 / 7.4;
-}
-
-.friezePainting img,
-.friezePainting video {
-  object-position: 50% 100%;
-}
-
 /* Largeurs ------------------------------------------------------------------------------------- */
 
 @media (max-width: 960px) {

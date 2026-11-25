@@ -46,18 +46,26 @@ export function showsSiteFooter(pathname: string | null): boolean {
  * `saleTypes` : le groupe « Ventes par type » (`SiteFooterSaleTypes`), composant serveur que le
  * layout passe ici déjà rendu. Écrit dans ce composant client, il pesait sur le JavaScript
  * initial de chaque page (budgets de `scripts/check-build-budgets.mjs`).
+ * `frieze` : le fond peint du pied de page de l'accueil (`SiteFooterFrieze`), passé de la même
+ * façon et pour la même raison ; il n'est posé que sur l'accueil.
  */
-export function SiteFooter({ saleTypes }: { saleTypes: ReactNode }) {
+export function SiteFooter({ saleTypes, frieze }: { saleTypes: ReactNode; frieze: ReactNode }) {
   const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
-  // L'accueil finit sur un bandeau pleine largeur : la marge haute y laisserait une bande vide.
-  const endsOnBand = pathname === "/";
+  // Sur l'accueil, le pied de page ferme la page sur la frise peinte, liens par-dessus : fond et
+  // couleurs claires dans `.site-footer-frieze` (`src/styles.css`). Rien ne suit la frise.
+  const onFrieze = pathname === "/";
 
   return (
     <footer
-      className={`${endsOnBand ? "" : "mt-16 "}border-t border-border bg-card text-sm text-muted-foreground`}
+      className={
+        onFrieze
+          ? "site-footer-frieze text-sm text-muted-foreground"
+          : "mt-16 border-t border-border bg-card text-sm text-muted-foreground"
+      }
     >
+      {onFrieze ? frieze : null}
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
