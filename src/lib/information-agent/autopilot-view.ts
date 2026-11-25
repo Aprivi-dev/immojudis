@@ -389,7 +389,8 @@ export function buildAutopilotView({
         label,
         ok,
         detail,
-        action: ok ? null : (own(READINESS_ACTIONS, key) ?? detail),
+        // Clé sans phrase : aucune action, le détail s'affiche déjà (le test des clés l'interdit en pratique).
+        action: ok ? null : (own(READINESS_ACTIONS, key) ?? null),
       })),
     },
     ready: {

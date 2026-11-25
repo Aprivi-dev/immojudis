@@ -518,6 +518,39 @@ describe("AdminInformationAgentAutopilotPanel", () => {
     });
   });
 
+  it("mode réel : les conditions restent visibles, une condition redevenue « À faire » se voit", async () => {
+    mocks.fetch.mockResolvedValue(view({ mode: "live", modeLabel: "Réel" }));
+    renderPanel();
+
+    const block = (await screen.findByRole("heading", { name: "Pilote en mode réel" }))
+      .parentElement!;
+    const summary = within(block).getByText(/^Conditions du mode réel/);
+    expect(summary.textContent).toBe(
+      "Conditions du mode réel : 1 sur 2 conditions remplies, 1 à faire",
+    );
+    const conditions = summary.closest("details")!;
+    expect(within(conditions).getByText("À faire")).toBeTruthy();
+    expect(within(conditions).getByText("Attestez l’AIPD ci-dessous.")).toBeTruthy();
+    expect(within(conditions).getByText("OK")).toBeTruthy();
+  });
+
+  it("attester l'AIPD vide son motif, pas celui du passage en mode réel", async () => {
+    mocks.fetch.mockResolvedValue(view());
+    mocks.run.mockResolvedValue(view());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPanel();
+
+    const liveReason = (await screen.findByLabelText(/Motif du changement/)) as HTMLInputElement;
+    fireEvent.change(liveReason, { target: { value: "Simulation concluante" } });
+    const aipdReason = screen.getByLabelText(/Motif de l’attestation/) as HTMLInputElement;
+    fireEvent.change(aipdReason, { target: { value: "AIPD signée et versée" } });
+    fireEvent.click(screen.getByRole("button", { name: "Attester l’AIPD" }));
+
+    await waitFor(() => expect(aipdReason.value).toBe(""));
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    expect(liveReason.value).toBe("Simulation concluante");
+  });
+
   it("l'arrêt d'urgence a le style « danger », distinct de « Valider et envoyer » (P11)", async () => {
     mocks.fetch.mockResolvedValue(
       view({ mode: "simulation", modeLabel: "Simulation (aucun envoi)" }),

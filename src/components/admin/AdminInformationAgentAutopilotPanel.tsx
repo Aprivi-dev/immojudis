@@ -15,18 +15,23 @@ import {
   runAdminInformationAgentAutopilotSimulationClient,
 } from "@/lib/client-api";
 import type { AutopilotOnDemandRun } from "@/lib/admin-information-agent-autopilot";
-import type { AutopilotPreparedDraft } from "@/lib/information-agent/autopilot-view";
+import type { AutopilotPreparedDraft, AutopilotView } from "@/lib/information-agent/autopilot-view";
 
 const BTN = "admin-button-secondary";
 const INPUT = "mt-1 block w-28 rounded-lg border bg-white px-2 py-1";
 /** Champ pleine largeur, 44 px de haut au moins (cible tactile). */
 const FIELD = "mt-1 block min-h-11 w-full rounded-lg border bg-white px-3 py-2 text-sm";
 /** Le mode réel a son propre bouton, dans « Mise en service du mode réel ». */
+type AutopilotChangeInput = Parameters<typeof runAdminInformationAgentAutopilotActionClient>[0];
 const MODES = [
   ["off", "Éteint"],
   ["simulation", "Simulation"],
 ] as const;
-/** Version de l'AIPD proposée à l'attestation : celle qui couvre l'envoi automatique. */
+/**
+ * Version de l'AIPD proposée à l'attestation : référence de l'AIPD du 23/11/2026, version 1.1, celle qui couvre
+ * l'envoi automatique, validée par le propriétaire (document conservé hors du dépôt public, dans son dossier). À
+ * changer à chaque nouvelle version de l'AIPD (`docs/runbooks/information-agent.md`, « Pilote automatique »).
+ */
 const AIPD_VERSION = "AIPD-AGENT-INFO-PILOTE v1.1";
 const SIMULATION_TOASTS: Record<AutopilotOnDemandRun["outcome"], string> = {
   finished: "Passage de simulation terminé.",
@@ -35,7 +40,7 @@ const SIMULATION_TOASTS: Record<AutopilotOnDemandRun["outcome"], string> = {
 };
 
 /**
- * Pilote automatique : interrupteur à trois états, passages, compteurs, contrôle de préparation, réglages du
+ * Pilote automatique : changement de mode, passages, compteurs, contrôle de préparation, réglages du
  * pilote, conformité, brouillons prêts à valider, derniers événements et arrêt d’urgence. Désactivé par défaut.
  * Tout arrive mis en forme par le serveur ; chaque changement exige un motif (sauf l’arrêt d’urgence) et est
  * journalisé. Un brouillon prêt à valider s’ouvre dans l’éditeur de l’onglet « À contacter » (`onOpenDraft`), là où
@@ -67,9 +72,10 @@ export function AdminInformationAgentAutopilotPanel({
   const query = useQuery(autopilotQuery());
   const run = useMutation({
     mutationFn: runAdminInformationAgentAutopilotActionClient,
+    // Chaque action vide son propre motif à l'appel (`change`, `attestAipd`) : attester l'AIPD ne vide pas celui
+    // du passage en mode réel.
     onSuccess: (view) => {
       queryClient.setQueryData(QUERY_KEY, view);
-      setReason("");
       toast.success("Pilote automatique mis à jour.");
     },
     onError: (error) => toast.error(queryErrorMessage(error, "Action impossible")),
@@ -103,6 +109,9 @@ export function AdminInformationAgentAutopilotPanel({
   // RÈGLE LIÉE : 1 à 90 jours, comme `AUTOPILOT_ART14_MAX_DAYS` (serveur) et la contrainte de la base.
   const daysValid = Number.isInteger(daysValue) && daysValue >= 1 && daysValue <= 90;
   const toDo = view ? view.readiness.checks.filter((check) => !check.ok).length : 0;
+  const conditionsLabel = view
+    ? `${view.readiness.checks.length - toDo} sur ${view.readiness.checks.length} conditions remplies`
+    : "";
   // Pourquoi « Passer le pilote en mode réel » est grisé ; la double authentification n'est connue que par le
   // refus du serveur (`liveRefusal`).
   const liveBlockers = [
@@ -114,6 +123,11 @@ export function AdminInformationAgentAutopilotPanel({
       : null,
   ].filter(Boolean);
 
+  /** Changement qui porte le motif commun de l'onglet : il le vide une fois fait. */
+  function change(input: AutopilotChangeInput) {
+    run.mutate(input, { onSuccess: () => setReason("") });
+  }
+
   function goLive() {
     if (
       !window.confirm(
@@ -124,7 +138,10 @@ export function AdminInformationAgentAutopilotPanel({
     setLiveRefusal(null);
     run.mutate(
       { action: "set_mode", mode: "live", reason },
-      { onError: (error) => setLiveRefusal(queryErrorMessage(error, "Mode réel refusé.")) },
+      {
+        onSuccess: () => setReason(""),
+        onError: (error) => setLiveRefusal(queryErrorMessage(error, "Mode réel refusé.")),
+      },
     );
   }
 
@@ -157,7 +174,7 @@ export function AdminInformationAgentAutopilotPanel({
       type="button"
       className={BTN}
       disabled={!ready || view?.mode === mode}
-      onClick={() => run.mutate({ action: "set_mode", mode, reason })}
+      onClick={() => change({ action: "set_mode", mode, reason })}
     >
       {label}
     </button>
@@ -207,6 +224,14 @@ export function AdminInformationAgentAutopilotPanel({
               </p>
               {reasonField}
               <div className="flex flex-wrap gap-2">{modeButtons}</div>
+              {/* Une condition qui redevient « À faire » (aller-retour expiré) se voit ici. */}
+              <details>
+                <summary className="flex min-h-11 cursor-pointer items-center font-medium">
+                  Conditions du mode réel : {conditionsLabel}
+                  {toDo ? `, ${toDo} à faire` : ""}
+                </summary>
+                <ReadinessChecks checks={view.readiness.checks} />
+              </details>
             </section>
           ) : (
             <>
@@ -225,29 +250,8 @@ export function AdminInformationAgentAutopilotPanel({
                 </div>
                 <div>
                   <h4 className="font-semibold">1. Vérifier les conditions</h4>
-                  <p className="mt-1">
-                    {view.readiness.checks.length - toDo} sur {view.readiness.checks.length}{" "}
-                    conditions remplies.
-                  </p>
-                  <ul className="mt-2 divide-y divide-brand-navy/10 rounded-lg border bg-white px-3">
-                    {view.readiness.checks.map((check) => (
-                      <li
-                        key={check.label}
-                        className="flex flex-col gap-1 py-2 sm:flex-row sm:items-start sm:gap-3"
-                      >
-                        <span className="w-20 shrink-0">
-                          <AdminPill tone={check.ok ? "success" : "warning"}>
-                            {check.ok ? "OK" : "À faire"}
-                          </AdminPill>
-                        </span>
-                        <div className="min-w-0 break-words">
-                          <p className="font-medium">{check.label}</p>
-                          {check.action ? <p>{check.action}</p> : null}
-                          <p className="text-xs text-ink-soft">{check.detail}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="mt-1">{conditionsLabel}.</p>
+                  <ReadinessChecks checks={view.readiness.checks} />
                 </div>
                 <div>
                   <h4 className="font-semibold">2. Attester l’AIPD</h4>
@@ -336,7 +340,7 @@ export function AdminInformationAgentAutopilotPanel({
                   className={BTN}
                   disabled={!ready || !cap}
                   onClick={() =>
-                    run.mutate({
+                    change({
                       action: "update_settings",
                       reason,
                       changes: { capTotalOverride: Number(cap) },
@@ -358,7 +362,7 @@ export function AdminInformationAgentAutopilotPanel({
                   className={BTN}
                   disabled={!ready}
                   onClick={() =>
-                    run.mutate({
+                    change({
                       action: "update_settings",
                       reason,
                       changes: { allowLicitorDecoded: !view.settings.allowLicitorDecoded },
@@ -401,7 +405,7 @@ export function AdminInformationAgentAutopilotPanel({
                         )
                       )
                         return;
-                      run.mutate({
+                      change({
                         action: "update_settings",
                         reason,
                         changes: { art14MaxAgeDays: daysValue },
@@ -422,7 +426,7 @@ export function AdminInformationAgentAutopilotPanel({
                           )
                         )
                           return;
-                        run.mutate({
+                        change({
                           action: "update_settings",
                           reason,
                           changes: { art14RuleEnabled: true },
@@ -483,6 +487,31 @@ export function AdminInformationAgentAutopilotPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** Conditions du contrôle de préparation : « OK » ou « À faire » en toutes lettres, avec l'action à mener. */
+function ReadinessChecks({ checks }: { checks: AutopilotView["readiness"]["checks"] }) {
+  return (
+    <ul className="mt-2 divide-y divide-brand-navy/10 rounded-lg border bg-white px-3">
+      {checks.map((check) => (
+        <li
+          key={check.label}
+          className="flex flex-col gap-1 py-2 sm:flex-row sm:items-start sm:gap-3"
+        >
+          <span className="w-20 shrink-0">
+            <AdminPill tone={check.ok ? "success" : "warning"}>
+              {check.ok ? "OK" : "À faire"}
+            </AdminPill>
+          </span>
+          <div className="min-w-0 break-words">
+            <p className="font-medium">{check.label}</p>
+            {check.action ? <p>{check.action}</p> : null}
+            <p className="text-xs text-ink-soft">{check.detail}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

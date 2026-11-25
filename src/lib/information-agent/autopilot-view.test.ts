@@ -267,7 +267,7 @@ describe("contrôle de préparation dans la vue", () => {
     ]);
   });
 
-  it("une condition inconnue garde son détail comme action", () => {
-    expect(readinessView([{ key: "nouvelle", ok: false }]).checks[0].action).toBe("Détail");
+  it("une condition inconnue n'a pas d'action : son détail ne s'affiche pas deux fois", () => {
+    expect(readinessView([{ key: "nouvelle", ok: false }]).checks[0].action).toBeNull();
   });
 });
