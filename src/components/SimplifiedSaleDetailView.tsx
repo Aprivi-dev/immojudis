@@ -1074,13 +1074,7 @@ function SaleDetailWorkspace({
                   <FirstAuctionGuide
                     ceilingHref={ceilingDetailHref}
                     eligibleBar={getSaleProcedure(displaySale).eligibleBar}
-                    onHide={() => {
-                      guide.hide();
-                      // Le focus passe au sommaire, juste dessous, au lieu de se perdre avec le bouton.
-                      window.requestAnimationFrame(() =>
-                        document.querySelector<HTMLElement>("[data-sale-tabs] a")?.focus(),
-                      );
-                    }}
+                    onHide={guide.hide}
                   />
                 </div>
               ) : null}
