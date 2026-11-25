@@ -402,26 +402,47 @@ def decode_protected_emails_enabled() -> bool:
     return False
 
 
-def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:
-    """Adresses masquées des blocs avocats, décodées pour un usage INTERNE seulement.
+def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[list[dict[str, str]]]:
+    """Adresses masquées des blocs avocats, décodées pour un usage INTERNE seulement, bloc par bloc.
 
     Décision du propriétaire (14/10/2026) : l'adresse décodée n'est jamais publiée. Les éléments
     masqués sont retirés de la page, donc elle n'entre ni dans le texte, ni dans les blocs, ni dans
     ``lawyer_contact``, ni dans les caractéristiques : elle ne part que dans ``internal_contacts``,
     clé que ``normalize_sale`` extrait de la vente avant ``raw_payload`` et qui n'est écrite que
     dans le registre des contacts de l'agent d'information (service_role).
+    Tous les blocs sont décodés (pour retirer leurs éléments masqués) ; une liste par bloc, dans
+    l'ordre de ``trusts``, que ``_prosecuting_lawyer_contacts`` réduit au seul bloc de l'avocat publié.
     """
-    contacts: list[dict[str, str]] = []
     decode = decode_protected_emails_enabled()
+    per_trust: list[list[dict[str, str]]] = []
     for trust in trusts:
         heading = trust.find("h3")
         name = clean_text(heading.get_text(" ", strip=True)) if heading is not None else None
-        for email in extract_cloudflare_emails(
-            soup, accept=publishable_licitor_email, within=[trust], decode=decode
-        ):
-            if all(email != item["email"] for item in contacts):
-                contacts.append({"email": email, "name": name or "", "role": "lawyer", "source_name": "licitor"})
-    return contacts
+        emails = extract_cloudflare_emails(soup, accept=publishable_licitor_email, within=[trust], decode=decode)
+        per_trust.append(
+            [{"email": email, "name": name or "", "role": "lawyer", "source_name": "licitor"} for email in dict.fromkeys(emails)]
+        )
+    return per_trust
+
+
+def _prosecuting_lawyer_contacts(
+    trusts: list[Any], per_trust: list[list[dict[str, str]]], lawyer_name: str | None
+) -> list[dict[str, str]]:
+    """Seules les adresses du bloc ``.Trust`` d'où vient le nom publié (``_extract_lawyer``).
+
+    Audit du 24/11/2026 : une fiche peut porter plusieurs blocs (avocat poursuivant, confrère,
+    colicitant). L'adresse d'un autre bloc ne sert jamais de contact de l'avocat poursuivant ; si le
+    bloc du nom publié n'a pas d'adresse lisible, aucune adresse n'est retenue.
+    """
+    wanted = clean_text(lawyer_name or "")
+    if not wanted:
+        return []
+    # ``per_trust`` est vide quand le décodage a échoué : aucune adresse, sans erreur.
+    for trust, contacts in zip(trusts, per_trust, strict=False):
+        lines = {clean_text(line) for line in trust.get_text("\n", strip=True).splitlines()}
+        if wanted in lines:
+            return contacts
+    return []
 
 
 def parse_licitor_detail_html(
@@ -443,10 +464,10 @@ def parse_licitor_detail_html(
     trusts = soup.select("div.Trust")
     _log_cloudflare_scope(soup, trusts, source_url)
     try:
-        internal_contacts = _internal_lawyer_contacts(soup, trusts)
+        contacts_per_trust = _internal_lawyer_contacts(soup, trusts)
     except Exception as exc:  # noqa: BLE001 - le décodage ne doit jamais faire échouer la lecture de la fiche
         LOGGER.warning("Licitor %s : décodage des adresses masquées ignoré (%s)", source_url, type(exc).__name__)
-        internal_contacts = []
+        contacts_per_trust = []
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 
@@ -461,6 +482,7 @@ def parse_licitor_detail_html(
     )
     address = _extract_address(soup, lines, city, postal_code)
     lawyer_name, lawyer_contact = _extract_lawyer(lines)
+    internal_contacts = _prosecuting_lawyer_contacts(trusts, contacts_per_trust, lawyer_name)
     latitude, longitude = _extract_coordinates(soup)
     description = _extract_description(soup, title)
     images = _extract_images(soup, source_url)

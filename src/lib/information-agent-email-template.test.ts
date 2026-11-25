@@ -50,9 +50,7 @@ describe("information agent email content template", () => {
       values,
     });
 
-    expect(rendered.subject).toBe(
-      "Appartement T3 à Bordeaux, audience du 14/09/2026 : vérification de l’annonce",
-    );
+    expect(rendered.subject).toBe("Immojudis – question sur la vente Appartement T3 à Bordeaux");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
     // Qui écrit, en une phrase factuelle : sans elle, le message ressemble à de l'hameçonnage.
     expect(rendered.bodyText).toContain(

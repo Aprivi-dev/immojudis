@@ -359,6 +359,37 @@ def test_a_failing_decoder_never_fails_the_page(monkeypatch: pytest.MonkeyPatch,
     assert "ValueError" in caplog.text and LAWYER_EMAIL not in caplog.text
 
 
+# --- Plusieurs blocs .Trust : seule l'adresse du bloc de l'avocat publié (audit du 24/11/2026) -------------
+
+SECOND_TRUST = "<p>2, place du Test - 92000 Nanterre</p></div>"
+CONFRERE_EMAIL = "scp-fictive@exemple.test"
+
+
+def _with_second_trust_email(html: str, email: str) -> str:
+    assert SECOND_TRUST in html
+    return html.replace(SECOND_TRUST, "<p>2, place du Test - 92000 Nanterre</p>" + _data_cfemail_block(email) + "</div>")
+
+
+def test_two_trust_blocks_keep_only_the_address_of_the_published_lawyer() -> None:
+    raw = parse_licitor_detail_html(_with_second_trust_email(_html(_data_cfemail_block(LAWYER_EMAIL)), CONFRERE_EMAIL), URL)
+
+    assert raw["lawyer_name"] == LAWYER_NAME
+    assert raw["internal_contacts"] == [
+        {"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer", "source_name": "licitor"}
+    ]
+    assert CONFRERE_EMAIL not in _published_text({k: v for k, v in raw.items() if k != "internal_contacts"})
+
+
+def test_an_address_readable_only_in_another_trust_block_is_never_the_prosecuting_lawyer() -> None:
+    raw = parse_licitor_detail_html(_with_second_trust_email(_html(""), CONFRERE_EMAIL), URL)
+
+    assert raw["lawyer_name"] == LAWYER_NAME
+    assert "internal_contacts" not in raw
+    assert CONFRERE_EMAIL not in _published_text(raw)
+    assert "protected" not in _published_text(raw)
+    assert normalize_sale(raw).internal_contacts == []
+
+
 # --- Interrupteur de suspension : LICITOR_DECODE_PROTECTED_EMAILS -----------------------------------------
 
 

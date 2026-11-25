@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Matrice de scénarios du pilote automatique (audit du 02/11/2026, section 6.5 : 32 cas) et cas juridiques du
@@ -77,6 +77,7 @@ import {
   AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION,
   autopilotRoundtripExpiry,
   evaluateAutopilotReadiness,
+  informationAgentTemplateFingerprint,
   privacyVersionAtLeast,
   type AutopilotRoundtripProof,
 } from "@/lib/information-agent/autopilot-readiness";
@@ -104,6 +105,16 @@ import { INFORMATION_AGENT_PREVIEW_CHECK_FAILED_MESSAGE } from "@/lib/informatio
 
 const MONDAY_10H = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris, plage d'envoi
 const NIGHT = new Date("2026-11-03T02:00:00Z");
+
+// Modèle publié des essais, approuvé pour l'envoi automatique (audit du 24/11/2026 : modèle figé en mode réel).
+const TEMPLATE_CONTENT = { name: "Modèle des essais", subjectTemplate: "Demande", blocks: [] };
+const TEMPLATE_FINGERPRINT = informationAgentTemplateFingerprint(TEMPLATE_CONTENT);
+beforeEach(() => {
+  vi.stubEnv("INFORMATION_AGENT_AUTOPILOT_APPROVED_TEMPLATE", TEMPLATE_FINGERPRINT);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const settings = (overrides: Partial<AutopilotSettings> = {}): AutopilotSettings => ({
   mode: "live",
@@ -633,7 +644,7 @@ describe("matrice du pilote : S01 à S32", () => {
   });
 
   it("S28 gabarit publié modifié depuis le brouillon : régénération, jamais un texte périmé ; garde commerciale bloquante", async () => {
-    mocks.template.mockResolvedValue({ id: "tpl", revision: 9 });
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 9, content: TEMPLATE_CONTENT });
     mocks.db.rows = [
       {
         id: "old-draft",
@@ -686,6 +697,58 @@ describe("matrice du pilote : S01 à S32", () => {
     });
     expect((await runInformationAgentAutopilot(deps)).skipped).toEqual({ content_rejected: 1 });
     expect(calls.sends).toBe(0);
+  });
+
+  it("S28b modèle figé : en mode réel, une révision publiée non approuvée n'est jamais préparée ni envoyée", async () => {
+    const changed = { ...TEMPLATE_CONTENT, subjectTemplate: "Demande URGENTE" };
+    expect(informationAgentTemplateFingerprint(changed)).not.toBe(TEMPLATE_FINGERPRINT);
+    // Le nom du modèle n'entre pas dans l'empreinte : il ne paraît pas dans le message.
+    expect(informationAgentTemplateFingerprint({ ...TEMPLATE_CONTENT, name: "Autre nom" })).toBe(
+      TEMPLATE_FINGERPRINT,
+    );
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 10, content: changed });
+    mocks.db.rows = [];
+    mocks.createDraft.mockClear();
+    expect(await prepareAutopilotDraft(candidate(), settings(), "run-1")).toEqual({
+      skip: "template_not_approved",
+    });
+    // Aucune empreinte approuvée : rien non plus.
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 9, content: TEMPLATE_CONTENT });
+    expect(await prepareAutopilotDraft(candidate(), settings(), "run-2", {})).toEqual({
+      skip: "template_not_approved",
+    });
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+    // Contrôle de préparation : le mode réel est refusé, l'empreinte à approuver est affichée.
+    const report = evaluateAutopilotReadiness(
+      readinessInput({ publishedTemplate: { revision: 10, fingerprint: "abcdef0123456789" } }),
+    );
+    const templateCheck = report.checks.find((check) => check.key === "template_approved");
+    expect(templateCheck?.ok).toBe(false);
+    expect(templateCheck?.detail).toContain("abcdef0123456789");
+    expect(report.ready).toBe(false);
+  });
+
+  it("S28c modèle figé : la simulation prépare toujours avec le modèle publié, approuvé ou non", async () => {
+    mocks.template.mockResolvedValue({
+      id: "tpl",
+      revision: 10,
+      content: { ...TEMPLATE_CONTENT, subjectTemplate: "Nouvel objet" },
+    });
+    mocks.db.rows = [];
+    mocks.createDraft.mockResolvedValue({
+      mission: {
+        id: "sim-draft",
+        recipientEmail: "me.dupont@cabinet-dupont.test",
+        recipientName: null,
+        recipientKind: "source_lawyer",
+        recipientOrigin: null,
+        subject: "Nouvel objet",
+        bodyText: "Bonjour, une question ?",
+      },
+    });
+    expect(
+      await prepareAutopilotDraft(candidate(), settings({ mode: "simulation" }), "run-1"),
+    ).toMatchObject({ missionId: "sim-draft" });
   });
 
   it("S29 administrateur d'exécution rétrogradé ou supprimé : arrêt, aucun envoi", async () => {
@@ -848,7 +911,7 @@ describe("erreurs du passage et refus au moment de l'envoi (relecture du 14/11/2
       AutopilotDraftCancelError,
     );
     // Régénération après un changement de gabarit : l'ancien brouillon ne s'annule pas, rien n'est créé.
-    mocks.template.mockResolvedValue({ id: "tpl", revision: 9 });
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 9, content: TEMPLATE_CONTENT });
     mocks.db.rows = [
       {
         id: "old-draft",
@@ -1642,12 +1705,14 @@ function readinessInput(
       NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
       NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de la Paix, 33000 Bordeaux",
       NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.test",
+      INFORMATION_AGENT_AUTOPILOT_APPROVED_TEMPLATE: TEMPLATE_FINGERPRINT,
     },
     now: MONDAY_10H,
     roundtripProof: attested("2026-10-25T00:00:00Z"),
     actingAdminIsAdmin: true,
     privacyVersion: "2099-01-01.0",
     verifiedResendDomains: new Set(["reponses.immojudis.test"]),
+    publishedTemplate: { revision: 9, fingerprint: TEMPLATE_FINGERPRINT },
     ...overrides,
   };
 }
@@ -1670,7 +1735,7 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
   });
 
   beforeEach(() => {
-    mocks.template.mockResolvedValue({ id: "tpl", revision: 9 });
+    mocks.template.mockResolvedValue({ id: "tpl", revision: 9, content: TEMPLATE_CONTENT });
     mocks.cancel.mockResolvedValue(undefined);
     mocks.db.sale = null;
   });

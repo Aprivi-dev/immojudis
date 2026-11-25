@@ -4,6 +4,7 @@
  */
 import { formatNumericDateTime } from "@/lib/format/dates";
 import {
+  AUTOPILOT_ART14_LIVE_MAX_DAYS,
   AUTOPILOT_ART14_MAX_DAYS,
   AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS,
   AUTOPILOT_ON_DEMAND_COOLDOWN_MS,
@@ -41,7 +42,14 @@ export type AutopilotView = {
     art14Label: string;
     aipdLabel: string;
   };
-  readiness: { ready: boolean; checks: Array<{ label: string; ok: boolean; detail: string }> };
+  /**
+   * Contrôle de préparation au mode réel. `action` : ce qu'il faut faire pour une condition non remplie, en une
+   * phrase simple ; null pour une condition remplie.
+   */
+  readiness: {
+    ready: boolean;
+    checks: Array<{ label: string; ok: boolean; detail: string; action: string | null }>;
+  };
   /**
    * Brouillons simulés en attente (`count` : tous, `items` : les plus récents, au plus le plafond), avec leur
    * plafond (`label`) et, une fois atteint, ce qu'il faut faire pour que la simulation reprenne (`notice`).
@@ -148,6 +156,7 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   interrupted: "pilote coupé pendant le passage",
   draft_refused: "brouillon refusé par les garde-fous",
   draft_recipient_mismatch: "brouillon adressé à un autre destinataire",
+  template_not_approved: "modèle de message non approuvé pour l’envoi automatique",
   draft_stale: "brouillon caduc (vente changée), annulé",
   policy_rejected: "rejet de politique à l’aperçu",
   content_rejected: "rejet de contenu à l’aperçu",
@@ -190,6 +199,33 @@ export function countsByCode(record: Record<string, unknown>, prefix: string): s
     .map(([key, count]) => `${codeText(key.slice(prefix.length))} (${count})`)
     .join(", ");
 }
+
+/**
+ * Ce qu'il faut faire pour remplir chaque condition du contrôle de préparation, par clé de
+ * `evaluateAutopilotReadiness`. `autopilot-view.test.ts` relit ce fichier et échoue sur une clé sans phrase.
+ */
+const READINESS_ACTIONS: Record<string, string> = {
+  outbound_env:
+    "Ouvrez l’envoi réel dans la configuration de l’hébergement et coupez le mode d’essai (voir le détail).",
+  secrets: "Ajoutez les clés manquantes dans la configuration de l’hébergement (voir le détail).",
+  from_domain: "Choisissez une adresse d’expédition sur le domaine de réception (voir le détail).",
+  resend_domain: "Faites vérifier le domaine d’envoi chez Resend, pour l’envoi et la réception.",
+  roundtrip:
+    "Vérifiez la réception d’une vraie réponse, puis cliquez sur « J’ai vérifié l’aller-retour réel » plus bas.",
+  privacy_version: "Publiez la politique de confidentialité à jour.",
+  live_allowed:
+    "Rien à faire ici : ce verrou se lève à la mise en ligne des textes juridiques du lot 3.",
+  art14_live: `Ramenez le délai de l’article 14 à ${AUTOPILOT_ART14_LIVE_MAX_DAYS} jours au plus, dans « Conformité » plus bas.`,
+  aipd: "Attestez l’AIPD ci-dessous.",
+  manual_sends:
+    "Continuez les envois à la main depuis l’onglet « À contacter », sans plainte ni rebond.",
+  simulation: "Laissez le pilote en simulation jusqu’à la durée demandée, sans anomalie.",
+  template_approved:
+    "Relisez le modèle de message publié (onglet « Réglages »), puis inscrivez son empreinte dans la configuration de l’hébergement et redéployez (voir le détail).",
+  no_blocked_mission: "Traitez les envois bloqués ou à vérifier dans l’onglet « Envois ».",
+  acting_admin:
+    "Vérifiez que le compte qui a lancé la simulation est toujours administrateur, ou réessayez plus tard.",
+};
 
 const MODE_LABELS = {
   off: "Éteint",
@@ -352,7 +388,13 @@ export function buildAutopilotView({
     },
     readiness: {
       ready: readiness.ready,
-      checks: readiness.checks.map(({ label, ok, detail }) => ({ label, ok, detail })),
+      checks: readiness.checks.map(({ key, label, ok, detail }) => ({
+        label,
+        ok,
+        detail,
+        // Clé sans phrase : aucune action, le détail s'affiche déjà (le test des clés l'interdit en pratique).
+        action: ok ? null : (own(READINESS_ACTIONS, key) ?? null),
+      })),
     },
     ready: {
       count: prepared.total,

@@ -272,7 +272,9 @@ export const informationAgentEmailTemplateContentSchema = z
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
   name: "Demande de précisions sur une vente — version 12",
-  subjectTemplate: "{{sale_subject_title}}, {{subject_date}} : vérification de l’annonce",
+  // Ni « audience » ni date de procédure dans l'objet : un avocat pourrait le lire comme un
+  // message de juridiction. La marque en tête dit qui écrit.
+  subjectTemplate: "Immojudis – question sur la vente {{sale_subject_title}}",
   blocks: [
     {
       id: "greeting",

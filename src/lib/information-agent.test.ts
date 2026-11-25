@@ -745,9 +745,7 @@ describe("supervised information agent", () => {
       questionKeys: ["documents", "photos", "visit"],
     });
 
-    expect(draft.subject).toBe(
-      "Appartement T3 à Bordeaux, audience du 14/09/2026 : vérification de l’annonce",
-    );
+    expect(draft.subject).toBe("Immojudis – question sur la vente Appartement T3 à Bordeaux");
     expect(draft.bodyText).toContain("vérifier avec vous quelques points de la fiche");
     expect(draft.bodyText).toContain("n’agit pas au nom d’un tribunal");
     expect(draft.bodyText).not.toContain("service indépendant");
@@ -861,9 +859,8 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject.length).toBeLessThanOrEqual(100);
-    expect(draft.subject).toMatch(
-      /…, audience du \d{2}\/\d{2}\/\d{4} : vérification de l’annonce$/,
-    );
+    expect(draft.subject).toMatch(/^Immojudis – question sur la vente .+…$/);
+    expect(draft.subject).not.toMatch(/audience|\d{2}\/\d{2}\/\d{4}/);
     expect(draft.bodyText).toContain("plusieurs lots à Bordeaux");
   });
 
