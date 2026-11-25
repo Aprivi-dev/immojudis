@@ -27,6 +27,7 @@ paths = [
 '''(?:^|/)src/lib/admin-information-agent-registry-review\.test\.ts''',
 '''(?:^|/)src/lib/admin-information-agent-withdrawals\.test\.ts''',
 '''(?:^|/)src/lib/auction-fact-claims\.test\.ts''',
+'''(?:^|/)src/lib/document-fact-sources\.test\.ts''',
 '''(?:^|/)src/lib/fact-reliability\.test\.ts''',
 '''(?:^|/)src/lib/information-agent-inbound\.test\.ts''',
 '''(?:^|/)src/lib/information-agent-inbound\.ts''',
