@@ -15,6 +15,19 @@ import scenes from "./HomeScenes.module.css";
  */
 
 /** Ce qu'une fiche peut réunir. `x`, `y` : place dans la scène (en %) ; `d` : départ dans la scène. */
+/**
+ * Écran étroit : les éléments de la scène du dossier s'accrochent au bord le plus proche (une
+ * étiquette placée à 84 % de la gauche sortirait de l'écran) et s'écartent du centre, où se lit la
+ * phrase.
+ */
+function narrowPlace(x: number, y: number): Record<string, string> {
+  const side: Record<string, string> =
+    x < 50
+      ? { "--mx": `${Math.round(x * 0.5 + 2)}%` }
+      : { "--mr": `${Math.round((100 - x) * 0.5 + 2)}%` };
+  return { ...side, "--my": `${Math.round(y < 50 ? 9 + y * 0.52 : 100 - (100 - y) * 0.6 - 8)}%` };
+}
+
 const DOSSIER_ITEMS: ReadonlyArray<{ label: string; x: number; y: number; d: number }> = [
   { label: "Cahier des conditions de vente", x: 4, y: 14, d: 0 },
   { label: "Procès-verbal descriptif", x: 70, y: 9, d: 0.05 },
@@ -153,7 +166,13 @@ export function HomeDossier() {
               <li
                 key={item.label}
                 data-home-flier={item.d}
-                style={{ "--x": `${item.x}%`, "--y": `${item.y}%` } as CSSProperties}
+                style={
+                  {
+                    "--x": `${item.x}%`,
+                    "--y": `${item.y}%`,
+                    ...narrowPlace(item.x, item.y),
+                  } as CSSProperties
+                }
               >
                 {item.label}
               </li>
@@ -169,6 +188,7 @@ export function HomeDossier() {
                 {
                   "--x": `${crop.x}%`,
                   "--y": `${crop.y}%`,
+                  ...narrowPlace(crop.x, crop.y),
                   "--w": String(crop.w),
                   aspectRatio: crop.ratio,
                   backgroundImage: `url(${homePaintingUrl(crop.painting)})`,

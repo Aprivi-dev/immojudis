@@ -167,22 +167,28 @@
 
 /* Premier écran -------------------------------------------------------------------------------- */
 
-/* Comme sur le site de référence : le premier écran fait la hauteur de la fenêtre, et la peinture,
-   plus large que l'écran, est coupée en haut, à droite et en bas. */
+/* Comme sur le site de référence : le premier écran fait la hauteur de la fenêtre, et la peinture
+   est coupée par ses bords. Il remonte sous l'en-tête flottant (les 6 rem que `main` lui réserve,
+   voir `[data-site-pill-spacer]` dans `src/styles.css`) : la peinture passe derrière la pilule, sans
+   ligne de coupe sous elle. */
 .hero {
   position: relative;
-  height: 100svh;
-  min-height: 620px;
+  box-sizing: border-box;
+  height: calc(100svh + 6rem);
+  min-height: calc(620px + 6rem);
+  margin-top: -6rem;
+  padding-top: 6rem;
   overflow: hidden;
 }
 
 .heroPainting {
   position: absolute;
-  /* Cadrage réglé par le propriétaire le 24/11/2026 : largeur 97,4 vw, gauche 0, haut −9,2 vw. La
-     hauteur plancher garde la peinture jusqu'au bas du premier écran sur les fenêtres hautes. */
-  top: -9.2vw;
-  left: 0;
-  height: max(73.05vw, calc(100% + 9.2vw));
+  /* Cadrage réglé par le propriétaire le 25/11/2026 : largeur 97,4 vw, gauche −4,1 vw, haut
+     −9,6 vw, mesurés depuis le bas de la réserve de l'en-tête. La hauteur plancher garde la
+     peinture jusqu'au bas du premier écran sur les fenêtres hautes. */
+  top: calc(6rem - 9.6vw);
+  left: -4.1vw;
+  height: max(73.05vw, calc(100% - 6rem + 9.6vw));
   aspect-ratio: 4 / 3;
 }
 
@@ -784,6 +790,8 @@
     flex-direction: column;
     height: auto;
     min-height: 0;
+    margin-top: 0;
+    padding-top: 0;
   }
 
   .heroCopy {
@@ -847,19 +855,42 @@
     min-height: 160px;
   }
 
-  /* Écran étroit : la main qui avance passerait sous le texte ; l'image fixe, cadrée entre les
-     deux mains, suffit. */
-  .growPainting video {
-    display: none;
+  /* Écran étroit : la peinture, très large, ne montrerait que le mur. Elle se range en bandeau au
+     bas de l'écran, cadrée sur la main qui tend la clé ; le texte garde le haut. */
+  .growPainting {
+    inset: auto 0 0;
+    height: 44%;
   }
 
-  .growPainting img {
-    object-position: 52% 100%;
+  .growPainting img,
+  .growPainting video {
+    object-position: 96% 100%;
+  }
+
+  .growText {
+    padding-bottom: 62vw;
+  }
+
+  :global(html[data-home-scenes]) .growText {
+    inset: 0 0 44%;
+  }
+
+  /* Scène du dossier : éléments accrochés au bord le plus proche (`--mx` ou `--mr`, `--my`), étiquettes plus petites, recadrages
+     tenus à l'écart de la phrase centrale. */
+  :global(html[data-home-scenes]) .cloud li,
+  :global(html[data-home-scenes]) .crop {
+    top: var(--my);
+    right: var(--mr, auto);
+    left: var(--mx, auto);
   }
 
   :global(html[data-home-scenes]) .cloud li {
     padding: 4px 9px;
     font-size: 12px;
+  }
+
+  :global(html[data-home-scenes]) .crop {
+    width: calc(var(--w) * 0.42px);
   }
 }
 
