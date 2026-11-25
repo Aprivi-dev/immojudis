@@ -11,7 +11,7 @@
 --   * une vente hors du catalogue public ne rend rien ; une trace retirée ne rend plus rien.
 begin;
 
-select plan(17);
+select plan(16);
 
 -- Le contrat ---------------------------------------------------------------------------------------------------
 select has_function('public', 'get_public_sale_document_fact_sources', array['uuid'], 'the public RPC exists');
