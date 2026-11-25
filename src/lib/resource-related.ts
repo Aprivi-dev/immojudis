@@ -35,6 +35,9 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
   "saisie-immobiliere-etapes-vente-forcee-acheteur": ["procedure", "types-de-vente"],
   "licitation-vente-bien-indivis-encheres-acheteur": ["types-de-vente", "procedure"],
   "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout": ["avocat", "audience", "budget"],
+  "droit-de-preemption-encheres-commune-acheteur": ["apres-vente", "procedure", "terrain"],
+  "garantie-10-pourcent-cheque-banque-caution-encheres": ["budget", "financement", "audience"],
+  "copropriete-encheres-charges-assemblees": ["documents", "analyse", "budget"],
   "vente-encheres-immobiliere-reportee-retiree-annulee": ["procedure", "audience", "avocat"],
   "liquidation-judiciaire-vente-immeuble-entreprise-encheres": ["types-de-vente", "procedure"],
   "mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres": ["analyse", "budget"],
@@ -55,6 +58,9 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
   "ventes-domaniales-etat-biens-immobiliers-mobiliers": ["types-de-vente"],
   "encheres-immobilieres-en-ligne-distance": ["types-de-vente", "audience", "avocat"],
 };
+
+/** Nombre d'articles liés affichés au bas d'un article (deux rangées de trois cartes). */
+export const RELATED_ARTICLES_SHOWN = 6;
 
 const TOPIC_WEIGHT = 3;
 const CATEGORY_WEIGHT = 1;
@@ -102,6 +108,13 @@ const UNDERSTAND_POOL = [
   "saisie-immobiliere-etapes-vente-forcee-acheteur",
 ] as const;
 
+/** Nombre stable tiré de l'identifiant d'une page : le même d'un rendu à l'autre. */
+function seedHash(seed: string): number {
+  let hash = 0;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash;
+}
+
 export function understandingResources(
   seed: string,
   candidates: readonly ResourceSummary[] = RESOURCE_SUMMARIES,
@@ -110,11 +123,50 @@ export function understandingResources(
     candidates.find((item) => item.slug === slug),
   ).filter((item): item is ResourceSummary => item != null);
   if (available.length <= 2) return available;
-  let hash = 0;
-  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const hash = seedHash(seed);
   const first = hash % available.length;
   // Le second est toujours distinct du premier et ne dépend que de la page : stable d'un rendu à l'autre.
   const second =
     (first + 1 + (Math.floor(hash / available.length) % (available.length - 1))) % available.length;
   return [available[first], available[second]];
+}
+
+/**
+ * Articles du blog proposés en plus sur les pages que les moteurs explorent le plus (fiches de
+ * vente, pages de tribunal et de département) : `limit` articles qui se suivent dans le registre, à
+ * partir d'un rang propre à la page. Chaque article du blog reçoit ainsi des liens d'autant de
+ * pages que les autres, au lieu des deux ou trois mêmes articles liés partout (au 25/11/2026,
+ * Google n'avait jamais exploré 14 articles sur 30, faute de liens depuis les pages qu'il visite).
+ * Le guide pilier, déjà lié par ces pages, et les articles de `exclude` n'en font jamais partie.
+ */
+export function rotatingResources(
+  seed: string,
+  limit: number,
+  exclude: readonly string[] = [],
+  candidates: readonly ResourceSummary[] = RESOURCE_SUMMARIES,
+): ResourceSummary[] {
+  const pool = candidates.filter(
+    (item) => item.href.startsWith("/ressources/") && !exclude.includes(item.slug),
+  );
+  const start = seedHash(seed) % Math.max(pool.length, 1);
+  return Array.from(
+    { length: Math.min(limit, pool.length) },
+    (_, index) => pool[(start + index) % pool.length],
+  );
+}
+
+/**
+ * « Pour comprendre » d'une page de tribunal ou de département : les deux articles du lot
+ * `understandingResources`, puis un troisième pris dans tout le blog (`rotatingResources`).
+ */
+export function understandingAndRotatingResources(seed: string): ResourceSummary[] {
+  const understanding = understandingResources(seed);
+  return [
+    ...understanding,
+    ...rotatingResources(
+      seed,
+      1,
+      understanding.map((item) => item.slug),
+    ),
+  ];
 }

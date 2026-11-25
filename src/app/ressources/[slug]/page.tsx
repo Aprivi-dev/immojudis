@@ -12,7 +12,7 @@ import {
   resourceDocumentTitle,
   resourceLastModified,
 } from "@/lib/resource-articles";
-import { relatedResources } from "@/lib/resource-related";
+import { RELATED_ARTICLES_SHOWN, relatedResources } from "@/lib/resource-related";
 import { siteLogoUrl } from "@/lib/seo";
 import { siteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
@@ -116,7 +116,8 @@ export default async function Page({ params }: Props) {
     ],
   };
   // Sujets puis catégorie en commun ; l'ordre du registre départage (voir resource-related.ts).
-  const related = relatedResources(slug);
+  // Six articles : avec trois, six articles du blog n'étaient proposés par aucun autre.
+  const related = relatedResources(slug, RELATED_ARTICLES_SHOWN);
 
   return (
     <main id="contenu" className={styles.root}>

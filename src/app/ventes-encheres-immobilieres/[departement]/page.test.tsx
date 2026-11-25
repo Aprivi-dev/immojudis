@@ -394,7 +394,7 @@ describe("page d'un département : contenu", () => {
     expect(hrefs).not.toContain("/sales?tribunal=TJ+Paris");
   });
 
-  it("ajoute « Pour comprendre » (le guide et deux articles) et les départements limitrophes en pastilles", async () => {
+  it("ajoute « Pour comprendre » (le guide et trois articles) et les départements limitrophes en pastilles", async () => {
     mocks.catalogue.mockResolvedValue(
       aggregateDepartments(
         [...THREE, sale("l1", { department: "40" }), sale("l2", { department: "40" })],
@@ -409,8 +409,8 @@ describe("page d'un département : contenu", () => {
       .map((link) => link.getAttribute("href"));
     expect(hrefs[0]).toBe("/ventes-immobilieres-judiciaires");
     const articles = hrefs.filter((href) => href?.startsWith("/ressources/"));
-    expect(articles).toHaveLength(2);
-    expect(new Set(articles).size).toBe(2);
+    expect(articles).toHaveLength(3);
+    expect(new Set(articles).size).toBe(3);
     expect(block.textContent).toContain("min de lecture");
 
     // Charente-Maritime, Dordogne, Landes et Lot-et-Garonne touchent la Gironde.
@@ -439,7 +439,7 @@ describe("page d'un département : contenu", () => {
     render(await Page(params("la-reunion")));
 
     const block = screen.getByRole("region", { name: "Pour comprendre" });
-    expect(within(block).getAllByRole("link").length).toBe(3);
+    expect(within(block).getAllByRole("link").length).toBe(4);
     expect(screen.queryByRole("region", { name: "Départements limitrophes" })).toBeNull();
     const others = screen.getByRole("region", { name: "Autres départements" });
     expect(within(others).getByRole("link", { name: "Tous les départements" })).toBeTruthy();

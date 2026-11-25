@@ -7,6 +7,7 @@ import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
+import type { SaleGuideLink } from "@/components/SalePublicFurther";
 import { Button, Notice } from "@/components/ui/primitives";
 import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 import { useAccessPlanQuery } from "@/hooks/use-access-plan";
@@ -89,6 +90,8 @@ type SaleDetailPageProps = {
   housingTension?: HousingTension | null;
   /** Rendement brut à la mise à prix de la fiche publique (ou loyer estimé s'il n'est pas significatif), calculé par le serveur (`publicRentalYield`). */
   rentalYield?: PublicRentalYield | null;
+  /** Articles du blog proposés en bas de la fiche publique, choisis par le serveur. */
+  guides?: readonly SaleGuideLink[];
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -111,6 +114,7 @@ function SaleDetailContent({
   rentReference = null,
   housingTension = null,
   rentalYield = null,
+  guides,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -363,6 +367,7 @@ function SaleDetailContent({
         rentReference={rentReference}
         housingTension={housingTension}
         rentalYield={rentalYield}
+        guides={guides}
         verifyingAccount={sessionHinted}
       />
     );
@@ -426,6 +431,7 @@ function SaleDetailContent({
         rentReference={rentReference}
         housingTension={housingTension}
         rentalYield={rentalYield}
+        guides={guides}
         verifyingAccount
       />
     );
@@ -446,6 +452,7 @@ function SaleDetailContent({
         rentReference={rentReference}
         housingTension={housingTension}
         rentalYield={rentalYield}
+        guides={guides}
       />
     );
   }
