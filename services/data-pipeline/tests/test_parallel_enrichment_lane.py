@@ -514,28 +514,47 @@ def test_a_shared_request_fails_while_an_exclusive_one_waits(database_url) -> No
         collection.join(timeout=10)
 
 
+def _wait_for_queued_advisory_lock(database_url: str, timeout: float = 10.0) -> None:
+    """Attend qu'une demande de verrou consultatif soit dans la file de PostgreSQL (vue ``pg_locks``)."""
+    deadline = time.monotonic() + timeout
+    with psycopg.connect(database_url, autocommit=True) as db:
+        while time.monotonic() < deadline:
+            row = db.execute(
+                "select count(*) from pg_locks where locktype = 'advisory' and not granted"
+            ).fetchone()
+            if row and row[0]:
+                return
+            time.sleep(0.02)
+    pytest.fail("no advisory lock request reached PostgreSQL's queue")
+
+
 def test_shared_source_turns_coexist_and_yield_to_a_waiting_collection(database_url) -> None:
     first = source_traffic.SourceTrafficTurns(database_url, mode="shared")
     second = source_traffic.SourceTrafficTurns(database_url, mode="shared")
     assert first.try_take() is True and second.try_take() is True
 
-    waiting = threading.Event()
+    release = threading.Event()
 
     def collection() -> None:
         with psycopg.connect(database_url, autocommit=True) as db:
             db.execute("set lock_timeout = '10s'")
-            waiting.set()
             db.execute("select pg_advisory_lock(hashtextextended(%s, 0))", (source_traffic.SOURCE_TRAFFIC_LOCK_NAME,))
+            # Une collecte garde le tour le temps de son travail : elle ne le rend que lorsque le test le dit.
+            # Rendu aussitôt pris, il pouvait être libre avant la reprise du second travailleur (CI du 25/11/2026).
+            release.wait(timeout=10)
             db.execute("select pg_advisory_unlock(hashtextextended(%s, 0))", (source_traffic.SOURCE_TRAFFIC_LOCK_NAME,))
 
     thread = threading.Thread(target=collection)
     thread.start()
-    waiting.wait(timeout=10)
-    time.sleep(0.3)
-    # Both workers release at their next batch: the waiting collection blocks any new shared turn.
-    assert first.try_take() is False
-    assert second.try_take() is False
-    thread.join(timeout=10)
+    try:
+        _wait_for_queued_advisory_lock(database_url)
+        # Both workers release at their next batch: the waiting collection blocks any new shared turn,
+        # then holds the turn once the last shared one is given back.
+        assert first.try_take() is False
+        assert second.try_take() is False
+    finally:
+        release.set()
+        thread.join(timeout=10)
     assert first.try_take() is True
 
 
