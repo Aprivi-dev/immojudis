@@ -19,8 +19,9 @@ import {
 } from "@/lib/market-estimate-display";
 import type { AuctionSale } from "@/lib/types";
 
-const OutcomeForecast = dynamic(() =>
-  import("@/components/OutcomeForecast").then((module) => module.OutcomeForecast),
+const OutcomeForecast = dynamic(
+  () => import("@/components/OutcomeForecast").then((module) => module.OutcomeForecast),
+  { loading: () => null },
 );
 
 export function TribunalEstimationEvidence({
@@ -180,9 +181,7 @@ export function MarketEvidence({
 
   return (
     <div id="market" className="min-w-0 scroll-mt-2">
-      <h3 className="mt-10 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
-        Marché local
-      </h3>
+      <h3 className="mt-10 font-display text-2xl font-semibold text-brand-navy">Marché local</h3>
       <dl className="mt-7 grid gap-4">
         <MarketFact
           icon={<BadgeEuro className="h-4 w-4" />}
@@ -249,7 +248,7 @@ export function MarketEvidence({
 
       {comparables.length ? (
         <div className="mt-7 rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
-          <h3 className="font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
+          <h3 className="font-display text-2xl font-semibold text-brand-navy">
             {usesAddressHistory
               ? "Historique des ventes à cette adresse"
               : "Ventes de référence à proximité"}

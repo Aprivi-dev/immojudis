@@ -30,6 +30,10 @@ export function useFirstAuctionGuide() {
     } catch {
       // Stockage indisponible (navigation privée) : le guide reste masqué pour cette page.
     }
+    // Le focus passe au sommaire, juste sous le guide, au lieu de se perdre avec le bouton de fermeture.
+    window.requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>("[data-sale-tabs] a")?.focus(),
+    );
   }, []);
   const show = useCallback(() => {
     setHidden(false);

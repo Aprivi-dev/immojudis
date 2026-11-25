@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   SALE_DETAIL_SECTIONS,
   type SaleDetailSection,
@@ -46,6 +46,11 @@ export function DetailSection({
  * dès qu'une ancre le demande (`force`) : la fiche sur une seule page garde le chargement différé
  * des anciens onglets, et le JavaScript comme les requêtes de ces blocs n'arrivent qu'à l'approche.
  * Sans `IntersectionObserver` (vieux navigateur, rendu de test), le bloc est monté tout de suite.
+ *
+ * Le bloc est souvent du code téléchargé à ce moment-là (`next/dynamic`) : la frontière `Suspense`
+ * garde l'emplacement réservé le temps du téléchargement. Sans elle, l'attente remonte jusqu'à la
+ * frontière de la fiche entière, qui disparaît derrière son squelette : la page rétrécit d'un coup
+ * et le lecteur se retrouve en bas.
  */
 export function WhenNear({
   force = false,
@@ -76,10 +81,10 @@ export function WhenNear({
     observer.observe(element);
     return () => observer.disconnect();
   }, [near]);
-  if (near) return <>{children}</>;
-  return (
+  const reserved = (
     <div ref={ref} className={styles.deferred} style={{ minHeight }}>
       <p>{placeholder}</p>
     </div>
   );
+  return near ? <Suspense fallback={reserved}>{children}</Suspense> : reserved;
 }

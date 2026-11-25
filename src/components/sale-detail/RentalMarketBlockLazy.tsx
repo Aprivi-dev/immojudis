@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
  * nécessaire au premier affichage de la fiche, et son module est partagé entre l'aperçu public et la fiche
  * complète (budget de JavaScript client, voir `check-build-budgets.mjs`).
  */
-export const RentalMarketBlockLazy = dynamic(() =>
-  import("@/components/sale-detail/RentalMarketBlock").then((module) => module.RentalMarketBlock),
+export const RentalMarketBlockLazy = dynamic(
+  () =>
+    import("@/components/sale-detail/RentalMarketBlock").then((module) => module.RentalMarketBlock),
+  { loading: () => null },
 );

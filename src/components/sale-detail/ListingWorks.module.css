@@ -27,7 +27,6 @@
   padding-bottom: 16px;
 }
 
-.eyebrow,
 .resultLabel {
   margin: 0;
   color: var(--gold-text, var(--gold-text));
@@ -36,9 +35,9 @@
 }
 
 .title {
-  margin: 5px 0 0;
+  margin: 0;
   font-family: var(--font-display, Georgia, serif);
-  font-size: clamp(28px, 4cqi, 38px);
+  font-size: var(--block-title-size, clamp(28px, 4cqi, 38px));
   font-weight: 500;
   line-height: 1.1;
 }

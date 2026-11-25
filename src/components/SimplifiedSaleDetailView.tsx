@@ -51,7 +51,6 @@ import { Terme } from "@/components/ceiling/Terme";
 import { buildValuePreview, type ValuePreview } from "@/lib/value-preview";
 import { marketGapWithheldReason, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
-import { POINTS_TO_VERIFY_ANCHOR } from "@/lib/search/points-to-verify";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
@@ -132,6 +131,8 @@ import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenari
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
+import { financingReference } from "@/components/sale-detail/FinancingReference";
+import { SaleDetailLandSection } from "@/components/sale-detail/SaleDetailLandSection";
 import { SaleDetailMarketSection } from "@/components/sale-detail/SaleDetailMarketSection";
 import { SaleDetailPiecesSection } from "@/components/sale-detail/SaleDetailPiecesSection";
 import { SaleDetailStepsSection } from "@/components/sale-detail/SaleDetailStepsSection";
@@ -140,27 +141,33 @@ import { SaleDetailWorksFinancingSection } from "@/components/sale-detail/SaleDe
 import { useSaleDetailAnchors } from "@/components/sale-detail/use-sale-detail-anchors";
 
 // « Mon dossier » gratuit (point 68) : chargé à la demande, hors du JavaScript initial de la fiche.
-const SaleFileCard = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
+const SaleFileCard = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
+  { loading: () => null },
 );
 // « Mon plafond face au tribunal » (n° 92) : chargé à la demande, hors du JavaScript initial de la fiche.
-const CeilingVsCourt = dynamic(() =>
-  import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+const CeilingVsCourt = dynamic(
+  () => import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+  { loading: () => null },
 );
 // Dossier du panneau « Votre analyse », changements de la vente et « Enregistrer ce plafond » (offre
 // Analyse) : chargés à la demande avec « Mon dossier » (même morceau), hors du JavaScript initial.
-const DossierActions = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.DossierActions),
+const DossierActions = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.DossierActions),
+  { loading: () => null },
 );
-const SaleFollowChanges = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFollowChanges),
+const SaleFollowChanges = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFollowChanges),
+  { loading: () => null },
 );
-const SaveCeilingButton = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaveCeilingButton),
+const SaveCeilingButton = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaveCeilingButton),
+  { loading: () => null },
 );
 // Bloc « Pourquoi cette pépite » : chargé à la demande, seule une pépite l'affiche.
-const PepiteBlock = dynamic(() =>
-  import("@/components/sale-detail/PepiteBlock").then((module) => module.PepiteBlock),
+const PepiteBlock = dynamic(
+  () => import("@/components/sale-detail/PepiteBlock").then((module) => module.PepiteBlock),
+  { loading: () => null },
 );
 
 /**
@@ -867,6 +874,11 @@ function SaleDetailWorkspace({
   ).blocked;
   // Offre Analyse, vente dont le plafond existe : le panneau collant devient « Votre analyse ».
   const analysisPanel = access === "analysis" && ceilingPromised;
+  // Le panneau suit la section lue : pendant « Travaux et financement », les montants qu'elle fait varier.
+  const sectionReference =
+    analysisPanel && activeSection === "travaux-financement"
+      ? financingReference(retainedWorks, activeFinancingResult?.monthlyPayment ?? null)
+      : null;
   const dossierInPanel = analysisPanel && Boolean(user) && !publicDemo;
   const dateBlocked = getAiReviewFieldResult(
     resolvedAiReviewProjections,
@@ -942,7 +954,8 @@ function SaleDetailWorkspace({
                   aiReviewProjections={resolvedAiReviewProjections}
                   aiReviewStatus={aiReviewStatus}
                   marketReference={
-                    valueGuarded ? null : (
+                    sectionReference ??
+                    (valueGuarded ? null : (
                       <MarketReference
                         startingPrice={startingPrice}
                         preview={valuePreview}
@@ -953,7 +966,7 @@ function SaleDetailWorkspace({
                           ceilingWording?.byOffers ? "La première offre possible" : "La mise à prix"
                         }
                       />
-                    )
+                    ))
                   }
                   showSecondaryAction={!summaryFooter}
                   lead={
@@ -1055,6 +1068,17 @@ function SaleDetailWorkspace({
                 />
               ) : null}
 
+              {/* Avant le sommaire : une aide au parcours, pas une information sur le bien. */}
+              {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
+                <div className="mt-6">
+                  <FirstAuctionGuide
+                    ceilingHref={ceilingDetailHref}
+                    eligibleBar={getSaleProcedure(displaySale).eligibleBar}
+                    onHide={guide.hide}
+                  />
+                </div>
+              ) : null}
+
               <SaleDetailToc active={activeSection} />
 
               <DetailSection id="bien">
@@ -1087,19 +1111,6 @@ function SaleDetailWorkspace({
                   access={access}
                   userKey={user?.id}
                 />
-                {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
-                  <FirstAuctionGuide
-                    ceilingHref={ceilingDetailHref}
-                    eligibleBar={getSaleProcedure(displaySale).eligibleBar}
-                    onHide={() => {
-                      guide.hide();
-                      // Le focus passe au bloc suivant au lieu de se perdre avec le bouton.
-                      window.requestAnimationFrame(() =>
-                        document.getElementById(`${POINTS_TO_VERIFY_ANCHOR}-title`)?.focus(),
-                      );
-                    }}
-                  />
-                ) : null}
                 <ListingChecks
                   sale={displaySale}
                   points={pointsToVerify(displaySale, { occupancyVisible: true })}
@@ -1130,7 +1141,14 @@ function SaleDetailWorkspace({
                     href="#quartier"
                     className="font-semibold text-gold-text underline underline-offset-4"
                   >
-                    Urbanisme, risques de la commune et marché locatif
+                    Marché locatif
+                  </a>
+                  {" · "}
+                  <a
+                    href="#urbanisme-risques"
+                    className="font-semibold text-gold-text underline underline-offset-4"
+                  >
+                    Urbanisme et risques de la commune
                   </a>
                   {isTribunalSale && guide.hidden ? (
                     <>
@@ -1191,28 +1209,33 @@ function SaleDetailWorkspace({
                   </p>
                 ) : null}
                 {startingPrice != null || priceSummaryValue || priceSummaryCeiling ? (
-                  <PriceSummaryCard
-                    startLabel={
-                      getSaleProcedure(displaySale).venueType === "state" ? (
-                        "Prix publié"
-                      ) : ceilingWording?.byOffers ? (
-                        <Terme terme="premiere-offre">Première offre possible</Terme>
-                      ) : (
-                        <Terme terme="mise-a-prix">Mise à prix</Terme>
-                      )
-                    }
-                    startingPrice={startingPrice}
-                    value={priceSummaryValue}
-                    valueWithheld={occupancyGapWithheld}
-                    ceilingLabel={
-                      <Terme terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}>
-                        {ceilingSummaryLabel}
-                      </Terme>
-                    }
-                    ceiling={priceSummaryCeiling}
-                    // Dans la section du prix, le calcul (ou le panneau de prix) suit juste en dessous.
-                    detailHref={null}
-                  />
+                  // Le panneau « Votre analyse » porte déjà ces montants : collant, il les garde à l'écran.
+                  <div className={analysisPanel ? layoutStyles.repeatedInSide : undefined}>
+                    <PriceSummaryCard
+                      startLabel={
+                        getSaleProcedure(displaySale).venueType === "state" ? (
+                          "Prix publié"
+                        ) : ceilingWording?.byOffers ? (
+                          <Terme terme="premiere-offre">Première offre possible</Terme>
+                        ) : (
+                          <Terme terme="mise-a-prix">Mise à prix</Terme>
+                        )
+                      }
+                      startingPrice={startingPrice}
+                      value={priceSummaryValue}
+                      valueWithheld={occupancyGapWithheld}
+                      ceilingLabel={
+                        <Terme
+                          terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}
+                        >
+                          {ceilingSummaryLabel}
+                        </Terme>
+                      }
+                      ceiling={priceSummaryCeiling}
+                      // Dans la section du prix, le calcul (ou le panneau de prix) suit juste en dessous.
+                      detailHref={null}
+                    />
+                  </div>
                 ) : null}
                 <div id="summary" className="scroll-mt-2">
                   {valuationConflict ? (
@@ -1349,6 +1372,18 @@ function SaleDetailWorkspace({
                 </WhenNear>
               </DetailSection>
 
+              <SaleDetailPiecesSection
+                saleId={sale.id}
+                sale={displaySale}
+                documentsOpen={Boolean(expandedDetails.documents)}
+                onDocumentsOpenChange={(open) => setDetailOpen("documents", open)}
+                locked={!fullData}
+                force={forced("pieces")}
+                readingEnabled={!publicDemo && !authLoading && Boolean(user)}
+                access={access}
+                userKey={user?.id}
+              />
+
               <SaleDetailMarketSection
                 sale={sale}
                 displaySale={displaySale}
@@ -1356,7 +1391,6 @@ function SaleDetailWorkspace({
                 fullData={fullData}
                 publicDemo={publicDemo}
                 signedIn={Boolean(user)}
-                authLoading={authLoading}
                 force={forced("marche")}
                 detailedMarketEstimate={detailedMarketEstimate}
                 marketComputedAt={marketQuery.data?.computedAt ?? null}
@@ -1369,6 +1403,17 @@ function SaleDetailWorkspace({
                 statisticsAvailable={statisticsAvailable}
                 adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
                 propertyTypeVerified={!valuationConflict && !propertyTypeBlocked}
+              />
+
+              <SaleDetailLandSection
+                sale={sale}
+                displaySale={displaySale}
+                access={access}
+                fullData={fullData}
+                publicDemo={publicDemo}
+                signedIn={Boolean(user)}
+                authLoading={authLoading}
+                force={forced("urbanisme-risques")}
                 cityBlocked={cityBlocked}
               />
 
@@ -1398,18 +1443,6 @@ function SaleDetailWorkspace({
                 monthlyDebtService={activeFinancingResult?.monthlyPayment ?? null}
                 rentalDraft={rentalDraft}
                 onRentalDraftChange={setRentalDraft}
-              />
-
-              <SaleDetailPiecesSection
-                saleId={sale.id}
-                sale={displaySale}
-                documentsOpen={Boolean(expandedDetails.documents)}
-                onDocumentsOpenChange={(open) => setDetailOpen("documents", open)}
-                locked={!fullData}
-                force={forced("pieces")}
-                readingEnabled={!publicDemo && !authLoading && Boolean(user)}
-                access={access}
-                userKey={user?.id}
               />
 
               <SaleDetailStepsSection

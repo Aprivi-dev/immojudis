@@ -23,12 +23,13 @@ const PropertyReportActions = dynamic(
   },
 );
 // « Mes questions pour l'avocat » (n° 92) : chargé à la demande, avec le repérage des points ouverts.
-const LawyerQuestions = dynamic(() =>
-  import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+const LawyerQuestions = dynamic(
+  () => import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+  { loading: () => null },
 );
 
 /**
- * Section 06 de la fiche, « Démarches » : déroulé de la vente, prochaines étapes, informations
+ * Section 07 de la fiche, « Démarches » : déroulé de la vente, prochaines étapes, informations
  * pratiques, « Mon dossier » (offre Analyse), avocat, conditions de la vente et rapport.
  */
 export function SaleDetailStepsSection({

@@ -6,7 +6,8 @@ import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import { canOptimizeListingPhoto } from "@/lib/listing-photo-source";
 import type { PhotoMirrorDisplay } from "@/lib/photo-mirror";
 
-const Image = dynamic(() => import("next/image"));
+// `loading` : sans lui, la première photo montée tard suspend la page entière (voir `WhenNear`).
+const Image = dynamic(() => import("next/image"), { loading: () => null });
 
 const DEFAULT_SIZES = "(max-width: 767px) calc(100vw - 32px), (max-width: 1280px) 50vw, 720px";
 

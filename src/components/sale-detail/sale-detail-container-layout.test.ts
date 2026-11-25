@@ -72,7 +72,7 @@ describe("fiche vente : grilles pilotées par la largeur de leur bloc", () => {
   it("règle les scénarios de travaux, la procédure et l'avocat sur leur conteneur", () => {
     const scenarios = read("src/components/bid-ceiling/BidCeilingWorks.tsx");
     expect(scenarios).toContain("@container");
-    expect(scenarios).toContain("@md:grid-cols-2 @4xl:grid-cols-4");
+    expect(scenarios).toContain("@md:grid-cols-2 @2xl:grid-cols-4");
     expect(scenarios).not.toMatch(/\blg:grid-cols-4\b/);
     expect(scenarios).not.toMatch(/text-\[1[01]px\]/);
 

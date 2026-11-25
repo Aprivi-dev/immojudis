@@ -36,7 +36,7 @@
 .title {
   margin: 0;
   color: var(--uc-ink);
-  font-size: clamp(23px, 3vw, 29px);
+  font-size: var(--block-title-size, clamp(23px, 3vw, 29px));
   font-weight: 750;
   line-height: 1.15;
 }

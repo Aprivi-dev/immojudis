@@ -24,17 +24,9 @@
   padding: 22px 22px 16px;
 }
 
-.eyebrow,
-.panelKicker {
-  margin: 0;
-  color: var(--gold-text, var(--gold-text));
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .title {
-  margin: 5px 0 0;
-  font-size: clamp(24px, 4cqi, 32px);
+  margin: 0;
+  font-size: var(--block-title-size, clamp(24px, 4cqi, 32px));
   line-height: 1.1;
 }
 
@@ -290,11 +282,6 @@
 
 .resultPanel {
   background: var(--surface);
-}
-
-.resultTitle {
-  margin-top: 4px;
-  font-size: 25px;
 }
 
 .resultPanel .panelIntro {
