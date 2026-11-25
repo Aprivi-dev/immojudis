@@ -3,7 +3,7 @@ import { isSiteIndexable } from "@/lib/seo-indexing";
 import { siteOrigin } from "@/lib/site-url";
 
 // Read at every request: the indexing switch (SEO_INDEXING_ENABLED) is an environment variable
-// that is flipped without a rebuild, like in robots.ts and src/proxy.ts.
+// that is flipped without a rebuild, like in /robots.txt and src/proxy.ts.
 export const dynamic = "force-dynamic";
 
 const TEXT = "text/plain; charset=utf-8";
