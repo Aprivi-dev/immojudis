@@ -620,30 +620,6 @@
   line-height: 1.55;
 }
 
-.dataReliability > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.dataReliability > summary::-webkit-details-marker {
-  display: none;
-}
-
-.dataReliability > summary > span {
-  color: var(--gold-text);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.dataReliability[open] > summary > span {
-  display: none;
-}
-
-.dataReliability > p {
-  margin: 6px 0 0;
-}
-
 .heroFact {
   display: grid;
   align-content: start;

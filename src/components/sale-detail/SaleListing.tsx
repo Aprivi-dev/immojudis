@@ -65,10 +65,7 @@ import {
   DOCUMENT_SURFACE_LABEL,
   documentSourceForDisplayedValue,
 } from "@/lib/document-fact-sources";
-import {
-  SALE_DATA_RELIABILITY_NOTE,
-  SALE_DATA_RELIABILITY_SUMMARY,
-} from "@/lib/sale-data-reliability";
+import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 import { SALE_DETAIL_PIECES_HREF as PIECES_SECTION_HREF } from "./sale-detail-anchors";
 import {
   LAWYER_DAY_LABEL,
@@ -431,12 +428,7 @@ export function ListingOverview({
           </dd>
         </div>
       </dl>
-      <details className={styles.dataReliability}>
-        <summary>
-          {SALE_DATA_RELIABILITY_SUMMARY} <span>En savoir plus</span>
-        </summary>
-        <p>{SALE_DATA_RELIABILITY_NOTE}</p>
-      </details>
+      <p className={styles.dataReliability}>{SALE_DATA_RELIABILITY_NOTE}</p>
       <div className={styles.summaryActions} data-hero-actions="">
         {actions}
         {actions ? null : preparation ? (

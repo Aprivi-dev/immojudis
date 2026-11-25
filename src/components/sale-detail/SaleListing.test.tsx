@@ -14,10 +14,7 @@ import {
   SaleDetailHeading,
 } from "./SaleListing";
 import { ListingBudget } from "./ListingBudget";
-import {
-  SALE_DATA_RELIABILITY_NOTE,
-  SALE_DATA_RELIABILITY_SUMMARY,
-} from "@/lib/sale-data-reliability";
+import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -346,14 +343,12 @@ describe("readable listing sections", () => {
     expect(screen.getByText("Non renseignée")).toBeTruthy();
     expect(screen.getByText("Non renseigné")).toBeTruthy();
     expect(screen.getByText("Date non renseignée")).toBeTruthy();
-    // La note fixe sous les données clés (« à confirmer dans le cahier », repliée sous son résumé) vaut pour
-    // toute la fiche : ce n'est pas une valeur présentée comme en cours de relecture.
-    const note = screen.getByText(SALE_DATA_RELIABILITY_NOTE).closest("details")!;
-    expect(note.querySelector("summary")?.textContent).toContain(SALE_DATA_RELIABILITY_SUMMARY);
+    // La ligne fixe sous les données clés (« à confirmer dans le cahier ») vaut pour toute la fiche : ce n'est
+    // pas une valeur présentée comme en cours de relecture.
     expect(
       screen
         .queryAllByText(/en cours de vérification|à confirmer/i)
-        .filter((element) => !note.contains(element)),
+        .filter((element) => element.textContent !== SALE_DATA_RELIABILITY_NOTE),
     ).toEqual([]);
   });
   it("offers the preparation first, then the appointments, from the summary", () => {
